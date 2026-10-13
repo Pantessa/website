@@ -15,6 +15,7 @@ import { ConvRing, Medallion } from '@/components/board-ui'
 import { tierColor } from '@/components/ReputationPanel'
 import type { ReputationScore } from '@/lib/reputation'
 import type { ServiceHealth, HealthState } from '@/lib/health'
+import { cleanServerName } from '@/lib/utils'
 
 export interface ReputationRowData {
   rank: number
@@ -75,11 +76,11 @@ function Row({ row }: { row: ReputationRowData }) {
         <span className="mono text-[length:var(--fs-xs)] tabular-nums text-[color:var(--muted-2)] w-5 text-right flex-shrink-0 hidden sm:block">
           {rep.qualified ? row.rank : '—'}
         </span>
-        <Medallion name={row.name} keys={[row.iconSlug, row.slug]} logoUrl={row.logoUrl} />
+        <Medallion name={cleanServerName(row.name)} keys={[row.iconSlug, row.slug]} logoUrl={row.logoUrl} />
         <div className="w-36 sm:w-52 flex-shrink-0 min-w-0">
           <Link href={`/servers/${row.slug}`} className="flex items-center gap-1.5 min-w-0 group">
             <span className="text-[color:var(--fg)] text-[14px] font-medium truncate group-hover:underline">
-              {row.name}
+              {cleanServerName(row.name)}
             </span>
             {row.callable && (
               <span
@@ -137,7 +138,7 @@ function Row({ row }: { row: ReputationRowData }) {
         <button
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          aria-label={open ? `Hide ${row.name} endpoints` : `Show ${row.name} endpoints`}
+          aria-label={open ? `Hide ${cleanServerName(row.name)} endpoints` : `Show ${cleanServerName(row.name)} endpoints`}
           disabled={!hasHealth}
           className="mono text-[length:var(--fs-xs)] leading-none w-4 flex-shrink-0 text-[color:var(--muted-2)] enabled:hover:text-[color:var(--fg)] disabled:opacity-0"
         >

@@ -118,7 +118,7 @@ export default function AgentsPanel({ orgId }: { orgId?: string | null }) {
         Connected agents
         <span className="font-normal text-[color:var(--muted-2)]">
           {' '}
-          — apps paying through the yeetful SDK, each on its own daily budget
+          — apps paying through the pantessa SDK, each on its own daily budget
         </span>
       </h2>
 

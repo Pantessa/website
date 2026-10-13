@@ -13,6 +13,7 @@ import {
   EMPTY_TOOLS_STATS,
   type ToolsStats,
 } from '@/lib/thinking-tools'
+import { cleanServerName } from '@/lib/utils'
 
 /**
  * /tools — the thinking tools, visualized. Three panels off one public stats
@@ -172,7 +173,7 @@ function buildToolStats(stats: ToolsStats): Map<string, ToolLiveStat> {
   const lastServerPick = stats.selects.find((s) => !/endpoint|planner/i.test(s.reason ?? ''))
   m.set('server-picker', {
     stat: `${serverSelects} picks in the live window`,
-    example: lastServerPick ? `last: ${lastServerPick.service}` : undefined,
+    example: lastServerPick ? `last: ${cleanServerName(lastServerPick.service)}` : undefined,
   })
   m.set('endpoint-picker', {
     stat: `${endpointSelects} planner picks · ${stats.endpoints.withParams} auto-callable endpoints on the menu`,
@@ -346,7 +347,7 @@ function SettleRateCard({ stats }: { stats: ToolsStats }) {
           {rows.map((r) => (
             <div key={r.name} className="min-w-0">
               <div className="flex justify-between text-[length:var(--fs-xs)] mono">
-                <span className="text-[color:var(--fg)] truncate">{r.name}</span>
+                <span className="text-[color:var(--fg)] truncate">{cleanServerName(r.name)}</span>
                 <span className="text-[color:var(--muted)] flex-shrink-0 ml-2">
                   {Math.round(r.rate * 100)}% · {r.total}
                 </span>

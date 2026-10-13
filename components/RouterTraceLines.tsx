@@ -4,6 +4,7 @@
 // the live engine window (monospace terminal), text glyphs only (no icon deps).
 
 import type { RouterTraceEvent } from '@/lib/store'
+import { cleanServerName } from '@/lib/utils'
 
 const ACCENT = 'var(--accent)'
 
@@ -37,7 +38,7 @@ function Line({ event }: { event: RouterTraceEvent }) {
           <p><span style={{ color: ACCENT }}>≡ shortlisted</span> {event.candidates.length}:</p>
           <ul className="mt-0.5 pl-3 text-[color:var(--muted-2)]">
             {event.candidates.slice(0, 12).map((c, i) => (
-              <li key={i}>· {c.service}{c.endpoint ? ` ${shortEndpoint(c.endpoint)}` : ''}{c.priceUsd ? ` $${c.priceUsd}` : ''}</li>
+              <li key={i}>· {cleanServerName(c.service)}{c.endpoint ? ` ${shortEndpoint(c.endpoint)}` : ''}{c.priceUsd ? ` $${c.priceUsd}` : ''}</li>
             ))}
           </ul>
         </div>
@@ -45,7 +46,7 @@ function Line({ event }: { event: RouterTraceEvent }) {
     case 'candidate':
       return (
         <p className="text-[color:var(--muted)]">
-          <span className="text-[color:var(--muted-2)]">·</span> {event.service}
+          <span className="text-[color:var(--muted-2)]">·</span> {cleanServerName(event.service)}
           {event.endpoint ? <span className="text-[color:var(--muted-2)]"> {shortEndpoint(event.endpoint)}</span> : null}
           {event.priceUsd ? <span className="text-[color:var(--muted-2)]"> ${event.priceUsd}</span> : null}
           {event.proven && event.proven > 0 ? <span style={{ color: ACCENT }}> ✓proven({event.proven}{typeof event.successRate === 'number' ? ` · ${Math.round(event.successRate * 100)}%` : ''})</span> : null}
@@ -56,20 +57,20 @@ function Line({ event }: { event: RouterTraceEvent }) {
     case 'select':
       return (
         <p className="text-[color:var(--fg)]">
-          <span style={{ color: ACCENT }}>✓ selected</span> {event.service}
+          <span style={{ color: ACCENT }}>✓ selected</span> {cleanServerName(event.service)}
           {event.endpoint ? <span className="text-[color:var(--muted)]"> {shortEndpoint(event.endpoint)}</span> : null}
           {event.priceUsd ? <span className="text-[color:var(--muted)]"> ${event.priceUsd}</span> : null}
           {event.reason ? <span className="text-[color:var(--muted)]"> — {event.reason}</span> : null}
         </p>
       )
     case 'pay':
-      return <p className="text-[color:var(--muted)]">$ paying {event.service} <span className="text-[color:var(--muted-2)]">({event.host})</span> ${event.priceUsd}…</p>
+      return <p className="text-[color:var(--muted)]">$ paying {cleanServerName(event.service)} <span className="text-[color:var(--muted-2)]">({event.host})</span> ${event.priceUsd}…</p>
     case 'receipt': {
       const r = event.receipt
       return r.ok ? (
-        <p style={{ color: ACCENT }}>✓ settled {r.name} ${r.priceUsd ?? ''}{r.txHash ? <span className="text-[color:var(--muted)]"> · {r.txHash.slice(0, 10)}…</span> : null}</p>
+        <p style={{ color: ACCENT }}>✓ settled {cleanServerName(r.name)} ${r.priceUsd ?? ''}{r.txHash ? <span className="text-[color:var(--muted)]"> · {r.txHash.slice(0, 10)}…</span> : null}</p>
       ) : (
-        <p className="text-[#ff6b6b]">✗ {r.name} — {r.note ?? 'failed'}</p>
+        <p className="text-[#ff6b6b]">✗ {cleanServerName(r.name)} — {r.note ?? 'failed'}</p>
       )
     }
     case 'tool': {

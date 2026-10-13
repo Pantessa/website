@@ -122,7 +122,7 @@ export default function ApiKeysPanel({
         <span className="font-normal text-[color:var(--muted-2)]">
           {' '}
           — track your agents&apos; x402 payment usage (spend policy + receipts, synced by the
-          yeetful SDK)
+          pantessa SDK)
         </span>
       </h2>
 

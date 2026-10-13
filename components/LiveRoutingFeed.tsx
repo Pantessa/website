@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Terminal, Radio, ExternalLink } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, cleanServerName } from '@/lib/utils'
 import type { RouterTraceEvent } from '@/lib/store'
 import RouteTraceTerminal from '@/components/RouteTraceTerminal'
 
@@ -141,7 +141,7 @@ export default function LiveRoutingFeed() {
                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                     style={{ background: c.ok ? 'var(--accent)' : '#ff6b6b' }}
                   />
-                  <span className="text-[color:var(--fg)] truncate">{c.service}</span>
+                  <span className="text-[color:var(--fg)] truncate">{cleanServerName(c.service)}</span>
                   {!c.ok && c.note ? <span className="text-[#ff6b6b] truncate text-[length:var(--fs-xs)]">— {c.note}</span> : null}
                   <span className="ml-auto flex items-center gap-2 flex-shrink-0 text-[color:var(--muted)] mono text-[length:var(--fs-xs)]">
                     {c.priceUsd ? <span>${c.priceUsd}</span> : null}

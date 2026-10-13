@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Server, ArrowUpRight, BadgeCheck, Loader2, AlertCircle, TrendingUp } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, cleanServerName } from '@/lib/utils'
 
 interface ServerRow {
   slug: string
@@ -110,7 +110,7 @@ export default function PayToAgentsCard() {
             >
               <div className="flex items-center gap-3">
                 <Server className="w-4 h-4 flex-shrink-0 text-[color:var(--muted-2)]" />
-                <span className="text-xs font-medium text-[color:var(--fg)] truncate min-w-0">{s.name}</span>
+                <span className="text-xs font-medium text-[color:var(--fg)] truncate min-w-0">{cleanServerName(s.name)}</span>
                 {s.claimed ? (
                   <span className="mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 flex-shrink-0 inline-flex items-center gap-1">
                     <BadgeCheck className="w-2.5 h-2.5" />

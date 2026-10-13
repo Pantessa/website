@@ -12,6 +12,7 @@ import { chainById } from '@/lib/chains'
 import { splashCapable } from '@/lib/splash/types'
 import type { ActivityTile, HoldingsTile, NftsTile, ProposalsTile, RowsTile, SplashTile } from '@/lib/splash/types'
 import { PANEL_TITLES, derivePanels, tilePanelKind, type PanelKind } from '@/lib/panels/types'
+import { cleanServerName } from '@/lib/utils'
 
 /**
  * App Mode: the working set rendered as a persistent structured workspace —
@@ -206,7 +207,7 @@ function PanelFrame({
             <Link
               key={s.slug}
               href={`/servers/${s.slug}`}
-              title={s.name}
+              title={cleanServerName(s.name)}
               className="grid h-5 w-5 place-items-center overflow-hidden rounded-full border border-[var(--line)] bg-[var(--surf-2)]"
             >
               <BrandIcon server={s} size={12} />

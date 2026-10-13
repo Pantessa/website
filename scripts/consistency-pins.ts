@@ -106,6 +106,26 @@ for (const size of ['192x192', '512x512']) {
   check(`manifest icon ${size} on disk`, !!icon && existsSync(join(ROOT, 'public', icon.src)), icon?.src ?? 'missing')
 }
 
+// ── 3b. Brand at display time (QA-C3 / QA-F6) ─────────────────────────────
+// Every surface that prints a server / service name routes it through
+// lib/utils cleanServerName (Yeetful → Pantessa, suffixes off). The data rows
+// keep their legacy labels on purpose (CLAUDE.md IDENTITY); the screen never does.
+const BRAND_SITES: Array<[string, RegExp]> = [
+  ['components/ActivityOverview.tsx', /\{cleanServerName\(r\.service\)\}/],
+  ['components/ThinkingToolsBoard.tsx', /\{cleanServerName\(r\.name\)\}/],
+  ['components/RouterTraceLines.tsx', /selected<\/span> \{cleanServerName\(event\.service\)\}/],
+  ['components/LiveRoutingFeed.tsx', /\{cleanServerName\(c\.service\)\}/],
+  ['components/ReputationBoard.tsx', /\{cleanServerName\(row\.name\)\}/],
+  ['components/ActiveServerBar.tsx', /\{cleanServerName\(s\.name\)\}/],
+  ['components/ShortlistBar.tsx', /\{cleanServerName\(s\.name\)\}/],
+  ['components/MyServersPanel.tsx', /\{cleanServerName\(s\.name\)\}/],
+  ['components/PayToAgentsCard.tsx', /\{cleanServerName\(s\.name\)\}/],
+  ['components/DashboardCharts.tsx', /service: cleanServerName\(r\.service\)/],
+  ['components/McpServerCard.tsx', /\{cleanServerName\(server\.name\)\}/],
+]
+for (const [f, re] of BRAND_SITES) check(`brand: ${f} prints server names through cleanServerName`, re.test(readFileSync(join(ROOT, f), 'utf8')))
+check('brand: the SDK is named pantessa in dashboard copy', !/yeetful SDK/.test(readFileSync(join(ROOT, 'components/ApiKeysPanel.tsx'), 'utf8') + readFileSync(join(ROOT, 'components/AgentsPanel.tsx'), 'utf8')))
+
 // ── 4. The fence ───────────────────────────────────────────────────────────
 type Counts = Record<string, Partial<Record<Kind, number>>>
 const now: Counts = {}
@@ -165,6 +185,18 @@ async function served() {
     const r = await fetch(`${BASE}${icon.src}`)
     check(`served icon ${icon.sizes} 200`, r.status === 200 && /image\/png/.test(r.headers.get('content-type') ?? ''), `${r.status}`)
   }
+  // No served page prints the word Yeetful outside the deliberate wire ids
+  // (QA's filter, scripts/polish-crawl.ts): SSR text only — scripts, styles
+  // and attributes are not words a visitor reads. /rebrand names it on purpose.
+  const WIRE = /formerly yeetful|yeetful,? inc\.?|@yeetful\/[\w-]+|yeetful[-_.@/][\w.-]*|[\w-]+\.yeetful\.com|YEETFUL_\w+|['"\x60]yeetful['"\x60]|npm (?:i(?:nstall)? )?yeetful/gi
+  const ROUTES = ['/', '/t/ETH', '/t/AAPL', '/live', '/chat', '/links', '/story', '/docs', '/docs/first-five-minutes', '/docs/markets', '/docs/embed', '/docs/links', '/docs/trust', '/docs/transactions', '/docs/privacy', '/docs/terms', '/pricing', '/blog', '/servers', '/compare', '/activity', '/agents', '/roster', '/mosaic', '/tools', '/benchmarks', '/incidents', '/router', '/servers/add', '/i/buy-aapl', '/nope-404-polish']
+  const leaks: string[] = []
+  for (const r of ROUTES) {
+    const page = await (await fetch(`${BASE}${r}`)).text()
+    const text = page.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, '\n').replace(/&amp;/g, '&').replace(/&#x27;|&#39;/g, "'")
+    for (const line of text.split('\n')) if (/yeetful/i.test(line.replace(WIRE, ''))) leaks.push(`${r}: ${line.trim().slice(0, 80)}`)
+  }
+  check(`brand: no served page (${ROUTES.length} routes) prints Yeetful outside the wire ids`, leaks.length === 0, leaks.slice(0, 6).join(' | '))
   const html = await (await fetch(`${BASE}/story`)).text()
   const metas = [...html.matchAll(/<meta name="theme-color"[^>]*>/g)].map((m) => m[0])
   const metaFor = (scheme: string) => metas.find((m) => m.includes(`media="(prefers-color-scheme: ${scheme})"`)) ?? ''

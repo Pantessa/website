@@ -524,7 +524,7 @@ export default function ActivityOverview({
                       background: 'color-mix(in srgb, var(--accent) 7%, transparent)',
                     }}
                   />
-                  <Medallion name={r.service} keys={[r.iconSlug, r.slug]} logoUrl={r.logoUrl} size={30} />
+                  <Medallion name={cleanServerName(r.service)} keys={[r.iconSlug, r.slug]} logoUrl={r.logoUrl} size={30} />
                   <div className="min-w-0 flex-1">
                     <p className="text-[color:var(--fg)] text-[length:var(--fs-md)] truncate">
                       {cleanServerName(r.service)}
