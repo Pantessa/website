@@ -152,6 +152,11 @@ try {
   await a.ev(`document.querySelector('.deck [data-channel="pulse"]').click()`)
   const pulseChips = await a.settle(`JSON.stringify([...document.querySelectorAll('.pulse__markets .pulse__mown > .pulse__m')].map((b) => b.textContent.replace(/^xyz/, '')))`, (v) => v === JSON.stringify(tickers(M)))
   check('…and the pulse channel leads its row with them', JSON.stringify(JSON.parse(pulseChips)) === JSON.stringify(tickers(M)), pulseChips)
+  // The deck's ladder follows the FIRST of the pick (the lens and the hot market are its fallbacks).
+  await a.ev(`document.querySelector('.deck__flick').click()`)
+  const ladder = await a.settle(`document.querySelector('.ladder')?.dataset.market ?? null`, (v) => v === M[0], 10000)
+  check(`the streaming order book follows the first pick (${M[0]})`, ladder === M[0], `ladder ${ladder}`)
+  await a.ev(`document.querySelector('.deck__flick').click()`)
 
   // ── 3. /live?view=siege marches them ────────────────────────────────
   await a.go('/live?view=siege')
