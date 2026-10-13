@@ -1,0 +1,106 @@
+/* ArmAlert — alerts on your pick (GTM squad 2026-10-13, lane ALERTS). The
+   scoreboard seat matches the recruit chips beside it (battle.css
+   .battle__chip: 26px pills); the deck seat matches the bar's switch
+   (deck.css .deck__flick: a bordered seat in the 54px bar). Under a coarse
+   pointer every seat is a 44px target. Tokens only; both themes free. */
+
+.armalert {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surf-1));
+  color: var(--accent);
+  font-family: var(--mk-font-ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+.armalert:hover:not(:disabled):not(.is-armed) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.armalert:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.armalert:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.armalert.is-armed {
+  cursor: default;
+  background: color-mix(in srgb, var(--accent) 22%, var(--surf-1));
+}
+.armalert__ico {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+.armalert__pct {
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+}
+.armalert__door {
+  display: contents;
+}
+.armalert__err,
+.armalert__note {
+  font-size: 10.5px;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+.armalert__err {
+  color: var(--battle-down, #e5484d);
+}
+.armalert__note {
+  color: var(--muted);
+}
+
+/* The deck's bar seat: a bordered seat like the switch beside it. */
+.armalert--deck {
+  flex: 0 0 auto;
+  align-self: stretch;
+  height: auto;
+  padding: 0 14px;
+  gap: 8px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.armalert--deck:hover:not(:disabled):not(.is-armed) {
+  transform: none;
+  filter: none;
+  color: var(--fg);
+}
+.armalert--deck.is-armed {
+  background: transparent;
+  color: var(--accent);
+}
+.armalert--deck .armalert__pct {
+  font-size: 11px;
+}
+.armalert--deck:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* Touch: 44px targets (the brief's rule for every seat). */
+@media (pointer: coarse) {
+  .armalert {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .armalert--scoreboard,
+  .armalert--strip {
+    padding: 0 12px;
+  }
+}
