@@ -63,6 +63,7 @@
     "pins:deck": "tsx scripts/deck-pins.ts",
     "pins:pick": "tsx scripts/pick-pins.ts",
     "pins:card": "tsx scripts/card-pins.ts",
+    "pins:arena": "tsx scripts/arena-pins.ts",
     "pins:pick-alerts": "tsx scripts/pick-alert-pins.ts",
     "pins:home-apps": "tsx scripts/home-apps-pins.ts",
     "drive:mobile-ux": "tsx scripts/drive-mobile-ux.ts",
