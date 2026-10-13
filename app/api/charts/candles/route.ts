@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { changePct24h, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
+import { changePct24h, chartPairFor, isPrintTf, type Candle, type ChartTf } from '@/lib/charts'
 import { MAX_CANDLES, WARMUP_BARS, loadCandleSeries, loadCandlesBefore, resolveTf } from '@/lib/candles-server'
 import { warmupBefore } from '@/lib/chart-indicators'
 
@@ -33,6 +33,12 @@ export async function GET(req: NextRequest) {
   const tf = resolveTf(req.nextUrl.searchParams.get('tf') ?? '1h')
   if (!/^[A-Za-z0-9$._-]{1,16}$/.test(symbolRaw)) {
     return NextResponse.json({ error: 'bad symbol' }, { status: 400 })
+  }
+  // A print frame (1s) is built from the stream in the browser; no venue serves it.
+  if (isPrintTf(tf)) return NextResponse.json({ symbol: symbolRaw.toUpperCase(), tf, candles: [], error: 'a print frame has no venue candles' }, { status: 400, headers: NO_STORE })
+  // A tokenized stock has no minute bar (lib/charts tfsForSource): refuse by name, never a 5-minute bar wearing 1m.
+  if (tf === '1m' && chartPairFor(symbolRaw)?.source === 'robinhood') {
+    return NextResponse.json({ symbol: symbolRaw.toUpperCase(), tf, candles: [], error: 'no 1m bars for a stock' }, { status: 400, headers: NO_STORE })
   }
   const beforeRaw = req.nextUrl.searchParams.get('before')
   if (beforeRaw !== null) return olderPage(symbolRaw, tf, beforeRaw)

@@ -48,6 +48,9 @@ const UPSTREAM_TIMEOUT_MS = 8_000
 const UA = 'Mozilla/5.0 (compatible; Pantessa/1.0; +https://www.pantessa.com)'
 
 const TFS: Record<ChartTf, { coinbaseGranularity: number; hlInterval: string; sec: number }> = {
+  // A print frame: no venue serves it (the route refuses it by name); the entry keeps the record total.
+  '1s': { coinbaseGranularity: 60, hlInterval: '1m', sec: 1 },
+  '1m': { coinbaseGranularity: 60, hlInterval: '1m', sec: 60 },
   '15m': { coinbaseGranularity: 900, hlInterval: '15m', sec: 900 },
   '1h': { coinbaseGranularity: 3600, hlInterval: '1h', sec: 3600 },
   // Coinbase has no native 4h — fetch 1h and bucket server-side.
@@ -58,6 +61,9 @@ const TFS: Record<ChartTf, { coinbaseGranularity: number; hlInterval: string; se
 /** Robinhood historicals: the finest native interval that still covers
  *  MAX_CANDLES after interpolated rows drop; coarser frames bucket up. */
 const RH_TFS: Record<ChartTf, { interval: string; span: string; native: number; sec: number }> = {
+  // No minute bar on the stock tape: the route refuses 1m for a stock by name (lib/charts tfsForSource).
+  '1s': { interval: '5minute', span: 'day', native: 300, sec: 300 },
+  '1m': { interval: '5minute', span: 'day', native: 300, sec: 300 },
   '15m': { interval: '5minute', span: 'week', native: 300, sec: 900 },
   '1h': { interval: 'hour', span: 'month', native: 3600, sec: 3600 },
   '4h': { interval: 'hour', span: 'month', native: 3600, sec: 14400 },
@@ -69,10 +75,12 @@ const RH_TFS: Record<ChartTf, { interval: string; span: string; native: number; 
  *  988 (month: 319), ~0.4–0.8s and ~345KB cold. The venue refuses longer
  *  spans for 5minute (a week: ~246 15m buckets) and hour (3month: ~248 4h
  *  buckets), so those two frames warm up as far as the tape reaches. */
-const RH_DEEP_SPAN: Record<ChartTf, string> = { '15m': 'week', '1h': '3month', '4h': '3month', '1d': '5year' }
+const RH_DEEP_SPAN: Record<ChartTf, string> = { '1s': 'day', '1m': 'day', '15m': 'week', '1h': '3month', '4h': '3month', '1d': '5year' }
 
 /** Yahoo Finance chart API — the fallback tape for stocks. */
 const YF_TFS: Record<ChartTf, { interval: string; range: string; native: number; sec: number }> = {
+  '1s': { interval: '1m', range: '1d', native: 60, sec: 60 },
+  '1m': { interval: '1m', range: '1d', native: 60, sec: 60 },
   '15m': { interval: '15m', range: '5d', native: 900, sec: 900 },
   '1h': { interval: '1h', range: '1mo', native: 3600, sec: 3600 },
   '4h': { interval: '1h', range: '1mo', native: 3600, sec: 14400 },
@@ -81,7 +89,7 @@ const YF_TFS: Record<ChartTf, { interval: string; range: string; native: number;
 
 /** Yahoo's deep ranges (measured 2026-09-14 on ADBE): 15m/1mo 1,409 bars,
  *  1h/3mo 1,072, 1h/6mo 508 4h buckets, 1d/2y 501. */
-const YF_DEEP_RANGE: Record<ChartTf, string> = { '15m': '1mo', '1h': '3mo', '4h': '6mo', '1d': '2y' }
+const YF_DEEP_RANGE: Record<ChartTf, string> = { '1s': '1d', '1m': '5d', '15m': '1mo', '1h': '3mo', '4h': '6mo', '1d': '2y' }
 
 export interface Series {
   feed: ChartFeed

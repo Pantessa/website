@@ -30,7 +30,7 @@
 
 import { NextResponse } from 'next/server'
 import { DUNE_FEED_KEY_ENV, DUNE_VENUE_IDS, LIVE_STREAM_HEARTBEAT_MS, LIVE_STREAM_HOLD_MS, LIVE_STREAM_PER_INSTANCE, LIVE_STREAM_PER_IP, duneFeedKey, parseMarketList, parseVenueList, type LiveStreamEvent } from '@/lib/dune'
-import { duneUpstreamStats, subscribeDune } from '@/lib/dune-feed-server'
+import { duneBackfill, duneUpstreamStats, subscribeDune } from '@/lib/dune-feed-server'
 import { clientIpFrom } from '@/lib/turn-limits'
 
 export const runtime = 'nodejs'
@@ -78,6 +78,8 @@ export async function GET(req: Request) {
   const venues = parseVenueList(sp.get('venues'))
   const markets = parseMarketList(sp.get('markets'))
   const want = markets.length ? new Set(markets) : null
+  // `?backfill=1`: the prints the relay already holds (a print frame's first minutes), before the live ones.
+  const backfill = sp.get('backfill') === '1'
   const ip = clientIpFrom(req.headers) ?? 'local'
   const now = Date.now()
   const held = liveWriters(ip, now)
@@ -120,6 +122,12 @@ export async function GET(req: Request) {
       }
       send(enc.encode('retry: 1000\n\n'))
       send(sse({ type: 'hello', venues, markets, keyed: true, closesInMs: LIVE_STREAM_HOLD_MS }))
+      if (backfill) {
+        for (const v of venues) {
+          const b = duneBackfill(v, want)
+          send(sse({ type: 'backfill', venue: v, fills: b.fills, sinceMs: b.sinceMs }))
+        }
+      }
       unsub = subscribeDune(venues, (e) => {
         if (e.type !== 'fills') {
           send(sse(e))

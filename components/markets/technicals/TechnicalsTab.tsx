@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { CHART_TFS, DEFAULT_CHART_TF, type ChartPair, type ChartTf } from '@/lib/charts'
+import { DEFAULT_CHART_TF, technicalsTfs, type ChartPair, type ChartTf } from '@/lib/charts'
 import { RATING_LABELS, type ChartAction, type Pivots, type Row, type TechnicalsApi, type TechnicalsRefusal } from '@/lib/technicals'
 import RatingGauge, { ratingColor } from './RatingGauge'
 import { canSellAsk } from '@/lib/sell-gate'
@@ -183,7 +183,7 @@ export default function TechnicalsTab({
   /** Mirror the frame into ?tf= (replaceState) so the gauge is a link target. */
   mirrorTf?: boolean
 }) {
-  const tfKeys = useMemo(() => CHART_TFS.map((t) => t.key), [])
+  const tfKeys = useMemo(() => technicalsTfs(pair?.source).map((t) => t.key), [pair?.source])
   const [tf, setTfState] = useState<ChartTf>(() => (initialTf && tfKeys.includes(initialTf) ? initialTf : DEFAULT_CHART_TF))
   const [res, setRes] = useState<Res | null>(null)
   const [loading, setLoading] = useState(false)
@@ -252,7 +252,7 @@ export default function TechnicalsTab({
       {/* timeframe strip — exactly the frames the candle proxy serves */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1" role="tablist" aria-label="Timeframe">
-          {CHART_TFS.map((t) => (
+          {technicalsTfs(pair?.source).map((t) => (
             <button
               key={t.key}
               type="button"

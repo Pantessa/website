@@ -32,7 +32,7 @@ interface Series {
   funding8h: number | null
 }
 
-const BYBIT_TF: Record<ChartTf, string> = { '15m': '15min', '1h': '1h', '4h': '4h', '1d': '1d' }
+const BYBIT_TF: Record<ChartTf, string> = { '1s': '1', '1m': '1', '15m': '15min', '1h': '1h', '4h': '4h', '1d': '1d' }
 async function bybit(symbol: string, tf: ChartTf): Promise<Series> {
   const base = 'https://api.bybit.com/v5/market'
   const q = `category=linear&symbol=${symbol}USDT`
@@ -74,7 +74,7 @@ async function binance(symbol: string, tf: ChartTf): Promise<Series> {
   return { source: 'Binance', oiUnit: 'coin', oi, ratio, funding8h: Number.isFinite(f) ? f : null }
 }
 
-const OKX_TF: Record<ChartTf, string> = { '15m': '5m', '1h': '1H', '4h': '1H', '1d': '1D' }
+const OKX_TF: Record<ChartTf, string> = { '1s': '1m', '1m': '1m', '15m': '5m', '1h': '1H', '4h': '1H', '1d': '1D' }
 async function okx(symbol: string, tf: ChartTf): Promise<Series> {
   const base = 'https://www.okx.com/api/v5'
   type Rows = { data?: string[][] }

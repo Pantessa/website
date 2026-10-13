@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CHART_TFS, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
 
-const POLL_MS: Record<ChartTf, number> = { '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
+const POLL_MS: Record<ChartTf, number> = { '1s': 5_000, '1m': 5_000, '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
 
 const AXIS_W = 56
 const TIME_H = 18

@@ -441,6 +441,26 @@ export function vsUrl(vs: string | null, pathname: string, search: string): stri
   return q ? `${pathname}?${q}` : pathname
 }
 
+/** `?tf=` on a symbol page: the chart's frame as a shareable address (Nate,
+ *  2026-10-13: "url tabs so people can share the time slots"). The default
+ *  frame drops the param. */
+export function tfUrl(tf: string, defaultTf: string, pathname: string, search: string): string {
+  const params = new URLSearchParams(search)
+  if (tf === defaultTf) params.delete('tf')
+  else params.set('tf', tf)
+  const q = params.toString()
+  return q ? `${pathname}?${q}` : pathname
+}
+
+/** replaceState mirror of the chart's frame (the ?tab= idiom). */
+export function syncTfParam(tf: string, defaultTf: string): void {
+  if (typeof window === 'undefined') return
+  const { pathname, search } = window.location
+  const next = tfUrl(tf, defaultTf, pathname, search)
+  if (next === `${pathname}${search}`) return
+  window.history.replaceState(null, '', next)
+}
+
 /** replaceState mirror of the compare symbol (the ?tab= idiom). */
 export function syncVsParam(vs: string | null): void {
   if (typeof window === 'undefined') return
