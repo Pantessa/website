@@ -344,7 +344,7 @@ export default function SymbolPage({
         <header className="sym__head sym__head--mk2">
           <div className="sym__id">
             <TokenIcon symbol={sym} size={40} {...markWhere} />
-            <div className="min-w-0">
+            <div className="sym__idtext min-w-0">
               <div className="sym__titlerow">
                 <h1 className="sym__name truncate">{name}</h1>
                 <span className="sym__sym mono">{sym}</span>
