@@ -268,6 +268,25 @@ export function tapePins(check: Check): void {
       const storeOk = /useWatchlists\(\{ holdings: false \}\)/.test(reads) && !/useWatchlists\(/.test(store) && /show: \(markets, source, write = source === 'hand'\) => \{\s*const next = cleanPick\(markets\)\s*if \(write\) writeMarketPick\(next\)/.test(store) && /readMarketPick\(\)/.test(store) && !/writeLiveMarketMemory|ARMY_MEMORY_KEY/.test(store)
       return hand(live) && hand(slot) && storeOk && /feed\.connect\(\[\.\.\.new Set\(\[\.\.\.markets, \.\.\.own\]\)\], handlers\)/.test(live) && /chipRow\(own, busiest \?\? markets \?\? \[\.\.\.FALLBACK_MARKETS\], filter, CHIP_MARKETS\)/.test(live) && /const aim = useMemo\(\(\) => \[\.\.\.new Set\(\[\.\.\.own, \.\.\.markets\]\)\], \[own, markets\]\)/.test(slot) && /chipRow\(own, markets, null, markets\.length\)/.test(slot)
     })())
+  // THE ONE PICK'S READS (2026-10-13): one subscriber a page. Found by the GTM squad's QA FINAL — six
+  // GET /api/watchlists on a signed-in `/`, one per useMarketPick() instance; scripts/pick-reads-drive.mjs
+  // counts one a page now.
+  check('pick reads: ONE subscriber a page — components/live/PickReads calls useWatchlists({ holdings: false }) and useHeld() once each and publishes through publishPickReads; the deck and /live\'s surface mount <PickReads /> once each, outside the view that remounts; no other home or live surface calls either hook (the first-run sheet reads usePickReads); the store decides the opening once (decide) and useMarketPick runs no opening effect of its own; the lists hook shares an in-flight GET /api/watchlists across the instances of one commit',
+    (() => {
+      const reads = readFileSync('components/live/PickReads.tsx', 'utf8')
+      const store = readFileSync('lib/use-market-pick.ts', 'utf8')
+      const deck = readFileSync('components/home/Deck.tsx', 'utf8')
+      const surface = readFileSync('components/live/LiveSurface.tsx', 'utf8')
+      const sheet = readFileSync('components/live/PickSheet.tsx', 'utf8')
+      const hook = readFileSync('components/markets/watchlist/useWatchlists.ts', 'utf8')
+      const others = ['components/home/PulseSlot.tsx', 'components/home/TapeStage.tsx', 'components/home/Deck.tsx', 'components/live/Battle.tsx', 'components/live/LiveFeed.tsx', 'components/live/ShareLive.tsx', 'components/live/PickSheet.tsx', 'components/live/LiveSurface.tsx', 'lib/use-market-pick.ts']
+      const noHooks = others.every((f) => !/useWatchlists\(|useHeld\(/.test(readFileSync(f, 'utf8')))
+      return (reads.match(/const wl = useWatchlists\(\{ holdings: false \}\)/g) ?? []).length === 1 && (reads.match(/const held = useHeld\(\)/g) ?? []).length === 1 && /publishPickReads\(\{ watchSymbols, held, signedOut \}\)/.test(reads) && /claimSeat\(/.test(reads) && /return owns \? <PickReadsSubscriber \/> : null/.test(reads) &&
+        (deck.match(/<PickReads \/>/g) ?? []).length === 1 && (surface.match(/<PickReads \/>/g) ?? []).length === 1 && /<PickReads \/>\s*\{isBattleView\(view\) \? <Battle key=\{view\}/.test(surface) &&
+        noHooks && /const \{ watchSymbols, held \} = usePickReads\(\)/.test(sheet) &&
+        /function decide\(\): void/.test(store) && /export function publishPickReads\(r: PickReads\): void/.test(store) && !/useEffect\(\(\) => \{[^}]*openingPick/.test(store) && (store.match(/openingPick\(\{/g) ?? []).length === 1 &&
+        /const listReads = new Map<string, Promise<\{ lists: WatchlistShape\[\] \}>>\(\)/.test(hook) && /await readLists\(modeKey\)/.test(hook) && /listReads\.delete\(modeKey\)/.test(hook)
+    })())
 
   // ── The chart's live tail (lib/chart-live, 2026-10-13) ────────────────
   const hype = chartLiveFeed({ symbol: 'HYPE', source: 'hyperliquid', pair: 'HYPE' })
