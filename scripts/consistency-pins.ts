@@ -11,8 +11,8 @@
 //      radii that a token should replace (scripts/consistency-audit.ts's own
 //      scanner) may only go DOWN from scripts/consistency-baseline.json. A new
 //      file starts at 0. A swap lowers the count; a new literal fails here.
-//      `--lower` ratchets the baseline down to today's counts (refuses if any
-//      file went UP).
+//      `--lower` ratchets every cell to min(baseline, today) — a cell that
+//      went UP keeps its baseline and stays red.
 //   5. With BASE set (a running server): the served manifest + the two
 //      media-keyed theme-color metas on `/`.
 //
@@ -138,11 +138,19 @@ if (seed || !existsSync(BASELINE)) {
   const total = (c: Counts) => Object.values(c).reduce((s, v) => s + Object.values(v).reduce((x, y) => x + (y ?? 0), 0), 0)
   check('fence: no file gained a literal color / palette class / px font / px radius', ups.length === 0, ups.length ? `\n   ${ups.join('\n   ')}\n   → use a token (scripts/consistency-audit.ts prints which)` : `${total(now)} fenced literals today (baseline ${total(was)}; ${downs.length} file·kind cells went down)`)
   if (lower) {
-    if (ups.length) console.log('refusing --lower: a file went UP')
-    else {
-      writeFileSync(BASELINE, JSON.stringify(now, null, 1) + '\n')
-      console.log(`baseline lowered: ${total(was)} → ${total(now)}`)
+    // Ratchet: every cell becomes min(baseline, today). A cell that went UP
+    // keeps its baseline (and keeps this pin red) — lowering never accepts a gain.
+    const next: Counts = {}
+    for (const f of new Set([...Object.keys(now), ...Object.keys(was)])) {
+      const cell: Partial<Record<Kind, number>> = {}
+      for (const k of FENCED) {
+        const v = Math.min(was[f]?.[k] ?? 0, now[f]?.[k] ?? 0)
+        if (v) cell[k] = v
+      }
+      if (Object.keys(cell).length) next[f] = cell
     }
+    writeFileSync(BASELINE, JSON.stringify(next, null, 1) + '\n')
+    console.log(`baseline lowered: ${total(was)} → ${total(next)}${ups.length ? ` (${ups.length} cells that went UP keep their baseline)` : ''}`)
   } else if (downs.length) console.log(`   (${downs.length} cells are below the baseline — run with --lower to ratchet)`)
 }
 

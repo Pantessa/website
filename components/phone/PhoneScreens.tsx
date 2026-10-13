@@ -115,7 +115,7 @@ function LinksScreen() {
           aria-expanded={listOpen}
           data-sheet-open="links"
           title="Your links at a glance — mint, the first-payout checklist, copy a link, your page"
-          className="flex-shrink-0 flex items-center gap-1.5 min-h-[44px] px-3 rounded-xl text-[12px] font-medium text-[color:var(--accent)] active:bg-[var(--surf-1)] transition-colors select-none"
+          className="flex-shrink-0 flex items-center gap-1.5 min-h-[44px] px-3 rounded-xl text-[length:var(--fs-sm)] font-medium text-[color:var(--accent)] active:bg-[var(--surf-1)] transition-colors select-none"
         >
           <ListChecks className="w-4 h-4" aria-hidden />
           Your list

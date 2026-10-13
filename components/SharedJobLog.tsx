@@ -133,13 +133,13 @@ export default function SharedJobLog({ job }: { job: SharedJob }) {
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[var(--line)] bg-[color:color-mix(in_srgb,var(--fg)_3%,transparent)]">
         <span className="flex items-center gap-2 min-w-0">
           <ShieldCheck className="w-4 h-4 flex-shrink-0 text-[color:var(--muted)]" aria-hidden />
-          <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] flex-shrink-0">
+          <span className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] flex-shrink-0">
             Execution log
           </span>
           <span className="text-[12.5px] truncate text-[color:var(--fg)]">{job.title}</span>
         </span>
         <span
-          className={`text-[11px] mono flex-shrink-0 ${
+          className={`text-[length:var(--fs-xs)] mono flex-shrink-0 ${
             job.status === 'done' ? 'text-[color:var(--done)]' : job.status === 'failed' ? 'text-[color:var(--fail)]' : 'text-[color:var(--muted)]'
           }`}
         >
@@ -174,7 +174,7 @@ export default function SharedJobLog({ job }: { job: SharedJob }) {
                   {step.title}
                 </span>
                 {step.valueUsd != null && (
-                  <span className="mono text-[11px] text-[color:var(--muted)]">${step.valueUsd.toFixed(2)}</span>
+                  <span className="mono text-[length:var(--fs-xs)] text-[color:var(--muted)]">${step.valueUsd.toFixed(2)}</span>
                 )}
                 {step.kind !== 'sign' && (
                   <span className="mono text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]">{step.kind}</span>
@@ -192,7 +192,7 @@ export default function SharedJobLog({ job }: { job: SharedJob }) {
                   {txs.map((tx) => {
                     const chain = chainById(tx.chainId)
                     return (
-                      <li key={tx.hash} className="flex items-center gap-1.5 text-[11px] mono text-[color:var(--muted)] min-w-0">
+                      <li key={tx.hash} className="flex items-center gap-1.5 text-[length:var(--fs-xs)] mono text-[color:var(--muted)] min-w-0">
                         <span className="text-[color:var(--muted-2)] flex-shrink-0">↳</span>
                         {tx.title && <span className="truncate">{tx.title}</span>}
                         <a
@@ -214,7 +214,7 @@ export default function SharedJobLog({ job }: { job: SharedJob }) {
 
               {/* wait/auto outcomes (settlement checks, HL fills) */}
               {note && (
-                <div className={`ml-6 mt-0.5 text-[11px] ${step.status === 'failed' ? 'text-[color:var(--fail)]' : 'text-[color:var(--muted-2)]'}`}>
+                <div className={`ml-6 mt-0.5 text-[length:var(--fs-xs)] ${step.status === 'failed' ? 'text-[color:var(--fail)]' : 'text-[color:var(--muted-2)]'}`}>
                   {external ? (
                     <a href={external} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)]">
                       {note.slice(0, 180)}
@@ -227,7 +227,7 @@ export default function SharedJobLog({ job }: { job: SharedJob }) {
 
               {/* the guardrail story — every check the build passed before it was offered */}
               {checks.length > 0 && (
-                <details className="ml-6 mt-0.5 text-[11px] mono">
+                <details className="ml-6 mt-0.5 text-[length:var(--fs-xs)] mono">
                   <summary className="cursor-pointer text-[color:var(--muted-2)] hover:text-[color:var(--fg)] select-none list-none inline-flex items-center gap-1">
                     <ShieldCheck className="w-3 h-3" aria-hidden />
                     {guardSummary}
@@ -247,7 +247,7 @@ export default function SharedJobLog({ job }: { job: SharedJob }) {
         })}
 
         {/* footer: the money-moved line marketing screenshots */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 border-t border-[var(--line)] text-[11px] mono text-[color:var(--muted-2)]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 border-t border-[var(--line)] text-[length:var(--fs-xs)] mono text-[color:var(--muted-2)]">
           {job.status === 'failed' && job.failReason ? (
             <span className="text-[color:var(--fail)]">{job.failReason.slice(0, 160)}</span>
           ) : (

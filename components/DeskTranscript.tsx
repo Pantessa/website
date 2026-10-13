@@ -189,7 +189,7 @@ export default function DeskTranscript() {
       data-desk-state={reduced ? 'static' : finished ? 'done' : paused ? 'paused' : armed ? 'playing' : 'armed'}
     >
       <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-2">
-        <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] truncate">
+        <span className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] truncate">
           A real desk session — two agents, one human signature
         </span>
         <div className="flex items-center gap-3 flex-shrink-0">
@@ -197,7 +197,7 @@ export default function DeskTranscript() {
             <button
               type="button"
               onClick={() => setPaused((p) => !p)}
-              className="inline-flex items-center gap-1 mono text-[11px] uppercase tracking-wider text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
+              className="inline-flex items-center gap-1 mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
               aria-label={paused ? 'Resume the session' : 'Pause the session'}
               aria-pressed={paused}
             >
@@ -208,7 +208,7 @@ export default function DeskTranscript() {
           <button
             type="button"
             onClick={replay}
-            className={`inline-flex items-center gap-1 mono text-[11px] uppercase tracking-wider transition-colors hover:text-[color:var(--fg)] ${
+            className={`inline-flex items-center gap-1 mono text-[length:var(--fs-xs)] uppercase tracking-wider transition-colors hover:text-[color:var(--fg)] ${
               finished && !reduced ? 'text-[color:var(--fg)]' : 'text-[color:var(--muted)]'
             }`}
             aria-label="Replay the session"

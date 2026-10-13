@@ -48,7 +48,7 @@ export function BrandColorField({
 
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[12px] font-medium text-[color:var(--fg)]">{label}</label>
+      <label className="text-[length:var(--fs-sm)] font-medium text-[color:var(--fg)]">{label}</label>
       <div className="flex items-center gap-2">
         {/* The OS picker. Its swatch IS the current color, so a creator can
             dial one in by eye; committing happens on change (not on every
@@ -73,18 +73,18 @@ export function BrandColorField({
           placeholder={role === 'bg' ? '#0f172a' : '#38bdf8'}
           maxLength={7}
           spellCheck={false}
-          className="mono w-24 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[12px] text-[color:var(--fg)] focus:border-[var(--accent)] focus:outline-none"
+          className="mono w-24 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[length:var(--fs-sm)] text-[color:var(--fg)] focus:border-[var(--accent)] focus:outline-none"
         />
         <button
           type="button"
           onClick={() => void apply(draft)}
           disabled={disabled || busy || !dirty || !!error}
-          className="mono text-[11px] text-[color:var(--muted-2)] transition-colors hover:text-[color:var(--fg)] disabled:opacity-40"
+          className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] transition-colors hover:text-[color:var(--fg)] disabled:opacity-40"
         >
           {busy ? 'applying…' : 'apply'}
         </button>
       </div>
-      <p className={`text-[11px] ${error ? 'text-amber-400' : 'text-[color:var(--muted-2)]'}`}>{error ?? hint}</p>
+      <p className={`text-[length:var(--fs-xs)] ${error ? 'text-amber-400' : 'text-[color:var(--muted-2)]'}`}>{error ?? hint}</p>
     </div>
   )
 }

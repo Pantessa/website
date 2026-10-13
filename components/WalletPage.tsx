@@ -134,7 +134,7 @@ export default function WalletPage() {
             <div className="min-w-0">
               <div className="mono text-[10.5px] uppercase tracking-[0.16em] text-[color:var(--muted-2)]">Wallet</div>
               <h1 className="text-[19px] font-semibold leading-tight text-[color:var(--fg)] truncate max-sm:whitespace-normal max-sm:line-clamp-2">{showDetails ? kind.label : 'Your wallet'}</h1>
-              {showDetails && <div className="mono text-[11px] leading-snug text-[color:var(--muted-2)] sm:truncate">{kind.sub}</div>}
+              {showDetails && <div className="mono text-[length:var(--fs-xs)] leading-snug text-[color:var(--muted-2)] sm:truncate">{kind.sub}</div>}
             </div>
           </div>
           {/* Switch or disconnect: RainbowKit's account modal, the right
@@ -164,7 +164,7 @@ export default function WalletPage() {
                 aria-label={openAccountModal ? 'Switch wallet or disconnect' : 'Connecting your wallet…'}
                 aria-busy={!openAccountModal || undefined}
                 data-wallet-switch={openAccountModal ? 'ready' : 'connecting'}
-                className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3 py-1.5 max-lg:min-h-11 max-lg:min-w-11 text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] disabled:cursor-progress transition-colors"
+                className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3 py-1.5 max-lg:min-h-11 max-lg:min-w-11 text-[length:var(--fs-sm)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] disabled:cursor-progress transition-colors"
               >
                 {openAccountModal ? <Settings2 className="w-3.5 h-3.5" /> : <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 <span className="max-sm:hidden">{openAccountModal ? 'Switch or disconnect' : 'Connecting…'}</span>

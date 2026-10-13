@@ -75,7 +75,7 @@
   "color": 2
  },
  "app/error.tsx": {
-  "font-px": 4
+  "font-px": 1
  },
  "app/global-error.tsx": {
   "color": 4,
@@ -146,11 +146,7 @@
   "radius-px": 190
  },
  "components/AccountSwitchBanner.tsx": {
-  "tw-color": 2,
-  "font-px": 1
- },
- "components/ActivityChains.tsx": {
-  "font-px": 1
+  "tw-color": 1
  },
  "components/ActivityCharts.tsx": {
   "font-px": 5
@@ -159,45 +155,43 @@
   "color": 5
  },
  "components/ActivityOverview.tsx": {
-  "tw-color": 12,
-  "font-px": 32
+  "tw-color": 4,
+  "font-px": 16
  },
  "components/AddMcpModal.tsx": {
-  "tw-color": 25,
-  "font-px": 23
+  "tw-color": 12,
+  "font-px": 10
  },
  "components/AdminCharts.tsx": {
   "font-px": 3
  },
  "components/AgentsPanel.tsx": {
-  "tw-color": 26,
-  "font-px": 10
+  "tw-color": 17,
+  "font-px": 5
  },
  "components/ApiKeysPanel.tsx": {
   "color": 2,
-  "tw-color": 19,
-  "font-px": 6
+  "tw-color": 13,
+  "font-px": 1
  },
  "components/AppModeWorkspace.tsx": {
-  "tw-color": 24,
-  "font-px": 16
+  "tw-color": 14,
+  "font-px": 10
  },
  "components/AppSpine.tsx": {
   "tw-color": 17,
   "font-px": 18
  },
  "components/AppsRailTab.tsx": {
-  "tw-color": 12,
-  "font-px": 11,
+  "tw-color": 4,
+  "font-px": 2,
   "radius-px": 2
  },
  "components/ArmDcaButton.tsx": {
-  "tw-color": 5,
-  "font-px": 5
+  "tw-color": 3
  },
  "components/ArmSpotGuardButton.tsx": {
-  "tw-color": 5,
-  "font-px": 5
+  "tw-color": 3
  },
  "components/AuthButton.tsx": {
   "tw-color": 9
@@ -210,18 +204,17 @@
  },
  "components/BrandColorField.tsx": {
   "color": 4,
-  "tw-color": 1,
-  "font-px": 4
+  "tw-color": 1
  },
  "components/Button.tsx": {
-  "tw-color": 15
+  "tw-color": 11
  },
  "components/CandleChart.tsx": {
-  "font-px": 4
+  "font-px": 2
  },
  "components/ChainPicker.tsx": {
-  "tw-color": 6,
-  "font-px": 5
+  "tw-color": 2,
+  "font-px": 1
  },
  "components/ChartOverlay.tsx": {
   "tw-color": 6,
@@ -256,15 +249,13 @@
   "font-px": 12
  },
  "components/ConnectAgentCard.tsx": {
-  "tw-color": 11,
-  "font-px": 4
+  "tw-color": 5
  },
  "components/ConnectWallet.tsx": {
-  "tw-color": 23
+  "tw-color": 22
  },
  "components/CopyBlock.tsx": {
-  "tw-color": 4,
-  "font-px": 1
+  "tw-color": 3
  },
  "components/CreateAccountButton.tsx": {
   "color": 4
@@ -282,7 +273,6 @@
   "font-px": 26
  },
  "components/DashAskBar.tsx": {
-  "tw-color": 2,
   "font-px": 1
  },
  "components/DashboardCharts.tsx": {
@@ -290,57 +280,51 @@
   "font-px": 8
  },
  "components/DeleteServerButton.tsx": {
-  "tw-color": 10,
-  "font-px": 6
+  "tw-color": 8
  },
  "components/DeskLogCharts.tsx": {
   "font-px": 2
  },
  "components/DeskLogSection.tsx": {
   "color": 8,
-  "tw-color": 7,
-  "font-px": 4
+  "tw-color": 1
  },
  "components/DeskTranscript.tsx": {
-  "font-px": 6
+  "font-px": 3
  },
  "components/EarnPanel.tsx": {
-  "tw-color": 13,
-  "font-px": 9
+  "tw-color": 8,
+  "font-px": 1
  },
  "components/EmbedChat.tsx": {
   "color": 1,
+  "tw-color": 1
+ },
+ "components/EmbedInsights.tsx": {
+  "tw-color": 12,
+  "font-px": 15
+ },
+ "components/EmbedInstall.tsx": {
+  "tw-color": 4,
+  "font-px": 4
+ },
+ "components/EmbedThisChat.tsx": {
+  "tw-color": 3,
+  "font-px": 4
+ },
+ "components/EmbedsPanel.tsx": {
   "tw-color": 1,
   "font-px": 4
  },
- "components/EmbedInsights.tsx": {
-  "tw-color": 19,
-  "font-px": 31
- },
- "components/EmbedInstall.tsx": {
-  "tw-color": 5,
-  "font-px": 9
- },
- "components/EmbedThisChat.tsx": {
-  "tw-color": 9,
-  "font-px": 6
- },
- "components/EmbedsPanel.tsx": {
-  "tw-color": 6,
-  "font-px": 9
- },
  "components/EmbedsSummaryCard.tsx": {
-  "tw-color": 2,
-  "font-px": 3
+  "font-px": 1
  },
  "components/ExternalBuildNotice.tsx": {
-  "tw-color": 4,
-  "font-px": 1
+  "tw-color": 4
  },
  "components/FundAccountCard.tsx": {
   "color": 2,
-  "tw-color": 12,
-  "font-px": 3
+  "tw-color": 7
  },
  "components/GrowthCharts.tsx": {
   "color": 8,
@@ -349,17 +333,14 @@
  "components/GuardianPanel.tsx": {
   "color": 6,
   "tw-color": 11,
-  "font-px": 17
+  "font-px": 1
  },
  "components/GuardianPolicyCard.tsx": {
   "color": 1,
   "tw-color": 5,
-  "font-px": 7
+  "font-px": 2
  },
  "components/HireConsentFrame.tsx": {
-  "font-px": 4
- },
- "components/HouseLinkChip.tsx": {
   "font-px": 1
  },
  "components/IntentLinksBoard.tsx": {
@@ -380,10 +361,10 @@
  "components/JobsPanel.tsx": {
   "color": 1,
   "tw-color": 9,
-  "font-px": 10
+  "font-px": 4
  },
  "components/JobsRailTab.tsx": {
-  "tw-color": 3,
+  "tw-color": 2,
   "font-px": 14
  },
  "components/LaunchToken.tsx": {
@@ -395,17 +376,14 @@
   "tw-color": 1
  },
  "components/LinkEarningsPanel.tsx": {
-  "font-px": 9
- },
- "components/LinkEconomy.tsx": {
-  "font-px": 2
+  "font-px": 3
  },
  "components/LinkFunnelTable.tsx": {
   "tw-color": 3,
-  "font-px": 14
+  "font-px": 2
  },
  "components/LinkRetired.tsx": {
-  "font-px": 5
+  "font-px": 2
  },
  "components/LinksBoardView.tsx": {
   "font-px": 12
@@ -433,21 +411,20 @@
  },
  "components/LiveRoutingFeed.tsx": {
   "color": 2,
-  "tw-color": 8,
-  "font-px": 9
+  "tw-color": 3,
+  "font-px": 1
  },
  "components/Logo.tsx": {
   "color": 2
  },
  "components/ManagerRow.tsx": {
-  "font-px": 5
+  "font-px": 4
  },
  "components/McpServerCard.tsx": {
   "color": 1
  },
  "components/MessageReceipts.tsx": {
-  "tw-color": 7,
-  "font-px": 2
+  "tw-color": 7
  },
  "components/MintLinkForm.tsx": {
   "tw-color": 1,
@@ -458,116 +435,103 @@
   "font-px": 7
  },
  "components/MosaicStudio.tsx": {
-  "tw-color": 9,
-  "font-px": 36
+  "tw-color": 7,
+  "font-px": 4
  },
  "components/MosaicTileBar.tsx": {
-  "font-px": 2
+  "font-px": 1
  },
  "components/MyServersPanel.tsx": {
-  "tw-color": 20,
-  "font-px": 6
+  "tw-color": 15,
+  "font-px": 3
  },
  "components/NavAccount.tsx": {
   "tw-color": 5
  },
- "components/NetworkPulse.tsx": {
-  "tw-color": 1
- },
  "components/NftGalleryCard.tsx": {
-  "tw-color": 5,
-  "font-px": 8
+  "tw-color": 2,
+  "font-px": 7
  },
  "components/NftMarketCard.tsx": {
-  "tw-color": 7,
-  "font-px": 10
+  "tw-color": 2,
+  "font-px": 8
  },
  "components/OnboardingChecklist.tsx": {
-  "tw-color": 10,
-  "font-px": 1
+  "tw-color": 7
  },
  "components/OrgMembersView.tsx": {
   "color": 5,
-  "tw-color": 5,
-  "font-px": 7
+  "tw-color": 1,
+  "font-px": 2
  },
  "components/OrgReport.tsx": {
-  "tw-color": 6,
-  "font-px": 6
+  "tw-color": 2,
+  "font-px": 2
  },
  "components/ParticleHeader.tsx": {
   "color": 2,
-  "tw-color": 8
+  "tw-color": 6
  },
  "components/PayToAgentsCard.tsx": {
-  "tw-color": 19,
-  "font-px": 6
+  "tw-color": 14,
+  "font-px": 3
  },
  "components/PaymentConfirm.tsx": {
-  "tw-color": 8,
-  "font-px": 8
+  "tw-color": 4,
+  "font-px": 1
  },
  "components/PaymentWeb.tsx": {
   "color": 1
  },
  "components/PlanPanel.tsx": {
   "color": 2,
-  "font-px": 18
+  "font-px": 7
  },
  "components/PortfolioCard.tsx": {
-  "tw-color": 7,
+  "tw-color": 3,
   "font-px": 7
  },
  "components/PrivateSwapToggle.tsx": {
-  "tw-color": 1,
-  "font-px": 7
+  "tw-color": 1
  },
  "components/Providers.tsx": {
   "color": 2
  },
  "components/RateService.tsx": {
-  "color": 1,
-  "tw-color": 1,
-  "font-px": 5
+  "color": 1
  },
  "components/ReputationBoard.tsx": {
   "color": 4,
-  "font-px": 13
+  "font-px": 7
  },
  "components/ReputationPanel.tsx": {
   "color": 6,
-  "font-px": 6
+  "font-px": 1
  },
  "components/RosterHome.tsx": {
-  "font-px": 9
+  "font-px": 2
  },
  "components/RosterTranscript.tsx": {
-  "font-px": 6
+  "font-px": 3
  },
  "components/RoutabilityPanel.tsx": {
   "tw-color": 5,
-  "font-px": 17
- },
- "components/RouteReport.tsx": {
   "font-px": 1
  },
  "components/RouteTraceTerminal.tsx": {
-  "color": 4,
-  "tw-color": 3,
-  "font-px": 1
+  "color": 4
  },
  "components/RouterEngineWindow.tsx": {
-  "tw-color": 8,
-  "font-px": 3
+  "tw-color": 4,
+  "font-px": 2
  },
  "components/RouterTraceLines.tsx": {
   "color": 4,
-  "tw-color": 4,
-  "font-px": 1
+  "tw-color": 1
  },
  "components/SampleCallDemo.tsx": {
-  "tw-color": 8,
-  "font-px": 5
+  "tw-color": 5,
+  "font-px": 2
  },
  "components/SendTxButton.tsx": {
   "font-px": 8
@@ -580,97 +544,79 @@
   "font-px": 1
  },
  "components/ServerApproveToggle.tsx": {
-  "tw-color": 4,
-  "font-px": 2
+  "tw-color": 2
  },
  "components/SettlementLine.tsx": {
-  "tw-color": 2,
-  "font-px": 3
+  "tw-color": 2
  },
  "components/ShareActions.tsx": {
-  "tw-color": 2,
+  "tw-color": 1,
   "font-px": 3
  },
  "components/ShareButton.tsx": {
-  "tw-color": 11,
-  "font-px": 12
+  "tw-color": 9,
+  "font-px": 4
  },
  "components/ShareReceiptButton.tsx": {
   "tw-color": 1,
   "font-px": 3
  },
  "components/SharedGone.tsx": {
-  "font-px": 3
+  "font-px": 1
  },
  "components/SharedJobLog.tsx": {
   "tw-color": 1,
-  "font-px": 11
+  "font-px": 4
  },
  "components/ShortlistBar.tsx": {
   "color": 2
  },
  "components/SignGrantButton.tsx": {
-  "tw-color": 6,
-  "font-px": 5
- },
- "components/SignHandoff.tsx": {
-  "font-px": 5
+  "tw-color": 4
  },
  "components/SignHlActionButton.tsx": {
-  "tw-color": 5,
-  "font-px": 6
+  "tw-color": 5
  },
  "components/SignNftListingButton.tsx": {
-  "tw-color": 6,
-  "font-px": 5
+  "tw-color": 4
  },
  "components/SignOrderButton.tsx": {
   "tw-color": 4,
   "font-px": 5
  },
  "components/SignVoteButton.tsx": {
-  "tw-color": 5,
-  "font-px": 4
- },
- "components/SignatureWaitOpenApp.tsx": {
-  "font-px": 1
+  "tw-color": 3
  },
  "components/SignatureWaitTakeover.tsx": {
-  "tw-color": 1,
-  "font-px": 4
+  "tw-color": 1
  },
  "components/SignedTxLines.tsx": {
-  "tw-color": 1,
-  "font-px": 2
+  "tw-color": 1
  },
  "components/SiteAccount.tsx": {
   "tw-color": 5
  },
  "components/SpendPolicyControls.tsx": {
-  "tw-color": 13
+  "tw-color": 8
  },
  "components/SpendPolicyFix.tsx": {
-  "tw-color": 10,
-  "font-px": 6
+  "tw-color": 8,
+  "font-px": 1
  },
  "components/SplashDashboard.tsx": {
-  "tw-color": 43,
-  "font-px": 24
- },
- "components/StandingSummaryCard.tsx": {
-  "tw-color": 2
+  "tw-color": 27,
+  "font-px": 15
  },
  "components/TeamRailTab.tsx": {
-  "tw-color": 15,
-  "font-px": 17
+  "tw-color": 7,
+  "font-px": 16
  },
  "components/ThinkingToolsBoard.tsx": {
-  "tw-color": 15,
-  "font-px": 22
+  "tw-color": 6,
+  "font-px": 8
  },
  "components/TokenChartButton.tsx": {
-  "tw-color": 4,
-  "font-px": 1
+  "tw-color": 2
  },
  "components/TokenIcon.tsx": {
   "color": 3
@@ -680,24 +626,17 @@
   "font-px": 5
  },
  "components/VoiceButton.tsx": {
-  "tw-color": 2,
   "font-px": 1
  },
- "components/VoteCandidates.tsx": {
-  "tw-color": 2,
-  "font-px": 2
- },
  "components/VoteChoiceButtons.tsx": {
-  "tw-color": 13,
-  "font-px": 12
+  "tw-color": 5
  },
  "components/WalletAppHandoff.tsx": {
-  "tw-color": 1,
-  "font-px": 7
+  "tw-color": 1
  },
  "components/WalletPage.tsx": {
   "tw-color": 1,
-  "font-px": 4
+  "font-px": 2
  },
  "components/WalletPanel.tsx": {
   "color": 2,
@@ -709,11 +648,11 @@
   "font-px": 29
  },
  "components/WalletSendForm.tsx": {
-  "tw-color": 5,
-  "font-px": 27
+  "tw-color": 4,
+  "font-px": 18
  },
  "components/WelcomeNudge.tsx": {
-  "tw-color": 6
+  "tw-color": 4
  },
  "components/arrival/arrival.css": {
   "font-px": 4,
@@ -864,18 +803,12 @@
   "radius-px": 3
  },
  "components/panels/GovernancePanel.tsx": {
-  "tw-color": 5,
+  "tw-color": 4,
   "font-px": 3
  },
  "components/panels/SwapPanel.tsx": {
-  "tw-color": 6,
-  "font-px": 9
- },
- "components/phone/PhoneScreen.tsx": {
-  "font-px": 1
- },
- "components/phone/PhoneScreens.tsx": {
-  "font-px": 1
+  "tw-color": 2,
+  "font-px": 2
  },
  "components/sign-cta.ts": {
   "tw-color": 1,
@@ -886,16 +819,15 @@
   "radius-px": 4
  },
  "components/splash/Hero.tsx": {
-  "tw-color": 6,
-  "font-px": 15
+  "tw-color": 2,
+  "font-px": 6
  },
  "components/splash/Sparkline.tsx": {
   "tw-color": 1,
   "font-px": 1
  },
  "components/splash/viz.tsx": {
-  "tw-color": 8,
-  "font-px": 22
+  "font-px": 14
  },
  "components/wallet-marks.tsx": {
   "radius-px": 1

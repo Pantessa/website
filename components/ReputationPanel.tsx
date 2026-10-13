@@ -24,7 +24,7 @@ export function TierBadge({ tier, overall }: { tier: string; overall?: number })
   const c = tierColor(tier)
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium mono"
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[length:var(--fs-xs)] font-medium mono"
       style={{ color: c, border: `1px solid ${c}`, background: `color-mix(in srgb, ${c} 12%, transparent)` }}
       title={overall != null ? `Reputation ${overall}/100` : undefined}
     >
@@ -45,7 +45,7 @@ const LABELS: { key: keyof ReputationScore['scores']; label: string }[] = [
 
 function ScoreBar({ label, value }: { label: string; value: number | null }) {
   return (
-    <div className="flex items-center gap-2 text-[12px]">
+    <div className="flex items-center gap-2 text-[length:var(--fs-sm)]">
       <span className="w-24 flex-shrink-0 text-[color:var(--muted)]">{label}</span>
       <div className="flex-1 h-1.5 rounded-full bg-[color-mix(in_srgb,var(--fg)_8%,transparent)] overflow-hidden">
         {value != null && (
@@ -92,7 +92,7 @@ export default function ReputationPanel({
         <span className="text-3xl font-semibold leading-none" style={{ color: c }}>
           {rep.qualified ? rep.overall : '—'}
         </span>
-        <span className="text-[11px] text-[color:var(--muted-2)] mono">/ 100</span>
+        <span className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mono">/ 100</span>
         <TierBadge tier={rep.tier} />
       </div>
       {/* Sub-scores */}
@@ -102,7 +102,7 @@ export default function ReputationPanel({
         ))}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[color:var(--muted-2)] mono">
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mono">
         <span>{Math.round(rep.settleRate * 100)}% settle · {rep.settled}/{rep.calls} calls</span>
         {rep.medianLatencyMs != null ? <span>~{(rep.medianLatencyMs / 1000).toFixed(1)}s median</span> : null}
         {rep.avgPriceUsd != null ? (
@@ -114,7 +114,7 @@ export default function ReputationPanel({
       {/* Recent pings — the success/fail timeline */}
       {pings.length > 0 && (
         <div className="mt-4">
-          <p className="text-[11px] uppercase tracking-wide text-[color:var(--muted)] mb-1.5 mono">Recent calls</p>
+          <p className="text-[length:var(--fs-xs)] uppercase tracking-wide text-[color:var(--muted)] mb-1.5 mono">Recent calls</p>
           <div className="flex flex-wrap items-center gap-1">
             {pings.map((p) =>
               p.txHash ? (

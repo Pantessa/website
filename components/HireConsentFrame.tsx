@@ -34,14 +34,14 @@ export default function HireConsentFrame({
           <div className="mono text-[10px] uppercase tracking-[0.2em] text-[color:var(--muted)]">
             You are hiring
           </div>
-          <div className="truncate text-[15px] font-semibold text-[color:var(--fg)]">{name}</div>
+          <div className="truncate text-[length:var(--fs-base)] font-semibold text-[color:var(--fg)]">{name}</div>
         </div>
       </div>
 
-      <p className="mt-3 text-[13px] leading-relaxed text-[color:var(--fg)]">
+      <p className="mt-3 text-[length:var(--fs-md)] leading-relaxed text-[color:var(--fg)]">
         One signature. Fire anytime. It can only propose.
       </p>
-      <p className="mt-1 text-[12px] leading-relaxed text-[color:var(--muted)]">
+      <p className="mt-1 text-[length:var(--fs-sm)] leading-relaxed text-[color:var(--muted)]">
         {/* the space rides INSIDE the conditional — a text node opening on a
             new JSX line loses its leading space (the SWC entity-space class,
             caught live in the 375 shot: ")lands") */}

@@ -32,7 +32,7 @@ export default function SettlementLine({
     <div className="mt-2 pt-1.5 border-t border-[var(--line)] space-y-1" data-settlement={outcome.status}>
       {/* items-start, not center: the headline wraps to two lines on a
           phone and a vertically centred mark floats away from its first line. */}
-      <div className={`flex items-start gap-1.5 text-[11px] mono ${TONE[copy.tone]}`}>
+      <div className={`flex items-start gap-1.5 text-[length:var(--fs-xs)] mono ${TONE[copy.tone]}`}>
         <span aria-hidden className="flex-shrink-0">
           {MARK[copy.tone]}
         </span>
@@ -44,10 +44,10 @@ export default function SettlementLine({
         )}
       </div>
       {copy.detail && (
-        <p className="text-[11px] leading-snug text-[color:var(--muted-2)] [overflow-wrap:anywhere]">{copy.detail}</p>
+        <p className="text-[length:var(--fs-xs)] leading-snug text-[color:var(--muted-2)] [overflow-wrap:anywhere]">{copy.detail}</p>
       )}
       {outcome.txHash && (
-        <div className="flex items-center gap-1.5 text-[11px] mono text-[color:var(--muted-2)] min-w-0">
+        <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] mono text-[color:var(--muted-2)] min-w-0">
           <span className="text-[color:var(--muted)] flex-shrink-0">{copy.txLabel ?? 'refund'}</span>
           {outcome.txUrl ? (
             <a

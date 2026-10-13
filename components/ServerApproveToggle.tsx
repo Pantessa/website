@@ -97,8 +97,8 @@ export default function ServerApproveToggle({
       )}
     >
       <div className="min-w-0">
-        <p className="text-[13px] text-white font-medium leading-tight">Approve for your expense account</p>
-        <p className="text-[11px] text-[color:var(--muted-2)] truncate">{sub}</p>
+        <p className="text-[length:var(--fs-md)] text-[color:var(--fg)] font-medium leading-tight">Approve for your expense account</p>
+        <p className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)] truncate">{sub}</p>
       </div>
       {cta ? (
         <button className="btn btn--solid flex-shrink-0" onClick={cta.onClick}>
@@ -118,7 +118,7 @@ export default function ServerApproveToggle({
         >
           <span
             className={cn(
-              'absolute top-[3px] w-[18px] h-[18px] rounded-full bg-white transition-all',
+              'absolute top-[3px] w-[18px] h-[18px] rounded-full bg-[var(--fg)] transition-all',
               approved ? 'left-[23px]' : 'left-[3px]',
             )}
           />

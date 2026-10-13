@@ -58,10 +58,10 @@ export default function LinkEconomy() {
           </div>
 
           <div className="spread__ctas">
-            <Link href={LINKS_STUDIO_HREF} className="btn btn--solid text-[13px]">
+            <Link href={LINKS_STUDIO_HREF} className="btn btn--solid text-[length:var(--fs-md)]">
               Mint yours
             </Link>
-            <Link href="/links" className="btn btn--ghost text-[13px]">
+            <Link href="/links" className="btn btn--ghost text-[length:var(--fs-md)]">
               The leaderboard
             </Link>
             <span className="mono spread__note">

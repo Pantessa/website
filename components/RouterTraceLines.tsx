@@ -55,7 +55,7 @@ function Line({ event }: { event: RouterTraceEvent }) {
       )
     case 'select':
       return (
-        <p className="text-white">
+        <p className="text-[color:var(--fg)]">
           <span style={{ color: ACCENT }}>✓ selected</span> {event.service}
           {event.endpoint ? <span className="text-[color:var(--muted)]"> {shortEndpoint(event.endpoint)}</span> : null}
           {event.priceUsd ? <span className="text-[color:var(--muted)]"> ${event.priceUsd}</span> : null}
@@ -78,7 +78,7 @@ function Line({ event }: { event: RouterTraceEvent }) {
       return <p style={{ color }}><span className="text-[color:var(--muted-2)]">⚙</span> {event.name} {mark}{event.detail ? <span className="text-[color:var(--muted)]"> {event.detail}</span> : null}</p>
     }
     case 'eip712':
-      return <p className="text-white"><span style={{ color: ACCENT }}>✎ sign {event.scheme.toUpperCase()}</span> <span className="text-[color:var(--muted)]">{event.summary}</span><span className="text-[color:var(--muted-2)]"> · {event.signer}</span></p>
+      return <p className="text-[color:var(--fg)]"><span style={{ color: ACCENT }}>✎ sign {event.scheme.toUpperCase()}</span> <span className="text-[color:var(--muted)]">{event.summary}</span><span className="text-[color:var(--muted-2)]"> · {event.signer}</span></p>
     case 'note':
       return <p style={{ color: event.level === 'warn' ? '#f4b740' : 'var(--muted-2)' }}>{event.level === 'warn' ? '⚠' : 'ℹ'} {event.label}</p>
     case 'error':
@@ -94,8 +94,8 @@ export default function RouterTraceLines({ meta }: { meta: unknown }) {
   const trace = (meta as { routerTrace?: unknown }).routerTrace
   if (!Array.isArray(trace) || trace.length === 0) return null
   return (
-    <details className="mt-2 text-[11px] mono [overflow-wrap:anywhere]">
-      <summary className="cursor-pointer text-[color:var(--muted-2)] hover:text-white select-none">⚙ Routing trace ({trace.length} steps)</summary>
+    <details className="mt-2 text-[length:var(--fs-xs)] mono [overflow-wrap:anywhere]">
+      <summary className="cursor-pointer text-[color:var(--muted-2)] hover:text-[color:var(--fg)] select-none">⚙ Routing trace ({trace.length} steps)</summary>
       <div className="mt-2 rounded-lg border border-[var(--line)] bg-black/40 p-3 space-y-1">
         {(trace as RouterTraceEvent[]).map((e, i) => (
           <Line key={i} event={e} />

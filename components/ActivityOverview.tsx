@@ -147,7 +147,7 @@ function useCountUp(target: number, duration = 1600): number {
 }
 
 const KIND_CHIP: Record<string, { label: string; cls: string }> = {
-  signed: { label: 'signed', cls: 'bg-[color:var(--accent)] text-black border-transparent font-semibold' },
+  signed: { label: 'signed', cls: 'bg-[color:var(--accent)] text-[color:var(--bg)] border-transparent font-semibold' },
   'tx-built': { label: 'built', cls: 'border-[color:var(--accent)] text-[color:var(--accent)]' },
   settled: { label: 'x402', cls: 'border-[color:var(--line-2)] text-[color:var(--muted)]' },
   executed: { label: 'auto', cls: 'border-amber-400/50 text-amber-400' },
@@ -332,15 +332,15 @@ export default function ActivityOverview({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div>
               <p className="mono text-[10.5px] uppercase tracking-[0.2em] text-[color:var(--muted-2)]">Attended</p>
-              <p className="mono text-[28px] tabular-nums text-white mt-1">{fmtUsd(h.attendedUsd)}</p>
-              <p className="mono text-[11px] text-[color:var(--muted-2)] tabular-nums">
+              <p className="mono text-[28px] tabular-nums text-[color:var(--fg)] mt-1">{fmtUsd(h.attendedUsd)}</p>
+              <p className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] tabular-nums">
                 {h.attendedCount} signatures · chat + embeds
               </p>
             </div>
             <div>
               <p className="mono text-[10.5px] uppercase tracking-[0.2em] text-[color:var(--accent)]">Standing</p>
               <p className="mono text-[28px] tabular-nums text-[color:var(--accent)] mt-1">{fmtUsd(h.standingUsd)}</p>
-              <p className="mono text-[11px] text-[color:var(--muted-2)] tabular-nums">
+              <p className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] tabular-nums">
                 {h.standing.jobsCount > 0 && `${fmtUsd(h.standing.jobsUsd)} jobs + DCA · `}
                 {h.standing.guardianCount > 0 && `${fmtUsd(h.standing.guardianUsd)} guardian · `}
                 {fmtFee(h.standing.x402Usd)} agent call fees
@@ -377,14 +377,14 @@ export default function ActivityOverview({
           <Card className="lg:col-span-3 min-w-0">
             <div className="mb-1">
               <span className="cardh__eyebrow mono">THE CURVE</span>
-              <h2 className="cardh--serif text-white">Money moved, cumulative</h2>
+              <h2 className="cardh--serif text-[color:var(--fg)]">Money moved, cumulative</h2>
             </div>
             <MoneyCurve series={data.series} />
           </Card>
           <Card className="lg:col-span-2 min-w-0">
             <div className="mb-1">
               <span className="cardh__eyebrow mono">DAY BY DAY</span>
-              <h2 className="cardh--serif text-white">Daily flow</h2>
+              <h2 className="cardh--serif text-[color:var(--fg)]">Daily flow</h2>
             </div>
             <DailyFlow series={data.series} />
           </Card>
@@ -400,7 +400,7 @@ export default function ActivityOverview({
         />
         {data.venues.length === 0 ? (
           <Card>
-            <p className="text-[13px] text-[color:var(--muted-2)] py-4">
+            <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)] py-4">
               No transactions built yet — the first venue lights up with the first build.
             </p>
           </Card>
@@ -415,7 +415,7 @@ export default function ActivityOverview({
                   <div key={v.venue} className="flex items-center gap-3 sm:gap-4 py-3 min-w-0">
                     <Medallion name={meta.label} keys={[v.venue === 'guardian' ? 'hyperliquid' : v.venue]} />
                     <div className="w-36 sm:w-48 flex-shrink-0 min-w-0">
-                      <p className="text-white text-[14px] font-medium truncate">{meta.label}</p>
+                      <p className="text-[color:var(--fg)] text-[14px] font-medium truncate">{meta.label}</p>
                       <p className="mono text-[10.5px] text-[color:var(--muted-2)] truncate">{meta.sub}</p>
                     </div>
                     <div className="flex-1 hidden sm:flex flex-col gap-1 min-w-0">
@@ -436,7 +436,7 @@ export default function ActivityOverview({
                       {conv != null ? (
                         <>
                           <ConvRing pct={conv} />
-                          <span className="mono text-[12px] tabular-nums text-[color:var(--muted)] w-9 text-right">
+                          <span className="mono text-[length:var(--fs-sm)] tabular-nums text-[color:var(--muted)] w-9 text-right">
                             {Math.round(conv * 100)}%
                           </span>
                         </>
@@ -479,7 +479,7 @@ export default function ActivityOverview({
                 { label: 'Signed', n: data.funnel.signed },
               ].map((row) => (
                 <div key={row.label} className="flex items-center gap-3 min-w-0">
-                  <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] w-40 flex-shrink-0">
+                  <span className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] w-40 flex-shrink-0">
                     {row.label}
                   </span>
                   <div className="flex-1 h-5 rounded-md overflow-hidden min-w-0" style={{ background: 'color-mix(in srgb, var(--fg) 5%, transparent)' }}>
@@ -488,7 +488,7 @@ export default function ActivityOverview({
                       style={{ width: `${Math.max(2, pct(row.n, data.funnel.turns))}%`, background: 'var(--accent)' }}
                     />
                   </div>
-                  <span className="mono text-[12px] w-20 text-right flex-shrink-0 tabular-nums">
+                  <span className="mono text-[length:var(--fs-sm)] w-20 text-right flex-shrink-0 tabular-nums">
                     {row.n} <span className="text-[color:var(--muted-2)]">· {pct(row.n, data.funnel.turns)}%</span>
                   </span>
                 </div>
@@ -526,7 +526,7 @@ export default function ActivityOverview({
                   />
                   <Medallion name={r.service} keys={[r.iconSlug, r.slug]} logoUrl={r.logoUrl} size={30} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-white text-[length:var(--fs-md)] truncate">
+                    <p className="text-[color:var(--fg)] text-[length:var(--fs-md)] truncate">
                       {cleanServerName(r.service)}
                       {r.free && (
                         <span className="mono text-[9.5px] uppercase tracking-wide ml-2 px-1.5 py-px rounded-full border border-[color:var(--line-2)] text-[color:var(--muted-2)]">
@@ -536,13 +536,13 @@ export default function ActivityOverview({
                     </p>
                     <p className="mono text-[10.5px] text-[color:var(--muted-2)]">{timeAgo(r.lastAt)}</p>
                   </div>
-                  <span className="mono text-[12px] tabular-nums text-[color:var(--muted)] flex-shrink-0 w-16 text-right">
+                  <span className="mono text-[length:var(--fs-sm)] tabular-nums text-[color:var(--muted)] flex-shrink-0 w-16 text-right">
                     {r.calls} call{r.calls === 1 ? '' : 's'}
                   </span>
-                  <span className="mono text-[11px] tabular-nums text-[color:var(--muted-2)] flex-shrink-0 w-12 text-right">
+                  <span className="mono text-[length:var(--fs-xs)] tabular-nums text-[color:var(--muted-2)] flex-shrink-0 w-12 text-right">
                     {r.settleRate != null ? `${Math.round(r.settleRate * 100)}%` : '—'}
                   </span>
-                  <span className="mono text-[12px] tabular-nums flex-shrink-0 w-16 text-right" style={{ color: r.usd > 0 ? 'var(--accent)' : 'var(--muted-2)' }}>
+                  <span className="mono text-[length:var(--fs-sm)] tabular-nums flex-shrink-0 w-16 text-right" style={{ color: r.usd > 0 ? 'var(--accent)' : 'var(--muted-2)' }}>
                     {r.usd > 0 ? fmtFee(r.usd) : 'free'}
                   </span>
                 </div>
@@ -564,7 +564,7 @@ export default function ActivityOverview({
         />
         <Card>
           {data.recent.length === 0 ? (
-            <p className="text-[13px] text-[color:var(--muted-2)] py-4">
+            <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)] py-4">
               Nothing yet — the first built transaction or settled call shows up here.
             </p>
           ) : (
@@ -573,13 +573,13 @@ export default function ActivityOverview({
                 const chip = KIND_CHIP[e.outcome] ?? KIND_CHIP.settled
                 const venueLabel = e.venue ? VENUE_META[e.venue]?.label : null
                 return (
-                  <div key={i} className="flex items-center gap-3 py-2.5 text-[13px] min-w-0">
+                  <div key={i} className="flex items-center gap-3 py-2.5 text-[length:var(--fs-md)] min-w-0">
                     <span
                       className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] mono uppercase tracking-wide whitespace-nowrap flex-shrink-0 ${chip.cls}`}
                     >
                       {chip.label}
                     </span>
-                    <span className="text-white truncate min-w-0">{e.label}</span>
+                    <span className="text-[color:var(--fg)] truncate min-w-0">{e.label}</span>
                     {venueLabel && (
                       <span className="mono text-[10.5px] text-[color:var(--muted-2)] flex-shrink-0 hidden sm:inline">
                         {venueLabel}
@@ -592,7 +592,7 @@ export default function ActivityOverview({
                     )}
                     <span className="ml-auto flex items-center gap-3 flex-shrink-0">
                       {e.usd != null && e.usd > 0 && (
-                        <span className="mono text-[12px] tabular-nums text-[color:var(--accent)]">
+                        <span className="mono text-[length:var(--fs-sm)] tabular-nums text-[color:var(--accent)]">
                           {e.kind === 'x402' ? fmtFee(e.usd) : fmtUsd(e.usd)}
                         </span>
                       )}
@@ -602,13 +602,13 @@ export default function ActivityOverview({
                           target="_blank"
                           rel="noreferrer"
                           data-journey="Open the transaction"
-                          className="mono text-[length:var(--fs-xs)] text-[color:var(--muted)] inline-flex items-center justify-center gap-0.5 [@media(pointer:coarse)]:min-h-[var(--tap)] [@media(pointer:coarse)]:min-w-[var(--tap)] hover:text-white transition-colors"
+                          className="mono text-[length:var(--fs-xs)] text-[color:var(--muted)] inline-flex items-center justify-center gap-0.5 [@media(pointer:coarse)]:min-h-[var(--tap)] [@media(pointer:coarse)]:min-w-[var(--tap)] hover:text-[color:var(--fg)] transition-colors"
                           title="View on the block explorer"
                         >
                           tx <ArrowUpRight className="w-3 h-3" />
                         </a>
                       )}
-                      <span className="mono text-[11px] text-[color:var(--muted-2)]">{timeAgo(e.at)}</span>
+                      <span className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">{timeAgo(e.at)}</span>
                     </span>
                   </div>
                 )
@@ -616,7 +616,7 @@ export default function ActivityOverview({
             </div>
           )}
         </Card>
-        <p className="mt-4 text-[11px] text-[color:var(--muted-2)] flex items-center gap-1.5">
+        <p className="mt-4 text-[length:var(--fs-xs)] text-[color:var(--muted-2)] flex items-center gap-1.5">
           <ShieldOff className="w-3.5 h-3.5" />
           Aggregates and artifact labels only — no prompts, no wallets. Refusals are counted, never
           listed. Updates every 30s.

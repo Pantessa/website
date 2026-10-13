@@ -25,7 +25,7 @@ export function ChartHoverButton({ symbol, alwaysVisible = false }: { symbol: st
       }}
       aria-label={`${pair.label} live chart`}
       title={`${pair.label} live chart`}
-      className={`grid h-6 w-6 place-items-center rounded-md text-[color:var(--muted-2)] transition-all hover:bg-white/5 hover:text-white focus-visible:opacity-100 [@media(hover:none)]:h-10 [@media(hover:none)]:w-10 [@media(hover:none)]:-my-2 [@media(hover:none)]:-mr-2${
+      className={`grid h-6 w-6 place-items-center rounded-md text-[color:var(--muted-2)] transition-all hover:bg-white/5 hover:text-[color:var(--fg)] focus-visible:opacity-100 [@media(hover:none)]:h-10 [@media(hover:none)]:w-10 [@media(hover:none)]:-my-2 [@media(hover:none)]:-mr-2${
         alwaysVisible ? '' : ' opacity-0 group-hover:opacity-100'
       }`}
     >
@@ -48,7 +48,7 @@ export function ChartChip({ symbol }: { symbol: string }) {
         setChartDetail({ symbol: pair.symbol })
       }}
       title={`${pair.label} live chart`}
-      className="flex items-center gap-1 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted-2)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+      className="flex items-center gap-1 rounded-full border border-[var(--line)] px-2.5 py-1 text-[length:var(--fs-xs)] text-[color:var(--muted-2)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-[color:var(--fg)]"
     >
       <ChartCandlestick className="h-3 w-3" />
       Chart

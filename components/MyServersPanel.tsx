@@ -73,7 +73,7 @@ export default function MyServersPanel() {
 
   return (
     <div className="rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 mb-6 min-w-0">
-      <h2 className="text-sm font-semibold text-white mb-1">
+      <h2 className="text-sm font-semibold text-[color:var(--fg)] mb-1">
         My MCP servers
         <span className="font-normal text-[color:var(--muted-2)]">
           {' '}
@@ -82,7 +82,7 @@ export default function MyServersPanel() {
       </h2>
 
       {error && (
-        <p className="flex items-center gap-1.5 text-[11px] text-red-400 mt-2">
+        <p className="flex items-center gap-1.5 text-[length:var(--fs-xs)] text-red-400 mt-2">
           <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
           {error}
         </p>
@@ -95,7 +95,7 @@ export default function MyServersPanel() {
           <Server className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <p className="text-xs leading-relaxed">
             No servers tied to this wallet. If you operate an MCP,{' '}
-            <Link href="/dashboard/servers" className="text-white underline underline-offset-2 decoration-dotted">
+            <Link href="/dashboard/servers" className="text-[color:var(--fg)] underline underline-offset-2 decoration-dotted">
               find it in the directory
             </Link>{' '}
             — sign in with the wallet its x402 <span className="mono">payTo</span> is set to and it shows up here
@@ -116,7 +116,7 @@ export default function MyServersPanel() {
               >
                 <div className="flex items-center gap-3">
                   <Server className="w-4 h-4 flex-shrink-0 text-[color:var(--muted-2)]" />
-                  <span className="text-xs font-medium text-white truncate min-w-0">{s.name}</span>
+                  <span className="text-xs font-medium text-[color:var(--fg)] truncate min-w-0">{s.name}</span>
                   {s.claimed ? (
                     <span className="mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 flex-shrink-0 inline-flex items-center gap-1">
                       <BadgeCheck className="w-2.5 h-2.5" />
@@ -133,7 +133,7 @@ export default function MyServersPanel() {
                       <button
                         onClick={() => void claim(s.slug)}
                         disabled={claiming === s.slug}
-                        className="flex items-center gap-1 text-[11px] px-2 py-1 max-lg:min-h-9 rounded-md bg-white text-zinc-950 hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                        className="flex items-center gap-1 text-[length:var(--fs-xs)] px-2 py-1 max-lg:min-h-9 rounded-md bg-[var(--fg)] text-zinc-950 hover:bg-zinc-200 disabled:opacity-50 transition-colors"
                       >
                         {claiming === s.slug ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                         Claim
@@ -141,7 +141,7 @@ export default function MyServersPanel() {
                     )}
                     <Link
                       href={`/servers/${s.slug}`}
-                      className="flex items-center gap-1 text-[11px] px-2 py-1 max-lg:min-h-9 rounded-md border border-[var(--line)] text-white hover:border-[var(--line-2)] hover:bg-white/5 transition-colors"
+                      className="flex items-center gap-1 text-[length:var(--fs-xs)] px-2 py-1 max-lg:min-h-9 rounded-md border border-[var(--line)] text-[color:var(--fg)] hover:border-[var(--line-2)] hover:bg-white/5 transition-colors"
                     >
                       Details
                       <ArrowUpRight className="w-3 h-3" />

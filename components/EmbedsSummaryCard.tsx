@@ -37,7 +37,7 @@ export default function EmbedsSummaryCard() {
         <p className="mt-3 text-[13.5px] leading-relaxed text-[color:var(--muted)] max-w-[70ch]">
           Put the full Pantessa chat — compose MCPs, guardrails, receipts, signing with the
           visitor&rsquo;s own wallet — on any site. Create a{' '}
-          <strong className="text-white font-medium">public embed key</strong> (safe in page
+          <strong className="text-[color:var(--fg)] font-medium">public embed key</strong> (safe in page
           source), paste one prompt into Claude, and your embeds report back here.
         </p>
         <div className="mt-4">
@@ -57,7 +57,7 @@ export default function EmbedsSummaryCard() {
         <span className="flex items-center gap-2.5 min-w-0">
           <Globe className="w-4 h-4 flex-shrink-0 text-[color:var(--muted-2)]" />
           <span className="min-w-0">
-            <p className="text-sm font-semibold text-white truncate">Embedded chat</p>
+            <p className="text-sm font-semibold text-[color:var(--fg)] truncate">Embedded chat</p>
             <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
               {keys.length} key{keys.length === 1 ? '' : 's'} · {sites.length} site
               {sites.length === 1 ? '' : 's'} · {turns} turn{turns === 1 ? '' : 's'}
@@ -67,13 +67,13 @@ export default function EmbedsSummaryCard() {
         <span className="flex items-center gap-4 flex-shrink-0">
           <Link
             href="/dashboard/keys#embed-keys"
-            className="mono text-[12px] text-[color:var(--accent)] hover:underline underline-offset-2"
+            className="mono text-[length:var(--fs-sm)] text-[color:var(--accent)] hover:underline underline-offset-2"
           >
             Manage keys →
           </Link>
           <Link
             href="/dashboard/embeds"
-            className="mono text-[12px] text-[color:var(--accent)] hover:underline underline-offset-2"
+            className="mono text-[length:var(--fs-sm)] text-[color:var(--accent)] hover:underline underline-offset-2"
           >
             Analytics →
           </Link>
