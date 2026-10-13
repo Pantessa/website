@@ -1,0 +1,30 @@
+/* THE APPS ROW — the fleet's marks on the splash (2026-10-13, lib/home-apps),
+   in the seat the guide card used to hold (markets.css .mk-guide-seat keeps
+   the margins). A note in the markets look: the page surface with rounded
+   corners, site tokens only, so light mode comes free. Each app is a pill
+   that is a real link; a thumb gets 44px. */
+
+.apps-row { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--mk-surface, var(--surf-1)); }
+.apps-row__head { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.apps-row__eyebrow { flex: 0 0 auto; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); line-height: 1.4; }
+.apps-row__why { min-width: 0; font-size: 12px; line-height: 1.4; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.apps-row__list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.apps-row__app { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 6px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--fg); font-family: var(--mk-font-ui); font-size: 12.5px; font-weight: 600; text-decoration: none; white-space: nowrap; transition: border-color .12s ease, background .12s ease; }
+.apps-row__app:hover, .apps-row__app:focus-visible { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); outline: none; }
+.apps-row__mark { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surf-2, var(--surf-1)); color: var(--fg); font-size: 11px; }
+.apps-row__mark svg { display: block; }
+.apps-row__app--all { padding: 0 12px; color: var(--muted); border-style: dashed; }
+.apps-row__app--all:hover { color: var(--fg); }
+.apps-row__arrow { color: var(--accent); }
+@media (hover: none) { .apps-row__app { height: 44px; } }
+
+/* Phone: one scrolling row of pills and nothing else — the same 62px the guide's
+   compact row held, so the first board row keeps its place above the bar. The
+   pills carry their own names and marks; "All apps →" names the destination. */
+@media (max-width: 640px) {
+  .apps-row { padding: 8px 10px; gap: 0; }
+  .apps-row__head { display: none; }
+  .apps-row__list { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -10px; padding: 0 10px; }
+  .apps-row__list::-webkit-scrollbar { display: none; }
+  .apps-row__list li { flex: 0 0 auto; }
+}

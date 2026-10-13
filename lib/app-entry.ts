@@ -153,9 +153,17 @@ export function sameAppHref(a: string, b: string): boolean {
  * symbol page. AppSpine leaves a visitor there, SpineLink links there plainly,
  * and signing out there stays put. Takes a path or an in-app href; the query
  * and hash don't count.
+ *
+ * The chat surface joined them on 2026-10-13 (Nate: "allow users to click
+ * apps without needing to sign into the wallet"): the bare /chat — its apps
+ * drawer, its empty composer, its deep links (`?tab=`, `?mcps=`, `?prompt=`)
+ * — is open to look at, and a send asks for the wallet (the chat's own
+ * connect gate, rule 6: connect to act). An OPEN chat (/chat/<id>) is its
+ * owner's and stays behind the gate; /wallet and the dashboard too.
  */
 export function isPublicAppPath(href: string): boolean {
-  return isMarketsPath(href.split(/[?#]/)[0])
+  const path = href.split(/[?#]/)[0]
+  return isMarketsPath(path) || path === '/chat' || path === '/chat/'
 }
 
 export type SessionStatus = 'loading' | 'authed' | 'guest'

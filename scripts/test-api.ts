@@ -375,6 +375,7 @@ import { battlePins } from './battle-pins'
 import { orderTicketPins } from './order-ticket-pins'
 import { depthPins } from './depth-pins'
 import { deckPins } from './deck-pins'
+import { homeAppsPins } from './home-apps-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -23807,9 +23808,11 @@ async function main() {
       const ag = await import('../lib/act-gate')
       check(
         // RE-PINNED 2026-10-06 (front-door): `/` IS the markets splash — public.
-        'public app pages: `/`, /markets and every /t/<symbol> (query and hash ignored) are open to a signed-out visitor; /chat and its deep links, /wallet, the dashboard and /story (a brochure page, not the shell) are not',
-        ['/', '/?utm_source=x', '/markets', '/markets?q=apple', '/markets#crypto', '/t/AAPL', '/t/ETH?tab=trade'].every((p) => ae.isPublicAppPath(p)) &&
-          !['/chat', `/chat?prompt=${encodeURIComponent('Buy $10 of AAPL')}`, '/chat/abc', '/wallet', '/dashboard', '/story', '/marketsx', '/t', '/pricing'].some((p) => ae.isPublicAppPath(p)),
+        // RE-PINNED 2026-10-13 (apps open): the bare /chat and its deep links are public to LOOK at (Nate: "allow users to
+        // click apps without needing to sign into the wallet"); an open chat (/chat/<id>) is its owner's and stays gated.
+        'public app pages: `/`, /markets, every /t/<symbol> and the bare /chat with its deep links (?tab=, ?mcps=, ?prompt= — query and hash ignored) are open to a signed-out visitor; an open chat (/chat/<id>), /wallet, the dashboard and /story (a brochure page, not the shell) are not',
+        ['/', '/?utm_source=x', '/markets', '/markets?q=apple', '/markets#crypto', '/t/AAPL', '/t/ETH?tab=trade', '/chat', '/chat/', '/chat?tab=mcps&mcps=uniswap-free', `/chat?prompt=${encodeURIComponent('Buy $10 of AAPL')}`].every((p) => ae.isPublicAppPath(p)) &&
+          !['/chat/abc', '/chats', '/wallet', '/dashboard', '/story', '/marketsx', '/t', '/pricing'].some((p) => ae.isPublicAppPath(p)),
       )
       check(
         'act gate: a connected wallet runs the action (no session needed); nobody here gets the door; a wallet that may still come back waits without one',
@@ -34737,6 +34740,8 @@ async function main() {
   depthPins(check)
   // THE DECK (2026-10-13): the band at the top of `/` as a bar of four channels (Pulse · Tape · The Front · The Siege) with the streaming-order-book switch — the channels and their doors, the switch's memory, the ladder's bins and prints, the words, the SSR frame, the wiring.
   deckPins(check)
+  // THE APPS ROW (2026-10-13): the fleet's marks on the splash in the guide card's old seat, each a door into the chat's apps drawer with that app on — the table, the hrefs, the public chat surface, the wiring.
+  homeAppsPins(check)
   // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
   // sign-in door, never a planner promise to "fetch your tokens".
   {
