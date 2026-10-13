@@ -25283,10 +25283,10 @@ async function main() {
     // The engine wiring (the pixels are proven in the PR's browser drive).
     const zoomSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
     check(
-      'chart zoom: MarketChart holds the right edge on a zoom (rightBarStaysOnScroll), pages older bars via ?before= through prependHistory under a 2,200-bar cap, runs every visible-range change through clampToFirstBar + wantsOlderBars, draws the held bars, and at the cap keeps the oldest 200 off the canvas as warm-up for the lines',
+      'chart zoom (RE-PINNED 2026-10-13, print-frame zoom: the guard\'s fit carries the Wall\'s margin at the fitted spacing): MarketChart holds the right edge on a zoom (rightBarStaysOnScroll), pages older bars via ?before= through prependHistory under a 2,200-bar cap, runs every visible-range change through clampToFirstBar + wantsOlderBars, draws the held bars, and at the cap keeps the oldest 200 off the canvas as warm-up for the lines',
       zoomSrc.includes('rightBarStaysOnScroll: true') && zoomSrc.includes('&before=${before}') && zoomSrc.includes('prependHistory(older, cur, HISTORY_CAP)') && zoomSrc.includes('const HISTORY_CAP = 2_200') &&
         zoomSrc.includes('const CAP_WARMUP = 200') && zoomSrc.includes('history.slice(CAP_WARMUP)') &&
-        zoomSrc.includes('clampToFirstBar(view, drawn, RIGHT_OFFSET)') && zoomSrc.includes('wantsOlderBars(clamped ?? view, drawn)') && zoomSrc.includes('subscribeVisibleLogicalRangeChange(onRange)') &&
+        zoomSrc.includes('clampToFirstBar(view, drawn, marginRef.current)') && zoomSrc.includes('fitMarginBars(drawn, RIGHT_OFFSET, wallPxRef.current, ts.width())') && zoomSrc.includes('wantsOlderBars(clamped ?? view, drawn)') && zoomSrc.includes('subscribeVisibleLogicalRangeChange(onRange)') &&
         zoomSrc.includes('cs.setData(bars.map('),
     )
   }

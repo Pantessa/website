@@ -53,7 +53,10 @@ import {
   type DunePerpTrade,
 } from '../lib/dune'
 import { simulateLadder } from './ask-ladder'
-import { LIVE_TAIL_TFS, applyPrint, barsFromPrints, bucketOf, chartLiveFeed, printOf, tailIsLive, tailWords } from '../lib/chart-live'
+import { LIVE_TAIL_TFS, PRINT_KEEP_MS, applyPrint, barsFromPrints, bucketOf, chartLiveFeed, printOf, tailIsLive, tailWords } from '../lib/chart-live'
+import { PRINT_BAR_SPACING, engineRightOffset, fitMarginBars, printOpeningView } from '../lib/chart-viewport'
+import { LIVE_BACKFILL_MS } from '../lib/dune'
+import { marginBarsFor } from '../lib/wall'
 import { CHART_TFS, VENUE_TFS, isPrintTf, technicalsTfs, tfsForSource } from '../lib/charts'
 import { tfUrl } from '../lib/markets'
 import { LIVE_MARKETS_KEY, MAX_OWN_MARKETS, OWN_SOURCE_NOTE, addLiveMarkets, chipRow, knownMarkets, openingOwnMarkets, parseLiveMarketMemory, removeLiveMarket, serializeLiveMarketMemory, watchlistMarkets } from '../lib/live-markets'
@@ -328,6 +331,36 @@ export function tapePins(check: Check): void {
         // The prod leak (2026-10-13): a gone client leaves only backpressure on Vercel — a writer releases itself after two stalled heartbeats, and the cap counts only writers younger than the hold.
         /c\.desiredSize !== null && c\.desiredSize <= 0/.test(route) && /stalled >= DEAD_BEATS/.test(route) && /const STALE_MS = LIVE_STREAM_HOLD_MS \+/.test(route) && /liveWriters\(ip, now\)/.test(route) && !/__liveStreamsTotal/.test(route) &&
         !/X-Dune-Api-Key|DUNE_BETA_API_KEY|process\.env\.DUNE/.test(clientFiles.replace(/\/\/[^\n]*|\/\*[^]*?\*\//g, '').replace(/DUNE_FEED_KEY_ENV = 'DUNE_BETA_API_KEY'/, '')) && !/NEXT_PUBLIC_DUNE/.test(clientFiles + feed + server + route)
+    })())
+
+  // ── Print-frame zoom + the Wall's fitted margin (2026-10-13) ────────────
+  check('print frame zoom: a print frame opens at PRINT_BAR_SPACING (6 px — the engine\'s own default, what Reset restores) with the newest bar at the right edge plus the margin, however few bars the ring holds: a range the engine turns into exactly that spacing (width / (to − from + 1)), `from` negative on a cold ring (the time before the relay held prints is empty, not missing); no bars, no width or no spacing → no view',
+    (() => {
+      const cold = printOpeningView(1, 4, 904)
+      const warm = printOpeningView(300, 40, 1500)
+      return PRINT_BAR_SPACING === 6 && !!cold && cold.to === 4 && Math.abs(cold.to - cold.from + 1 - 904 / 6) < 1e-9 && cold.from < 0 &&
+        !!warm && warm.to === 339 && Math.abs(1500 / (warm.to - warm.from + 1) - 6) < 1e-9 && warm.from === 90 &&
+        printOpeningView(0, 4, 904) === null && printOpeningView(5, 4, 0) === null && printOpeningView(5, 4, 904, 0) === null
+    })(), JSON.stringify({ cold: printOpeningView(1, 4, 904), warm: printOpeningView(300, 40, 1500) }))
+  check('print frame zoom: a fit\'s margin for the Wall is solved at the FITTED spacing — a fixed point of marginBarsFor at width / (bars + margin) — so 15 bars and a 212 px Wall on a 904 px plot fit at ~41 px a bar with 7 bars of margin, never the 221 bars the zoomed-out spacing counted; no Wall, no bars or no width → the engine\'s own offset; the engine\'s held offset reads off its range as to − (bars − 1)',
+    (() => {
+      const m = fitMarginBars(15, 4, 212, 904)
+      const s = 904 / (15 + m)
+      const big = fitMarginBars(380, 4, 212, 1500)
+      return m >= 6 && m <= 9 && marginBarsFor(212, s, 4) === m && s > 30 && s < 45 &&
+        fitMarginBars(15, 4, 0, 904) === 4 && fitMarginBars(0, 4, 212, 904) === 4 && fitMarginBars(15, 4, 212, 0) === 4 &&
+        marginBarsFor(212, 1500 / (380 + big), 4) === big && big < 100 &&
+        engineRightOffset({ from: 4.66, to: 18 }, 14) === 5 && engineRightOffset({ from: 0, to: 10 }, 0) === null
+    })(), JSON.stringify({ m: fitMarginBars(15, 4, 212, 904), big: fitMarginBars(380, 4, 212, 1500) }))
+  check('print frame zoom: the chart wires it — the viewport guard leaves a print frame alone (no clamp, nothing to page), a fit carries fitMarginBars and records it, a print frame opens on printOpeningView (never fitContent), the margin sync reads the engine\'s held offset (an offset written in the same frame as a range write is dropped by the engine), the browser keeps half an hour of prints while the relay backfills five minutes, and no drive hook ships',
+    (() => {
+      const chart = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
+      const guard = chart.slice(chart.indexOf('const requestGuard'), chart.indexOf('// Warm-up:'))
+      return /if \(isPrintTf\(tfRef\.current\)\) \{\s*emitViewport\(view\)\s*return\s*\}/.test(guard) && guard.indexOf('isPrintTf(tfRef.current)') < guard.indexOf('clampToFirstBar(view, drawn, marginRef.current)') &&
+        /fitMarginBars\(drawn, RIGHT_OFFSET, wallPxRef\.current, ts\.width\(\)\)/.test(guard) && /marginRef\.current = margin\s*clamped = \{ from: 0, to: drawn - 1 \+ margin \}/.test(guard) &&
+        /if \(isPrintTf\(tf\)\) \{[\s\S]{0,600}printOpeningView\(bars\.length, margin, ts\.width\(\)\)/.test(chart) && /marginBarsFor\(wallPxRef\.current, PRINT_BAR_SPACING, RIGHT_OFFSET\)/.test(chart) &&
+        /engineRightOffset\(view, drawnRef\.current\)/.test(chart) && /Math\.abs\(held - want\) < 1/.test(chart) &&
+        PRINT_KEEP_MS === 30 * 60_000 && LIVE_BACKFILL_MS === 5 * 60_000 && !chart.includes('__mkChart')
     })())
 }
 
