@@ -179,8 +179,17 @@ export async function POST(req: NextRequest) {
   // (POLISH/DEADENDS 2026-10-13: the AI bar's own question chip read "The
   // model is not available right now").
   const read = marketReadAsk(question, symbol)
+  const tapeWords = (kind: 'price' | 'trend') => marketReadWords({ pair, kind, last, change24hPct: tape.change24hPct, tech, tf, news: null })
   const readAnswer = (model: string) =>
-    answer({ kind: 'answer', text: marketReadWords({ pair, kind: read!.kind === 'move' ? 'trend' : read!.kind, last, change24hPct: tape.change24hPct, tech, tf, news: null }) }, { deterministic: true, model })
+    answer({ kind: 'answer', text: tapeWords(read!.kind === 'move' ? 'trend' : read!.kind) }, { deterministic: true, model })
+  // The model's prose is checked before it reaches the page: a reply that
+  // says it can't (no feed, "try Yahoo Finance", "in this environment") is a
+  // dead end with our name on it — the tape's own read answers instead, plus
+  // the one sentence that always builds here.
+  const honest = (text: string): { text: string; replaced: boolean } =>
+    DEAD_END_PROSE.test(text)
+      ? { text: `${tapeWords('trend')}\n\nSay the trade (“buy $25 of ${symbol}”) and it builds right here for your wallet to sign.`, replaced: true }
+      : { text, replaced: false }
 
   // ── The model ────────────────────────────────────────────────────────────
   // With an order live, a message the page can't read still reaches the
@@ -225,7 +234,8 @@ export async function POST(req: NextRequest) {
   // Unparsed: the model's prose, or the words it meant — never its JSON.
   if (!m) {
     console.warn('[markets/ask] model answer did not parse', { chars: text.length, head: text.slice(0, 80) })
-    return answer({ kind: 'answer', text: modelProse(text) }, { deterministic: false, model })
+    const h = honest(modelProse(text))
+    return answer({ kind: 'answer', text: h.text }, { deterministic: h.replaced, model })
   }
 
   switch (m.kind) {
@@ -253,10 +263,15 @@ export async function POST(req: NextRequest) {
       if (carried && !carried.ok) console.warn('[markets/ask] alert action dropped by the fence', { why: carried.why })
       return answer({ ...alertAnswer(rule), say: cleanProse(m.say || alertAnswer(rule).say, 300), ...(carried?.ok ? { actionAsk: carried.ask } : {}) }, { deterministic: false, model })
     }
-    default:
-      return answer({ kind: 'answer', text: m.text }, { deterministic: false, model })
+    default: {
+      const h = honest(m.text)
+      return answer({ kind: 'answer', text: h.text }, { deterministic: h.replaced, model })
+    }
   }
 }
+
+/** Prose that leaves a reader nowhere (README §A rule 3). */
+const DEAD_END_PROSE = /\bI can['’]t\b|\bI cannot\b|\bI (?:do not|don['’]t) have (?:access|real-time|live)|\bYahoo\b|\bthis environment\b|\bas an AI\b|process\.env|[A-Z]{3,}_(?:API_)?KEY\b/i
 
 function alertAnswer(rule: AlertRule): Extract<AskAnswer, { kind: 'alert' }> {
   return { kind: 'alert', say: `Alert ready: ${alertPreview(rule)}. Confirm to save it — nothing is sent for you when it fires.`, rule, label: alertPreview(rule) }

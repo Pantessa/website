@@ -169,7 +169,12 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   check('chat route: the chart reply no longer offers DCA (retired 2026-09-16)', !/Tap Buy, Sell, or DCA/.test(chat))
   const mask = readFileSync(join(__dirname, '../app/api/markets/ask/route.ts'), 'utf8')
   check('markets ask: a read question answers from the tape when the model is down or walled', /if \(read\) return readAnswer\('none'\)/.test(mask) && /if \(read\) return readAnswer\('wall'\)/.test(mask))
-  check('markets ask: no reply says "I can\'t"', !/I can['’]t/.test(mask))
+  check('markets ask: none of our own replies says "I can\'t"', !/text: [`'"][^`'"]*I can['’]t/.test(mask))
+  {
+    const re = mask.match(/const DEAD_END_PROSE = (\/.*\/i)\n/)
+    const rx = re ? (eval(re[1]) as RegExp) : null
+    check('markets ask: model prose that dead-ends is replaced by the tape\'s read (I can\'t · no real-time access · Yahoo · this environment · an env var)', !!rx && ['I can\'t see live prices.', "I don't have access to real-time data", 'Try Yahoo Finance', 'not available in this environment', 'set ANTHROPIC_API_KEY'].every((t) => rx.test(t)) && !['The trend is up on the daily chart.', 'Support sits near 2,400.'].some((t) => rx.test(t)) && /const h = honest\(m\.text\)/.test(mask) && /const h = honest\(modelProse\(text\)\)/.test(mask))
+  }
 }
 // ── POLISH: composers speak the order the route would offer ───────────────
 {
@@ -184,6 +189,42 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   check('tape: a "SOL" printed on a Base pool follows as the perp, not the look-alike', followAsk({ market: 'SOL', side: 'buy', venue: 'dex', chainId: 8453 })?.ask === 'Long $25 of SOL on Hyperliquid' && followAsk({ market: 'WETH', side: 'buy', venue: 'dex', chainId: 8453 })?.ask === 'Buy $25 of ETH on Base')
   const hype = alertActionChips({ symbol: 'HYPE', condition: 'pct_move', value: 5 } as never, cp('HYPE'))
   check('alert chips: a perp alert offers Long/Short on Hyperliquid, a stock alert keeps Buy/Sell', hype[0].ask === 'Long $50 of HYPE on Hyperliquid' && hype[1].ask === 'Short $50 of HYPE on Hyperliquid' && alertActionChips({ symbol: 'AAPL', condition: 'pct_move', value: 5 } as never, cp('AAPL'))[0].ask === 'Buy $50 of AAPL')
+}
+
+// ── POLISH: every refusal carries a next step (lib/refusal-next-step) ─────
+{
+  const { refusalNextSteps, quotedSentences, namedMarket, NEXT_STEP_QUESTION } = require('../lib/refusal-next-step') as typeof import('../lib/refusal-next-step')
+  const { buildsNatively: bn } = require('./ask-ladder') as typeof import('./ask-ladder')
+  check('next step: quoted sentences, curly and straight, punctuation trimmed', quotedSentences('Say “supply 10 USDC to Aave on Ethereum.” or "lend 10 USDC on Morpho on Base"').join('|') === 'supply 10 USDC to Aave on Ethereum|lend 10 USDC on Morpho on Base')
+  const aaveChain = refusalNextSteps('supply 10 USDC to aave on base', "🏦 Aave v4 is live on **Ethereum only** today — I can't build a supply on base. Say “supply 10 USDC to Aave on Ethereum” and I'll prepare it.", bn)
+  check('next step: a native wall that names its fix gets it as a chip (the refusal\'s own words)', aaveChain.length === 1 && aaveChain[0].resume === 'supply 10 USDC to Aave on Ethereum' && aaveChain[0].label === 'Supply 10 USDC to Aave on Ethereum', JSON.stringify(aaveChain))
+  const readOnly = refusalNextSteps('withdraw 10 USDC from aave', "🏦 You don't have any USDC supplied on Aave v4 — nothing to withdraw. Ask “show my Aave position” to see what's there.", bn)
+  check('next step: a quoted READ the ladder can\'t build is never a chip', readOnly.length === 0, JSON.stringify(readOnly))
+  const transient = refusalNextSteps('Buy $10 of AAPL', '🔄 I couldn\'t read your USDG balance on Robinhood Chain just now (the RPC didn\'t answer), so I won\'t build the swap blind — try again in a moment.', bn)
+  check('next step: a transient wall offers "Try again" with the ask', transient.length === 1 && transient[0].label === 'Try again' && transient[0].resume === 'Buy $10 of AAPL', JSON.stringify(transient))
+  const funding = refusalNextSteps('Buy $50 of ETH', '🔄 The swap sells 50 USDC on Base and the wallet holds 0. Send ETH or USDC to this wallet on any of those chains, then ask again — nothing was built.', bn)
+  check('next step: a funding shortfall (native) gets nothing here — the funding layer owns its chips', funding.length === 0, JSON.stringify(funding))
+  const prose = refusalNextSteps('buy some apple stock', 'I can help with that — which amount?', bn, { planner: true })
+  check('next step: planner prose on a money ask gets the grammar\'s read (net chips)', prose.length > 0 && prose.every((c) => bn(c.resume)), JSON.stringify(prose))
+  const market = refusalNextSteps('is TSLA a good trade at this price, should I size up', 'Here is a balanced view…', bn, { planner: true })
+  check('next step: planner prose naming a market gets its chart + lead order', market.map((c) => c.resume).join('|') === 'Show me the TSLA chart|Buy $25 of TSLA', JSON.stringify(market))
+  check('next step: never re-offers the refused ask on a permanent wall', refusalNextSteps('supply 10 USDC to Aave on Ethereum', 'Say “supply 10 USDC to Aave on Ethereum”', bn).length === 0)
+  check('next step: namedMarket reads tickers and household names, never English words', namedMarket('sell my $TSLA now') === 'TSLA' && namedMarket('buy some apple') === 'AAPL' && namedMarket('put it all on red') === null)
+  const chat = readFileSync(join(__dirname, '../app/api/chat/route.ts'), 'utf8')
+  const iBelt = chat.indexOf('refusalNextSteps(askText, preData.reply, buildsNatively')
+  const iOpt = chat.indexOf("if (req.headers.get('x-yf-no-ask-log') === '1') return res")
+  check('chat route: the next-step belt runs in the POST wrapper (every refusal site, every origin) before the harness opt-out', iBelt > 0 && iOpt > iBelt && chat.includes(`question: NEXT_STEP_QUESTION`))
+  check('chat route: the failures queue logs the ORIGINAL turn (a chip is not a fix)', /const data = preData\n\s+const kind = preKind/.test(chat))
+  // Every “say …” / “try …” suggestion in the route's own copy that names a
+  // money action must build — "say X and I'll build it" with an X that falls
+  // to the planner is a dead end with our name on it. Reads (positions,
+  // "where can I earn") ride the venue's MCP and context follow-ups ride the
+  // pending turn; they are listed, never chips.
+  const READ_OR_CONTEXT = /^(cancel|vote on \d|make it|privately|where can I|what can I|show my|\$\{message\})/i
+  const fill = (x: string) => x.replace(/\$\{[^}]*amount[^}]*\}/gi, '10').replace(/\$\{[^}]*token[^}]*\}/gi, 'USDC').replace(/\$\{[^}]*(sym|Sym|coin)[^}]*\}/g, 'ETH').replace(/\$\{[^}]*chain[^}]*\}/gi, 'base').replace(/\$\{[^}]*op[^}]*\}/gi, 'withdraw').replace(/\$\{[^}]*\}/g, 'X')
+  const said = [...chat.matchAll(/(?:[Ss]ay|[Tt]ry|[Aa]sk|e\.g\.|like)[^“\n]{0,40}“([^”\n]{4,140})”/g)].map((m) => m[1]).filter((x) => !READ_OR_CONTEXT.test(x) && !/[`<]/.test(x)) // nested templates / <placeholders> are prose
+  const dead = said.map((x) => fill(x).replace(/[.,;:!?…]+$/, '')).filter((x) => !bn(x))
+  check(`chat route: every money sentence the refusal copy tells you to say builds (${said.length} quoted)`, said.length >= 10 && dead.length === 0, dead.join(' | '))
 }
 
 console.log(`\npins:deadends — ${pass} passed, ${fail} failed`)
