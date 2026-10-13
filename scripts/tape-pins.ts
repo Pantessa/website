@@ -247,7 +247,7 @@ export function tapePins(check: Check): void {
       const clientFiles = ['lib/tape-feed.ts', 'lib/tape.ts', 'lib/pulse.ts', 'lib/dune.ts', 'components/live/LiveFeed.tsx', 'components/home/PulseSlot.tsx', 'components/live/Battle.tsx'].map((f) => readFileSync(f, 'utf8')).join('\n')
       return /^'use client'/.test(feed) && /wss:\/\/api\.hyperliquid\.xyz\/ws/.test(feed) && /fields: \{ effect: false, block: false \}/.test(feed) && /fields: \{ effect: true, block: true \}/.test(feed) && /new EventSource\(url\)/.test(feed) && /\?probe=1/.test(feed) && /res\.status === 503/.test(feed) && /onStatus\('unconfigured'/.test(feed) && /addEventListener\('bye'/.test(feed) && /export function connectTape/.test(feed) && /requestAnimationFrame/.test(feed) &&
         !/'use client'/.test(server) && /'X-Dune-Api-Key': key/.test(server) && /resumeUrl\(venue\.url, u\.cursor\)/.test(server) && /ev\.code === 1008/.test(server) && /IDLE_CLOSE_MS/.test(server) &&
-        /text\/event-stream/.test(route) && /export const maxDuration = LIVE_STREAM_MAX_DURATION_S/.test(route) && /status: 503/.test(route) && /type: 'bye'/.test(route) && /LIVE_STREAM_PER_IP/.test(route) &&
+        /text\/event-stream/.test(route) && new RegExp(`export const maxDuration = ${LIVE_STREAM_MAX_DURATION_S}\\b`).test(route) && /status: 503/.test(route) && /type: 'bye'/.test(route) && /LIVE_STREAM_PER_IP/.test(route) &&
         !/X-Dune-Api-Key|DUNE_BETA_API_KEY|process\.env\.DUNE/.test(clientFiles.replace(/\/\/[^\n]*|\/\*[^]*?\*\//g, '').replace(/DUNE_FEED_KEY_ENV = 'DUNE_BETA_API_KEY'/, '')) && !/NEXT_PUBLIC_DUNE/.test(clientFiles + feed + server + route)
     })())
 }

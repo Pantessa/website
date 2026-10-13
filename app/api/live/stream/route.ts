@@ -20,13 +20,15 @@
 // every function slot.
 
 import { NextResponse } from 'next/server'
-import { DUNE_FEED_KEY_ENV, DUNE_VENUE_IDS, LIVE_STREAM_HEARTBEAT_MS, LIVE_STREAM_HOLD_MS, LIVE_STREAM_MAX_DURATION_S, LIVE_STREAM_PER_INSTANCE, LIVE_STREAM_PER_IP, duneFeedKey, parseMarketList, parseVenueList, type LiveStreamEvent } from '@/lib/dune'
+import { DUNE_FEED_KEY_ENV, DUNE_VENUE_IDS, LIVE_STREAM_HEARTBEAT_MS, LIVE_STREAM_HOLD_MS, LIVE_STREAM_PER_INSTANCE, LIVE_STREAM_PER_IP, duneFeedKey, parseMarketList, parseVenueList, type LiveStreamEvent } from '@/lib/dune'
 import { duneUpstreamStats, subscribeDune } from '@/lib/dune-feed-server'
 import { clientIpFrom } from '@/lib/turn-limits'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = LIVE_STREAM_MAX_DURATION_S
+// A literal: Next reads segment config statically. lib/dune pins it equal to
+// LIVE_STREAM_MAX_DURATION_S, which the hold below is derived from.
+export const maxDuration = 300
 
 const enc = new TextEncoder()
 const store = globalThis as typeof globalThis & { __liveStreams?: Map<string, number>; __liveStreamsTotal?: number }

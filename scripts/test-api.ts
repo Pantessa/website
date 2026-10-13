@@ -34695,6 +34695,65 @@ async function main() {
       JSON.stringify(j).slice(0, 200))
   }
 
+  // Dune's real-time feeds through the relay (2026-10-13): the probe names
+  // the key's state; a keyed relay streams `hello` then fills within fifteen
+  // seconds (HyperCore prints ~40/s); without the key it answers 503 by name.
+  {
+    const probe = await fetch(`${BASE}/api/live/stream?probe=1`, { cache: 'no-store' })
+    const pj = (await probe.json().catch(() => ({}))) as { keyed?: boolean; venues?: string[]; error?: string; detail?: string }
+    const keyed = probe.status === 200 && pj.keyed === true
+    check('live relay: the probe answers the key\'s state by name — 200 with the six venues when keyed, 503 `unconfigured` naming DUNE_BETA_API_KEY when not — never a dropped socket',
+      (keyed && pj.venues?.length === 6) || (probe.status === 503 && pj.error === 'unconfigured' && /DUNE_BETA_API_KEY/.test(pj.detail ?? '')), `${probe.status} ${JSON.stringify(pj).slice(0, 160)}`)
+    if (keyed) {
+      const ac = new AbortController()
+      const t = setTimeout(() => ac.abort(), 15_000)
+      let hello = false
+      let fills = 0
+      let effectful = 0
+      let tagged = 0
+      let ctype = ''
+      const venuesSeen = new Set<string>()
+      const want = ['BTC', 'ETH', 'HYPE', 'SOL']
+      try {
+        const res = await fetch(`${BASE}/api/live/stream?venues=hypercore,lighter&markets=${want.join(',')}`, { signal: ac.signal })
+        ctype = res.headers.get('content-type') ?? ''
+        const reader = res.body!.getReader()
+        const dec = new TextDecoder()
+        let buf = ''
+        while (fills < 3) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buf += dec.decode(value, { stream: true })
+          let i: number
+          while ((i = buf.indexOf('\n\n')) >= 0) {
+            const chunk = buf.slice(0, i)
+            buf = buf.slice(i + 2)
+            const ev = /^event: (\w+)/m.exec(chunk)?.[1]
+            const data = /^data: (.*)$/m.exec(chunk)?.[1]
+            if (!ev || !data) continue
+            const e = JSON.parse(data) as { keyed?: boolean; venues?: string[]; fills?: { market: string; venue: string; source: string; block: number | null; effect: string | null }[] }
+            if (ev === 'hello') hello = e.keyed === true && Array.isArray(e.venues) && e.venues.join(',') === 'hypercore,lighter'
+            if (ev === 'fills') {
+              for (const f of e.fills ?? []) {
+                fills++
+                venuesSeen.add(f.venue)
+                if (f.effect) effectful++
+                if (want.includes(f.market) && f.source === 'dune' && f.block != null) tagged++
+              }
+            }
+          }
+        }
+        ac.abort()
+      } catch {
+        // the abort, or a relay that never answered — the check below says which
+      }
+      clearTimeout(t)
+      check('live relay (live): a keyed relay streams text/event-stream — `hello` with the venues asked for, then fills within 15s tagged with their venue and block, carrying a position effect, filtered to the markets asked for',
+        /text\/event-stream/.test(ctype) && hello && fills >= 3 && tagged === fills && effectful > 0 && [...venuesSeen].every((v) => v === 'hyperliquid' || v === 'lighter'),
+        `fills=${fills} tagged=${tagged} effect=${effectful} venues=${[...venuesSeen].join(',')} hello=${hello} ctype=${ctype}`)
+    }
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

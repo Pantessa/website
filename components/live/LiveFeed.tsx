@@ -206,8 +206,19 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
   // every five seconds so the row does not reshuffle on every print), the
   // filter kept in view; on the venue's socket, what it is subscribed to.
   const chipBeat = Math.floor(now / 5_000)
-  const busiest = useMemo(() => (source === 'dune' ? busiestMarkets(view, chipBeat * 5_000, CHIP_MARKETS) : null), [source, view, chipBeat])
-  const marketCount = useMemo(() => (source === 'dune' ? new Set(view.filter((f) => f.at >= chipBeat * 5_000 - 60_000).map((f) => f.market)).size : null), [source, view, chipBeat])
+  const frozenRef = useRef<TapeFill[] | null>(null)
+  frozenRef.current = paused && frozen ? frozen : null
+  // Keyed on the beat alone (the buffer is read through its ref): the row
+  // reshuffles every five seconds, never on every print.
+  const chips = useMemo(() => {
+    if (source !== 'dune') return null
+    const buf = frozenRef.current ?? fillsRef.current
+    const at = chipBeat * 5_000
+    return { busiest: busiestMarkets(buf, at, CHIP_MARKETS), count: new Set(buf.filter((f) => f.at >= at - 60_000).map((f) => f.market)).size }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, chipBeat])
+  const busiest = chips?.busiest ?? null
+  const marketCount = chips?.count ?? null
   const marketList = busiest ? (filter && !busiest.includes(filter) ? [filter, ...busiest] : busiest) : (markets ?? [...FALLBACK_MARKETS])
 
   return (
