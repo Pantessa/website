@@ -198,8 +198,8 @@ html[data-theme="light"] .battle {
    the Front's field sized to what is left of the screen. */
 @media (max-width: 640px) {
   /* Both seats (the deck's stage and the page): one 44px row of controls that scrolls when it must, and the
-     armies as ONE scrolling row — one row, so each pill is a whole 44px target (3–4 wrapped rows were 132–198px
-     on /live and 80–124px in the deck). */
+     armies as ONE scrolling row — one row, so each pill is a whole 44px target (2–4 wrapped rows were 80–198px).
+     PICK moved the add box out of `.battle__chips` (a sibling after it), so it never scrolls away with them. */
   .battle__controls { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .battle__controls::-webkit-scrollbar { display: none; }
   .battle__controls > * { flex: 0 0 auto; }
@@ -214,6 +214,12 @@ html[data-theme="light"] .battle {
   }
   /* The page's field: the Front sized to what is left of the screen, the Siege as tall as the column is wide
      (its radius is min(w, h) / 2 − 40 — battle-draw — so height past the width is empty field). */
-  .battle[data-seat="page"] .battle__stage { height: clamp(300px, calc(100svh - 420px), 480px); }
-  .battle[data-seat="page"][data-view="siege"] .battle__stage { height: clamp(300px, calc(100cqw + 16px), 460px); }
+  .battle[data-seat="page"] .battle__stage { height: clamp(300px, calc(100svh - 488px), 480px); }
+  .battle[data-seat="page"][data-view="siege"] .battle__stage { height: clamp(300px, min(calc(100cqw + 16px), calc(100svh - 488px)), 460px); }
+}
+/* PHONE — ARENA's "Change" trigger in /live's pick head (83×34) → a 44px hit area; the head is a wrapping row with
+   8px between its lines, so 5px of reach above and below never meets the next line's. */
+@media (max-width: 640px) and (hover: none) {
+  .battle[data-seat="page"] .picksheet__trigger { position: relative; }
+  .battle[data-seat="page"] .picksheet__trigger::after { content: ''; position: absolute; inset: -5px 0; }
 }

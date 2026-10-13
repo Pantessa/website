@@ -103,6 +103,10 @@ async function main() {
   const rec = heldArmRecord('HYPE', 5, '/live', 1000)
   pin('a held arm round-trips on its page within the TTL', eq(readHeldArm(rec, '/live', 1000 + HELD_ARM_TTL_MS), { market: 'HYPE', pct: 5, path: '/live', at: 1000 }))
   pin('another page, a stale record, the future, a defect, an unpriceable market → nothing', readHeldArm(rec, '/', 2000) === null && readHeldArm(rec, '/live', 1000 + HELD_ARM_TTL_MS + 1) === null && readHeldArm(rec, '/live', 999) === null && readHeldArm('{"v":2}', '/live', 1000) === null && readHeldArm('nope', '/live', 1000) === null && readHeldArm(null, '/live') === null && readHeldArm(heldArmRecord('ZK', 5, '/live', 1000), '/live', 1000) === null)
+  const heldList = heldArmRecord('', 5, '/live', 1000, ['ZK', 'HYPE', 'ETH', 'HYPE'])
+  pin('a held "Watch these" carries its list and is honored when at least one market is priceable (QA-A2)', eq(readHeldArm(heldList, '/live', 2000), { market: '', markets: ['ZK', 'HYPE', 'ETH', 'HYPE'], pct: 5, path: '/live', at: 1000 }))
+  pin('a held list with nothing priceable, an empty list, or no list at all with no market → nothing', readHeldArm(heldArmRecord('', 5, '/live', 1000, ['ZK', 'AZTEC']), '/live', 1000) === null && readHeldArm(heldArmRecord('', 5, '/live', 1000, []), '/live', 1000) === null && readHeldArm(heldArmRecord('', 5, '/live', 1000), '/live', 1000) === null)
+  pin('a held list caps at WATCH_CAP; a row record never carries a list', (JSON.parse(heldArmRecord('', 5, '/', 1, Array.from({ length: 20 }, (_, i) => `M${i}`))) as { markets: string[] }).markets.length === WATCH_CAP && !('markets' in JSON.parse(heldArmRecord('HYPE', 5, '/', 1))))
   pin('the labels per seat', armLabel('scoreboard', 'HYPE') === '±5%' && armLabel('deck', 'xyz:NVDA') === 'Alert NVDA ±5%' && armLabel('strip', 'HYPE') === 'Watch these')
   pin('only the server\'s "no live price" answer earns the one retry (1.5s); nothing else does', ARM_RETRY_MS === 1500 && isNoPriceYet('No live price for HYPE right now — try again in a moment.') && !isNoPriceYet('Not signed in.') && !isNoPriceYet('A percent move must be under 100.') && !isNoPriceYet(null))
 
@@ -114,6 +118,7 @@ async function main() {
   pin('every arm wears a journey name', /data-journey=\{`Arm alert \$\{market\}`\}/.test(arm) && /data-journey="Watch these"/.test(arm))
   pin('a provider-less arm tells the page\'s bell (the deck on /)', /dispatchEvent\(new Event\(ALERTS_CHANGED_EVENT\)\)/.test(arm))
   pin('the held arm is claimed on read (removeItem before it runs) and runs once', /removeItem\(HELD_ARM_KEY\)/.test(arm) && /ranHeldRef\.current = true/.test(arm))
+  pin('a held "Watch these" resumes through watchPlan (never armed blind) and the strip holds its list, not an empty market', /watchPlan\(list, shared\?\.alerts, pct, canAct\)/.test(arm) && /heldArmRecord\('', pct, pathname, Date\.now\(\), markets \?\? \[\]\)/.test(arm) && !/heldArmRecord\(seat === 'strip' \? ''/.test(arm))
   pin('a tap retries once on the server\'s no-price answer and never on anything else', /if \(!retried && isNoPriceYet\(/.test(arm) && (arm.match(/isNoPriceYet\(/g) ?? []).length === 1 && /return armRow\(p, true\)/.test(arm))
   const bell = src('components/markets/watchlist/useWatchlists.ts')
   pin('useAlerts re-reads on the change event', /addEventListener\(ALERTS_CHANGED_EVENT/.test(bell) && /removeEventListener\(ALERTS_CHANGED_EVENT/.test(bell))
