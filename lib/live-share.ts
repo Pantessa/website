@@ -14,6 +14,7 @@
 
 import { DEFAULT_WINDOW, FRONT_WINDOWS, LIVE_VIEWS, MAX_ARMIES, isBattleView, liveUrl, parseFrontWindow, parseLiveView, rankArmies, type FrontWindow, type LiveView } from '@/lib/battle'
 import { MAX_PICK, armiesOf, parsePickParam, pickParam } from '@/lib/market-pick'
+import { challengeLine } from '@/lib/arena'
 import { SITE_URL } from '@/lib/site-url'
 import { tapeMarket } from '@/lib/tape'
 
@@ -125,6 +126,15 @@ export function shareTitle(view: LiveView, markets: readonly string[], since: Fr
   const names = markets.map(shareName).join(' · ')
   if (!isBattleView(view)) return `${names} on the live tape`
   return `${names} on ${viewLabel(view)} · ${windowLabel(since)}`
+}
+
+/** The challenge a battle share carries (ARENA's words, lib/arena challengeLine,
+ *  + the view): `ZK vs OP vs AZTEC · 1h · who's winning on The Front`. The whole
+ *  pick goes in, so past five it counts the rest (`+3`). The tape keeps the
+ *  plain line. The title, the share sheet's text and the card's page title. */
+export function shareText(view: LiveView, pick: readonly string[], since: FrontWindow = DEFAULT_WINDOW): string {
+  if (!isBattleView(view)) return shareTitle(view, pick, since)
+  return `${challengeLine(pick, since)} on ${viewLabel(view)}`
 }
 
 export function shareDescription(view: LiveView, markets: readonly string[], since: FrontWindow = DEFAULT_WINDOW): string {

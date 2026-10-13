@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DEFAULT_WINDOW, parseFrontWindow, type LiveView } from '@/lib/battle'
-import { shareTitle, shareUrlFor } from '@/lib/live-share'
+import { shareText, shareUrlFor } from '@/lib/live-share'
 import { parsePickParam } from '@/lib/market-pick'
 import { useMarketPick } from '@/lib/use-market-pick'
 
@@ -76,7 +76,7 @@ export default function ShareLive({ view, seat, markets }: ShareLiveProps) {
     const list = fromUrl.length ? fromUrl : chosen
     const href = shareUrlFor(view, list, since)
     setUrl(href)
-    const text = list.length ? shareTitle(view, list, since) : 'Pantessa Live'
+    const text = list.length ? shareText(view, list, since) : 'Pantessa Live'
     const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
     if (coarse && typeof navigator.share === 'function') {
       try {
