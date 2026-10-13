@@ -133,7 +133,10 @@ export async function POST(req: NextRequest) {
     const i = candles.findIndex((c) => c.t === body.bar!.t)
     const prev = i > 0 ? { c: candles[i - 1].c } : null
     const text = await modelText({ system: EXPLAIN_SYSTEM, user: explainUserPrompt({ symbol, tf, bar: body.bar, prev, tech, verdict: body.verdict ? RATING_LABELS[body.verdict] : null }), maxTokens: EXPLAIN_MAX_TOKENS, surface: 'markets-explain', apiKey: explainAdm.apiKey, owner: explainAdm.owner, mock: { scenario } })
-    const out = cleanProse(text ?? explainFallback(body.bar), 400)
+    // A model sentence that dead-ends ("I can't see…") never explains a bar:
+    // the bar's own numbers do (README §A rule 3).
+    const said = text ? cleanProse(text, 400) : ''
+    const out = said && !DEAD_END_PROSE.test(said) ? said : cleanProse(explainFallback(body.bar), 400)
     explainCache.set(key, { at: Date.now(), text: out })
     return answer({ kind: 'answer', text: out }, { deterministic: !text, model })
   }

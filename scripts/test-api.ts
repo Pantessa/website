@@ -34828,6 +34828,37 @@ async function main() {
     }
   }
 
+  /* POLISH:DEADENDS — every sentence the product offers is backed by a response (squad polish, 2026-10-13). */
+  {
+    console.log('— polish deadends: the market read door, a next step on every refusal, the inventory')
+    const DEAD_PROSE = /\bI can['’]t\b|\bI cannot\b|I (?:do not|don['’]t) have (?:access|real-time|live)|\bYahoo\b|this environment|process\.env|prisma/i
+    const wallet = '0x' + 'd3adbeef'.repeat(5)
+    const post = (message: string, extra: Record<string, unknown> = {}) =>
+      fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ message, history: [], activeServers: [], sessionId: `harness-polish-deadends-${Date.now()}`, ...extra }) })
+        .then((r) => r.json() as Promise<Record<string, any>>).catch(() => null)
+    const read = await post('Why is ETH moving?')
+    check('polish deadends: "Why is ETH moving?" (the guide hint, the ask door chip) answers from our tape — the live chart, the chart + lead-order chips, no planner, no "I can\'t"',
+      read?.buildPath === 'native-market-read' && read.chart?.symbol === 'ETH' && (read.clarify?.options ?? []).some((o: any) => o.resume === 'Show me the ETH chart') && /\*\*ETH\*\*/.test(String(read.reply)) && !DEAD_PROSE.test(String(read.reply)),
+      `${read?.buildPath} ${String(read?.reply).slice(0, 160)}`)
+    const doorChip = await post('What is moving TSLA right now — price, 24h change, and the news behind it?')
+    check('polish deadends: the ask door\'s /t chip on a stock is the same native read', doorChip?.buildPath === 'native-market-read' && doorChip.chart?.symbol === 'TSLA', String(doorChip?.buildPath))
+    const opinion = await post('is TSLA a good trade right now')
+    check('polish deadends: an opinion ask gets the tape and the call left to the reader (the planner invented levels)', opinion?.buildPath === 'native-market-read' && /That call is yours to make/.test(String(opinion.reply)), String(opinion?.reply).slice(0, 160))
+    const aave = await post('supply 10 USDC to aave on base', { walletAddress: wallet })
+    check('polish deadends: a native wall that names its fix carries it as a chip (the refusal\'s own words)',
+      aave?.nextSteps === true && aave.clarify?.options?.[0]?.resume === 'supply 10 USDC to Aave on Ethereum', JSON.stringify(aave?.clarify ?? aave?.reply).slice(0, 200))
+    const unknown = await post('buy $10 of ZZQX', { walletAddress: wallet })
+    check('polish deadends: an unknown token never ends bare — what works today rides the refusal', (unknown?.clarify?.options ?? []).length > 0 && ((unknown?.clarify?.options ?? []) as any[]).every((o) => simulateLadder(o.resume).kind !== 'planner'), JSON.stringify(unknown?.clarify ?? unknown?.reply).slice(0, 200))
+    const typo = await post('buy $10 of AAPLE', { walletAddress: wallet })
+    check('polish deadends: a typo\'d ticker is offered the listed one (AAPLE → AAPL) or the stock door', (typo?.clarify?.options ?? []).some((o: any) => /AAPL\b/.test(o.resume)), JSON.stringify(typo?.clarify ?? typo?.reply).slice(0, 200))
+    const ma = await fetch(`${BASE}/api/markets/ask`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ symbol: 'ETH', question: 'What is the trend in the ETH candles on screen?' }) }).then((r) => r.json() as Promise<Record<string, any>>).catch(() => null)
+    check('polish deadends: the AI bar\'s trend question chip answers (model, wall or tape) — never a dead end', !!ma && ['answer', 'chart', 'alert', 'act'].includes(ma.kind) && !DEAD_PROSE.test(String(ma.text ?? ma.say ?? '')) && String(ma.text ?? ma.say ?? '').length > 20, JSON.stringify(ma).slice(0, 200))
+    const { enumerate } = await import('./deadend-inventory')
+    const inv = enumerate()
+    const falls = inv.filter((r) => r.verdict === 'planner' || r.verdict === 'refusal')
+    check(`polish deadends: the inventory — ${inv.length} offered sentences, 0 planner, 0 bare refusal`, inv.length > 1500 && falls.length === 0, falls.slice(0, 5).map((r) => `[${r.surface}] ${r.sentence}`).join(' | '))
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

@@ -179,7 +179,7 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   {
     const re = mask.match(/const DEAD_END_PROSE = (\/.*\/i)\n/)
     const rx = re ? (eval(re[1]) as RegExp) : null
-    check('markets ask: model prose that dead-ends is replaced by the tape\'s read (I can\'t · no real-time access · Yahoo · this environment · an env var)', !!rx && ['I can\'t see live prices.', "I don't have access to real-time data", 'Try Yahoo Finance', 'not available in this environment', 'set ANTHROPIC_API_KEY'].every((t) => rx.test(t)) && !['The trend is up on the daily chart.', 'Support sits near 2,400.'].some((t) => rx.test(t)) && /const h = honest\(m\.text\)/.test(mask) && /const h = honest\(modelProse\(text\)\)/.test(mask))
+    check('markets ask: model prose that dead-ends is replaced by the tape\'s read (I can\'t · no real-time access · Yahoo · this environment · an env var)', !!rx && ['I can\'t see live prices.', "I don't have access to real-time data", 'Try Yahoo Finance', 'not available in this environment', 'set ANTHROPIC_API_KEY'].every((t) => rx.test(t)) && !['The trend is up on the daily chart.', 'Support sits near 2,400.'].some((t) => rx.test(t)) && /const h = honest\(m\.text\)/.test(mask) && /const h = honest\(modelProse\(text\)\)/.test(mask) && /said && !DEAD_END_PROSE\.test\(said\) \? said : cleanProse\(explainFallback/.test(mask))
   }
 }
 // ── POLISH: composers speak the order the route would offer ───────────────
