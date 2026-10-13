@@ -7,6 +7,7 @@
 //   npx tsx scripts/depth-pins.ts
 import { readFileSync } from 'node:fs'
 import {
+  DEFAULT_DEPTH_SETTINGS,
   DEPTH_TAPE_ROWS,
   DEFAULT_DEPTH_UNIT,
   DEFAULT_DEPTH_WINDOW_PCT,
@@ -29,6 +30,7 @@ import {
   levelAt,
   limitAimAt,
   parseCoinbaseL2,
+  parseDepthSettings,
   parseHlL2Book,
   printAlpha,
   printOnBook,
@@ -179,9 +181,19 @@ export function depthPins(check: Check): void {
       printWords('DEX prints', 'live', 0) === 'prints · DEX prints · waiting for the first print' && printWords('DEX prints', 'live', 3) === 'prints · DEX prints · live' && printWords('DEX prints', 'unconfigured', 0) === 'prints · relay has no key' && printWords(null, null, 0) === 'prints · none for this instrument' && printWords('Hyperliquid prints', 'connecting', 0) === 'prints · Hyperliquid prints · connecting')
   check('depth: prices print at the precision their magnitude needs (four decimals on a $7 coin), sizes to three figures, dollars short; the axis steps are round',
     fmtDepthPrice(7.3220) === '7.3220' && fmtDepthPrice(113_250.4) === '113250' && fmtDepthPrice(0.0042) === '0.00420' && fmtDepthPrice(80.871) === '80.8710' && fmtDepthSize(42.969) === '43.0' && fmtDepthSize(2.9412) === '2.94' && fmtDepthSize(0.00594) === '0.00594' && fmtDepthSize(12_400) === '12.4K' &&
-      fmtDepthUsd(311) === '$311' && fmtDepthUsd(5_120) === '$5,120' && fmtDepthUsd(340_000) === '$340K' && fmtDepthUsd(1_234_567) === '$1.23M' && fmtDepthUsd(13_400_000) === '$13.4M' && fmtDepthUsd(9_780_000) === '$9.78M' && axisSteps(1000).join(',') === '250,500,750,1000' && axisSteps(0).length === 0 && axisSteps(7.3).join(',') === '2,4,6')
+      fmtDepthUsd(311) === '$311' && fmtDepthUsd(0.102) === '$0.10' && fmtDepthUsd(42.5) === '$42.50' && fmtDepthUsd(99.996) === '$100.00' && fmtDepthUsd(100) === '$100' && fmtDepthUsd(5_120) === '$5,120' && fmtDepthUsd(340_000) === '$340K' && fmtDepthUsd(1_234_567) === '$1.23M' && fmtDepthUsd(13_400_000) === '$13.4M' && fmtDepthUsd(9_780_000) === '$9.78M' && axisSteps(1000).join(',') === '250,500,750,1000' && axisSteps(0).length === 0 && axisSteps(7.3).join(',') === '2,4,6')
 
   // ── The URL and the wiring ────────────────────────────────────────────
+  check('depth: the window · unit · overlay ride the URL (?win= ?unit= ?overlay=hl), spelled only when not the default, parsed back exactly, cleared off the Depth view, and unknown values are the default',
+    (() => {
+      const url = viewUrl('depth', null, '/t/ETH', '?tf=1h', { pct: 10, unit: 'base', overlay: true })
+      const back = parseDepthSettings(url.split('?')[1])
+      const dflt = viewUrl('depth', null, '/t/ETH', '', DEFAULT_DEPTH_SETTINGS)
+      return url === '/t/ETH?tf=1h&view=depth&win=10&unit=base&overlay=hl' && back.pct === 10 && back.unit === 'base' && back.overlay === true && dflt === '/t/ETH?view=depth' &&
+        viewUrl('depth', null, '/t/ETH', '', { pct: null, unit: 'usd', overlay: false }) === '/t/ETH?view=depth&win=all' && parseDepthSettings('?win=all').pct === null && parseDepthSettings('?win=0.5').pct === 0.5 &&
+        viewUrl('candles', null, '/t/ETH', '?view=depth&win=10&unit=base&overlay=hl&vs=BTC') === '/t/ETH?vs=BTC' && viewUrl('field', 'spot', '/t/ETH', '?view=depth&win=10') === '/t/ETH?view=battlefield&board=spot' &&
+        parseDepthSettings('?win=3&unit=eth&overlay=yes').pct === 2 && parseDepthSettings('?win=3&unit=eth&overlay=yes').unit === 'usd' && parseDepthSettings('?win=3&unit=eth&overlay=yes').overlay === false && parseDepthSettings('').pct === DEFAULT_DEPTH_SETTINGS.pct
+    })())
   check('depth: ?view=depth opens the chart on the Depth view and the switch mirrors it; the Battlefield keeps its deep link; the URL round-trips',
     parseViewParam('?view=depth') === 'depth' && parseViewParam('?view=battlefield') === 'field' && parseViewParam('?view=nope') === 'candles' && viewUrl('depth', null, '/t/UNI', '?tf=1h') === '/t/UNI?tf=1h&view=depth' && viewUrl('depth', 'spot', '/t/UNI', '') === '/t/UNI?view=depth' && viewUrl('candles', null, '/t/UNI', '?view=depth') === '/t/UNI')
   check('depth: the switch reads Candles | Depth — the Battlefield\'s button shows only while its deep link has it open (the code stays); the Depth view mounts over the engine; the limit aim rides ChartMount from the symbol page',
@@ -192,6 +204,14 @@ export function depthPins(check: Check): void {
       return /switchView\('depth'\)/.test(chart) && /<span>Depth<\/span>/.test(chart) && /\{view === 'field' && \(/.test(chart) && /<span>Battlefield<\/span>/.test(chart) && !/switchView\('field'\)\}>\s*<Swords[^]*?<span>Battlefield<\/span>[^]*?<\/button>\s*<\/div>\s*\)\}\s*\{!altOn/.test(chart) &&
         /\{depthOn && tokens && <DepthChart/.test(chart) && /\{fieldOn && tokens && <FrontBoard/.test(chart) && /depthPrintRef\.current\?\.\(batch\)/.test(chart) && /tailIsLive\(tf, liveFeed\) \|\| depthOn/.test(chart) &&
         /onLimit=\{onLimit\}/.test(mount) && /battlefield onLimit=\{onLimit\}/.test(page) && /useOrderAim\.getState\(\)\.setAim\(\{ symbol: sym, side, limitPrice: price, at: Date\.now\(\) \}\)/.test(page)
+    })())
+  check('depth: the chart owns the settings — read from the URL on mount, mirrored on every switch with the view, handed to the view and to the Share popover\'s link',
+    (() => {
+      const chart = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
+      const share = readFileSync('components/markets/chart/ChartShare.tsx', 'utf8')
+      const view = readFileSync('components/markets/chart/DepthChart.tsx', 'utf8')
+      return /setDepthSettings\(parseDepthSettings\(window\.location\.search\)\)/.test(chart) && /syncViewParam\(view, view === 'field' \? board : null, view === 'depth' \? depthSettings : null\)/.test(chart) && /\[battlefield, view, board, depthSettings\]/.test(chart) &&
+        /settings=\{depthSettings\} onSettings=\{setDepthSettings\}/.test(chart) && /depth=\{depthOn \? depthSettings : null\}/.test(chart) && /depth \?\? null\)\), via\)/.test(share) && !/useState<number \| null>\(DEFAULT_DEPTH_WINDOW_PCT\)/.test(view) && !/useState<DepthUnit>/.test(view) && /onSettings\(\(s\) => \(\{ \.\.\.s, overlay: !s\.overlay \}\)\)/.test(view) && !/onSettings\(\{ \.\.\.settings/.test(view)
     })())
   check('depth: the books are the browser\'s own sockets — Coinbase Advanced Trade level2 and Hyperliquid l2Book, keyless — with the site\'s book routes as the poll lane, and nothing stored',
     (() => {

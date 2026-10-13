@@ -29,15 +29,13 @@
 // are DOM so they theme with the page. Inks come from the chart's own tokens
 // (chart-tokens), never a color-mix() into a fillStyle.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction } from 'react'
 import type { ChartPair } from '@/lib/charts'
 import type { TapeFill } from '@/lib/tape'
 import { venueTag } from '@/lib/tape'
 import type { FeedStatus } from '@/lib/tape-feed'
 import { openBookFeed } from '@/lib/depth-feed'
 import {
-  DEFAULT_DEPTH_UNIT,
-  DEFAULT_DEPTH_WINDOW_PCT,
   DEPTH_TAPE_ROWS,
   DEPTH_VENUE_LABEL,
   DEPTH_WINDOWS,
@@ -59,8 +57,8 @@ import {
   wallsIn,
   type BookFeedStatus,
   type DepthBook,
+  type DepthSettings,
   type DepthSide,
-  type DepthUnit,
   type DepthWindow,
 } from '@/lib/depth'
 import type { Tokens } from './chart-tokens'
@@ -92,6 +90,11 @@ export interface DepthChartProps {
   printLabel: string | null
   /** A level clicked: aim the ticket at a limit there. Absent = no act. */
   onLevel?: (side: 'buy' | 'sell', price: number) => void
+  /** The window · unit · overlay, owned by the chart (they ride the URL). */
+  settings: DepthSettings
+  /** A setState: every chip updates FUNCTIONALLY, so two changes in one
+   *  frame never overwrite each other with a stale render's copy. */
+  onSettings: Dispatch<SetStateAction<DepthSettings>>
 }
 
 const FONT = "'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace"
@@ -112,11 +115,13 @@ interface Geom {
   plotH: number
 }
 
-export default function DepthChart({ symbol, pair, tokens, last, perpListed, printSink, printStatus, printLabel, onLevel }: DepthChartProps) {
+export default function DepthChart({ symbol, pair, tokens, last, perpListed, printSink, printStatus, printLabel, onLevel, settings, onSettings }: DepthChartProps) {
   const plan = useMemo(() => depthPlanFor(pair, perpListed), [pair, perpListed])
-  const [pct, setPct] = useState<number | null>(DEFAULT_DEPTH_WINDOW_PCT)
-  const [unit, setUnit] = useState<DepthUnit>(DEFAULT_DEPTH_UNIT)
-  const [otherOn, setOtherOn] = useState(false)
+  const { pct, unit } = settings
+  const otherOn = settings.overlay
+  const setPct = (next: number | null) => onSettings((s) => ({ ...s, pct: next }))
+  const setUnit = (next: DepthSettings['unit']) => onSettings((s) => ({ ...s, unit: next }))
+  const toggleOther = () => onSettings((s) => ({ ...s, overlay: !s.overlay }))
   const [main, setMain] = useState<DepthBook | null>(null)
   const [mainStatus, setMainStatus] = useState<BookFeedStatus>('idle')
   const [other, setOther] = useState<DepthBook | null>(null)
@@ -479,7 +484,7 @@ export default function DepthChart({ symbol, pair, tokens, last, perpListed, pri
           </button>
         </div>
         {plan.other && (
-          <button type="button" className={`dp__chip dp__chip--other mono${otherOn ? ' is-on' : ''}`} aria-pressed={otherOn} title={`${DEPTH_VENUE_LABEL[plan.other]} — a different book, drawn as an outline`} onClick={() => setOtherOn((v) => !v)}>
+          <button type="button" className={`dp__chip dp__chip--other mono${otherOn ? ' is-on' : ''}`} aria-pressed={otherOn} title={`${DEPTH_VENUE_LABEL[plan.other]} — a different book, drawn as an outline`} onClick={toggleOther}>
             <i className="dp__sw dp__sw--other" aria-hidden="true" />+ {DEPTH_VENUE_LABEL[plan.other]}
           </button>
         )}

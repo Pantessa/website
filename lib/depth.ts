@@ -433,7 +433,8 @@ export function fmtDepthSize(n: number): string {
   return a.toPrecision(3)
 }
 
-/** Dollars, short: $1.2M · $340K · $5,120 · $42. */
+/** Dollars, short: $1.2M · $340K · $5,120 · $311 · $42.50 · $0.10 (cents under $100 — a dust level on a
+ *  Coinbase book is a dime, not nothing). */
 export function fmtDepthUsd(n: number): string {
   if (!Number.isFinite(n)) return '—'
   const a = Math.abs(n)
@@ -441,7 +442,8 @@ export function fmtDepthUsd(n: number): string {
   if (a >= 1e6) return `$${(a / 1e6).toFixed(a >= 1e7 ? 1 : 2)}M`
   if (a >= 1e4) return `$${(a / 1e3).toFixed(0)}K`
   if (a >= 1e3) return `$${a.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
-  return `$${a.toFixed(0)}`
+  if (a >= 100) return `$${a.toFixed(0)}`
+  return `$${a.toFixed(2)}`
 }
 
 /** The axis's numbers: five round steps up to the top. */
@@ -459,3 +461,48 @@ export function axisSteps(max: number, n = 4): number[] {
 
 /** The URL and the switch: `?view=depth`. */
 export const DEPTH_VIEW_PARAM = 'depth'
+
+// ── The view's settings in the URL (Nate, 2026-10-13: "add a url for all the
+// toggles … so I can share what I am seeing") ────────────────────────────
+// `?view=depth&win=10&unit=base&overlay=hl` — the ?tab= / ?view= idiom: only
+// what is not the default is spelled, every switch mirrors, a shared link
+// opens on the exact picture.
+
+export interface DepthSettings {
+  /** The window chip: ± percent of the mid; null = the whole book. */
+  pct: number | null
+  unit: DepthUnit
+  /** The other venue's book drawn as an outline. */
+  overlay: boolean
+}
+
+export const DEFAULT_DEPTH_SETTINGS: DepthSettings = { pct: DEFAULT_DEPTH_WINDOW_PCT, unit: DEFAULT_DEPTH_UNIT, overlay: false }
+
+/** The keys the view owns in the URL. */
+export const DEPTH_URL_KEYS = ['win', 'unit', 'overlay'] as const
+
+/** The settings a search string names; anything unknown is the default. */
+export function parseDepthSettings(search: string): DepthSettings {
+  const p = new URLSearchParams(search)
+  const out: DepthSettings = { ...DEFAULT_DEPTH_SETTINGS }
+  const w = p.get('win')
+  if (w === 'all') out.pct = null
+  else if (w != null) {
+    const n = Number(w)
+    if (DEPTH_WINDOWS.some((x) => x.pct === n)) out.pct = n
+  }
+  const u = p.get('unit')
+  if (u === 'base' || u === 'usd') out.unit = u
+  out.overlay = p.get('overlay') === 'hl'
+  return out
+}
+
+/** Write the settings into a URL's params: the view's keys are cleared, then
+ *  only what differs from the default is set. `null` = not on the Depth view. */
+export function writeDepthParams(params: URLSearchParams, s: DepthSettings | null): void {
+  for (const k of DEPTH_URL_KEYS) params.delete(k)
+  if (!s) return
+  if (s.pct !== DEFAULT_DEPTH_SETTINGS.pct) params.set('win', s.pct == null ? 'all' : String(s.pct))
+  if (s.unit !== DEFAULT_DEPTH_SETTINGS.unit) params.set('unit', s.unit)
+  if (s.overlay) params.set('overlay', 'hl')
+}

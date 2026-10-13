@@ -33,6 +33,7 @@ import { useShareVia } from '@/components/ShareActions'
 import { withVia } from '@/lib/share-posts'
 import { absoluteUrl } from '@/lib/site-url'
 import { viewUrl, type BoardMode, type ChartView } from '@/lib/markets'
+import type { DepthSettings } from '@/lib/depth'
 import { friendlyError } from '@/lib/friendly-error'
 
 export interface ChartShareProps {
@@ -42,6 +43,8 @@ export interface ChartShareProps {
   /** The view the share is taken from: a Battlefield share links back to the Battlefield. */
   view?: ChartView
   board?: BoardMode | null
+  /** The Depth view's window · unit · overlay — the link opens on the same picture. */
+  depth?: DepthSettings | null
   /** Compose the picture from the chart as it stands (null = not ready). */
   capture: () => Promise<HTMLCanvasElement | null>
   onClose: () => void
@@ -55,7 +58,7 @@ function XMark() {
   )
 }
 
-export default function ChartShare({ symbol, tf, lines, view, board, capture, onClose }: ChartShareProps) {
+export default function ChartShare({ symbol, tf, lines, view, board, depth, capture, onClose }: ChartShareProps) {
   const session = useSession()
   const tfLabel = CHART_TFS.find((t) => t.key === tf)?.label ?? tf
   const [blob, setBlob] = useState<Blob | null>(null)
@@ -129,7 +132,7 @@ export default function ChartShare({ symbol, tf, lines, view, board, capture, on
   // when a wallet is connected (a one-way hash, never the address).
   const via = useShareVia()
   // A share from the Battlefield links to the Battlefield (and its board).
-  const chartUrl = withVia(absoluteUrl(viewUrl(view ?? 'candles', board ?? null, `/t/${symbol}`, tf === '1d' ? '' : `?tf=${tf}`)), via)
+  const chartUrl = withVia(absoluteUrl(viewUrl(view ?? 'candles', board ?? null, `/t/${symbol}`, tf === '1d' ? '' : `?tf=${tf}`, depth ?? null)), via)
   // A browser with a share sheet that cannot take a file (desktop Safari,
   // Firefox on Android) still shares the link.
   const [canShareLink, setCanShareLink] = useState(false)
