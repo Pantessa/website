@@ -126,9 +126,10 @@ export async function frontDoorPins(check: Check): Promise<void> {
   const home = code('components/home/HomeSurface.tsx')
   const index = code('components/markets/shell/MarketsIndex.tsx')
   const claim = code('components/home/SplashClaim.tsx')
+  // RE-PINNED 2026-10-13 (deck): the lead seat holds THE DECK (components/home/Deck), which mounts the pulse band as its first channel.
   check(
-    'front door: HomeSurface mounts the three seats — claim (SplashClaim), lead (SentHomeNotice + PulseSlot), guide (GuideSeat surface="home") — and MarketsIndex renders the claim FIRST in the main column, standing in for its sr-only "Markets" h1 (one h1 per page)',
-    /claim=\{<SplashClaim \/>\}/.test(home) && /<SentHomeNotice \/>\s*<PulseSlot \/>/.test(home) && /guide=\{<GuideSeat surface="home" \/>\}/.test(home) &&
+    'front door: HomeSurface mounts the three seats — claim (SplashClaim), lead (SentHomeNotice + Deck, the deck mounting PulseSlot as its first channel), guide (GuideSeat surface="home") — and MarketsIndex renders the claim FIRST in the main column, standing in for its sr-only "Markets" h1 (one h1 per page)',
+    /claim=\{<SplashClaim \/>\}/.test(home) && /<SentHomeNotice \/>\s*<Deck \/>/.test(home) && /guide=\{<GuideSeat surface="home" \/>\}/.test(home) &&
       /\{claim \?\? <h1 className="sr-only">Markets<\/h1>\}/.test(index) &&
       index.indexOf('{claim ?? ') < index.indexOf('className="mkt-frame__bar"') && index.indexOf('className="mkt-frame__bar"') < index.indexOf('className="mk-lead-seat"'),
   )
