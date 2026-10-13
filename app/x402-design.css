@@ -5507,13 +5507,14 @@
 .mkt-frame__ask { flex: 0 0 auto; height: 34px; }
 /* THE BELL beside Ask (RailAlerts, 2026-10-13): fired + armed alerts behind one
    34px icon — the rail no longer spends two bands on them. It wears the fired
-   count; the popover drops under the strip, right-aligned, over the rail. */
-.mkt-frame__alerts { position: relative; flex: 0 0 auto; display: flex; align-items: center; }
+   count; the popover hangs from the STRIP (the sticky strip is the containing
+   block), right-aligned to it, so it drops over the rail's top, not the chart. */
+.mkt-frame__alerts { flex: 0 0 auto; display: flex; align-items: center; margin-right: auto; } /* auto margin: the bell hugs Ask, the account seat keeps the right edge */
 .mkt-frame__bell { position: relative; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line-2); border-radius: 999px; background: color-mix(in srgb, var(--surf-1) 80%, transparent); color: var(--muted); transition: color .15s ease, border-color .15s ease, box-shadow .15s ease; }
 .mkt-frame__bell:hover, .mkt-frame__bell[aria-expanded="true"] { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); }
 .mkt-frame__bell[data-fired] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); }
 .mkt-frame__bellCount { position: absolute; top: -5px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: var(--ink); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
-.mkt-alertpop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: min(340px, calc(100vw - 20px)); max-height: min(70vh, 520px); overflow-y: auto; border: 1px solid var(--line-2); border-radius: 12px; background: var(--bg); box-shadow: 0 16px 40px rgba(0,0,0,.35); }
+.mkt-alertpop { position: absolute; top: calc(100% + 6px); right: 10px; z-index: 40; width: min(340px, calc(100vw - 20px)); max-height: min(70vh, 520px); overflow-y: auto; border: 1px solid var(--line-2); border-radius: 12px; background: var(--bg); box-shadow: 0 16px 40px rgba(0,0,0,.35); }
 .mkt-alertpop__head { display: flex; align-items: center; gap: 8px; padding: 9px 8px 8px 14px; border-bottom: 1px solid var(--line); }
 .mkt-alertpop__title { font-size: 13px; font-weight: 600; color: var(--fg); }
 .mkt-alertpop__meta { margin-left: auto; font-size: 10px; color: var(--muted-2); white-space: nowrap; }
