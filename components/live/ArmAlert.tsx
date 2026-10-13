@@ -29,7 +29,8 @@
 // never a raw connect modal; the arm the tap meant is held — in state for
 // the wallet / email lanes (the page refreshes in place) and in
 // sessionStorage for the Google lane (the page leaves) — and runs once the
-// session is authed, exactly once (the record is claimed on read).
+// session is authed, exactly once (the record is claimed on read). A strip
+// tap holds its LIST and resumes through watchPlan (QA-A2).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
@@ -177,36 +178,57 @@ export default function ArmAlert({ market, seat, markets, pct = DEFAULT_ALERT_PC
   // A guest's tap leaves a record while the door is open (the Google lane
   // leaves the page); the wallet / email lanes keep this instance, so the ref
   // alone carries it.
+  // A strip tap holds its LIST (QA-A2): on resume the list is re-derived
+  // through watchPlan against the owner's rules, never armed blind.
+  const heldListRef = useRef<readonly string[] | null>(null)
   const hold = useCallback(() => {
     heldRef.current = true
+    if (seat === 'strip') heldListRef.current = markets ?? []
     try {
-      window.sessionStorage.setItem(HELD_ARM_KEY, heldArmRecord(seat === 'strip' ? '' : market, pct, pathname))
+      window.sessionStorage.setItem(HELD_ARM_KEY, seat === 'strip' ? heldArmRecord('', pct, pathname, Date.now(), markets ?? []) : heldArmRecord(market, pct, pathname))
     } catch {}
-  }, [seat, market, pct, pathname])
+  }, [seat, market, markets, pct, pathname])
 
-  // On mount: claim a fresh held record for THIS market on THIS page (claimed
-  // on read, so a second instance of the same market never arms it twice).
+  // On mount: claim a fresh held record for THIS seat on THIS page (claimed
+  // on read, so a second instance of the same market never arms it twice):
+  // a row seat takes a record naming its market; the strip takes a list.
   useEffect(() => {
-    if (seat === 'strip' || typeof window === 'undefined') return
+    if (typeof window === 'undefined') return
     try {
       const rec = readHeldArm(window.sessionStorage.getItem(HELD_ARM_KEY), pathname)
-      if (rec && rec.market === market) {
+      if (!rec) return
+      if (seat === 'strip' ? !!rec.markets?.length : rec.market === market) {
         window.sessionStorage.removeItem(HELD_ARM_KEY)
         heldRef.current = true
+        if (seat === 'strip') heldListRef.current = rec.markets ?? []
       }
     } catch {}
   }, [seat, market, pathname])
 
   // The held arm runs once the session is authed — exactly once.
   useEffect(() => {
-    if (gate !== 'ready' || !heldRef.current || ranHeldRef.current || !plan || sharedOn) return
+    if (gate !== 'ready' || !heldRef.current || ranHeldRef.current) return
+    if (seat === 'strip') {
+      const list = heldListRef.current
+      if (!list) return
+      ranHeldRef.current = true
+      heldRef.current = false
+      heldListRef.current = null
+      try {
+        window.sessionStorage.removeItem(HELD_ARM_KEY)
+      } catch {}
+      const resumed = watchPlan(list, shared?.alerts, pct, canAct)
+      if (resumed.plans.length) void armMany(resumed.plans)
+      return
+    }
+    if (!plan || sharedOn) return
     ranHeldRef.current = true
     heldRef.current = false
     try {
       window.sessionStorage.removeItem(HELD_ARM_KEY)
     } catch {}
     void armOne(plan)
-  }, [gate, plan, sharedOn, armOne])
+  }, [gate, seat, plan, sharedOn, armOne, armMany, shared?.alerts, pct, canAct])
 
   // ── Strip: "Watch these" ────────────────────────────────────────────────
   if (seat === 'strip') {
