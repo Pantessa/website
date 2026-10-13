@@ -30,6 +30,9 @@ import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { useTradable } from '@/lib/use-tradable'
 import { FOLLOW_USD, fmtAxisClock, fmtAxisUsd, fmtPrice, fmtUsd, niceCeil, tapeMarket, type TapeFill, type TapeMarket, type TapeSource } from '@/lib/tape'
 import { connectTape, readTapeUniverse, type FeedStatus, type TapeHandle } from '@/lib/tape-feed'
+import { useWatchlists } from '@/components/markets/watchlist/useWatchlists'
+import { resolveMarket } from '@/lib/battle'
+import { MAX_OWN_MARKETS, OWN_SOURCE_NOTE, addLiveMarkets, chipRow, knownMarkets, openingOwnMarkets, readLiveMarketMemory, removeLiveMarket, watchlistMarkets, writeLiveMarketMemory, type OwnSource } from '@/lib/live-markets'
 import {
   PULSE_FALLBACK_MARKETS,
   PULSE_FLUSH_MS,
@@ -102,6 +105,66 @@ export default function PulseSlot() {
   const bufRef = useRef<TapeFill[]>([])
   const flushRef = useRef<number | null>(null)
   const handleRef = useRef<TapeHandle | null>(null)
+  // Your own markets (lib/live-markets — /live's rule, on the band): a
+  // hand's list leads the row and rides the relay's filter; remembered in
+  // this browser; the watchlist stands in until a hand touches it.
+  const [own, setOwn] = useState<string[]>([])
+  const [ownSource, setOwnSource] = useState<OwnSource>(null)
+  const [universe, setUniverse] = useState<string[]>([])
+  const [draft, setDraft] = useState('')
+  const [addNote, setAddNote] = useState<string | null>(null)
+  const handRef = useRef(false)
+  const wl = useWatchlists({ holdings: false })
+  const watchSymbols = useMemo(() => {
+    if (!wl.ready) return [] as string[]
+    const activeId = (wl.active as { id?: string } | null)?.id
+    const ordered = [...wl.lists].sort((a, b) => (a.id === activeId ? -1 : b.id === activeId ? 1 : 0))
+    const out: string[] = []
+    for (const l of ordered) for (const sym of l.symbols) if (!out.includes(sym)) out.push(sym)
+    return out
+  }, [wl.ready, wl.lists, wl.active])
+  useEffect(() => {
+    const mem = readLiveMarketMemory()
+    if (mem) {
+      setOwn(mem.own)
+      setOwnSource('memory')
+    }
+  }, [])
+  useEffect(() => {
+    if (handRef.current || ownSource === 'memory' || !universe.length) return
+    const d = openingOwnMarkets({ memory: null, watch: watchlistMarkets(watchSymbols, universe) })
+    if (d.source === 'watchlist') {
+      setOwn(d.own)
+      setOwnSource('watchlist')
+    }
+  }, [watchSymbols, universe, ownSource])
+  const addOwn = useCallback(
+    (raw: string) => {
+      const r = addLiveMarkets(raw, knownMarkets(universe, new Set(bufRef.current.map((f) => f.market))), own)
+      if (r.added.length) {
+        handRef.current = true
+        const next = [...own, ...r.added]
+        setOwn(next)
+        setOwnSource('memory')
+        writeLiveMarketMemory(next)
+        setDraft('')
+      }
+      setAddNote(r.unknown.length ? `no venue prints ${r.unknown.map((u) => u.toUpperCase()).join(', ')} yet` : r.full.length ? `the row holds ${MAX_OWN_MARKETS} of yours` : null)
+    },
+    [own, universe],
+  )
+  const removeOwn = useCallback(
+    (m: string) => {
+      handRef.current = true
+      const next = removeLiveMarket(own, m)
+      setOwn(next)
+      setOwnSource('memory')
+      writeLiveMarketMemory(next)
+    },
+    [own],
+  )
+  // The aim: your own markets first, then the venue's pick.
+  const aim = useMemo(() => [...new Set([...own, ...markets])], [own, markets])
 
   // Visibility: read at mount, then every change (lib/pulse pulseVisibilityStep).
   useEffect(() => {
@@ -122,6 +185,7 @@ export default function PulseSlot() {
       window.clearTimeout(timer)
       if (gone) return
       setMarkets(pulseMarketsFrom(main, xyz))
+      setUniverse([...main, ...xyz].filter((r) => !r.delisted).sort((a, b) => b.volumeUsd - a.volumeUsd).map((r) => r.name))
     })
     return () => {
       gone = true
@@ -136,8 +200,8 @@ export default function PulseSlot() {
   // in a ref and the band repaints at most every PULSE_FLUSH_MS — the first
   // fill into an empty buffer paints at once.
   const streamOn = vis ? pulseStreamWanted(vis, now) : false
-  const marketsRef = useRef(markets)
-  marketsRef.current = markets
+  const marketsRef = useRef(aim)
+  marketsRef.current = aim
   useEffect(() => {
     if (!streamOn) return
     const flush = () => {
@@ -177,8 +241,8 @@ export default function PulseSlot() {
   // the venue's socket subscribe what it adds and drop what it leaves
   // (lib/tape subscriptionDelta) — never a quiet second.
   useEffect(() => {
-    handleRef.current?.setMarkets(markets)
-  }, [markets])
+    handleRef.current?.setMarkets(aim)
+  }, [aim])
 
   // The clock the bars and tiles read: once a second. The buffer is pruned on
   // the same beat, so a quiet market's window still empties — and a tab that
@@ -204,14 +268,14 @@ export default function PulseSlot() {
   const { act, door } = useConnectToAct({ run, redirectFor: promptHref })
 
   const chipOk = useCallback((ask: string) => canTradeAsk(ask, tradable), [tradable])
-  const pick = pulsePick(pickRaw, markets)
+  const pick = pulsePick(pickRaw, aim)
   const bars = useMemo(() => pulseBars(fills, now, undefined, pick), [fills, now, pick])
   const tiles = useMemo(() => pulseTiles(fills, now, chipOk, pick), [fills, now, chipOk, pick])
   const have = pick ? fills.some((f) => f.market === pick) : fills.length > 0
   const max = useMemo(() => niceCeil(Math.max(0, ...bars.map((b) => b.total))), [bars])
   const hidden = vis !== null && !vis.visible
   const live = status === 'live'
-  const words = pulseStatusWords(status, detail, { markets: markets.length, hidden })
+  const words = pulseStatusWords(status, detail, { markets: aim.length, hidden })
   // The phone's head has ~110px for the status: the venue and the state, no count.
   const shortWords = pulseStatusWords(status, detail, { hidden })
   const hb = hover !== null ? bars[hover] : null
@@ -225,7 +289,7 @@ export default function PulseSlot() {
 
   return (
     <section className="pulse-seat" aria-label="Live pulse">
-      <div className="pulse" data-status={status} data-source={source} data-hidden={hidden || undefined} data-fills={have ? 'yes' : 'no'} data-markets={markets.length}>
+      <div className="pulse" data-status={status} data-source={source} data-hidden={hidden || undefined} data-fills={have ? 'yes' : 'no'} data-markets={aim.length}>
         <header className="pulse__head">
           <span className={`mk-dot ${live ? 'mk-dot--open' : 'mk-dot--closed'} pulse__dot`} aria-hidden />
           <span className="pulse__title">Live pulse</span>
@@ -249,16 +313,60 @@ export default function PulseSlot() {
 
         <div className="pulse__markets" role="group" aria-label="Markets on the pulse">
           <button type="button" className={`pulse__m${pick === null ? ' is-on' : ''}`} aria-pressed={pick === null} onClick={() => choose(null)}>
-            All <span className="mono pulse__mcount">{markets.length}</span>
+            All <span className="mono pulse__mcount">{aim.length}</span>
           </button>
-          {markets.map((m) => {
+          {chipRow(own, markets, null, markets.length).map(({ market: m, own: isOwn }) => {
             const tm = tapeMarket(m)
-            return (
-              <button key={m} type="button" className={`pulse__m${pick === m ? ' is-on' : ''}`} aria-pressed={pick === m} data-kind={tm.kind} onClick={() => choose(pick === m ? null : m)}>
+            const chip = (
+              <button type="button" className={`pulse__m${pick === m ? ' is-on' : ''}`} aria-pressed={pick === m} data-kind={tm.kind} data-own={isOwn || undefined} onClick={() => choose(pick === m ? null : m)}>
                 <MarketName m={tm} />
               </button>
             )
+            return isOwn ? (
+              <span key={m} className="pulse__mown">
+                {chip}
+                <button type="button" className="pulse__mx" onClick={() => removeOwn(m)} aria-label={`Remove ${m} from your markets`} title="Remove">
+                  ×
+                </button>
+              </span>
+            ) : (
+              <span key={m} className="pulse__mseat">{chip}</span>
+            )
           })}
+          <form
+            className="pulse__add"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (draft.trim()) addOwn(draft)
+            }}
+          >
+            <input
+              id="pulse-add"
+              list="pulse-universe"
+              value={draft}
+              onChange={(e) => {
+                const v = e.target.value
+                setDraft(v)
+                const picked = (e.nativeEvent as InputEvent).inputType === 'insertReplacementText'
+                if (picked && resolveMarket(v, universe)) addOwn(v)
+              }}
+              placeholder={own.length >= MAX_OWN_MARKETS ? 'row is full' : '+ your own'}
+              aria-label="Add your own markets, several with commas"
+              autoComplete="off"
+              disabled={own.length >= MAX_OWN_MARKETS}
+              title={addNote ?? (ownSource === 'watchlist' && own.length ? `${OWN_SOURCE_NOTE.watchlist} · remembered once you touch it` : 'commas add several · remembered in this browser')}
+            />
+            <datalist id="pulse-universe">
+              {universe.slice(0, 400).map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+            {addNote && (
+              <span className="pulse__addnote mono" role="status">
+                {addNote}
+              </span>
+            )}
+          </form>
         </div>
 
         <div className="pulse__body">
