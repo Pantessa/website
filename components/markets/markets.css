@@ -218,7 +218,7 @@ button.mk-held:hover { border-color: var(--accent); }
   /* The bell beside the ask field (RailAlerts): a 40px target in the 52px bar;
      its popover spans the screen under the bar instead of hanging off a
      button that sits a thumb from the right edge. */
-  .mkt-frame__top .mkt-frame__bell { width: 40px; height: 40px; }
+  .mkt-frame__top .mkt-frame__bell { width: 44px; height: 44px; } /* POLISH: 40 → 44 */
   .mkt-frame__top .mkt-alertpop { position: fixed; top: calc(var(--mkt-top-h, 52px) + 6px); left: 10px; right: 10px; width: auto; max-height: min(70dvh, 520px); }
   /* The section tabs stick under the top strip while the tab's body scrolls
      (the native tab strip); scroll-margin lands a tab switch under the strip. */
@@ -696,4 +696,74 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym--cockpit .sym__strip .sym__last { font-size: 24px; }
   .sym--cockpit .sym__strip .sym__venue-tail { display: inline; }
   .sym--cockpit .sym__chart { margin-top: 10px; }
+}
+
+/* ── POLISH (squad polish 2026-10-13, MARKETS-MOBILE) — the phone act bar,
+   the sheets, the last small targets. Measured by
+   squad-polish-2026-10-13/shots/markets/phone.mjs at 320/375/390/430 under a
+   coarse pointer (before → after in MARKETS-MOBILE.md). Raw values below
+   carry a `tok` note until CONSISTENCY's tokens land (R2). ───────────────── */
+
+/* THE ACT BAR (the cockpit's named follow-up). On a phone the act chips
+   leave the flow and dock above the tab bar — a native trade screen's
+   Buy / Sell bar — so the chart rises (its top at 378 → ~322px at 375×812)
+   and the act is one thumb away wherever the reader is on the page. A chip's
+   ticket is a SHEET (ExecStrip + components/mobile/Sheet). The NO VENUE note
+   is prose and stays in the flow; the bar hides under the soft keyboard the
+   way the tab bar does (html[data-keyboard]); the page pads for it; the
+   full-screen chart (z 60) covers it. */
+@media (max-width: 1023px) {
+  .mkt-frame--sym .sym__exec:has(.sym__act-chips) {
+    position: fixed; left: 0; right: 0; z-index: 33;
+    bottom: calc(var(--spine-bar-h, 49px) + env(safe-area-inset-bottom)); /* tok: --bar-h */
+    margin: 0; padding: 6px 0; /* tok: space-6 */
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line);
+  }
+  .mkt-frame--sym .sym__exec:has(.sym__act-chips) > .sym__act { gap: 0; }
+  .mkt-frame--sym .sym__exec:has(.sym__act-chips) .sym__act-eyebrow { display: none; }
+  .mkt-frame--sym .sym__exec:has(.sym__act-chips) .sym__act-chips {
+    align-self: stretch; min-width: 0; flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+    margin: 0; padding-inline: 16px; scroll-padding-inline: 16px; /* tok: gutter */
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  .mkt-frame--sym .sym__exec:has(.sym__act-chips) .sym__act-chips::-webkit-scrollbar { display: none; }
+  .mkt-frame--sym .sym__exec:has(.sym__act-chips) .sym__act-chip { flex: 0 0 auto; min-height: 44px; }
+  /* The chips are 44px in a 57px bar: 44 + 6 + 6 + the hairline. */
+  .mkt-frame--sym .sym--cockpit { padding-bottom: 57px; }
+  html[data-keyboard] .mkt-frame--sym .sym__exec:has(.sym__act-chips) { display: none; }
+  /* The guide card used to sit under the chips; with the chips in the bar it
+     follows the tabs at the same 12px. */
+  .mkt-frame--sym .sym--cockpit > .guide-seat { margin-top: 12px; }
+}
+
+/* THE SHEETS. The ticket inside its sheet loses the card chrome (the sheet
+   is the card); the alerts body keeps the popover's sections. */
+.mkt-ticketsheet .mkt-ticket--strip { margin: 0; border: 0; border-radius: 0; background: transparent; padding: 0 0 4px; }
+.mkt-ticketsheet .mkt-ticket__x { display: none; } /* the sheet's own close */
+.mkt-alertsheet__meta { padding: 0 0 8px; }
+.mkt-alertsheet .mkt-alertpop__body { display: block; }
+
+/* THE LAST SMALL TARGETS the probe found on main (375, coarse):
+   the timeframes 36×44 (six on a coin; the row shared with the view switch
+   and full screen) → the timeframe row is its own row, each button an equal
+   share (57px at 375, 48 at 320), the switch + full screen take the next;
+   the bell 40 → 44; the brief's chip 35 → 44; the chart's attribution link
+   30 → a 44px hit area; the movers tape's items 34 → 44 on `/`. */
+@media (max-width: 640px) {
+  /* (Both spellings of the cockpit's phone rule, so the later one wins at
+     the same specificity: the `:has(> .mkt-view)` row shared the 36px floor.) */
+  .sym .mkt-chart__bar:has(> .mkt-view) > .tok__tf, .sym .mkt-chart__bar > .tok__tf { flex: 0 0 100%; gap: 4px; }
+  .sym .mkt-chart__bar:has(> .mkt-view) > .tok__tf > .tok__tfbtn, .sym .mkt-chart__bar > .tok__tf > .tok__tfbtn { flex: 1 1 0; min-width: 44px; }
+  /* The view switch + Share + full screen on the row after the timeframes. */
+  .sym .mkt-chart__bar > .mkt-view { order: 2; }
+}
+@media (hover: none) {
+  .mkt-frame__top .mkt-frame__bell { width: 44px; height: 44px; }
+  .mk-ai__chip { min-height: 44px; }
+  .sym .mkt-attrib { position: relative; display: inline-block; }
+  .sym .mkt-attrib::after { content: ''; position: absolute; inset: -7px 0; }
+  .mk-tape__item { min-height: 44px; padding-block: 0; }
 }

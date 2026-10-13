@@ -47,3 +47,9 @@
 }
 @media (hover: none) { .dp__chip { height: 32px; padding: 0 11px; } .dp__act { height: 36px; } }
 @media (prefers-reduced-motion: reduce) { .dp__print:first-child { animation: none; } }
+
+/* POLISH (MARKETS-MOBILE, 2026-10-13): the depth view's nine chips were 32px under a thumb (375, coarse) → 44. */
+@media (hover: none) {
+  .dp__chip { height: 44px; padding: 0 12px; border-radius: 10px; }
+  .dp__chips { border-radius: 12px; }
+}
