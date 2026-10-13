@@ -27,17 +27,17 @@ import type { ChartPair } from '@/lib/charts'
 import { fmtPrice } from '@/components/CandleChart'
 import { useHeld } from '@/lib/use-held'
 import { useStableBalances } from '@/lib/use-stable-balances'
-import { followOrderSize, orderSizeOf, useOrderSize } from '@/lib/order-size'
+import { followOrderSize, orderSizeOf, useOrderAim, useOrderSize } from '@/lib/order-size'
 import { useTradable } from '@/lib/use-tradable'
 import { canSellAsk } from '@/lib/sell-gate'
 import { canTradeAsk, tradeRefusal } from '@/lib/trade-venue-gate'
 import { VENUE_NAME, venueChainLabel, type RouteQuote, type RoutesResponse } from '@/lib/symbol-venues'
-import { fmtAskPrice } from '@/lib/chart-actions'
 import {
   availableFor,
   composeTicketAsk,
   defaultLimitPrice,
   freshTicket,
+  fmtLimitPrice,
   fmtTicketUnits,
   isPerpSide,
   limitChainsFor,
@@ -136,7 +136,7 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
     return seed?.leverage != null && isPerpSide(side) ? { ...fresh, leverage: seed.leverage } : fresh
   })
   const [text, setText] = useState<string>(() => (st.amount != null ? String(st.amount) : ''))
-  const [pxText, setPxText] = useState<string>(() => (st.limitPrice != null ? fmtAskPrice(st.limitPrice) : ''))
+  const [pxText, setPxText] = useState<string>(() => (st.limitPrice != null ? fmtLimitPrice(st.limitPrice) : ''))
   const [sent, setSent] = useState<number | null>(null)
   const usdRef = useRef(TICKET_DEFAULT_USD)
   const lastRef = useRef(last)
@@ -153,7 +153,7 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
       const next = freshTicket(pair, s, { usd: typed, last: lastRef.current, type: opts.type })
       setSt(next)
       setText(next.amount != null ? String(next.amount) : '')
-      setPxText(next.limitPrice != null ? fmtAskPrice(next.limitPrice) : '')
+      setPxText(next.limitPrice != null ? fmtLimitPrice(next.limitPrice) : '')
       setSent(null)
     },
     [pair],
@@ -176,6 +176,20 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
 
   const patch = useCallback((p: Partial<TicketState>) => setSt((s) => ({ ...s, ...p })), [])
   const types = useMemo(() => ticketTypesFor(pair, side), [pair, side])
+  // Aimed at a price (the Depth chart's click on a level, lib/order-size
+  // useOrderAim): once this ticket is on the aim's side, it becomes a LIMIT
+  // at that price. Each stamp applies once; runs AFTER the side reset above
+  // so the fresh ticket is what gets aimed. Only a side with a limit lane.
+  const aim = useOrderAim((s) => s.aim)
+  const aimedRef = useRef<number>(0)
+  useEffect(() => {
+    if (!aim || aim.symbol !== sym || aim.side !== side || aimedRef.current === aim.at) return
+    if (!types.includes('limit')) return
+    aimedRef.current = aim.at
+    patch({ type: 'limit', limitPrice: aim.limitPrice })
+    setPxText(fmtLimitPrice(aim.limitPrice))
+    setSent(null)
+  }, [aim, sym, side, types, patch])
   const amountKind = ticketAmountKind(side)
   const tone = sideTone(side)
   const isPerp = isPerpSide(side)
@@ -242,7 +256,7 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
     if (t === st.type) return
     const px = t === 'limit' && lastRef.current != null && (side === 'buy' || side === 'sell') ? (st.limitPrice ?? defaultLimitPrice(side, lastRef.current)) : st.limitPrice
     patch({ type: t, limitPrice: px })
-    setPxText(px != null ? fmtAskPrice(px) : '')
+    setPxText(px != null ? fmtLimitPrice(px) : '')
   }
   const setUnit = (u: TicketUnit) => {
     if (u === st.unit) return
@@ -273,7 +287,7 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
     if (lastRef.current == null || (side !== 'buy' && side !== 'sell')) return
     const px = defaultLimitPrice(side, lastRef.current, pct)
     patch({ limitPrice: px })
-    setPxText(fmtAskPrice(px))
+    setPxText(fmtLimitPrice(px))
   }
 
   // The sentence, and the two gates every chip answers to.
@@ -331,7 +345,7 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
     const { usd, units } = ticketSizes(st, last)
     const px = last != null && last > 0 ? `$${fmtPrice(last)}` : null
     if (side === 'buy' || side === 'sell') {
-      if (st.type === 'limit' && st.limitPrice != null && out.usd != null && out.units != null) return `${fmtAmt(out.units)} ${sym} for ${fmtUsd2(out.usd)} USDC at $${fmtAskPrice(st.limitPrice)}`
+      if (st.type === 'limit' && st.limitPrice != null && out.usd != null && out.units != null) return `${fmtAmt(out.units)} ${sym} for ${fmtUsd2(out.usd)} USDC at $${fmtLimitPrice(st.limitPrice)}`
       if (st.sellAll) return heldRow ? `all ${fmtAmt(heldRow.amount)} ${sym}${heldRow.valueUsd != null ? ` ≈ ${fmtUsd2(heldRow.valueUsd)}` : ''}` : `the whole ${sym} balance`
       if (st.unit === 'usd') return units != null && px ? `≈ ${fmtAmt(units)} ${sym} at ${px}` : null
       return usd != null && px ? `≈ ${fmtUsd2(usd)} at ${px}` : null

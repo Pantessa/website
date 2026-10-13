@@ -373,6 +373,7 @@ import { tapePins } from './tape-pins'
 import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
 import { orderTicketPins } from './order-ticket-pins'
+import { depthPins } from './depth-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -34731,6 +34732,8 @@ async function main() {
   spotHomePins(check)
   // The order ticket (2026-10-06): every shape the form composes lands native, the honesty rules, the sizing, the Available line, the wiring.
   orderTicketPins(check)
+  // The Depth chart (2026-10-13): the book model and its deltas, the venue wire shapes, the window, the curve, the hover's numbers, the act at a level, the plan per chart, the words, the view's URL and wiring.
+  depthPins(check)
   // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
   // sign-in door, never a planner promise to "fetch your tokens".
   {

@@ -41,7 +41,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
-import { ChartCandlestick, ChevronsRight, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, RotateCcw, Rows3, Ruler, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, Trash2, TrendingUp, Undo2 } from 'lucide-react'
+import { ChartCandlestick, ChevronsRight, Layers2, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, RotateCcw, Rows3, Ruler, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, Trash2, TrendingUp, Undo2 } from 'lucide-react'
 import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, isPrintTf, tfsForSource, type Candle, type ChartTf } from '@/lib/charts'
 import { PRINT_KEEP_MS, applyPrint, barsFromPrints, chartLiveFeed, printOf, tailIsLive, tailWords } from '@/lib/chart-live'
 import { syncTfParam } from '@/lib/markets'
@@ -71,7 +71,9 @@ import { awayFromLive, chartKey, markPlusHintSeen, plusHintSeen, tidyPrice, zoom
 import FrontBoard from './FrontBoard'
 import PositionHeat from './PositionHeat'
 import TheWall, { marginBarsFor, type WallStatus } from './TheWall'
-import { parseBoardParam, parseViewParam, syncViewParam, type BoardMode } from '@/lib/markets'
+import { parseBoardParam, parseViewParam, syncViewParam, type BoardMode, type ChartView } from '@/lib/markets'
+import { hasPerpCold } from '@/lib/symbol-venues'
+import DepthChart from './DepthChart'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
@@ -154,9 +156,13 @@ export interface MarketChartProps {
    *  pointer-transparent: the chart keeps its gestures. The landing's
    *  rehearsal strip rides here. */
   overlay?: ReactNode
-  /** Offer the Battlefield view beside the candles (the symbol page). The
-   *  candles are always the view a chart opens on. */
+  /** Offer the chart's other views beside the candles (the symbol page):
+   *  the Depth chart on the switch, the Battlefield by its `?view=` deep
+   *  link. The candles are always the view a chart opens on. */
   battlefield?: boolean
+  /** The Depth chart's act: a level clicked → aim the page's order ticket
+   *  at a limit order resting at that price (lib/order-size useOrderAim). */
+  onLimit?: (side: 'buy' | 'sell', price: number) => void
 }
 
 interface CandlesResponse {
@@ -255,6 +261,7 @@ export default function MarketChart({
   fills,
   overlay,
   battlefield = false,
+  onLimit,
 }: MarketChartProps) {
   const fill = heightProp === 'fill'
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
@@ -304,9 +311,10 @@ export default function MarketChart({
   const [geomTick, setGeomTick] = useState(0)
   const [pool, setPool] = useState<PoolPrice | null>(null)
   const [noteDraft, setNoteDraft] = useState<{ t: number; price: number; text: string } | null>(null)
-  // The second view (FrontBoard): the market's two sides on a tilted table.
-  // Never remembered: every chart opens on its candles.
-  const [view, setView] = useState<'candles' | 'field'>('candles')
+  // The other views: the Depth chart (DepthChart, 2026-10-13) on the switch,
+  // the Battlefield (FrontBoard) by its deep link. Never remembered: every
+  // chart opens on its candles.
+  const [view, setView] = useState<ChartView>('candles')
   // The board the Battlefield shows; null = its own default. `?view=battlefield&board=spot`
   // opens straight onto it (a shared link), and the switch mirrors into the URL.
   const [board, setBoard] = useState<BoardMode | null>(null)
@@ -337,7 +345,7 @@ export default function MarketChart({
     if (!battlefield) return
     const v = parseViewParam(window.location.search)
     const b = parseBoardParam(window.location.search)
-    if (v === 'field') setView('field')
+    if (v !== 'candles') setView(v)
     if (b) setBoard(b)
   }, [battlefield])
   useEffect(() => {
@@ -878,8 +886,13 @@ export default function MarketChart({
   }, [tf])
 
   const fieldOn = battlefield && view === 'field'
-  const switchView = useCallback((next: 'candles' | 'field') => {
-    if (next === 'field') {
+  const depthOn = battlefield && view === 'depth'
+  // Either other view: the candles' own chrome (tools, legend, drawings) steps aside.
+  const altOn = fieldOn || depthOn
+  // The Depth chart takes the prints off the chart's one relay stream.
+  const depthPrintRef = useRef<((fills: readonly TapeFill[]) => void) | null>(null)
+  const switchView = useCallback((next: ChartView) => {
+    if (next !== 'candles') {
       setTool('none')
       setNoteDraft(null)
       setSelectedId(null)
@@ -950,10 +963,13 @@ export default function MarketChart({
   // instrument that polls opens nothing, and the foot says so.
   const liveFeed = useMemo(() => chartLiveFeed(pair), [pair])
   useEffect(() => {
-    if (!liveFeed || !tailIsLive(tf, liveFeed)) {
+    // The Depth view wants the prints on every frame (they land on the book,
+    // not on a bar); the candles only on a live frame.
+    if (!liveFeed || !(tailIsLive(tf, liveFeed) || depthOn)) {
       setTailStatus('idle')
       return
     }
+    const tailLive = tailIsLive(tf, liveFeed)
     const tfSec = FRAME_SEC[tf]
     const print = isPrintTf(tf)
     const p = pair
@@ -974,6 +990,8 @@ export default function MarketChart({
         rebuild()
       },
       onFills: (batch) => {
+        depthPrintRef.current?.(batch)
+        if (!tailLive) return
         if (print) {
           const floor = Date.now() - PRINT_KEEP_MS
           const ring = printsRef.current
@@ -1018,7 +1036,7 @@ export default function MarketChart({
       printLineRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveFeed, tf, tokens, symbol])
+  }, [liveFeed, tf, tokens, symbol, depthOn])
 
   // Compare: a second symbol's candles at the chart's frame, drawn as a line
   // on the LEFT scale in percentage mode (indexed to the first bar on screen).
@@ -1235,7 +1253,7 @@ export default function MarketChart({
   useEffect(() => {
     if (!tools) return
     const onKey = (e: KeyboardEvent) => {
-      if (!overRef.current || e.defaultPrevented || fieldOn) return
+      if (!overRef.current || e.defaultPrevented || altOn) return
       const target = e.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
@@ -1259,7 +1277,7 @@ export default function MarketChart({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [tools, fieldOn, resetScale])
+  }, [tools, altOn, resetScale])
 
   const goLive = useCallback(() => chartRef.current?.timeScale().scrollToRealTime(), [])
 
@@ -1463,13 +1481,23 @@ export default function MarketChart({
               <ChartCandlestick className="h-3.5 w-3.5" />
               <span>Candles</span>
             </button>
-            <button type="button" className={`mkt-view__btn mono${view === 'field' ? ' is-active' : ''}`} aria-pressed={view === 'field'} title="Battlefield — the same bars as a field: buyers hold the ground under the price, sellers the ground over it" onClick={() => switchView('field')}>
-              <Swords className="h-3.5 w-3.5" />
-              <span>Battlefield</span>
+            <button type="button" className={`mkt-view__btn mono${view === 'depth' ? ' is-active' : ''}`} aria-pressed={view === 'depth'} title="Depth — the resting order book as a curve: bids stacking left of the mid, asks right, the prints landing on it live" onClick={() => switchView('depth')}>
+              <Layers2 className="h-3.5 w-3.5" />
+              <span>Depth</span>
             </button>
+            {/* The Battlefield left the switch when Depth arrived (Nate,
+                2026-10-13: "remove the battlefield tab but keep the code");
+                its `?view=battlefield` deep link still opens it, and while
+                it is open its button shows so the view can be left. */}
+            {view === 'field' && (
+              <button type="button" className="mkt-view__btn mono is-active" aria-pressed title="Battlefield — the same bars as a field: buyers hold the ground under the price, sellers the ground over it" onClick={() => switchView('field')}>
+                <Swords className="h-3.5 w-3.5" />
+                <span>Battlefield</span>
+              </button>
+            )}
           </div>
         )}
-        {!fieldOn && <div className="mkt-chart__ind" role="group" aria-label="Overlays">
+        {!altOn && <div className="mkt-chart__ind" role="group" aria-label="Overlays">
           {OVERLAYS.filter((o) => (o.key !== 'vwap' || hasVolume(candles)) && (o.key !== 'wall' || battlefield) && (o.key !== 'vp' || !wallOn)).map((o) => (
             <button
               key={o.key}
@@ -1492,7 +1520,7 @@ export default function MarketChart({
             </button>
           ))}
         </div>}
-        {tools && !fieldOn && (
+        {tools && !altOn && (
           <div className="mkt-chart__tools" role="group" aria-label="Drawing tools">
             {toolBtn('none', MousePointer2, 'Select (Esc)')}
             {toolBtn('h', Minus, 'Horizontal level — click a price (H)')}
@@ -1548,7 +1576,7 @@ export default function MarketChart({
 
       {/* Canvas: the engine owns the bars; the SVG layer owns the drawings. */}
       <div
-        className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fieldOn ? ' is-field' : ''}${fill ? ' min-h-0 flex-1' : ''}`}
+        className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fieldOn ? ' is-field' : depthOn ? ' is-depth' : ''}${fill ? ' min-h-0 flex-1' : ''}`}
         style={fill ? undefined : { height: heightProp }}
         onPointerEnter={() => {
           overRef.current = true
@@ -1566,8 +1594,8 @@ export default function MarketChart({
         onDoubleClick={syncScale}
       >
         <div ref={wrapRef} className="mkt-chart__engine" />
-        {candles.length > 0 && tool === 'none' && !noteDraft && !fieldOn && <ChartLegend symbol={pair.symbol} tf={tf} bars={bars} lines={legendLines} hint={tools && !selectedId ? plusHint : null} />}
-        {tools && tool === 'none' && !noteDraft && !selectedId && !fieldOn && (
+        {candles.length > 0 && tool === 'none' && !noteDraft && !altOn && <ChartLegend symbol={pair.symbol} tf={tf} bars={bars} lines={legendLines} hint={tools && !selectedId ? plusHint : null} />}
+        {tools && tool === 'none' && !noteDraft && !selectedId && !altOn && (
           <button ref={plusRef} type="button" className="mkt-plus" data-draw-handle aria-label="Put a level at this price" onClick={dropLevel}>
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -1575,7 +1603,7 @@ export default function MarketChart({
         {/* Undo, redo and clear float over the plot. In the bar above they
             widened the tools group the moment a first drawing landed, the bar
             wrapped, and the canvas (with the level just placed) jumped down a row. */}
-        {tools && !fieldOn && (undoStacks.past.length > 0 || undoStacks.future.length > 0 || lines.length > 0) && (
+        {tools && !altOn && (undoStacks.past.length > 0 || undoStacks.future.length > 0 || lines.length > 0) && (
           <div className="mkt-chart__tools mkt-chart__edit" role="group" aria-label="Edit drawings">
             {(undoStacks.past.length > 0 || undoStacks.future.length > 0) && (
               <>
@@ -1603,20 +1631,20 @@ export default function MarketChart({
             )}
           </div>
         )}
-        {away && candles.length > 0 && !fieldOn && (
+        {away && candles.length > 0 && !altOn && (
           <button type="button" className="mkt-live mono" title="Back to the newest bar (L)" onClick={goLive}>
             Live <ChevronsRight className="h-3 w-3" />
           </button>
         )}
         {/* The price axis is yours (a focus, a wheel over the axis, an axis
             drag): one press fits it to the bars again. Sits on the axis itself. */}
-        {scaleManual && candles.length > 0 && !fieldOn && (
+        {scaleManual && candles.length > 0 && !altOn && (
           <button type="button" className="mkt-scale mono" data-scale-manual title="Price axis scaled by hand — fit it to the bars again (A, Esc, or double-click the axis)" onClick={resetScale}>
             <Scaling className="h-3 w-3" /> auto
           </button>
         )}
         {/* Over the plot, never above it: a hint that pushed the canvas down moved the bars under the cursor. */}
-        {tool !== 'none' && !fieldOn && (
+        {tool !== 'none' && !altOn && (
           <p className="mkt-chart__hint mono">
             {tool === 'h' && 'click a price to place a level — it can carry an order'}
             {tool === 'zone' && 'drag across the range — or click its two edges'}
@@ -1645,8 +1673,9 @@ export default function MarketChart({
           </div>
         )}
         {fieldOn && tokens && <FrontBoard symbol={pair.symbol} pair={pair} tf={tf} bars={candles} tokens={tokens} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} board={board} onBoard={setBoard} />}
+        {depthOn && tokens && <DepthChart symbol={pair.symbol} pair={pair} tokens={tokens} last={last} perpListed={hasPerpCold(pair.symbol)} printSink={depthPrintRef} printStatus={liveFeed ? tailStatus : null} printLabel={liveFeed?.label ?? null} onLevel={onLimit} />}
         {wallOn && tokens && <TheWall geom={geom} bars={bars} symbol={pair.symbol} pair={pair} tf={tf} tokens={tokens} last={last} hostRef={wrapRef} onStatus={setWallStatus} />}
-        {!fieldOn && <DrawingLayer
+        {!altOn && <DrawingLayer
           geom={geom}
           lines={lines}
           selectedId={selectedId}
@@ -1666,7 +1695,7 @@ export default function MarketChart({
           readOnly={!tools}
         />}
         {overlay}
-        {noteDraft && !fieldOn && (
+        {noteDraft && !altOn && (
           <form
             className="mkt-pop mkt-pop--note"
             style={{ left: 12, top: 12 }}
@@ -1720,7 +1749,7 @@ export default function MarketChart({
         </p>
       )}
       {/* A year of positioning under the candles (the symbol page; coins and perps). */}
-      {battlefield && !fieldOn && <PositionHeat symbol={pair.symbol} pair={pair} mark={last} />}
+      {battlefield && !altOn && <PositionHeat symbol={pair.symbol} pair={pair} mark={last} />}
 
       {/* Your fills — the glyphs on the bars; the receipt words + explorer link live here. */}
       {fills && fills.length > 0 && pair && (
@@ -1764,7 +1793,7 @@ export default function MarketChart({
         <ChartShare
           symbol={pair.symbol}
           tf={tf}
-          view={fieldOn ? 'field' : 'candles'}
+          view={battlefield ? view : 'candles'}
           board={fieldOn ? board : null}
           lines={lines}
           onClose={() => setShareOpen(false)}

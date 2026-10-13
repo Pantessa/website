@@ -204,8 +204,9 @@ export function orderTicketPins(check: Check): void {
     check('order size (store): an unchanged size is a no-op (the first writer stays — no two surfaces can chase each other), a new dollar or a leverage is a new state, clear empties it',
       sameAgain && moved && lev && store.getState().size === null)
   }
+  // RE-PINNED 2026-10-13 (depth): the import line also carries useOrderAim (the Depth chart aims the ticket at a level).
   check('order size (wired): the ticket SEEDS a fresh mount from a size already set on its symbol (the remembered default applies to a cold page only), publishes its dollars from an effect keyed on the AMOUNT and the UNIT (never the price, which ticks) with a perp\'s leverage, never re-publishes a change it FOLLOWED (two tickets chased each other 25 ↔ 100 until React gave up), reads the store LIVE when it follows (the render\'s snapshot can predate a publish in the same commit), and a protect ticket (no amount) neither publishes nor follows',
-    ot.includes("import { followOrderSize, orderSizeOf, useOrderSize } from '@/lib/order-size'") && ot.includes('}, [st.amount, st.unit, st.leverage, amountKind, isPerp, sym, sizeId, setSize])') &&
+    ot.includes("import { followOrderSize, orderSizeOf, useOrderAim, useOrderSize } from '@/lib/order-size'") && ot.includes('}, [st.amount, st.unit, st.leverage, amountKind, isPerp, sym, sizeId, setSize])') &&
       ot.includes('const seed = followOrderSize(useOrderSize.getState().size, pair.symbol, sizeId)') && ot.includes('usd: seed?.usd ?? TICKET_DEFAULT_USD') && ot.includes('if (seededRef.current) return') && ot.includes('const followingRef = useRef(seededRef.current)') && ot.includes("return seed?.leverage != null && isPerpSide(side) ? { ...fresh, leverage: seed.leverage } : fresh") &&
       ot.indexOf('const sizeId = useId()') < ot.indexOf('const [st, setSt] = useState<TicketState>') &&
       ot.includes('const next = orderSizeOf(sym, usd, isPerp ? st.leverage : null, sizeId)') && ot.includes("setSt((s) => ({ ...s, unit: 'usd', amount: live.usd, sellAll: false, ...(lev != null ? { leverage: lev } : {}) }))") &&

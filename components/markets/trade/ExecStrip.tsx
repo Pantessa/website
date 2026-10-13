@@ -28,12 +28,13 @@
 // so the chart stays high, and a tap opens it. The server renders the chips
 // only, so every act-strip pin on the HTML holds.
 
-import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import Link from 'next/link'
 import type { ChartPair } from '@/lib/charts'
 import { execAsks, type ExecSide } from '@/lib/trade-asks'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
+import { useOrderAim } from '@/lib/order-size'
 import './trade.css'
 import { canTradeAsk, tradeTarget } from '@/lib/trade-venue-gate'
 import { useTradable } from '@/lib/use-tradable'
@@ -128,6 +129,21 @@ export default function ExecStrip({
     // Once per mount: the symbol page remounts the strip per symbol.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // Aimed from the Depth chart (lib/order-size useOrderAim): the strip's
+  // ticket opens on the aim's side (the phone has no rail), and the ticket
+  // turns into the limit. The desktop's rail ticket answers the same aim.
+  const aim = useOrderAim((s) => s.aim)
+  const aimedRef = useRef<number>(0)
+  useEffect(() => {
+    if (!aim || aim.symbol !== pair.symbol || aimedRef.current === aim.at) return
+    if (!sideList.includes(aim.side)) return
+    aimedRef.current = aim.at
+    setTicket(aim.side)
+    // The strip sits above the chart on a phone: a ticket opened by a tap on
+    // a level, out of view, would read as a dead tap — bring it into view.
+    requestAnimationFrame(() => rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }, [aim, pair.symbol, sideList])
+  const rootRef = useRef<HTMLDivElement>(null)
   const pick = (side: TicketSide) => {
     setTicket((t) => {
       const next = t === side ? null : side
@@ -161,7 +177,7 @@ export default function ExecStrip({
     pick(side)
   }
   return (
-    <div className="sym__act" aria-label={`Act on ${symbol}`} data-acts={asks.length} data-ticket={shown ?? undefined}>
+    <div ref={rootRef} className="sym__act" aria-label={`Act on ${symbol}`} data-acts={asks.length} data-ticket={shown ?? undefined}>
       <span className="sym__act-eyebrow mono">ACT ON {pair.symbol} · SENDS THE ASK · YOUR WALLET SIGNS</span>
       <div className="sym__act-chips">
         {asks.map((a) => (
