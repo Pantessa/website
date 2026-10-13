@@ -5,7 +5,7 @@ import { ARMY_MEMORY_KEY, FALLBACK_ARMIES, MAX_ARMIES } from '../lib/battle'
 import { LIVE_MARKETS_KEY } from '../lib/live-markets'
 import {
   ARMY_SLICE, LEGACY_PICK_KEYS, MARKET_PICK_KEY, MAX_PICK,
-  armiesOf, armySliceNote, lensFor, migrateLegacyPick, normalizeMarket, openingPick, parseMarketPick, parsePickParam, pickParam, pickSourceWord, removeFromPick, serializeMarketPick,
+  PICK_RANK, armiesOf, armySliceNote, lensFor, replacesPick, samePick, migrateLegacyPick, normalizeMarket, openingPick, parseMarketPick, parsePickParam, pickParam, pickSourceWord, removeFromPick, serializeMarketPick,
 } from '../lib/market-pick'
 
 let pass = 0
@@ -51,6 +51,17 @@ async function main() {
   pin('the first five march; the note says so past five', eq(armiesOf(['A', 'B', 'C', 'D', 'E', 'F']), ['A', 'B', 'C', 'D', 'E']) && armySliceNote(['A', 'B', 'C', 'D', 'E', 'F']) === 'the first 5 of your 6 march' && armySliceNote(['A']) === null)
   pin('remove is exact', eq(removeFromPick(['A', 'B'], 'A'), ['B']))
   pin('source words', pickSourceWord('watchlist') === 'from your watchlist' && pickSourceWord('held') === 'from your wallet' && pickSourceWord('hand') === 'as you left them' && pickSourceWord('url') === null && pickSourceWord('venue') === null)
+
+  // The browser store's guard (lane PICK): a later read replaces only a default.
+  const at = (markets: string[], source: 'url' | 'hand' | 'watchlist' | 'held' | 'venue' | 'fallback') => ({ markets, source })
+  pin('replace: nothing shown → the decision paints', replacesPick(null, at(['A'], 'fallback')))
+  pin('replace: a watchlist that lands after the venue takes the row; holdings never replace a watchlist',
+    replacesPick(at(['A'], 'venue'), at(['W'], 'watchlist')) && !replacesPick(at(['W'], 'watchlist'), at(['H'], 'held')) && replacesPick(at(['F'], 'fallback'), at(['V'], 'venue')))
+  pin('replace: no default ever replaces a hand or a link', ['watchlist', 'held', 'venue', 'fallback'].every((src) => !replacesPick(at(['X'], 'hand'), at(['Y'], src as 'venue')) && !replacesPick(at(['X'], 'url'), at(['Y'], src as 'venue'))))
+  pin('replace: a page\'s own link outranks a hand; the same link twice is a no-op', replacesPick(at(['X'], 'hand'), at(['Y'], 'url')) && !replacesPick(at(['Y'], 'url'), at(['Y'], 'url')) && replacesPick(at(['Y'], 'url'), at(['Z'], 'url')))
+  pin('replace: a hand replaces any default; the ranks run url > hand > watchlist > held > venue > fallback',
+    replacesPick(at(['V'], 'venue'), at(['H'], 'hand')) && PICK_RANK.url > PICK_RANK.hand && PICK_RANK.hand > PICK_RANK.watchlist && PICK_RANK.watchlist > PICK_RANK.held && PICK_RANK.held > PICK_RANK.venue && PICK_RANK.venue > PICK_RANK.fallback)
+  pin('samePick is order-sensitive and exact', samePick(['A', 'B'], ['A', 'B']) && !samePick(['A', 'B'], ['B', 'A']) && !samePick(['A'], ['A', 'B']))
 
   console.log(`\npick pins: ${pass} passed / ${fail} failed`)
   if (fail) process.exit(1)

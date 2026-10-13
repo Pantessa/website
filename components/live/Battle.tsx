@@ -18,40 +18,29 @@ import { askAppSlugs } from '@/lib/ask-apps'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import type { TradabilityMap } from '@/lib/tradability'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
-import { useHeld } from '@/lib/use-held'
 import { useSession } from '@/lib/session'
 import {
-  ARMY_MEMORY_KEY,
   ARMY_SLOTS,
   DEFAULT_PICK,
-  addOwnMarkets,
   FRONT_WINDOWS,
   LIVE_VIEWS,
   MAX_ARMIES,
   PICK_MODES,
   armyLabel,
-  armySourceWord,
   dayChangePct,
-  heldArmies,
   fmtFunding,
   fmtPct,
   liveUrl,
   mergeSamples,
   oiUsd,
-  openingArmies,
-  parseArmyMemory,
-  parseFrontTokens,
   parseFrontWindow,
   resolveMarket,
   parsePickMode,
   pickList,
   pushSample,
   rankArmies,
-  serializeArmyMemory,
   windowMinutes,
   type ArmyContext,
-  type ArmyMemory,
-  type ArmySource,
   type BattleView,
   type FrontWindow,
   type PctRange,
@@ -60,9 +49,10 @@ import {
 } from '@/lib/battle'
 import { midsFeed, readArmyContexts, readFrontCandles } from '@/lib/battle-feed'
 import { FOLLOW_USD, fmtClock, fmtPrice, fmtUsd, followAsk, mergeFills, type FollowAsk, type TapeFill, type TapeSide, type TapeSource } from '@/lib/tape'
-import { connectTape, readTapeUniverse, type FeedStatus } from '@/lib/tape-feed'
+import { connectTape, type FeedStatus } from '@/lib/tape-feed'
 import { PERP_VENUES } from '@/lib/dune'
 import { useMarketPick } from '@/lib/use-market-pick'
+import { MAX_PICK, armiesOf, armySliceNote, pickSourceWord } from '@/lib/market-pick'
 import PickSheet from '@/components/live/PickSheet'
 import ArmAlert from '@/components/live/ArmAlert'
 import { buildScene, drawFront, drawMap, drawSiege, type ArmyFrame, type Inks, type Particle } from './battle-draw'
@@ -70,10 +60,6 @@ import { buildScene, drawFront, drawMap, drawSiege, type ArmyFrame, type Inks, t
 const MAX_PARTICLES = 400
 const LOG_ROWS = 40
 const KEEP_MS = 25 * 3600_000
-/** How long the opening pick holds for a wallet's holdings before the venue's pick paints. */
-const HELD_WAIT_MS = 4000
-/** How long the venue gets to answer before the fallback trio paints. */
-const VENUE_WAIT_MS = 6000
 
 interface WarEvent {
   id: string
@@ -106,15 +92,15 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
   const onPage = seat === 'page'
   // THE ONE PICK (GTM squad 2026-10-13): lane PICK makes `armies` follow it; ARENA's sheet reads it.
   const pick = useMarketPick({ seat })
-  // The URL is the page's: the deck's stage reads none of it (`/?t=` is nobody's).
-  const urlArmies = useMemo(() => (onPage ? initialArmies() : []), [onPage])
-  const memory = useMemo(() => readArmyMemory(), [])
-  // The URL's own armies lead; else what this browser set by hand last time.
-  // Anything else (holdings, the venue) is decided once the reads answer.
-  const [armies, setArmies] = useState<string[]>(() => (urlArmies.length ? urlArmies : memory?.armies ?? []))
-  const [source, setSource] = useState<ArmySource | null>(() => (urlArmies.length ? 'url' : memory ? 'memory' : null))
+  // The armies are the pick's first five (lib/market-pick armiesOf): the URL,
+  // the memory, the watchlist, the wallet and the venue's gainers are the
+  // store's to decide (lib/use-market-pick) — the page seat reads `?t=`, the
+  // deck's stage reads none of it (`/?t=` is nobody's).
+  const armies = useMemo(() => armiesOf(pick.markets), [pick.markets])
+  const universe = pick.universe
   const [since, setSince] = useState<FrontWindow>(() => (onPage ? initialWindow() : parseFrontWindow(null)))
-  const [pickMode, setPickMode] = useState<PickMode>(() => (onPage ? initialPick(memory) : (memory?.pick ?? 'gainers')))
+  // Which venue list the chips show; a "fill from" press writes the pick by hand.
+  const [pickMode, setPickMode] = useState<PickMode>(() => (onPage ? initialPick() : 'gainers'))
   const onReportRef = useRef(onReport)
   onReportRef.current = onReport
   const onFillsRef = useRef(onFills)
@@ -123,10 +109,7 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
   onLeaderRef.current = onLeader
   const tapeSourceRef = useRef<TapeSource>('dune')
   const reportedLeaderRef = useRef<string | null>(null)
-  const [heldWaited, setHeldWaited] = useState(false)
-  const [venueWaited, setVenueWaited] = useState(false)
   const [status, setStatus] = useState<FeedStatus>('idle')
-  const [universe, setUniverse] = useState<string[]>([])
   const [paused, setPaused] = useState(false)
   const [full, setFull] = useState(false)
   const [tick, setTick] = useState(0)
@@ -149,8 +132,6 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
   const leaderRef = useRef<string | null>(null)
   const framesRef = useRef<ArmyFrame[]>([])
   const reducedRef = useRef(false)
-  /** A hand touched the picker: defaults stop moving and the memory writes. */
-  const handRef = useRef(false)
 
   const mainRef = useRef<HTMLElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -193,33 +174,18 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
   )
 
   // ── URL (the page's alone — the deck's stage never rewrites `/`) ─────
+  // `?t=` carries the whole pick (lib/use-market-pick mirrors the same
+  // value); nothing is written until the pick has painted.
   useEffect(() => {
-    if (!onPage || typeof window === 'undefined') return
-    const url = new URL(liveUrl(view, armies, since, window.location.pathname), window.location.origin)
+    if (!onPage || typeof window === 'undefined' || !pick.ready) return
+    const url = new URL(liveUrl(view, pick.markets, since, window.location.pathname), window.location.origin)
     if (pickMode !== 'gainers') url.searchParams.set('pick', pickMode)
     window.history.replaceState(window.history.state, '', url.pathname + url.search)
-  }, [onPage, view, armies, since, pickMode])
+  }, [onPage, view, pick.markets, pick.ready, since, pickMode])
 
-  // ── The universe (for the add box) ────────────────────────────────────
-  useEffect(() => {
-    const ac = new AbortController()
-    readTapeUniverse(ac.signal).then(({ main, xyz }) => {
-      if (ac.signal.aborted) return
-      const names = [...main, ...xyz].filter((r) => !r.delisted).sort((a, b) => b.volumeUsd - a.volumeUsd).map((r) => r.name)
-      setUniverse(names)
-      // The URL spells a market in caps; the venue spells kPEPE with its k.
-      // Once the list is here, every army takes the venue's spelling.
-      if (names.length) {
-        setArmies((prev) => {
-          const fixed = prev.map((m) => resolveMarket(m, names) ?? m)
-          return fixed.some((m, i) => m !== prev[i]) ? fixed : prev
-        })
-      }
-    })
-    return () => ac.abort()
-  }, [])
+  // ── The universe (for the add box) is the store's (pick.universe) ─────
 
-  // ── Contexts: mark, OI, funding, 24h; the opening pick ────────────────
+  // ── Contexts: mark, OI, funding, 24h (the scoreboard, the chips) ──────
   useEffect(() => {
     const ac = new AbortController()
     const read = () => readArmyContexts(ac.signal).then((m) => {
@@ -235,47 +201,18 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
     }
   }, [])
 
-  // ── The opening pick: holdings, else the venue, else the fallback ─────
-  // (lib/battle openingArmies has the order). A wallet that may still
-  // answer — connected, restoring, or remembered by this browser — holds
-  // the venue's pick for a few seconds; holdings that land later still
-  // replace a default while no hand has touched the picker.
+  // ── The opening pick is the store's (lib/use-market-pick: the URL, the
+  // memory, the watchlist, the wallet held ≤4s, the venue's gainers, the
+  // fallback trio after 6s). Only a hand writes the memory, and that is the
+  // store's too — this file writes none.
   const { signedOut } = useSession()
-  const held = useHeld()
-  const heldPick = useMemo(() => (held && universe.length ? heldArmies(held, universe) : null), [held, universe])
-  useEffect(() => {
-    const a = setTimeout(() => setHeldWaited(true), HELD_WAIT_MS)
-    const b = setTimeout(() => setVenueWaited(true), VENUE_WAIT_MS)
-    return () => {
-      clearTimeout(a)
-      clearTimeout(b)
-    }
-  }, [])
   // The stage's waiting words are decided after mount: the server knows no
   // URL, no memory and no wallet, and React leaves a mismatched single text
   // child as the server wrote it, so a word computed during hydration would
   // sit stale until the overlay unmounts (found 2026-10-07, hidden pane).
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
-  const waitingForWallet = mounted && source === null && !signedOut && !heldWaited && heldPick === null
-  useEffect(() => {
-    if (handRef.current || source === 'url' || source === 'memory' || source === 'held') return
-    const venue = pickList(ctxRef.current, pickMode).slice(0, DEFAULT_PICK).map((r) => r.market)
-    const d = openingArmies({ url: [], memory: null, held: heldPick, venue, waitForHeld: !signedOut && !heldWaited })
-    if (!d) return
-    // A default already painted stays until holdings or a hand replace it;
-    // the fallback waits for the venue's turn.
-    if (d.source !== 'held' && source !== null) return
-    if (d.source === 'fallback' && !venueWaited) return
-    setArmies(d.armies)
-    setSource(d.source)
-  }, [ctxTick, heldPick, heldWaited, venueWaited, signedOut, pickMode, source])
-
-  // ── Memory: only a hand-set field is remembered ───────────────────────
-  useEffect(() => {
-    if (!handRef.current || !armies.length) return
-    writeArmyMemory({ armies, pick: pickMode, at: Date.now() })
-  }, [armies, pickMode])
+  const waitingForWallet = mounted && !pick.ready && !signedOut
 
   // ── Candles: the ground before the page opened ────────────────────────
   useEffect(() => {
@@ -459,54 +396,48 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
     hoverRef.current = null
   }, [])
 
-  // ── Armies: pick, add, remove ─────────────────────────────────────────
-  const byHand = useCallback(() => {
-    handRef.current = true
-    setSource('hand')
-  }, [])
+  // ── Armies: pick, add, remove — every one a hand on THE pick ──────────
+  // The field marches the pick's first five; the chips add to (or drop from)
+  // the one pick every live surface reads, so a market set here is on the
+  // pulse, the tape and the deck too. The last army never drops from here
+  // (the field needs one); the pulse's × can clear the row.
   const toggleArmy = useCallback(
     (m: string) => {
-      const cur = stateRef.current.armies
-      const changes = cur.includes(m) ? cur.length > 1 : cur.length < MAX_ARMIES
-      if (!changes) return
-      byHand()
-      setArmies((prev) => {
-        if (prev.includes(m)) return prev.length > 1 ? prev.filter((x) => x !== m) : prev
-        if (prev.length >= MAX_ARMIES) return prev
-        return [...prev, m]
-      })
+      const cur = pick.markets
+      if (cur.includes(m)) {
+        if (cur.length > 1) pick.remove(m)
+        return
+      }
+      if (cur.length >= MAX_PICK) return
+      pick.set([...cur, m], 'hand')
     },
-    [byHand],
+    [pick],
   )
   // Your own armies: several at once (commas or spaces), each resolved to
   // the venue's spelling; a name the venue lists no market for is said so.
   const addOwn = useCallback(
     (raw: string) => {
-      const r = addOwnMarkets(raw, universe, armies)
-      if (r.added.length) {
-        byHand()
-        setArmies((prev) => [...prev, ...r.added.filter((m) => !prev.includes(m))].slice(0, MAX_ARMIES))
-      }
+      const r = pick.add(raw)
       if (r.unknown.length) setAddNote({ text: `Hyperliquid lists no market called ${r.unknown.map((u) => u.toUpperCase()).join(', ')}`, tone: 'warn' })
-      else if (r.full.length) setAddNote({ text: `the field is full — drop an army to add ${r.full.map(armyLabel).join(', ')}`, tone: 'dim' })
+      else if (r.full.length) setAddNote({ text: `your pick holds ${MAX_PICK} — drop one to add ${r.full.map(armyLabel).join(', ')}`, tone: 'dim' })
       else setAddNote(null)
       setDraft(r.unknown.join(', '))
     },
-    [armies, universe, byHand],
+    [pick],
   )
   useEffect(() => {
     if (!addNote) return
     const id = setTimeout(() => setAddNote(null), 6000)
     return () => clearTimeout(id)
   }, [addNote])
+  // "Fill from": the venue's top three of that list become your pick, by hand.
   const pickTop = useCallback(
     (mode: PickMode) => {
-      byHand()
       setPickMode(mode)
       const top = pickList(ctxRef.current, mode).slice(0, DEFAULT_PICK).map((r) => r.market)
-      if (top.length) setArmies(top)
+      if (top.length) pick.set(top, 'hand')
     },
-    [byHand],
+    [pick],
   )
 
   // ── The scoreboard reads the last frame ───────────────────────────────
@@ -516,21 +447,24 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
   const unit = unitRef.current
   const minutes = windowMinutes(since)
   const viewDef = LIVE_VIEWS.find((v) => v.id === view)!
-  const custom = armies.filter((m) => !picks.some((p) => p.market === m))
+  const custom = pick.markets.filter((m) => !picks.some((p) => p.market === m))
   const slotOf = (m: string) => ARMY_SLOTS[armies.indexOf(m)] ?? 1
-  const sourceWord = source ? armySourceWord(source) : null
+  const sourceWord = pick.ready ? pickSourceWord(pick.source) : null
+  const sliceNote = armySliceNote(pick.markets)
+  const fieldName = viewDef.label.replace(/^The /, '')
+  const pickFull = pick.markets.length >= MAX_PICK
 
   const sinceEl = (
     <div className="battle__since" role="group" aria-label="Ground is measured since">
       {FRONT_WINDOWS.map((w) => (
-        <button key={w.id} type="button" className={since === w.id ? 'is-on' : undefined} aria-pressed={since === w.id} onClick={() => setSince(w.id)}>
+        <button key={w.id} type="button" className={since === w.id ? 'is-on' : undefined} aria-pressed={since === w.id} onClick={() => setSince(w.id)} data-journey={`Measure ${fieldName} since ${w.label}`}>
           {w.label}
         </button>
       ))}
     </div>
   )
   const holdEl = (
-    <button type="button" className="battle__btn" onClick={togglePause} aria-pressed={paused} title={paused ? 'Resume the field' : 'Hold the field'}>
+    <button type="button" className="battle__btn" onClick={togglePause} aria-pressed={paused} title={paused ? 'Resume the field' : 'Hold the field'} data-journey={`${paused ? 'Resume' : 'Hold'} ${fieldName}`}>
       {paused ? <Play size={13} strokeWidth={2.2} /> : <Pause size={13} strokeWidth={2.2} />}
       <span>{paused ? 'Resume' : 'Hold'}</span>
     </button>
@@ -555,7 +489,7 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
           <div className="battle__controls">
             {sinceEl}
             {holdEl}
-            <button type="button" className="battle__btn" onClick={toggleFull} title={full ? 'Leave fullscreen' : 'Fullscreen'}>
+            <button type="button" className="battle__btn" onClick={toggleFull} title={full ? 'Leave fullscreen' : 'Fullscreen'} data-journey={`${full ? 'Leave' : 'Open'} ${fieldName} fullscreen`}>
               {full ? <Minimize2 size={13} strokeWidth={2.2} /> : <Maximize2 size={13} strokeWidth={2.2} />}
               <span>{full ? 'Exit' : 'Fullscreen'}</span>
             </button>
@@ -575,48 +509,54 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
         {/* ── The picker: one to five armies ── */}
         <div className="battle__picker" role="group" aria-label="Armies">
           <div className="battle__pickhead">
-            <div className="battle__modes" role="group" aria-label="Pick from">
+            <div className="battle__modes" role="group" aria-label="Fill from">
               {PICK_MODES.map((m) => (
-                <button key={m.id} type="button" className={pickMode === m.id ? 'is-on' : undefined} aria-pressed={pickMode === m.id} onClick={() => pickTop(m.id)} title={m.hint}>
+                <button key={m.id} type="button" className={pickMode === m.id ? 'is-on' : undefined} aria-pressed={pickMode === m.id} onClick={() => pickTop(m.id)} title={`Fill your pick from ${m.label.toLowerCase()} — ${m.hint}`} data-journey={`Fill ${fieldName} from ${m.id === 'gainers' ? 'top gainers' : 'biggest'}`}>
                   {m.label}
                 </button>
               ))}
             </div>
             <span className="battle__count mono">
-              {armies.length} of {MAX_ARMIES} armies{sourceWord ? ` · ${sourceWord}` : ''} · click to add or drop
+              {armies.length} of {MAX_ARMIES} armies{sourceWord ? ` · ${sourceWord}` : ''}{sliceNote ? ` · ${sliceNote}` : ''} · click to add or drop
             </span>
             <PickSheet pick={pick} seat="battle" />{/* seat: ARENA (GTM squad 2026-10-13) */}
           </div>
           <div className="battle__chips">
             {picks.map((p) => {
-              const on = armies.includes(p.market)
-              const fullUp = !on && armies.length >= MAX_ARMIES
+              const on = pick.markets.includes(p.market)
+              const marching = armies.includes(p.market)
+              const fullUp = !on && pickFull
               return (
                 <button
                   key={p.market}
                   type="button"
                   className={`battle__pick${on ? ' is-on' : ''}`}
-                  style={on ? ({ ['--army-ink' as string]: `var(--army-${slotOf(p.market)})` } as React.CSSProperties) : undefined}
+                  style={marching ? ({ ['--army-ink' as string]: `var(--army-${slotOf(p.market)})` } as React.CSSProperties) : undefined}
                   aria-pressed={on}
                   disabled={fullUp}
                   onClick={() => toggleArmy(p.market)}
-                  title={fullUp ? 'Five armies is the field — drop one first' : on ? 'Drop this army' : 'Add this army'}
+                  title={fullUp ? `Your pick holds ${MAX_PICK} — drop one first` : on ? (marching ? 'Drop this army' : `In your pick — the first ${MAX_ARMIES} march`) : 'Add this army'}
+                  data-journey={`${on ? 'Drop' : 'Add'} ${armyLabel(p.market)} on ${fieldName}`}
                 >
-                  {on && <span className="battle__army-dot" aria-hidden />}
+                  {marching && <span className="battle__army-dot" aria-hidden />}
                   <span className="battle__pick-n">{armyLabel(p.market)}</span>
                   <span className={`battle__pick-v mono ${pickMode === 'gainers' ? (p.dayPct !== null && p.dayPct >= 0 ? 'up' : 'down') : ''}`}>{pickMode === 'gainers' ? fmtPct(p.dayPct) : fmtUsd(p.oiUsd)}</span>
                 </button>
               )
             })}
             {custom.map((m) => (
-              <button key={m} type="button" className="battle__pick is-on" style={{ ['--army-ink' as string]: `var(--army-${slotOf(m)})` } as React.CSSProperties} aria-pressed onClick={() => toggleArmy(m)} title="Drop this army">
-                <span className="battle__army-dot" aria-hidden />
+              <button key={m} type="button" className="battle__pick is-on" style={armies.includes(m) ? ({ ['--army-ink' as string]: `var(--army-${slotOf(m)})` } as React.CSSProperties) : undefined} aria-pressed onClick={() => toggleArmy(m)} title={armies.includes(m) ? 'Drop this army' : `In your pick — the first ${MAX_ARMIES} march`} data-journey={`Drop ${armyLabel(m)} on ${fieldName}`}>
+                {armies.includes(m) && <span className="battle__army-dot" aria-hidden />}
                 <span className="battle__pick-n">{armyLabel(m)}</span>
                 <span className="battle__pick-v mono">yours</span>
               </button>
             ))}
-            <form
+          </div>
+          {/* The add box sits after the chips, not in them (PHONE, 2026-10-13: on a phone the armies become one
+              scrolling row and the box must never scroll away with them). */}
+          <form
               className="battle__add"
+              style={{ marginTop: 8 }}
               onSubmit={(e) => {
                 e.preventDefault()
                 if (draft.trim()) addOwn(draft)
@@ -633,17 +573,17 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
                   const picked = (e.nativeEvent as InputEvent).inputType === 'insertReplacementText'
                   if (picked && resolveMarket(v, universe)) addOwn(v)
                 }}
-                placeholder={armies.length >= MAX_ARMIES ? 'field is full' : '+ your own · near, pepe, nvda'}
+                placeholder={pickFull ? 'your pick is full' : '+ your own · near, pepe, nvda'}
                 aria-label="Add your own tokens, several with commas"
                 autoComplete="off"
-                disabled={armies.length >= MAX_ARMIES}
+                disabled={pickFull}
               />
               <datalist id="battle-universe">
                 {universe.slice(0, 400).map((m) => (
                   <option key={m} value={m} />
                 ))}
               </datalist>
-              <button type="submit" className="battle__addbtn" disabled={armies.length >= MAX_ARMIES || !draft.trim()}>
+              <button type="submit" className="battle__addbtn" disabled={pickFull || !draft.trim()} data-journey={`Add markets on ${fieldName}`}>
                 Add
               </button>
               {addNote ? (
@@ -654,12 +594,11 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
                 <span className="battle__addnote mono battle__addnote--dim">commas add several</span>
               )}
             </form>
-          </div>
         </div>
 
         <div className="battle__stage" ref={stageRef} onMouseMove={onMove} onMouseLeave={onLeave}>
           <canvas ref={canvasRef} className="battle__canvas" role="img" aria-label={`${viewDef.label}: ${viewDef.blurb}`} />
-          {frames.every((a) => a.track.length === 0) && <div className="battle__empty mono">{!mounted || armies.length === 0 ? (waitingForWallet ? 'reading your wallet…' : 'picking the armies…') : status === 'live' ? 'first prices landing…' : 'reaching the venue…'}</div>}
+          {frames.every((a) => a.track.length === 0) && <div className="battle__empty mono">{!mounted || !pick.ready ? (waitingForWallet ? 'reading your wallet…' : 'picking the armies…') : armies.length === 0 ? 'add a market above' : status === 'live' ? 'first prices landing…' : 'reaching the venue…'}</div>}
         </div>
         {onPage && (
         <p className="battle__legend mono">
@@ -723,12 +662,12 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
                     <td>
                       <div className="battle__recruit">
                         {long && (
-                          <button type="button" className="battle__chip battle__chip--buy" onClick={() => act(long.ask)} title={long.ask}>
+                          <button type="button" className="battle__chip battle__chip--buy" onClick={() => act(long.ask)} title={long.ask} data-journey={`Recruit long ${armyLabel(army.market)} on ${fieldName}`}>
                             {long.label} <span className="battle__chip-usd">${FOLLOW_USD}</span>
                           </button>
                         )}
                         {short && (
-                          <button type="button" className="battle__chip battle__chip--sell" onClick={() => act(short.ask)} title={short.ask}>
+                          <button type="button" className="battle__chip battle__chip--sell" onClick={() => act(short.ask)} title={short.ask} data-journey={`Recruit short ${armyLabel(army.market)} on ${fieldName}`}>
                             {short.label} <span className="battle__chip-usd">${FOLLOW_USD}</span>
                           </button>
                         )}
@@ -787,7 +726,7 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
                 </div>
                 <p className="battle__evt">{e.text}</p>
                 {e.follow && (
-                  <button type="button" className={`battle__chip battle__chip--${e.follow.tone}`} style={{ marginTop: 6 }} onClick={() => act(e.follow!.ask)} title={e.follow.ask}>
+                  <button type="button" className={`battle__chip battle__chip--${e.follow.tone}`} style={{ marginTop: 6 }} onClick={() => act(e.follow!.ask)} title={e.follow.ask} data-journey={`Follow the war log on ${armyLabel(e.market)}`}>
                     {e.follow.label} <span className="battle__chip-usd">${FOLLOW_USD}</span>
                   </button>
                 )}
@@ -804,40 +743,18 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
 
 // ── Initial state from the URL ────────────────────────────────────────────────
 
-function initialArmies(): string[] {
-  if (typeof window === 'undefined') return []
-  return parseFrontTokens(new URLSearchParams(window.location.search).get('t'))
-}
-
 function initialWindow(): FrontWindow {
   if (typeof window === 'undefined') return parseFrontWindow(null)
   return parseFrontWindow(new URLSearchParams(window.location.search).get('since'))
 }
 
-function initialPick(memory: ArmyMemory | null): PickMode {
+function initialPick(): PickMode {
   if (typeof window === 'undefined') return 'gainers'
-  const raw = new URLSearchParams(window.location.search).get('pick')
-  return raw ? parsePickMode(raw) : (memory?.pick ?? 'gainers')
+  return parsePickMode(new URLSearchParams(window.location.search).get('pick'))
 }
 
-// ── The browser's memory of a hand-set field (lib/battle has the shape) ─────
-
-function readArmyMemory(): ArmyMemory | null {
-  if (typeof window === 'undefined') return null
-  try {
-    return parseArmyMemory(window.localStorage.getItem(ARMY_MEMORY_KEY))
-  } catch {
-    return null
-  }
-}
-
-function writeArmyMemory(m: ArmyMemory): void {
-  try {
-    window.localStorage.setItem(ARMY_MEMORY_KEY, serializeArmyMemory(m))
-  } catch {
-    // storage blocked — the field just isn't remembered
-  }
-}
+// ── The memory of a hand-set field is lib/market-pick's (one key for every
+// live surface; the old army key is read once and carried over there). ─────
 
 // ── Inks from the page's tokens ──────────────────────────────────────────────
 
