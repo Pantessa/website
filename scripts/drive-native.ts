@@ -635,7 +635,7 @@ type Opened = { ctx: Pw; page: Pw; chatPosts: number; errors: string[]; address:
 
 let PW: Pw = null
 function pw(): Pw {
-  if (!PW) PW = createRequire(ANCHOR)('playwright-core')
+  if (!PW) PW = process.env.PLAYWRIGHT_CORE ? createRequire(import.meta.url)(process.env.PLAYWRIGHT_CORE) : createRequire(ANCHOR)('playwright-core')
   return PW
 }
 
@@ -1934,7 +1934,7 @@ async function main() {
   let webkitNote = ''
   try {
     const exe = webkit.executablePath()
-    if (!existsSync(exe)) webkitNote = `Playwright WebKit is not installed for playwright-core ${createRequire(ANCHOR)('playwright-core/package.json').version} (expects ${exe.split('/ms-playwright/')[1]?.split('/')[0] ?? exe}); only an older build is on this Mac and launching it hangs. Owner step: \`npx playwright install webkit\`.`
+    if (!existsSync(exe)) webkitNote = `Playwright WebKit is not installed for playwright-core ${(process.env.PLAYWRIGHT_CORE ? createRequire(import.meta.url)(`${process.env.PLAYWRIGHT_CORE}/package.json`) : createRequire(ANCHOR)('playwright-core/package.json')).version} (expects ${exe.split('/ms-playwright/')[1]?.split('/')[0] ?? exe}); only an older build is on this Mac and launching it hangs. Owner step: \`npx playwright install webkit\`.`
   } catch (e) {
     webkitNote = `WebKit unavailable: ${(e as Error).message.split('\n')[0]}`
   }

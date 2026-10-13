@@ -2969,6 +2969,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             onCancel={onVoiceCancel}
             onStateChange={setVoiceState}
             disabled={loading || !!pendingPayment}
+            // 44px below lg (its own md: step shrank it to 36px on a landscape
+            // phone, 844×390 — drive:native targets, polish R1).
+            className="max-lg:w-11 max-lg:h-11"
           />
           <button
             onClick={() => sendComposer()}

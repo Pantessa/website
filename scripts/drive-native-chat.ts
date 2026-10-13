@@ -1144,8 +1144,8 @@ async function desktopPass(browser: Pw) {
 }
 
 async function main() {
-  const require_ = createRequire('/Users/nategeier/anchor.js')
-  const { chromium, webkit, devices } = require_('playwright-core') as { chromium: Pw; webkit: Pw; devices: Pw }
+  const require_ = createRequire(process.env.PLAYWRIGHT_CORE ? import.meta.url : '/Users/nategeier/anchor.js')
+  const { chromium, webkit, devices } = require_(process.env.PLAYWRIGHT_CORE || 'playwright-core') as { chromium: Pw; webkit: Pw; devices: Pw }
   if (SHOTS) mkdirSync(SHOTS, { recursive: true })
   const browsers: Record<string, Pw> = {}
   const get = async (engine: 'webkit' | 'chrome') => {

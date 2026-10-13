@@ -31,6 +31,8 @@ import ChatInterface from '@/components/ChatInterface'
 import ChatLoader from '@/components/ChatLoader'
 import { SignatureWaitModal, useSignatureWait } from '@/components/SignatureWaitTakeover'
 import { useBackToClose } from '@/components/mobile/useBackToClose'
+import Sheet from '@/components/mobile/Sheet'
+import { usePhonePosture } from '@/components/chat/usePhonePosture'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { I_STEPS } from '@/lib/first-run'
 import KeepItBar from '@/components/guide/KeepItBar'
@@ -154,6 +156,24 @@ export default function IntentRuntime({
   const [started, setStarted] = useState(false)
   const [built, setBuilt] = useState(false)
   const [signed, setSigned] = useState(false)
+  // THE KEEP-IT SHEET (squad polish R1, FLOW-MOBILE; rule B4): on a phone the
+  // post-receipt "keep it" bar is a Sheet — it rises once, after the
+  // signature (the answer to the user's own tap, never on load), and every
+  // way out (scrim, ✕, swipe, back) is "Not now": the same sessionStorage
+  // key components/guide/KeepItBar reads, so the inline bar below stays
+  // quiet too and a reload does not re-ask. At lg+ the inline bar is
+  // unchanged (the drive's desktop baseline).
+  const phone = usePhonePosture()
+  const [keepSheetClosed, setKeepSheetClosed] = useState(false)
+  const quietKeep = () => {
+    try {
+      window.sessionStorage.setItem(`pantessa.keep.notnow.i:${slug}`, '1')
+    } catch {
+      /* private mode: forgets on reload, that is all */
+    }
+    setKeepSheetClosed(true)
+  }
+  const keepSheetOpen = phone && signed && needsSignIn && !keepSheetClosed
   // What the receipt said (the keep-it bar quotes it): the dollars and the explorer link.
   const [receipt, setReceipt] = useState<{ txUrl?: string; valueUsd?: number } | null>(null)
   // The Decline verb (doors run) — addressed cards only, recipient only.
@@ -734,7 +754,9 @@ export default function IntentRuntime({
               name on a blocklist page deserves the same disclosure here
               (squad round 2, ideation premortem). */}
           <p className={`mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] max-sm:order-5 ${hasCreator ? 'mt-4' : 'mt-10 pt-4 border-t border-[var(--line)] max-w-md w-full'}`}>
-            <Link href="/rebrand" className="hover:text-[color:var(--fg)] underline decoration-dotted underline-offset-2">
+            {/* A 10.5px mono line is a 14px-tall link; under a thumb it
+                hit-tests 44px (the ::after hit area, polish R1). */}
+            <Link href="/rebrand" data-journey="Open rebrand record" className="relative inline-block py-[15px] -my-[15px] hover:text-[color:var(--fg)] underline decoration-dotted underline-offset-2">
               Pantessa · formerly Yeetful
             </Link>
           </p>
@@ -1061,12 +1083,19 @@ export default function IntentRuntime({
           dashboard), and it comes AFTER the aha, never before it. Guest runs
           live in a local chat; signing in adopts it into the DB
           (session.tsx → adoptLocalChat). */}
-      {signed && needsSignIn && (
+      {signed && needsSignIn && !phone && (
         // THE KEEP-IT MOMENT (squad pre-gtm r3): what just happened, and one
         // warm invitation to keep it. Non-blocking; "Not now" quiets it.
         <div data-runtime-bar="" className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <KeepItBar id={`i:${slug}`} ask={ask} valueUsd={receipt?.valueUsd ?? null} txUrl={receipt?.txUrl ?? null} onKeep={() => void signIn()} busy={signingIn} />
         </div>
+      )}
+      {signed && needsSignIn && phone && (
+        <Sheet id="keep" open={keepSheetOpen} onClose={quietKeep} title="Keep this" description="Sign in once; the thread and the receipt stay yours." journey="Keep receipt">
+          <div className="px-4 pb-3" data-runtime-bar="" data-keep-sheet="">
+            <KeepItBar id={`i:${slug}`} ask={ask} valueUsd={receipt?.valueUsd ?? null} txUrl={receipt?.txUrl ?? null} onKeep={() => void signIn()} busy={signingIn} />
+          </div>
+        </Sheet>
       )}
       {signed && returnHref && redirectHost && (
         <div data-runtime-bar="" className="relative sticky bottom-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]" data-return-host-bar>
