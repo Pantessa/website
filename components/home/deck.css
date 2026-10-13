@@ -246,6 +246,14 @@
   .deck__tape td.deck__act { padding-left: 2px; }
   .deck__noact { white-space: normal; line-height: 12px; }
 
+  /* ── The tape stage's pick row (PICK, 2026-10-13: `.pulse__markets.deck__picks.deck__tapepick`, the pulse's 28px
+     chips) → one 44px scrolling row: every chip, its ×, the add field and the All chip are whole targets. ── */
+  .deck__tapepick { height: 44px; align-items: center; }
+  .deck__tapepick .pulse__m, .deck__tapepick .pulse__mx, .deck__tapepick .pulse__add input { height: 44px; }
+  .deck__tapepick .pulse__m { min-width: 44px; justify-content: center; }
+  .deck__tapepick .pulse__mx { min-width: 44px; padding: 0 12px 0 8px; }
+  .deck__tapepick .pulse__add input:focus { width: 150px; }
+
   /* ── The battle channels ── (the one-row controls and the scrolling army row are battle.css's PHONE block,
      both seats) */
   /* The Siege's radius is min(w, h) / 2 − 40 (battle-draw): a 200px field drew a 59px arena. As tall as the
@@ -283,6 +291,7 @@
   .deck__chan .battle--stage .battle__table th:nth-child(2) { width: 25%; }
   .deck__chan .battle--stage .battle__table th:nth-child(3) { width: 24%; }
   .deck__chan .battle--stage .battle__table th:nth-child(8) { width: 42%; }
+  .deck__tape .deck__chip { padding: 0 6px; font-size: 10.5px; } /* "Short AZTEC" was cut by 2px at 320 */
 }
 /* PHONE — the seats other lanes mount in the bar (ALERTS's `.armalert--deck`): on a phone the bar is a row of 36px pills
    (the channel idiom), so a seat there is a 36px bordered pill with a 44px hit area — never a 44px item that grows the bar
@@ -292,4 +301,22 @@
   @media (hover: none) {
     .deck__bar .armalert--deck::after { content: ''; position: absolute; inset: -4px 0; }
   }
+}
+/* PHONE — ARENA's sheet trigger in the bar ("+ Your markets", 2026-10-13) sat AFTER the door chip, at x=462 — past
+   the bar's right edge at every phone width (a returning visitor never saw it without scrolling the bar). It rides
+   second, after the switch; the 34px "Change" trigger in the stage's pick head and the tape's row gets a 44px hit
+   area (it measured 83×34 in every battle and tape cell). */
+@media (max-width: 640px) {
+  .deck__flick { order: -2; }
+  .deck__bar .picksheet--deck { order: -1; }
+  @media (hover: none) {
+    .deck__stage .picksheet__trigger { position: relative; }
+    .deck__stage .picksheet__trigger::after { content: ''; position: absolute; inset: -5px 0; }
+  }
+}
+/* PHONE — at 320 the bar is 286px: Book (88) + the pill (118) + Pulse (77) don't fit, and the picked channel must stay
+   in view (measured: Pulse 238–315 against a bar ending at 303). Under 375 the pill keeps its place after the channels
+   (the sheet opens by itself on a first visit). */
+@media (max-width: 374px) {
+  .deck__bar .picksheet--deck { order: 0; }
 }
