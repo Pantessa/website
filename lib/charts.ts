@@ -96,6 +96,9 @@ const COINBASE_USD = new Set([
   'LINK', 'UNI', 'AAVE', 'LDO', 'CRV', 'COMP', 'MKR', 'SNX', 'MORPHO',
   'ARB', 'OP', 'POL', 'SUI', 'APT', 'INJ', 'TIA', 'FIL', 'ONDO', 'ENA',
   'PEPE', 'SHIB', 'WLD', 'JTO', 'JUP', 'AERO', 'EIGEN',
+  // Base-native and newer listings (probed on Coinbase Exchange 2026-10-13,
+  // Nate looking up VIRTUAL): every one answers /products/<SYM>-USD.
+  'VIRTUAL', 'DEGEN', 'ZRO', 'WELL', 'TOSHI', 'KAITO', 'CLANKER', 'SPX', 'STRK', 'PENDLE', 'PYTH', 'W', 'ZEC', 'SEI',
 ])
 
 /** Wrapped/staked forms that chart as their underlying USD pair. */
@@ -107,7 +110,7 @@ const COINBASE_ALIASES: Record<string, string> = {
 }
 
 /** HL perp listings we chart when Coinbase has no USD product. */
-const HYPERLIQUID_PERPS = new Set(['HYPE', 'SYRUP', 'FARTCOIN'])
+const HYPERLIQUID_PERPS = new Set(['HYPE', 'SYRUP', 'FARTCOIN', 'BRETT', 'AIXBT'])
 
 /** Listed on Robinhood Chain but with NO quote on Robinhood's market-data
  *  feed (probed 2026-09-10 across all 201 listings: a batch historicals call
