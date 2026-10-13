@@ -25,6 +25,12 @@
 #   symbol_tradability ×12 before test:api — it rots after 24h)
 #   TESTAPI_ONLY=1  start the server and run only test:api (the control run uses this)
 set -u
+# Run from a private copy: bash reads a script as it executes, so editing the file
+# mid-gate (a 20-minute run) would make the running gate execute shifted bytes.
+if [ -z "${GTM3H_GATE_COPY:-}" ]; then
+  c=$(mktemp -t gtm3h-gate); cp "$0" "$c"
+  GTM3H_GATE_COPY=1 exec bash "$c" "$@"
+fi
 export PATH="$HOME/.nvm/versions/node/v26.10.0/bin:$PATH"
 WT=${WT:-/Users/nate/pantessa/website-gtm-3h-qa}
 PORT=${PORT:-4046}
@@ -124,6 +130,11 @@ oi=$(printf '%s' "$h" | grep -oE '<meta property="og:image" content="[^"]+"' | h
 h2=$(curl -s -m 40 -H 'x-yf-internal-run: 1' "$B/live")
 oi2=$(printf '%s' "$h2" | grep -oE '<meta property="og:image" content="[^"]+"' | head -1 | sed -E 's/.*content="([^"]+)"/\1/')
 row 'og:image /live?view=front&t=HYPE,ETH,BTC vs /live' "picked: ${oi:-**NONE**} · bare: ${oi2:-**NONE**}"
+# a hostile `t` / `view` must come back escaped (never a live tag in the HTML) and never 500
+x=$(curl -s -m 40 -o "$D/xss.html" -w '%{http_code}' -H 'x-yf-internal-run: 1' "$B/live?view=%22%3E%3Csvg%2Fonload%3Dalert(1)%3E&t=%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E,%22%3E%3Cscript%3Ealert(2)%3C%2Fscript%3E")
+raw=$(grep -oiE '<svg/onload=alert\(1\)>|<img src=x onerror=alert\(1\)>|"><script>alert\(2\)' "$D/xss.html" | head -3 | tr '\n' ' ')
+row 'hostile ?t= / ?view= on /live' "$([ "$x" = 200 ] && [ -z "$raw" ] && echo PASS || echo **FAIL**) — status $x$([ -n "$raw" ] && echo " · RAW TAG IN HTML: $raw")"
+
 fi # TESTAPI_ONLY
 
 # ── 7. test:api (quiet window on the shared TEST DB) ────────────────────────
