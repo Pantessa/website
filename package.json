@@ -53,6 +53,7 @@
     "probe:creator-split": "tsx scripts/probe-creator-split.ts",
     "probe:listings": "tsx scripts/action-gate-pins.ts --live",
     "pins:tape": "tsx scripts/tape-pins.ts",
+    "pins:prints": "tsx scripts/print-alert-pins.ts",
     "pins:battle": "tsx scripts/battle-pins.ts",
     "pins:ticket": "tsx scripts/order-ticket-pins.ts",
     "pins:guide": "tsx scripts/guide-pins.ts",
@@ -71,7 +72,8 @@
     "drive:growth-people": "tsx scripts/drive-growth-people.ts",
     "drive:i-mobile": "tsx scripts/drive-i-mobile.ts",
     "drive:ask-chart": "tsx scripts/drive-ask-chart.ts",
-    "drive:native": "tsx scripts/drive-native.ts"
+    "drive:native": "tsx scripts/drive-native.ts",
+    "drive:prints": "tsx scripts/drive-print-alerts.ts"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.111",

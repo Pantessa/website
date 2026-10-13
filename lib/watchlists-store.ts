@@ -483,6 +483,22 @@ const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[a-z]{2,}$/i
 
 export type CreateAlertResult = { alert: AlertShape } | { problem: string; status: number }
 
+/** An alert's optional mail recipient. The recipient must have confirmed
+ *  mail from us (the double-opt-in subscriber row) — otherwise any
+ *  signed-in wallet could point unlimited alerts at a stranger's inbox
+ *  (integration review, 2026-09-11). ONE rule for price alerts and the
+ *  print alerts (lib/print-alerts-store). */
+export async function readAlertEmail(raw: unknown): Promise<{ email: string | null } | { problem: string }> {
+  if (!(typeof raw === 'string' && raw.trim())) return { email: null }
+  const e = raw.trim().toLowerCase()
+  if (!EMAIL_RE.test(e)) return { problem: 'That email does not look deliverable.' }
+  const sub = await prisma.subscriber.findUnique({ where: { email: e }, select: { status: true } })
+  if (sub?.status !== 'verified') {
+    return { problem: `${e} hasn't confirmed mail from Pantessa yet — subscribe with it (footer form), click the confirm link, then set the alert. In-app notifications still work without it.` }
+  }
+  return { email: e }
+}
+
 export async function createAlert(
   owner: string,
   body: { symbol?: unknown; condition?: unknown; value?: unknown; basePrice?: unknown; actionAsk?: unknown; email?: unknown },
@@ -498,19 +514,9 @@ export async function createAlert(
   const problem = alertRuleProblem(rule)
   if (problem) return { problem, status: 400 }
   const actionAsk = typeof body.actionAsk === 'string' && body.actionAsk.trim() ? body.actionAsk.replace(/\s+/g, ' ').trim().slice(0, ASK_MAX) : null
-  let email: string | null = null
-  if (typeof body.email === 'string' && body.email.trim()) {
-    const e = body.email.trim().toLowerCase()
-    if (!EMAIL_RE.test(e)) return { problem: 'That email does not look deliverable.', status: 400 }
-    // The recipient must have confirmed mail from us (the double-opt-in
-    // subscriber row) — otherwise any signed-in wallet could point unlimited
-    // alerts at a stranger's inbox (integration review, 2026-09-11).
-    const sub = await prisma.subscriber.findUnique({ where: { email: e }, select: { status: true } })
-    if (sub?.status !== 'verified') {
-      return { problem: `${e} hasn't confirmed mail from Pantessa yet — subscribe with it (footer form), click the confirm link, then set the alert. In-app notifications still work without it.`, status: 400 }
-    }
-    email = e
-  }
+  const mail = await readAlertEmail(body.email)
+  if ('problem' in mail) return { problem: mail.problem, status: 400 }
+  const email = mail.email
   const row = await prisma.priceAlert.create({
     data: {
       id: mintSlug(10),

@@ -262,3 +262,17 @@
   .live__table th:nth-child(1) { width: 13%; }
   .live__table th:nth-child(4) { width: 18%; }
 }
+
+/* ── While you're away: the rules armed on the server (lib/print-alerts) ── */
+.live__server { border-top: 1px solid var(--line); margin-top: 10px; padding-bottom: 4px; flex: 0 0 auto; }
+.live__srules { margin: 0; padding: 0 14px; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.live__srule { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }
+.live__srule-n { font-size: 12px; font-weight: 500; color: var(--fg); min-width: 0; }
+.live__srule-w { font-size: 10px; color: var(--muted-2); }
+.live__sarm { flex: 0 0 auto; height: 26px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, var(--surf-1)); color: var(--accent); font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; font-family: var(--mk-font-ui); transition: filter .12s ease; }
+.live__sarm:hover { filter: brightness(1.08); }
+.live__sarm:disabled { opacity: .6; cursor: default; }
+.live__sarmed { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--accent); white-space: nowrap; }
+.live__sctl { height: 22px; min-width: 22px; padding: 0 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font-size: 11px; line-height: 1; cursor: pointer; }
+.live__sctl:hover { border-color: var(--accent); }
+@media (pointer: coarse) { .live__sarm, .live__sctl { min-height: 44px; } }

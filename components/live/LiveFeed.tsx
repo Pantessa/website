@@ -71,9 +71,10 @@ import { useWatchlists } from '@/components/markets/watchlist/useWatchlists'
 import { resolveMarket } from '@/lib/battle'
 import { MAX_OWN_MARKETS, OWN_SOURCE_NOTE, addLiveMarkets, chipRow, knownMarkets, openingOwnMarkets, readLiveMarketMemory, removeLiveMarket, watchlistMarkets, writeLiveMarketMemory, type OwnSource } from '@/lib/live-markets'
 import { DEFAULT_LIVE_VENUES, DUNE_VENUES, type DuneVenueId } from '@/lib/dune'
+import { BIG_PRINT_CHOICES } from '@/lib/print-alerts'
+import ServerTriggers from '@/components/live/ServerTriggers'
 
 const RULES: readonly TriggerRule[] = ['big-print', 'whale-repeat', 'flow-skew']
-const BIG_PRINT_CHOICES = [10_000, 50_000, 250_000, 1_000_000] as const
 const TAPE_ROWS = 80
 const EVENT_ROWS = 40
 /** The chip row on the firehose: this many of the busiest books. */
@@ -462,7 +463,7 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
       <MarketsSide label="Triggers">
         <div data-slot="triggers" className="live__rail">
           <GuideSeat surface="live" posture="desktop" />
-          <TriggersPanel armed={armed} setArmed={setArmed} thresholds={thresholds} setThresholds={setThresholds} events={events} onAct={act} chipOk={(f) => canTradeAsk(f.ask, tradable)}>
+          <TriggersPanel armed={armed} setArmed={setArmed} thresholds={thresholds} setThresholds={setThresholds} events={events} onAct={act} chipOk={(f) => canTradeAsk(f.ask, tradable)} market={filter} venues={venues}>
             <FeedsCard source={source} setSource={setSource} status={status} detail={statusDetail} venues={venues} setVenues={setVenues} relayNote={relayNote} />
           </TriggersPanel>
         </div>
@@ -707,6 +708,8 @@ function TriggersPanel({
   events,
   onAct,
   chipOk,
+  market,
+  venues,
   children,
 }: {
   armed: Set<TriggerRule>
@@ -716,6 +719,10 @@ function TriggersPanel({
   events: TriggerEvent[]
   onAct: (ask: string) => void
   chipOk: (f: FollowAsk) => boolean
+  /** The tape's market filter (`?m=`) — the scope a server rule is armed on. */
+  market: string | null
+  /** The Dune venues the page reads — what a server rule reads too. */
+  venues: readonly DuneVenueId[]
   /** The feeds card, seated between the rules and the fired events. */
   children?: React.ReactNode
 }) {
@@ -756,6 +763,7 @@ function TriggersPanel({
         ))}
       </ul>
       <p className="live__note mono">A trigger arms the ask. Your wallet signs it — nothing fires on its own.</p>
+      <ServerTriggers market={market} venues={venues} thresholds={thresholds} />
       {children}
       <header className="live__rh live__rh--fired">
         <span className="live__rk">Fired</span>

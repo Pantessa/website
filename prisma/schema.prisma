@@ -1742,6 +1742,66 @@ model AlertNotification {
   @@map("alert_notifications")
 }
 
+// ── Print alerts (2026-10-13) ───────────────────────────────────────────────
+// The /live trigger rules (lib/tape detectTriggers: big print · one taker,
+// repeatedly · one-sided minute) armed on the SERVER, so they outlive the
+// tab. /api/cron/prints reopens Dune's feed every minute from a stored
+// per-venue cursor (`?resume_after=`), consumes the minute it missed, runs
+// the same pure rules, and writes a fired rule through the price alerts'
+// own notification path (alert_notifications → the bell, lib/email). A rule
+// never flips to `fired`: a stream keeps printing, so it cools down per
+// market instead (lib/print-alerts). Nothing here sends the chip.
+
+/// One armed stream rule. `market` null = any market the rule's venues
+/// print; `venues` = the Dune venue ids it reads (lib/dune DUNE_VENUE_IDS);
+/// `thresholds` = the lib/tape TriggerThresholds it runs with (only
+/// `bigPrintUsd` is user-set today); `recent` = the dedupe + cooldown state
+/// the sweep carries between passes ({ events: string[], fires: { market: iso } }).
+model PrintAlert {
+  id          String    @id // mintSlug(10)
+  owner       String // lowercased SIWE wallet
+  rule        String // big-print | whale-repeat | flow-skew
+  market      String?
+  venues      Json
+  thresholds  Json
+  status      String    @default("active") // active | paused
+  /// Optional: also email the firing (a verified subscriber, lib/email).
+  email       String?
+  recent      Json?
+  lastFiredAt DateTime? @map("last_fired_at") @db.Timestamptz(6)
+  firedCount  Int       @default(0) @map("fired_count")
+  isInternal  Boolean   @default(false) @map("is_internal")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([owner, status])
+  @@index([status])
+  @@map("print_alerts")
+}
+
+/// Where the cron left each Dune venue: the last `sequence_number` it
+/// handled (persisted only after the frame was evaluated — the runbook's
+/// rule), when that frame's block was stamped, the pass lease (two passes
+/// never read one venue at once), and the last gap the venue refused to
+/// replay (`gap_from` = the cursor it rejected, `gap_at` = when) — a gap is
+/// recorded, never papered over.
+model FeedCursor {
+  venue       String    @id // lib/dune DuneVenueId
+  cursor      String?
+  tipAt       DateTime? @map("tip_at") @db.Timestamptz(6)
+  frames      Int       @default(0)
+  fills       Int       @default(0)
+  lastOutcome String?   @map("last_outcome")
+  lastPassAt  DateTime? @map("last_pass_at") @db.Timestamptz(6)
+  leaseUntil  DateTime? @map("lease_until") @db.Timestamptz(6)
+  gapFrom     String?   @map("gap_from")
+  gapAt       DateTime? @map("gap_at") @db.Timestamptz(6)
+  gapNote     String?   @map("gap_note")
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("feed_cursors")
+}
+
 // ── User flows (2026-09-18) ────────────────────────────────────────────────
 // Every table we had was keyed by wallet, and visitors were leaving before a
 // wallet existed. These three are the first-party, cookie-less journey log
