@@ -319,7 +319,9 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   const pickDesktop = (tab: RailTab) => {
     if (offChat) {
       const href = tabUrl(tab, '/chat', '')
-      if (openDoorFor(href)) return
+      // The chat is public to look at (lib/app-entry, 2026-10-13: "click apps
+      // without needing to sign into the wallet"): no door on the way in.
+      if (!isPublicAppPath(href) && openDoorFor(href)) return
       setRailTab(tab)
       setMainView(mainViewFor(tab))
       setMcpRailOpen(true)
@@ -357,7 +359,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         setPhoneScreen(action.screen)
         return
       case 'navigate':
-        if (openDoorFor(action.href)) return
+        if (!isPublicAppPath(action.href) && openDoorFor(action.href)) return
         // The arriving /chat shows the screen at once; the URL names it too,
         // so a reload agrees.
         if (action.href.startsWith('/chat')) setPhoneScreen(action.screen ?? ARRIVAL_SCREEN)

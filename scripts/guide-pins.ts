@@ -61,7 +61,7 @@ const deepEq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(
 /** A busy record: everything stamped. */
 function busyState(): GuideState {
   let s = freshGuideState()
-  s = markShown(s, 'pulse', NOW - 5_000)
+  s = markShown(s, 'links', NOW - 5_000)
   s = markShown(s, 'chart', NOW - 4_000)
   s = markDismissed(s, 'chart', 'symbol', NOW - 3_000)
   s = noteEvent(s, 'visited:home', NOW - 6_000)
@@ -74,20 +74,22 @@ function busyState(): GuideState {
 export function guidePins(check: Check): void {
   // ── The hints ─────────────────────────────────────────────────────────
   const ids = GUIDE_HINTS.map((h) => h.id)
+  // RE-PINNED 2026-10-13 (apps row): the splash's own lesson ("pulse" → the live tape) left — the deck at the
+  // top of `/` IS that lesson and the apps row took the card's seat. Six hints; the splash mounts no seat.
   check(
-    'guide: seven hints in the brief\'s priority order (pulse · chart · triggers · links · jobs · wallet · alerts), ids unique, every surface a GuideSurface, the storage key fixed',
-    ids.join(',') === 'pulse,chart,triggers,links,jobs,wallet,alerts' &&
-      new Set(ids).size === 7 &&
-      GUIDE_TOTAL === 7 &&
+    'guide: six hints in the brief\'s priority order (chart · triggers · links · jobs · wallet · alerts — the splash\'s pulse lesson retired 2026-10-13, the deck is it), ids unique, every surface a GuideSurface, the storage key fixed',
+    ids.join(',') === 'chart,triggers,links,jobs,wallet,alerts' &&
+      new Set(ids).size === 6 &&
+      GUIDE_TOTAL === 6 &&
       GUIDE_HINTS.every((h) => h.surfaces.length > 0 && h.surfaces.every((s) => GUIDE_SURFACES.includes(s))) &&
       GUIDE_STORAGE_KEY === 'pantessa.guide.v1' &&
-      guideIndexOf('pulse') === 1 &&
-      guideIndexOf('alerts') === 7,
+      guideIndexOf('chart') === 1 &&
+      guideIndexOf('alerts') === 6,
     ids.join(','),
   )
   check(
-    'guide: a fresh browser leads with the surface\'s own lesson — pulse on the splash, ask-the-chart on a symbol, triggers on the tape, links in the chat and on the wallet page',
-    first('home', GUIDE_FRESH) === 'pulse' && first('symbol', GUIDE_FRESH) === 'chart' && first('live', GUIDE_FRESH) === 'triggers' && first('chat', GUIDE_FRESH) === 'links' && first('wallet', GUIDE_FRESH) === 'links',
+    'guide: a fresh browser leads with the surface\'s own lesson — ask-the-chart on a symbol, triggers on the tape, links in the chat and on the wallet page; the splash has no first lesson any more (its seat is the apps row, and every home hint waits for an act or a return)',
+    first('home', GUIDE_FRESH) === null && first('symbol', GUIDE_FRESH) === 'chart' && first('live', GUIDE_FRESH) === 'triggers' && first('chat', GUIDE_FRESH) === 'links' && first('wallet', GUIDE_FRESH) === 'links',
     [first('home', GUIDE_FRESH), first('symbol', GUIDE_FRESH), first('live', GUIDE_FRESH), first('chat', GUIDE_FRESH), first('wallet', GUIDE_FRESH)].join(','),
   )
 
@@ -151,9 +153,8 @@ export function guidePins(check: Check): void {
   const linksStranger = guideCta(hint('links'), { connected: false })
   const linksWallet = guideCta(hint('links'), { connected: true })
   check(
-    'guide: pulse → /live (public, plain link); links → the public board for a stranger and the studio through the door (SpineLink) for a connected wallet; jobs → /chat?tab=jobs through the door; wallet → /wallet through the door; alerts and triggers scroll to a real selector',
-    deepEq(guideCta(hint('pulse'), {}), { label: 'Open the live tape →', short: 'Live tape →', kind: 'href', value: '/live' }) &&
-      isPublicAppPath('/live') &&
+    'guide: links → the public board for a stranger and the studio through the door (SpineLink) for a connected wallet; jobs → /chat?tab=jobs through the door; wallet → /wallet through the door; alerts and triggers scroll to a real selector (RE-PINNED 2026-10-13: the pulse lesson and its /live link retired — the deck is the door now)',
+    isPublicAppPath('/live') &&
       linksStranger?.kind === 'href' &&
       linksStranger.value === '/links' &&
       linksWallet?.kind === 'spine' &&
@@ -173,7 +174,6 @@ export function guidePins(check: Check): void {
 
   // ── requires ──────────────────────────────────────────────────────────
   let s = freshGuideState()
-  s = markDismissed(s, 'pulse', null, NOW - 100_000)
   s = markDismissed(s, 'chart', null, NOW - 100_000)
   const later = NOW + GUIDE_QUIET_MS + 1
   check(
@@ -218,16 +218,17 @@ export function guidePins(check: Check): void {
   )
 
   // ── The pick rules ────────────────────────────────────────────────────
+  // RE-PINNED 2026-10-13 (apps row): the retire rule on the symbol page's own lesson (the splash has none now).
   let twice = freshGuideState()
-  for (let i = 0; i < GUIDE_MAX_SHOWS; i++) twice = markShown(twice, 'pulse', NOW - 1_000 * (i + 1))
+  for (let i = 0; i < GUIDE_MAX_SHOWS; i++) twice = markShown(twice, 'chart', NOW - 1_000 * (i + 1))
   check(
-    `guide: a hint shown ${GUIDE_MAX_SHOWS} times retires on its own (the splash falls silent on a fresh browser once pulse has had its turns), and a dismissed hint never returns however much later`,
-    first('home', markShown(freshGuideState(), 'pulse', NOW - 1_000)) === 'pulse' &&
-      first('home', twice) === null &&
-      first('home', markDismissed(freshGuideState(), 'pulse', null, NOW - 100_000), {}, NOW + 365 * 86_400_000) === null &&
-      first('home', markDismissed(freshGuideState(), 'pulse', 'home', NOW - 100_000), {}, NOW + 365 * 86_400_000) === null,
+    `guide: a hint shown ${GUIDE_MAX_SHOWS} times retires on its own (a symbol page falls silent on a fresh browser once ask-the-chart has had its turns), and a dismissed hint never returns however much later`,
+    first('symbol', markShown(freshGuideState(), 'chart', NOW - 1_000)) === 'chart' &&
+      first('symbol', twice) === null &&
+      first('symbol', markDismissed(freshGuideState(), 'chart', null, NOW - 100_000), {}, NOW + 365 * 86_400_000) === null &&
+      first('symbol', markDismissed(freshGuideState(), 'chart', 'symbol', NOW - 100_000), {}, NOW + 365 * 86_400_000) === null,
   )
-  const dismissedHome = noteEvent(markDismissed(freshGuideState(), 'pulse', 'home', NOW), 'visited:home', NOW - 10)
+  const dismissedHome = noteEvent(markDismissed(freshGuideState(), 'links', 'home', NOW), 'visited:home', NOW - 10)
   check(
     'guide: a dismiss quiets THAT surface for the quiet window (a reload never swaps a replacement card into the hole), then the next lesson may come; other surfaces are untouched',
     first('home', dismissedHome, {}, NOW + 1_000) === null &&
@@ -243,7 +244,6 @@ export function guidePins(check: Check): void {
     off.off === true && GUIDE_SURFACES.every((sf) => first(sf, off, { connected: true }, later) === null) && !dotFor('jobs', off) && !dotFor('links', off) && !dotFor('wallet', off),
   )
   let loaded = noteEvent(noteEvent(noteEvent(freshGuideState(), 'chip', NOW - 50), 'connected', NOW - 40), 'visited:home', NOW - 30)
-  loaded = markDismissed(loaded, 'pulse', null, NOW - 100_000)
   const order: string[] = []
   for (let i = 0; i < 6; i++) {
     const id = first('home', loaded, { connected: true }, later)
@@ -259,7 +259,7 @@ export function guidePins(check: Check): void {
   check(
     'guide: the record round-trips byte-for-byte through localStorage (seen counts, dismissals, visits, acts, the quiet stamp), the first stamp of a visit or an act is the one kept, and GUIDE_FRESH is a frozen v1',
     deepEq(round, busy) &&
-      round.seen.pulse?.n === 1 &&
+      round.seen.links?.n === 1 &&
       round.dismissed.chart === NOW - 3_000 &&
       round.quiet.symbol === NOW - 3_000 &&
       round.visited.jobs === NOW - 2_000 &&
@@ -298,10 +298,12 @@ export function guidePins(check: Check): void {
     garbage.filter((g) => !deepEq(readGuideState(g), fresh)).map(String).join(' | '),
   )
   const retired = readGuideState('{"v":1,"seen":{"retired":{"n":1,"at":1}},"dismissed":{"retired":1},"off":false,"visited":{"attic":1,"home":7},"acted":{}}')
-  const noQuiet = readGuideState('{"v":1,"seen":{"pulse":{"n":1,"at":7}},"dismissed":{},"off":false,"visited":{},"acted":{}}')
+  const noQuiet = readGuideState('{"v":1,"seen":{"chart":{"n":1,"at":7}},"dismissed":{},"off":false,"visited":{},"acted":{}}')
+  // RE-PINNED 2026-10-13 (apps row): `pulse` IS a retired hint now — a browser that saw it keeps reading.
+  const sawPulse = readGuideState('{"v":1,"seen":{"pulse":{"n":2,"at":7}},"dismissed":{"pulse":9},"off":false,"visited":{"home":7},"acted":{}}')
   check(
-    'guide: a record from a retired hint or place is kept, not reset (the unknown keys drop), and a record written before `quiet` existed still reads',
-    deepEq(retired.seen, {}) && deepEq(retired.dismissed, {}) && retired.visited.home === 7 && noQuiet.seen.pulse?.n === 1 && deepEq(noQuiet.quiet, {}),
+    'guide: a record from a retired hint or place is kept, not reset (the unknown keys drop — a browser that saw the splash\'s retired pulse lesson keeps its visits), and a record written before `quiet` existed still reads',
+    deepEq(retired.seen, {}) && deepEq(retired.dismissed, {}) && retired.visited.home === 7 && noQuiet.seen.chart?.n === 1 && deepEq(noQuiet.quiet, {}) && deepEq(sawPulse.seen, {}) && deepEq(sawPulse.dismissed, {}) && sawPulse.visited.home === 7,
   )
 
   // ── The dots ──────────────────────────────────────────────────────────
@@ -458,8 +460,13 @@ export function guidePins(check: Check): void {
   const chat = src('components/chat/EmptyState.tsx')
   const wallet = src('components/WalletPage.tsx')
   check(
-    'guide: five seats, one line each — home (MarketsIndex\'s guide seat), the symbol header under the act strip quoting the pair\'s own buy sentence, /live once per posture (rail on desktop, main column on a phone), the chat empty state, the wallet page under its header',
-    /<GuideSeat surface="home" \/>/.test(home) &&
+    // RE-PINNED 2026-10-13 (apps row): the splash's guide seat is gone — the
+    // deck IS the live-tape lesson and the seat holds the apps row (which
+    // still writes the `visited:home` record the claim block reads).
+    'guide: four seats, one line each — the symbol header under the act strip quoting the pair\'s own buy sentence, /live once per posture (rail on desktop, main column on a phone), the chat empty state, the wallet page under its header; the splash mounts NO seat (its guide prop is the apps row, which keeps the visit record)',
+    !/<GuideSeat/.test(home) &&
+      /guide=\{<AppsRow \/>\}/.test(home) &&
+      /noteGuideEvent\('visited:home'\)/.test(src('components/home/AppsRow.tsx')) &&
       /\{pair && <GuideSeat surface="symbol" symbol=\{sym\} ask=\{composeAsk\(pair, 'buy', \{ usd: 25 \}\)\} \/>\}/.test(symbol) &&
       symbol.indexOf('data-seat="ExecStrip"') < symbol.indexOf('<GuideSeat surface="symbol"') &&
       count(live, '<GuideSeat surface="live" posture="phone" />') === 1 &&

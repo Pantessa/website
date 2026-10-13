@@ -66,7 +66,7 @@ export function compactOnPhone(surface: GuideSurface): boolean {
   return GUIDE_COMPACT_SURFACES.includes(surface)
 }
 
-export type GuideHintId = 'pulse' | 'chart' | 'triggers' | 'links' | 'jobs' | 'wallet' | 'alerts'
+export type GuideHintId = 'chart' | 'triggers' | 'links' | 'jobs' | 'wallet' | 'alerts'
 
 /** What the seat knows that the record does not: where it is, which symbol
  *  (the chart hint names it), the example ask the page's own grammar
@@ -140,14 +140,13 @@ export const CREATOR_SPLIT_WORD: string =
  *  the first wins. Copy rules: only what CAN happen; a sentence offered as
  *  an ask must be one the ladder builds (scripts/guide-pins.ts replays
  *  `{ASK}` for a stock, a coin and a perp); fee numbers come from lib/fees. */
+// The splash's own lesson ("Every print is a button" → the live tape) left on
+// 2026-10-13: the deck at the top of `/` IS that lesson now (the tape is a
+// channel on it), and the apps row took the card's seat. The splash mounts no
+// seat; the other hints keep 'home' in their surfaces as the rulebook's
+// vocabulary (lib/guide knows the splash as a surface — the claim block reads
+// `visited.home`), and teach on /t, /live, /chat and /wallet.
 export const GUIDE_HINTS: readonly GuideHint[] = [
-  {
-    id: 'pulse',
-    surfaces: ['home'],
-    title: 'Every print is a button.',
-    body: 'The live tape is Hyperliquid’s own fills, keyless. Each print carries the sentence that does the same thing — and only your wallet signs it.',
-    cta: { label: 'Open the live tape →', short: 'Live tape →', kind: 'href', value: '/live' },
-  },
   {
     id: 'chart',
     surfaces: ['symbol'],
