@@ -129,18 +129,31 @@ function bootPick(): void {
   })
   window.setTimeout(() => st.setState({ heldWaited: true }), PICK_HELD_WAIT_MS)
   window.setTimeout(() => st.setState({ venueWaited: true }), PICK_VENUE_WAIT_MS)
-  void readTapeUniverse().then(({ main, xyz }) => {
-    const names = [...main, ...xyz].filter((r) => !r.delisted).sort((a, b) => b.volumeUsd - a.volumeUsd).map((r) => r.name)
-    if (!names.length) return
-    // A link spells a market in caps; the venue spells kPEPE with its k.
-    const s = st.getState()
-    const fixed = s.markets.map((m) => resolveMarket(m, names) ?? m)
-    st.setState(samePick(fixed, s.markets) ? { universe: names } : { universe: names, markets: fixed })
-  })
-  void readArmyContexts().then((ctx) => {
-    const venue = pickList(ctx, 'gainers').slice(0, DEFAULT_PICK).map((r) => r.market)
-    if (venue.length) st.setState({ venue })
-  })
+  // The venue answers in 2–3s (measured 2026-10-13 on `/` and /live); a read
+  // that comes back empty (a refused or dropped request on a busy page) is
+  // tried again, three times, before the fallback trio is all there is.
+  const readUniverse = (n: number): void => {
+    void readTapeUniverse().then(({ main, xyz }) => {
+      const names = [...main, ...xyz].filter((r) => !r.delisted).sort((a, b) => b.volumeUsd - a.volumeUsd).map((r) => r.name)
+      if (!names.length) {
+        if (n < 3) window.setTimeout(() => readUniverse(n + 1), 2500 * (n + 1))
+        return
+      }
+      // A link spells a market in caps; the venue spells kPEPE with its k.
+      const s = st.getState()
+      const fixed = s.markets.map((m) => resolveMarket(m, names) ?? m)
+      st.setState(samePick(fixed, s.markets) ? { universe: names } : { universe: names, markets: fixed })
+    })
+  }
+  const readVenue = (n: number): void => {
+    void readArmyContexts().then((ctx) => {
+      const venue = pickList(ctx, 'gainers').slice(0, DEFAULT_PICK).map((r) => r.market)
+      if (venue.length) st.setState({ venue })
+      else if (n < 3) window.setTimeout(() => readVenue(n + 1), 2500 * (n + 1))
+    })
+  }
+  readUniverse(0)
+  readVenue(0)
 }
 
 /** Test seam (the drive resets nothing; the pins never touch the store). */
