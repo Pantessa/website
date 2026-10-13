@@ -48,9 +48,9 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-2xl border border-[var(--line)] px-5 py-4">
-      <div className="text-[11px] uppercase tracking-wide text-[color:var(--muted)] mono">{label}</div>
+      <div className="text-[length:var(--fs-xs)] uppercase tracking-wide text-[color:var(--muted)] mono">{label}</div>
       <div className="mt-1 text-2xl font-semibold text-[color:var(--fg)]">{value}</div>
-      {sub ? <div className="mt-0.5 text-[12px] text-[color:var(--muted)]">{sub}</div> : null}
+      {sub ? <div className="mt-0.5 text-[length:var(--fs-sm)] text-[color:var(--muted)]">{sub}</div> : null}
     </div>
   )
 }
@@ -98,7 +98,7 @@ export default async function AgentRecordPage({ params }: Params) {
           {name}
           {founding ? (
             <span
-              className="mono rounded-full px-2.5 py-1 align-middle text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--bg)]"
+              className="mono rounded-full px-2.5 py-1 align-middle text-[length:var(--fs-xs)] font-semibold uppercase tracking-[0.14em] text-[color:var(--bg)]"
               style={{ background: 'var(--accent)' }}
               title="Founding manager — one of the first external agents on the desk. Historical, never a rank."
             >
@@ -106,16 +106,16 @@ export default async function AgentRecordPage({ params }: Params) {
             </span>
           ) : null}
           {mandate ? (
-            <span className="mono rounded-full border border-[var(--line)] px-2.5 py-1 align-middle text-[11px] font-normal uppercase tracking-wide text-[color:var(--fg)]">
+            <span className="mono rounded-full border border-[var(--line)] px-2.5 py-1 align-middle text-[length:var(--fs-xs)] font-normal uppercase tracking-wide text-[color:var(--fg)]">
               {MANDATE_LABELS[mandate]}
             </span>
           ) : null}
         </h1>
-        <p className="mt-1 text-[13px] text-[color:var(--muted)] mono">
+        <p className="mt-1 text-[length:var(--fs-md)] text-[color:var(--muted)] mono">
           agent <span className="text-[color:var(--fg)]">{rec.handle}</span> · clears through Pantessa
         </p>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-[color:var(--muted)]">
+        <p className="mt-4 text-[length:var(--fs-base)] leading-relaxed text-[color:var(--muted)]">
           A public, non-custodial track record. Every figure below is the real guarded path — deterministic
           builders wrote each transaction, a human signed it, and our own test traffic is excluded. Nothing
           here can be inflated by us.
@@ -129,7 +129,7 @@ export default async function AgentRecordPage({ params }: Params) {
         </div>
 
         {rec.signedTurns === 0 ? (
-          <p className="mt-6 text-[13px] text-[color:var(--muted)]">
+          <p className="mt-6 text-[length:var(--fs-md)] text-[color:var(--muted)]">
             No signed activity yet — this agent has brokered intents, but no human has signed one through
             Pantessa so far. The record fills in as they do.
           </p>
@@ -139,24 +139,24 @@ export default async function AgentRecordPage({ params }: Params) {
           <section className="mt-10 rounded-2xl border border-dashed border-[var(--line-2)] bg-[var(--surf-1)] p-5">
             <p className="mono text-[10px] uppercase tracking-widest text-[color:var(--muted-2)]">Paper</p>
             {/* §1.4 header label — VERBATIM on every surface. */}
-            <p className="mt-1 text-[13px] font-semibold text-[color:var(--fg)]">{PAPER_LABEL}</p>
+            <p className="mt-1 text-[length:var(--fs-md)] font-semibold text-[color:var(--fg)]">{PAPER_LABEL}</p>
             <ul className="mt-3 space-y-2">
               {tryouts.map((t) => (
-                <li key={t.id} className="text-[13px] text-[color:var(--muted)]">
+                <li key={t.id} className="text-[length:var(--fs-md)] text-[color:var(--muted)]">
                   <span className="mono text-[10px] uppercase tracking-wide text-[color:var(--muted-2)]">{t.status}</span>{' '}
                   &ldquo;{t.mandateText}&rdquo; · {t._count.marks} paper proposal{t._count.marks === 1 ? '' : 's'} ·{' '}
                   {fmtDate(t.startedAt)}–{fmtDate(t.reviewAt)}
                 </li>
               ))}
             </ul>
-            <p className="mt-3 text-[12px] text-[color:var(--muted-2)]">
+            <p className="mt-3 text-[length:var(--fs-sm)] text-[color:var(--muted-2)]">
               Paper never counts above: the record tiles read real signed turns only. Promoting a tryout runs the
               normal hire flow (fresh consent) — nothing transfers from paper.
             </p>
           </section>
         ) : null}
 
-        <p className="mt-8 text-[13px] text-[color:var(--muted)]">
+        <p className="mt-8 text-[length:var(--fs-md)] text-[color:var(--muted)]">
           Active {fmtDate(rec.firstSeen)} → {fmtDate(rec.lastSeen)}.{' '}
           <Link href="/docs/desk" className="underline">
             Give your own agent a desk

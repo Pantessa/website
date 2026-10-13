@@ -66,6 +66,8 @@
     "pins:arena": "tsx scripts/arena-pins.ts",
     "pins:pick-alerts": "tsx scripts/pick-alert-pins.ts",
     "pins:home-apps": "tsx scripts/home-apps-pins.ts",
+    "pins:consistency": "tsx scripts/consistency-pins.ts",
+    "audit:consistency": "tsx scripts/consistency-audit.ts",
     "drive:mobile-ux": "tsx scripts/drive-mobile-ux.ts",
     "drive:mobile-connect": "tsx scripts/drive-mobile-connect.ts",
     "drive:mobile-sign": "tsx scripts/drive-mobile-sign.ts",
