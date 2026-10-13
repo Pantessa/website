@@ -14,7 +14,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { DEFAULT_WINDOW, MAX_ARMIES } from '../lib/battle'
 import {
   ARMY_INKS, CARD_PATH, MAX_T_CHARS,
-  cardAlt, cardEyebrow, cardPathFor, cardRankNote, cardRowHeight, cardRows, cardUrlFor, firstParam, groundShare, headlineSize, listWords, liveSharePath, matchVenue, parseLiveShare, shareDescription, shareTitle, shareUrlFor,
+  cardAlt, cardEyebrow, cardPathFor, shareText, cardRankNote, cardRowHeight, cardRows, cardUrlFor, firstParam, groundShare, headlineSize, listWords, liveSharePath, matchVenue, parseLiveShare, shareDescription, shareTitle, shareUrlFor,
   type VenueRow,
 } from '../lib/live-share'
 import { MAX_PICK, parsePickParam } from '../lib/market-pick'
@@ -71,6 +71,7 @@ function pure() {
 
   // ── the words ──
   pin('the title names the markets, the view and the window', shareTitle('front', ['ZK', 'OP', 'AZTEC'], '1h') === 'ZK · OP · AZTEC on The Front · 1h' && shareTitle('siege', ['HYPE'], 'open') === 'HYPE on The Siege · since open' && shareTitle('tape', ['xyz:NVDA', 'ETH']) === 'NVDA · ETH on the live tape')
+  pin('a battle share carries ARENA\'s challenge + the view; the tape keeps the plain line', shareText('front', ['ZK', 'OP', 'AZTEC'], '1h') === "ZK vs OP vs AZTEC · 1h · who's winning on The Front" && shareText('siege', ['ZK'], '4h') === 'ZK · 4h · where it stands on The Siege' && shareText('map', ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'], '1h') === "A vs B vs C vs D vs E +3 · 1h · who's winning on The Map" && shareText('tape', ['UNI']) === 'UNI on the live tape')
   pin('list words', listWords(['ZK']) === 'ZK' && listWords(['ZK', 'OP']) === 'ZK and OP' && listWords(['ZK', 'OP', 'AZTEC']) === 'ZK, OP and AZTEC' && listWords([]) === '')
   pin('a battle\'s alt says the 24h proxy, never the live window', /ranked by the venue's 24h move/.test(cardAlt('front', ['ZK', 'OP'])) && /Hyperliquid/.test(cardAlt('front', ['ZK'])) && !/\b1h\b|live window|since open/.test(cardAlt('front', ['ZK'])))
   pin('the tape\'s alt names what it draws', cardAlt('tape', ['UNI']) === 'Pantessa Live — the tape for UNI: last price, 24h move and open interest from Hyperliquid.')
@@ -154,10 +155,10 @@ async function serve() {
   const withT = await (await get('/live?t=HYPE', BOT)).text()
   const img = ogOf(withT, 'og:image')
   const tw = ogOf(withT, 'twitter:image')
-  pin(`serve: /live?t=HYPE carries og:image + twitter:image at the route (${img})`, !!img && img.includes(`${CARD_PATH}?view=tape&t=HYPE`) && !!tw && tw.includes(`${CARD_PATH}?view=tape&t=HYPE`) && /HYPE on the live tape/.test(ogOf(withT, 'og:title') ?? ''))
+  pin(`serve: /live?t=HYPE carries og:image + twitter:image at the route (${img})`, !!img && img.includes(`${CARD_PATH}?view=tape&t=HYPE`) && !!tw && tw.includes(`${CARD_PATH}?view=tape&t=HYPE`) && /HYPE on the live tape · Pantessa Live/.test(ogOf(withT, 'og:title') ?? ''))
   pin('serve: /live?t=HYPE carries no generic file card beside it', !/\/live\/opengraph-image|\/live\/twitter-image/.test(withT.match(/<head>[\s\S]*?<\/head>/)?.[0] ?? withT))
   const front = await (await get('/live?view=front&t=ZK,OP,AZTEC&since=4h', BOT)).text()
-  pin('serve: a battle share names the markets, the view and the window', ogOf(front, 'og:title') === 'ZK · OP · AZTEC on The Front · 4h · Pantessa Live' && (ogOf(front, 'og:image') ?? '').includes(`${CARD_PATH}?view=front&t=ZK%2COP%2CAZTEC&since=4h`) && /ranked by the venue&#x27;s 24h move|ranked by the venue's 24h move/.test(front))
+  pin('serve: a battle share names the markets, the view and the window', (ogOf(front, 'og:title') ?? '').replace(/&#x27;/g, "'") === "ZK vs OP vs AZTEC · 4h · who's winning on The Front · Pantessa Live" && (ogOf(front, 'og:image') ?? '').includes(`${CARD_PATH}?view=front&t=ZK%2COP%2CAZTEC&since=4h`) && /ranked by the venue&#x27;s 24h move|ranked by the venue's 24h move/.test(front))
   if (img) {
     const path = new URL(img).pathname + new URL(img).search
     const followed = await pngOf(path)

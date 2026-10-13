@@ -3,7 +3,7 @@ import Footer from '@/components/Footer'
 import LiveSurface from '@/components/live/LiveSurface'
 import MarketsShell from '@/components/markets/shell/MarketsShell'
 import { readTradability } from '@/lib/tradability-store'
-import { cardAlt, cardUrlFor, parseLiveShare, shareDescription, shareTitle } from '@/lib/live-share'
+import { cardAlt, cardUrlFor, parseLiveShare, shareDescription, shareText } from '@/lib/live-share'
 import '@/components/live/live.css'
 import '@/components/live/battle.css'
 
@@ -42,7 +42,7 @@ const BASE: Metadata = {
 export async function generateMetadata({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }): Promise<Metadata> {
   const share = parseLiveShare(await searchParams)
   if (!share) return BASE
-  const title = `${shareTitle(share.view, share.markets, share.since)} · Pantessa Live`
+  const title = `${shareText(share.view, share.pick, share.since)} · Pantessa Live`
   const description = shareDescription(share.view, share.markets, share.since)
   const image = { url: cardUrlFor(share), width: 1200, height: 630, alt: cardAlt(share.view, share.markets), type: 'image/png' }
   return {
