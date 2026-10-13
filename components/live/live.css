@@ -284,3 +284,11 @@
     .live__mx { height: 44px; min-width: 44px; padding: 0 12px 0 8px; }
   }
 }
+/* PHONE — 320 with CARD's share in the views row (2026-10-13): the share's own rule squeezes each view to 7px of
+   padding and draws the share 30px wide, so "Tape" measured 42×44 and the share 42×44 (hit). Every view and the
+   share keep a 44px box: a step smaller type and 3px of padding pay for it (the row: 285px of a 288px column). */
+@media (max-width: 340px) {
+  .mkt-frame__main .live__views:has(> .lshare--live) > .live__view:not(.lshare) { padding: 0 3px; min-width: 44px; justify-content: center; font-size: 11.5px; }
+  .mkt-frame__main .lshare--live { width: 44px; }
+  .mkt-frame__main .lshare--live::after { inset: -4px 0; }
+}
