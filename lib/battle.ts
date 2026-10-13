@@ -643,6 +643,10 @@ export function fmtFunding(perHour: number): string {
 // visit. A default stays fluid until the hand touches it: holdings that land
 // after the venue's pick painted replace it.
 
+// RETIRED AS A WRITER (GTM squad 2026-10-13, lane PICK): the field reads THE
+// ONE PICK (lib/market-pick, key `pantessa.markets.pick.v1`); this key is only
+// READ, once, by lib/market-pick readMarketPick to carry an old field over.
+// The parser stays (the carry-over and the pins use it); nothing writes it.
 export const ARMY_MEMORY_KEY = 'pantessa.live.armies.v1'
 
 export interface ArmyMemory {
@@ -679,6 +683,7 @@ export function parseArmyMemory(raw: string | null | undefined): ArmyMemory | nu
   return { armies, pick: parsePickMode(typeof o.pick === 'string' ? o.pick : null), at }
 }
 
+/** Retired as a writer's helper (2026-10-13): no surface writes the army key; kept for the pins' round-trip. */
 export function serializeArmyMemory(m: ArmyMemory): string {
   return JSON.stringify({ v: 1, armies: m.armies.slice(0, MAX_ARMIES), pick: m.pick, at: m.at })
 }
@@ -735,7 +740,8 @@ export interface OpeningInput {
   waitForHeld: boolean
 }
 
-/** The opening decision from what is known so far; null = keep waiting
+/** Retired from the page (2026-10-13): lib/market-pick openingPick decides (watchlist added). Kept for the pins.
+ *  The opening decision from what is known so far; null = keep waiting
  *  (nothing explicit, and a wallet may still answer). */
 export function openingArmies(s: OpeningInput): { armies: string[]; source: ArmySource } | null {
   if (s.url.length) return { armies: [...s.url], source: 'url' }
@@ -746,7 +752,8 @@ export function openingArmies(s: OpeningInput): { armies: string[]; source: Army
   return { armies: [...FALLBACK_ARMIES], source: 'fallback' }
 }
 
-/** The picker's word for where the field came from; nothing for a link
+/** Retired from the page (2026-10-13): lib/market-pick pickSourceWord. Kept for the pins.
+ *  The picker's word for where the field came from; nothing for a link
  *  (its armies are in the address bar), the venue's pick, or a hand. */
 export function armySourceWord(source: ArmySource): string | null {
   if (source === 'held') return 'from your wallet'
