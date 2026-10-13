@@ -43,7 +43,7 @@
  *
  *   BASE=http://localhost:3994 PLAYWRIGHT_CORE=/path/to/playwright-core \
  *     npx tsx scripts/pregtm-deadend-crawl.ts [--out dir] [--only /a,/b] \
- *     [--personas out,empty,signed] [--widths 1440,375] [--jobs 8] [--max 30]
+ *     [--personas out,empty,signed] [--widths 1440,375] [--jobs 8] [--max 30] [--first-run]
  *
  * `--report <deadend.json> [--diff old.json] --out dir` re-renders a report without crawling.
  * Writes <out>/deadend.json (every click) and <out>/deadend.md (the DEAD +
@@ -71,6 +71,11 @@ const JOBS = Number(opt('--jobs', '8'))
 const MAX = Number(opt('--max', '30'))
 const DIFF = opt('--diff')
 const MAX_PER_FAMILY = 2
+/** The first-run pick sheet (lib/arena, #979) opens by itself 1.2s after a
+ *  fresh visitor lands on `/` and `/live`, and every click here starts from a
+ *  fresh browser — so by default the crawl marks it seen and measures the page
+ *  beneath. `--first-run` keeps it (it then covers every control at 375). */
+const FIRST_RUN = argv.includes('--first-run')
 const MAX_CHROME = Number(opt('--max-chrome', '12'))
 const SETTLE_MS = 2500
 const BASELINE_MS = 450
@@ -268,6 +273,7 @@ async function newCtx(browser: any, persona: Persona, width: number) {
     colorScheme: 'dark', permissions: ['clipboard-read', 'clipboard-write'],
   })
   await ctx.addInitScript(PROBE)
+  if (!FIRST_RUN) await ctx.addInitScript(`try { localStorage.setItem('pantessa.markets.picksheet.v1', JSON.stringify({ v: 1, at: Date.now() })) } catch {}`)
   if (persona === 'empty') await ctx.addInitScript(mockWalletScript(EMPTY_WALLET))
   if (persona === 'signed') { await ctx.addInitScript(mockWalletScript((await signedIdentity()).address)); await seedSession(ctx) }
   const origin = new URL(BASE).origin
@@ -427,7 +433,11 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
         }
       } catch (err: any) {
         const m = String(err?.message || err)
-        rec.outcome = 'BLOCKED'; rec.detail = /intercepts pointer|covered/.test(m) ? 'covered by another element' : m.split('\n')[0].slice(0, 120)
+        // Name the interceptor (Playwright says "<div class=…> … intercepts
+        // pointer events"): a covered tab bar is a bug only its owner can fix,
+        // and the owner needs to know WHAT covers it.
+        const by = m.match(/(<[a-z][^>]{0,160}>)[^\n]*?intercepts pointer events/)
+        rec.outcome = 'BLOCKED'; rec.detail = /intercepts pointer|covered/.test(m) ? `covered by another element${by ? ` ${by[1].replace(/\s+/g, ' ').slice(0, 140)}` : ''}` : m.split('\n')[0].slice(0, 120)
         cell.clicks.push(rec); continue
       }
       // Poll until something decisive happens or SETTLE_MS passes.
