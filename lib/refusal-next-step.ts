@@ -29,7 +29,9 @@ export const NEXT_STEP_MAX = 3
 export const NEXT_STEP_QUESTION = 'Try one of these instead?'
 
 /** A refusal that a moment's wait can fix (the feed, the RPC, a rate limit). */
-const TRANSIENT_RE = /\b(?:try again|in a moment|right now|just now|didn['’]t answer|couldn['’]t (?:read|reach|load)|rate[- ]limit|timed out|is unavailable)\b/i
+// "right now" is NOT transient ("isn't a supplyable reserve right now" is a
+// listing fact) — only words about the read itself.
+const TRANSIENT_RE = /\b(?:try again|in a moment|just now|didn['’]t answer|couldn['’]t (?:read|reach|load)|rate[- ]limit|timed out)\b/i
 
 /** The quoted sentences in a reply: “curly”, "straight", and **"bold"** quotes. */
 export function quotedSentences(reply: string): string[] {

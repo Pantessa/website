@@ -214,6 +214,7 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   check('next step: planner prose on a money ask gets the grammar\'s read (net chips)', prose.length > 0 && prose.every((c) => bn(c.resume)), JSON.stringify(prose))
   const market = refusalNextSteps('is TSLA a good trade at this price, should I size up', 'Here is a balanced view…', bn, { planner: true })
   check('next step: planner prose naming a market gets its chart + lead order', market.map((c) => c.resume).join('|') === 'Show me the TSLA chart|Buy $25 of TSLA', JSON.stringify(market))
+  check('next step: a listing fact said "right now" is not a feed blip (no Try again loop)', refusalNextSteps('supply 10 FOO to aave', "🏦 FOO isn't an active, supplyable Aave v4 reserve on Ethereum right now — ask “where can I earn on FOO?” to see what's listed.", bn).length === 0)
   check('next step: never re-offers the refused ask on a permanent wall', refusalNextSteps('supply 10 USDC to Aave on Ethereum', 'Say “supply 10 USDC to Aave on Ethereum”', bn).length === 0)
   const zz = refusalNextSteps('buy $10 of ZZQX', '🔄 I don\'t know the token “ZZQX” on Base — use a known symbol (USDC, …).', bn, { planner: true })
   check('next step: an unknown token offers what works today (the starter chips), every one builds', zz.length === 3 && zz.every((c) => bn(c.resume)), JSON.stringify(zz))
