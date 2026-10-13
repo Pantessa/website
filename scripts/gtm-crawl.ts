@@ -25,7 +25,7 @@ const onlyIdx = args.indexOf('--only')
 const ONLY = onlyIdx >= 0 ? args[onlyIdx + 1].split(',') : null
 
 const SYMBOLS = ['AAPL', 'ETH', 'HYPE', 'BTC', 'TSLA', 'SOL', 'ZZQQXX']
-const TABS = ['overview', 'news', 'community', 'technicals', 'trade']
+const TABS = ['overview', 'chart', 'news', 'community', 'technicals', 'trade']
 const DOCS = [
   '', 'creator-earnings', 'dca', 'desk', 'embed', 'embedded-wallet', 'first-five-minutes',
   'guardian', 'host-buttons', 'jobs', 'links', 'markets', 'privacy', 'roster', 'snapshot',

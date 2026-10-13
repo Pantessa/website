@@ -99,26 +99,16 @@
 .mk-keys kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 5px; font: inherit; color: var(--muted); text-transform: none; }
 
 /* ── Symbol header (MK2) ───────────────────────────────────────────────── */
-.sym__head--mk2 { align-items: flex-start; }
 /* The act seat takes its own full row under identity + quote (the stub's
    .sym__act had this from x402-design.css; the seat owns it now). */
 .sym__exec { order: 3; flex-basis: 100%; min-width: 0; }
 .sym__exec > .sym__act { align-items: flex-start; }
 .sym__exec > .sym__act .sym__act-chips { justify-content: flex-start; }
 .sym__meta { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-top: 8px; min-width: 0; }
-.sym__head--mk2 .sym__session { margin-top: 0; display: inline-flex; align-items: center; gap: 6px; }
 .mk-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--muted-2); flex: 0 0 auto; }
 .mk-dot--open { background: var(--mk-up, var(--accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mk-up, var(--accent)) 22%, transparent); }
 .mk-dot--closed { background: var(--muted-2); }
 .mk-dot--always { background: var(--accent); }
-/* The quote block: last · change · feed on one baseline, the range bar on
-   its own line under them. A flex row, not a grid (2026-10-08): the grid's
-   three `auto` columns shared the range row's width, so a wide range bar
-   pushed the feed label away from the change — "COINBASE" floated 37px
-   right of "-6.52% 24h" in Nate's screenshot. */
-.sym__head--mk2 .sym__quote { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 0; justify-content: end; }
-.sym__head--mk2 .sym__last { line-height: 1.2; }
-.sym__head--mk2 .mk-range { flex: 1 1 100%; }
 .mk-range { display: grid; grid-template-columns: auto minmax(120px, 220px) auto; grid-template-areas: "lo bar hi" "k k k"; align-items: center; gap: 2px 8px; margin-top: 6px; }
 .mk-range__lo { grid-area: lo; font-size: 10.5px; color: var(--muted); }
 .mk-range__hi { grid-area: hi; font-size: 10.5px; color: var(--muted); }
@@ -126,61 +116,6 @@
 .mk-range__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: linear-gradient(90deg, color-mix(in srgb, var(--mk-down, var(--sell)) 70%, transparent), var(--mk-up, var(--accent))); }
 .mk-range__tick { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--fg); box-shadow: 0 0 0 2px var(--bg); }
 .mk-range__k { grid-area: k; justify-self: center; font-size: 8.5px; letter-spacing: 0.16em; color: var(--muted-2); }
-/* ── The header grid (2026-10-08, Nate: "the header looks a little
-   misaligned and sloppy"). The header's SEAT (a wrapper div — an element
-   can't query itself, and .sym must stay a plain block for the full-screen
-   chart) is the size container. From 760px of column width — the rail-
-   docked column from ~1170px viewports, a tablet without the rail from
-   ~800px — the header is ONE grid whose rows run ACROSS both columns, so
-   the left and the right line up row for row:
-
-     logo │ Uniswap UNI · venue      │ ACT ON UNI · SENDS THE ASK …   (row 1, one baseline)
-     logo │ $7.40  −6.5% 24h  COINBASE │ [Buy] [Sell] [Long] [Short] …  (row 2, tops aligned)
-          │ 24H RANGE  $7.20 ─●─ $8.03 │
-          │ ● Spot 24/7 · YOU HOLD · VS │ the order ticket               (row 3)
-     ─────┴─────────────────────────┴──────────────────────────────
-                        the guide seat                                 (row 4)
-
-   The logo hangs in its own 40px gutter and everything else on the left
-   shares ONE left edge (the name, the price, the range, the pills) — the
-   old layout stepped the price back under the logo, 56px left of the
-   name. The two wrappers inside .sym__id and the act seat's own wrappers
-   become `display: contents` so their children are the grid's items; the
-   DOM order is untouched (the harness pins id → meta → quote → seat) and
-   the meta row is PLACED under the quote by area, not moved. Under 760px
-   the wrapping flex rows above stand: a phone leads with the price, then
-   the chips, then the chart. */
-.sym__headseat { container: sym-head / inline-size; min-width: 0; }
-@container sym-head (min-width: 760px) {
-  .sym__head--mk2 {
-    display: grid; grid-template-columns: 40px 16px minmax(280px, 5fr) 28px minmax(0, 7fr); grid-template-rows: auto auto auto;
-    grid-template-areas: "logo . title . acta" "logo . quote . actb" ". . meta . actc";
-    align-items: start; column-gap: 0; row-gap: 10px;
-  }
-  .sym__head--mk2 > .sym__id, .sym__head--mk2 > .sym__id > .sym__idtext, .sym__head--mk2 > .sym__exec, .sym__head--mk2 > .sym__exec > .sym__act { display: contents; }
-  .sym__head--mk2 > .sym__id > :not(.sym__idtext) { grid-area: logo; margin-top: 2px; }
-  .sym__head--mk2 .sym__titlerow { grid-area: title; align-self: baseline; }
-  .sym__head--mk2 > .sym__quote { grid-area: quote; justify-content: start; align-self: start; }
-  .sym__head--mk2 .sym__meta { grid-area: meta; margin-top: 2px; }
-  /* Anything new the act seat grows lands in its column (the three known
-     children are placed by area below). */
-  .sym__head--mk2 .sym__act > * { grid-column: acta; }
-  .sym__head--mk2 .sym__act-eyebrow { grid-area: acta; align-self: baseline; }
-  .sym__head--mk2 .sym__act-chips, .sym__head--mk2 .sym__act-shut { grid-area: actb; }
-  .sym__head--mk2 .sym__act-shut { padding-top: 8px; text-align: left; }
-  .sym__head--mk2 .sym__act > .mkt-ticket--strip { grid-area: actc; margin-top: 0; }
-  .sym__head--mk2 > .guide-seat { grid-column: 1 / -1; grid-row: 4; margin-top: 0; }
-  /* The range reads as one line under the price: its caption LEADS the bar
-     (it sat centred under a 300px bar, floating), the bar is a gauge, not a
-     ruler. */
-  .sym__head--mk2 .mk-range { grid-template-columns: auto auto minmax(100px, 200px) auto; grid-template-areas: "k lo bar hi"; margin-top: 4px; }
-  .sym__head--mk2 .mk-range__k { justify-self: start; font-size: 9px; padding-right: 2px; white-space: nowrap; }
-  /* A stock's session line ("Token trades 24/7 on Robinhood Chain · NYSE
-     open") wraps in a 324px column (1280, rail docked): the dot stays on the
-     FIRST line instead of floating beside the block's middle. */
-  .sym__head--mk2 .sym__session { align-items: flex-start; }
-  .sym__head--mk2 .sym__session .mk-dot { margin-top: calc(0.5lh - 3px); }
-}
 /* What you hold — one pill. */
 .mk-held { display: inline-flex; align-items: baseline; gap: 7px; height: 26px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--fg); font: inherit; cursor: default; }
 button.mk-held { cursor: pointer; }
@@ -252,7 +187,6 @@ button.mk-held:hover { border-color: var(--accent); }
   .mk-table__name { display: none; }
   .mk-trend__row { grid-template-columns: 18px 20px minmax(0, 1fr) auto auto; gap: 8px; padding: 9px 10px; }
   .mk-trend__last { display: none; }
-  .sym__head--mk2 .sym__quote { justify-content: start; }
   .mk-range { grid-template-columns: auto minmax(90px, 1fr) auto; }
   .mk-vs__note { display: none; }
   .mk-table__spark { display: none; }
@@ -458,34 +392,6 @@ button.mk-held:hover { border-color: var(--accent); }
   .mkt-routes__slider input[type='range'] { height: 44px; }
 }
 @media (max-width: 640px) {
-  /* The /t header leads with the price and the chart (round 2, F9: the chart
-     started at 48–56% of a 375×629 screen; a long venue chip and session line
-     wrapped the identity block to 101–126px). One title line, one meta line
-     (the session ellipsizes, the pills keep their seats), no "24H RANGE"
-     caption, tighter rhythm. */
-  .mkt-frame--sym .sym__head { padding: 10px 0 8px; row-gap: 8px; }
-  /* The title row WRAPS (GTM squad, 2026-10-05). One nowrap line cut the
-     symbol's own name: "Hyperliq…" beside "HYPERLIQUID PE…" at 375, and
-     every name at 320 ("Appl…"). The name and ticker never clip now; a venue
-     chip that does not fit beside them takes the next line (one 22px line,
-     paid for by the chart bar's two rows below). Only a chip wider than the
-     whole column still ellipsizes. */
-  .sym__head--mk2 .sym__titlerow { flex-wrap: wrap; row-gap: 6px; }
-  .sym__head--mk2 .sym__name { flex: 0 1 auto; min-width: 0; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
-  .sym__head--mk2 .sym__sym { flex: 0 0 auto; }
-  .sym__head--mk2 .sym__venue { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  /* The meta line WRAPS (round 4): nowrap pushed COMPARE past the screen edge
-     when a holding wallet adds YOU HOLD (QA: /t/AAPL +8px, /t/ETH +9px at 375,
-     +23/+24 at 360). The session line's 7rem basis keeps the common case one
-     line (session + COMPARE); a holder's pill is the value only here (the
-     amount rides its title, the Trade tab and the rail). */
-  .sym__head--mk2 .sym__meta { flex-wrap: wrap; row-gap: 6px; margin-top: 6px; }
-  .sym__head--mk2 .sym__session { display: block; flex: 1 1 7rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sym__head--mk2 .mk-held__amt { display: none; }
-  .sym__head--mk2 .sym__session .mk-dot { vertical-align: middle; margin-right: 6px; }
-  .sym__head--mk2 .sym__meta > :not(.sym__session) { flex: 0 0 auto; }
-  .sym__head--mk2 .mk-range { margin-top: 4px; }
-  .sym__head--mk2 .mk-range__k { display: none; }
   /* Performance: six tiles wrapped 5 + 1 with the note squeezed beside the
      orphan; three columns, two rows, the note on its own line. */
   .sym .mkt-perf:not(.mkt-perf--compact) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -688,7 +594,7 @@ button.mk-held:hover { border-color: var(--accent); }
 /* The strip: one line, the stats folding from the right as the column
    narrows (the seat is the size container; .sym stays a plain block for the
    full-screen chart). */
-.sym--cockpit .sym__strip { display: flex; align-items: center; flex-wrap: nowrap; gap: 14px; min-height: 64px; padding: 14px 0 10px; }
+.sym--cockpit .sym__strip { display: flex; align-items: center; flex-wrap: nowrap; gap: 14px; min-height: 64px; padding: 10px 0 8px; }
 .sym--cockpit .sym__strip > .sym__id { flex: 0 1 auto; gap: 10px; min-width: 0; }
 .sym--cockpit .sym__strip .sym__titlerow { flex-wrap: nowrap; gap: 8px; }
 .sym--cockpit .sym__strip .sym__name { font-size: clamp(18px, 1.7vw, 24px); }
