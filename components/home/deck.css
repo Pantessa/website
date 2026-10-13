@@ -254,12 +254,14 @@
   /* The scoreboard: Backers steps out (the field draws the backers), the recruit chips sit side by side and
      wrap only when they must. */
   .deck__chan .battle--stage .battle__table th:nth-child(5), .deck__chan .battle--stage .battle__table td:nth-child(5) { display: none; }
-  .deck__chan .battle--stage .battle__table th:nth-child(2) { width: 27%; }
+  .deck__chan .battle--stage .battle__table th:nth-child(2) { width: 25%; }
   .deck__chan .battle--stage .battle__table th:nth-child(3) { width: 21%; }
-  .deck__chan .battle--stage .battle__table th:nth-child(8) { width: 44%; }
-  .deck__chan .battle--stage .battle__recruit { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0 6px; }
+  .deck__chan .battle--stage .battle__table th:nth-child(8) { width: 46%; }
+  .deck__chan .battle--stage .battle__table td:nth-child(8) { padding-right: 2px; }
+  .deck__chan .battle--stage .battle__pct { font-size: 12px; }
+  .deck__chan .battle--stage .battle__recruit { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0 4px; }
   .deck__chan .battle--stage .battle__table td { padding-top: 0; padding-bottom: 0; height: 46px; }
-  .deck__chan .battle--stage .battle__table .battle__chip { padding: 0 8px; font-size: 10.5px; }
+  .deck__chan .battle--stage .battle__table .battle__chip { padding: 0 7px; font-size: 10.5px; }
   @media (hover: none) {
     /* The active chip's hit area (the desktop underline rule hid it). */
     .deck__ch.is-on::after { display: block; inset: -4px 0; height: auto; background: none; }
@@ -271,5 +273,23 @@
     .deck__tape .deck__chip::before { content: ''; position: absolute; inset: 10px 0; z-index: -1; border-radius: 999px; border: 1px solid transparent; }
     .deck__tape .deck__chip--buy::before { background: color-mix(in srgb, var(--mk-up, var(--accent)) 18%, var(--surf-1)); border-color: color-mix(in srgb, var(--mk-up, var(--accent)) 55%, transparent); }
     .deck__tape .deck__chip--sell::before { background: color-mix(in srgb, var(--mk-down, var(--sell)) 16%, var(--surf-1)); border-color: color-mix(in srgb, var(--mk-down, var(--sell)) 55%, transparent); }
+  }
+}
+/* PHONE — under 375 the side-by-side chips never fit (264px of table); they stack and Ground takes the width
+   ("+2.30%" was cut at 320). */
+@media (max-width: 374px) {
+  .deck__chan .battle--stage .battle__table th:nth-child(1) { width: 9%; }
+  .deck__chan .battle--stage .battle__table td:nth-child(1) { padding-left: 4px; padding-right: 0; }
+  .deck__chan .battle--stage .battle__table th:nth-child(2) { width: 25%; }
+  .deck__chan .battle--stage .battle__table th:nth-child(3) { width: 24%; }
+  .deck__chan .battle--stage .battle__table th:nth-child(8) { width: 42%; }
+}
+/* PHONE — the seats other lanes mount in the bar (ALERTS's `.armalert--deck`): on a phone the bar is a row of 36px pills
+   (the channel idiom), so a seat there is a 36px bordered pill with a 44px hit area — never a 44px item that grows the bar
+   (45px → 52px would move the first board row toward the 740px budget). */
+@media (max-width: 640px) {
+  .deck__bar .armalert--deck { align-self: center; min-height: 0; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; position: relative; }
+  @media (hover: none) {
+    .deck__bar .armalert--deck::after { content: ''; position: absolute; inset: -4px 0; }
   }
 }
