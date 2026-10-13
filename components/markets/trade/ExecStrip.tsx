@@ -225,6 +225,7 @@ export default function ExecStrip({
             data-tone={a.tone}
             aria-pressed={shown === a.side}
             data-journey={`Pick ${a.label}`}
+            {...(phone ? { 'data-sheet-open': 'order-ticket' } : {})}
             onClick={pickOnClick(a.side)}
           >
             {a.label}

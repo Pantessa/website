@@ -185,6 +185,7 @@ export default function RailAlerts() {
         aria-haspopup="dialog"
         data-fired={count || undefined}
         data-journey="Open alerts"
+        {...(phone ? { 'data-sheet-open': 'alerts' } : {})}
         onClick={() => setOpen((o) => !o)}
       >
         {count ? <BellRing className="h-4 w-4" aria-hidden /> : <Bell className="h-4 w-4" aria-hidden />}

@@ -47,13 +47,13 @@ check(
   'the bell: on a phone the alerts body is a Sheet (id "alerts"), the popover renders only off the phone, and the outside-click closer stands down for the sheet (its portal is outside the bell\'s root)',
   bell.includes("import Sheet from '@/components/mobile/Sheet'") && bell.includes('const phone = usePhoneSheet()') && bell.includes('{open && !phone && (') &&
     bell.includes('<Sheet open={open} onClose={() => setOpen(false)} title="Alerts" id="alerts" className="mkt-alertsheet">') && bell.includes('if (!open || phone) return') &&
-    bell.includes('data-journey="Open alerts"') && /const body = \(\s*<div className="mkt-alertpop__body">/.test(bell) && (bell.match(/\{body\}/g) ?? []).length === 2,
+    bell.includes('data-journey="Open alerts"') && bell.includes("{...(phone ? { 'data-sheet-open': 'alerts' } : {})}") && /const body = \(\s*<div className="mkt-alertpop__body">/.test(bell) && (bell.match(/\{body\}/g) ?? []).length === 2,
 )
 check(
   'the order ticket: on a phone a chip\'s ticket is a Sheet (id "order-ticket") titled by its side, the inline ticket renders only off the phone, ONE ticket element feeds both seats, and the sheet never opens on its own',
   strip.includes("import Sheet from '@/components/mobile/Sheet'") && strip.includes('const phone = usePhoneSheet()') && strip.includes('{shown && !phone && ticketEl}') &&
     strip.includes('<Sheet open={!!shown} onClose={close} title={shownLabel ?? `Trade ${pair.symbol}`} id="order-ticket" className="mkt-ticketsheet">') &&
-    strip.includes('{shown && ticketEl}') && strip.includes('if (window.matchMedia?.(PHONE_SHEET_QUERY).matches) open = false') && strip.includes('data-journey={`Pick ${a.label}`}') &&
+    strip.includes('{shown && ticketEl}') && strip.includes('if (window.matchMedia?.(PHONE_SHEET_QUERY).matches) open = false') && strip.includes('data-journey={`Pick ${a.label}`}') && strip.includes("{...(phone ? { 'data-sheet-open': 'order-ticket' } : {})}") &&
     (strip.match(/<OrderTicket/g) ?? []).length === 1,
 )
 check(
@@ -73,6 +73,10 @@ check(
     rf('components/markets/trade/trade.css').includes('.mkt-ticket__preset { min-width: 44px; }') && rf('components/markets/trade/trade.css').includes(".mkt-ticket input[type='range'] { height: 44px; }") && rf('components/markets/trade/trade.css').includes('.mkt-ticket__check { min-height: 44px; }') && rf('components/markets/technicals/fundamentals.css').includes(".mk-fund__head a::after, .mk-fund__foot a::after { content: ''; position: absolute; inset: -15px -6px; }") &&
     css.includes('.mkt-frame__top .mkt-frame__bell { width: 44px; height: 44px; }') && css.includes('.mk-ai__chip { min-height: 44px; }') &&
     css.includes(".sym .mkt-attrib::after { content: ''; position: absolute; inset: -7px 0; }") && css.includes('.mk-tape__item { min-height: 44px; padding-block: 0; }'),
+)
+check(
+  'QA-M1: the claim\'s display face carries a site-token fallback (look.css loads first, but the mk2 pin reads every --mk-* use)',
+  css.includes("font-family: var(--mk-font-display, 'Fraunces', Georgia, serif);"),
 )
 check(
   'the sheet bodies: the ticket loses its card chrome inside the sheet (the sheet is the card) and its own × (the sheet closes); the alerts body keeps its sections',
