@@ -427,7 +427,7 @@ export default function MosaicStudio({ from }: { from?: string }) {
                   onChange={(e) => setToken(r.id, e.target.value)}
                   placeholder="TOKEN"
                   aria-label="Token symbol"
-                  className="mono w-32 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                  className="mono w-32 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[length:var(--fs-md)] [@media(pointer:coarse)]:text-[length:var(--fs-input)] [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
                 />
                 <input
                   value={r.pct}
@@ -438,14 +438,15 @@ export default function MosaicStudio({ from }: { from?: string }) {
                   step="any"
                   placeholder="%"
                   aria-label="Percent"
-                  className="mono w-20 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-[color:var(--fg)] tabular-nums focus:outline-none focus:border-[var(--accent)]"
+                  className="mono w-20 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[length:var(--fs-md)] [@media(pointer:coarse)]:text-[length:var(--fs-input)] [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--fg)] tabular-nums focus:outline-none focus:border-[var(--accent)]"
                 />
                 <span className="mono text-[12px] text-[color:var(--muted-2)]">%</span>
                 <button
                   type="button"
                   onClick={() => removeRow(r.id)}
                   aria-label={`Remove the ${r.token || 'empty'} tile`}
-                  className="w-7 h-7 grid place-items-center rounded-lg text-[color:var(--muted-2)] hover:text-[color:var(--fg)] hover:bg-[var(--surf-2)] transition-colors"
+                  data-journey="Remove a tile"
+                  className="w-7 h-7 [@media(pointer:coarse)]:w-[var(--tap)] [@media(pointer:coarse)]:h-[var(--tap)] shrink-0 grid place-items-center rounded-lg text-[color:var(--muted-2)] hover:text-[color:var(--fg)] hover:bg-[var(--surf-2)] transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -459,7 +460,8 @@ export default function MosaicStudio({ from }: { from?: string }) {
               onClick={addRow}
               disabled={rows.length >= 8}
               title={rows.length >= 8 ? 'A shape keeps to 8 tiles so the batch stays signable' : 'Add a tile'}
-              className="inline-flex items-center gap-1.5 mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] disabled:opacity-40 transition-colors"
+              data-journey="Add a tile"
+              className="inline-flex items-center gap-1.5 mono text-[length:var(--fs-sm)] [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--muted)] hover:text-[color:var(--fg)] disabled:opacity-40 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" /> add a tile
             </button>
@@ -469,7 +471,8 @@ export default function MosaicStudio({ from }: { from?: string }) {
                 type="button"
                 onClick={normalize}
                 title="Scale every tile proportionally to sum exactly 100"
-                className="inline-flex items-center gap-1.5 mono text-[12px] text-[color:var(--accent)] hover:underline underline-offset-2"
+                data-journey="Scale the tiles to 100"
+                className="inline-flex items-center gap-1.5 mono text-[length:var(--fs-sm)] [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--accent)] hover:underline underline-offset-2"
               >
                 <Wand2 className="w-3.5 h-3.5" /> make it 100
               </button>
@@ -482,7 +485,7 @@ export default function MosaicStudio({ from }: { from?: string }) {
               <select
                 value={chain}
                 onChange={(e) => setChain(e.target.value as ChainChoice)}
-                className="min-w-0 max-w-[220px] rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                className="min-w-0 max-w-[220px] rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-[length:var(--fs-sm)] [@media(pointer:coarse)]:text-[length:var(--fs-input)] [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
               >
                 {CHAIN_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -592,7 +595,8 @@ export default function MosaicStudio({ from }: { from?: string }) {
           <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">The wall</h2>
           <Link
             href="/links"
-            className="mono text-[11px] text-[color:var(--accent)] hover:underline underline-offset-2"
+            data-journey="Open all intent links"
+            className="mono text-[length:var(--fs-xs)] [@media(pointer:coarse)]:inline-flex [@media(pointer:coarse)]:items-center [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--accent)] hover:underline underline-offset-2"
           >
             All intent links →
           </Link>

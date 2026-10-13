@@ -59,7 +59,8 @@ async function LinkEconomy() {
         </h2>
         <Link
           href="/links"
-          className="mono text-[length:var(--fs-xs)] text-[color:var(--accent)] hover:underline underline-offset-2"
+          data-journey="Open the full board"
+          className="mono text-[length:var(--fs-xs)] [@media(pointer:coarse)]:inline-flex [@media(pointer:coarse)]:items-center [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--accent)] hover:underline underline-offset-2"
         >
           Full board →
         </Link>

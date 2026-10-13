@@ -11,6 +11,7 @@
 // Data: GET /api/activity/overview (aggregates + artifact labels — never
 // prompts, never full wallets; chains carry step SHAPE only).
 
+import { cleanServerName } from '@/lib/utils'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, ShieldOff } from 'lucide-react'
 import { Card, Kpi, SkeletonCard, SkeletonKpi, timeAgo } from '@/lib/dashboard-ui'
@@ -525,8 +526,8 @@ export default function ActivityOverview({
                   />
                   <Medallion name={r.service} keys={[r.iconSlug, r.slug]} logoUrl={r.logoUrl} size={30} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-white text-[13px] truncate">
-                      {r.service}
+                    <p className="text-white text-[length:var(--fs-md)] truncate">
+                      {cleanServerName(r.service)}
                       {r.free && (
                         <span className="mono text-[9.5px] uppercase tracking-wide ml-2 px-1.5 py-px rounded-full border border-[color:var(--line-2)] text-[color:var(--muted-2)]">
                           free
@@ -600,7 +601,8 @@ export default function ActivityOverview({
                           href={e.link}
                           target="_blank"
                           rel="noreferrer"
-                          className="mono text-[11px] text-[color:var(--muted)] inline-flex items-center gap-0.5 hover:text-white transition-colors"
+                          data-journey="Open the transaction"
+                          className="mono text-[length:var(--fs-xs)] text-[color:var(--muted)] inline-flex items-center justify-center gap-0.5 [@media(pointer:coarse)]:min-h-[var(--tap)] [@media(pointer:coarse)]:min-w-[var(--tap)] hover:text-white transition-colors"
                           title="View on the block explorer"
                         >
                           tx <ArrowUpRight className="w-3 h-3" />
