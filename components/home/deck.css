@@ -302,3 +302,21 @@
     .deck__bar .armalert--deck::after { content: ''; position: absolute; inset: -4px 0; }
   }
 }
+/* PHONE — ARENA's sheet trigger in the bar ("+ Your markets", 2026-10-13) sat AFTER the door chip, at x=462 — past
+   the bar's right edge at every phone width (a returning visitor never saw it without scrolling the bar). It rides
+   second, after the switch; the 34px "Change" trigger in the stage's pick head and the tape's row gets a 44px hit
+   area (it measured 83×34 in every battle and tape cell). */
+@media (max-width: 640px) {
+  .deck__flick { order: -2; }
+  .deck__bar .picksheet--deck { order: -1; }
+  @media (hover: none) {
+    .deck__stage .picksheet__trigger { position: relative; }
+    .deck__stage .picksheet__trigger::after { content: ''; position: absolute; inset: -5px 0; }
+  }
+}
+/* PHONE — at 320 the bar is 286px: Book (88) + the pill (118) + Pulse (77) don't fit, and the picked channel must stay
+   in view (measured: Pulse 238–315 against a bar ending at 303). Under 375 the pill keeps its place after the channels
+   (the sheet opens by itself on a first visit). */
+@media (max-width: 374px) {
+  .deck__bar .picksheet--deck { order: 0; }
+}
