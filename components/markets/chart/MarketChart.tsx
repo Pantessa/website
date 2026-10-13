@@ -41,7 +41,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
-import { ChartCandlestick, ChevronsRight, Eraser, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, Rows3, Ruler, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, TrendingUp, Undo2 } from 'lucide-react'
+import { ChartCandlestick, ChevronsRight, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, RotateCcw, Rows3, Ruler, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, Trash2, TrendingUp, Undo2 } from 'lucide-react'
 import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, isPrintTf, tfsForSource, type Candle, type ChartTf } from '@/lib/charts'
 import { PRINT_KEEP_MS, applyPrint, barsFromPrints, chartLiveFeed, printOf, tailIsLive, tailWords } from '@/lib/chart-live'
 import { syncTfParam } from '@/lib/markets'
@@ -1263,6 +1263,20 @@ export default function MarketChart({
 
   const goLive = useCallback(() => chartRef.current?.timeScale().scrollToRealTime(), [])
 
+  // Back to plain candles: no drawings, no indicators, the price axis fitted,
+  // the newest bar in view. The drawings go through `edit`, so undo restores them.
+  const chartDirty = lines.length > 0 || overlays.size > 0 || scaleManual || view !== 'candles'
+  const resetChart = useCallback(() => {
+    setTool('none')
+    setNoteDraft(null)
+    setSelectedId(null)
+    if (lines.length > 0) edit([])
+    setOverlays(new Set())
+    setView('candles')
+    resetScale()
+    chartRef.current?.timeScale().resetTimeScale()
+  }, [lines.length, edit, resetScale])
+
   // Keys over the chart (lib/chart-legend chartKey): 1-4 pick the frame, the
   // left and right arrows walk the bars, + and - zoom about the right edge, L
   // or End returns to the newest bar. Only while the pointer is over this
@@ -1518,6 +1532,11 @@ export default function MarketChart({
               </>
             )}
           </span>
+          {tools && candles.length > 0 && chartDirty && (
+            <button type="button" className="mkt-sharebtn mono" data-chart-reset title="Reset the chart to plain candles — drawings, indicators and zoom cleared (undo brings the drawings back)" onClick={resetChart}>
+              <RotateCcw className="h-3 w-3" /> Reset
+            </button>
+          )}
           {tools && candles.length > 0 && (
             <button type="button" className="mkt-sharebtn mono" aria-haspopup="dialog" aria-expanded={shareOpen} title="Share this chart — image, link, or a stamped call on X" onClick={() => setShareOpen(true)}>
               <Share2 className="h-3 w-3" /> Share
@@ -1571,15 +1590,15 @@ export default function MarketChart({
             {lines.length > 0 && (
               <button
                 type="button"
-                className="mkt-tool"
-                title="Clear drawings"
-                aria-label="Clear drawings"
+                className="mkt-tool mkt-tool--clear mono"
+                title="Delete every drawing on this chart (undo brings them back)"
+                aria-label="Delete all drawings"
                 onClick={() => {
                   edit([])
                   setSelectedId(null)
                 }}
               >
-                <Eraser className="h-3.5 w-3.5" />
+                <Trash2 className="h-3.5 w-3.5" /> Clear all
               </button>
             )}
           </div>
