@@ -15,6 +15,12 @@
 // plus every market the stream has already printed, so a Lighter-only
 // book (OPENAI) resolves once it has been seen. Pure except the two
 // localStorage helpers (try/catch, never throw). Pinned in scripts/tape-pins.
+//
+// RETIRED AS A WRITER (GTM squad 2026-10-13, lane PICK): the rows now read
+// THE ONE PICK (lib/market-pick + lib/use-market-pick, key
+// `pantessa.markets.pick.v1`). This key is only READ, once, by
+// lib/market-pick readMarketPick to carry an old row over; nothing writes it.
+// The pure row helpers (chipRow, knownMarkets, watchlistMarkets) stay live.
 
 import { addOwnMarkets, resolveMarket, type OwnAdd } from '@/lib/battle'
 
@@ -58,6 +64,7 @@ export function serializeLiveMarketMemory(m: LiveMarketMemory): string {
   return JSON.stringify({ v: 1, own: m.own.slice(0, MAX_OWN_MARKETS), at: m.at })
 }
 
+/** Retired as a surface read (2026-10-13): lib/market-pick readMarketPick carries it over once. */
 export function readLiveMarketMemory(): LiveMarketMemory | null {
   try {
     return parseLiveMarketMemory(window.localStorage.getItem(LIVE_MARKETS_KEY))
@@ -66,6 +73,7 @@ export function readLiveMarketMemory(): LiveMarketMemory | null {
   }
 }
 
+/** Retired (2026-10-13): no surface writes this key any more — lib/market-pick writeMarketPick does. */
 export function writeLiveMarketMemory(own: readonly string[], at = Date.now()): void {
   try {
     window.localStorage.setItem(LIVE_MARKETS_KEY, serializeLiveMarketMemory({ own: [...own], at }))
@@ -107,6 +115,7 @@ export type OwnSource = 'memory' | 'watchlist' | null
 
 /** What the row opens on: the memory (even an empty one — a hand cleared
  *  it), else the watchlist, else nothing. */
+/** Retired (2026-10-13): lib/market-pick openingPick decides every row's opening. */
 export function openingOwnMarkets(d: { memory: LiveMarketMemory | null; watch: readonly string[] }): { own: string[]; source: OwnSource } {
   if (d.memory) return { own: [...d.memory.own], source: 'memory' }
   if (d.watch.length) return { own: [...d.watch], source: 'watchlist' }
@@ -115,10 +124,12 @@ export function openingOwnMarkets(d: { memory: LiveMarketMemory | null; watch: r
 
 /** Several at once, resolved against the venue's list plus what the
  *  stream has printed; capped at MAX_OWN_MARKETS. */
+/** Retired (2026-10-13): lib/market-pick addToPick (cap MAX_PICK). */
 export function addLiveMarkets(raw: string, known: readonly string[], current: readonly string[]): OwnAdd {
   return addOwnMarkets(raw, known, current, MAX_OWN_MARKETS)
 }
 
+/** Retired (2026-10-13): lib/market-pick removeFromPick. */
 export function removeLiveMarket(current: readonly string[], market: string): string[] {
   return current.filter((m) => m !== market)
 }
@@ -163,5 +174,5 @@ export function chipRow(own: readonly string[], rest: readonly string[], filter:
   return out
 }
 
-/** The note beside the add box while no hand has touched the row. */
+/** The note beside the add box while no hand has touched the row. Retired (2026-10-13): lib/market-pick pickSourceWord. */
 export const OWN_SOURCE_NOTE: Record<Exclude<OwnSource, null>, string> = { watchlist: 'from your watchlist', memory: 'as you left them' }

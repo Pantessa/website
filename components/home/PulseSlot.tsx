@@ -30,15 +30,15 @@ import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { useTradable } from '@/lib/use-tradable'
 import { FOLLOW_USD, fmtAxisClock, fmtAxisUsd, fmtPrice, fmtUsd, niceCeil, tapeMarket, type TapeFill, type TapeMarket, type TapeSource } from '@/lib/tape'
 import { connectTape, readTapeUniverse, type FeedStatus, type TapeHandle } from '@/lib/tape-feed'
-import { useWatchlists } from '@/components/markets/watchlist/useWatchlists'
 import { resolveMarket } from '@/lib/battle'
-import { MAX_OWN_MARKETS, OWN_SOURCE_NOTE, addLiveMarkets, chipRow, knownMarkets, openingOwnMarkets, readLiveMarketMemory, removeLiveMarket, watchlistMarkets, writeLiveMarketMemory, type OwnSource } from '@/lib/live-markets'
+import { chipRow, knownMarkets } from '@/lib/live-markets'
+import { MAX_PICK, addToPick, pickSourceWord } from '@/lib/market-pick'
+import { useMarketPick } from '@/lib/use-market-pick'
+import PickSheet from '@/components/live/PickSheet'
 import {
   PULSE_FALLBACK_MARKETS,
   PULSE_FLUSH_MS,
   PULSE_KEEP_MS,
-  PULSE_PICK_KEY,
-  PULSE_PICK_RE,
   PULSE_TILE_WINDOW_SEC,
   PULSE_UNIVERSE_TIMEOUT_MS,
   PULSE_VENUES,
@@ -98,26 +98,30 @@ export default function PulseSlot({ seat = 'band', onReport, onFills, onBookMark
   // tab opened in the background never opens the stream before it is seen.
   const [vis, setVis] = useState<PulseVisibility | null>(null)
   const [hover, setHover] = useState<number | null>(null)
-  // The token the band reads (lib/pulse pulsePick): null = every book. The
-  // remembered pick is read after mount so the server and first paint agree.
-  const [pickRaw, setPickRaw] = useState<string | null>(null)
-  useEffect(() => {
-    // A phone hides the chip row (the 160px budget), so it never wears a
-    // remembered pick it could not see or clear.
-    if (!window.matchMedia('(min-width: 641px)').matches) return
-    try {
-      const m = window.localStorage.getItem(PULSE_PICK_KEY)
-      if (m && PULSE_PICK_RE.test(m)) setPickRaw(m)
-    } catch {}
-  }, [])
-  const choose = useCallback((m: string | null) => {
-    setPickRaw(m)
-    setHover(null)
-    try {
-      if (m) window.localStorage.setItem(PULSE_PICK_KEY, m)
-      else window.localStorage.removeItem(PULSE_PICK_KEY)
-    } catch {}
-  }, [])
+  // THE ONE PICK (lib/use-market-pick, GTM squad 2026-10-13): your markets
+  // lead the row — the same list The Front, The Siege and the tape read, set
+  // on any of them. The token the band narrows to (lib/pulse pulsePick, null =
+  // every book) is the pick's LENS when the chip is yours (shared with the
+  // tape on the deck, never remembered — a lens is a look, the pick is what a
+  // hand keeps; the pulse's own lens memory (lib/pulse's pick key) is retired), or
+  // a PEEK at one of the venue's busiest: the band's alone, carried by no
+  // door, gone when you tap All or a chip of yours.
+  const picked = useMarketPick({ seat: 'stage' })
+  const own = picked.markets
+  const universe = picked.universe
+  const [peek, setPeek] = useState<string | null>(null)
+  const choose = useCallback(
+    (m: string | null) => {
+      setHover(null)
+      if (m && !picked.markets.includes(m)) {
+        setPeek(m)
+        return
+      }
+      setPeek(null)
+      picked.setLens(m)
+    },
+    [picked],
+  )
   const bufRef = useRef<TapeFill[]>([])
   const flushRef = useRef<number | null>(null)
   const handleRef = useRef<TapeHandle | null>(null)
@@ -130,64 +134,22 @@ export default function PulseSlot({ seat = 'band', onReport, onFills, onBookMark
   onBookMarketRef.current = onBookMarket
   const onPickRef = useRef(onPick)
   onPickRef.current = onPick
-  // Your own markets (lib/live-markets — /live's rule, on the band): a
-  // hand's list leads the row and rides the relay's filter; remembered in
-  // this browser; the watchlist stands in until a hand touches it.
-  const [own, setOwn] = useState<string[]>([])
-  const [ownSource, setOwnSource] = useState<OwnSource>(null)
-  const [universe, setUniverse] = useState<string[]>([])
+  // Add / remove are a hand on the pick: several at once, resolved against
+  // the venue's list plus every market the band has already printed.
   const [draft, setDraft] = useState('')
   const [addNote, setAddNote] = useState<string | null>(null)
-  const handRef = useRef(false)
-  const wl = useWatchlists({ holdings: false })
-  const watchSymbols = useMemo(() => {
-    if (!wl.ready) return [] as string[]
-    const activeId = (wl.active as { id?: string } | null)?.id
-    const ordered = [...wl.lists].sort((a, b) => (a.id === activeId ? -1 : b.id === activeId ? 1 : 0))
-    const out: string[] = []
-    for (const l of ordered) for (const sym of l.symbols) if (!out.includes(sym)) out.push(sym)
-    return out
-  }, [wl.ready, wl.lists, wl.active])
-  useEffect(() => {
-    const mem = readLiveMarketMemory()
-    if (mem) {
-      setOwn(mem.own)
-      setOwnSource('memory')
-    }
-  }, [])
-  useEffect(() => {
-    if (handRef.current || ownSource === 'memory' || !universe.length) return
-    const d = openingOwnMarkets({ memory: null, watch: watchlistMarkets(watchSymbols, universe) })
-    if (d.source === 'watchlist') {
-      setOwn(d.own)
-      setOwnSource('watchlist')
-    }
-  }, [watchSymbols, universe, ownSource])
   const addOwn = useCallback(
     (raw: string) => {
-      const r = addLiveMarkets(raw, knownMarkets(universe, new Set(bufRef.current.map((f) => f.market))), own)
+      const r = addToPick(raw, knownMarkets(picked.universe, new Set(bufRef.current.map((f) => f.market))), picked.markets)
       if (r.added.length) {
-        handRef.current = true
-        const next = [...own, ...r.added]
-        setOwn(next)
-        setOwnSource('memory')
-        writeLiveMarketMemory(next)
+        picked.set([...picked.markets, ...r.added], 'hand')
         setDraft('')
       }
-      setAddNote(r.unknown.length ? `no venue prints ${r.unknown.map((u) => u.toUpperCase()).join(', ')} yet` : r.full.length ? `the row holds ${MAX_OWN_MARKETS} of yours` : null)
+      setAddNote(r.unknown.length ? `no venue prints ${r.unknown.map((u) => u.toUpperCase()).join(', ')} yet` : r.full.length ? `the row holds ${MAX_PICK} of yours` : null)
     },
-    [own, universe],
+    [picked],
   )
-  const removeOwn = useCallback(
-    (m: string) => {
-      handRef.current = true
-      const next = removeLiveMarket(own, m)
-      setOwn(next)
-      setOwnSource('memory')
-      writeLiveMarketMemory(next)
-    },
-    [own],
-  )
+  const removeOwn = useCallback((m: string) => picked.remove(m), [picked])
   // The aim: your own markets first, then the venue's pick.
   const aim = useMemo(() => [...new Set([...own, ...markets])], [own, markets])
 
@@ -210,7 +172,6 @@ export default function PulseSlot({ seat = 'band', onReport, onFills, onBookMark
       window.clearTimeout(timer)
       if (gone) return
       setMarkets(pulseMarketsFrom(main, xyz))
-      setUniverse([...main, ...xyz].filter((r) => !r.delisted).sort((a, b) => b.volumeUsd - a.volumeUsd).map((r) => r.name))
     })
     return () => {
       gone = true
@@ -295,7 +256,7 @@ export default function PulseSlot({ seat = 'band', onReport, onFills, onBookMark
   const { act, door } = useConnectToAct({ run, redirectFor: promptHref })
 
   const chipOk = useCallback((ask: string) => canTradeAsk(ask, tradable), [tradable])
-  const pick = pulsePick(pickRaw, aim)
+  const pick = pulsePick(peek ?? picked.lens, aim)
   const bars = useMemo(() => pulseBars(fills, now, undefined, pick), [fills, now, pick])
   const tiles = useMemo(() => pulseTiles(fills, now, chipOk, pick), [fills, now, chipOk, pick])
   const have = pick ? fills.some((f) => f.market === pick) : fills.length > 0
@@ -312,9 +273,11 @@ export default function PulseSlot({ seat = 'band', onReport, onFills, onBookMark
   useEffect(() => {
     onReportRef.current?.({ status, detail, source, markets: aim.length, hidden })
   }, [status, detail, source, aim.length, hidden])
+  // The deck's doors carry the LENS only (a peek is the band's own).
+  const lens = picked.lens
   useEffect(() => {
-    onPickRef.current?.(pick)
-  }, [pick])
+    onPickRef.current?.(lens)
+  }, [lens])
   const hotName = tiles.hot?.market.name ?? null
   useEffect(() => {
     onBookMarketRef.current?.(pick ?? hotName)
@@ -346,7 +309,7 @@ export default function PulseSlot({ seat = 'band', onReport, onFills, onBookMark
               </Link>
             ))}
           </nav>
-          <Link href={pulseLiveHref(pick)} className="pulse__door" prefetch={false} data-journey="Open the live tape">
+          <Link href={pulseLiveHref(lens)} className="pulse__door" prefetch={false} data-journey="Open the live tape">
             <span className="pulse__door-long">Open the live tape</span>
             <span className="pulse__door-short">Live tape</span> <span aria-hidden>→</span>
           </Link>
@@ -354,7 +317,7 @@ export default function PulseSlot({ seat = 'band', onReport, onFills, onBookMark
         )}
 
         <div className="pulse__markets" role="group" aria-label="Markets on the pulse">
-          <button type="button" className={`pulse__m${pick === null ? ' is-on' : ''}`} aria-pressed={pick === null} onClick={() => choose(null)}>
+          <button type="button" className={`pulse__m${pick === null ? ' is-on' : ''}`} aria-pressed={pick === null} onClick={() => choose(null)} data-journey="Show every book on the pulse">
             All <span className="mono pulse__mcount">{aim.length}</span>
           </button>
           <form
@@ -374,11 +337,11 @@ export default function PulseSlot({ seat = 'band', onReport, onFills, onBookMark
                 const picked = (e.nativeEvent as InputEvent).inputType === 'insertReplacementText'
                 if (picked && resolveMarket(v, universe)) addOwn(v)
               }}
-              placeholder={own.length >= MAX_OWN_MARKETS ? 'row is full' : '+ your own'}
+              placeholder={own.length >= MAX_PICK ? 'row is full' : '+ your own'}
               aria-label="Add your own markets, several with commas"
               autoComplete="off"
-              disabled={own.length >= MAX_OWN_MARKETS}
-              title={addNote ?? (ownSource === 'watchlist' && own.length ? `${OWN_SOURCE_NOTE.watchlist} · remembered once you touch it` : 'commas add several · remembered in this browser')}
+              disabled={own.length >= MAX_PICK}
+              title={addNote ?? (picked.source === 'watchlist' && own.length ? `${pickSourceWord('watchlist')} · remembered once you touch it` : 'commas add several · remembered in this browser')}
             />
             <datalist id="pulse-universe">
               {universe.slice(0, 400).map((m) => (
@@ -391,17 +354,18 @@ export default function PulseSlot({ seat = 'band', onReport, onFills, onBookMark
               </span>
             )}
           </form>
+          <PickSheet pick={picked} seat="pulse" />{/* seat: ARENA (GTM squad 2026-10-13) */}
           {chipRow(own, markets, null, markets.length).map(({ market: m, own: isOwn }) => {
             const tm = tapeMarket(m)
             const chip = (
-              <button type="button" className={`pulse__m${pick === m ? ' is-on' : ''}`} aria-pressed={pick === m} data-kind={tm.kind} data-own={isOwn || undefined} onClick={() => choose(pick === m ? null : m)}>
+              <button type="button" className={`pulse__m${pick === m ? ' is-on' : ''}`} aria-pressed={pick === m} data-kind={tm.kind} data-own={isOwn || undefined} onClick={() => choose(pick === m ? null : m)} data-journey={`${pick === m ? 'Show every book, not' : 'Narrow the pulse to'} ${tm.ticker}`}>
                 <MarketName m={tm} />
               </button>
             )
             return isOwn ? (
               <span key={m} className="pulse__mown">
                 {chip}
-                <button type="button" className="pulse__mx" onClick={() => removeOwn(m)} aria-label={`Remove ${m} from your markets`} title="Remove">
+                <button type="button" className="pulse__mx" onClick={() => removeOwn(m)} aria-label={`Remove ${m} from your markets`} title="Remove" data-journey={`Remove ${tm.ticker} from your markets`}>
                   ×
                 </button>
               </span>

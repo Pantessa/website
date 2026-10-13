@@ -253,12 +253,17 @@ export function tapePins(check: Check): void {
   const row = chipRow(['UNI', 'ETH'], ['BTC', 'ETH', 'SOL', 'DOGE'], 'xyz:MU', 2)
   check('own markets: the chip row leads with yours in your order (wearing the remove button), then the page\'s own list minus what you hold, capped, the active filter kept in view',
     row.map((e) => `${e.market}${e.own ? '*' : ''}`).join(',') === 'xyz:MU,UNI*,ETH*,BTC,SOL' && chipRow([], ['BTC'], null, 5).length === 1 && chipRow([], ['BTC'], 'BTC', 5).length === 1, row.map((e) => e.market).join(','))
-  check('own markets: both rows read the memory on mount, write it ONLY from a hand (add / remove — a watchlist default is never remembered as yours), read the watchlist as a second instance (`holdings: false`, never the rail\'s reconcile claim), and the venue socket\'s subscription carries your own markets',
+  // RE-PINNED 2026-10-13 (gtm3h): the rows read THE ONE PICK (lib/use-market-pick) — the store reads the
+  // memory once, writes it only from a hand (add / remove / a fill-from), reads the watchlist as a second
+  // instance; the rows write no storage of their own and the old live-row key is never written.
+  check('own markets: both rows read the one pick, write it ONLY from a hand (add / remove — a watchlist default is never remembered as yours), the store reads the watchlist as a second instance (`holdings: false`, never the rail\'s reconcile claim), and the venue socket\'s subscription carries your own markets',
     (() => {
       const live = readFileSync('components/live/LiveFeed.tsx', 'utf8')
       const slot = readFileSync('components/home/PulseSlot.tsx', 'utf8')
-      const hand = (src: string) => (src.match(/writeLiveMarketMemory\(next\)/g) ?? []).length === 2 && (src.match(/handRef\.current = true/g) ?? []).length === 2 && /readLiveMarketMemory\(\)/.test(src) && /useWatchlists\(\{ holdings: false \}\)/.test(src) && /openingOwnMarkets\(\{ memory: null, watch: watchlistMarkets\(watchSymbols, universe\) \}\)/.test(src) && /if \(handRef\.current \|\| ownSource === 'memory'/.test(src) && /insertReplacementText/.test(src)
-      return hand(live) && hand(slot) && /feed\.connect\(\[\.\.\.new Set\(\[\.\.\.markets, \.\.\.own\]\)\], handlers\)/.test(live) && /chipRow\(own, busiest \?\? markets \?\? \[\.\.\.FALLBACK_MARKETS\], filter, CHIP_MARKETS\)/.test(live) && /const aim = useMemo\(\(\) => \[\.\.\.new Set\(\[\.\.\.own, \.\.\.markets\]\)\], \[own, markets\]\)/.test(slot) && /chipRow\(own, markets, null, markets\.length\)/.test(slot)
+      const store = readFileSync('lib/use-market-pick.ts', 'utf8')
+      const hand = (src: string) => /useMarketPick\(\{ seat: '(page|stage)' \}\)/.test(src) && /\.set\(\[\.\.\.(pick|picked)\.markets, \.\.\.r\.added\], 'hand'\)/.test(src) && /\.remove\(m\)/.test(src) && !/localStorage\.setItem|writeLiveMarketMemory\(|writeMarketPick\(/.test(src) && /insertReplacementText/.test(src)
+      const storeOk = /useWatchlists\(\{ holdings: false \}\)/.test(store) && /show: \(markets, source, write = source === 'hand'\) => \{\s*const next = cleanPick\(markets\)\s*if \(write\) writeMarketPick\(next\)/.test(store) && /readMarketPick\(\)/.test(store) && !/writeLiveMarketMemory|ARMY_MEMORY_KEY/.test(store)
+      return hand(live) && hand(slot) && storeOk && /feed\.connect\(\[\.\.\.new Set\(\[\.\.\.markets, \.\.\.own\]\)\], handlers\)/.test(live) && /chipRow\(own, busiest \?\? markets \?\? \[\.\.\.FALLBACK_MARKETS\], filter, CHIP_MARKETS\)/.test(live) && /const aim = useMemo\(\(\) => \[\.\.\.new Set\(\[\.\.\.own, \.\.\.markets\]\)\], \[own, markets\]\)/.test(slot) && /chipRow\(own, markets, null, markets\.length\)/.test(slot)
     })())
 
   // ── The chart's live tail (lib/chart-live, 2026-10-13) ────────────────
