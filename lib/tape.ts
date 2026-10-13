@@ -11,14 +11,15 @@
 //
 // This module is the pure half: fill shapes, the flow classes, the per-second
 // buckets, the tiles, the follow asks, the trigger rules, the market pick.
-// No browser, no network. lib/tape-feed.ts is the streaming half (the
-// Hyperliquid WebSocket today; the Dune adapter slot beside it), and
+// No browser, no network. lib/tape-feed.ts is the streaming half (Dune's
+// real-time feeds through our relay — lib/dune parses the wire — with the
+// venue's own Hyperliquid WebSocket as the keyless fallback), and
 // components/live/LiveFeed.tsx draws it. Pinned by scripts/tape-pins.ts.
 //
 // Rules the chart work taught (HANDOFF-battlefield): every pixel is a
 // number; measured and estimated never mix — a field a feed does not carry
 // is shown as missing, never guessed (the HL stream has no position effect
-// and no block; those two columns are what a position-aware stream adds).
+// and no block; Dune's perp feeds carry both, 2026-10-13).
 
 import { chartPairFor, isChartedStock } from '@/lib/charts'
 
@@ -29,7 +30,55 @@ export type TapeSide = 'buy' | 'sell'
  *  position-aware stream knows it; the venue's own trade feed does not. */
 export type TapeEffect = 'open' | 'increase' | 'decrease' | 'close' | 'flip'
 
+/** The transport a fill came over: the venue's own socket, or Dune's feed
+ *  through our relay. */
 export type TapeSource = 'hyperliquid' | 'dune'
+
+/** WHERE a fill printed. `hyperliquid` over either transport (the venue's
+ *  socket or Dune's HyperCore feed); `lighter`, `lighter-robinhood` (the
+ *  USDG-settled book: OPENAI, ANTHROPIC, CRCL …) and `dex` (a spot swap on
+ *  an EVM chain, `chainId` says which) only arrive through Dune. */
+export type TapeVenue = 'hyperliquid' | 'lighter' | 'lighter-robinhood' | 'dex'
+
+export const TAPE_VENUES: readonly TapeVenue[] = ['hyperliquid', 'lighter', 'lighter-robinhood', 'dex']
+
+export const TAPE_VENUE_LABEL: Record<TapeVenue, string> = {
+  hyperliquid: 'Hyperliquid',
+  lighter: 'Lighter',
+  'lighter-robinhood': 'Lighter · Robinhood',
+  dex: 'DEX',
+}
+
+const CHAIN_TAG: Record<number, string> = { 1: 'eth', 8453: 'base', 42161: 'arb', 10: 'op' }
+const CHAIN_WORD: Record<number, string> = { 1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum', 10: 'Optimism' }
+
+/** The small tag beside a market on a row: `hl` · `lighter` · `lighter·rh`
+ *  · the chain of a spot swap (`base`). */
+export function venueTag(venue: TapeVenue, chainId: number | null): string {
+  switch (venue) {
+    case 'hyperliquid':
+      return 'hl'
+    case 'lighter':
+      return 'lighter'
+    case 'lighter-robinhood':
+      return 'lighter·rh'
+    case 'dex':
+      return chainId != null ? (CHAIN_TAG[chainId] ?? `chain ${chainId}`) : 'dex'
+  }
+}
+
+/** The chain's name for an ask: `on Base`. Null when the chain is unknown. */
+export function chainWord(chainId: number | null): string | null {
+  return chainId != null ? (CHAIN_WORD[chainId] ?? null) : null
+}
+
+/** A spot symbol → the ticker the ask grammar knows (lib/token-home: a buy
+ *  of "ETH" is the native coin; cbBTC/WBTC are the BTC the cascade swaps). */
+export const DEX_ASK_TICKER: Readonly<Record<string, string>> = { WETH: 'ETH', WBTC: 'BTC', CBBTC: 'BTC' }
+
+export function dexAskTicker(symbol: string): string {
+  return DEX_ASK_TICKER[symbol.toUpperCase()] ?? symbol.toUpperCase()
+}
 
 export interface TapeFill {
   /** The venue's own id (HL `tid`), the dedupe key across reconnects. */
@@ -51,6 +100,9 @@ export interface TapeFill {
   effect: TapeEffect | null
   block: number | null
   source: TapeSource
+  venue: TapeVenue
+  /** The EVM chain of a spot swap; null for a perp. */
+  chainId: number | null
 }
 
 /** What a feed carries. Rendered as columns when true, named as missing when
@@ -186,6 +238,27 @@ export function subscriptionDelta(prev: readonly string[], next: readonly string
  *  books, 2026-10-06, and the xyz stocks Dune's own clip showed). */
 export const FALLBACK_MARKETS: readonly string[] = ['BTC', 'ETH', 'HYPE', 'SOL', 'XRP', 'DOGE', 'UNI', 'AAVE', 'NEAR', 'SUI', 'xyz:TSLA', 'xyz:NVDA', 'xyz:INTC', 'xyz:SNDK', 'xyz:AAPL', 'xyz:HOOD']
 
+/**
+ * The markets carrying the most dollars in the last `windowMs`, busiest
+ * first — the chip row when the stream is a firehose (Dune's feeds carry
+ * every market, so there is no subscription to list; the busiest books
+ * RIGHT NOW are the honest chips). Pure; the caller re-reads it on its
+ * clock. A market with no dollars in the window is not busy.
+ */
+export function busiestMarkets(fills: readonly TapeFill[], nowMs: number, n: number, windowMs = 60_000): string[] {
+  const floor = nowMs - windowMs
+  const usd = new Map<string, number>()
+  for (const f of fills) {
+    if (f.at < floor) continue
+    usd.set(f.market, (usd.get(f.market) ?? 0) + f.usd)
+  }
+  return [...usd.entries()]
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+    .slice(0, n)
+    .map(([m]) => m)
+}
+
 // ── Parsing a venue's row ────────────────────────────────────────────────────
 
 /** Hyperliquid's `trades` WebSocket row. `users` is `[buyer, seller]`; the
@@ -227,65 +300,24 @@ export function fillFromHl(t: HlWsTrade): TapeFill | null {
     effect: null,
     block: null,
     source: 'hyperliquid',
+    venue: 'hyperliquid',
+    chainId: null,
   }
 }
 
-/**
- * The row shape the Dune adapter expects — the columns of Dune's own feed
- * (market · side · size · price · notional · effect · time · taker · block),
- * so wiring their stream is a field map, not a rewrite. Anything the row
- * does not carry is null, never guessed.
- */
-export interface DuneStreamRow {
-  market: string
-  side: 'buy' | 'sell' | 'B' | 'A'
-  size: number | string
-  price: number | string
-  notional?: number | string
-  effect?: string | null
-  time: number | string
-  taker?: string | null
-  maker?: string | null
-  tx_hash?: string | null
-  block?: number | string | null
-  id?: string | number
-}
-
-const EFFECTS = new Set<TapeEffect>(['open', 'increase', 'decrease', 'close', 'flip'])
-
-export function fillFromDune(r: DuneStreamRow): TapeFill | null {
-  const price = Number(r.price)
-  const size = Number(r.size)
-  if (!r.market || !Number.isFinite(price) || !Number.isFinite(size) || price <= 0 || size <= 0) return null
-  const side: TapeSide | null = r.side === 'buy' || r.side === 'B' ? 'buy' : r.side === 'sell' || r.side === 'A' ? 'sell' : null
-  if (!side) return null
-  const at = typeof r.time === 'number' ? r.time : Date.parse(String(r.time))
-  if (!Number.isFinite(at)) return null
-  const effect = typeof r.effect === 'string' && EFFECTS.has(r.effect.toLowerCase() as TapeEffect) ? (r.effect.toLowerCase() as TapeEffect) : null
-  const block = r.block == null ? null : Number(r.block)
-  const notional = r.notional == null ? NaN : Number(r.notional)
-  return {
-    id: `dune:${r.id ?? `${r.market}:${at}:${r.taker ?? ''}:${size}`}`,
-    market: r.market,
-    side,
-    size,
-    price,
-    usd: Number.isFinite(notional) && notional > 0 ? notional : size * price,
-    at,
-    taker: r.taker?.toLowerCase() ?? null,
-    maker: r.maker?.toLowerCase() ?? null,
-    hash: r.tx_hash && !ZERO_HASH.test(r.tx_hash) ? r.tx_hash : null,
-    effect,
-    block: block != null && Number.isFinite(block) ? block : null,
-    source: 'dune',
-  }
-}
+// Dune's wire (perp-trades.json.v1 · dex-trades.json.v1) is parsed by
+// lib/dune fillFromDunePerp / fillFromDuneDex — measured against the live
+// feeds on 2026-10-13, not guessed from a clip.
 
 // ── The buffer ───────────────────────────────────────────────────────────────
 
-/** How much tape the page keeps: the flow window plus the trigger windows. */
+/** How much tape the page keeps: the flow window plus the trigger windows.
+ *  The cap must outlast the window: Dune's three perp venues together
+ *  measured ~75 fills/s on 2026-10-13 (HyperCore 41/s across every market),
+ *  so 4,000 fills was 53s of a 180s window and the oldest bars would have
+ *  thinned. 20,000 covers 110 fills/s for the whole window. */
 export const TAPE_KEEP_MS = 180_000
-export const TAPE_MAX_FILLS = 4_000
+export const TAPE_MAX_FILLS = 20_000
 
 /**
  * Merge a batch into the buffer (newest first), dropping duplicates by id
@@ -365,8 +397,10 @@ export interface TapeStats {
   /** Dollars over the last sixty seconds. */
   notionalPerMin: number
   largestPrint: TapeFill | null
-  /** The market with the most dollars in the window, and which side carried them. */
-  hotMarket: { market: string; usd: number; side: TapeSide } | null
+  /** The market with the most dollars in the window, which side carried
+   *  them, and where its newest fill printed (a DEX market follows as a
+   *  spot buy, a perp as the Hyperliquid sentence). */
+  hotMarket: { market: string; usd: number; side: TapeSide; venue: TapeVenue; chainId: number | null } | null
   takerFlow: { buyUsd: number; sellUsd: number; buyPct: number | null }
 }
 
@@ -378,7 +412,7 @@ export function tapeStats(fills: readonly TapeFill[], nowMs: number, market: str
   let largest: TapeFill | null = null
   let buyUsd = 0
   let sellUsd = 0
-  const byMarket = new Map<string, { usd: number; buy: number }>()
+  const byMarket = new Map<string, { usd: number; buy: number; venue: TapeVenue; chainId: number | null }>()
   for (const f of fills) {
     if (market && f.market !== market) continue
     if (f.at < minAgo) continue
@@ -387,13 +421,13 @@ export function tapeStats(fills: readonly TapeFill[], nowMs: number, market: str
     if (!largest || f.usd > largest.usd) largest = f
     if (f.side === 'buy') buyUsd += f.usd
     else sellUsd += f.usd
-    const r = byMarket.get(f.market) ?? { usd: 0, buy: 0 }
+    const r = byMarket.get(f.market) ?? { usd: 0, buy: 0, venue: f.venue, chainId: f.chainId }
     r.usd += f.usd
     if (f.side === 'buy') r.buy += f.usd
     byMarket.set(f.market, r)
   }
-  let hot: { market: string; usd: number; side: TapeSide } | null = null
-  for (const [m, r] of byMarket) if (!hot || r.usd > hot.usd) hot = { market: m, usd: r.usd, side: r.buy * 2 >= r.usd ? 'buy' : 'sell' }
+  let hot: TapeStats['hotMarket'] = null
+  for (const [m, r] of byMarket) if (!hot || r.usd > hot.usd) hot = { market: m, usd: r.usd, side: r.buy * 2 >= r.usd ? 'buy' : 'sell', venue: r.venue, chainId: r.chainId }
   const flow = buyUsd + sellUsd
   return {
     tradesPerSec: Math.round(ten / 10),
@@ -412,8 +446,9 @@ export interface FollowAsk {
   ask: string
   label: string
   tone: 'buy' | 'sell'
-  /** The venue the sentence runs on. */
-  venue: 'hyperliquid' | 'robinhood'
+  /** The venue the sentence runs on: the Hyperliquid layer, the Robinhood
+   *  Chain stock buy, or the spot swap cascade (`spot`) for a DEX print. */
+  venue: 'hyperliquid' | 'robinhood' | 'spot'
 }
 
 /**
@@ -425,10 +460,24 @@ export interface FollowAsk {
  *     (our Hyperliquid layer runs the main book only; the spot stock is the
  *     honest twin). A stock SELL needs a position, so it offers nothing —
  *     the sell gate's rule.
+ *   • a DEX spot swap (Dune's dex feed, `venue: 'dex'`) → the same swap on
+ *     the chain it printed on, `Buy $25 of ETH on Base` (WETH is the ETH the
+ *     cascade buys; cbBTC/WBTC are BTC). A spot SELL needs a holding, so it
+ *     offers nothing — the sell gate's rule again.
+ *   • a Lighter perp keeps the Hyperliquid sentence for the same ticker
+ *     (that is the perp layer the chat runs); an unlisted one (OPENAI) the
+ *     gate refuses, so the row says "no route here".
  *   • anything else (a k-prefixed 1000× coin, gold, FX) → null.
  * The caller still asks canTradeAsk before drawing it.
  */
-export function followAsk(fill: Pick<TapeFill, 'market' | 'side'>, usd = FOLLOW_USD): FollowAsk | null {
+export function followAsk(fill: Pick<TapeFill, 'market' | 'side'> & Partial<Pick<TapeFill, 'venue' | 'chainId'>>, usd = FOLLOW_USD): FollowAsk | null {
+  if (fill.venue === 'dex') {
+    if (fill.side !== 'buy') return null
+    const ticker = dexAskTicker(fill.market)
+    if (!TICKER_RE.test(ticker)) return null
+    const where = chainWord(fill.chainId ?? null)
+    return { ask: `Buy $${usd} of ${ticker}${where ? ` on ${where}` : ''}`, label: `Buy ${ticker}`, tone: 'buy', venue: 'spot' }
+  }
   const m = tapeMarket(fill.market)
   if (m.kind === 'coin') {
     if (!TICKER_RE.test(m.ticker)) return null

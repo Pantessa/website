@@ -34,6 +34,9 @@
   "functions": {
     "app/api/**/*.ts": {
       "maxDuration": 30
+    },
+    "app/api/live/stream/route.ts": {
+      "maxDuration": 300
     }
   }
 }

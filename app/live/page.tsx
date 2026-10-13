@@ -13,12 +13,15 @@ import '@/components/live/battle.css'
 // for ground, lib/battle): one to five armies, percent move as the ground,
 // the last sixty seconds of fills as the strength. Public to look at
 // (lib/app-entry isPublicAppPath via isMarketsPath); the wallet is asked for
-// at the action. Every stream is opened by the browser (lib/tape-feed,
-// lib/battle-feed); this page only reads which rows can be acted on.
+// at the action. The fills come from Dune's real-time feeds through our
+// relay (lib/tape-feed over /api/live/stream — HyperCore, Lighter, Lighter
+// Robinhood perps and the DEX spot trial; the venue's keyless socket is the
+// fallback); mids and candles are the venue's (lib/battle-feed). This page
+// only reads which rows can be acted on.
 
 const TITLE = 'Live feed — every print is a button'
 const DESCRIPTION =
-  'Hyperliquid fills as they land: notional per second by taker flow, the largest print, the hot market, the taker split, and the tape. Every row offers the sentence that does the same — your wallet signs it.'
+  'Hyperliquid, Lighter and DEX fills as they land through Dune\'s real-time feed: notional per second by taker flow, the largest print, the hot market, the taker split, and the tape. Every row offers the sentence that does the same — your wallet signs it.'
 
 export const metadata: Metadata = {
   title: TITLE,

@@ -28,8 +28,8 @@ import { askAppSlugs } from '@/lib/ask-apps'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { useTradable } from '@/lib/use-tradable'
-import { FOLLOW_USD, fmtAxisClock, fmtAxisUsd, fmtPrice, fmtUsd, niceCeil, tapeMarket, type TapeFill, type TapeMarket } from '@/lib/tape'
-import { connectHlTape, readTapeUniverse, type FeedStatus, type HlTapeHandle } from '@/lib/tape-feed'
+import { FOLLOW_USD, fmtAxisClock, fmtAxisUsd, fmtPrice, fmtUsd, niceCeil, tapeMarket, type TapeFill, type TapeMarket, type TapeSource } from '@/lib/tape'
+import { connectTape, readTapeUniverse, type FeedStatus, type TapeHandle } from '@/lib/tape-feed'
 import {
   PULSE_FALLBACK_MARKETS,
   PULSE_FLUSH_MS,
@@ -38,9 +38,11 @@ import {
   PULSE_PICK_RE,
   PULSE_TILE_WINDOW_SEC,
   PULSE_UNIVERSE_TIMEOUT_MS,
+  PULSE_VENUES,
+  PULSE_VENUE_WORD,
   PULSE_VIEW_LINKS,
   PULSE_WAITING,
-  PULSE_WHY,
+  PULSE_WHY_BY_SOURCE,
   PULSE_WINDOW_SEC,
   mergePulseFills,
   pulseBars,
@@ -69,6 +71,9 @@ export default function PulseSlot() {
   // the venue answers (the feed sets the same word when it opens).
   const [status, setStatus] = useState<FeedStatus>('connecting')
   const [detail, setDetail] = useState<string | undefined>(undefined)
+  // Which transport the band is reading: Dune through the relay, or the
+  // venue's keyless socket when the relay says `unconfigured` (connectTape).
+  const [source, setSource] = useState<TapeSource>('dune')
   const [now, setNow] = useState(() => Date.now())
   // null until mounted: the server and the first client paint agree, and a
   // tab opened in the background never opens the stream before it is seen.
@@ -96,7 +101,7 @@ export default function PulseSlot() {
   }, [])
   const bufRef = useRef<TapeFill[]>([])
   const flushRef = useRef<number | null>(null)
-  const handleRef = useRef<HlTapeHandle | null>(null)
+  const handleRef = useRef<TapeHandle | null>(null)
 
   // Visibility: read at mount, then every change (lib/pulse pulseVisibilityStep).
   useEffect(() => {
@@ -139,7 +144,11 @@ export default function PulseSlot() {
       flushRef.current = null
       setFills(bufRef.current)
     }
-    const handle = connectHlTape(marketsRef.current, {
+    const handle = connectTape(marketsRef.current, {
+      onSource: setSource,
+      onRetract: (venue, block) => {
+        bufRef.current = bufRef.current.filter((f) => !(f.venue === venue && f.block === block))
+      },
       onFills: (batch) => {
         const wasEmpty = bufRef.current.length === 0
         bufRef.current = mergePulseFills(bufRef.current, batch, Date.now())
@@ -154,7 +163,7 @@ export default function PulseSlot() {
         setStatus(s)
         setDetail(d)
       },
-    })
+    }, { venues: PULSE_VENUES, filter: true })
     handleRef.current = handle
     return () => {
       handleRef.current = null
@@ -164,8 +173,9 @@ export default function PulseSlot() {
     }
   }, [streamOn])
 
-  // The aim follows the pick on the open socket — subscribe what it adds,
-  // drop what it leaves (lib/tape subscriptionDelta) — never a reconnect.
+  // The aim follows the pick on the open stream — the relay's filter, or on
+  // the venue's socket subscribe what it adds and drop what it leaves
+  // (lib/tape subscriptionDelta) — never a quiet second.
   useEffect(() => {
     handleRef.current?.setMarkets(markets)
   }, [markets])
@@ -215,12 +225,12 @@ export default function PulseSlot() {
 
   return (
     <section className="pulse-seat" aria-label="Live pulse">
-      <div className="pulse" data-status={status} data-hidden={hidden || undefined} data-fills={have ? 'yes' : 'no'} data-markets={markets.length}>
+      <div className="pulse" data-status={status} data-source={source} data-hidden={hidden || undefined} data-fills={have ? 'yes' : 'no'} data-markets={markets.length}>
         <header className="pulse__head">
           <span className={`mk-dot ${live ? 'mk-dot--open' : 'mk-dot--closed'} pulse__dot`} aria-hidden />
           <span className="pulse__title">Live pulse</span>
           <span className="pulse__status mono" role="status">
-            <span className="pulse__venue">Hyperliquid · </span>
+            <span className="pulse__venue">{PULSE_VENUE_WORD[source]} · </span>
             <span className="pulse__status-long">{words}</span>
             <span className="pulse__status-short">{shortWords}</span>
           </span>
@@ -326,9 +336,9 @@ export default function PulseSlot() {
 
         <footer className="pulse__foot mono">
           <span className="pulse__why-long">
-            {PULSE_WHY.what} {PULSE_WHY.why}
+            {PULSE_WHY_BY_SOURCE[source].what} {PULSE_WHY_BY_SOURCE[source].why}
           </span>
-          <span className="pulse__why-phone">{PULSE_WHY.phone}</span>
+          <span className="pulse__why-phone">{PULSE_WHY_BY_SOURCE[source].phone}</span>
         </footer>
         {door}
       </div>

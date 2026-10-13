@@ -9,8 +9,11 @@ import {
   FALLBACK_MARKETS,
   FLOW_STACK,
   TAPE_KEEP_MS,
+  TAPE_MAX_FILLS,
+  busiestMarkets,
+  chainWord,
   detectTriggers,
-  fillFromDune,
+  dexAskTicker,
   fillFromHl,
   flowBuckets,
   flowClassOf,
@@ -27,8 +30,29 @@ import {
   tapeMarket,
   tapeStats,
   triggerDetail,
+  venueTag,
   type TapeFill,
 } from '../lib/tape'
+import {
+  DEFAULT_LIVE_VENUES,
+  DUNE_FEED_KEY_ENV,
+  DUNE_VENUES,
+  LIVE_STREAM_HOLD_MS,
+  LIVE_STREAM_MAX_DURATION_S,
+  PERP_VENUES,
+  duneFeedKey,
+  duneVenue,
+  fillFromDuneDex,
+  fillFromDunePerp,
+  fillsFromDuneFrame,
+  parseMarketList,
+  parseVenueList,
+  resumeUrl,
+  venueWords,
+  type DuneDexTrade,
+  type DunePerpTrade,
+} from '../lib/dune'
+import { simulateLadder } from './ask-ladder'
 import { capabilityTarget } from '../lib/venue-capability'
 import { tradeTarget } from '../lib/trade-venue-gate'
 import { composeExecAsk } from '../lib/trade-asks'
@@ -52,8 +76,18 @@ const fill = (over: Partial<TapeFill> & { id: string }): TapeFill => ({
   effect: null,
   block: null,
   source: 'hyperliquid',
+  venue: 'hyperliquid',
+  chainId: null,
   ...over,
 })
+
+// Dune's wire, verbatim from the live feeds on 2026-10-13 (keys the tape
+// does not read are left in so the parser is proven on the real shape).
+const HC_SELL: DunePerpTrade = { tx: { hash: '0x84ac722b458397e686260446747c2e02028a0010e086b6b828751d7e048771d1' }, trade_id: 'hypercore-1-1182039086-180-match-1030036812375233-0', venue: { name: 'hyperliquid', protocol: 'hypercore', id: 'HLPERP.HL', market: 'BERA', market_id: '180' }, mechanism: 'order_book', maker: { address: '0x8184405076b61ab78013f16393322eaf0d0a01a1', account_id: null, position_side: 'short', position_effect: 'decrease' }, taker: { address: '0x010461C14E146AC35FE42271BDC1134EE31C703A', account_id: null, position_side: 'long', position_effect: 'decrease' }, kind: 'trade', base_symbol: 'BERA', side: 'sell', size: '86.5', executed_price: '0.22125', executed_at: '2026-10-13T07:28:51.856169+00:00', value_usd: { amount: '19.13512682', source: 'chainlink', stale: false }, instrument_code: 'BERA-USDC.HLPERP.HL' }
+const LT_BUY: DunePerpTrade = { tx: { hash: '0000001f3bd01f91000001a13429fdbd000000000000000000000000000000000000000000000000' }, trade_id: 'lighter-1-354535562-50-match-0000001f3bd01f91000001a13429fdbd000000000000000000000000000000000000000000000000-0', venue: { name: 'lighter', protocol: 'lighter', id: 'LIGHTER', market: 'ARB', market_id: '50' }, mechanism: 'order_book', maker: { address: null, account_id: '281474976499586', position_side: 'long', position_effect: 'decrease' }, taker: { address: null, account_id: '281474976499712', position_side: 'long', position_effect: 'increase' }, kind: 'trade', base_symbol: 'ARB', side: 'buy', size: '0.2', executed_price: '0.18839', executed_at: '2026-10-13T07:28:49.597689+00:00', value_usd: { amount: '0.037678', source: 'venue_reported', stale: false }, instrument_code: 'ARB-USDC.LIGHTER' }
+const DEX_BUY: DuneDexTrade = { base: '0x4200000000000000000000000000000000000006', side: 'buy', executed_price: 2528.30354717563, instrument_code: 'WETH-USDC.UNIV3.BASE', quote: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', taker: '0x61040e143a77f165ba44543af4a079f2c809d14b', tokens: [{ address: '0x4200000000000000000000000000000000000006', amount_in: 0, amount_out: 0.14684991302359976, decimals: 18, symbol: 'WETH' }, { address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', amount_in: 371.281156, amount_out: 0, decimals: 6, symbol: 'USDC' }], trade_id: '8453-52543679-3-trace-146-0', tx: { from: '0xAD3FE4FA38AD6E05B7FC11647FC36457943493ED', hash: '0xe40557ef7d90dfd213ffc82fec0c14dcd054efeabb084aab59693f9d7c0b4126' }, value: { notional_usd: 371.2262695, price_source: 'chainlink', stale_usd_price: false }, venue: { id: 'UNIV3.BASE', name: 'UniswapV3', pool: '0xb4cb800910b228ed3d0834cf79d697127bbb00e5', protocol: 'UniswapV3' } }
+const HC_ENV = { block_number: 1182039086, chain: { type: 'hypercore', id: 1 } }
+const BASE_ENV = { block_number: 52543679, chain: { type: 'evm', id: 8453 } }
 
 export function tapePins(check: Check): void {
   // ── The venue's row ───────────────────────────────────────────────────
@@ -64,10 +98,44 @@ export function tapePins(check: Check): void {
       !!sell && sell.side === 'sell' && sell.taker === '0xseller' && sell.hash?.startsWith('0xa39c') === true && sell.market === 'xyz:SNDK', JSON.stringify([buy, sell]))
   check('tape: a row with no price, no size, a bad side or no coin is dropped, never drawn',
     fillFromHl({ coin: 'HYPE', side: 'B', px: 'nope', sz: '1', time: T0, tid: 1 }) === null && fillFromHl({ coin: 'HYPE', side: 'B', px: '1', sz: '0', time: T0, tid: 1 }) === null && fillFromHl({ coin: 'HYPE', side: 'X' as 'A', px: '1', sz: '1', time: T0, tid: 1 }) === null && fillFromHl({ coin: '', side: 'B', px: '1', sz: '1', time: T0, tid: 1 }) === null)
-  const dune = fillFromDune({ market: 'xyz:INTC', side: 'sell', size: '12.94', price: '118.62', notional: '1534.94', effect: 'increase', time: '2026-10-06T10:03:28.859Z', taker: '0x98DA633CC3814857680EB313DE6770B7A801F13B', block: '1159201256', id: 'abc' })
-  check('tape: a Dune-shaped row maps field for field — effect and block ride through, the venue\'s notional wins over size × price when given, the taker is lowercased, an unknown effect word is null not guessed',
-    !!dune && dune.source === 'dune' && dune.effect === 'increase' && dune.block === 1159201256 && dune.usd === 1534.94 && dune.taker === '0x98da633cc3814857680eb313de6770b7a801f13b' && dune.at === Date.parse('2026-10-06T10:03:28.859Z') && dune.id === 'dune:abc' &&
-      fillFromDune({ market: 'HYPE', side: 'B', size: 1, price: 2, time: T0, effect: 'wat' })?.effect === null && fillFromDune({ market: 'HYPE', side: 'B', size: 1, price: 2, time: 'never' }) === null, JSON.stringify(dune))
+  // ── Dune's wire (lib/dune) ────────────────────────────────────────────
+  const hc = fillFromDunePerp(HC_SELL, HC_ENV, 'hyperliquid')
+  const lt = fillFromDunePerp(LT_BUY, { block_number: 354535562, chain: { type: 'lighter', id: 1 } }, 'lighter')
+  check('dune: a HyperCore perp execution parses as the TAKER\'s side with its position effect, the venue\'s own market name, Chainlink\'s dollar value over size × price, the L1 hash, both addresses lowercased, the block from the envelope, tagged hyperliquid over the dune transport',
+    !!hc && hc.market === 'BERA' && hc.side === 'sell' && hc.size === 86.5 && hc.price === 0.22125 && hc.usd === 19.13512682 && hc.effect === 'decrease' && hc.taker === '0x010461c14e146ac35fe42271bdc1134ee31c703a' && hc.maker === '0x8184405076b61ab78013f16393322eaf0d0a01a1' && hc.hash === '0x84ac722b458397e686260446747c2e02028a0010e086b6b828751d7e048771d1' && hc.block === 1182039086 &&
+      hc.at === Date.parse('2026-10-13T07:28:51.856169+00:00') && hc.id === 'dune:hypercore-1-1182039086-180-match-1030036812375233-0' && hc.source === 'dune' && hc.venue === 'hyperliquid' && hc.chainId === null, JSON.stringify(hc))
+  check('dune: a Lighter execution names its parties by account id (address null → acct:<id>), its 80-hex tx id is not an EVM hash (null, never shown as one), and it is tagged with the venue the socket speaks for',
+    !!lt && lt.market === 'ARB' && lt.side === 'buy' && lt.effect === 'increase' && lt.taker === 'acct:281474976499712' && lt.maker === 'acct:281474976499586' && lt.hash === null && lt.venue === 'lighter' && lt.usd === 0.037678 && lt.block === 354535562, JSON.stringify(lt))
+  check('dune: a settlement (side null) is no print; a stale or missing dollar value falls back to size × price; an effect word outside the five is null, never guessed; a bad price, size or time is dropped',
+    fillFromDunePerp({ ...HC_SELL, side: null }, HC_ENV, 'hyperliquid') === null &&
+      fillFromDunePerp({ ...HC_SELL, value_usd: { amount: '19.1', source: 'chainlink', stale: true } }, HC_ENV, 'hyperliquid')?.usd === 86.5 * 0.22125 && fillFromDunePerp({ ...HC_SELL, value_usd: null }, HC_ENV, 'hyperliquid')?.usd === 86.5 * 0.22125 &&
+      fillFromDunePerp({ ...HC_SELL, taker: { address: '0x1', account_id: null, position_effect: 'wat' } }, HC_ENV, 'hyperliquid')?.effect === null && fillFromDunePerp({ ...HC_SELL, taker: null }, HC_ENV, 'hyperliquid')?.effect === null &&
+      fillFromDunePerp({ ...HC_SELL, executed_price: 'nope' }, HC_ENV, 'hyperliquid') === null && fillFromDunePerp({ ...HC_SELL, size: '0' }, HC_ENV, 'hyperliquid') === null && fillFromDunePerp({ ...HC_SELL, executed_at: 'never' }, HC_ENV, 'hyperliquid') === null)
+  const dx = fillFromDuneDex(DEX_BUY, BASE_ENV)
+  check('dune: a DEX swap parses on its BASE token — the taker\'s side on it, the base amount that moved, dollars per unit from the venue\'s notional, the sender as the taker, the tx hash, the block, the chain id, no position effect — and a spot sell is the base amount paid in',
+    !!dx && dx.market === 'WETH' && dx.side === 'buy' && dx.size === 0.14684991302359976 && dx.usd === 371.2262695 && Math.abs(dx.price - 371.2262695 / 0.14684991302359976) < 1e-9 && dx.taker === '0xad3fe4fa38ad6e05b7fc11647fc36457943493ed' && dx.hash === '0xe40557ef7d90dfd213ffc82fec0c14dcd054efeabb084aab59693f9d7c0b4126' &&
+      dx.block === 52543679 && dx.chainId === 8453 && dx.venue === 'dex' && dx.effect === null && dx.source === 'dune' && dx.id === 'dune:evm-8453-8453-52543679-3-trace-146-0' &&
+      fillFromDuneDex({ ...DEX_BUY, side: 'sell', tokens: [{ ...DEX_BUY.tokens[0], amount_in: 0.5, amount_out: 0 }, DEX_BUY.tokens[1]] }, BASE_ENV)?.size === 0.5 &&
+      fillFromDuneDex({ ...DEX_BUY, value: null, executed_price: 2500 }, BASE_ENV)?.price === 2500 && fillFromDuneDex({ ...DEX_BUY, value: null, executed_price: 2500, quote: '0xnot', tokens: [DEX_BUY.tokens[0], { ...DEX_BUY.tokens[1], address: '0xnot', symbol: 'LINK' }] }, BASE_ENV) === null, JSON.stringify(dx))
+  const frame = fillsFromDuneFrame({ schema_version: 'perp-trades.json.v1', chain: { type: 'hypercore', id: 1 }, block_number: 1182039086, op: 'INSERT', sequence_number: '75604723', trades: [HC_SELL, { ...HC_SELL, trade_id: 'x', side: null }] }, duneVenue('hypercore')!)
+  const dexFrame = fillsFromDuneFrame({ schema_version: 'dex-trades.json.v1', chain: { type: 'evm', id: 8453 }, block_number: 52543679, block_timestamp: '2026-10-13T07:30:01+00:00', op: 'UPDATE', sequence_number: '12009732', trades: [DEX_BUY] }, duneVenue('dex-base')!)
+  check('dune: one envelope → its prints in wire order with the op and block beside them (an UPDATE replaces a block downstream); a spot swap wears the block\'s own time; an unknown op or schema answers nothing',
+    !!frame && frame.op === 'INSERT' && frame.block === 1182039086 && frame.fills.length === 1 && frame.fills[0].market === 'BERA' &&
+      !!dexFrame && dexFrame.op === 'UPDATE' && dexFrame.fills[0].at === Date.parse('2026-10-13T07:30:01+00:00') && dexFrame.fills[0].venue === 'dex' &&
+      fillsFromDuneFrame({ schema_version: 'perp-trades.json.v1', chain: { type: 'hypercore', id: 1 }, block_number: 1, op: 'DELETE', sequence_number: '1', trades: [] }, duneVenue('hypercore')!) === null &&
+      fillsFromDuneFrame({ schema_version: 'nope.v9', chain: { type: 'hypercore', id: 1 }, block_number: 1, op: 'INSERT', sequence_number: '1', trades: [] }, duneVenue('hypercore')!) === null, JSON.stringify([frame, dexFrame]))
+  check('dune: the venue table is the six feeds the key reaches (three perp venues, three spot chains), the perp list is the pulse\'s and the battle\'s, `?venues=` keeps table order and falls back whole, `?markets=` takes venue spellings only, and a resume URL carries the cursor strictly as digits',
+    DUNE_VENUES.length === 6 && DUNE_VENUES.filter((v) => v.kind === 'perp').length === 3 && PERP_VENUES.every((id) => duneVenue(id)?.kind === 'perp') && DEFAULT_LIVE_VENUES.length === 6 && DUNE_VENUES.every((v) => /^wss:\/\/api\.dune\.com\//.test(v.url)) &&
+      parseVenueList('lighter,hypercore,nope').join(',') === 'hypercore,lighter' && parseVenueList('').join(',') === DEFAULT_LIVE_VENUES.join(',') && parseVenueList('zzz', PERP_VENUES).join(',') === PERP_VENUES.join(',') &&
+      parseMarketList('BTC,xyz:NVDA,BTC, bad market ,x'.repeat(1)).join(',') === 'BTC,xyz:NVDA,x' && parseMarketList(null).length === 0 &&
+      resumeUrl('wss://x/1', '123') === 'wss://x/1?resume_after=123' && resumeUrl('wss://x/1', null) === 'wss://x/1' && resumeUrl('wss://x/1', '12a') === 'wss://x/1' && venueWords(DEFAULT_LIVE_VENUES) === 'every venue' && venueWords(['hypercore', 'dex-base']) === '1 perp venue + 1 spot chain')
+  check('dune: the feed reads DUNE_BETA_API_KEY and ONLY that — the older DUNE_API_KEY is the Analytics key, which the feed refuses (probed 2026-10-13, close 1006 like no key), so it is never a fallback',
+    DUNE_FEED_KEY_ENV === 'DUNE_BETA_API_KEY' && duneFeedKey({ DUNE_BETA_API_KEY: ' k1 ' }) === 'k1' && duneFeedKey({ DUNE_API_KEY: 'old' }) === null && duneFeedKey({}) === null && duneFeedKey({ DUNE_BETA_API_KEY: '' }) === null)
+  check('dune: the relay says bye before the function\'s own limit (a browser reopens cleanly instead of reading a dropped socket as a quiet market)',
+    LIVE_STREAM_HOLD_MS < LIVE_STREAM_MAX_DURATION_S * 1000 - 5_000 && LIVE_STREAM_HOLD_MS >= 60_000)
+  check('tape: a venue tag beside the market reads hl · lighter · lighter·rh · the chain of a spot swap; a spot symbol maps to the ticker the ask grammar buys (WETH → ETH, cbBTC → BTC)',
+    venueTag('hyperliquid', null) === 'hl' && venueTag('lighter', null) === 'lighter' && venueTag('lighter-robinhood', null) === 'lighter·rh' && venueTag('dex', 8453) === 'base' && venueTag('dex', 1) === 'eth' && venueTag('dex', 42161) === 'arb' && venueTag('dex', null) === 'dex' &&
+      dexAskTicker('WETH') === 'ETH' && dexAskTicker('cbBTC') === 'BTC' && dexAskTicker('LINK') === 'LINK' && chainWord(8453) === 'Base' && chainWord(999) === null)
 
   // ── Flow classes ──────────────────────────────────────────────────────
   check('tape: without an effect the class is the taker side; with one, a buy that opens/increases is a long open, a buy that closes/decreases is a short cover, a sell likewise is a short open or a long close, and a flip opens',
@@ -114,6 +182,10 @@ export function tapePins(check: Check): void {
       fLong.ask === composeExecAsk(chartPairFor('HYPE')!, 'long', { usd: 25 }) && fShort.ask === composeExecAsk({ symbol: 'BTC', source: 'coinbase', pair: 'BTC-USD', label: 'BTC / USD' }, 'short', { usd: 25 }), JSON.stringify([fLong, fShort]))
   check('tape: an xyz stock buy follows as the spot buy on Robinhood Chain (our Hyperliquid layer runs the main book only); a stock sell needs a position and offers nothing; gold, FX and a k-prefixed coin offer nothing',
     fStock?.ask === 'Buy $25 of INTC' && fStock.venue === 'robinhood' && followAsk({ market: 'xyz:INTC', side: 'sell' }) === null && followAsk({ market: 'xyz:GOLD', side: 'buy' }) === null && followAsk({ market: 'xyz:JPY', side: 'sell' }) === null && followAsk({ market: 'kPEPE', side: 'buy' }) === null && followAsk({ market: 'xyz:XYZ100', side: 'buy' }) === null, JSON.stringify(fStock))
+  const dexFollow = followAsk({ market: 'WETH', side: 'buy', venue: 'dex', chainId: 8453 })
+  check('tape: a DEX print follows as the same swap on its chain — a WETH buy on Base is `Buy $25 of ETH on Base` on the spot cascade (a native ask: the ladder lands it on the swap gate), a spot sell needs a holding and offers nothing, an unknown chain drops the clause',
+    dexFollow?.ask === 'Buy $25 of ETH on Base' && dexFollow.venue === 'spot' && dexFollow.tone === 'buy' && dexFollow.label === 'Buy ETH' && simulateLadder('Buy $25 of ETH on Base').gate === 'swap' && simulateLadder('Buy $25 of LINK on Arbitrum').gate === 'swap' &&
+      followAsk({ market: 'WETH', side: 'sell', venue: 'dex', chainId: 8453 }) === null && followAsk({ market: 'UNI', side: 'buy', venue: 'dex', chainId: null })?.ask === 'Buy $25 of UNI' && followAsk({ market: 'BTC', side: 'buy', venue: 'lighter', chainId: null })?.ask === 'Long $25 of BTC on Hyperliquid', JSON.stringify(dexFollow))
   check('tape: every follow sentence lands on the venue gates the markets chips are judged by (a perp names its venue for the capability rule; a stock buy is a market buy for the fill rule)',
     capabilityTarget(fLong!.ask)?.side === 'perp' && capabilityTarget(fLong!.ask)?.symbol === 'HYPE' && tradeTarget(fLong!.ask) === null && tradeTarget(fStock!.ask)?.side === 'buy' && tradeTarget(fStock!.ask)?.symbol === 'INTC')
   check('tape: a market resolves to its page — a coin to /t/<sym>, an xyz stock the house lists to /t/<ticker>, gold to nothing',
@@ -153,6 +225,10 @@ export function tapePins(check: Check): void {
   check('tape: the subscription is the busiest books by the venue\'s own 24h volume, main then xyz; delisted, zero-volume and the dex index never make it; among xyz the two hottest lead, then the stocks the house lists (their rows carry a button) before gold and FX; the fallback list stands on its own',
     picked.join(',') === 'ETH,xyz:INTC' && pickedXyz.join(',') === 'xyz:SPCX,xyz:GOLD,xyz:INTC,xyz:TSLA' && pickTapeMarkets([], []).length === 0 && FALLBACK_MARKETS.includes('HYPE') && FALLBACK_MARKETS.some((m) => m.startsWith('xyz:')), `${picked.join(',')} / ${pickedXyz.join(',')}`)
 
+  const busy = busiestMarkets([fill({ id: 'a', market: 'BTC', usd: 50, at: T0 }), fill({ id: 'b', market: 'ETH', usd: 500, at: T0 }), fill({ id: 'c', market: 'ETH', usd: 1, at: T0 - 59_000 }), fill({ id: 'd', market: 'SOL', usd: 9_999, at: T0 - 61_000 }), fill({ id: 'e', market: 'ARB', usd: 50, at: T0 })], T0 + 500, 3)
+  check('tape: the busiest markets are the ones with the most dollars in the last minute (the firehose\'s chip row), ties by name, nothing older than the window, capped',
+    busy.join(',') === 'ETH,ARB,BTC' && busiestMarkets([], T0, 5).length === 0 && TAPE_MAX_FILLS >= 110 * (TAPE_KEEP_MS / 1000), busy.join(','))
+
   // ── Formats ───────────────────────────────────────────────────────────
   check('tape: dollars print like a tape ($898.53 · $1.53K · $83.85K · $1.20M), the axis in short units, a price at its own precision, a size without trailing zeros, an address as 0x98da_f13b',
     fmtUsd(898.53) === '$898.53' && fmtUsd(1534.94) === '$1.53K' && fmtUsd(83_850) === '$83.85K' && fmtUsd(1_200_000) === '$1.20M' && fmtAxisUsd(200_000) === '200K' && fmtAxisUsd(1_200_000) === '1.2M' && fmtPrice(86047) === '86047.0' && fmtPrice(1703) === '1703.0' && fmtPrice(118.62) === '118.62' && fmtPrice(0.13248) === '0.1325' && fmtPrice(0.008636) === '0.008636' && fmtPrice(4.2226) === '4.2226' && fmtSize(0.00200) === '0.002' && fmtSize(22499) === '22499' && fmtSize(2.918) === '2.918' && fmtAddr('0x98da633cc3814857680eb313de6770b7a801f13b') === '0x98da_f13b')
@@ -163,10 +239,16 @@ export function tapePins(check: Check): void {
       const src = readFileSync('components/live/LiveFeed.tsx', 'utf8')
       return /useConnectToAct\(\{ run, redirectFor: promptHref \}\)/.test(src) && /openDoor\(ask, \{ send: true, mcps: askAppSlugs\(ask\) \}\)/.test(src) && /canTradeAsk\(f\.ask, tradable\)/.test(src) && !/fetch\(['"`]\/api\/chat/.test(src)
     })())
-  check('tape: the feed adapters are the browser\'s (no server holds the socket), the Hyperliquid feed names the two fields it lacks, and the Dune slot reports unconfigured by name instead of pretending',
+  check('tape: Dune is read through OUR relay (the key rides the WebSocket upgrade — lib/dune-feed-server alone sends X-Dune-Api-Key; no client file and no NEXT_PUBLIC_ name ever carries it), the page holds the relay\'s Server-Sent Events with a probe first so `unconfigured` is a word, the venue\'s keyless socket is the fallback that names its two missing fields, and the relay route says bye before its limit',
     (() => {
-      const src = readFileSync('lib/tape-feed.ts', 'utf8')
-      return /wss:\/\/api\.hyperliquid\.xyz\/ws/.test(src) && /fields: \{ effect: false, block: false \}/.test(src) && /fields: \{ effect: true, block: true \}/.test(src) && /NEXT_PUBLIC_DUNE_STREAM_URL/.test(src) && /onStatus\('unconfigured'/.test(src) && /requestAnimationFrame/.test(src)
+      const feed = readFileSync('lib/tape-feed.ts', 'utf8')
+      const server = readFileSync('lib/dune-feed-server.ts', 'utf8')
+      const route = readFileSync('app/api/live/stream/route.ts', 'utf8')
+      const clientFiles = ['lib/tape-feed.ts', 'lib/tape.ts', 'lib/pulse.ts', 'lib/dune.ts', 'components/live/LiveFeed.tsx', 'components/home/PulseSlot.tsx', 'components/live/Battle.tsx'].map((f) => readFileSync(f, 'utf8')).join('\n')
+      return /^'use client'/.test(feed) && /wss:\/\/api\.hyperliquid\.xyz\/ws/.test(feed) && /fields: \{ effect: false, block: false \}/.test(feed) && /fields: \{ effect: true, block: true \}/.test(feed) && /new EventSource\(url\)/.test(feed) && /\?probe=1/.test(feed) && /res\.status === 503/.test(feed) && /onStatus\('unconfigured'/.test(feed) && /addEventListener\('bye'/.test(feed) && /export function connectTape/.test(feed) && /requestAnimationFrame/.test(feed) &&
+        !/'use client'/.test(server) && /'X-Dune-Api-Key': key/.test(server) && /resumeUrl\(venue\.url, u\.cursor\)/.test(server) && /ev\.code === 1008/.test(server) && /IDLE_CLOSE_MS/.test(server) &&
+        /text\/event-stream/.test(route) && /export const maxDuration = LIVE_STREAM_MAX_DURATION_S/.test(route) && /status: 503/.test(route) && /type: 'bye'/.test(route) && /LIVE_STREAM_PER_IP/.test(route) &&
+        !/X-Dune-Api-Key|DUNE_BETA_API_KEY|process\.env\.DUNE/.test(clientFiles.replace(/\/\/[^\n]*|\/\*[^]*?\*\//g, '').replace(/DUNE_FEED_KEY_ENV = 'DUNE_BETA_API_KEY'/, '')) && !/NEXT_PUBLIC_DUNE/.test(clientFiles + feed + server + route)
     })())
 }
 

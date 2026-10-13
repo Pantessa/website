@@ -36,6 +36,13 @@
 .live__mcount { font-size: 9.5px; color: var(--muted-2); }
 .live__dex { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
 .live__dex::after { content: ':'; }
+.live__venue { font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); margin-left: 5px; }
+.live-row[data-venue="dex"] .live__venue { color: var(--mk-series-3, var(--muted)); }
+.live__venues { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 10px 8px; }
+.live__venue-t { font-size: 9.5px; letter-spacing: 0.02em; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; }
+.live__venue-t.is-on { border-color: var(--accent); color: var(--fg); }
+.live__venue-t:disabled { opacity: 0.55; cursor: default; }
+.live__feed-b:disabled { cursor: default; }
 
 /* ── Panels ───────────────────────────────────────────────────────────── */
 .live__panel { margin-top: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); overflow: hidden; }
@@ -179,6 +186,7 @@
   .live__table .live__chip { padding: 0 7px; font-size: 10.5px; }
   .live__table td.live__col-act { padding-left: 2px; }
   .live__dex { display: none; }
+  .live__venue { display: none; }
 }
 
 /* MOBILE (squad pre-gtm, 2026-10-07). /live under a thumb was the site's least touchable page — 175 sub-44 targets
