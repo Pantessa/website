@@ -488,15 +488,16 @@ export function parseChartAsk(message: string): ChartAsk | null {
     if (!ticker && CHART_STOPWORDS.has(raw)) continue
     const byName = CHART_NAMES[raw] ?? CHART_STOCK_NAMES[raw]
     const sym = byName ?? raw
-    const pair = chartPairFor(sym)
+    let pair = chartPairFor(sym)
     // A stock reached by a lowercase bare ticker must be unmistakably a
     // ticker: four+ letters and not an English word ("aapl", "nvda" — yes;
     // "cost", "on", "now" — no).
     if (pair?.source === 'robinhood' && !byName && !ticker && (raw.length < 4 || ENGLISH_WORD_TICKERS.has(raw))) continue
     // A perp only the live table knows (AI, MOVE, GOAT, PUMP…) must be
     // typed as a ticker ("$AI", or AI in a lowercase sentence) — a bare
-    // lowercase word stays prose, the way an English-word stock ticker does.
-    if (isLiveOnlyHlPair(pair) && !byName && !typedAsTicker(w, text)) continue
+    // lowercase word reads as it did before the table existed: no feed for
+    // it (the chartless answer still names the word), never a MOVE chart.
+    if (isLiveOnlyHlPair(pair) && !byName && !typedAsTicker(w, text)) pair = null
     if (pair) return { symbol: pair.symbol, pair }
     // Remember the first ticker-shaped word so a chartless ask can name it.
     if (!named && /^[A-Z][A-Z0-9]{1,11}$/.test(sym) && /[A-Z]/.test(sym)) named = sym

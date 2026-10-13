@@ -77,14 +77,15 @@ interface HlCtx {
   markPx?: string
   prevDayPx?: string
 }
-let hlSnapshot: { at: number; byCoin: Map<string, HlCtx> } | null = null
-let hlInflight: Promise<Map<string, HlCtx>> | null = null
+type HlDex = 'main' | 'xyz'
+const hlSnapshots: Record<HlDex, { at: number; byCoin: Map<string, HlCtx> } | null> = { main: null, xyz: null }
+const hlInflights: Record<HlDex, Promise<Map<string, HlCtx>> | null> = { main: null, xyz: null }
 
 /** One dex's `metaAndAssetCtxs`: the contexts keyed by the venue's coin name
  *  ('HYPE', 'kPEPE', 'xyz:GOLD'). The universe half primes lib/hl-universe
  *  (the chart pair table's source), so a quotes read warms the table for
- *  free. Throws on a bad answer; the caller decides what a half-miss means. */
-async function hlDexContexts(dex: 'main' | 'xyz'): Promise<Map<string, HlCtx>> {
+ *  free. Throws on a bad answer. */
+async function hlDexContexts(dex: HlDex): Promise<Map<string, HlCtx>> {
   const res = await fetchWithTimeout('https://api.hyperliquid.xyz/info', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -101,26 +102,29 @@ async function hlDexContexts(dex: 'main' | 'xyz'): Promise<Map<string, HlCtx>> {
   return byCoin
 }
 
-/** Every perp's context, main book + the xyz dex, in ONE map (the dexes'
- *  coin names never collide — xyz names carry their prefix). The main book
- *  is required; a failed xyz read leaves its perps unquoted this poll. */
-async function hlContexts(): Promise<Map<string, HlCtx>> {
-  if (hlSnapshot && Date.now() - hlSnapshot.at < QUOTE_TTL_MS) return hlSnapshot.byCoin
-  if (hlInflight) return hlInflight
-  hlInflight = (async () => {
-    const [main, xyz] = await Promise.all([hlDexContexts('main'), hlDexContexts('xyz').catch(() => null)])
-    const byCoin = new Map<string, HlCtx>(main)
-    if (xyz) for (const [coin, ctx] of xyz) byCoin.set(coin, ctx)
-    hlSnapshot = { at: Date.now(), byCoin }
+/** A dex's contexts, cached QUOTE_TTL_MS with one inflight read shared —
+ *  N main-book perps still cost ONE call, and the xyz dex is read only when
+ *  an xyz pair ('xyz:GOLD') is being quoted, so the main path's venue load is
+ *  exactly what it was before the dex existed here. */
+async function hlContexts(dex: HlDex): Promise<Map<string, HlCtx>> {
+  const snap = hlSnapshots[dex]
+  if (snap && Date.now() - snap.at < QUOTE_TTL_MS) return snap.byCoin
+  if (hlInflights[dex]) return hlInflights[dex]
+  hlInflights[dex] = (async () => {
+    const byCoin = await hlDexContexts(dex)
+    hlSnapshots[dex] = { at: Date.now(), byCoin }
     return byCoin
   })().finally(() => {
-    hlInflight = null
+    hlInflights[dex] = null
   })
-  return hlInflight
+  return hlInflights[dex]
 }
 
+/** The dex a pair's coin lives on: 'xyz:GOLD' → xyz, 'HYPE' / 'kPEPE' → main. */
+const hlDexOf = (coin: string): HlDex => (coin.startsWith('xyz:') ? 'xyz' : 'main')
+
 async function fetchHyperliquid(pair: ChartPair): Promise<Quote | null> {
-  const ctx = (await hlContexts()).get(pair.pair)
+  const ctx = (await hlContexts(hlDexOf(pair.pair))).get(pair.pair)
   if (!ctx) return null
   return quoteOf(Number(ctx.markPx), Number(ctx.prevDayPx), 'hyperliquid', pair)
 }
@@ -492,5 +496,6 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
 /** Test seam: wipe the cache (the cron's fixture pin runs on a cold cache). */
 export function resetQuoteCache(): void {
   cache.clear()
-  hlSnapshot = null
+  hlSnapshots.main = null
+  hlSnapshots.xyz = null
 }

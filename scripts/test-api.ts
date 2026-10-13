@@ -21277,7 +21277,8 @@ async function main() {
   {
     const { hlChartTableFrom, isLiveOnlyHlPair, warmHlPerps, resolveChartPair, liveHlPerpNames, primeHlPerps, chartableSymbols, chartSymbolsIn, isMoneyAssetWord, normalizeChartSymbol } = await import('../lib/charts')
     const { readQuotes } = await import('../lib/quotes')
-    const { hlPerpUniverseCached } = await import('../lib/hl-universe')
+    const { hlPerpUniverseCached, resetHlUniverse } = await import('../lib/hl-universe')
+    const { ROBINHOOD_TICKER_SET } = await import('../lib/robinhood-tickers')
 
     // Pure rules on a fixture universe (listed names only — lib/hl-universe splits delisted off first).
     const table = hlChartTableFrom(['ZK', 'kPEPE', 'ETH', 'HYPE', 'MATIC', 'USDC', 'xyz:ZK', 'NVDA', 'SATS', 'MOVE'], ['xyz:NVDA', 'xyz:GOLD', 'xyz:XYZ100', 'xyz:ZK', 'xyz:GOLD', 'xyz:SATS'])
@@ -21292,7 +21293,8 @@ async function main() {
     )
 
     // A fixture prime (≥ 20 names, the universe-size floor) proves the resolver + the parsers' fence; the real table is put back after.
-    const before = liveHlPerpNames()
+    // The caches are RESET around it: a fixture left as the "fresh" universe would be what every later in-process read answers from.
+    resetHlUniverse()
     primeHlPerps({ main: ['ZK', 'MOVE', 'PUMP', 'AZTEC', ...Array.from({ length: 20 }, (_, i) => `FIXT${i}`)] })
     check(
       'live HL perps: the static set is the fallback and stays whatever the table holds (HYPE / SYRUP chart as themselves); a primed table resolves ZK as a hyperliquid pair under its own coin, and only the table’s perps read as live-only',
@@ -21314,7 +21316,7 @@ async function main() {
       'live HL perps: the sitemap set (chartableSymbols) never carries a live-only perp — venue listings chart on demand, the index stays the static set',
       chartableSymbols().every((s) => !isLiveOnlyHlPair(chartPairFor(s))) && !chartableSymbols().includes('ZK'),
     )
-    if (before) primeHlPerps(before)
+    resetHlUniverse()
 
     // The venue, live. The rule: every LISTED main-book coin resolves to SOME pair (Coinbase, the stock tape, or the
     // venue itself under its own casing) unless it is a stable; every listed xyz market resolves through its bare
@@ -21324,14 +21326,19 @@ async function main() {
     const main = live?.main ?? []
     const xyz = live?.xyz ?? []
     const stableWord = (s: string) => ['USDC', 'USDT', 'DAI', 'USDG', 'GHO', 'USDE', 'PYUSD', 'USDS', 'USDBC'].includes(normalizeChartSymbol(s))
-    const mainMiss = main.filter((n) => !stableWord(n) && normalizeChartSymbol(n).length <= 12 && normalizeChartSymbol(n) !== '' && chartPairFor(n) === null)
+    // The stock fence: a main-book coin wearing a Robinhood-Chain ticker (the venue's CASHCAT perp, the feedless listing's
+    // name) stays chartless BY DESIGN — exempt from "every coin resolves", asserted the other way as `fenceLeak`.
+    const stockWord = (s: string) => ROBINHOOD_TICKER_SET.has(normalizeChartSymbol(s))
+    const mainMiss = main.filter((n) => !stableWord(n) && !stockWord(n) && normalizeChartSymbol(n).length <= 12 && normalizeChartSymbol(n) !== '' && chartPairFor(n) === null)
+    const fenced = main.filter((n) => stockWord(n) && !isChartedStock(n))
+    const fenceLeak = fenced.filter((n) => chartPairFor(n) !== null)
     const casingMiss = main.filter((n) => { const p = chartPairFor(n); return p?.source === 'hyperliquid' && p.pair !== n })
-    const xyzMiss = xyz.filter((n) => !/:XYZ100$/.test(n)).map((n) => n.slice(n.indexOf(':') + 1)).filter((t) => !stableWord(t) && normalizeChartSymbol(t) !== '' && chartPairFor(t) === null)
+    const xyzMiss = xyz.filter((n) => !/:XYZ100$/.test(n)).map((n) => n.slice(n.indexOf(':') + 1)).filter((t) => !stableWord(t) && !stockWord(t) && normalizeChartSymbol(t) !== '' && chartPairFor(t) === null)
     check(
-      'live HL perps (venue): the universe read lands (main book ≥ 100 listed, xyz dex ≥ 20), every listed main-book coin resolves (Coinbase / stock tape / the venue under its own casing), every xyz market resolves through its bare ticker, and nothing the static table knew changed',
-      warm && main.length >= 100 && xyz.length >= 20 && mainMiss.length === 0 && casingMiss.length === 0 && xyzMiss.length === 0 &&
+      'live HL perps (venue): the universe read lands (main book ≥ 100 listed, xyz dex ≥ 20), every listed main-book coin resolves (Coinbase / stock tape / the venue under its own casing) except one wearing a Robinhood ticker (the stock fence, which never leaks), every xyz market resolves through its bare ticker, and nothing the static table knew changed',
+      warm && main.length >= 100 && xyz.length >= 20 && mainMiss.length === 0 && casingMiss.length === 0 && xyzMiss.length === 0 && fenceLeak.length === 0 &&
         chartPairFor('HYPE')?.pair === 'HYPE' && chartPairFor('AAPL')?.source === 'robinhood' && chartPairFor('ETH')?.pair === 'ETH-USD' && chartPairFor('USDC') === null && (await resolveChartPair('NOPE')) === null,
-      `main=${main.length} xyz=${xyz.length} mainMiss=${mainMiss.slice(0, 8).join(',')} casing=${casingMiss.slice(0, 4).join(',')} xyzMiss=${xyzMiss.slice(0, 8).join(',')}`,
+      `main=${main.length} xyz=${xyz.length} mainMiss=${mainMiss.slice(0, 8).join(',')} casing=${casingMiss.slice(0, 4).join(',')} xyzMiss=${xyzMiss.slice(0, 8).join(',')} stockFenced=${fenced.join(',')} leak=${fenceLeak.join(',')}`,
     )
     const zkListed = !!hlPerpUniverseCached('main')?.listed.has('ZK')
     const zk = chartPairFor('ZK')

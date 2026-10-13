@@ -113,6 +113,12 @@ export async function hlUniverses(): Promise<Record<HlDex, HlUniverse | null>> {
   return { main, xyz }
 }
 
+/** Test seam: forget every dex's cache and backoff (the harness primes a
+ *  fixture universe to pin the rules, then wants the venue's own again). */
+export function resetHlUniverse(): void {
+  for (const dex of HL_DEXES) dexes[dex] = { cache: null, lastFailAt: 0, inflight: null }
+}
+
 /**
  * Prime a dex's cache from rows another reader already holds (lib/tape-feed
  * readTapeUniverse's answer in the browser, lib/quotes' metaAndAssetCtxs
