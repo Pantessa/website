@@ -5885,6 +5885,12 @@
 .mkt-draw__label--read { fill: var(--fg); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
 @media (hover: none) { .mkt-draw__hit { stroke-width: 26 !important; } }
 .mkt-tool:disabled { opacity: .35; pointer-events: none; }
+/* a fib grabs by any of its levels, narrow so the band between stays clickable */
+.mkt-draw__hit--thin { stroke-width: 7 !important; }
+@media (hover: none) { .mkt-draw__hit--thin { stroke-width: 14 !important; } }
+/* the edit group's delete-all wears its words: an unlabeled eraser read as decoration */
+.mkt-chart .mkt-chart__tools.mkt-chart__edit > .mkt-tool.mkt-tool--clear { white-space: nowrap;  width: auto; padding: 0 9px; gap: 5px; display: inline-flex; align-items: center; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.mkt-chart .mkt-chart__edit > .mkt-tool.mkt-tool--clear:hover { color: var(--sell, #f87171); }
 /* The tools that place nothing (measure, zoom) sit past a rule; the magnet is a switch, not a tool. */
 .mkt-tools__sep { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--line); }
 .mkt-tool--magnet.is-on { color: var(--accent); }

@@ -545,6 +545,7 @@ export default function DrawingLayer({ geom, lines, selectedId, onSelect, onChan
                   return (
                     <g key={lv.ratio} className={`mkt-draw__fiblvl${lv.ratio > 1 ? ' is-ext' : ''}${lv.ratio === 0 || lv.ratio === 1 ? ' is-end' : ''}`}>
                       <line x1={left} x2={plotW} y1={y} y2={y} />
+                      {!readOnly && <line x1={left} x2={plotW} y1={y} y2={y} className="mkt-draw__hit mkt-draw__hit--move mkt-draw__hit--thin" {...grab(l)} />}
                       {label && (
                         <text x={plotW - 6} y={clamp(y - 3, 10, height - 4)} textAnchor="end" className="mkt-draw__label mkt-draw__label--read">
                           {text}
