@@ -28,7 +28,7 @@
 #   CONTROL   a control test:api log to label reds against (default: $S/control/testapi.log)
 #   PLAYWRIGHT_CORE  playwright-core install
 #   SKIP_BUILD=1 · SKIP_TESTAPI=1 · SKIP_CRAWL=1 · SKIP_NATIVE=1 · SKIP_DEADEND=1 · SKIP_WALLS=1 ·
-#   SKIP_PINS=1 · WARM=1 (re-warm symbol_tradability ×12 before test:api — it rots after 24h)
+#   SKIP_PINS=1 · SKIP_SHEETS=1 · WARM=1 (re-warm symbol_tradability ×12 before test:api — it rots after 24h)
 #   CRAWL_JOBS (default 6) · DEADEND_JOBS (default 6) · SHOTS_TO (default the blackboard's shots/qa)
 #   TESTAPI_ONLY=1  start the server and run only test:api (the control run uses this)
 #   REUSE_SERVER=1  gate the server already on $PORT (no restart; same build)
@@ -290,6 +290,14 @@ console.log(`| dead-end: ERROR (must be 0) | ${cell(err).replace(/\|/g, '\\|')} 
 console.log(`| dead-end: BLOCKED (triage: bug or open overlay) | ${cell(blk).replace(/\|/g, '\\|')} |`)
 console.log(`| dead-end: cells that failed to load | ${cell(loadErr).replace(/\|/g, '\\|')} |`)
 NODE
+fi
+
+# ── 8a''. the sheet security pass (focus in · trap · no click leak · scrim/Esc close · never stuck) ──
+if [ "${SKIP_SHEETS:-}" = 1 ]; then row 'sheet probe' 'skipped (SKIP_SHEETS=1)'
+else
+  PLAYWRIGHT_CORE=$PW BASE=$B npx tsx scripts/polish-sheet-probe.ts --out "$D/sheets.json" > "$D/sheets.log" 2>&1
+  n=$(grep -cE '^(ok|!!) ' "$D/sheets.log"); bad=$(grep -E '^!! ' "$D/sheets.log" | sed 's/^!! //' | cut -c1-140)
+  row 'sheet probe (phone 375, every [data-sheet-open] on 10 routes)' "$([ -z "$bad" ] && echo "PASS — $n sheets" || echo "**$(printf '%s\n' "$bad" | wc -l | tr -d ' ') of $n flagged** — $(printf '%s' "$bad" | tr '\n' ';' | cut -c1-600)")"
 fi
 
 # ── 8b. lane drives (scripts/*-drive.mjs: PICK's CDP drive, …) ─────────────
