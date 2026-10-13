@@ -28,6 +28,8 @@ import BookLadder from '@/components/home/BookLadder'
 import Battle from '@/components/live/Battle'
 import ShareLive from '@/components/live/ShareLive'
 import ArmAlert from '@/components/live/ArmAlert'
+import PickSheet from '@/components/live/PickSheet'
+import { useMarketPick } from '@/lib/use-market-pick'
 import { useTradable } from '@/lib/use-tradable'
 import { PULSE_WHY_BY_SOURCE } from '@/lib/pulse'
 import { DECK_BOOK_KEY, DECK_CHANNELS, DECK_DEFAULT_CHANNEL, deckBookMarket, deckChannel, deckHref, deckSourceLine, deckSwitchWords, isDeckBattle, parseDeckBook, serializeDeckBook, type DeckChannel, type StageReport } from '@/lib/deck'
@@ -47,6 +49,13 @@ export default function Deck() {
   const [hot, setHot] = useState<string | null>(null)
   const fillsRef = useRef<readonly TapeFill[]>([])
   const tradable = useTradable()
+  // THE ONE PICK on the deck (GTM squad 2026-10-13): the same store the
+  // channels read; the ladder follows its first market (lane PICK's line),
+  // and on a phone the bar carries ARENA's sheet trigger (the pulse's own
+  // row is hidden there by the band's height budget — the first board row
+  // must stay inside 740px at 375×812, lib/deck DECK_STAGE_MIN_H's reason).
+  const marketPick = useMarketPick({ seat: 'stage' })
+  const tabsRef = useRef<HTMLElement>(null)
 
   // The switch's memory, read after mount: the server frame starts off.
   useEffect(() => {
@@ -67,6 +76,12 @@ export default function Deck() {
   const onFills = useCallback((buffer: readonly TapeFill[]) => {
     fillsRef.current = buffer
   }, [])
+  // PHONE (lane PHONE, R1): the bar scrolls under 640px, so a switched-to
+  // channel can sit past the right edge — bring it into view, never the page.
+  useEffect(() => {
+    const el = tabsRef.current?.querySelector<HTMLElement>(`[data-channel="${ch}"]`)
+    el?.scrollIntoView?.({ inline: 'nearest', block: 'nearest', behavior: 'smooth' })
+  }, [ch])
   const switchTo = useCallback((id: DeckChannel) => {
     setCh(id)
     setReport(FRESH)
@@ -88,7 +103,7 @@ export default function Deck() {
   return (
     <section className="deck" data-deck data-channel={ch} data-book={book ? 'on' : 'off'} data-status={report.status} aria-label="Live channels">
       <div className="deck__bar">
-        <nav className="deck__tabs" role="tablist" aria-label="Channels">
+        <nav className="deck__tabs" role="tablist" aria-label="Channels" ref={tabsRef}>
           {DECK_CHANNELS.map((c) => {
             const on = c.id === ch
             return (
@@ -114,6 +129,7 @@ export default function Deck() {
         </nav>
         {/* The phone's door: the foot steps out under 640px (the phone band's
             budget), so the channel's door rides the chip row there. */}
+        <PickSheet pick={marketPick} seat="deck" />{/* seat: ARENA (GTM squad 2026-10-13) — the phone's trigger; renders nothing on a desktop */}
         <Link href={href} className="deck__ch deck__ch--door" prefetch={false} data-journey={def.door} aria-label={def.door}>
           <b className="deck__chname">
             {def.door.replace(/^Open /, '')} <span aria-hidden>→</span>
