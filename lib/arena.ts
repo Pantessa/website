@@ -198,13 +198,17 @@ export function pickTriggerWord(markets: readonly string[], seat: PickSheetSeat 
 
 /**
  * Whether the sheet may open BY ITSELF this visit: only on an untouched row
- * (not a hand's, not a link's), only once per browser (`seen` = the flag is
- * set), never on the server. The caller decides after mount and after
- * PICK_SHEET_OFFER_DELAY_MS, so a memory or URL pick that settles late still
- * cancels it.
+ * (not a hand's, not a link's — a default the venue painted still counts as
+ * untouched; the moment a hand removes one of its chips the store says
+ * 'hand' and the offer is off), only once the store's opening has PAINTED
+ * (`ready` — false on the server and until the first read decides, so a
+ * memory that lands late never races the offer), only once per browser
+ * (`seen` = the flag is set), never on the server. The caller decides after
+ * mount and after PICK_SHEET_OFFER_DELAY_MS.
  */
-export function shouldOfferFirstRun(d: { source: PickSource; seen: boolean }): boolean {
+export function shouldOfferFirstRun(d: { source: PickSource; seen: boolean; ready?: boolean }): boolean {
   if (d.seen) return false
+  if (d.ready === false) return false
   return d.source !== 'hand' && d.source !== 'url'
 }
 

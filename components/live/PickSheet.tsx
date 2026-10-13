@@ -70,22 +70,23 @@ export default function PickSheet({ pick, seat }: PickSheetProps) {
 
   // ── The first-run offer: once per browser, on an untouched row ────────
   const source = pick.source
+  const ready = pick.ready
   useEffect(() => {
     if (!mounted || open) return
-    if (!shouldOfferFirstRun({ source, seen: readPickSheetSeen() })) return
+    if (!shouldOfferFirstRun({ source, ready, seen: readPickSheetSeen() })) return
     const id = setTimeout(() => {
       // Decided again when the timer fires: a sibling seat may have claimed
       // the once flag, a memory or a link may have settled the row. A seat
       // the page's CSS hides never offers (it would spend the once flag on
       // a dialog nobody sees).
-      if (!shouldOfferFirstRun({ source, seen: readPickSheetSeen() })) return
+      if (!shouldOfferFirstRun({ source, ready, seen: readPickSheetSeen() })) return
       if (!triggerRef.current || triggerRef.current.getClientRects().length === 0) return
       writePickSheetSeen()
       setHow('self')
       setOpen(true)
     }, PICK_SHEET_OFFER_DELAY_MS)
     return () => clearTimeout(id)
-  }, [mounted, open, source])
+  }, [mounted, open, source, ready])
 
   const close = useCallback(() => {
     // A dismiss remembers: the sheet never offers itself again in this browser.
