@@ -189,6 +189,17 @@ export function limitDistancePct(price: number, last: number): number | null {
 const no = (problem: string): TicketCompose => ({ ok: false, problem })
 const yes = (ask: string, label: string, usd: number | null, units: number | null): TicketCompose => ({ ok: true, ask, label, usd, units })
 
+/** A limit price as the ticket SHOWS it (the sentence never carries it:
+ *  units × USDC encode the price exactly). The grammar's two decimals round a
+ *  $7.2140 book level to $7.21, a different level on a four-decimal book, so
+ *  a price under $100 keeps up to four decimals; trailing zeros go; a price
+ *  the grammar already rounded ($7.23) reads the same as before. */
+export function fmtLimitPrice(p: number): string {
+  if (!Number.isFinite(p) || p <= 0) return '0'
+  if (p >= 100 || p < 1) return fmtAskPrice(p)
+  return p.toFixed(4).replace(/\.?0+$/, '')
+}
+
 function composeLimit(sym: string, side: 'buy' | 'sell', st: TicketState, last: number | null): TicketCompose {
   if (last == null || !(last > 0)) return no('Waiting for a live price before sizing a limit order.')
   const price = st.limitPrice
@@ -203,7 +214,7 @@ function composeLimit(sym: string, side: 'buy' | 'sell', st: TicketState, last: 
   if (!units) return no('Enter an amount.')
   const usdc = fmtAskPrice(Number(units) * price)
   if (Number(usdc) < SPOT_MIN_USD) return no(`Limit orders start at $${SPOT_MIN_USD}.`)
-  const px = fmtAskPrice(price)
+  const px = fmtLimitPrice(price)
   if (side === 'buy') {
     return yes(`limit order: buy ${units} ${sym} for at most ${usdc} USDC on ${st.limitChain}`, `Buy ${units} ${sym} at $${px}`, Number(usdc), Number(units))
   }

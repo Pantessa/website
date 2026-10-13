@@ -71,3 +71,28 @@ export const useOrderSize = create<OrderSizeState>((set) => ({
   setSize: (next) => set((s) => (sameOrderSize(s.size, next) ? s : { size: next })),
   clear: () => set({ size: null }),
 }))
+
+// ── Aim the ticket at a price (the Depth chart, 2026-10-13) ───────────────
+// A level on the book is a price a limit order can rest at. Clicking one
+// AIMS whichever ticket is on the page (the rail's on a desktop, the
+// header strip's on a phone): open it on that side, as a limit, at that
+// price. One record, consumed once by its stamp; the symbol fences it so an
+// aim never follows across pages.
+
+export interface OrderAim {
+  symbol: string
+  side: 'buy' | 'sell'
+  limitPrice: number
+  /** Date.now() at the click — a consumer applies each stamp once. */
+  at: number
+}
+
+interface OrderAimState {
+  aim: OrderAim | null
+  setAim: (next: OrderAim) => void
+}
+
+export const useOrderAim = create<OrderAimState>((set) => ({
+  aim: null,
+  setAim: (next) => set({ aim: next }),
+}))

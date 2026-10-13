@@ -27,13 +27,14 @@
 // ticket. Both are in the HTML, so every act-strip pin on the served page
 // holds and the phone keeps tap-to-open.
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ChevronDown, ChevronUp, CornerDownLeft } from 'lucide-react'
 import type { ChartPair } from '@/lib/charts'
 import OrderTicket from '@/components/markets/trade/OrderTicket'
 import { execAsks } from '@/lib/trade-asks'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
+import { useOrderAim } from '@/lib/order-size'
 import { canTradeAsk, tradeTarget } from '@/lib/trade-venue-gate'
 import { useTradable } from '@/lib/use-tradable'
 import { noVenueNote } from '@/lib/tradability'
@@ -91,6 +92,18 @@ export default function RailTicket({
       /* stays open */
     }
   }, [])
+  // Aimed from the Depth chart (lib/order-size useOrderAim): the rail opens
+  // (a folded ticket would take the aim silently) and shows the aim's side;
+  // the ticket itself turns into the limit. Only while the side is offered.
+  const aim = useOrderAim((s) => s.aim)
+  const aimedRef = useRef<number>(0)
+  useEffect(() => {
+    if (!aim || aim.symbol !== pair.symbol || aimedRef.current === aim.at) return
+    if (!sides.includes(aim.side)) return
+    aimedRef.current = aim.at
+    setOpen(true)
+    onSide(aim.side)
+  }, [aim, pair.symbol, sides, onSide])
   const toggle = () =>
     setOpen((o) => {
       try {

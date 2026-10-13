@@ -74,6 +74,8 @@ export interface ChartMountProps {
   overlay?: ReactNode
   /** Offer the Battlefield view beside the candles (MarketChart `battlefield`). */
   battlefield?: boolean
+  /** The Depth chart's act (MarketChart `onLimit`). */
+  onLimit?: (side: 'buy' | 'sell', price: number) => void
 }
 
 export default function ChartMount({
@@ -93,6 +95,7 @@ export default function ChartMount({
   fills,
   overlay,
   battlefield,
+  onLimit,
 }: ChartMountProps) {
   const [drawings, setDrawings] = useState<ChartState | null>(null)
   // News-on-bars: the News tab toggles markers into COMM's session store;
@@ -142,6 +145,7 @@ export default function ChartMount({
       fills={fills}
       overlay={overlay}
       battlefield={battlefield}
+      onLimit={onLimit}
     />
   )
 }

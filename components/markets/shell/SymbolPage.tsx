@@ -72,6 +72,7 @@ import { useSession } from '@/lib/session'
 import { useSymbolFills, type FillMarker } from '@/lib/chart-fills'
 import { fillFromSigned, mergeFills, type SignedEvent } from '@/lib/ask-chart-thread'
 import { useAskDoor } from '@/lib/ask-door'
+import { useOrderAim } from '@/lib/order-size'
 import GuideSeat from '@/components/guide/GuideSeat'
 import { appScrollTop, scrollAppTo } from '@/lib/app-scroller'
 import type { AskChartIncoming } from '@/components/markets/ai/AskChart'
@@ -278,6 +279,10 @@ export default function SymbolPage({
   // ask string through the act door.
   // A drawn level on the chart carries a bare ask string — same door.
   const onChartAsk = useCallback((ask: string) => onAsk({ side: sideOf(ask), label: ask, ask }), [onAsk])
+  // The Depth chart's act (2026-10-13): a level clicked aims the page's
+  // ticket — the rail's on a desktop, the header strip's on a phone — at a
+  // limit order resting at that price (lib/order-size useOrderAim).
+  const onLimit = useCallback((side: 'buy' | 'sell', price: number) => useOrderAim.getState().setAim({ symbol: sym, side, limitPrice: price, at: Date.now() }), [sym])
   // The live drawings (for "attach my current chart" on a post) and a post's
   // lines loaded back onto the chart ("copy these lines to my chart").
   const [chartState, setChartState] = useState<ChartState | null>(null)
@@ -540,7 +545,7 @@ export default function SymbolPage({
         <div ref={shellRef} className={`tchart sym__chart${expanded ? ' tchart--expanded' : ''}${showChart ? '' : ' is-parked'}`} data-chart-tab={tab} aria-hidden={showChart ? undefined : true}>
           <div className="tchart__canvas">
             {pair ? (
-              <ChartMount symbol={sym} height="fill" defaultTf={initialTf} urlTf onStats={setStats} controlsRight={chartControls} resizeKey={`${expanded}:${showChart}`} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} compare={vs} fills={fills} battlefield />
+              <ChartMount symbol={sym} height="fill" defaultTf={initialTf} urlTf onStats={setStats} controlsRight={chartControls} resizeKey={`${expanded}:${showChart}`} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} compare={vs} fills={fills} battlefield onLimit={onLimit} />
             ) : unknown ? (
               <div className="flex flex-1 items-center justify-center">
                 <div className="mkt-card max-w-md text-center" data-standing="unknown">

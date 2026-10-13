@@ -400,6 +400,8 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas { flex: 0 0 auto; height: 260px; }
   /* The battlefield carries a sky and a two-row strip: it needs the height. */
   .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas.is-field { height: 460px; }
+  /* The depth chart carries its chips, a print strip and a foot: the same room. */
+  .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas.is-depth { height: 460px; }
   /* Its controls in two rows, not four (44px each at a thumb's size): the
      timeframes with the live badge + full screen on the right, then the
      overlays (their own sideways scroller) beside the drawing tools. A stock's
@@ -493,6 +495,7 @@ button.mk-held:hover { border-color: var(--accent); }
    chart card grows to hold them (the candles keep their own height). */
 @media (min-width: 641px) {
   .sym .tchart:not(.tchart--expanded):has(.mkt-chart__canvas.is-field) { height: clamp(600px, 74dvh, 780px); }
+  .sym .tchart:not(.tchart--expanded):has(.mkt-chart__canvas.is-depth) { height: clamp(560px, 70dvh, 720px); }
   /* The positioning strip under the candles needs its own rows. */
   .sym .tchart:not(.tchart--expanded):has(.poshet.is-open) { height: clamp(560px, 76dvh, 820px); }
 }

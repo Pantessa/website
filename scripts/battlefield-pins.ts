@@ -185,7 +185,7 @@ export function battlefieldPins(check: Check): void {
   const chart = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
   const page = readFileSync('components/markets/shell/SymbolPage.tsx', 'utf8')
   check('battlefield: MarketChart opens on candles (the view is never remembered), offers the switch only when asked, and hides the drawing tools on the field',
-    /useState<'candles' \| 'field'>\('candles'\)/.test(chart) && /battlefield = false/.test(chart) && /\{battlefield && \(\s*<div className="mkt-view"/.test(chart) && /tools && !fieldOn &&/.test(chart) && !/localStorage/.test(chart) && /<ChartMount[^>]*\bbattlefield\b/.test(page))
+    /useState<ChartView>\('candles'\)/.test(chart) && /battlefield = false/.test(chart) && /\{battlefield && \(\s*<div className="mkt-view"/.test(chart) && /tools && !altOn &&/.test(chart) && !/localStorage/.test(chart) && /<ChartMount[^>]*\bbattlefield\b/.test(page))
 
   // ── The Wall (lib/wall): every dollar at its price, kinds kept apart ────
   const wallBars = [bar(1, 100, 101, 99, 100.5, 10), bar(2, 100.5, 102, 100, 101.2, 20), bar(3, 101.2, 103, 98, 99.4, 5)]
