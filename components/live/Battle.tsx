@@ -520,6 +520,7 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
               {armies.length} of {MAX_ARMIES} armies{sourceWord ? ` · ${sourceWord}` : ''}{sliceNote ? ` · ${sliceNote}` : ''} · click to add or drop
             </span>
             <PickSheet pick={pick} seat="battle" />{/* seat: ARENA (GTM squad 2026-10-13) */}
+            <ArmAlert seat="strip" market="" markets={pick.markets} />{/* seat: ALERTS "Watch these" — one consent over the pick (GTM squad 2026-10-13) */}
           </div>
           <div className="battle__chips">
             {picks.map((p) => {
