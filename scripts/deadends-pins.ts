@@ -240,5 +240,25 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   check(`chat route: every money sentence the refusal copy tells you to say builds (${said.length} quoted)`, said.length >= 10 && dead.length === 0, dead.join(' | '))
 }
 
+// ── POLISH R2: the three dead ends QA found that no lane owned ────────────
+{
+  const { BUILD_PATH_OF_JOB_BUILDER } = require('../lib/job-step-telemetry') as typeof import('../lib/job-step-telemetry')
+  const { venueOfBuildPath } = require('../lib/build-path') as typeof import('../lib/build-path')
+  check('QA-X1: a signed ETH→WETH wrap step reports a path and a venue (was NULL — no venue, the #819 class)', BUILD_PATH_OF_JOB_BUILDER['native-weth-wrap'] === 'native-aave-op' && venueOfBuildPath(BUILD_PATH_OF_JOB_BUILDER['native-weth-wrap']) === 'aave' && venueOfBuildPath('native-weth-wrap') === 'aave')
+  const jobsSrc = readFileSync(join(__dirname, '../lib/jobs.ts'), 'utf8')
+  const SELF_PATHED = ['native-swap', 'native-lifi-swap', 'native-hl-exec', 'wait', 'native-hl-guardian']
+  const unpathed = [...new Set([...jobsSrc.matchAll(/builder: '([a-z0-9-]+)'/g)].map((m) => m[1]))].filter((b) => !SELF_PATHED.includes(b) && !BUILD_PATH_OF_JOB_BUILDER[b])
+  check('QA-X1: every sign builder the jobs compiler emits has a path', unpathed.length === 0, unpathed.join(','))
+  const { VENUE_FLOORS, crossChainFloorBlock } = require('../lib/venue-floor') as typeof import('../lib/venue-floor')
+  const cc = (o: string, d: string) => ({ amount: '20', originToken: 'USDC', originChain: o, destinationToken: 'USDC', destinationChain: d })
+  check('QA-X3: Polygon\'s lifted floor no longer refuses a $20 move (probe:venue-floors 2026-10-13); BNB still does', !('polygon' in VENUE_FLOORS) && crossChainFloorBlock(cc('polygon', 'base')) === null && crossChainFloorBlock(cc('base', 'polygon')) === null && crossChainFloorBlock(cc('bnb', 'base'))?.usd === 1000)
+  check('QA-X3: "Swap 20 USDC from Polygon to USDC on Base" builds natively (was refused by our own table)', simulateLadder('Swap 20 USDC from Polygon to USDC on Base').kind === 'action')
+  const { ROBINHOOD_CHAIN_COINS, ROBINHOOD_TICKER_SET } = require('../lib/robinhood-tickers') as typeof import('../lib/robinhood-tickers')
+  const { isChartedStock } = require('../lib/charts') as typeof import('../lib/charts')
+  check('QA-X2: PONS (and cbBTC) are 4663 COINS — named, out of the equity snapshot, never a charted stock', ROBINHOOD_CHAIN_COINS.has('PONS') && ROBINHOOD_CHAIN_COINS.has('cbBTC') && !ROBINHOOD_TICKER_SET.has('PONS') && !isChartedStock('PONS'))
+  const wv = readFileSync(join(__dirname, '../lib/wallet-view.ts'), 'utf8')
+  check('QA-X2: the stock set leaves the coins out, the balance read still walks them (a held coin is a holding)', /robinhoodListedTokens\(\)\.filter\(\(t\) => !ROBINHOOD_CHAIN_COINS\.has\(t\.symbol\)\)/.test(wv) && /const list = robinhoodListedTokens\(\)/.test(wv))
+}
+
 console.log(`\npins:deadends — ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
