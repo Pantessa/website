@@ -9,6 +9,14 @@
 // lib/use-market-pick (the one pick) and writes it ONLY by hand
 // (`pick.set(list, 'hand')` / `pick.add`). It never fires a chat turn.
 //
+// THE DECK's bar seat (`seat="deck"`, coordinator R1): the PHONE's trigger only
+// — under 640px one 36px pill ("Your markets", a 44px hit area, the bar's own
+// chip idiom) beside the channel chips; at 640px and up it is display:none
+// (the channel rows carry the picker on a desktop) — CSS only, so the bar's
+// height and the server frame never change. The pulse's own row stays hidden
+// on phones (PHONE's budget), so on the Pulse channel this pill is the one
+// way a phone adds a market.
+//
 // The rules (lib/arena, pinned): a row whose list resolves to nothing is
 // OMITTED — never a dead button; the sheet may open BY ITSELF once per
 // browser (`PICK_SHEET_SEEN_KEY`), only on a row no hand or link set, and
@@ -58,6 +66,7 @@ export default function PickSheet({ pick, seat }: PickSheetProps) {
   /** How it opened: by itself (the first-run moment) or by a hand. */
   const [how, setHow] = useState<'self' | 'hand'>('hand')
   const titleId = useId()
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   // ── The first-run offer: once per browser, on an untouched row ────────
   const source = pick.source
@@ -66,8 +75,11 @@ export default function PickSheet({ pick, seat }: PickSheetProps) {
     if (!shouldOfferFirstRun({ source, seen: readPickSheetSeen() })) return
     const id = setTimeout(() => {
       // Decided again when the timer fires: a sibling seat may have claimed
-      // the once flag, a memory or a link may have settled the row.
+      // the once flag, a memory or a link may have settled the row. A seat
+      // the page's CSS hides never offers (it would spend the once flag on
+      // a dialog nobody sees).
       if (!shouldOfferFirstRun({ source, seen: readPickSheetSeen() })) return
+      if (!triggerRef.current || triggerRef.current.getClientRects().length === 0) return
       writePickSheetSeen()
       setHow('self')
       setOpen(true)
@@ -90,16 +102,17 @@ export default function PickSheet({ pick, seat }: PickSheetProps) {
   return (
     <div className={`picksheet picksheet--${seat}${open ? ' is-open' : ''}`} data-seat={seat}>
       <button
+        ref={triggerRef}
         type="button"
         className="picksheet__trigger"
         onClick={open ? close : openByHand}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-controls={open ? `${titleId}-panel` : undefined}
-        data-journey="Open pick sheet"
+        data-journey={seat === 'deck' ? 'Open pick sheet (deck bar)' : 'Open pick sheet'}
         title="Fill the row in one tap: your watchlist, your wallet, the venue's lists"
       >
-        <span className="picksheet__trigger-w">{pickTriggerWord(pick.markets)}</span>
+        <span className="picksheet__trigger-w">{pickTriggerWord(pick.markets, seat)}</span>
         <span className="picksheet__trigger-c" aria-hidden>
           ▾
         </span>

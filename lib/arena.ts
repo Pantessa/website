@@ -185,8 +185,14 @@ export function pickSheetBlurb(seat: PickSheetSeat): string {
     : `One tap fills the row (up to ${MAX_PICK}). The Front and The Siege march the first ${ARMY_SLICE}.`
 }
 
-/** The trigger's words beside the row: nothing yet → "Pick"; a filled row → "Change". */
-export function pickTriggerWord(markets: readonly string[]): string {
+/** The deck's bar seat is the PHONE's trigger only (a 36px pill beside the channel chips, the bar's own
+ *  idiom; a desktop's channel rows carry the picker) — one label, never Pick/Change. */
+export const DECK_TRIGGER_WORD = 'Your markets'
+
+/** The trigger's words beside the row: nothing yet → "Pick"; a filled row → "Change"; the deck's bar pill
+ *  always "Your markets". */
+export function pickTriggerWord(markets: readonly string[], seat: PickSheetSeat = 'battle'): string {
+  if (seat === 'deck') return DECK_TRIGGER_WORD
   return markets.length ? 'Change' : 'Pick'
 }
 

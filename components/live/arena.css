@@ -7,6 +7,13 @@
 
 .picksheet { position: relative; display: inline-flex; align-items: center; }
 
+/* THE DECK's stage seat (components/home/deck.css hides the battle's whole pick head there — modes,
+   count, add box — for a shorter field). The sheet is the one control that belongs on the stage: the
+   head comes back as a single right-aligned row holding only this seat (four classes outrank
+   deck.css's three), everything else in it stays hidden. */
+.deck__chan .battle--stage .battle__picker .battle__pickhead { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.deck__chan .battle--stage .battle__picker .battle__pickhead > :not(.picksheet) { display: none; }
+
 .picksheet__trigger { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: filter .12s ease, border-color .12s ease; }
 .picksheet__trigger:hover { filter: brightness(1.1); }
 .picksheet__trigger[aria-expanded="true"] { border-color: var(--accent); }
@@ -47,9 +54,19 @@
 .picksheet__note--dim { color: var(--muted-2); }
 .picksheet__note--warn { color: var(--battle-down, #f06c6c); }
 
+/* THE DECK's bar seat: the phone's trigger only — nothing on a desktop (the channel rows carry the
+   picker there). Under 640px it is one of the bar's 36px pills (deck.css's phone `.deck__ch` idiom:
+   border, 999px radius, 12.5px label, a 44px hit area through ::after) so the bar's height never moves. */
+.picksheet--deck { display: none; }
+
 /* PHONE: a sheet from the bottom. */
 @media (max-width: 640px) {
   .picksheet__trigger { height: 34px; padding: 0 13px; }
+  .picksheet--deck { display: inline-flex; flex: 0 0 auto; align-self: center; }
+  .picksheet--deck .picksheet__trigger { position: relative; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--fg); font-family: var(--mk-font-ui); font-size: 12.5px; font-weight: 600; }
+  .picksheet--deck .picksheet__trigger-w::before { content: '+ '; color: var(--accent); }
+  .picksheet--deck .picksheet__trigger-c { display: none; }
+  .picksheet--deck .picksheet__trigger::after { content: ''; position: absolute; inset: -4px 0; }
   .picksheet.is-open .picksheet__scrim { display: block; position: fixed; inset: 0; z-index: 61; background: rgba(0, 0, 0, .5); }
   .picksheet__panel { position: fixed; inset: auto 0 0 0; top: auto; right: auto; z-index: 62; width: auto; max-height: min(82dvh, 640px); overflow-y: auto; padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); border-left: 0; border-right: 0; border-bottom: 0; border-radius: 16px 16px 0 0; box-shadow: 0 -24px 64px rgba(0, 0, 0, .4); }
   .picksheet--pulse .picksheet__panel, .picksheet--tape .picksheet__panel, .picksheet--deck .picksheet__panel { left: 0; }

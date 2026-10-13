@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { ARMY_SLICE, MAX_PICK } from '../lib/market-pick'
 import { DEFAULT_PICK, FRONT_WINDOWS, PICK_MODES } from '../lib/battle'
 import {
-  CHALLENGE_TAIL, EMPTY_CHALLENGE, FILL_FROM_VENUE, NO_GROUND_HEADLINE, PICK_SHEET_OFFER_DELAY_MS, PICK_SHEET_SEEN_KEY, SOLO_TAIL,
+  CHALLENGE_TAIL, DECK_TRIGGER_WORD, EMPTY_CHALLENGE, FILL_FROM_VENUE, NO_GROUND_HEADLINE, PICK_SHEET_OFFER_DELAY_MS, PICK_SHEET_SEEN_KEY, SOLO_TAIL,
   arenaHeadline, challengeLine, fillRows, fmtUtcMinute, hillLine, namesLine, pickSheetBlurb, pickSheetTitle, pickTriggerWord, shouldOfferFirstRun, sinceWords, warLogLine, windowWord,
 } from '../lib/arena'
 
@@ -60,7 +60,7 @@ async function main() {
   pin('the sheet offers itself only on an untouched row, only once', shouldOfferFirstRun({ source: 'fallback', seen: false }) && shouldOfferFirstRun({ source: 'venue', seen: false }) && shouldOfferFirstRun({ source: 'watchlist', seen: false }) && shouldOfferFirstRun({ source: 'held', seen: false }) && !shouldOfferFirstRun({ source: 'hand', seen: false }) && !shouldOfferFirstRun({ source: 'url', seen: false }) && !shouldOfferFirstRun({ source: 'fallback', seen: true }))
   pin('the once flag has its own key and the offer waits for the page to paint', PICK_SHEET_SEEN_KEY === 'pantessa.markets.picksheet.v1' && PICK_SHEET_OFFER_DELAY_MS >= 600 && PICK_SHEET_OFFER_DELAY_MS <= 3000)
   pin('titles and blurbs per seat say the slice', pickSheetTitle('battle') === 'Pick your armies' && pickSheetTitle('pulse') === 'Pick your markets' && pickSheetBlurb('battle').includes(`first ${ARMY_SLICE}`) && pickSheetBlurb('tape').includes(`first ${ARMY_SLICE}`) && pickSheetBlurb('tape').includes(`${MAX_PICK}`))
-  pin('the trigger reads Pick on an empty row, Change on a filled one', pickTriggerWord([]) === 'Pick' && pickTriggerWord(['A']) === 'Change')
+  pin('the trigger reads Pick on an empty row, Change on a filled one; the deck\'s bar pill always "Your markets"', pickTriggerWord([]) === 'Pick' && pickTriggerWord(['A']) === 'Change' && pickTriggerWord([], 'deck') === DECK_TRIGGER_WORD && pickTriggerWord(['A'], 'deck') === DECK_TRIGGER_WORD && DECK_TRIGGER_WORD === 'Your markets')
 
   // ── The component's rules, read as text ───────────────────────────────
   const sheet = readFileSync('components/live/PickSheet.tsx', 'utf8')
@@ -72,6 +72,7 @@ async function main() {
   pin('the once flag is written on offer AND on dismiss, read after mount', (sheet.match(/writePickSheetSeen\(/g) ?? []).length >= 2 && /readPickSheetSeen\(\)/.test(sheet) && /PICK_SHEET_OFFER_DELAY_MS/.test(sheet))
   pin('a phone gets a bottom sheet with 44px rows and safe-area padding; a desktop a popover', /@media \(max-width: 640px\)/.test(css) && /min-height: 44px/.test(css) && /env\(safe-area-inset-bottom/.test(css) && /position: absolute/.test(css) && /position: fixed/.test(css))
   pin('the typed add goes through pick.add (lib/battle resolveMarket against the universe); unknown names are said', /pick\.add\(/.test(sheet) && /unknown/.test(sheet) && /lists no market/.test(sheet))
+  pin('the deck seat is the phone\'s trigger only: display:none by default, a 36px pill with a 44px hit area under 640px', /\.picksheet--deck \{ display: none; \}/.test(css) && /\.picksheet--deck \{ display: inline-flex/.test(css) && /\.picksheet--deck \.picksheet__trigger \{[^}]*height: 36px/.test(css) && /\.picksheet--deck \.picksheet__trigger::after \{[^}]*inset: -4px 0/.test(css) && /pickTriggerWord\(pick\.markets, seat\)/.test(sheet))
   pin('the panel is mounted only while open (a closed seat reads nothing); the scrim and Esc close it', /\{open && <PickSheetPanel/.test(sheet) && /e\.key === 'Escape'/.test(sheet) && /picksheet__scrim/.test(sheet))
 
   console.log(`\narena pins: ${pass} passed / ${fail} failed`)
