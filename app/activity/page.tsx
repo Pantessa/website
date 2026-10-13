@@ -54,12 +54,12 @@ async function LinkEconomy() {
   return (
     <section>
       <div className="flex items-baseline justify-between gap-4 mb-3 flex-wrap">
-        <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
+        <h2 className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]">
           The link economy
         </h2>
         <Link
           href="/links"
-          className="mono text-[11px] text-[color:var(--accent)] hover:underline underline-offset-2"
+          className="mono text-[length:var(--fs-xs)] text-[color:var(--accent)] hover:underline underline-offset-2"
         >
           Full board →
         </Link>
@@ -68,35 +68,35 @@ async function LinkEconomy() {
       {fees && fees.feeBearingUsd > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
           <div className="rounded-lg border border-[var(--line)] bg-[var(--surf-1)] px-4 py-3">
-            <p className="mono text-[10.5px] uppercase tracking-wider text-[color:var(--muted-2)]">
+            <p className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]">
               Fee-bearing conversions
             </p>
-            <p className="mono text-[20px] tabular-nums text-[color:var(--fg)] mt-1">
+            <p className="mono text-[length:var(--fs-xl)] tabular-nums text-[color:var(--fg)] mt-1">
               {fmtUsd(fees.feeBearingUsd)}
             </p>
-            <p className="mono text-[10.5px] text-[color:var(--muted-2)] tabular-nums">
+            <p className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] tabular-nums">
               {fees.conversions} signed swaps
             </p>
           </div>
           <div className="rounded-lg border border-[var(--line)] bg-[var(--surf-1)] px-4 py-3">
-            <p className="mono text-[10.5px] uppercase tracking-wider text-[color:var(--muted-2)]">
+            <p className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]">
               Fees to creators
             </p>
-            <p className="mono text-[20px] tabular-nums text-[color:var(--accent)] mt-1">
+            <p className="mono text-[length:var(--fs-xl)] tabular-nums text-[color:var(--accent)] mt-1">
               {fmtUsd(fees.creatorUsd)}
             </p>
-            <p className="mono text-[10.5px] text-[color:var(--muted-2)]">
+            <p className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
               half the fee on link conversions
             </p>
           </div>
           <div className="rounded-lg border border-[var(--line)] bg-[var(--surf-1)] px-4 py-3">
-            <p className="mono text-[10.5px] uppercase tracking-wider text-[color:var(--muted-2)]">
+            <p className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]">
               Fees to Pantessa
             </p>
-            <p className="mono text-[20px] tabular-nums text-[color:var(--fg)] mt-1">
+            <p className="mono text-[length:var(--fs-xl)] tabular-nums text-[color:var(--fg)] mt-1">
               {fmtUsd(fees.yeetfulUsd)}
             </p>
-            <p className="mono text-[10.5px] text-[color:var(--muted-2)]">
+            <p className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
               ledgered estimate · on-chain treasury is truth
             </p>
           </div>
@@ -105,7 +105,7 @@ async function LinkEconomy() {
 
       {daily.length > 0 && (
         <div className="rounded-lg border border-[var(--line)] bg-[var(--surf-1)] px-4 py-3 mb-5">
-          <p className="mono text-[10.5px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+          <p className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
             The link economy, daily — minted · conversions · $ moved (30d)
           </p>
           <LinksDaily daily={daily} />
@@ -113,7 +113,7 @@ async function LinkEconomy() {
       )}
 
       {(board.byClaims.length > 0 || board.byRecent.length > 0) && <IntentLinksBoard board={board} />}
-      <p className="mono text-[11px] text-[color:var(--muted-2)] mt-3">
+      <p className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mt-3">
         Dollars are guardrail-priced signed notional — the same source as the figures above. Every
         row is a live link.{' '}
         <SignInFlowLink href={LINKS_STUDIO_HREF} className="text-[color:var(--accent)] hover:underline underline-offset-2">

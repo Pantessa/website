@@ -50,8 +50,8 @@ const row = (name: string) => ROWS.includes(name)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Pw = any
-const require = createRequire('/Users/nategeier/anchor.js')
-const pw = require('playwright-core')
+const require = createRequire(process.env.PLAYWRIGHT_CORE ? import.meta.url : '/Users/nategeier/anchor.js')
+const pw = require(process.env.PLAYWRIGHT_CORE || 'playwright-core')
 const { webkit, chromium, devices } = pw
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 

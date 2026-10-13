@@ -26,9 +26,9 @@ import path from 'node:path'
 // playwright-core resolves from ~/node_modules (the resolver walks up from
 // the worktree) and is CommonJS: require it, never a static import (a bare
 // import type-checks here and kills the Vercel build — squad 09-23).
-const req = createRequire(path.join(process.cwd(), 'anchor.js'))
+const req = createRequire(process.env.PLAYWRIGHT_CORE ? import.meta.url : path.join(process.cwd(), 'anchor.js'))
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const pw: any = req('playwright-core')
+const pw: any = req(process.env.PLAYWRIGHT_CORE || 'playwright-core')
 
 export const NAV_SHOT_DIR = process.env.NAV_SHOT_DIR ?? '/Users/nategeier/yeetful/squad-native-2026-09-24/gates/shots/nav'
 

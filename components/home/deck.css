@@ -320,3 +320,15 @@
 @media (max-width: 374px) {
   .deck__bar .picksheet--deck { order: 0; }
 }
+/* POLISH (MARKETS-MOBILE, 2026-10-13) — THE BAR'S TAIL. PHONE's leftover: on every phone the Share chip (and the
+   ±5% alert when a wallet is in) sat PAST the bar's right edge (x≈699–735 in a bar ending at 358 at 375), after the
+   door chip, reachable only by scrolling the row. Ordering them earlier pushed the channels off the bar (the 320
+   case). Now they are the row's TAIL: sticky at the bar's right edge inside the scroller, so they are in view at
+   every width and the channels scroll UNDER them (a native pinned trailing action). Share is its icon on a phone (the
+   word stays in the DOM); the alert chip sits just left of it. Measured at 375 on the first cut: `right: 10px` put the
+   icon at 302→338 over the picked Pulse chip's last 13px (the bar's content edge is 348); `right: 0` = flush. */
+@media (max-width: 640px) {
+  .deck__bar > .lshare--deck { position: sticky; right: 0; order: 20; z-index: 2; width: 36px; padding: 0; gap: 0; justify-content: center; background: var(--surf-2, var(--surf-1)); box-shadow: -10px 0 10px -6px var(--surf-2, var(--surf-1)); }
+  .deck__bar > .lshare--deck .lshare__word { display: none; }
+  .deck__bar > .armalert--deck { position: sticky; right: 42px; order: 19; z-index: 2; background: var(--surf-2, var(--surf-1)); box-shadow: -10px 0 10px -6px var(--surf-2, var(--surf-1)); }
+}
