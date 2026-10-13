@@ -273,8 +273,9 @@ export function deckPins(check: Check): void {
   )
   check(
     "deck: the battle's stage seat rewrites no URL (`/?t=` is nobody's) and reads none, keeps the hand-set memory shared with /live, mounts no war-log rail and no page title, and reports its feed, its buffer and the leader as they change",
-    /if \(!onPage \|\| typeof window === 'undefined'\) return/.test(battle) &&
-      /onPage \? initialArmies\(\) : \[\]/.test(battle) &&
+    /if \(!onPage \|\| typeof window === 'undefined'( \|\| !pick\.ready)?\) return/.test(battle) /* RE-PINNED 2026-10-13 (gtm3h): nothing written before the pick paints */ &&
+      /* RE-PINNED 2026-10-13 (gtm3h): the armies are the one pick's first five; the store's stage seat reads and writes no URL */
+      /const pick = useMarketPick\(\{ seat \}\)/.test(battle) && /armiesOf\(pick\.markets\)/.test(battle) && /const onPage = \(opts\.seat \?\? 'stage'\) === 'page'/.test(readFileSync('lib/use-market-pick.ts', 'utf8')) &&
       /onPage \? initialWindow\(\) : parseFrontWindow\(null\)/.test(battle) &&
       /\{onPage && \(\s*<MarketsSide label="War log">/.test(battle) &&
       /className="battle battle--stage"/.test(battle) &&
@@ -282,7 +283,7 @@ export function deckPins(check: Check): void {
       /if \(leader !== reportedLeaderRef\.current\) \{\s*reportedLeaderRef\.current = leader\s*onLeaderRef\.current\?\.\(leader\)/.test(battle) &&
       /onFillsRef\.current\?\.\(fillsRef\.current\)/.test(battle) &&
       /onReportRef\.current\?\.\(\{ status: s, detail: d, source: tapeSourceRef\.current/.test(battle) &&
-      /writeArmyMemory\(\{ armies, pick: pickMode, at: Date\.now\(\) \}\)/.test(battle),
+      !/localStorage|writeArmyMemory/.test(battle) /* RE-PINNED 2026-10-13 (gtm3h): the memory is the store's, shared by every surface */,
   )
   check(
     "deck: the ladder is Hyperliquid's l2Book over the Depth view's own feed (openBookFeed: the venue's keyless socket, the book route when a socket is refused), re-aimed after a settle so a flickering hot market never thrashes the socket, repainted at most four times a second, its prints read from the stage's buffer and faded on the second hand; a market that never answers is said so; its door is lib/deck's",

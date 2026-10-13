@@ -97,7 +97,7 @@ export default function Deck() {
 
   const def = deckChannel(ch)
   const live = report.status === 'live'
-  const bookMarket = deckBookMarket([pick, hot])
+  const bookMarket = deckBookMarket([marketPick.markets[0] ?? null, pick, hot]) // the ladder follows the FIRST of the one pick (GTM squad 2026-10-13, lane PICK)
   const href = deckHref(ch, pick)
 
   return (
