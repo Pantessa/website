@@ -12,9 +12,13 @@
 // wallet still signs it. Nothing here moves money on its own — the chip-send
 // contract: the tap is the send, the signature is the gate.
 //
-// Feeds: lib/tape-feed. The Hyperliquid WebSocket today (no effect, no
-// block — those two columns say so instead of guessing); the Dune adapter
-// slot beside it, named on the page, live the moment its URL is set.
+// Feeds: lib/tape-feed. Dune's real-time feeds through our relay by default
+// (HyperCore, Lighter, Lighter Robinhood perps + the DEX spot trial; the
+// taker's position effect and the block on every row; the venues are
+// toggles in the Feeds card); the venue's keyless Hyperliquid socket when
+// the relay reports `unconfigured` (no effect, no block — those two columns
+// say so instead of guessing). A firehose has no subscription to list, so
+// the market chips are the busiest books in the last minute, measured.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import Link from 'next/link'
@@ -33,6 +37,7 @@ import {
   FLOW_STACK,
   FOLLOW_USD,
   TRIGGER_LABEL,
+  busiestMarkets,
   detectTriggers,
   flowBuckets,
   flowClassOf,
@@ -51,6 +56,7 @@ import {
   tapeMarket,
   tapeStats,
   triggerDetail,
+  venueTag,
   type FlowBucket,
   type FlowClass,
   type FollowAsk,
@@ -60,15 +66,22 @@ import {
   type TriggerRule,
   type TriggerThresholds,
 } from '@/lib/tape'
-import { feedFor, readTapeUniverse, type FeedStatus } from '@/lib/tape-feed'
+import { feedFor, openDuneTape, readTapeUniverse, type FeedHandlers, type FeedStatus } from '@/lib/tape-feed'
+import { DEFAULT_LIVE_VENUES, DUNE_VENUES, type DuneVenueId } from '@/lib/dune'
 
 const RULES: readonly TriggerRule[] = ['big-print', 'whale-repeat', 'flow-skew']
 const BIG_PRINT_CHOICES = [10_000, 50_000, 250_000, 1_000_000] as const
 const TAPE_ROWS = 80
 const EVENT_ROWS = 40
+/** The chip row on the firehose: this many of the busiest books. */
+const CHIP_MARKETS = 22
 
 export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap; tabs?: ReactNode }) {
-  const [source, setSource] = useState<TapeSource>('hyperliquid')
+  // Dune first; the relay's `unconfigured` flips this to the venue's socket
+  // and the Feeds card says why.
+  const [source, setSource] = useState<TapeSource>('dune')
+  const [venues, setVenues] = useState<DuneVenueId[]>([...DEFAULT_LIVE_VENUES])
+  const [relayNote, setRelayNote] = useState<string | null>(null)
   const feed = feedFor(source)
   const [markets, setMarkets] = useState<string[] | null>(null)
   const [fills, setFills] = useState<TapeFill[]>([])
@@ -85,9 +98,12 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
   const fillsRef = useRef<TapeFill[]>([])
   fillsRef.current = fills
 
-  // The markets: the venue's busiest books, read once; the fallback list if
-  // the read fails. `?m=` narrows the view, never the subscription.
+  // The venue's socket needs a subscription list: its busiest books, read
+  // once; the fallback list if the read fails. The relay carries every
+  // market, so this only runs for the fallback. `?m=` narrows the view,
+  // never the subscription.
   useEffect(() => {
+    if (source !== 'hyperliquid' || markets) return
     const ac = new AbortController()
     readTapeUniverse(ac.signal).then(({ main, xyz }) => {
       if (ac.signal.aborted) return
@@ -95,20 +111,28 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
       setMarkets(picked.length ? picked : [...FALLBACK_MARKETS])
     })
     return () => ac.abort()
-  }, [])
+  }, [source, markets])
 
-  // The stream. Reconnects itself; this effect only opens and closes it.
+  // The stream. Reconnects itself; this effect only opens and closes it. A
+  // block Dune replaces (op UPDATE) is retracted before its new fills merge.
   useEffect(() => {
-    if (!markets) return
-    const close = feed.connect(markets, {
+    const handlers: FeedHandlers = {
       onFills: (batch) => setFills((prev) => mergeFills(prev, batch, Date.now())),
+      onRetract: (venue, block) => setFills((prev) => prev.filter((f) => !(f.venue === venue && f.block === block))),
       onStatus: (s, d) => {
+        if (s === 'unconfigured' && source === 'dune') {
+          setRelayNote(d ?? 'not configured')
+          setSource('hyperliquid')
+          return
+        }
         setStatus(s)
         setStatusDetail(d)
       },
-    })
-    return close
-  }, [feed, markets])
+    }
+    if (source === 'dune') return openDuneTape([], handlers, { venues, filter: false }).close
+    if (!markets) return
+    return feed.connect(markets, handlers)
+  }, [feed, source, venues, markets])
 
   // The clock the buckets and tiles read: once a second, and the buffer is
   // pruned on the same beat so a quiet market's tape still ages out.
@@ -178,7 +202,24 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
   )
 
   const live = status === 'live'
-  const marketList = markets ?? [...FALLBACK_MARKETS]
+  // The chips: on the firehose the busiest books of the last minute (re-read
+  // every five seconds so the row does not reshuffle on every print), the
+  // filter kept in view; on the venue's socket, what it is subscribed to.
+  const chipBeat = Math.floor(now / 5_000)
+  const frozenRef = useRef<TapeFill[] | null>(null)
+  frozenRef.current = paused && frozen ? frozen : null
+  // Keyed on the beat alone (the buffer is read through its ref): the row
+  // reshuffles every five seconds, never on every print.
+  const chips = useMemo(() => {
+    if (source !== 'dune') return null
+    const buf = frozenRef.current ?? fillsRef.current
+    const at = chipBeat * 5_000
+    return { busiest: busiestMarkets(buf, at, CHIP_MARKETS), count: new Set(buf.filter((f) => f.at >= at - 60_000).map((f) => f.market)).size }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, chipBeat])
+  const busiest = chips?.busiest ?? null
+  const marketCount = chips?.count ?? null
+  const marketList = busiest ? (filter && !busiest.includes(filter) ? [filter, ...busiest] : busiest) : (markets ?? [...FALLBACK_MARKETS])
 
   return (
     <>
@@ -205,7 +246,7 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
         <div className="live__markets" role="group" aria-label="Markets on the tape">
           <button type="button" className={`live__m${filter === null ? ' is-on' : ''}`} onClick={() => pickFilter(null)}>
             All
-            <span className="mono live__mcount">{marketList.length}</span>
+            <span className="mono live__mcount">{marketCount ?? marketList.length}</span>
           </button>
           {marketList.map((m) => {
             const tm = tapeMarket(m)
@@ -241,7 +282,7 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
             k="Hot market · 60s"
             v={stats.hotMarket ? <span className="mono">{stats.hotMarket.market}</span> : <span className="mono live__dim">—</span>}
             sub={stats.hotMarket ? `${fmtUsd(stats.hotMarket.usd)} traded` : 'no fill yet'}
-            chip={stats.hotMarket ? chipFor({ market: stats.hotMarket.market, side: stats.hotMarket.side }) : null}
+            chip={stats.hotMarket ? chipFor(stats.hotMarket) : null}
             onAct={act}
           />
           <Tile
@@ -291,13 +332,13 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
                 </tr>
               )}
               {rows.map((f) => (
-                <TapeRow key={f.id} fill={f} chip={chipFor(f)} onAct={act} />
+                <TapeRow key={f.id} fill={f} chip={chipFor(f)} onAct={act} showVenue={source === 'dune'} />
               ))}
             </tbody>
           </table>
         </section>
         <p className="live__foot mono">
-          Every row is the venue&apos;s own fill: side, size, price, time and the taker it names. A chip is the sentence that does the same thing, in this
+          Every row is the venue&apos;s own fill: side, size, price, time and the taker it names{source === 'dune' ? ', through Dune\'s real-time feed' : ''}. A chip is the sentence that does the same thing, in this
           chat&apos;s grammar; your wallet signs it. Sizes are ${FOLLOW_USD} on purpose. Nothing on this page fires on its own.
         </p>
       </main>
@@ -306,7 +347,7 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
         <div data-slot="triggers" className="live__rail">
           <GuideSeat surface="live" posture="desktop" />
           <TriggersPanel armed={armed} setArmed={setArmed} thresholds={thresholds} setThresholds={setThresholds} events={events} onAct={act} chipOk={(f) => canTradeAsk(f.ask, tradable)}>
-            <FeedsCard source={source} setSource={setSource} status={status} detail={statusDetail} />
+            <FeedsCard source={source} setSource={setSource} status={status} detail={statusDetail} venues={venues} setVenues={setVenues} relayNote={relayNote} />
           </TriggersPanel>
         </div>
       </MarketsSide>
@@ -371,12 +412,12 @@ function Tile({ k, v, sub, chip, onAct, bar, split }: { k: string; v: React.Reac
 
 // ── The tape ─────────────────────────────────────────────────────────────────
 
-function TapeRow({ fill, chip, onAct }: { fill: TapeFill; chip: FollowAsk | null; onAct: (ask: string) => void }) {
+function TapeRow({ fill, chip, onAct, showVenue }: { fill: TapeFill; chip: FollowAsk | null; onAct: (ask: string) => void; showVenue?: boolean }) {
   const cls = flowClassOf(fill)
   const tone = flowTone(cls)
   const m = tapeMarket(fill.market)
   return (
-    <tr className={`live-row live-row--${tone.dir}${tone.strong ? ' is-strong' : ''}`} data-class={cls}>
+    <tr className={`live-row live-row--${tone.dir}${tone.strong ? ' is-strong' : ''}`} data-class={cls} data-venue={fill.venue}>
       <td className="live__market">
         {m.href ? (
           <Link href={m.href} className="live__mlink" prefetch={false}>
@@ -387,6 +428,11 @@ function TapeRow({ fill, chip, onAct }: { fill: TapeFill; chip: FollowAsk | null
           <span className="live__mlink live__mlink--plain">
             {m.dex && <span className="live__dex mono">{m.dex}</span>}
             {m.ticker}
+          </span>
+        )}
+        {showVenue && (
+          <span className="live__venue mono" title={fill.venue === 'dex' ? 'a spot swap on this chain' : 'a perp fill on this venue'}>
+            {venueTag(fill.venue, fill.chainId)}
           </span>
         )}
       </td>
@@ -406,7 +452,7 @@ function TapeRow({ fill, chip, onAct }: { fill: TapeFill; chip: FollowAsk | null
             {chip.label} <span className="live__chip-usd">${FOLLOW_USD}</span>
           </button>
         ) : (
-          <span className="live__dim mono live__noact">{m.kind === 'stock' && fill.side === 'sell' ? 'needs a position' : 'no route here'}</span>
+          <span className="live__dim mono live__noact">{(m.kind === 'stock' || fill.venue === 'dex') && fill.side === 'sell' ? 'needs a position' : 'no route here'}</span>
         )}
       </td>
     </tr>
@@ -625,9 +671,13 @@ function TriggersPanel({
 
 // ── Feeds ────────────────────────────────────────────────────────────────────
 
-function FeedsCard({ source, setSource, status, detail }: { source: TapeSource; setSource: (s: TapeSource) => void; status: FeedStatus; detail?: string }) {
+function FeedsCard({ source, setSource, status, detail, venues, setVenues, relayNote }: { source: TapeSource; setSource: (s: TapeSource) => void; status: FeedStatus; detail?: string; venues: DuneVenueId[]; setVenues: (v: DuneVenueId[]) => void; relayNote: string | null }) {
   const hl = feedFor('hyperliquid')
   const dune = feedFor('dune')
+  const toggle = (id: DuneVenueId) => {
+    const next = venues.includes(id) ? venues.filter((v) => v !== id) : DUNE_VENUES.map((v) => v.id).filter((v) => v === id || venues.includes(v))
+    if (next.length) setVenues(next)
+  }
   return (
     <section className="live__feeds" aria-label="Feeds">
       <header className="live__rh">
@@ -635,22 +685,29 @@ function FeedsCard({ source, setSource, status, detail }: { source: TapeSource; 
         <span className="live__rv mono">lib/tape-feed.ts</span>
       </header>
       <ul className="live__feedlist">
-        <li className={`live__feed${source === 'hyperliquid' ? ' is-on' : ''}`}>
+        <li className={`live__feed${source === 'dune' ? ' is-on' : ''}`} data-feed="dune">
+          <button type="button" className="live__feed-b" onClick={() => setSource('dune')} aria-pressed={source === 'dune'} disabled={relayNote !== null}>
+            <span className="live__feed-n">{dune.label}</span>
+            <span className="live__feed-s mono">{source === 'dune' ? statusWords(status, detail) : relayNote ? `relay · ${relayNote}` : 'through our relay · the key stays on the server'}</span>
+          </button>
+          <div className="live__venues" role="group" aria-label="Venues on the feed">
+            {DUNE_VENUES.map((v) => (
+              <button key={v.id} type="button" className={`live__venue-t mono${venues.includes(v.id) ? ' is-on' : ''}`} aria-pressed={venues.includes(v.id)} onClick={() => toggle(v.id)} disabled={source !== 'dune'} data-kind={v.kind}>
+                {v.label}
+              </button>
+            ))}
+          </div>
+          <p className="live__feed-f mono">+ position effect · block · hash · both parties</p>
+        </li>
+        <li className={`live__feed${source === 'hyperliquid' ? ' is-on' : ''}`} data-feed="hyperliquid">
           <button type="button" className="live__feed-b" onClick={() => setSource('hyperliquid')} aria-pressed={source === 'hyperliquid'}>
             <span className="live__feed-n">{hl.label}</span>
-            <span className="live__feed-s mono">{source === 'hyperliquid' ? statusWords(status, detail) : 'keyless · public'}</span>
+            <span className="live__feed-s mono">{source === 'hyperliquid' ? statusWords(status, detail) : 'keyless · public · the fallback'}</span>
           </button>
           <p className="live__feed-f mono">side · size · price · time · taker · hash</p>
         </li>
-        <li className={`live__feed${source === 'dune' ? ' is-on' : ''}`}>
-          <button type="button" className="live__feed-b" onClick={() => setSource('dune')} aria-pressed={source === 'dune'}>
-            <span className="live__feed-n">{dune.label}</span>
-            <span className="live__feed-s mono">{source === 'dune' ? statusWords(status, detail) : process.env.NEXT_PUBLIC_DUNE_STREAM_URL ? 'configured' : 'slot open · NEXT_PUBLIC_DUNE_STREAM_URL'}</span>
-          </button>
-          <p className="live__feed-f mono">+ position effect · block · every venue it indexes</p>
-        </li>
       </ul>
-      <p className="live__note mono">A feed is a field map (lib/tape fillFromDune). The columns a feed does not carry are marked, never guessed.</p>
+      <p className="live__note mono">A feed is a field map (lib/dune, lib/tape). The columns a feed does not carry are marked, never guessed.</p>
     </section>
   )
 }

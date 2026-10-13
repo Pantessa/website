@@ -5,7 +5,8 @@
 // epileptic every trade splat … combine the live feed with the markets page
 // … showing value others do not have right away like the scanning streaming
 // data". So the splash opens on the venue's own fills, aggregated in the
-// browser (lib/tape + lib/tape-feed, keyless) into a calm band: dollars per
+// browser (lib/tape + lib/tape-feed: Dune's perp feeds through our relay,
+// the venue's keyless socket as the fallback) into a calm band: dollars per
 // second over the last ninety seconds, the hot market, the largest print,
 // the taker split — and the chip on the two numbers is the sentence that does
 // the same thing ("every print is a button"). No tape rows: that is /live's
@@ -37,8 +38,10 @@ import {
   type TapeFill,
   type TapeMarket,
   type TapeSide,
+  type TapeSource,
   type UniverseRow,
 } from '@/lib/tape'
+import { PERP_VENUES } from '@/lib/dune'
 import type { FeedStatus } from '@/lib/tape-feed'
 
 // ── The pick ─────────────────────────────────────────────────────────────────
@@ -203,7 +206,7 @@ export function pulseTiles(fills: readonly TapeFill[], nowMs: number, chipOk: (a
       usd: st.hotMarket.usd,
       side: st.hotMarket.side,
       buyPct: all > 0 ? Math.round((buy / all) * 100) : 0,
-      chip: gate(followAsk({ market: st.hotMarket.market, side: st.hotMarket.side })),
+      chip: gate(followAsk({ market: st.hotMarket.market, side: st.hotMarket.side, venue: st.hotMarket.venue, chainId: st.hotMarket.chainId })),
     }
   }
   const largest: PulseTiles['largest'] = st.largestPrint ? { fill: st.largestPrint, market: tapeMarket(st.largestPrint.market), chip: gate(followAsk(st.largestPrint)) } : null
@@ -300,14 +303,32 @@ export function pulseStatusWords(status: FeedStatus, detail?: string, opts: { ma
   }
 }
 
-/** What it is and why it is different — one mono line under the panel. The
- *  phone keeps one sentence (≤ 54 characters: one line of 9.5px mono in the
- *  321px a 375 phone leaves the band). */
-export const PULSE_WHY = {
-  what: "Hyperliquid's own fills, live and keyless, read by your browser.",
-  why: 'Every number is a sentence your wallet can sign — nothing fires on its own.',
-  phone: 'Hyperliquid fills · every number is a button you sign.',
-} as const
+/** What it is and why it is different — one mono line under the panel,
+ *  per transport (lib/tape-feed connectTape says which one the band ended
+ *  up reading). The phone keeps one sentence (≤ 54 characters: one line of
+ *  9.5px mono in the 321px a 375 phone leaves the band). */
+export const PULSE_WHY_BY_SOURCE: Record<TapeSource, { what: string; why: string; phone: string }> = {
+  dune: {
+    what: "Hyperliquid, Lighter and Lighter Robinhood fills through Dune's real-time feed, relayed live.",
+    why: 'Every number is a sentence your wallet can sign — nothing fires on its own.',
+    phone: 'Dune live fills · every number is a button you sign.',
+  },
+  hyperliquid: {
+    what: "Hyperliquid's own fills, live and keyless, read by your browser.",
+    why: 'Every number is a sentence your wallet can sign — nothing fires on its own.',
+    phone: 'Hyperliquid fills · every number is a button you sign.',
+  },
+}
+
+/** The keyless fallback's words (the name the first pins used). */
+export const PULSE_WHY = PULSE_WHY_BY_SOURCE.hyperliquid
+
+/** The word before the status: where the fills come from. */
+export const PULSE_VENUE_WORD: Record<TapeSource, string> = { dune: 'Dune', hyperliquid: 'Hyperliquid' }
+
+/** The perp venues the band reads through the relay (lib/dune): a spot
+ *  swap has no taker position, and the band's chips are perp sentences. */
+export const PULSE_VENUES = PERP_VENUES
 
 export const PULSE_WAITING = 'waiting for the first fill'
 

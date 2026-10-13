@@ -1,30 +1,43 @@
 'use client'
 
-// The live tape's feeds (2026-10-06). The browser subscribes directly — a
-// serverless host cannot hold a socket open, and the venue's stream is
-// public, keyless and CORS-open (its own app reads it the same way). Two
-// adapters behind one interface:
+// The live tape's feeds (2026-10-06; Dune relay 2026-10-13). Two adapters
+// behind one interface:
 //
-//   • hyperliquid — the venue's `trades` WebSocket, today's feed. Carries
-//     side, size, price, time, the L1 hash and the two addresses; it does
-//     NOT carry the taker's position effect or the block.
-//   • dune — the slot for a position-aware chain stream. Reads
-//     NEXT_PUBLIC_DUNE_STREAM_URL (a WebSocket URL; `?markets=` appended)
-//     and maps each row through lib/tape fillFromDune. Unset, the adapter
-//     reports `unconfigured` and the page says so by name — it never
-//     pretends. When Dune's API lands, this file is the whole integration.
+//   • dune — Dune's real-time trade feeds (HyperCore, Lighter, Lighter
+//     Robinhood perps; the DEX spot trial on Ethereum/Base/Arbitrum),
+//     through OUR relay: `GET /api/live/stream` is a Server-Sent Events
+//     response the browser holds with an EventSource, and the server holds
+//     the authenticated upstream socket (lib/dune-feed-server) — the key
+//     never reaches a browser. Carries the taker's position EFFECT, the
+//     block, the hash and both parties. A relay without the key answers 503
+//     `unconfigured`, and the adapter says so by name — it never pretends.
+//   • hyperliquid — the venue's own `trades` WebSocket, keyless and
+//     CORS-open, opened by the browser: the fallback when the relay is not
+//     configured (a dev machine without the key, an outage). No position
+//     effect, no block.
+//
+// connectTape is the opener the splash's pulse and the battle views use:
+// it tries Dune, and on `unconfigured` opens the venue's socket on the same
+// handlers and tells the caller which one it is reading. /live keeps its
+// Feeds card and picks explicitly.
 //
 // Fills are handed over in batches (one per animation frame at most), so a
 // 100-fill second is one React update, not a hundred. A feed reconnects
 // with backoff on its own; the status it reports is what the page prints.
 
-import { fillFromDune, fillFromHl, pickTapeMarkets, subscriptionDelta, type HlWsTrade, type TapeFields, type TapeFill, type TapeSource, type UniverseRow } from '@/lib/tape'
+import { DEFAULT_LIVE_VENUES, venueWords, type DuneVenueId, type LiveStreamEvent } from '@/lib/dune'
+import { fillFromHl, pickTapeMarkets, subscriptionDelta, type HlWsTrade, type TapeFields, type TapeFill, type TapeSource, type TapeVenue, type UniverseRow } from '@/lib/tape'
 
 export type FeedStatus = 'idle' | 'connecting' | 'live' | 'reconnecting' | 'unconfigured' | 'closed'
 
 export interface FeedHandlers {
   onFills: (fills: TapeFill[]) => void
   onStatus: (status: FeedStatus, detail?: string) => void
+  /** Dune replaced a block (op UPDATE): drop that block's fills before the
+   *  new set merges. A feed that never corrects never calls it. */
+  onRetract?: (venue: TapeVenue, block: number) => void
+  /** connectTape says which transport it ended up reading. */
+  onSource?: (source: TapeSource) => void
 }
 
 export interface TapeFeed {
@@ -35,6 +48,19 @@ export interface TapeFeed {
   /** Open the stream for these markets; the return closes it. */
   connect: (markets: readonly string[], handlers: FeedHandlers) => () => void
 }
+
+/** A live stream that can be re-aimed without a reconnect. */
+export interface TapeHandle {
+  close: () => void
+  /** Subscribe to the markets `next` adds and drop the ones it leaves out
+   *  (the venue's socket, lib/tape subscriptionDelta), or re-aim the relay's
+   *  filter; a stream still connecting, or reconnecting later, opens on
+   *  `next`. */
+  setMarkets: (next: readonly string[]) => void
+}
+
+/** The old name, kept for the pulse's import. */
+export type HlTapeHandle = TapeHandle
 
 const HL_WS_URL = 'wss://api.hyperliquid.xyz/ws'
 const HL_INFO_URL = 'https://api.hyperliquid.xyz/info'
@@ -68,18 +94,9 @@ function batcher(onFills: (fills: TapeFill[]) => void): { push: (f: TapeFill) =>
   }
 }
 
-/** A live Hyperliquid stream that can be re-aimed without a reconnect. */
-export interface HlTapeHandle {
-  close: () => void
-  /** Subscribe to the markets `next` adds and drop the ones it leaves out,
-   *  on the open socket (lib/tape subscriptionDelta); a socket still
-   *  connecting, or reconnecting later, subscribes to `next` when it opens. */
-  setMarkets: (next: readonly string[]) => void
-}
-
 const hlSub = (coin: string, method: 'subscribe' | 'unsubscribe') => JSON.stringify({ method, subscription: { type: 'trades', coin } })
 
-function openHlTape(initial: readonly string[], handlers: FeedHandlers): HlTapeHandle {
+function openHlTape(initial: readonly string[], handlers: FeedHandlers): TapeHandle {
   let markets = [...initial]
   let ws: WebSocket | null = null
   let closed = false
@@ -160,7 +177,7 @@ function openHlTape(initial: readonly string[], handlers: FeedHandlers): HlTapeH
  *  mounts and re-aims it when the venue's universe answers (lib/pulse) — on
  *  the same socket, so a chart never shows a reconnect as a quiet second.
  *  Additive beside hlTapeFeed.connect, which /live keeps calling. */
-export function connectHlTape(markets: readonly string[], handlers: FeedHandlers): HlTapeHandle {
+export function connectHlTape(markets: readonly string[], handlers: FeedHandlers): TapeHandle {
   return openHlTape(markets, handlers)
 }
 
@@ -173,47 +190,216 @@ export const hlTapeFeed: TapeFeed = {
   },
 }
 
-/** The Dune slot. Configure NEXT_PUBLIC_DUNE_STREAM_URL to a WebSocket that
- *  sends JSON rows (one or an array) in the DuneStreamRow shape. */
-export const duneTapeFeed: TapeFeed = {
-  source: 'dune',
-  label: 'Dune · real-time chain stream',
-  fields: { effect: true, block: true },
-  connect(markets, handlers) {
-    const url = process.env.NEXT_PUBLIC_DUNE_STREAM_URL
-    if (!url) {
-      handlers.onStatus('unconfigured', 'NEXT_PUBLIC_DUNE_STREAM_URL is not set')
-      return () => {}
+// ── Dune, through the relay ──────────────────────────────────────────────────
+
+export const LIVE_STREAM_PATH = '/api/live/stream'
+
+export interface DuneTapeOptions {
+  /** Which venues the relay reads (lib/dune DuneVenueId); default every one. */
+  venues?: readonly DuneVenueId[]
+  /** Narrow the relay to the markets given (the pulse, the battle); false
+   *  = the firehose, every market the venues print (/live). */
+  filter?: boolean
+}
+
+const TAPE_VENUE_OF: Record<DuneVenueId, TapeVenue> = { hypercore: 'hyperliquid', lighter: 'lighter', 'lighter-robinhood': 'lighter-robinhood', 'dex-ethereum': 'dex', 'dex-base': 'dex', 'dex-arbitrum': 'dex' }
+
+function streamUrl(venues: readonly DuneVenueId[], markets: readonly string[] | null): string {
+  const q = new URLSearchParams()
+  q.set('venues', venues.join(','))
+  if (markets && markets.length) q.set('markets', markets.join(','))
+  return `${LIVE_STREAM_PATH}?${q.toString()}`
+}
+
+/**
+ * Hold the relay's Server-Sent Events. A probe first (`?probe=1`, one small
+ * JSON answer) tells a missing key apart from a dropped socket — an
+ * EventSource reports neither a status code nor a body — so `unconfigured`
+ * is said by name and a caller can fall back. Then the EventSource: the
+ * relay says `bye` before its own limit and the adapter reopens at once;
+ * a dropped connection reconnects with backoff; a block the venue replaced
+ * is retracted before its new fills merge.
+ */
+export function openDuneTape(initial: readonly string[], handlers: FeedHandlers, opts: DuneTapeOptions = {}): TapeHandle {
+  const venues = opts.venues && opts.venues.length ? [...opts.venues] : [...DEFAULT_LIVE_VENUES]
+  const filter = opts.filter === true
+  let markets = [...initial]
+  let es: EventSource | null = null
+  let closed = false
+  let attempt = 0
+  let retry: ReturnType<typeof setTimeout> | null = null
+  const batch = batcher(handlers.onFills)
+  const venueStatus = new Map<DuneVenueId, 'connecting' | 'live' | 'reconnecting' | 'closed'>()
+
+  const report = () => {
+    const live = venues.filter((v) => venueStatus.get(v) === 'live')
+    if (live.length) {
+      handlers.onStatus('live', `${venueWords(live)}${live.length < venues.length ? ` · ${venues.length - live.length} reconnecting` : ''}`)
+      return
     }
-    let closed = false
-    const batch = batcher(handlers.onFills)
-    handlers.onStatus('connecting')
-    const sep = url.includes('?') ? '&' : '?'
-    const ws = new WebSocket(`${url}${sep}markets=${encodeURIComponent(markets.join(','))}`)
-    ws.onopen = () => handlers.onStatus('live', `${markets.length} markets`)
-    ws.onmessage = (ev) => {
-      let data: unknown
+    const re = venues.find((v) => venueStatus.get(v) === 'reconnecting')
+    if (re) handlers.onStatus('reconnecting', `${re}`)
+    else handlers.onStatus('connecting')
+  }
+
+  const open = () => {
+    if (closed) return
+    handlers.onStatus(attempt === 0 ? 'connecting' : 'reconnecting', attempt === 0 ? undefined : `attempt ${attempt + 1}`)
+    const url = streamUrl(venues, filter ? markets : null)
+    let src: EventSource
+    try {
+      src = new EventSource(url)
+    } catch (err) {
+      handlers.onStatus('closed', err instanceof Error ? err.message : 'stream refused')
+      return
+    }
+    es = src
+    src.addEventListener('hello', () => {
+      attempt = 0
+      venueStatus.clear()
+      report()
+    })
+    src.addEventListener('status', (ev) => {
+      let e: LiveStreamEvent
       try {
-        data = JSON.parse(String(ev.data))
+        e = JSON.parse((ev as MessageEvent).data) as LiveStreamEvent
       } catch {
         return
       }
-      const rows = Array.isArray(data) ? data : [data]
-      for (const row of rows) {
-        const f = fillFromDune(row)
-        if (f) batch.push(f)
+      if (e.type !== 'status') return
+      venueStatus.set(e.venue, e.status)
+      report()
+    })
+    src.addEventListener('fills', (ev) => {
+      let e: LiveStreamEvent
+      try {
+        e = JSON.parse((ev as MessageEvent).data) as LiveStreamEvent
+      } catch {
+        return
       }
+      if (e.type !== 'fills') return
+      if (venueStatus.get(e.venue) !== 'live') {
+        venueStatus.set(e.venue, 'live')
+        report()
+      }
+      if (e.op === 'UPDATE' && e.block != null) handlers.onRetract?.(TAPE_VENUE_OF[e.venue], e.block)
+      for (const f of e.fills) batch.push(f)
+    })
+    src.addEventListener('bye', () => {
+      // The relay's own rollover: reopen now, no backoff, no gap worth a word.
+      if (src !== es || closed) return
+      src.close()
+      es = null
+      open()
+    })
+    src.onerror = () => {
+      if (src !== es || closed) return
+      if (src.readyState === EventSource.CONNECTING) return // the browser's own retry is under way
+      src.close()
+      es = null
+      attempt++
+      const wait = Math.min(15_000, 500 * 2 ** Math.min(attempt, 5))
+      handlers.onStatus('reconnecting', `in ${Math.round(wait / 1000)}s`)
+      retry = setTimeout(open, wait)
     }
-    ws.onclose = () => {
-      if (!closed) handlers.onStatus('closed', 'stream closed')
-    }
-    return () => {
+  }
+
+  // The probe: unconfigured is a word, not a dropped socket.
+  fetch(`${LIVE_STREAM_PATH}?probe=1`, { cache: 'no-store' })
+    .then(async (res) => {
+      if (closed) return
+      if (res.status === 503) {
+        let detail = 'the relay has no feed key'
+        try {
+          const j = (await res.json()) as { detail?: string }
+          if (j.detail) detail = j.detail
+        } catch {}
+        handlers.onStatus('unconfigured', detail)
+        return
+      }
+      open()
+    })
+    .catch(() => {
+      if (closed) return
+      handlers.onStatus('closed', 'the relay did not answer')
+    })
+
+  return {
+    close() {
       closed = true
       batch.stop()
-      ws.close()
+      if (retry) clearTimeout(retry)
+      es?.close()
+      es = null
       handlers.onStatus('closed')
-    }
+    },
+    setMarkets(next) {
+      if (closed) return
+      const { add, drop } = subscriptionDelta(markets, next)
+      markets = [...next]
+      if (!filter) return // the firehose carries every market already
+      if (add.length === 0 && drop.length === 0) return
+      if (!es) return // it opens on `markets`
+      // Re-aim the relay's filter: open the new query before closing the old
+      // one, so the chart never shows the swap as a quiet second (lib/tape
+      // mergeFills drops the overlap by id).
+      const old = es
+      es = null
+      open()
+      old.close()
+    },
+  }
+}
+
+export const duneTapeFeed: TapeFeed = {
+  source: 'dune',
+  label: 'Dune · real-time feeds',
+  fields: { effect: true, block: true },
+  connect(markets, handlers) {
+    return openDuneTape(markets, handlers, { filter: false }).close
   },
+}
+
+/**
+ * The opener the splash's pulse and the battle views use: Dune through the
+ * relay when the relay has its key, else the venue's keyless socket on the
+ * same handlers — and `onSource` says which, so the page prints the truth
+ * ("Dune · live" / "Hyperliquid · live"). The handle re-aims whichever
+ * stream is live.
+ */
+export function connectTape(markets: readonly string[], handlers: FeedHandlers, opts: DuneTapeOptions = {}): TapeHandle {
+  let current: TapeHandle | null = null
+  let closed = false
+  let want = [...markets]
+  const fallback = () => {
+    if (closed) return
+    handlers.onSource?.('hyperliquid')
+    current = openHlTape(want, handlers)
+  }
+  handlers.onSource?.('dune')
+  current = openDuneTape(markets, {
+    ...handlers,
+    onStatus: (s, d) => {
+      if (s === 'unconfigured') {
+        current?.close()
+        current = null
+        fallback()
+        return
+      }
+      handlers.onStatus(s, d)
+    },
+  }, { ...opts, filter: opts.filter ?? true })
+  return {
+    close() {
+      closed = true
+      current?.close()
+      current = null
+    },
+    setMarkets(next) {
+      want = [...next]
+      current?.setMarkets(next)
+    },
+  }
 }
 
 export const TAPE_FEEDS: readonly TapeFeed[] = [hlTapeFeed, duneTapeFeed]

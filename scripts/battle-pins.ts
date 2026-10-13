@@ -73,7 +73,7 @@ const T0 = 1_791_298_000_000
 const MIN = 60_000
 const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps
 const fill = (over: Partial<TapeFill> & { id: string }): TapeFill => ({
-  market: 'HYPE', side: 'buy', size: 1, price: 100, usd: 100, at: T0, taker: '0xabc', maker: null, hash: null, effect: null, block: null, source: 'hyperliquid', ...over,
+  market: 'HYPE', side: 'buy', size: 1, price: 100, usd: 100, at: T0, taker: '0xabc', maker: null, hash: null, effect: null, block: null, source: 'hyperliquid', venue: 'hyperliquid', chainId: null, ...over,
 })
 const ctx = (markPx: number, oiCoins: number, prevDayPx: number): ArmyContext => ({ markPx, openInterest: oiCoins, funding: 0.00001, prevDayPx, dayNtlVlm: 1e6 })
 

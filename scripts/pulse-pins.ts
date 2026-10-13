@@ -20,9 +20,12 @@ import {
   PULSE_PHONE_BUDGET_PX,
   PULSE_PICK,
   PULSE_TILE_WINDOW_SEC,
+  PULSE_VENUES,
+  PULSE_VENUE_WORD,
   PULSE_VIEW_LINKS,
   PULSE_WAITING,
   PULSE_WHY,
+  PULSE_WHY_BY_SOURCE,
   PULSE_WINDOW_SEC,
   mergePulseFills,
   pickPulseMarkets,
@@ -37,6 +40,7 @@ import {
   pulseVisibilityStep,
 } from '../lib/pulse'
 import { FALLBACK_MARKETS, TAPE_KEEP_MS, TAPE_MAX_FILLS, followAsk, mergeFills, subscriptionDelta, tapeMarket, type TapeFill } from '../lib/tape'
+import { PERP_VENUES } from '../lib/dune'
 import { canTradeAsk } from '../lib/trade-venue-gate'
 import { simulateLadder } from './ask-ladder'
 import { isMarketsPath } from '../lib/markets'
@@ -63,6 +67,8 @@ const fill = (id: string, agoSec: number, over: Partial<TapeFill> = {}): TapeFil
   effect: null,
   block: null,
   source: 'hyperliquid',
+  venue: 'hyperliquid',
+  chainId: null,
   ...over,
 })
 const FIXTURE: TapeFill[] = [
@@ -121,9 +127,9 @@ export function pulsePins(check: Check): void {
   check('pulse: the buffer keeps the chart\'s whole window plus an edge bucket, covers the tiles\' minute, and its cap holds 120 fills/s across the keep (the 12-market pick measured 47/s) — a cap that bit inside the window would thin the oldest bars',
     PULSE_KEEP_MS >= (PULSE_WINDOW_SEC + 1) * 1000 && PULSE_KEEP_MS >= PULSE_TILE_WINDOW_SEC * 1000 && PULSE_MAX_FILLS >= 120 * (PULSE_KEEP_MS / 1000) && PULSE_WINDOW_SEC === 90 && PULSE_TILE_WINDOW_SEC === 60, `${PULSE_KEEP_MS} / ${PULSE_MAX_FILLS}`)
   const merged = mergePulseFills(FIXTURE, [fill('h0', 2), fill('new', 0, { at: NOW - 5 }), fill('new', 0, { at: NOW - 5 })], NOW)
-  check('pulse: the fixture is forty fills; mergePulseFills merges newest first, drops a duplicate id held or repeated inside the batch, and ages out at the PULSE keep — while lib/tape mergeFills keeps its own 180s window and 4,000 cap untouched',
+  check('pulse: the fixture is forty fills; mergePulseFills merges newest first, drops a duplicate id held or repeated inside the batch, and ages out at the PULSE keep — while lib/tape mergeFills keeps its own 180s window and its 20,000 cap (Dune\'s three perp venues measured ~75 fills/s on 2026-10-13; the old 4,000 was 53s of the window)',
     FIXTURE.length === 40 && merged.length === FIXTURE.length - 1 + 1 && merged[0].id === 'new' && merged.every((f, i) => i === 0 || merged[i - 1].at >= f.at) && !merged.some((f) => f.id === 'o2') && merged.filter((f) => f.id === 'h0').length === 1 &&
-      mergeFills(FIXTURE, [], NOW).some((f) => f.id === 'o2') && TAPE_KEEP_MS === 180_000 && TAPE_MAX_FILLS === 4_000, `${merged.length} / ${merged[0]?.id}`)
+      mergeFills(FIXTURE, [], NOW).some((f) => f.id === 'o2') && TAPE_KEEP_MS === 180_000 && TAPE_MAX_FILLS === 20_000, `${merged.length} / ${merged[0]?.id}`)
   check('pulse: the band repaints at most four times a second (a batch lands every frame on a busy second; the first fill paints at once)', PULSE_FLUSH_MS >= 200 && PULSE_FLUSH_MS <= 500)
 
   // ── The bars ──────────────────────────────────────────────────────────
@@ -181,8 +187,10 @@ export function pulsePins(check: Check): void {
   check('pulse: the status says live with the market count, connecting, reconnecting with the feed\'s own detail, and "paused · tab in the background" for the policy\'s close — never "live" while the socket is closed',
     pulseStatusWords('live', undefined, { markets: 12 }) === 'live · 12 markets' && pulseStatusWords('connecting') === 'connecting' && pulseStatusWords('reconnecting', 'in 2s') === 'reconnecting in 2s' &&
       pulseStatusWords('closed', undefined, { hidden: true }) === 'paused · tab in the background' && pulseStatusWords('idle', undefined, { hidden: true }) === 'paused · tab in the background' && !pulseStatusWords('closed').includes('live'))
-  check('pulse: the mono line says what it is (keyless, the venue\'s own fills, read in the browser) and why it is different (every number is a sentence the wallet signs; nothing fires on its own); the phone keeps one sentence of at most 54 characters (one 9.5px mono line in the 321px a 375 phone leaves the band)',
-    /keyless/.test(PULSE_WHY.what) && /Hyperliquid/.test(PULSE_WHY.what) && /browser/.test(PULSE_WHY.what) && /nothing fires on its own/.test(PULSE_WHY.why) && /wallet/.test(PULSE_WHY.why) && PULSE_WHY.phone.length <= 54 && /you sign/.test(PULSE_WHY.phone), String(PULSE_WHY.phone.length))
+  check('pulse: the mono line says what it is per transport — Dune\'s feed naming the three perp venues and the relay, or the keyless fallback (the venue\'s own fills, read in the browser) — and why it is different (every number is a sentence the wallet signs; nothing fires on its own); the phone keeps one sentence of at most 54 characters (one 9.5px mono line in the 321px a 375 phone leaves the band); the word before the status says which',
+    /keyless/.test(PULSE_WHY.what) && /Hyperliquid/.test(PULSE_WHY.what) && /browser/.test(PULSE_WHY.what) && /nothing fires on its own/.test(PULSE_WHY.why) && /wallet/.test(PULSE_WHY.why) && PULSE_WHY.phone.length <= 54 && /you sign/.test(PULSE_WHY.phone) && PULSE_WHY === PULSE_WHY_BY_SOURCE.hyperliquid &&
+      /Dune/.test(PULSE_WHY_BY_SOURCE.dune.what) && /Lighter/.test(PULSE_WHY_BY_SOURCE.dune.what) && /relay/.test(PULSE_WHY_BY_SOURCE.dune.what) && /nothing fires on its own/.test(PULSE_WHY_BY_SOURCE.dune.why) && PULSE_WHY_BY_SOURCE.dune.phone.length <= 54 && /you sign/.test(PULSE_WHY_BY_SOURCE.dune.phone) &&
+      PULSE_VENUE_WORD.dune === 'Dune' && PULSE_VENUE_WORD.hyperliquid === 'Hyperliquid' && PULSE_VENUES === PERP_VENUES, `${PULSE_WHY.phone.length} / ${PULSE_WHY_BY_SOURCE.dune.phone.length}`)
 
   // ── The door ──────────────────────────────────────────────────────────
   const battle = readFileSync('lib/battle.ts', 'utf8')
@@ -209,9 +217,9 @@ export function pulsePins(check: Check): void {
   check('pulse: at ≤640px the door ("Live tape →", an 18px line) reaches 44px — `position: relative; z-index: 1` and a ::after with 13px of inset above and below',
     !!doorRule && Number(doorRule[1]) * 2 + 18 >= 44 && Number(doorRule[1]) <= 13, doorRule ? `inset ${doorRule[1]}px` : 'no door rule')
   const feedSrc = readFileSync('lib/tape-feed.ts', 'utf8')
-  check('pulse: the stream opens on the fallback list the moment the band mounts and the venue\'s pick re-aims the SAME socket (connectHlTape setMarkets: unsubscribe the drops, subscribe the adds) — never a reconnect drawn as a quiet second; /live\'s hlTapeFeed.connect still stands',
-    /useState<readonly string\[\]>\(PULSE_FALLBACK_MARKETS\)/.test(slot) && /connectHlTape\(marketsRef\.current/.test(slot) && /handleRef\.current\?\.setMarkets\(markets\)/.test(slot) && /\}, \[streamOn\]\)/.test(slot) && !/feedFor\(/.test(slot) &&
-      /hlSub\(coin, 'unsubscribe'\)/.test(feedSrc) && /export function connectHlTape/.test(feedSrc) && /connect\(markets, handlers\) \{\s*return openHlTape\(markets, handlers\)\.close/.test(feedSrc))
+  check('pulse: the stream opens on the fallback list the moment the band mounts through connectTape (Dune\'s perp venues through the relay, filtered to the pick; the venue\'s keyless socket when the relay has no key — onSource names which, and the band prints that word) and the venue\'s pick re-aims the SAME stream (setMarkets: the relay\'s filter, or unsubscribe the drops and subscribe the adds) — never a reconnect drawn as a quiet second; /live\'s hlTapeFeed.connect still stands',
+    /useState<readonly string\[\]>\(PULSE_FALLBACK_MARKETS\)/.test(slot) && /connectTape\(marketsRef\.current/.test(slot) && /onSource: setSource/.test(slot) && /\{ venues: PULSE_VENUES, filter: true \}/.test(slot) && /PULSE_VENUE_WORD\[source\]/.test(slot) && /data-source=\{source\}/.test(slot) && /handleRef\.current\?\.setMarkets\(markets\)/.test(slot) && /\}, \[streamOn\]\)/.test(slot) && !/feedFor\(/.test(slot) &&
+      /hlSub\(coin, 'unsubscribe'\)/.test(feedSrc) && /export function connectHlTape/.test(feedSrc) && /export function connectTape/.test(feedSrc) && /if \(s === 'unconfigured'\) \{/.test(feedSrc) && /connect\(markets, handlers\) \{\s*return openHlTape\(markets, handlers\)\.close/.test(feedSrc))
   check('pulse: the band is calm — no tape rows, no row flashes, nothing animates under reduced motion, and the socket follows the tab (visibilitychange → pulseStreamWanted)',
     !/<table/.test(slot) && !/live-row|TapeRow/.test(slot) && /prefers-reduced-motion: reduce/.test(css) && /animation: none/.test(css) && /transition: none/.test(css) && /visibilitychange/.test(slot) && /pulseStreamWanted\(vis, now\)/.test(slot) && /pulseVisibilityStep\(prev, document\.hidden/.test(slot))
   check('pulse: every chip goes through the connect-to-act door into the ask door\'s sheet with the ask\'s own apps, gated by canTradeAsk with the measured verdicts (useTradable) — the /live pattern verbatim; the band never calls the chat route itself',

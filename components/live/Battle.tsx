@@ -60,7 +60,8 @@ import {
 } from '@/lib/battle'
 import { midsFeed, readArmyContexts, readFrontCandles } from '@/lib/battle-feed'
 import { FOLLOW_USD, fmtClock, fmtPrice, fmtUsd, followAsk, mergeFills, type FollowAsk, type TapeFill, type TapeSide } from '@/lib/tape'
-import { hlTapeFeed, readTapeUniverse, type FeedStatus } from '@/lib/tape-feed'
+import { connectTape, readTapeUniverse, type FeedStatus } from '@/lib/tape-feed'
+import { PERP_VENUES } from '@/lib/dune'
 import { buildScene, drawFront, drawMap, drawSiege, type ArmyFrame, type Inks, type Particle } from './battle-draw'
 
 const MAX_PARTICLES = 400
@@ -258,10 +259,15 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
     return () => ac.abort()
   }, [armies, since])
 
-  // ── Fills: the stream ─────────────────────────────────────────────────
+  // ── Fills: the stream (Dune's perp feeds through the relay for these
+  // armies — HyperCore spells a market as the venue does, so an army name
+  // is the filter; the venue's keyless socket when the relay has no key) ──
   useEffect(() => {
     if (!armies.length) return
-    const close = hlTapeFeed.connect(armies, {
+    const handle = connectTape(armies, {
+      onRetract: (venue, block) => {
+        fillsRef.current = fillsRef.current.filter((f) => !(f.venue === venue && f.block === block))
+      },
       onFills: (batch) => {
         const now = Date.now()
         fillsRef.current = mergeFills(fillsRef.current, batch, now)
@@ -276,8 +282,8 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
         if (particlesRef.current.length > MAX_PARTICLES) particlesRef.current.splice(0, particlesRef.current.length - MAX_PARTICLES)
       },
       onStatus: (s) => setStatus(s),
-    })
-    return close
+    }, { venues: PERP_VENUES, filter: true })
+    return handle.close
   }, [armies])
 
   // ── Mids: the front moves between fills ───────────────────────────────
