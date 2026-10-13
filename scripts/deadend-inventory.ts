@@ -50,6 +50,7 @@ import { validateProposedAsk } from '../lib/markets-ai-ladder'
 import { walletFlags } from '../lib/wallet-flags'
 import { alertActionChips } from '../lib/watchlists'
 import { composeLineActions, composeZoneActions } from '../lib/chart-actions'
+import { composeBriefingItems } from '../lib/briefing'
 import { chipMenu } from '../lib/markets-ai'
 import { APP_CHAINS } from '../lib/chains'
 import { gasStateFor, type WalletChainView } from '../lib/wallet-view'
@@ -297,6 +298,20 @@ export function enumerate(): Row[] {
       ['Base stalled, mainnet ETH only', [mk(1, 0.05, []), mk(8453, 0, [['USDC', 20, 20]])]],
     ]
     for (const [name, chains] of wallets) for (const f of walletFlags(chains, 2500)) for (const a of f.actions) add('wallet flags', `${name} · ${f.kind}`, a.ask)
+  })
+
+  // The wallet briefing (/w/<address>, the splash's "what Pantessa noticed").
+  safe('briefing', () => {
+    const src = (chainId: number, chainWord: string, token: string, usd: number) => ({ chainId, chainWord, token, balance: token === 'ETH' ? usd / 2500 : usd, usd })
+    const inputs = {
+      firedRecently: [],
+      positions: [{ coin: 'HYPE', side: 'long', positionValueUsd: 120, unrealizedPnl: 4, leverage: 2 }, { coin: 'ETH', side: 'short', positionValueUsd: 60, unrealizedPnl: -2, leverage: 3 }],
+      protectedCoins: [], spotProtectedSymbols: [],
+      funding: { sources: [src(8453, 'Base', 'ETH', 400), src(42161, 'Arbitrum', 'ETH', 12), src(8453, 'Base', 'USDC', 80)], stranded: [src(10, 'Optimism', 'USDC', 30), src(1, 'Ethereum', 'USDC', 40)], readChains: [1, 8453, 42161, 10], failedChains: [] },
+      aave: { healthFactor: 1.3, hasBorrows: true },
+      failed: [],
+    }
+    for (const row of composeBriefingItems(inputs as never)) for (const a of (row as { actions?: { prompt?: string }[] }).actions ?? []) add('wallet briefing (lib/briefing)', String((row as { label?: string }).label ?? ''), a.prompt)
   })
 
   // The refusal + rescue chips the chat route hands back.
