@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { chartPairFor } from '@/lib/charts'
+import { chartPairFor, resolveChartPair } from '@/lib/charts'
 import { tokenHome } from '@/lib/token-home'
 import { buysNativeEth, chainById, primaryStable, publicClientFor } from '@/lib/chains'
 import { dynamicTokenBySymbol, ensureTokenList } from '@/lib/token-list'
@@ -426,7 +426,9 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   const symbolRaw = sp.get('symbol') ?? ''
   if (!/^[A-Za-z0-9$._-]{1,16}$/.test(symbolRaw)) return NextResponse.json({ error: 'bad symbol' }, { status: 400 })
-  const pair = chartPairFor(symbolRaw)
+  // The live perp table warms on a miss (lib/charts): a perp the venue
+  // lists gets its venue map on a cold process too, never a 404.
+  const pair = await resolveChartPair(symbolRaw)
   if (!pair) return NextResponse.json({ error: `${symbolRaw.toUpperCase()} has no venue map — not a charted symbol.` }, { status: 404 })
   const amountRaw = Number(sp.get('amount') ?? DEFAULT_ROUTE_USD)
   const amount = Number.isFinite(amountRaw) && amountRaw >= 1 && amountRaw <= 100_000 ? Math.round(amountRaw * 100) / 100 : DEFAULT_ROUTE_USD

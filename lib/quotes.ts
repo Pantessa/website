@@ -20,7 +20,8 @@
 // symbol (never a 500 — the README contract). `readQuotes` is the injection
 // seam the cron's dedup pin counts through.
 
-import { chartPairFor, type ChartPair } from '@/lib/charts'
+import { chartPairFor, resolveChartPair, type ChartPair } from '@/lib/charts'
+import { primeHlUniverse } from '@/lib/hl-universe'
 import { normalizeWatchSymbol, sessionFor, type Quote } from '@/lib/watchlists'
 
 export const QUOTE_TTL_MS = 15_000
@@ -79,22 +80,37 @@ interface HlCtx {
 let hlSnapshot: { at: number; byCoin: Map<string, HlCtx> } | null = null
 let hlInflight: Promise<Map<string, HlCtx>> | null = null
 
+/** One dex's `metaAndAssetCtxs`: the contexts keyed by the venue's coin name
+ *  ('HYPE', 'kPEPE', 'xyz:GOLD'). The universe half primes lib/hl-universe
+ *  (the chart pair table's source), so a quotes read warms the table for
+ *  free. Throws on a bad answer; the caller decides what a half-miss means. */
+async function hlDexContexts(dex: 'main' | 'xyz'): Promise<Map<string, HlCtx>> {
+  const res = await fetchWithTimeout('https://api.hyperliquid.xyz/info', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(dex === 'main' ? { type: 'metaAndAssetCtxs' } : { type: 'metaAndAssetCtxs', dex }),
+  })
+  if (!res.ok) throw new Error(`hyperliquid ${res.status}`)
+  const [meta, ctxs] = (await res.json()) as [{ universe?: { name: string; isDelisted?: boolean }[] }, HlCtx[]]
+  const byCoin = new Map<string, HlCtx>()
+  ;(meta.universe ?? []).forEach((u, i) => {
+    if (ctxs?.[i]) byCoin.set(u.name, ctxs[i])
+  })
+  if (byCoin.size === 0) throw new Error('hyperliquid shape')
+  primeHlUniverse(dex, meta.universe ?? [])
+  return byCoin
+}
+
+/** Every perp's context, main book + the xyz dex, in ONE map (the dexes'
+ *  coin names never collide — xyz names carry their prefix). The main book
+ *  is required; a failed xyz read leaves its perps unquoted this poll. */
 async function hlContexts(): Promise<Map<string, HlCtx>> {
   if (hlSnapshot && Date.now() - hlSnapshot.at < QUOTE_TTL_MS) return hlSnapshot.byCoin
   if (hlInflight) return hlInflight
   hlInflight = (async () => {
-    const res = await fetchWithTimeout('https://api.hyperliquid.xyz/info', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'metaAndAssetCtxs' }),
-    })
-    if (!res.ok) throw new Error(`hyperliquid ${res.status}`)
-    const [meta, ctxs] = (await res.json()) as [{ universe?: { name: string }[] }, HlCtx[]]
-    const byCoin = new Map<string, HlCtx>()
-    ;(meta.universe ?? []).forEach((u, i) => {
-      if (ctxs?.[i]) byCoin.set(u.name, ctxs[i])
-    })
-    if (byCoin.size === 0) throw new Error('hyperliquid shape')
+    const [main, xyz] = await Promise.all([hlDexContexts('main'), hlDexContexts('xyz').catch(() => null)])
+    const byCoin = new Map<string, HlCtx>(main)
+    if (xyz) for (const [coin, ctx] of xyz) byCoin.set(coin, ctx)
     hlSnapshot = { at: Date.now(), byCoin }
     return byCoin
   })().finally(() => {
@@ -363,6 +379,7 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
   const missing: string[] = []
   const now = Date.now()
   const toFetch: { symbol: string; pair: ChartPair }[] = []
+  const unresolved: string[] = []
   for (const s of symbols) {
     const hit = cache.get(s)
     if (hit && now - hit.at < QUOTE_TTL_MS) {
@@ -371,10 +388,19 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
     }
     const pair = chartPairFor(s)
     if (!pair) {
-      missing.push(s)
+      unresolved.push(s)
       continue
     }
     toFetch.push({ symbol: s, pair })
+  }
+  // A symbol the static table does not know may be a perp the venue lists
+  // (the alerts sweep on a ZK pick, 2026-10-13): warm the live pair table
+  // once (lib/charts resolveChartPair — cached 10 min, no read when fresh)
+  // before calling it chartless.
+  for (const s of unresolved) {
+    const pair = await resolveChartPair(s)
+    if (pair) toFetch.push({ symbol: s, pair })
+    else missing.push(s)
   }
 
   // Share in-flight reads across concurrent callers (two rails polling the
