@@ -342,4 +342,7 @@
 @media (hover: none) {
   .mkt-ticket__preset { min-width: 44px; }
   .mkt-ticket input[type='range'] { height: 44px; }
+  /* The "protect it with a stop" row: a 15px checkbox in an 18px label (the label is the target) → a 44px row, a 20px box. */
+  .mkt-ticket__check { min-height: 44px; }
+  .mkt-ticket__check input { width: 20px; height: 20px; }
 }
