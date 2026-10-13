@@ -330,8 +330,10 @@ export type LiveStreamEvent =
 export const LIVE_STREAM_HOLD_MS = 285_000
 export const LIVE_STREAM_MAX_DURATION_S = 300
 export const LIVE_STREAM_HEARTBEAT_MS = 15_000
-/** Streams one address may hold at once on one instance, and in all. */
-export const LIVE_STREAM_PER_IP = 6
+/** Live writers one address may hold at once on one instance, and in all.
+ *  A person holds one per tab; a reconnect's old writer dies within two
+ *  heartbeats, so twelve is room, not a budget. */
+export const LIVE_STREAM_PER_IP = 12
 export const LIVE_STREAM_PER_INSTANCE = 400
 
 /** The words for a status line: which venues the page is reading. */
