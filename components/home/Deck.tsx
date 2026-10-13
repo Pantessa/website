@@ -26,6 +26,8 @@ import PulseSlot from '@/components/home/PulseSlot'
 import TapeStage from '@/components/home/TapeStage'
 import BookLadder from '@/components/home/BookLadder'
 import Battle from '@/components/live/Battle'
+import ShareLive from '@/components/live/ShareLive'
+import ArmAlert from '@/components/live/ArmAlert'
 import { useTradable } from '@/lib/use-tradable'
 import { PULSE_WHY_BY_SOURCE } from '@/lib/pulse'
 import { DECK_BOOK_KEY, DECK_CHANNELS, DECK_DEFAULT_CHANNEL, deckBookMarket, deckChannel, deckHref, deckSourceLine, deckSwitchWords, isDeckBattle, parseDeckBook, serializeDeckBook, type DeckChannel, type StageReport } from '@/lib/deck'
@@ -117,6 +119,8 @@ export default function Deck() {
             {def.door.replace(/^Open /, '')} <span aria-hidden>→</span>
           </b>
         </Link>
+        <ShareLive view={def.view} seat="deck" />{/* seat: CARD (GTM squad 2026-10-13) */}
+        {bookMarket && <ArmAlert market={bookMarket} seat="deck" />}{/* seat: ALERTS (GTM squad 2026-10-13) */}
         <button type="button" role="switch" aria-checked={book} className={`deck__flick${book ? ' is-on' : ''}`} onClick={toggleBook} data-journey="Streaming order book">
           <span className="deck__flicklab">
             <b>

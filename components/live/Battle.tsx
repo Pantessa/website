@@ -62,6 +62,9 @@ import { midsFeed, readArmyContexts, readFrontCandles } from '@/lib/battle-feed'
 import { FOLLOW_USD, fmtClock, fmtPrice, fmtUsd, followAsk, mergeFills, type FollowAsk, type TapeFill, type TapeSide, type TapeSource } from '@/lib/tape'
 import { connectTape, readTapeUniverse, type FeedStatus } from '@/lib/tape-feed'
 import { PERP_VENUES } from '@/lib/dune'
+import { useMarketPick } from '@/lib/use-market-pick'
+import PickSheet from '@/components/live/PickSheet'
+import ArmAlert from '@/components/live/ArmAlert'
 import { buildScene, drawFront, drawMap, drawSiege, type ArmyFrame, type Inks, type Particle } from './battle-draw'
 
 const MAX_PARTICLES = 400
@@ -101,6 +104,8 @@ export interface BattleProps {
 
 export default function Battle({ view, tradable, tabs, seat = 'page', onReport, onFills, onLeader }: BattleProps) {
   const onPage = seat === 'page'
+  // THE ONE PICK (GTM squad 2026-10-13): lane PICK makes `armies` follow it; ARENA's sheet reads it.
+  const pick = useMarketPick({ seat })
   // The URL is the page's: the deck's stage reads none of it (`/?t=` is nobody's).
   const urlArmies = useMemo(() => (onPage ? initialArmies() : []), [onPage])
   const memory = useMemo(() => readArmyMemory(), [])
@@ -580,6 +585,7 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
             <span className="battle__count mono">
               {armies.length} of {MAX_ARMIES} armies{sourceWord ? ` · ${sourceWord}` : ''} · click to add or drop
             </span>
+            <PickSheet pick={pick} seat="battle" />{/* seat: ARENA (GTM squad 2026-10-13) */}
           </div>
           <div className="battle__chips">
             {picks.map((p) => {
@@ -727,6 +733,7 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
                           </button>
                         )}
                         {!long && !short && <span className="battle__dim mono">no route here</span>}
+                        <ArmAlert market={army.market} seat="scoreboard" />{/* seat: ALERTS (GTM squad 2026-10-13) */}
                       </div>
                     </td>
                   </tr>
