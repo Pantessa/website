@@ -246,6 +246,14 @@
   .deck__tape td.deck__act { padding-left: 2px; }
   .deck__noact { white-space: normal; line-height: 12px; }
 
+  /* ── The tape stage's pick row (PICK, 2026-10-13: `.pulse__markets.deck__picks.deck__tapepick`, the pulse's 28px
+     chips) → one 44px scrolling row: every chip, its ×, the add field and the All chip are whole targets. ── */
+  .deck__tapepick { height: 44px; align-items: center; }
+  .deck__tapepick .pulse__m, .deck__tapepick .pulse__mx, .deck__tapepick .pulse__add input { height: 44px; }
+  .deck__tapepick .pulse__m { min-width: 44px; justify-content: center; }
+  .deck__tapepick .pulse__mx { min-width: 44px; padding: 0 12px 0 8px; }
+  .deck__tapepick .pulse__add input:focus { width: 150px; }
+
   /* ── The battle channels ── (the one-row controls and the scrolling army row are battle.css's PHONE block,
      both seats) */
   /* The Siege's radius is min(w, h) / 2 − 40 (battle-draw): a 200px field drew a 59px arena. As tall as the
@@ -283,6 +291,7 @@
   .deck__chan .battle--stage .battle__table th:nth-child(2) { width: 25%; }
   .deck__chan .battle--stage .battle__table th:nth-child(3) { width: 24%; }
   .deck__chan .battle--stage .battle__table th:nth-child(8) { width: 42%; }
+  .deck__tape .deck__chip { padding: 0 6px; font-size: 10.5px; } /* "Short AZTEC" was cut by 2px at 320 */
 }
 /* PHONE — the seats other lanes mount in the bar (ALERTS's `.armalert--deck`): on a phone the bar is a row of 36px pills
    (the channel idiom), so a seat there is a 36px bordered pill with a 44px hit area — never a 44px item that grows the bar

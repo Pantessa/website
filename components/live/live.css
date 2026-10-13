@@ -280,5 +280,7 @@
     .live__venues { row-gap: 8px; }
     .live__venue-t { min-height: 36px; position: relative; }
     .live__venue-t::after { content: ''; position: absolute; inset: -4px 0; }
+    /* The pick's × beside each own chip (PICK, 2026-10-13) was 22×28 next to a 44px chip. */
+    .live__mx { height: 44px; min-width: 44px; padding: 0 12px 0 8px; }
   }
 }
