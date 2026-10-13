@@ -160,7 +160,11 @@ else
     while IFS= read -r l; do
       k=$(printf '%s' "$l" | cut -c1-70)
       if grep -qF -- "$k" "$D/control-reds.txt"; then lab="$lab
-  MAIN-TOO: $(printf '%s' "$l" | cut -c1-170)"; else lab="$lab
+  MAIN-TOO: $(printf '%s' "$l" | cut -c1-170)"
+      # Known environment flakes on the shared TEST DB (named, never silently dropped):
+      # taste (HTTP) draws 1 of 250 fake IPs and TASTE_GUEST_DAILY=1 spends each for the UTC day.
+      elif printf '%s' "$l" | grep -qE '^taste \(HTTP\): a wallet-less stranger.*served=0'; then lab="$lab
+  ENV: $(printf '%s' "$l" | cut -c1-170) [the guest's daily taste on a reused fake IP]"; else lab="$lab
   **OURS**: $(printf '%s' "$l" | cut -c1-170)"; fi
     done < "$D/testapi-reds.txt"
   fi
@@ -208,6 +212,15 @@ const out = [
 for (const [k, v] of out) console.log(`| ${k} | ${String(v).replace(/\|/g, '\\|')} |`)
 NODE
 fi
+
+# ── 8b. lane drives (scripts/*-drive.mjs: PICK's CDP drive, …) ─────────────
+for f in scripts/*-drive.mjs; do
+  [ -f "$f" ] || continue
+  n=$(basename "$f" .mjs)
+  BASE=$B node "$f" > "$D/$n.log" 2>&1; ec=$?
+  t=$(grep -cE '✅|✓|PASS' "$D/$n.log"); f2=$(grep -cE '❌|✗|FAIL' "$D/$n.log")
+  row "$n" "$([ $ec = 0 ] && echo PASS || echo "**FAIL** (exit $ec)") — ✅$t ❌$f2 · $(grep -E 'passed|failed|❌|✗' "$D/$n.log" | tail -3 | tr '\n' ' ' | cut -c1-260)"
+done
 
 # ── 9. the signed-in walls (the burner's real SIWE + a watch-only wallet) ───
 if [ "${SKIP_WALLS:-}" = 1 ]; then row 'signed-in walls' 'skipped (SKIP_WALLS=1)'
@@ -258,6 +271,18 @@ const pk = (env.match(/^PRIVATE_KEY=(.*)$/m)?.[1] ?? '').trim().replace(/^"|"$/g
       res.push({ path, width: vp.width, status, ...m, pageErrors: errs, failed: fails })
       await page.close()
     }
+    // signed-in on the live surfaces: count the per-surface reads (one hook instance per surface)
+    for (const path of vp.width === 1440 ? ['/', '/live', '/live?view=front'] : []) {
+      const page = await ctx.newPage()
+      const errs = [], reqs = {}
+      page.on('pageerror', (e) => errs.push(String(e.message).slice(0, 140)))
+      page.on('request', (r) => { const u = new URL(r.url()); if (u.origin === new URL(BASE).origin && u.pathname.startsWith('/api/')) { const k = `${r.method()} ${u.pathname}`; reqs[k] = (reqs[k] || 0) + 1 } })
+      let status = null
+      try { status = (await page.goto(BASE + path, { waitUntil: 'load', timeout: 60000 }))?.status() ?? null } catch (e) { errs.push('NAV ' + String(e.message).slice(0, 100)) }
+      await page.waitForTimeout(10000)
+      res.push({ path, width: vp.width, status, url: await page.evaluate(() => location.pathname + location.search).catch(() => ''), live: true, reqs, pageErrors: errs, failed: [] })
+      await page.close()
+    }
     await ctx.close()
   }
   await browser.close()
@@ -269,7 +294,12 @@ WALLS
 const fs = require('fs')
 let j; try { j = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')) } catch (e) { j = { error: 'no output: ' + e } }
 if (!Array.isArray(j)) { console.log(`| signed-in walls | **FAIL** — ${String(j.error).slice(0, 200)} |`); process.exit(0) }
+const live = j.filter((r) => r.live)
+j = j.filter((r) => !r.live)
 const bad = j.filter((r) => r.status !== 200 || r.url !== r.path || r.pageErrors.length || r.len < 200 || r.overflow > 0)
+const liveBad = live.filter((r) => r.status !== 200 || r.pageErrors.length)
+const n = (r, k) => r.reqs[k] || 0
+console.log(`| signed-in live surfaces (1440, 10s) | ${liveBad.length ? '**FAIL** ' : ''}${live.map((r) => `${r.path} ${r.status}${r.pageErrors.length ? ' pe:' + r.pageErrors[0] : ''} · GET /api/watchlists ×${n(r, 'GET /api/watchlists')} · GET /api/alerts ×${n(r, 'GET /api/alerts')} · api total ${Object.values(r.reqs).reduce((a, b) => a + b, 0)}`).join(' — ').replace(/\|/g, '\\|')} |`)
 const desc = j.map((r) => `${r.path}@${r.width} ${r.status}${r.url !== r.path ? ' →' + r.url : ''} h:"${(r.h || [])[0] ?? ''}" ${r.len}ch${r.overflow ? ' ov+' + r.overflow : ''}${r.pageErrors.length ? ' pe:' + r.pageErrors[0] : ''}${r.failed.length ? ' fail:' + r.failed.slice(0, 2).join(',') : ''}`)
 console.log(`| signed-in walls (burner SIWE, admin) | ${bad.length ? '**FAIL** ' + bad.length + ' — ' : 'PASS — '}${desc.join(' · ').replace(/\|/g, '\\|')} |`)
 NODE
