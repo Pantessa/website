@@ -322,6 +322,9 @@ export function fillsFromDuneFrame(frame: DuneFrame, venue: DuneVenue): { op: 'I
 export type LiveStreamEvent =
   | { type: 'hello'; venues: DuneVenueId[]; markets: string[]; keyed: true; closesInMs: number }
   | { type: 'fills'; venue: DuneVenueId; op: 'INSERT' | 'UPDATE'; block: number | null; fills: TapeFill[] }
+  /** `?backfill=1` only: the prints the relay already held for this venue
+   *  (the last LIVE_BACKFILL_MS at most), oldest first, before the live ones. */
+  | { type: 'backfill'; venue: DuneVenueId; fills: TapeFill[]; sinceMs: number }
   | { type: 'status'; venue: DuneVenueId; status: 'connecting' | 'live' | 'reconnecting' | 'closed'; detail?: string }
   | { type: 'bye'; reason: 'max-duration' | 'shutdown' }
 
@@ -330,6 +333,10 @@ export type LiveStreamEvent =
 export const LIVE_STREAM_HOLD_MS = 285_000
 export const LIVE_STREAM_MAX_DURATION_S = 300
 export const LIVE_STREAM_HEARTBEAT_MS = 15_000
+/** How long the relay remembers a venue's prints for a new viewer's
+ *  backfill (a 1s chart's first minutes); a cold instance holds less. */
+export const LIVE_BACKFILL_MS = 5 * 60_000
+export const LIVE_BACKFILL_MAX = 30_000
 /** Live writers one address may hold at once on one instance, and in all.
  *  A person holds one per tab; a reconnect's old writer dies within two
  *  heartbeats, so twelve is room, not a budget. */

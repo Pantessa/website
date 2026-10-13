@@ -53,8 +53,9 @@ import {
   type DunePerpTrade,
 } from '../lib/dune'
 import { simulateLadder } from './ask-ladder'
-import { LIVE_TAIL_TFS, applyPrint, bucketOf, chartLiveFeed, printOf, tailIsLive, tailWords } from '../lib/chart-live'
-import { CHART_TFS, tfsForSource } from '../lib/charts'
+import { LIVE_TAIL_TFS, applyPrint, barsFromPrints, bucketOf, chartLiveFeed, printOf, tailIsLive, tailWords } from '../lib/chart-live'
+import { CHART_TFS, VENUE_TFS, isPrintTf, technicalsTfs, tfsForSource } from '../lib/charts'
+import { tfUrl } from '../lib/markets'
 import { LIVE_MARKETS_KEY, MAX_OWN_MARKETS, OWN_SOURCE_NOTE, addLiveMarkets, chipRow, knownMarkets, openingOwnMarkets, parseLiveMarketMemory, removeLiveMarket, serializeLiveMarketMemory, watchlistMarkets } from '../lib/live-markets'
 import { capabilityTarget } from '../lib/venue-capability'
 import { tradeTarget } from '../lib/trade-venue-gate'
@@ -264,8 +265,30 @@ export function tapePins(check: Check): void {
   check('chart tail: only the chart\'s OWN instrument drives its tail — a perp takes HyperCore prints for its coin, a trial-covered coin takes DEX spot prints under its printed symbols (ETH ← WETH + ETH, BTC ← WBTC + cbBTC), a coin outside the trial and every stock take nothing',
     hype?.venues.join() === 'hypercore' && hype.markets.join() === 'HYPE' && uni?.venues.join(',') === 'dex-ethereum,dex-base,dex-arbitrum' && uni.markets.join() === 'UNI' && eth?.markets.join(',') === 'WETH,ETH' && chartLiveFeed({ symbol: 'BTC', source: 'coinbase', pair: 'BTC-USD' })?.markets.join(',') === 'WBTC,cbBTC' &&
       chartLiveFeed({ symbol: 'DOGE', source: 'coinbase', pair: 'DOGE-USD' }) === null && chartLiveFeed({ symbol: 'AAPL', source: 'robinhood', pair: 'AAPL' }) === null && chartLiveFeed(null) === null)
-  check('chart tail: the tail follows the prints on 1m · 15m · 1H only (4H and 1D poll), the 1m frame leads the list, and a stock\'s list has no 1m (its tape has no minute bar)',
-    LIVE_TAIL_TFS.join(',') === '1m,15m,1h' && tailIsLive('1h', hype) && !tailIsLive('4h', hype) && !tailIsLive('1d', hype) && !tailIsLive('1m', null) && CHART_TFS[0].key === '1m' && CHART_TFS.length === 5 && tfsForSource('robinhood').every((t) => t.key !== '1m') && tfsForSource('coinbase').length === 5 && tfsForSource('hyperliquid')[0].key === '1m')
+  check('chart tail: the tail follows the prints on 1s · 1m · 15m · 1H only (4H and 1D poll); the list leads 1s then 1m; a stock\'s list has neither (no prints, no minute bar); the Technicals gauge never reads a print frame; VENUE_TFS is every frame a venue serves',
+    LIVE_TAIL_TFS.join(',') === '1s,1m,15m,1h' && tailIsLive('1h', hype) && !tailIsLive('4h', hype) && !tailIsLive('1d', hype) && !tailIsLive('1m', null) && CHART_TFS[0].key === '1s' && CHART_TFS[1].key === '1m' && CHART_TFS.length === 6 && isPrintTf('1s') && !isPrintTf('1m') &&
+      tfsForSource('robinhood').map((t) => t.key).join(',') === '15m,1h,4h,1d' && tfsForSource('coinbase').length === 6 && technicalsTfs('coinbase').every((t) => !isPrintTf(t.key)) && VENUE_TFS.length === 5 && VENUE_TFS[0].key === '1m')
+  const TP = 1_791_880_000_000
+  const ring = [{ at: TP + 2_500, price: 7.5, size: 1 }, { at: TP + 100, price: 7.4, size: 2 }, { at: TP + 1_200, price: 7.45, size: 1 }, { at: TP + 1_900, price: 7.3, size: 3 }, { at: TP + 1_500, price: 0, size: 1 }]
+  const pb = barsFromPrints(ring, 1)
+  check('print frame: the bars come from the prints alone, oldest first whatever order they arrived in — one bar per second that printed (a quiet second is a gap, never an invented flat bar), a zero price is noise',
+    pb.length === 3 && pb[0].t === Math.floor((TP + 100) / 1000) && pb[0].c === 7.4 && pb[1].o === 7.45 && pb[1].h === 7.45 && pb[1].l === 7.3 && pb[1].c === 7.3 && pb[1].v === 4 && pb[2].o === 7.5 && pb.every((b, i) => i === 0 || b.t > pb[i - 1].t), JSON.stringify(pb))
+  check('print frame: the frame is a shareable address — ?tf= set for every frame but the default, which drops it, other params kept',
+    tfUrl('1s', '1d', '/t/HYPE', '') === '/t/HYPE?tf=1s' && tfUrl('1d', '1d', '/t/HYPE', '?tf=1s&tab=trade') === '/t/HYPE?tab=trade' && tfUrl('15m', '1d', '/t/UNI', '?vs=ETH') === '/t/UNI?vs=ETH&tf=15m')
+  check('print frame: the relay remembers each venue\'s last minutes of prints (an UPDATE replaces its block) and hands them to a `?backfill=1` reader before the live ones; the adapter delivers them as onBackfill; the chart asks for them only on a print frame, polls the venue for the header\'s numbers alone, re-derives its bars once a second, and the symbol page hands the chart the URL\'s frame and mirrors it back',
+    (() => {
+      const server = readFileSync('lib/dune-feed-server.ts', 'utf8')
+      const route = readFileSync('app/api/live/stream/route.ts', 'utf8')
+      const feed = readFileSync('lib/tape-feed.ts', 'utf8')
+      const chart = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
+      const page = readFileSync('components/markets/shell/SymbolPage.tsx', 'utf8')
+      const candles = readFileSync('app/api/charts/candles/route.ts', 'utf8')
+      return /remember\(u, parsed\.op, parsed\.block, parsed\.fills\)/.test(server) && /ring\.filter\(\(f: TapeFill\) => f\.block !== block\)/.test(server) && /export function duneBackfill/.test(server) &&
+        /sp\.get\('backfill'\) === '1'/.test(route) && /type: 'backfill', venue: v, fills: b\.fills/.test(route) && route.indexOf("type: 'backfill'") < route.indexOf('unsub = subscribeDune') &&
+        /addEventListener\('backfill'/.test(feed) && /handlers\.onBackfill\?\.\(e\.fills, e\.sinceMs\)/.test(feed) &&
+        /backfill: print \}/.test(chart) && /barsFromPrints\(printsRef\.current\.map\(printOf\), tfSec\)/.test(chart) && /tf=\$\{isPrintTf\(tf\) \? '1m' : tf\}/.test(chart) && /setInterval\(rebuild, 1_000\)/.test(chart) && /secondsVisible: isPrintTf\(tf\)/.test(chart) && /if \(urlTf\) syncTfParam\(tf, DEFAULT_CHART_TF\)/.test(chart) &&
+        /defaultTf=\{initialTf\} urlTf/.test(page) && /if \(isPrintTf\(tf\)\) return NextResponse\.json/.test(candles)
+    })())
   const T = 1_791_880_000_000 // ms
   const b0 = bucketOf(T, 60)
   const open = applyPrint(null, { at: T, price: 7.4, size: 10 }, 60)
@@ -280,7 +303,7 @@ export function tapePins(check: Check): void {
   check('chart tail: MarketChart opens the relay filtered to the instrument\'s own prints only on a live frame, updates the engine\'s last bar in place (never setData per print), re-applies a live bar the poll has not reached yet, and a stock never asks for 1m',
     (() => {
       const src = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
-      return /openDuneTape\(liveFeed\.markets/.test(src) && /\{ venues: liveFeed\.venues, filter: true \}/.test(src) && /if \(!liveFeed \|\| !tailIsLive\(tf, liveFeed\)\)/.test(src) && /applyPrint\(tailRef\.current, printOf\(f\), tfSec\)/.test(src) && /cs\.update\(\{ time: r\.bar\.t as UTCTimestamp/.test(src) && /tailRef\.current = bars\[bars\.length - 1\] \?\? null/.test(src) && /tfsForSource\(pair\?\.source\)/.test(src) && /pair\?\.source === 'robinhood' && tf === '1m'/.test(src) && /data-tail=\{/.test(src)
+      return /openDuneTape\(liveFeed\.markets/.test(src) && /\{ venues: liveFeed\.venues, filter: true, backfill: print \}/.test(src) && /if \(!liveFeed \|\| !tailIsLive\(tf, liveFeed\)\)/.test(src) && /applyPrint\(tailRef\.current, printOf\(f\), tfSec\)/.test(src) && /cs\.update\(\{ time: r\.bar\.t as UTCTimestamp/.test(src) && /tailRef\.current = bars\[bars\.length - 1\] \?\? null/.test(src) && /tfsForSource\(pair\?\.source\)/.test(src) && /pair\?\.source === 'robinhood' && tf === '1m'/.test(src) && /data-tail=\{/.test(src)
     })())
 
   // ── Formats ───────────────────────────────────────────────────────────

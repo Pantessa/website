@@ -48,6 +48,8 @@ export interface ChartMountProps {
   /** Fixed pixel height, or 'fill' to take the flex parent's remaining space. */
   height?: number | 'fill'
   defaultTf?: ChartTf
+  /** Mirror the frame into `?tf=` (the symbol page only). */
+  urlTf?: boolean
   /** Fires whenever fresh candles land — the header reads last/chg off it. */
   onStats?: (s: ChartStats) => void
   /** Extra control beside the live badge (the frame's expand toggle). */
@@ -78,6 +80,7 @@ export default function ChartMount({
   symbol,
   height = 'fill',
   defaultTf,
+  urlTf,
   onStats,
   controlsRight,
   resizeKey,
@@ -124,6 +127,7 @@ export default function ChartMount({
       symbol={symbol}
       height={height}
       defaultTf={defaultTf}
+      urlTf={urlTf}
       onStats={onStats}
       controlsRight={controlsRight}
       resizeKey={resizeKey}

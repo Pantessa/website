@@ -42,8 +42,10 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { ChartCandlestick, ChevronsRight, Eraser, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, Rows3, Ruler, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, TrendingUp, Undo2 } from 'lucide-react'
-import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, tfsForSource, type Candle, type ChartTf } from '@/lib/charts'
-import { applyPrint, chartLiveFeed, printOf, tailIsLive, tailWords } from '@/lib/chart-live'
+import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, isPrintTf, tfsForSource, type Candle, type ChartTf } from '@/lib/charts'
+import { PRINT_KEEP_MS, applyPrint, barsFromPrints, chartLiveFeed, printOf, tailIsLive, tailWords } from '@/lib/chart-live'
+import { syncTfParam } from '@/lib/markets'
+import type { TapeFill } from '@/lib/tape'
 import { openDuneTape, type FeedStatus } from '@/lib/tape-feed'
 import { newLineId, serializeChartState, type ChartLine, type ChartState } from '@/lib/chart-state'
 import { composeLineActions, composeZoneActions, missingActionNote, type LineActionOffer } from '@/lib/chart-actions'
@@ -75,12 +77,14 @@ import { useHeld } from '@/lib/use-held'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import { useTradable } from '@/lib/use-tradable'
 
-const POLL_MS: Record<ChartTf, number> = { '1m': 5_000, '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
+const POLL_MS: Record<ChartTf, number> = { '1s': 30_000, '1m': 5_000, '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
 const POOL_POLL_MS = 30_000
 /** Bars the chart holds for one symbol + frame: the live window (180), its
  *  warm-up (200), and the older pages a zoom-out pulls in. Past it the chart
  *  stops paging, and a zoom-out stops where every drawn bar fits the plot. */
 const HISTORY_CAP = 2_200
+/** A print frame's window: three minutes of second bars (MAX_CANDLES's twin). */
+const PRINT_WINDOW = 180
 /** At the cap the oldest bars stay off the canvas as the rolling lines'
  *  warm-up, so an SMA 200 still starts at the first candle on screen. Only a
  *  feed with nothing older shows a line starting partway in. */
@@ -114,6 +118,8 @@ export interface MarketChartProps {
   /** Fixed pixel height, or 'fill' to take the flex parent's remaining space. */
   height?: number | 'fill'
   defaultTf?: ChartTf
+  /** Mirror the frame into `?tf=` as it changes (the symbol page only). */
+  urlTf?: boolean
   /** Initial / replayed drawings. Re-applied whenever a DIFFERENT state
    *  arrives (a fork), never on the echo of our own onStateChange. */
   state?: ChartState | null
@@ -232,6 +238,7 @@ export default function MarketChart({
   symbol,
   height: heightProp = 360,
   defaultTf = DEFAULT_CHART_TF,
+  urlTf = false,
   state,
   onStateChange,
   markers,
@@ -258,6 +265,16 @@ export default function MarketChart({
   const [tailStatus, setTailStatus] = useState<FeedStatus>('idle')
   const tailRef = useRef<Candle | null>(null)
   const printLineRef = useRef<IPriceLine | null>(null)
+  // A PRINT frame (1s): the bars are built from the prints alone — the
+  // relay's backfill plus every live print — and re-derived once a second
+  // so the lines and the volume follow; the venue is polled for the header's
+  // numbers only. No venue serves a second bar.
+  const printFrame = isPrintTf(tf)
+  const printsRef = useRef<TapeFill[]>([])
+  /** The frame is a shareable address on the symbol page (`?tf=`). */
+  useEffect(() => {
+    if (urlTf) syncTfParam(tf, DEFAULT_CHART_TF)
+  }, [tf, urlTf])
   const [data, setData] = useState<CandlesResponse | null>(null)
   const [stale, setStale] = useState(false)
   const [tokens, setTokens] = useState<Tokens | null>(null)
@@ -495,6 +512,7 @@ export default function MarketChart({
   // candle instead of `period` bars in. The engine draws them too, off-screen
   // left of the opening view: the first range a zoom-out shows.
   const loadWarmup = useCallback(async () => {
+    if (isPrintTf(tf)) return
     const key = `${symbol}:${tf}`
     const w = warmRef.current
     if (w.key === key && (w.warmed || w.inflight || Date.now() - w.triedAt < WARMUP_RETRY_MS)) return
@@ -532,7 +550,7 @@ export default function MarketChart({
   // fits what the chart holds.
   const loadOlder = useCallback(async () => {
     const key = `${symbol}:${tf}`
-    if (keyRef.current !== key) return
+    if (keyRef.current !== key || isPrintTf(tf)) return
     const page = pageRef.current.key === key ? pageRef.current : (pageRef.current = { key, loading: false, exhausted: false, retryAt: 0, lastBefore: null })
     const w = warmRef.current
     if (page.loading || page.exhausted || Date.now() < page.retryAt || (w.key === key && w.inflight)) return
@@ -582,12 +600,20 @@ export default function MarketChart({
   const load = useCallback(async () => {
     const key = `${symbol}:${tf}`
     try {
-      const res = await fetch(`/api/charts/candles?symbol=${encodeURIComponent(symbol)}&tf=${tf}`, { cache: 'no-store' })
+      const res = await fetch(`/api/charts/candles?symbol=${encodeURIComponent(symbol)}&tf=${isPrintTf(tf) ? '1m' : tf}`, { cache: 'no-store' })
       if (!res.ok) throw new Error(String(res.status))
       const d = (await res.json()) as CandlesResponse
       // A response for the symbol or frame the chart just left never paints
       // (nor leaks its bars into the new frame's history).
       if (keyRef.current !== key) return
+      if (isPrintTf(tf)) {
+        // The bars are the prints'; the venue only names the price and the day's move.
+        if (d.candles.length > 0) {
+          setStale(false)
+          onStatsRef.current?.({ last: d.last ?? d.candles[d.candles.length - 1].c, changePct24h: d.changePct24h ?? null, label: d.label, source: d.source, feed: 'dune prints' })
+        }
+        return
+      }
       if (d.candles.length > 0) {
         setData(d)
         feedRef.current = d.feed ?? null
@@ -681,7 +707,7 @@ export default function MarketChart({
       // A zoom holds the right edge (the latest bar stays put) instead of the
       // bar under the cursor: a zoom-out from mid-plot used to push the latest
       // candle left into empty time. The left edge is the viewport guard's.
-      timeScale: { borderColor: alpha(tokens.line, 0.6), timeVisible: tf !== '1d', secondsVisible: false, rightOffset: RIGHT_OFFSET, rightBarStaysOnScroll: true },
+      timeScale: { borderColor: alpha(tokens.line, 0.6), timeVisible: tf !== '1d', secondsVisible: isPrintTf(tf), rightOffset: RIGHT_OFFSET, rightBarStaysOnScroll: true },
       localization: { priceFormatter: (p: number) => fmtPrice(p) },
       handleScale: { axisPressedMouseMove: true },
       // A touch screen shares its scroll with the chart (squad mobile-native,
@@ -848,7 +874,7 @@ export default function MarketChart({
   }, [tokens])
 
   useEffect(() => {
-    chartRef.current?.applyOptions({ timeScale: { timeVisible: tf !== '1d' } })
+    chartRef.current?.applyOptions({ timeScale: { timeVisible: tf !== '1d', secondsVisible: isPrintTf(tf) } })
   }, [tf])
 
   const fieldOn = battlefield && view === 'field'
@@ -929,9 +955,33 @@ export default function MarketChart({
       return
     }
     const tfSec = FRAME_SEC[tf]
+    const print = isPrintTf(tf)
+    const p = pair
+    printsRef.current = []
+    // A print frame's bars, from the ring: history + the engine's series in one.
+    const rebuild = () => {
+      if (!print || !p) return
+      const bars = barsFromPrints(printsRef.current.map(printOf), tfSec)
+      setHistory(bars)
+      setData({ symbol: p.symbol, label: p.label, source: p.source, feed: 'dune prints', tf, candles: bars.slice(-PRINT_WINDOW) })
+    }
+    const ticker = print ? setInterval(rebuild, 1_000) : null
     const handle = openDuneTape(liveFeed.markets, {
       onStatus: (s) => setTailStatus(s),
+      onBackfill: (fills) => {
+        if (!print) return
+        printsRef.current = fills.filter((f) => f.at >= Date.now() - PRINT_KEEP_MS)
+        rebuild()
+      },
       onFills: (batch) => {
+        if (print) {
+          const floor = Date.now() - PRINT_KEEP_MS
+          const ring = printsRef.current
+          ring.push(...batch)
+          let cut = 0
+          while (cut < ring.length && ring[cut].at < floor) cut++
+          if (cut) ring.splice(0, cut)
+        }
         const cs = candleRef.current
         const vs = volRef.current
         if (!cs || !vs || !tokens) return
@@ -953,8 +1003,9 @@ export default function MarketChart({
         if (!printLineRef.current) printLineRef.current = cs.createPriceLine({ price: last, color: alpha(tokens.accent, 0.9), lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'print' })
         else printLineRef.current.applyOptions({ price: last })
       },
-    }, { venues: liveFeed.venues, filter: true })
+    }, { venues: liveFeed.venues, filter: true, backfill: print })
     return () => {
+      if (ticker) clearInterval(ticker)
       handle.close()
       const cs = candleRef.current
       if (cs && printLineRef.current) {

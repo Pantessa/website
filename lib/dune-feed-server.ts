@@ -25,7 +25,8 @@
 //   • an unknown `op` is logged with the venue's words and skipped.
 // Never imported by a client module; the page talks to the relay only.
 
-import { DUNE_VENUES, duneFeedKey, duneVenue, fillsFromDuneFrame, resumeUrl, type DuneFrame, type DuneVenueId, type LiveStreamEvent } from '@/lib/dune'
+import { DUNE_VENUES, LIVE_BACKFILL_MAX, LIVE_BACKFILL_MS, duneFeedKey, duneVenue, fillsFromDuneFrame, resumeUrl, type DuneFrame, type DuneVenueId, type LiveStreamEvent } from '@/lib/dune'
+import type { TapeFill } from '@/lib/tape'
 
 type Listener = (e: LiveStreamEvent) => void
 
@@ -44,6 +45,9 @@ interface Upstream {
   frames: number
   fills: number
   lastFrameAt: number
+  /** The last LIVE_BACKFILL_MS of prints, oldest first: a new viewer's
+   *  history for a print frame. Trimmed on every frame. */
+  ring: TapeFill[]
 }
 
 const store = globalThis as typeof globalThis & { __duneUpstreams?: Map<DuneVenueId, Upstream> }
@@ -61,7 +65,7 @@ type HeaderedWebSocket = new (url: string, opts: { headers: Record<string, strin
 function up(id: DuneVenueId): Upstream {
   let u = upstreams.get(id)
   if (!u) {
-    u = { id, ws: null, listeners: new Set(), cursor: null, attempt: 0, resumeFails: 0, openedAt: 0, retry: null, idle: null, status: 'idle', frames: 0, fills: 0, lastFrameAt: 0 }
+    u = { id, ws: null, listeners: new Set(), cursor: null, attempt: 0, resumeFails: 0, openedAt: 0, retry: null, idle: null, status: 'idle', frames: 0, fills: 0, lastFrameAt: 0, ring: [] }
     upstreams.set(id, u)
   }
   return u
@@ -127,6 +131,7 @@ function open(u: Upstream) {
     }
     if (parsed.fills.length || parsed.op === 'UPDATE') {
       u.fills += parsed.fills.length
+      remember(u, parsed.op, parsed.block, parsed.fills)
       tell(u, { type: 'fills', venue: u.id, op: parsed.op, block: parsed.block, fills: parsed.fills })
     }
     // The checkpoint moves only after the frame was handed on.
@@ -164,6 +169,28 @@ function open(u: Upstream) {
       open(u)
     }, wait)
   }
+}
+
+/** The ring: an UPDATE replaces the block's prints; the window and the cap
+ *  trim from the old end. */
+function remember(u: Upstream, op: 'INSERT' | 'UPDATE', block: number | null, fills: TapeFill[]) {
+  const floor = Date.now() - LIVE_BACKFILL_MS
+  let ring: TapeFill[] = u.ring
+  if (op === 'UPDATE' && block != null) ring = ring.filter((f: TapeFill) => f.block !== block)
+  ring.push(...fills)
+  let cut = 0
+  while (cut < ring.length && ring[cut].at < floor) cut++
+  if (cut) ring = ring.slice(cut)
+  if (ring.length > LIVE_BACKFILL_MAX) ring = ring.slice(ring.length - LIVE_BACKFILL_MAX)
+  u.ring = ring
+}
+
+/** What the ring holds for these markets (every market when none given). */
+export function duneBackfill(id: DuneVenueId, markets: ReadonlySet<string> | null): { fills: TapeFill[]; sinceMs: number } {
+  const u = upstreams.get(id)
+  if (!u || !u.ring.length) return { fills: [], sinceMs: Date.now() }
+  const fills = markets ? u.ring.filter((f: TapeFill) => markets.has(f.market)) : [...u.ring]
+  return { fills, sinceMs: u.ring[0].at }
 }
 
 function closeUpstream(u: Upstream) {
@@ -219,11 +246,11 @@ export function subscribeDune(ids: readonly DuneVenueId[], onEvent: Listener): (
 }
 
 /** For a diagnostics line: what each venue's socket is doing right now. */
-export function duneUpstreamStats(): { venue: DuneVenueId; status: Upstream['status']; readers: number; frames: number; fills: number; cursor: string | null; lastFrameAgoMs: number | null }[] {
+export function duneUpstreamStats(): { venue: DuneVenueId; status: Upstream['status']; readers: number; frames: number; fills: number; cursor: string | null; lastFrameAgoMs: number | null; held: number }[] {
   return DUNE_VENUES.map((v) => {
     const u = upstreams.get(v.id)
     return u
-      ? { venue: v.id, status: u.status, readers: u.listeners.size, frames: u.frames, fills: u.fills, cursor: u.cursor, lastFrameAgoMs: u.lastFrameAt ? Date.now() - u.lastFrameAt : null }
-      : { venue: v.id, status: 'idle', readers: 0, frames: 0, fills: 0, cursor: null, lastFrameAgoMs: null }
+      ? { venue: v.id, status: u.status, readers: u.listeners.size, frames: u.frames, fills: u.fills, cursor: u.cursor, lastFrameAgoMs: u.lastFrameAt ? Date.now() - u.lastFrameAt : null, held: u.ring.length }
+      : { venue: v.id, status: 'idle', readers: 0, frames: 0, fills: 0, cursor: null, lastFrameAgoMs: null, held: 0 }
   })
 }
