@@ -154,7 +154,8 @@ export async function gtmSharePins(check: Check): Promise<void> {
 
   // ── the chart dialog and the signed moment ────────────────────────────────
   const chartShare = readFileSync(join(ROOT, 'components/markets/chart/ChartShare.tsx'), 'utf8')
-  check('chart: the share dialog always offers the chart link (copy), shares a link where a file cannot go, and carries the sharer id', /copyLink\(chartUrl\)/.test(chartShare) && /canNativeShare \|\| canShareLink/.test(chartShare) && /withVia\(absoluteUrl\(`\/t\/\$\{symbol\}/.test(chartShare) && /chartTweetHref\(symbol, tfLabel, chartUrl\)/.test(chartShare))
+  // RE-PINNED 2026-10-13 (polish-qa): be7aed07 (#919 Battlefield link) composes the chart URL through lib/markets viewUrl(view, board, `/t/${symbol}`, …) so the link opens on the view it was shared from — still /t/<symbol>, still absolute, still wearing the sharer id
+  check('chart: the share dialog always offers the chart link (copy), shares a link where a file cannot go, and carries the sharer id', /copyLink\(chartUrl\)/.test(chartShare) && /canNativeShare \|\| canShareLink/.test(chartShare) && /const chartUrl = withVia\(absoluteUrl\((?:viewUrl\([^`]*)?`\/t\/\$\{symbol\}/.test(chartShare) && /chartTweetHref\(symbol, tfLabel, chartUrl\)/.test(chartShare))
   check('chart: the dialog offers the share that pays (the symbol\'s own lead ask as an intent link), composed by the header strip\'s grammar', /execAsks\(pair, \{ usd: 25 \}\)\.find\(\(a\) => a\.tone === 'buy'\)/.test(chartShare) && /linksStudioHref\(\{ ask: earnAsk \}\)/.test(chartShare) && /data-share-earn/.test(chartShare))
   const tCard = readFileSync(join(app, 't/[symbol]/opengraph-image.tsx'), 'utf8')
   check('cards: a symbol card says what the link does (trade from the chart), only for a chartable symbol', /seo\.pair && \([\s\S]{0,400}Trade from this chart/.test(tCard))
