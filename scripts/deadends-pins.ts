@@ -61,9 +61,10 @@ for (const [ask, re] of net) {
   const o = simulateLadder(ask)
   check(`net: "${ask}" → chips`, o.kind === 'clarify' && o.gate === 'intent-net' && !!o.chips && re.test(o.note ?? ''), `${o.kind}/${o.gate} ${o.note ?? ''}`)
 }
-// RE-PINNED 2026-10-13 (polish): "why is eth moving" left this list — it is
-// the market-read door now (pinned below), never planner prose.
-for (const q of ['what should I buy', 'what is a stop loss', 'is aapl a buy', 'buy now', 'run it back', 'tell me a joke', 'what is the apy on aave?'])
+// RE-PINNED 2026-10-13 (polish): "why is eth moving" and "is aapl a buy" left
+// this list — they are the market-read door now (pinned below; the planner
+// invented support/resistance levels for them), never planner prose.
+for (const q of ['what should I buy', 'what is a stop loss', 'buy now', 'run it back', 'tell me a joke', 'what is the apy on aave?'])
   check(`still prose: "${q}"`, simulateLadder(q).kind === 'planner', JSON.stringify(simulateLadder(q)))
 check('moneyShaped: asset name is evidence', moneyShaped('buy apple') && moneyShaped('short btc') && moneyShaped('buy bitcoin'))
 check('moneyShaped: English-word tickers are prose', !moneyShaped('buy now') && !moneyShaped('run it') && !moneyShaped('snap out of it'))
@@ -138,10 +139,11 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
     ['What is moving AAPL right now — price, 24h change, and the news behind it?', 'AAPL', 'move'], ["what's going on with apple", 'AAPL', 'move'], ['how is NVDA doing', 'NVDA', 'move'],
     ['What is the current price and 24h change for ETH?', 'ETH', 'price'], ["what's the price of bitcoin", 'BTC', 'price'],
     ['What is the trend in the SOL candles on screen?', 'SOL', 'trend'],
+    ['is TSLA a good trade right now', 'TSLA', 'opinion'], ['should I buy HYPE', 'HYPE', 'opinion'], ['is aapl a buy', 'AAPL', 'opinion'], ['is now a good time to buy ETH', 'ETH', 'opinion'], ['what do you think about bitcoin', 'BTC', 'opinion'], ['can you tell me why ETH is moving', 'ETH', 'move'],
   ]
   for (const [q, sym, kind] of reads) { const r = marketReadAsk(q); check(`market read: "${q}" → ${sym} ${kind}`, r?.symbol === sym && r.kind === kind, JSON.stringify(r)) }
   check('market read: the page names the symbol ("what\'s the trend?" on /t/HYPE)', marketReadAsk("What's the trend?", 'HYPE')?.symbol === 'HYPE' && marketReadAsk("What's the trend?") === null)
-  for (const q of ['eth price', 'buy eth', 'Buy $25 of ETH', 'why is it moving', 'why is the market down', 'how do I start?', 'what is staking?', 'Show me the ETH chart', 'why is ZZQX moving', 'what is moving 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'])
+  for (const q of ['eth price', 'buy eth', 'Buy $25 of ETH', 'why is it moving', 'why is the market down', 'how do I start?', 'what is staking?', 'Show me the ETH chart', 'why is ZZQX moving', 'what is moving 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 'should I buy now', 'is aave safe?', 'is this a scam'])
     check(`market read stays out of: "${q}"`, marketReadAsk(q) === null, JSON.stringify(marketReadAsk(q)))
   for (const q of ['Why is ETH moving?', 'What is the current price and 24h change for ETH?', 'What is moving TSLA right now — price, 24h change, and the news behind it?']) {
     const o = simulateLadder(q)
@@ -156,6 +158,10 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   for (const w of [full, empty]) check('market read words: never "I can\'t" / Yahoo / this environment / an env var', !/I can['’]t|I cannot|yahoo|this environment|process\.env|[A-Z]{3,}_[A-Z]{3,}_?KEY|prisma/i.test(w))
   const trend = marketReadWords({ pair: eth, kind: 'trend', last: 2500, change24hPct: -1, tech: null, news: null })
   check('market read words: a trend read carries no news line', !/news|headlines/i.test(trend) && /down 1\.00%/.test(trend))
+  const opinion = marketReadWords({ pair: eth, kind: 'opinion', last: 2500, change24hPct: 1, tech: null, news: [], name: 'Ethereum' })
+  check('market read words: an opinion read leaves the call to the reader and invents nothing', /That call is yours to make/.test(opinion) && /nothing invented/.test(opinion) && !/support|resistance/i.test(opinion), opinion)
+  const { headlineAbout } = require('../lib/market-read') as typeof import('../lib/market-read')
+  check('market read: a headline must name the market (the search feeds return neighbours)', headlineAbout('Tesla target lowered by analysts', 'TSLA', 'Tesla') && !headlineAbout('U.S. Bancorp (USB) Stock Looks Below Fair Value', 'TSLA', 'Tesla') && headlineAbout('Why $TSLA dropped', 'TSLA', 'Tesla') && !headlineAbout('Bitcoin rallies', 'ETH', 'Ethereum'))
   for (const sym of ['ETH', 'AAPL', 'HYPE', 'SOL', 'UNI']) {
     const chips = marketReadChips(cp(sym)!)
     check(`market read chips (${sym}): the chart + the lead order, every one builds`, chips.length === 2 && chips.every((c) => builds(c.resume) && simulateLadder(c.resume).kind === 'action') && !chips.some((c) => /^Sell/.test(c.resume)), JSON.stringify(chips))
@@ -209,6 +215,12 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   const market = refusalNextSteps('is TSLA a good trade at this price, should I size up', 'Here is a balanced view…', bn, { planner: true })
   check('next step: planner prose naming a market gets its chart + lead order', market.map((c) => c.resume).join('|') === 'Show me the TSLA chart|Buy $25 of TSLA', JSON.stringify(market))
   check('next step: never re-offers the refused ask on a permanent wall', refusalNextSteps('supply 10 USDC to Aave on Ethereum', 'Say “supply 10 USDC to Aave on Ethereum”', bn).length === 0)
+  const zz = refusalNextSteps('buy $10 of ZZQX', '🔄 I don\'t know the token “ZZQX” on Base — use a known symbol (USDC, …).', bn, { planner: true })
+  check('next step: an unknown token offers what works today (the starter chips), every one builds', zz.length === 3 && zz.every((c) => bn(c.resume)), JSON.stringify(zz))
+  const typo = refusalNextSteps('buy $10 of AAPLE', '🔄 I don\'t know the token “AAPLE” on Base — use a known symbol (USDC, …).', bn, { planner: true })
+  check('next step: a typo\'d token offers the listed symbol one edit away (AAPLE → AAPL)', typo.length === 1 && typo[0].resume === 'buy $10 of AAPL' && typo[0].label === 'Buy $10 of AAPL', JSON.stringify(typo))
+  const hlUnknown = refusalNextSteps('long $10 of ZZQX on hyperliquid', '📈 **ZZQX** isn\'t a Hyperliquid perp, and nothing listed is close to it.', bn)
+  check('next step: an unlisted perp (a native wall) still gets what works', hlUnknown.length > 0 && hlUnknown.every((c) => bn(c.resume)), JSON.stringify(hlUnknown))
   check('next step: namedMarket reads tickers and household names, never English words', namedMarket('sell my $TSLA now') === 'TSLA' && namedMarket('buy some apple') === 'AAPL' && namedMarket('put it all on red') === null)
   const chat = readFileSync(join(__dirname, '../app/api/chat/route.ts'), 'utf8')
   const iBelt = chat.indexOf('refusalNextSteps(askText, preData.reply, buildsNatively')

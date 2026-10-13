@@ -21,7 +21,8 @@
 
 import type { ClarifyOption } from '@/lib/clarify'
 import { rescueIntent } from '@/lib/intent-rescue'
-import { chartPairFor, chartSymbolByName } from '@/lib/charts'
+import { chartPairFor, chartSymbolByName, chartableSymbols } from '@/lib/charts'
+import { STARTER_CHIPS } from '@/lib/starter-door'
 import { marketReadChips } from '@/lib/market-read'
 
 export const NEXT_STEP_MAX = 3
@@ -54,6 +55,35 @@ export function namedMarket(message: string): string | null {
   return null
 }
 
+/** The token a refusal says it doesn't know (“ZZQX”, **ZZQX** isn't a …). */
+export function unknownTokenIn(reply: string): string | null {
+  const m = String(reply ?? '').match(/(?:don['’]t know the token|no token called|isn['’]t a token I know)\s+[“"]?\$?([A-Za-z0-9]{2,12})[”"]?|\*\*\$?([A-Za-z0-9]{2,12})\*\*\s+isn['’]t (?:a Hyperliquid perp|listed)/i)
+  return m ? (m[1] ?? m[2]).toUpperCase() : null
+}
+
+/** One edit away (a typo): AAPLE → AAPL, ETHH → ETH, HYP → HYPE. */
+function oneEdit(a: string, b: string): boolean {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false
+  let i = 0
+  let j = 0
+  let edits = 0
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue }
+    if (++edits > 1) return false
+    if (a.length > b.length) i++
+    else if (b.length > a.length) j++
+    else { i++; j++ }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1
+}
+
+/** Listed symbols one edit from an unknown token, most familiar first. */
+export function nearSymbols(token: string, max = 2): string[] {
+  const t = token.toUpperCase()
+  if (t.length < 3) return []
+  return chartableSymbols().filter((s) => oneEdit(t, s)).slice(0, max)
+}
+
 /**
  * The chips for a refusal, or [] when nothing honest fits. `verify` answers
  * "does the native ladder build this sentence?" (the route passes the
@@ -74,6 +104,15 @@ export function refusalNextSteps(message: string, reply: string, verify: (ask: s
   for (const s of quotedSentences(reply)) push(s.charAt(0).toUpperCase() + s.slice(1), s)
   // 2. A transient refusal: the same ask, once more.
   if (!out.length && TRANSIENT_RE.test(reply) && ask && verify(ask)) out.push({ label: 'Try again', resume: ask })
+  // 2b. An unknown token: the same ask with the listed symbol one typo away,
+  //     else what works here today (the starter door's chips — the refusal
+  //     already says "use a known symbol").
+  const unknown = unknownTokenIn(reply)
+  if (!out.length && unknown) {
+    const re = new RegExp(`\\$?\\b${unknown}\\b`, 'i')
+    for (const near of nearSymbols(unknown)) if (re.test(ask)) { const fixed = ask.replace(re, near); push(fixed.charAt(0).toUpperCase() + fixed.slice(1), fixed) }
+    if (!out.length) for (const c of STARTER_CHIPS) push(c.label, c.resume)
+  }
   // A native layer's refusal knows its domain: a funding shortfall's next
   // step is the funding layer's own (card door / plan), a guard refusal's is
   // nothing. Only the refusal's own words (1) and a retry (2) ride a native

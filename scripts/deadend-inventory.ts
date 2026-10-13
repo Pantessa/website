@@ -355,4 +355,48 @@ function main() {
   process.exit(totals.planner ? 1 : 0)
 }
 
-if (require.main === module) main()
+// ── --live: the refusal sweep (README §A rule 4) ───────────────────────────
+// Asks that historically end in a refusal, POSTed to a running server
+// (BASE) as a stranger with a fresh empty wallet. Every money-shaped answer
+// must be actionable (lib/ask-failure classifyTurn) — a build, a clarify with
+// chips, a door, a connect gate. Nothing real runs: the wallet is empty and
+// watch-only, nothing is signed; harness-stamped (x-yf-internal-run) and kept
+// off the failures queue (x-yf-no-ask-log is NOT sent — the belt runs before
+// the opt-out either way).
+export const REFUSAL_SWEEP: string[] = [
+  'supply 10 USDC to aave on base', 'withdraw 10 USDC from aave on arbitrum', 'lend 10 USDC on morpho on arbitrum',
+  'buy $10 of ZZQX', 'swap 10 ZZQX for USDC on base', 'sell all my ZZQX', 'buy $10 of AAPL on base',
+  'swap 10 USDC for USDC on base', 'limit order: buy 1 ETH for at most 100 USDC on arbitrum chain 999',
+  'long $5 of HYPE on hyperliquid', 'long $10 of ZZQX on hyperliquid', 'protect my ZZQX long with a 5% stop',
+  'stake 0.0001 ETH on lido', 'bridge 5 USDC from base to solana', 'send 5 USDC to @nate',
+  'Buy $50 of ETH', 'Buy $10 of AAPL', 'Sell $50 of ETH', 'Supply $25 of USDC to Aave',
+  'Why is ETH moving?', 'What is the current price and 24h change for ETH?', 'buy some apple stock',
+  'is TSLA a good trade right now', 'should I buy HYPE',
+]
+
+async function live(base: string) {
+  const { classifyTurn } = await import('../lib/ask-failure')
+  const { moneyShaped } = await import('../lib/ask-failure-shape')
+  const wallet = '0x' + Array.from({ length: 40 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('')
+  let bare = 0
+  for (const ask of REFUSAL_SWEEP) {
+    let d: Record<string, unknown> | null = null
+    try {
+      const r = await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ message: ask, history: [], walletAddress: wallet, sessionId: `harness-deadends-${Date.now()}` }) })
+      d = r.headers.get('content-type')?.includes('json') ? ((await r.json()) as Record<string, unknown>) : { reply: '(stream)', streamed: true }
+    } catch (e) { d = { error: (e as Error).message } }
+    const k = d?.streamed ? null : classifyTurn(d).kind
+    const money = moneyShaped(ask)
+    const chips = ((d?.clarify as { options?: { resume: string }[] })?.options ?? []).map((o) => o.resume)
+    const isBare = !!k && money
+    if (isBare) bare++
+    console.log(`${isBare ? '❌' : k ? '·' : '✅'} ${ask}\n     ${k ?? 'actionable'} · ${String(d?.buildPath ?? '')} · ${chips.length ? `chips: ${chips.join(' | ')}` : 'no chips'}\n     ${String(d?.reply ?? d?.error ?? '').replace(/\s+/g, ' ').slice(0, 220)}`)
+  }
+  console.log(`\nrefusal sweep: ${REFUSAL_SWEEP.length} asks · ${bare} money asks with nothing to tap`)
+  process.exit(bare ? 1 : 0)
+}
+
+if (require.main === module) {
+  if (process.argv.includes('--live')) void live((process.env.BASE || 'http://localhost:4072').replace(/\/$/, ''))
+  else main()
+}

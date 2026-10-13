@@ -14,10 +14,10 @@
 // then hand the facts here. Every number on the reply is one we measured;
 // nothing is a forecast and nothing says "I can't".
 
-import { chartPairFor, chartSymbolByName, normalizeChartSymbol, type ChartPair } from '@/lib/charts'
+import { chartPairFor, chartSymbolByName, isMoneyAssetWord, normalizeChartSymbol, type ChartPair } from '@/lib/charts'
 import { execAsks } from '@/lib/trade-asks'
 
-export type MarketReadKind = 'move' | 'price' | 'trend'
+export type MarketReadKind = 'move' | 'price' | 'trend' | 'opinion'
 
 export interface MarketReadAsk {
   symbol: string
@@ -33,6 +33,10 @@ function symbolOf(raw: string | undefined): string | null {
   const word = raw.replace(/^\$/, '').replace(/[?.!,'’]+$/, '')
   const norm = normalizeChartSymbol(word)
   if (!norm || NOT_A_SYMBOL.has(norm)) return null
+  // A lowercase word is a market only when it can't be English ("should I
+  // buy now" is not ServiceNow): the money-asset fence lib/charts keeps.
+  const typedAsTicker = /^[A-Z0-9.]+$/.test(word) || raw.startsWith('$')
+  if (!typedAsTicker && !isMoneyAssetWord(word)) return null
   return chartPairFor(norm)?.symbol ?? chartSymbolByName(word) ?? null
 }
 
@@ -79,6 +83,19 @@ export function marketReadAsk(text: string, symbolHint?: string | null): MarketR
   if ((m = t.match(/^what(?:'s|’s| is)\s+(?:the\s+)?(?:current\s+|live\s+|latest\s+)?price(?:\s+and\s+(?:the\s+)?24h\s+change)?\s+(?:of|for|on)\s+(\$?[A-Za-z][A-Za-z0-9.]{0,14})\b/i))) {
     const s = symbolOf(m[1])
     return s ? { symbol: s, kind: 'price' } : null
+  }
+  // An OPINION about one market ("is TSLA a good trade right now", "should I
+  // buy HYPE", "is aapl a buy"). The planner answered these with invented
+  // levels — a live sweep (2026-10-13) read "support near $238 and resistance
+  // at $265" for TSLA at $378. The honest answer is the tape and the call
+  // left to the reader.
+  if ((m = t.match(/^(?:is|are)\s+(?:now\s+(?:a\s+)?good\s+time\s+to\s+(?:buy|sell|get)\s+)?(\$?[A-Za-z][A-Za-z0-9.]{0,14})\s+(?:a\s+|an\s+)?(?:good|bad|smart|safe)?\s*(?:buy|sell|trade|investment|entry|bet|long|short)\b/i))) {
+    const s = symbolOf(m[1])
+    return s ? { symbol: s, kind: 'opinion' } : null
+  }
+  if ((m = t.match(/^(?:is\s+(?:it|now)\s+(?:a\s+)?(?:good|bad)\s+time\s+to\s+(?:buy|sell|get|long|short)|should\s+I\s+(?:buy|sell|long|short|get|hold|dump|ape(?:\s+into)?)(?:\s+(?:some|more|any))?|what\s+do\s+you\s+think\s+(?:about|of))\s+(\$?[A-Za-z][A-Za-z0-9.]{0,14})\b/i))) {
+    const s = symbolOf(m[1])
+    return s ? { symbol: s, kind: 'opinion' } : null
   }
   // "What is the trend in the ETH candles on screen?" · "what's the trend?" (on a symbol page)
   if ((m = t.match(/^what(?:'s|’s| is)\s+the\s+(?:trend|setup|read)\b(?:\s+(?:in|on|for|of)\s+(?:the\s+)?(\$?[A-Za-z][A-Za-z0-9.]{0,14}))?/i))) {
@@ -135,6 +152,7 @@ const FEED_WORD: Record<string, string> = { coinbase: 'Coinbase spot', hyperliqu
 export function marketReadWords(f: MarketReadFacts): string {
   const sym = f.pair.symbol
   const out: string[] = []
+  if (f.kind === 'opinion') out.push(`🧭 That call is yours to make — here's what the ${sym} tape says, with nothing invented.`)
   if (f.last != null) {
     const ch = f.change24hPct
     const move = ch == null ? '' : Math.abs(ch) < 0.05 ? ', flat over 24h' : `, ${ch > 0 ? 'up' : 'down'} ${Math.abs(ch).toFixed(2)}% over 24h`
