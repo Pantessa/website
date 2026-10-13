@@ -1,7 +1,10 @@
 // Pins for lib/arena — the words of the fight (GTM squad 2026-10-13, lane
 // ARENA): the challenge, the stage headline, the shareable war-log line, the
 // first-run sheet's rows and its once-per-browser rule. `npm run pins:arena`.
-// Pure: no server, no DB, no browser.
+// Pure: no server, no DB, no browser. Also reads components/live/PickSheet.tsx
+// and arena.css as text for the rules a component must keep (nothing on the
+// server frame, no chat route, a journey label on every control).
+import { readFileSync } from 'node:fs'
 import { ARMY_SLICE, MAX_PICK } from '../lib/market-pick'
 import { DEFAULT_PICK, FRONT_WINDOWS, PICK_MODES } from '../lib/battle'
 import {
@@ -58,6 +61,18 @@ async function main() {
   pin('the once flag has its own key and the offer waits for the page to paint', PICK_SHEET_SEEN_KEY === 'pantessa.markets.picksheet.v1' && PICK_SHEET_OFFER_DELAY_MS >= 600 && PICK_SHEET_OFFER_DELAY_MS <= 3000)
   pin('titles and blurbs per seat say the slice', pickSheetTitle('battle') === 'Pick your armies' && pickSheetTitle('pulse') === 'Pick your markets' && pickSheetBlurb('battle').includes(`first ${ARMY_SLICE}`) && pickSheetBlurb('tape').includes(`first ${ARMY_SLICE}`) && pickSheetBlurb('tape').includes(`${MAX_PICK}`))
   pin('the trigger reads Pick on an empty row, Change on a filled one', pickTriggerWord([]) === 'Pick' && pickTriggerWord(['A']) === 'Change')
+
+  // ── The component's rules, read as text ───────────────────────────────
+  const sheet = readFileSync('components/live/PickSheet.tsx', 'utf8')
+  const css = readFileSync('components/live/arena.css', 'utf8').replace(/\/\*[^]*?\*\//g, '')
+  pin('the sheet renders nothing on the server (the deck frame stays byte-identical): mounted gate before any markup', /const \[mounted, setMounted\] = useState\(false\)/.test(sheet) && /if \(!mounted\) return null/.test(sheet))
+  pin('the sheet never fires a chat turn and only writes the pick by hand', !/fetch\(['"`]\/api\/chat/.test(sheet) && !/openDoor|useConnectToAct|composerSend/.test(sheet) && /pick\.set\([^)]*'hand'\)/.test(sheet))
+  const controls = sheet.match(/<button[\s\S]*?(?<!=)>(?!=)/g) ?? []
+  pin('every button in the sheet carries a journey label', controls.length >= 4 && controls.every((b) => /data-journey=/.test(b)), `${controls.filter((b) => !/data-journey=/.test(b)).length} of ${controls.length} unlabeled`)
+  pin('the once flag is written on offer AND on dismiss, read after mount', (sheet.match(/writePickSheetSeen\(/g) ?? []).length >= 2 && /readPickSheetSeen\(\)/.test(sheet) && /PICK_SHEET_OFFER_DELAY_MS/.test(sheet))
+  pin('a phone gets a bottom sheet with 44px rows and safe-area padding; a desktop a popover', /@media \(max-width: 640px\)/.test(css) && /min-height: 44px/.test(css) && /env\(safe-area-inset-bottom/.test(css) && /position: absolute/.test(css) && /position: fixed/.test(css))
+  pin('the typed add goes through pick.add (lib/battle resolveMarket against the universe); unknown names are said', /pick\.add\(/.test(sheet) && /unknown/.test(sheet) && /lists no market/.test(sheet))
+  pin('the panel is mounted only while open (a closed seat reads nothing); the scrim and Esc close it', /\{open && <PickSheetPanel/.test(sheet) && /e\.key === 'Escape'/.test(sheet) && /picksheet__scrim/.test(sheet))
 
   console.log(`\narena pins: ${pass} passed / ${fail} failed`)
   if (fail) process.exit(1)
