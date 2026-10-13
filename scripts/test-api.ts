@@ -23461,8 +23461,9 @@ async function main() {
     check(
       '/t/AAPL: the watchlist rail docks right like /markets (main.sym + the frame rail holding the watchlist then the symbol card, the footer under the page)',
       /class="mkt-frame mkt-frame--sym"/.test(tAapl) &&
-        /<main class="sym" data-symbol="AAPL"/.test(tAapl) &&
-        /<aside class="mkt-frame__rail"[^>]*>[\s\S]*?data-slot="watchlist"[\s\S]*?data-slot="symbol-card"/.test(tAapl) &&
+        // RE-PINNED 2026-10-13 (cockpit): main wears the cockpit class; the rail's first child is the order ticket, then the watchlist, then the symbol card.
+        /<main class="sym sym--cockpit" data-symbol="AAPL"/.test(tAapl) &&
+        /<aside class="mkt-frame__rail"[^>]*><section class="mkt-railticket" data-slot="order-ticket"[\s\S]*?data-slot="watchlist"[\s\S]*?data-slot="symbol-card"/.test(tAapl) &&
         /class="mkt-frame__foot"><footer class="footer"/.test(tAapl) &&
         /\.mkt-frame--sym > \.sym \{[^}]*grid-area: main;/.test(shellCss),
     )
@@ -23851,7 +23852,8 @@ async function main() {
           // the two no-chart chips and hands the strip `act` itself; the stub's chips call onAsk.
           (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
           // RE-PINNED 2026-10-06 (order ticket): the strip also takes the page's BUILD door — the ticket's sentence docks in Ask the chart.
-          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} onBuild=\{buildHere\} last=\{stats\?\.last \?\? null\} \/>/.test(symS) &&
+          // RE-PINNED 2026-10-13 (cockpit): the strip is the phone's and never auto-opens its ticket (the right column holds the desktop's).
+          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} onBuild=\{buildHere\} last=\{stats\?\.last \?\? null\} autoOpen=\{false\} \/>/.test(symS) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
           // Re-pinned by the mobile-native squad (2026-09-24, NAV): the phone
           // posture executes lib/phone-nav (pickPhone), so the door call is
@@ -26163,33 +26165,52 @@ async function main() {
     const tSelf = flat(await (await fetch(`${BASE}/t/AAPL?vs=aapl`)).text())
     check(
       'mk2/markets: /t/AAPL?vs=BTC server-renders the compare pill (data-vs on main + the VS pill naming BTC); ?vs=<self> renders no compare',
-      /<main class="sym" data-symbol="AAPL" data-vs="BTC">/.test(tVs) && /class="mk-vs" data-vs="BTC"/.test(tVs) &&
+      // RE-PINNED 2026-10-13 (cockpit): main carries the tab and the chart's
+      // shown/parked state too; the compare pill rides the chart's toolbar.
+      /<main class="sym sym--cockpit" data-symbol="AAPL" data-vs="BTC" data-tab="overview" data-chart="shown">/.test(tVs) && /class="mk-vs" data-vs="BTC"/.test(tVs) &&
         !/data-vs=/.test(tSelf) && /class="mk-vs__open mono"/.test(tSelf),
     )
-    // The symbol header, in order: identity (mark · title · venue · the
-    // session line with its dot · compare) → quote (last · change · feed ·
-    // the range bar's seat) → the ExecStrip seat (the act chips) — then the
-    // chart, then the ask dock, then the tab strip.
+    // THE COCKPIT (re-pinned 2026-10-13): the one-line strip, in order —
+    // identity (mark · title · the venue pill with the session dot) → quote
+    // (last · change · feed) → the 24h stats — then the TAB STRIP, then the
+    // ExecStrip seat (the phone's chips; hidden from 1024px by CSS, in the
+    // HTML on every posture so these pins hold), then the chart, then the
+    // ask dock. Overview and Chart show the chart; the other tabs park it.
     const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
     const at = (re: RegExp) => {
       const m = re.exec(tAapl)
       return m ? m.index : -1
     }
-    const iHead = at(/<header class="sym__head sym__head--mk2">/)
+    const iHead = at(/<header class="sym__head sym__strip" data-seat="strip">/)
     const iId = at(/<div class="sym__id">/)
     const iMeta = at(/<div class="sym__meta">/)
     const iQuote = at(/<div class="sym__quote">/)
+    const iTabs = at(/<nav class="sym__tabs"/)
     const iAct = at(/<div class="sym__exec" data-seat="ExecStrip">/)
     const iChart = at(/class="tchart sym__chart"/)
     const iDock = at(/<section class="mk-askdock is-open" data-askchart="open"/)
-    const iTabs = at(/<nav class="sym__tabs"/)
     check(
-      'mk2/markets: /t/AAPL header order — sym__head → sym__id → sym__meta (session dot + compare) → sym__quote → the ExecStrip seat (non-empty) → chart → ask dock → tabs',
-      iHead >= 0 && iHead < iId && iId < iMeta && iMeta < iQuote && iQuote < iAct && iAct < iChart && iChart < iDock && iDock < iTabs &&
-        /<p class="sym__session mono" data-tape="(open|closed)"><span class="mk-dot mk-dot--(open|closed)"/.test(tAapl) &&
+      'mk2/markets: /t/AAPL cockpit order — the strip (sym__head.sym__strip → sym__id → sym__meta (the venue pill wearing the session dot) → sym__quote) → the tab strip → the ExecStrip seat (non-empty) → the chart (shown on Overview) → the ask dock',
+      iHead >= 0 && iHead < iId && iId < iMeta && iMeta < iQuote && iQuote < iTabs && iTabs < iAct && iAct < iChart && iChart < iDock &&
+        /<span class="sym__venue mono" data-tape="(open|closed)"[^>]*><span class="mk-dot mk-dot--(open|closed)"/.test(tAapl) &&
+        /<p class="sym__session mono sr-only" data-tape="(open|closed)">/.test(tAapl) &&
+        /<main class="sym sym--cockpit" data-symbol="AAPL" data-tab="overview" data-chart="shown">/.test(tAapl) &&
+        !/class="tchart sym__chart is-parked"/.test(tAapl) &&
         seat(tAapl, 'sym__exec" data-seat="ExecStrip'),
-      `head=${iHead} id=${iId} meta=${iMeta} quote=${iQuote} act=${iAct} chart=${iChart} dock=${iDock} tabs=${iTabs}`,
+      `head=${iHead} id=${iId} meta=${iMeta} quote=${iQuote} tabs=${iTabs} act=${iAct} chart=${iChart} dock=${iDock}`,
     )
+    {
+      // The Chart tab shows the chart (taller, data-tab="chart"); News parks
+      // it — the same mount, hidden, so drawings and the thread survive.
+      const tChartTab = flat(await (await fetch(`${BASE}/t/AAPL?tab=chart`)).text())
+      const tNewsTab = flat(await (await fetch(`${BASE}/t/AAPL?tab=news`)).text())
+      check(
+        'mk2/markets: /t/AAPL?tab=chart renders the chart shown under a Chart tab lit (data-tab="chart" data-chart="shown", an empty body); ?tab=news parks the chart AND the ask dock (is-parked on both, mounted in the HTML) and renders the News body',
+        /<main class="sym sym--cockpit" data-symbol="AAPL" data-tab="chart" data-chart="shown">/.test(tChartTab) && /class="tchart sym__chart"/.test(tChartTab) && /<a href="\/t\/AAPL\?tab=chart" role="tab" aria-selected="true" class="sym__tab is-on"/.test(tChartTab) &&
+          /<main class="sym sym--cockpit" data-symbol="AAPL" data-tab="news" data-chart="parked">/.test(tNewsTab) && /class="tchart sym__chart is-parked"/.test(tNewsTab) && /<section class="mk-askdock is-open is-parked" data-askchart="open"/.test(tNewsTab) &&
+          /<div class="sym__body" data-tab="news">/.test(tNewsTab) && tNewsTab.indexOf('class="tchart sym__chart is-parked"') < tNewsTab.indexOf('class="sym__body" data-tab="news"'),
+      )
+    }
     check(
       'mk2/markets: Overview mounts the AiBrief (lead) → FlowPanel → Performance → Key stats → RouteTable seats, each non-empty in the server HTML',
       seat(tAapl, 'mk-overview__lead') && seat(tAapl, 'mk-overview__flow') && seat(tAapl, 'mk-overview__routes') &&
@@ -26199,11 +26220,17 @@ async function main() {
     )
     const tTrade = flat(await (await fetch(`${BASE}/t/AAPL?tab=trade`)).text())
     check(
-      'mk2/markets: Trade mounts RouteTable → the order panel → CompoundComposer → PositionPanel, each non-empty in the server HTML, and no in-page runtime seat (asks run in the app since 2026-09-16)',
+      // RE-PINNED 2026-10-13 (cockpit): the order panel left the Trade tab for
+      // the right column (RailTicket, data-slot="order-ticket", before the
+      // watchlist in the aside, on every tab); the tab keeps routes → the
+      // composer → the position. A fillable symbol renders no mkt-order card.
+      'mk2/markets: Trade mounts RouteTable → CompoundComposer → PositionPanel, each non-empty in the server HTML, no order card (the ticket leads the right column on every tab, before the watchlist) and no in-page runtime seat (asks run in the app since 2026-09-16)',
       seat(tTrade, 'mk-trade__routes') && seat(tTrade, 'mk-trade__compound') && seat(tTrade, 'mk-trade__position') &&
-        tTrade.indexOf('class="mk-trade__routes"') < tTrade.indexOf('class="mkt-card mkt-order"') &&
-        tTrade.indexOf('class="mkt-card mkt-order"') < tTrade.indexOf('class="mk-trade__compound"') &&
+        tTrade.indexOf('class="mk-trade__routes"') < tTrade.indexOf('class="mk-trade__compound"') &&
         tTrade.indexOf('class="mk-trade__compound"') < tTrade.indexOf('class="mk-trade__position"') &&
+        !tTrade.includes('class="mkt-card mkt-order"') &&
+        /<aside class="mkt-frame__rail"[^>]*><section class="mkt-railticket" data-slot="order-ticket" data-open="1" data-side="buy" data-acts="\d+" aria-label="Act on AAPL">[\s\S]*?<div data-slot="watchlist"/.test(tTrade) &&
+        /<aside class="mkt-frame__rail"[^>]*><section class="mkt-railticket" data-slot="order-ticket"/.test(tAapl) &&
         !tTrade.includes('mkt-trade__chat'),
     )
     {
@@ -28039,7 +28066,8 @@ async function main() {
     // the rule with the connected wallet's holdings — and a new component that
     // writes a Sell sentence without the rule fails the fence.
     const sgSurfaces = [
-      'components/markets/trade/ExecStrip.tsx', 'components/markets/trade/RouteTable.tsx', 'components/markets/tabs/TradeTab.tsx',
+      // RE-PINNED 2026-10-13 (cockpit): the Trade tab composes no Sell any more (its ticket moved to the right column: RailTicket).
+      'components/markets/trade/ExecStrip.tsx', 'components/markets/trade/RouteTable.tsx', 'components/markets/trade/RailTicket.tsx',
       'components/markets/chart/MarketChart.tsx', 'components/markets/technicals/TechnicalsTab.tsx', 'components/markets/ai/AiBrief.tsx',
       'components/markets/ai/MorningTape.tsx', 'components/AskDoor.tsx', 'components/markets/watchlist/WatchlistRail.tsx',
       'components/markets/community/CommunityTab.tsx', 'components/ChartOverlay.tsx', 'components/markets/shell/SymbolPage.tsx',
@@ -28196,7 +28224,7 @@ async function main() {
       // renders and then vanishes.
       const vgSurfaces = [
         'components/markets/trade/QuickAct.tsx', 'components/markets/trade/ExecStrip.tsx', 'components/markets/trade/RouteTable.tsx',
-        'components/markets/tabs/TradeTab.tsx', 'components/markets/chart/MarketChart.tsx', 'components/markets/technicals/TechnicalsTab.tsx',
+        'components/markets/trade/RailTicket.tsx', 'components/markets/chart/MarketChart.tsx', 'components/markets/technicals/TechnicalsTab.tsx',
         'components/markets/ai/AiBrief.tsx', 'components/markets/ai/MorningTape.tsx', 'components/AskDoor.tsx',
         'components/markets/watchlist/WatchlistRail.tsx', 'components/markets/community/CommunityTab.tsx', 'components/ChartOverlay.tsx',
         'components/markets/shell/SymbolPage.tsx',
@@ -28224,9 +28252,15 @@ async function main() {
           (await readFile('app/x402-design.css', 'utf8')).includes('.sym__act-shut'),
       )
       const vgTradeTab = await readFile('components/markets/tabs/TradeTab.tsx', 'utf8')
+      const vgRail = await readFile('components/markets/trade/RailTicket.tsx', 'utf8')
+      // RE-PINNED 2026-10-13 (cockpit): the order ticket lives in the right
+      // column (RailTicket) — its side list is the two gates' honest set and
+      // an empty one renders the venue note, never a form; the Trade tab
+      // drops "Chain it" for a shut symbol and says why.
       check(
-        'venue gate: the Trade panel never composes an order for a side with no venue (its side list would be EMPTY and the sentence undefined), and "Chain it" is gone with it — its first leg would bridge money onto a chain that cannot complete the buy',
-        vgTradeTab.includes('const noOrder = sides.length === 0') && vgTradeTab.includes("!shutSides.includes('buy') && (") && vgTradeTab.includes('noVenueNote('),
+        'venue gate: the right column\'s ticket never composes an order for a side with no venue (an empty honest side list renders the venue note, no form), and the Trade tab drops "Chain it" for a shut symbol — its first leg would bridge money onto a chain that cannot complete the buy',
+        vgRail.includes('const shown = side ? fallbackSide(side, sides) : (sides[0] ?? null)') && vgRail.includes('noVenueNote(pair.symbol, shut)') && vgRail.includes("const sides = new Set<'buy' | 'sell'>()") &&
+          vgTradeTab.includes('shutSides.length > 0 ? (') && vgTradeTab.includes('noVenueNote(pair.symbol, [...shutSides])') && !vgTradeTab.includes('OrderTicket'),
       )
       const vgAmbaTrade = await (await fetch(`${BASE}/t/AMBA?tab=trade`)).text()
       const vgAaplTrade = await (await fetch(`${BASE}/t/AAPL?tab=trade`)).text()
@@ -33609,8 +33643,9 @@ async function main() {
     )
     const nmSym = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
     check(
-      'native markets: a /t tab switch made while the strip is stuck scrolls the app scroller by the strip\'s UNSTUCK place (its parent\'s top) — scrollIntoView on a stuck sticky is a no-op — and the rail + footer never anchor the scroll (a short loading tab once threw the page 5,521px to the footer)',
-      /const natural = main\.getBoundingClientRect\(\)\.top\s*\n\s*if \(natural < stuckAt - 1\) scrollAppTo\(appScrollTop\(\) \+ natural - stuckAt\)/.test(nmSym) &&
+      // RE-PINNED 2026-10-13 (cockpit): the tab strip is a direct child of .sym now (its sticky range is the whole column), so the unstuck place is the zero-height sentinel right before it, not a parent's top.
+      'native markets: a /t tab switch made while the strip is stuck scrolls the app scroller by the strip\'s UNSTUCK place (the sentinel before it) — scrollIntoView on a stuck sticky is a no-op — and the rail + footer never anchor the scroll (a short loading tab once threw the page 5,521px to the footer)',
+      /const natural = mark\.getBoundingClientRect\(\)\.top\s*\n\s*if \(natural < stuckAt - 1\) scrollAppTo\(appScrollTop\(\) \+ natural - stuckAt\)/.test(nmSym) && /<span className="sym__navtop" aria-hidden \/>\s*\n\s*<nav ref=\{tabsRef\} className="sym__tabs"/.test(nmSym) &&
         !/el\.scrollIntoView\(\{ block: 'start' \}\)/.test(nmCode(nmSym)) &&
         /\.mkt-frame__rail, \.mkt-frame__foot \{ overflow-anchor: none; \}/.test(nmMk),
     )
@@ -33627,14 +33662,16 @@ async function main() {
     // Round 2 (coordinator R2-1 + R2-3).
     check(
       'native markets (round 2): on a phone the /t header leads with the price and the chart — one title line (the venue chip ellipsizes), one meta line (the session ellipsizes), no "24H RANGE" caption, a tighter rhythm; the act chips snap to a chip\'s edge; the header pills keep a 44px hit area',
-      /\.mkt-frame--sym \.sym__head \{ padding: 10px 0 8px; row-gap: 8px; \}/.test(nmMk) &&
-        /\.sym__head--mk2 \.sym__titlerow \{ flex-wrap: nowrap; \}/.test(nmMk) &&
-        /\.sym__head--mk2 \.sym__session \{ display: block; flex: 1 1 7rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/.test(nmMk) &&
-        // Round 4: the meta line WRAPS (nowrap pushed COMPARE off a 375 screen once
-        // a holding wallet added YOU HOLD: +8/+9px, +23/+24 at 360).
-        /\.sym__head--mk2 \.sym__meta \{ flex-wrap: wrap; row-gap: 6px; margin-top: 6px; \}/.test(nmMk) && !/\.sym__meta \{ flex-wrap: nowrap/.test(nmCode(nmMk)) &&
-        /\.sym__head--mk2 \.mk-held__amt \{ display: none; \}/.test(nmMk) &&
-        /\.sym__head--mk2 \.mk-range__k \{ display: none; \}/.test(nmMk) &&
+      // RE-PINNED 2026-10-13 (cockpit): the header is the one-line strip; on a
+      // phone it is TWO rows — identity (+ YOU HOLD) over the price with the
+      // day's high / low — with no range bar or volume (the venue pill
+      // ellipsizes; Compare lives in the chart's bar now).
+      /\.sym--cockpit \.sym__strip \{ flex-wrap: wrap; gap: 8px 12px; min-height: 0; padding: 12px 0 6px; \}/.test(nmMk) &&
+        /\.sym--cockpit \.sym__strip > \.sym__id \{ flex: 1 1 auto; order: 1; \}/.test(nmMk) &&
+        /\.sym--cockpit \.sym__strip > \.sym__quote \{ order: 3; flex: 1 1 auto; \}/.test(nmMk) &&
+        /\.sym--cockpit \.sym__stats > \.sym__sep, \.sym--cockpit \.sym__st--range, \.sym--cockpit \.sym__st--vol \{ display: none; \}/.test(nmMk) &&
+        /\.sym--cockpit \.sym__st--hi, \.sym--cockpit \.sym__st--lo \{ display: flex; \}/.test(nmMk) &&
+        /\.sym--cockpit \.sym__strip \.sym__venue \{ display: inline-flex; align-items: center; gap: 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; \}/.test(nmMk) &&
         /\.sym__act-chips \{ scroll-snap-type: x proximity; \}/.test(nmMk) && /\.sym__act-chip \{ flex-shrink: 0; scroll-snap-align: start; \}/.test(nmMk) &&
         /\.mk-vs__open::after, \.mk-vs__x::after, button\.mk-held::after \{ content: ''; position: absolute; inset: -9px -4px; \}/.test(nmMk),
     )

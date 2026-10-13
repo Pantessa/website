@@ -240,10 +240,15 @@ export function sessionState(pair: ChartPair | null, now: Date = new Date()): Se
 
 // ── Tab strip (the #705 idiom: ?tab= mirrored via replaceState) ─────────────
 
-export type MarketTab = 'overview' | 'news' | 'community' | 'technicals' | 'trade'
+export type MarketTab = 'overview' | 'chart' | 'news' | 'community' | 'technicals' | 'trade'
 
+/** The symbol page's sections. THE COCKPIT (2026-10-13): the tab strip sits
+ *  under the header, TradingView's way; the chart shows on Overview and on
+ *  its own Chart tab (the full tool set), and every other tab dives straight
+ *  into its content. The order ticket lives in the right column on every tab. */
 export const MARKET_TABS: { tab: MarketTab; label: string }[] = [
   { tab: 'overview', label: 'Overview' },
+  { tab: 'chart', label: 'Chart' },
   { tab: 'news', label: 'News' },
   { tab: 'community', label: 'Community' },
   { tab: 'technicals', label: 'Technicals' },

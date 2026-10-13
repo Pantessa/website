@@ -54,7 +54,7 @@ export default function MarketsDocsPage() {
       <div className="docs__prose">
         <h2>What a chart can do</h2>
         <p>
-          Every symbol page carries the same strip: <strong>Overview · News · Community · Technicals · Trade</strong>.
+          Every symbol page carries the same strip: <strong>Overview · Chart · News · Community · Technicals · Trade</strong>.
           Each tab ends in an ask. The Trade tab is the order panel; the others earn their place by producing one.
         </p>
         <ul>

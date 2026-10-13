@@ -71,6 +71,7 @@ export default function ExecStrip({
   onBuild,
   last,
   usd = 50,
+  autoOpen = true,
 }: {
   symbol: string
   pair: ChartPair
@@ -83,6 +84,10 @@ export default function ExecStrip({
    *  (optional; without it the Stake chip is omitted, never guessed). */
   last?: number | null
   usd?: number
+  /** Open the ticket on the lead side by itself on a desktop (the remembered
+   *  default). THE COCKPIT (2026-10-13) passes false: the desktop ticket lives
+   *  in the right column and this strip is the phone's; a tap still opens it. */
+  autoOpen?: boolean
 }) {
   const held = useHeld()
   const tradable = useTradable()
@@ -107,6 +112,7 @@ export default function ExecStrip({
   const [ticket, setTicket] = useState<TicketSide | null>(null)
   const leadSide = all[0]?.side ?? null
   useEffect(() => {
+    if (!autoOpen) return
     let open: boolean | null = null
     try {
       const v = window.localStorage.getItem(TICKET_OPEN_KEY)

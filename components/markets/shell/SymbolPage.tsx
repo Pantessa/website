@@ -1,16 +1,30 @@
 'use client'
 
-// The /t/<symbol> page FRAME (SHELL): header (mark · name · symbol · venue
-// chip · last · change · session line) → the chart (always mounted, above
-// the tabs — the chart is the order form, so it never disappears while you
-// trade) → the tab strip Overview · News · Community · Technicals · Trade
-// (`?tab=` mirrored via replaceState, the #705 idiom) → the tab's body. The
-// right rail (watchlist slot + symbol card) is the /markets frame's rail:
-// docked right from the nav down on ≥1024px, stacked below at 375px.
+// The /t/<symbol> page FRAME (SHELL) — THE COCKPIT (2026-10-13, Nate: "the
+// header area feels unprofessional and a bit claustrophobic… I want that
+// chart to have a nice prominent spot… the Overview, News bar can be on top,
+// one of the nav sections can be the chart just like on TradingView… I like
+// B with the buy side on the right").
+//
+//   the strip  — ONE line: mark · name · symbol · venue (with the session
+//                dot) · last · change · 24h high / low / vol / range · YOU
+//                HOLD. The stats fold from the right as the column narrows
+//                (markets.css, a container query on the strip's seat).
+//   the tabs   — Overview · Chart · News · Community · Technicals · Trade,
+//                right under the strip (`?tab=` mirrored, the #705 idiom).
+//   the chart  — on Overview and on the Chart tab (the full tool set, taller);
+//                the other tabs dive straight into their content. The chart
+//                stays MOUNTED and parks (display: none) off those tabs, so
+//                drawings, zoom and the Ask-the-chart thread survive a switch.
+//   the ticket — the right column's lead on every tab (RailTicket, beside the
+//                watchlist and the About card). The header's act chips and
+//                their inline ticket are the phone's (hidden by CSS from the
+//                rail-docking width); both are in the HTML.
 //
 // The chart engine lives behind components/markets/chart/ChartMount (CHART
 // lane swaps the internals); the expand toggle is the same CSS takeover +
-// Fullscreen API the old full-bleed page had.
+// Fullscreen API the old full-bleed page had; Compare rides beside it in the
+// chart's own toolbar now (it is a chart control).
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import Link from 'next/link'
@@ -45,6 +59,7 @@ import AskChart from '@/components/markets/slots/AskChart'
 import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
 import SymbolCardSlot from '@/components/markets/shell/SymbolCardSlot'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
+import RailTicket from '@/components/markets/trade/RailTicket'
 import OverviewTab from '@/components/markets/tabs/OverviewTab'
 import NewsTab from '@/components/markets/tabs/NewsTab'
 import CommunityTab from '@/components/markets/tabs/CommunityTab'
@@ -66,10 +81,17 @@ import { canTradeAsk } from '@/lib/trade-venue-gate'
 import { seedTradable } from '@/lib/tradable-read'
 import type { TradabilityMap } from '@/lib/tradability'
 import { useTradable } from '@/lib/use-tradable'
+import type { TicketSide } from '@/lib/order-ticket'
 
 /** Where an unknown /t/<symbol> points: one of each family. */
 const UNKNOWN_SYMBOL_PICKS = ['AAPL', 'ETH', 'HYPE'] as const
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
+/** The tabs the chart shows on; everywhere else it parks (mounted, hidden). */
+export const CHART_TABS: readonly MarketTab[] = ['overview', 'chart']
+export const chartShowsOn = (tab: MarketTab): boolean => CHART_TABS.includes(tab)
+/** The rail docks (and the ticket moves into it) from this viewport width — markets.css's breakpoint. */
+const RAIL_DOCK_MIN_PX = 1024
+const compactNumber = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
 
 type FsDoc = Document & { webkitExitFullscreen?: () => Promise<void>; webkitFullscreenElement?: Element | null }
 type FsEl = HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> }
@@ -125,6 +147,10 @@ export default function SymbolPage({
     }
     syncMarketTab(tab)
   }, [tab])
+  const showChart = chartShowsOn(tab)
+  // A build or an ask that lands in the chart's dock brings a chart tab back
+  // first (the dock parks with the chart off Overview / Chart).
+  const showAChartTab = useCallback(() => setTab((t) => (chartShowsOn(t) ? t : 'overview')), [])
 
   // ── Compare: ?vs=<symbol> (MK2) — same URL discipline as ?tab= ──
   const [vs, setVs] = useState<string | null>(initialVs)
@@ -170,6 +196,7 @@ export default function SymbolPage({
     const { setDock } = useAskDoor.getState()
     setDock((draft, opts) => {
       setAskOpen(true)
+      showAChartTab()
       setDoorAsk({ text: (draft ?? '').trim(), send: !!opts?.send, ...(opts?.mcps?.length ? { mcps: opts.mcps } : {}), at: Date.now() })
       requestAnimationFrame(() => {
         const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -177,7 +204,7 @@ export default function SymbolPage({
       })
     })
     return () => useAskDoor.getState().setDock(null)
-  }, [hasPair])
+  }, [hasPair, showAChartTab])
   const toggleAsk = useCallback(() => {
     setAskOpen((o) => {
       try {
@@ -188,6 +215,14 @@ export default function SymbolPage({
       return !o
     })
   }, [])
+  // The floating ask pill steps aside while this cockpit is on screen: the
+  // right column carries the ⌘K trigger and the ticket's own ask row
+  // (markets.css hides the pill from the rail-docking width on this flag).
+  useEffect(() => {
+    if (!hasPair) return
+    document.documentElement.setAttribute('data-sym-cockpit', '')
+    return () => document.documentElement.removeAttribute('data-sym-cockpit')
+  }, [hasPair])
 
   // ── The send door: every chip on the page runs in the app ──
   // (2026-09-16, Nate: "Buy AMAT goes nowhere… should it open the app page
@@ -228,6 +263,9 @@ export default function SymbolPage({
     },
     [act],
   )
+  // The right column's ask row: a question or a trade with an if, into the
+  // same conversation (the dock brings a chart tab back by itself).
+  const sayHere = buildHere
   // A chip is a real link (the /chat prefill: no-JS, a new tab); a plain
   // click sends through the act door instead.
   const sendOnClick = (ask: string) => (e: ReactMouseEvent<HTMLAnchorElement>) => {
@@ -244,6 +282,14 @@ export default function SymbolPage({
   // lines loaded back onto the chart ("copy these lines to my chart").
   const [chartState, setChartState] = useState<ChartState | null>(null)
   const [loadedState, setLoadedState] = useState<ChartState | null>(null)
+  // A post's lines loaded back onto the chart show the chart.
+  const loadChart = useCallback(
+    (s: ChartState) => {
+      setLoadedState(s)
+      showAChartTab()
+    },
+    [showAChartTab],
+  )
   // The connected wallet's own fills on this symbol (VIZ's glyphs + receipt
   // legend under the chart). Public by address; no wallet → no read.
   const { walletAddress } = useSession()
@@ -268,6 +314,15 @@ export default function SymbolPage({
   const fallbackSell = `Sell $50 of ${sym}`
   // What's on screen (VIZ's onViewport, bar open times) — AskChart's context.
   const [viewport, setViewport] = useState<{ from: number; to: number; tf: ChartTf } | null>(null)
+  // The right column's ticket: the side the page wants shown (YOU HOLD aims
+  // Sell); null = the lead side. Resets per symbol.
+  const [railSide, setRailSide] = useState<TicketSide | null>(null)
+  useEffect(() => setRailSide(null), [sym])
+  const onHeld = useCallback(() => {
+    setRailSide('sell')
+    // No rail on a phone: the Trade tab carries the position and its Sell.
+    if (window.innerWidth < RAIL_DOCK_MIN_PX) setTab('trade')
+  }, [])
 
   // ── Session line ticks (a stock page left open crosses the bell) ──
   const [now, setNow] = useState<Date>(() => new Date())
@@ -276,7 +331,7 @@ export default function SymbolPage({
     return () => clearInterval(id)
   }, [])
   const session = sessionState(pair, now)
-  // 24h range (hourly series) for the header's range bar.
+  // 24h stats (hourly series) for the strip: high · low · vol · the range bar.
   const day = useDayStats(pair ? pair.symbol : null)
   const rangeAt = rangePosition(day?.low, day?.high, stats?.last)
 
@@ -318,6 +373,7 @@ export default function SymbolPage({
   const markWhere = pair?.source === 'robinhood' ? { chain: 'Robinhood Chain' } : {}
   const feed = (stats?.feed ?? pair?.source ?? null) as ChartFeed | null
   const feedLabel = feed ? (CHART_FEED_LABELS[feed] ?? feed) : ''
+  const tapeState = session.tape ? (session.tape.open ? 'open' : 'closed') : 'none'
 
   const expandButton = (
     <button
@@ -331,77 +387,160 @@ export default function SymbolPage({
       {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
     </button>
   )
+  // Compare is a chart control: it rides the chart's own bar, beside the
+  // expand toggle (it used to be a header pill).
+  const chartControls = (
+    <>
+      {pair && <CompareControl symbol={sym} vs={vs} onChange={setVs} />}
+      {expandButton}
+    </>
+  )
 
   // Two grid items for the page's .mkt-frame (the /markets frame): the symbol
-  // column and the watchlist rail, docked right from the nav down.
+  // column and the right column (ticket · watchlist · About), docked right
+  // from the nav down.
   return (
     <>
-      <main className="sym" data-symbol={sym} data-vs={vs ?? undefined}>
-        {/* ── Header ── (its seat is the size container the two-column
-            layout reads, markets.css: an element can't query itself, and
-            .sym must stay a plain block for the full-screen chart) */}
-        <div className="sym__headseat">
-        <header className="sym__head sym__head--mk2">
-          <div className="sym__id">
-            <TokenIcon symbol={sym} size={40} {...markWhere} />
-            <div className="sym__idtext min-w-0">
-              <div className="sym__titlerow">
-                <h1 className="sym__name truncate">{name}</h1>
-                <span className="sym__sym mono">{sym}</span>
-                <span className="sym__venue mono">{unknown ? 'Not listed' : venueLabel(pair)}</span>
-              </div>
-              <div className="sym__meta">
-                <p className="sym__session mono" data-tape={session.tape ? (session.tape.open ? 'open' : 'closed') : 'none'}>
-                  <span className={`mk-dot${session.tape ? (session.tape.open ? ' mk-dot--open' : ' mk-dot--closed') : ' mk-dot--always'}`} aria-hidden />
-                  {unknown ? 'Not a ticker we carry' : session.line}
-                </p>
-                {pair && <HeldPill symbol={sym} last={stats?.last ?? null} onClick={() => setTab('trade')} />}
-                {pair && <CompareControl symbol={sym} vs={vs} onChange={setVs} />}
+      <main className="sym sym--cockpit" data-symbol={sym} data-vs={vs ?? undefined} data-tab={tab} data-chart={showChart ? 'shown' : 'parked'}>
+        {/* ── The strip ── (its seat is the size container the folds read,
+            markets.css: an element can't query itself, and .sym must stay a
+            plain block for the full-screen chart) */}
+        <div className="sym__headseat sym__stripseat">
+          <header className="sym__head sym__strip" data-seat="strip">
+            <div className="sym__id">
+              <TokenIcon symbol={sym} size={32} {...markWhere} />
+              <div className="sym__idtext min-w-0">
+                <div className="sym__titlerow">
+                  <h1 className="sym__name truncate">{name}</h1>
+                  <span className="sym__sym mono">{sym}</span>
+                </div>
+                <div className="sym__meta">
+                  <span className="sym__venue mono" data-tape={tapeState} title={unknown ? undefined : session.line}>
+                    <span className={`mk-dot${session.tape ? (session.tape.open ? ' mk-dot--open' : ' mk-dot--closed') : ' mk-dot--always'}`} aria-hidden />
+                    {unknown ? 'Not listed' : venueLabel(pair)}
+                    {pair && !unknown && <span className="sym__venue-tail">{session.tape ? (session.tape.open ? ' · open' : ' · closed') : ' · 24/7'}</span>}
+                  </span>
+                  {/* The session line in full — the words a reader and the harness get; the strip shows the dot + venue. */}
+                  <p className="sym__session mono sr-only" data-tape={tapeState}>
+                    {unknown ? 'Not a ticker we carry' : session.line}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="sym__quote">
-            {pair && stats?.last != null ? (
-              <>
-                <span className="sym__last mono">${fmtPrice(stats.last)}</span>
-                <span className={`sym__chg mono mkt-chg ${chgClass}`}>{chgLabel}</span>
-                <span className="sym__feed mono">{feedLabel}</span>
-              </>
-            ) : pair ? (
-              <span className="sym__feed mono">{statsLate ? `${feedLabel} didn’t answer · retrying` : `loading ${feedLabel} candles…`}</span>
-            ) : unknown ? null : (
-              // An unknown ticker already wears "Not listed" in the title row;
-              // a second copy in the quote slot read as a stutter (POLISH, pre-gtm r1).
-              <span className="sym__feed mono">No live chart yet</span>
-            )}
-            {pair && day && rangeAt !== null && (
-              <div className="mk-range" data-range-at={rangeAt.toFixed(3)} title={`24h range: $${fmtQuotePrice(day.low)} – $${fmtQuotePrice(day.high)}`}>
-                <span className="mk-range__lo mono">${fmtQuotePrice(day.low)}</span>
-                <span className="mk-range__bar" aria-hidden>
-                  <span className="mk-range__fill" style={{ width: `${(rangeAt * 100).toFixed(1)}%` }} />
-                  <span className="mk-range__tick" style={{ left: `${(rangeAt * 100).toFixed(1)}%` }} />
-                </span>
-                <span className="mk-range__hi mono">${fmtQuotePrice(day.high)}</span>
-                <span className="mk-range__k mono">24H RANGE</span>
+            <span className="sym__sep" aria-hidden />
+            <div className="sym__quote">
+              {pair && stats?.last != null ? (
+                <>
+                  <span className="sym__last mono">${fmtPrice(stats.last)}</span>
+                  <span className={`sym__chg mono mkt-chg ${chgClass}`}>{chgLabel}</span>
+                  <span className="sym__feed mono">{feedLabel}</span>
+                </>
+              ) : pair ? (
+                <span className="sym__feed mono">{statsLate ? `${feedLabel} didn’t answer · retrying` : `loading ${feedLabel} candles…`}</span>
+              ) : unknown ? null : (
+                // An unknown ticker already wears "Not listed" in the title row;
+                // a second copy in the quote slot read as a stutter (POLISH, pre-gtm r1).
+                <span className="sym__feed mono">No live chart yet</span>
+              )}
+            </div>
+            {pair && day && (
+              <div className="sym__stats" aria-label="Last 24 hours">
+                <span className="sym__sep" aria-hidden />
+                <div className="sym__st sym__st--hi">
+                  <span className="sym__st-k mono">24H HIGH</span>
+                  <span className="sym__st-v mono">${fmtQuotePrice(day.high)}</span>
+                </div>
+                <div className="sym__st sym__st--lo">
+                  <span className="sym__st-k mono">24H LOW</span>
+                  <span className="sym__st-v mono">${fmtQuotePrice(day.low)}</span>
+                </div>
+                {day.volume > 0 && (
+                  <div className="sym__st sym__st--vol">
+                    <span className="sym__st-k mono">24H VOL</span>
+                    <span className="sym__st-v mono">
+                      {compactNumber.format(day.volume)} {sym}
+                    </span>
+                  </div>
+                )}
+                {rangeAt !== null && (
+                  <div className="sym__st sym__st--range">
+                    <div className="mk-range" data-range-at={rangeAt.toFixed(3)} title={`24h range: $${fmtQuotePrice(day.low)} – $${fmtQuotePrice(day.high)}`}>
+                      <span className="mk-range__lo mono">${fmtQuotePrice(day.low)}</span>
+                      <span className="mk-range__bar" aria-hidden>
+                        <span className="mk-range__fill" style={{ width: `${(rangeAt * 100).toFixed(1)}%` }} />
+                        <span className="mk-range__tick" style={{ left: `${(rangeAt * 100).toFixed(1)}%` }} />
+                      </span>
+                      <span className="mk-range__hi mono">${fmtQuotePrice(day.high)}</span>
+                      <span className="mk-range__k mono">24H RANGE</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-          </div>
-          {/* The act row: EXEC's ExecStrip in a MARKETS-owned seat (the seat is
-              what the harness pins; the slot's body is theirs). */}
-          {pair && (
-            <div className="sym__exec" data-seat="ExecStrip">
-              <ExecStrip symbol={sym} pair={pair} onAsk={act} onBuild={buildHere} last={stats?.last ?? null} />
-            </div>
-          )}
-          {pair && <GuideSeat surface="symbol" symbol={sym} ask={composeAsk(pair, 'buy', { usd: 25 })} />}
-        </header>
+            <span className="sym__grow" aria-hidden />
+            {pair && <HeldPill symbol={sym} last={stats?.last ?? null} onClick={onHeld} />}
+          </header>
         </div>
 
-        {/* ── Chart (always mounted; the tabs never unmount it) ── */}
-        <div ref={shellRef} className={expanded ? 'tchart sym__chart tchart--expanded' : 'tchart sym__chart'}>
+        {/* ── Tabs, right under the strip. The nav is a direct child of .sym so
+            its phone-side sticky range is the whole column; the zero-height
+            sentinel before it marks where it sits when unstuck. ── */}
+        <span className="sym__navtop" aria-hidden />
+        <nav ref={tabsRef} className="sym__tabs" role="tablist" aria-label="Symbol sections" style={unknown ? { display: 'none' } : undefined}>
+            {MARKET_TABS.map((t) => (
+              <a
+                key={t.tab}
+                href={t.tab === DEFAULT_MARKET_TAB ? `/t/${sym}` : `/t/${sym}?tab=${t.tab}`}
+                role="tab"
+                aria-selected={tab === t.tab}
+                className={`sym__tab ${tab === t.tab ? 'is-on' : ''}`}
+                onClick={(e) => {
+                  // A real link (crawlable, middle-clickable); a plain click switches in place.
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+                  e.preventDefault()
+                  setTab(t.tab)
+                  // On a phone the strip sticks under the top bar (markets.css):
+                  // a switch made while it's stuck lands the new tab at its own
+                  // top, the way a native tab strip does, instead of mid-body.
+                  // scrollIntoView on a STUCK sticky is a no-op (its box already
+                  // sits at the line), so scroll by where the strip would be
+                  // unstuck: the sentinel right before it (.sym__navtop).
+                  requestAnimationFrame(() => {
+                    const el = tabsRef.current
+                    const mark = el?.previousElementSibling
+                    if (!el || !mark) return
+                    const cs = getComputedStyle(el)
+                    if (cs.position !== 'sticky') return
+                    const stuckAt = parseFloat(cs.top) || 0
+                    const natural = mark.getBoundingClientRect().top
+                    if (natural < stuckAt - 1) scrollAppTo(appScrollTop() + natural - stuckAt)
+                  })
+                }}
+                data-tab={t.tab}
+              >
+                {t.label}
+              </a>
+            ))}
+          </nav>
+
+        {/* The act row: EXEC's ExecStrip in a MARKETS-owned seat (the seat is
+            what the harness pins; the slot's body is theirs). THE PHONE's chips
+            + ticket: hidden by markets.css from the rail-docking width, where
+            the right column's ticket takes over. */}
+        {pair && (
+          <div className="sym__exec" data-seat="ExecStrip">
+            <ExecStrip symbol={sym} pair={pair} onAsk={act} onBuild={buildHere} last={stats?.last ?? null} autoOpen={false} />
+          </div>
+        )}
+        {/* The guide's one hint card: under the chips on a phone, right under
+            the tabs on a desktop (where the chips hide). */}
+        {pair && <GuideSeat surface="symbol" symbol={sym} ask={composeAsk(pair, 'buy', { usd: 25 })} />}
+
+        {/* ── Chart: always mounted; shown on Overview + Chart, parked elsewhere ── */}
+        <div ref={shellRef} className={`tchart sym__chart${expanded ? ' tchart--expanded' : ''}${showChart ? '' : ' is-parked'}`} data-chart-tab={tab} aria-hidden={showChart ? undefined : true}>
           <div className="tchart__canvas">
             {pair ? (
-              <ChartMount symbol={sym} height="fill" defaultTf={initialTf} urlTf onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} compare={vs} fills={fills} battlefield />
+              <ChartMount symbol={sym} height="fill" defaultTf={initialTf} urlTf onStats={setStats} controlsRight={chartControls} resizeKey={`${expanded}:${showChart}`} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} compare={vs} fills={fills} battlefield />
             ) : unknown ? (
               <div className="flex flex-1 items-center justify-center">
                 <div className="mkt-card max-w-md text-center" data-standing="unknown">
@@ -448,9 +587,9 @@ export default function SymbolPage({
           </div>
         </div>
 
-        {/* ── Ask the chart (AI's AskChart slot), docked under the chart ── */}
+        {/* ── Ask the chart (AI's AskChart slot), docked under the chart; parks with it ── */}
         {pair && (
-          <section ref={askDockRef} className={`mk-askdock${askOpen ? ' is-open' : ''}`} data-askchart={askOpen ? 'open' : 'closed'} aria-label="Ask about this chart">
+          <section ref={askDockRef} className={`mk-askdock${askOpen ? ' is-open' : ''}${showChart ? '' : ' is-parked'}`} data-askchart={askOpen ? 'open' : 'closed'} aria-label="Ask about this chart" aria-hidden={showChart ? undefined : true}>
             <button type="button" className="mk-askdock__bar" onClick={toggleAsk} aria-expanded={askOpen}>
               <span className="mk-askdock__k mono">ASK THE CHART</span>
               <span className="mk-askdock__hint">{askOpen ? 'What is on screen is the context — and a trade builds right here.' : `Ask about ${sym}, or say a trade — it builds right here for your wallet to sign.`}</span>
@@ -458,62 +597,26 @@ export default function SymbolPage({
             </button>
             {askOpen && (
               <div className="mk-askdock__body">
-                <AskChart symbol={sym} pair={pair} chartState={chartState ?? undefined} visible={viewport ? { from: viewport.from, to: viewport.to } : undefined} onAsk={act} onChartState={setLoadedState} incoming={doorAsk} onSigned={onTicketSigned} />
+                <AskChart symbol={sym} pair={pair} chartState={chartState ?? undefined} visible={viewport ? { from: viewport.from, to: viewport.to } : undefined} onAsk={act} onChartState={loadChart} incoming={doorAsk} onSigned={onTicketSigned} />
               </div>
             )}
           </section>
         )}
 
-        {/* ── Tabs ── */}
+        {/* ── The tab's body (the Chart tab is the chart itself) ── */}
         <div className="sym__main">
-          <nav ref={tabsRef} className="sym__tabs" role="tablist" aria-label="Symbol sections" style={unknown ? { display: 'none' } : undefined}>
-            {MARKET_TABS.map((t) => (
-              <a
-                key={t.tab}
-                href={t.tab === DEFAULT_MARKET_TAB ? `/t/${sym}` : `/t/${sym}?tab=${t.tab}`}
-                role="tab"
-                aria-selected={tab === t.tab}
-                className={`sym__tab ${tab === t.tab ? 'is-on' : ''}`}
-                onClick={(e) => {
-                  // A real link (crawlable, middle-clickable); a plain click switches in place.
-                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
-                  e.preventDefault()
-                  setTab(t.tab)
-                  // On a phone the strip sticks under the top bar (markets.css):
-                  // a switch made while it's stuck lands the new tab at its own
-                  // top, the way a native tab strip does, instead of mid-body.
-                  // scrollIntoView on a STUCK sticky is a no-op (its box already
-                  // sits at the line), so scroll by where the strip would be
-                  // unstuck: the top of its parent (.sym__main).
-                  requestAnimationFrame(() => {
-                    const el = tabsRef.current
-                    const main = el?.parentElement
-                    if (!el || !main) return
-                    const cs = getComputedStyle(el)
-                    if (cs.position !== 'sticky') return
-                    const stuckAt = parseFloat(cs.top) || 0
-                    const natural = main.getBoundingClientRect().top
-                    if (natural < stuckAt - 1) scrollAppTo(appScrollTop() + natural - stuckAt)
-                  })
-                }}
-                data-tab={t.tab}
-              >
-                {t.label}
-              </a>
-            ))}
-          </nav>
           <div className="sym__body" data-tab={tab}>
             {pair ? (
               tab === 'overview' ? (
                 <OverviewTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} last={stats?.last ?? null} />
-              ) : tab === 'news' ? (
+              ) : tab === 'chart' ? null : tab === 'news' ? (
                 <NewsTab symbol={sym} pair={pair} />
               ) : tab === 'community' ? (
-                <CommunityTab symbol={sym} pair={pair} chartState={chartState} onAsk={onChartAsk} onLoadChart={setLoadedState} />
+                <CommunityTab symbol={sym} pair={pair} chartState={chartState} onAsk={onChartAsk} onLoadChart={loadChart} />
               ) : tab === 'technicals' ? (
                 <TechnicalsTab symbol={sym} pair={pair} initialTf={initialTf} onAsk={onChartAsk} />
               ) : (
-                <TradeTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} onBuild={buildHere} last={stats?.last ?? null} />
+                <TradeTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} last={stats?.last ?? null} />
               )
             ) : unknown ? null : (
               <section className="mkt-card">
@@ -525,8 +628,9 @@ export default function SymbolPage({
         </div>
       </main>
 
-      {/* ── Rail: the /markets watchlist, then the symbol card pinned under it ── */}
-      <MarketsSide label="Watchlist and symbol details">
+      {/* ── The right column: the ticket leads, the watchlist follows, the symbol card pinned under it ── */}
+      <MarketsSide label="Order ticket, watchlist and symbol details">
+        {pair && !unknown && <RailTicket symbol={sym} pair={pair} last={stats?.last ?? null} side={railSide} onSide={setRailSide} onBuild={buildHere} onSay={sayHere} />}
         <WatchlistSlot current={unknown ? undefined : sym} onAsk={onChartAsk} />
         {unknown ? null : <SymbolCardSlot symbol={sym} pair={pair} feed={feed} />}
       </MarketsSide>

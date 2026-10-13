@@ -147,7 +147,10 @@ export function orderTicketPins(check: Check): void {
       canSellAsk('limit order: sell 2.5 UNI for at least 27.5 USDC on Base', heldUniEth) === false && canSellAsk('limit order: sell 2.5 UNI for at least 27.5 USDC on Ethereum', heldUniEth) === true &&
       canSellAsk('Buy $25 of UNI', null) === true && canTradeAsk('limit order: buy 2.7778 UNI for at most 25 USDC on Ethereum', {}) === true)
   check('order ticket: a side that leaves the honest set falls back to the first side still offered, and nothing when none is',
-    fallbackSide('sell', ['buy', 'long']) === 'buy' && fallbackSide('long', ['buy', 'long']) === 'long' && fallbackSide('sell', []) === null && TICKET_AUTO_OPEN_MIN_PX === 900 && /under the chart/.test(TICKET_SENT_NOTE.strip) && /above the tabs/.test(TICKET_SENT_NOTE.card))
+    // RE-PINNED 2026-10-13 (cockpit): both seats build under the chart now —
+    // the card seat is the right column's ticket, and the chart sits under
+    // the tabs, so "above the tabs" stopped being true.
+    fallbackSide('sell', ['buy', 'long']) === 'buy' && fallbackSide('long', ['buy', 'long']) === 'long' && fallbackSide('sell', []) === null && TICKET_AUTO_OPEN_MIN_PX === 900 && /under the chart/.test(TICKET_SENT_NOTE.strip) && /under the chart/.test(TICKET_SENT_NOTE.card))
 
   // ── 6. The wiring the page pins ──────────────────────────────────────────
   const es = rf('components/markets/trade/ExecStrip.tsx')
@@ -158,9 +161,13 @@ export function orderTicketPins(check: Check): void {
   check('order ticket (wired): the header strip\'s chips OPEN the ticket on their side (aria-pressed on the open one, the /chat prefill href kept as the no-JS fallback) and the ticket sends through the page\'s BUILD door, the act door when there is none; the server renders chips only',
     es.includes("import OrderTicket from '@/components/markets/trade/OrderTicket'") && es.includes('aria-pressed={shown === a.side}') && es.includes('onSend={onBuild ?? onAsk}') && es.includes('data-ticket={shown ?? undefined}') &&
       es.includes('const [ticket, setTicket] = useState<TicketSide | null>(null)') && es.includes('TICKET_AUTO_OPEN_MIN_PX') && es.includes('pickOnClick(a.side)'))
-  check('order ticket (wired): SymbolPage hands both seats a build door that docks the sentence in Ask the chart\'s order ticket (lib/ask-door dock, send: true) and falls back to the act door; the Trade tab\'s order card IS the ticket (seat card) inside the pinned mkt-order section',
-    sp.includes('const dock = useAskDoor.getState().dock') && sp.includes('if (dock) dock(ask, { send: true })') && sp.includes('onBuild={buildHere} last={stats?.last ?? null} />') && (sp.match(/onBuild=\{buildHere\}/g) ?? []).length === 2 &&
-      tt.includes('seat="card"') && tt.includes('<section className="mkt-card mkt-order" aria-label={`Trade ${symbol}`}>') && tt.includes('onSend={onBuild ?? askText}') && tt.includes('const noOrder = sides.length === 0'))
+  // RE-PINNED 2026-10-13 (cockpit): the card seat moved from the Trade tab
+  // into the right column (RailTicket) — the Trade tab carries no ticket.
+  const rtk = rf('components/markets/trade/RailTicket.tsx')
+  check('order ticket (wired): SymbolPage hands both seats a build door that docks the sentence in Ask the chart\'s order ticket (lib/ask-door dock, send: true) and falls back to the act door; the right column\'s ticket IS the card seat (RailTicket, every tab) and the Trade tab carries none',
+    sp.includes('const dock = useAskDoor.getState().dock') && sp.includes('if (dock) dock(ask, { send: true })') && sp.includes('onBuild={buildHere} last={stats?.last ?? null} autoOpen={false} />') && (sp.match(/onBuild=\{buildHere\}/g) ?? []).length === 2 &&
+      sp.includes('<RailTicket symbol={sym} pair={pair} last={stats?.last ?? null} side={railSide} onSide={setRailSide} onBuild={buildHere} onSay={sayHere} />') &&
+      rtk.includes('seat="card"') && rtk.includes('onSend={onBuild}') && rtk.includes('data-slot="order-ticket"') && !tt.includes('OrderTicket') && tt.includes('aria-label={`Trade ${symbol}`} data-shut={shutSides.join(\'+\')}'))
   check('order ticket (wired): the form\'s box is a decimal keyboard, its button sends the composed sentence and nothing else, the live quote is the venue map\'s own read (never a build), and the CSS is one size container with 44px targets on touch',
     ot.includes('inputMode="decimal"') && ot.includes('onSend(out.ask)') && ot.includes("fetch(`/api/markets/routes?") && !ot.includes('/api/chat') && ot.includes('disabled={!out.ok || !allowed}') &&
       css.includes('.mkt-ticket { container: mkt-ticket / inline-size;') && css.includes('@container mkt-ticket (min-width: 640px)') && /@media \(hover: none\) \{\s*\.mkt-ticket__tab, \.mkt-ticket__preset, \.mkt-ticket__unit, \.mkt-ticket__px \{ min-height: 44px; \}/.test(css))
@@ -211,21 +218,21 @@ export function orderTicketPins(check: Check): void {
       rt.includes('const followed = followOrderSize(sharedSize, pair.symbol, sizeId)') && rt.includes('useState<number>(() => (followed ? (routeSizeView(followed.usd).preset ?? amountProp ?? DEFAULT_ROUTE_USD) : (amountProp ?? DEFAULT_ROUTE_USD)))') &&
       rt.includes('if (view.preset != null) setAmount(view.preset)') && rt.includes('if (live.leverage != null) setLeverage(Math.min(LEVERAGE_MAX, Math.max(1, live.leverage)))') && rt.includes('const live = followOrderSize(useOrderSize.getState().size, pair.symbol, sizeId) ?? followed') &&
       rt.includes('const next = orderSizeOf(pair.symbol, usd, null, sizeId)') && (rt.match(/publishSize\(/g) ?? []).length === 2 && rt.includes('const publishSize = (usd: number) => {'))
-  // The header: the quote under the logo, the act seat on the right (CSS
-  // only — the DOM order the harness pins is untouched).
+  // The header — THE COCKPIT (re-pinned 2026-10-13; the 2026-10-08 grid is
+  // gone): ONE line in a seat that is the size container (the chart stays
+  // outside it), the stats folding from the right by column width, the
+  // tabs right under it, the chart under the tabs on Overview + Chart only
+  // (parked, not unmounted, elsewhere), the act seat after the tabs (the
+  // phone's; hidden from the rail-docking width) and the ticket in the rail.
   const mk = rf('components/markets/markets.css')
-  const headBlock = mk.split('@container sym-head (min-width: 760px) {')[1]?.split('\n}')[0] ?? ''
-  check('order ticket (header): the symbol header sits in a seat that is the size container (the chart stays outside it) and, from 760px of column width, ONE grid whose rows run across both columns (re-pinned 2026-10-08) — the logo in its own gutter, title / quote / meta down the left, eyebrow / chips / ticket down the right on the same rows, the guide seat a full row under; the quote left-aligns there',
-    mk.includes('.sym__headseat { container: sym-head / inline-size; min-width: 0; }') && sp.includes('<div className="sym__headseat">') && sp.indexOf('<div className="sym__headseat">') < sp.indexOf('<header className="sym__head sym__head--mk2">') && !sp.includes('className="sym__headseat">\n        <div ref={shellRef}') && headBlock.includes('grid-template-areas: "logo . title . acta" "logo . quote . actb" ". . meta . actc";') && headBlock.includes('grid-template-rows: auto auto auto;') &&
-      // RE-PINNED 2026-10-08 (header grid): the rows run ACROSS both columns —
-      // the act seat's wrappers are `display: contents` and its eyebrow / chips /
-      // ticket are placed by area (acta / actb / actc), the logo hangs in its own
-      // gutter, the guide seat is row 4.
-      headBlock.includes('.sym__head--mk2 > .sym__quote { grid-area: quote; justify-content: start; align-self: start; }') &&
-      headBlock.includes('.sym__head--mk2 > .sym__id, .sym__head--mk2 > .sym__id > .sym__idtext, .sym__head--mk2 > .sym__exec, .sym__head--mk2 > .sym__exec > .sym__act { display: contents; }') &&
-      headBlock.includes('.sym__head--mk2 .sym__act > .mkt-ticket--strip { grid-area: actc; margin-top: 0; }') && sp.includes('<div className="sym__idtext min-w-0">') &&
-      headBlock.includes('.sym__head--mk2 > .guide-seat { grid-column: 1 / -1; grid-row: 4; margin-top: 0; }') && !sp.includes('sym__quote" style'),
-    `block=${headBlock.length}`)
+  check('order ticket (header): the symbol header is ONE strip in a seat that is the size container (the chart stays outside it) — identity · quote · 24h stats · YOU HOLD — whose stats fold from the right by column width (range < 1180, vol < 1000, high/low < 900); the tabs sit right under it with the chart under them, shown on Overview + Chart and parked (mounted, hidden) elsewhere; the act seat follows the tabs and hides from 1024px where the right column\'s ticket takes over',
+    mk.includes('.sym__stripseat { container: sym-strip / inline-size; min-width: 0; }') && sp.includes('<div className="sym__headseat sym__stripseat">') && sp.indexOf('<div className="sym__headseat sym__stripseat">') < sp.indexOf('<header className="sym__head sym__strip" data-seat="strip">') &&
+      !sp.includes('className="sym__headseat">\n        <div ref={shellRef}') && sp.includes('<div className="sym__idtext min-w-0">') && sp.indexOf('className="sym__id"') < sp.indexOf('className="sym__meta"') && sp.indexOf('className="sym__meta"') < sp.indexOf('className="sym__quote"') &&
+      sp.indexOf('className="sym__quote"') < sp.indexOf('className="sym__stats"') && sp.indexOf('className="sym__tabs"') < sp.indexOf('className="sym__exec"') && sp.indexOf('className="sym__exec"') < sp.indexOf('tchart sym__chart') &&
+      mk.includes('@container sym-strip (max-width: 1180px) { .sym__st--range { display: none; } }') && mk.includes('@container sym-strip (max-width: 1000px) { .sym__st--vol { display: none; } }') && mk.includes('@container sym-strip (max-width: 900px) { .sym__st--hi, .sym__st--lo, .sym__stats > .sym__sep { display: none; } }') &&
+      sp.includes("export const CHART_TABS: readonly MarketTab[] = ['overview', 'chart']") && sp.includes("${showChart ? '' : ' is-parked'}") && mk.includes('.sym .tchart.is-parked, .sym .mk-askdock.is-parked { display: none !important; }') &&
+      mk.includes('.sym--cockpit[data-tab="chart"] .tchart:not(.tchart--expanded) { height: clamp(540px, 74dvh, 820px); }') && /@media \(min-width: 1024px\) \{\s*\.mkt-frame--sym \.sym__exec \{ display: none; \}/.test(mk) && /@media \(max-width: 1023px\) \{\s*\.mkt-railticket \{ display: none; \}/.test(mk) &&
+      !sp.includes('sym__quote" style'))
   check('order ticket (column seat): between 420 and 640px of ticket width the size row is box + presets on one line, the estimate and the slider under (grid order, no named areas), the button keeps the row, and the × keeps the corner while the available line takes its own',
     css.includes('@container mkt-ticket (min-width: 420px) and (max-width: 639.98px) {') && css.includes('.mkt-ticket__size > .mkt-ticket__presets { order: 1; justify-content: flex-end; }') &&
       css.includes('.mkt-ticket__eq { order: 2; grid-column: 1 / -1; }') && (css.split('@container mkt-ticket (max-width: 639.98px) {')[1]?.split('\n}')[0] ?? '').includes('.mkt-ticket__x { margin-left: auto; }'))

@@ -369,5 +369,5 @@ export function fallbackSide(wanted: TicketSide, offered: readonly TicketSide[])
 /** The ticket's status line after a send — where the build lands. */
 export const TICKET_SENT_NOTE: Record<'strip' | 'card', string> = {
   strip: 'Sent — it builds in Ask the chart, under the chart. Your wallet signs it there.',
-  card: 'Sent — it builds in Ask the chart, above the tabs. Your wallet signs it there.',
+  card: 'Sent — it builds in Ask the chart, under the chart. Your wallet signs it there.',
 }
