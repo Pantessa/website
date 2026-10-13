@@ -38,6 +38,9 @@ export interface FeedHandlers {
   onRetract?: (venue: TapeVenue, block: number) => void
   /** connectTape says which transport it ended up reading. */
   onSource?: (source: TapeSource) => void
+  /** The relay's backfill (`backfill: true`): the prints it already held,
+   *  oldest first, before any live batch. */
+  onBackfill?: (fills: TapeFill[], sinceMs: number) => void
 }
 
 export interface TapeFeed {
@@ -200,14 +203,17 @@ export interface DuneTapeOptions {
   /** Narrow the relay to the markets given (the pulse, the battle); false
    *  = the firehose, every market the venues print (/live). */
   filter?: boolean
+  /** Ask for the prints the relay already holds first (a print frame). */
+  backfill?: boolean
 }
 
 const TAPE_VENUE_OF: Record<DuneVenueId, TapeVenue> = { hypercore: 'hyperliquid', lighter: 'lighter', 'lighter-robinhood': 'lighter-robinhood', 'dex-ethereum': 'dex', 'dex-base': 'dex', 'dex-arbitrum': 'dex' }
 
-function streamUrl(venues: readonly DuneVenueId[], markets: readonly string[] | null): string {
+function streamUrl(venues: readonly DuneVenueId[], markets: readonly string[] | null, backfill = false): string {
   const q = new URLSearchParams()
   q.set('venues', venues.join(','))
   if (markets && markets.length) q.set('markets', markets.join(','))
+  if (backfill) q.set('backfill', '1')
   return `${LIVE_STREAM_PATH}?${q.toString()}`
 }
 
@@ -245,7 +251,7 @@ export function openDuneTape(initial: readonly string[], handlers: FeedHandlers,
   const open = () => {
     if (closed) return
     handlers.onStatus(attempt === 0 ? 'connecting' : 'reconnecting', attempt === 0 ? undefined : `attempt ${attempt + 1}`)
-    const url = streamUrl(venues, filter ? markets : null)
+    const url = streamUrl(venues, filter ? markets : null, opts.backfill === true)
     let src: EventSource
     try {
       src = new EventSource(url)
@@ -269,6 +275,16 @@ export function openDuneTape(initial: readonly string[], handlers: FeedHandlers,
       if (e.type !== 'status') return
       venueStatus.set(e.venue, e.status)
       report()
+    })
+    src.addEventListener('backfill', (ev) => {
+      let e: LiveStreamEvent
+      try {
+        e = JSON.parse((ev as MessageEvent).data) as LiveStreamEvent
+      } catch {
+        return
+      }
+      if (e.type !== 'backfill') return
+      handlers.onBackfill?.(e.fills, e.sinceMs)
     })
     src.addEventListener('fills', (ev) => {
       let e: LiveStreamEvent

@@ -32,9 +32,10 @@ export const CHART_FEED_LABELS: Record<ChartFeed, string> = {
 
 import { ROBINHOOD_TICKER_SET } from '@/lib/robinhood-tickers'
 
-export type ChartTf = '1m' | '15m' | '1h' | '4h' | '1d'
+export type ChartTf = '1s' | '1m' | '15m' | '1h' | '4h' | '1d'
 
 export const CHART_TFS: { key: ChartTf; label: string }[] = [
+  { key: '1s', label: '1s' },
   { key: '1m', label: '1m' },
   { key: '15m', label: '15m' },
   { key: '1h', label: '1H' },
@@ -42,11 +43,26 @@ export const CHART_TFS: { key: ChartTf; label: string }[] = [
   { key: '1d', label: '1D' },
 ]
 
+/** A PRINT frame: bars built from the stream's executions (lib/chart-live),
+ *  not from a venue's candles — no venue serves it, the relay backfills it. */
+export const PRINT_TFS: readonly ChartTf[] = ['1s']
+export function isPrintTf(tf: ChartTf): boolean {
+  return PRINT_TFS.includes(tf)
+}
+
+/** The frames a venue's candles serve (everything but the print frames). */
+export const VENUE_TFS: { key: ChartTf; label: string }[] = CHART_TFS.filter((t) => !isPrintTf(t.key))
+
 /** The frames a source can draw: a tokenized stock's tape (Robinhood's
- *  5-minute historicals, Yahoo behind it) has no minute bar, so the 1m
- *  frame is a coin's and a perp's (2026-10-13, the live tail). */
+ *  5-minute historicals, Yahoo behind it) has no minute bar and no prints,
+ *  so 1s and 1m are a coin's and a perp's (2026-10-13, the live tail). */
 export function tfsForSource(source: ChartSource | null | undefined): { key: ChartTf; label: string }[] {
-  return source === 'robinhood' ? CHART_TFS.filter((t) => t.key !== '1m') : CHART_TFS
+  return source === 'robinhood' ? CHART_TFS.filter((t) => t.key !== '1m' && !isPrintTf(t.key)) : CHART_TFS
+}
+
+/** The frames the Technicals gauge reads: venue candles only. */
+export function technicalsTfs(source: ChartSource | null | undefined): { key: ChartTf; label: string }[] {
+  return tfsForSource(source).filter((t) => !isPrintTf(t.key))
 }
 
 /** The frame a token chart opens on: the day (Nate, 2026-09-16). The chart

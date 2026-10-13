@@ -26,7 +26,7 @@ import type { DuneVenueId } from '@/lib/dune'
 import type { TapeFill } from '@/lib/tape'
 
 /** The frames whose tail follows the prints. */
-export const LIVE_TAIL_TFS: readonly ChartTf[] = ['1m', '15m', '1h']
+export const LIVE_TAIL_TFS: readonly ChartTf[] = ['1s', '1m', '15m', '1h']
 
 export interface ChartLiveFeed {
   venues: DuneVenueId[]
@@ -99,13 +99,36 @@ export function printOf(f: Pick<TapeFill, 'at' | 'price' | 'size'>): Print {
   return { at: f.at, price: f.price, size: f.size }
 }
 
+/**
+ * A PRINT frame's bars (1s): the whole series from the prints, oldest
+ * first — the relay's backfill (the last minutes it already held) plus
+ * every live print since. A second with no print is no bar: the engine
+ * draws the gap, never a flat invented candle.
+ */
+export function barsFromPrints(prints: readonly Print[], tfSec: number): Candle[] {
+  const sorted = [...prints].filter((p) => p.price > 0 && Number.isFinite(p.at)).sort((a, b) => a.at - b.at)
+  const out: Candle[] = []
+  for (const p of sorted) {
+    const r = applyPrint(out[out.length - 1] ?? null, p, tfSec)
+    if (!r) continue
+    if (r.fresh) out.push(r.bar)
+    else out[out.length - 1] = r.bar
+  }
+  return out
+}
+
+/** How much of a print frame the relay hands a new viewer: the minutes it
+ *  already holds (lib/dune LIVE_BACKFILL_MS). A cold instance holds less and
+ *  the frame builds as you watch — said in the foot. */
+export const PRINT_KEEP_MS = 5 * 60_000
+
 /** The pill's words. */
 export function tailWords(status: 'idle' | 'connecting' | 'live' | 'reconnecting' | 'unconfigured' | 'closed', feed: ChartLiveFeed | null, tf: ChartTf): string {
   if (!feed) return 'polled'
   if (!LIVE_TAIL_TFS.includes(tf)) return 'polled · prints on 1m–1H'
   switch (status) {
     case 'live':
-      return `${feed.label} · live`
+      return tf === '1s' ? `${feed.label} · live · bars built from prints` : `${feed.label} · live`
     case 'connecting':
     case 'idle':
       return `${feed.label} · connecting`
