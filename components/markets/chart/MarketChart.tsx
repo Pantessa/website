@@ -50,7 +50,7 @@ import { openDuneTape, type FeedStatus } from '@/lib/tape-feed'
 import { newLineId, serializeChartState, type ChartLine, type ChartState } from '@/lib/chart-state'
 import { composeLineActions, composeZoneActions, missingActionNote, type LineActionOffer } from '@/lib/chart-actions'
 import { bollinger, ema, hasVolume, mergeHistory, onWindow, OVERLAYS, prependHistory, sma, vwap, type LinePoint, type OverlayKey } from '@/lib/chart-indicators'
-import { clampToFirstBar, wantsOlderBars } from '@/lib/chart-viewport'
+import { PRINT_BAR_SPACING, clampToFirstBar, engineRightOffset, fitMarginBars, printOpeningView, wantsOlderBars } from '@/lib/chart-viewport'
 import { equitySession, extendedRuns, FRAME_SEC, sessionsApply, type EquitySession } from '@/lib/chart-sessions'
 import { poolPremiumPct, type PoolPrice } from '@/lib/pool-price-shape'
 import { fmtPrice, type ChartStats } from '@/components/CandleChart'
@@ -331,11 +331,19 @@ export default function MarketChart({
   const wallPxRef = useRef(0)
   wallPxRef.current = wallOn && wallStatus?.active ? wallStatus.px : 0
   const marginRef = useRef(RIGHT_OFFSET)
+  const drawnRef = useRef(0) // bars in the engine's series right now
   const syncMargin = useCallback(() => {
     const chart = chartRef.current
     if (!chart) return
-    const want = marginBarsFor(wallPxRef.current, chart.timeScale().options().barSpacing, RIGHT_OFFSET)
-    if (want === marginRef.current) return
+    const ts = chart.timeScale()
+    const want = marginBarsFor(wallPxRef.current, ts.options().barSpacing, RIGHT_OFFSET)
+    // The memory alone lied: the engine drops an offset written in the same
+    // frame as a range write (the guard's fit, the opening view, a zoom key),
+    // and the Wall's margin stayed at a zoomed-out count for good
+    // (2026-10-13). Ask the engine what it holds before trusting the memory.
+    const view = ts.getVisibleLogicalRange()
+    const held = view ? engineRightOffset(view, drawnRef.current) : null
+    if (want === marginRef.current && (held === null || Math.abs(held - want) < 1)) return
     marginRef.current = want
     chart.applyOptions({ timeScale: { rightOffset: want } })
   }, [])
@@ -478,7 +486,6 @@ export default function MarketChart({
   // (clampToFirstBar), and while less than a screen of held bars sits left
   // of the view the chart asks for an older page (wantsOlderBars). The why
   // is in lib/chart-viewport.
-  const drawnRef = useRef(0) // bars in the engine's series right now
   const loadOlderRef = useRef<() => Promise<void>>(async () => {})
   const guardQueuedRef = useRef(false)
   // The visible window as bar open times, once per animation frame at most.
@@ -512,7 +519,22 @@ export default function MarketChart({
       const ts = chart.timeScale()
       const view = ts.getVisibleLogicalRange()
       if (!view) return
-      const clamped = clampToFirstBar(view, drawn, marginRef.current)
+      // A print frame holds the relay's minutes and nothing older: nothing
+      // to page, and a zoom-out past its first print shows the time before
+      // it EMPTY — never a fit onto a handful of bars (lib/chart-viewport
+      // printOpeningView). The right edge is the engine's.
+      if (isPrintTf(tfRef.current)) {
+        emitViewport(view)
+        return
+      }
+      let clamped = clampToFirstBar(view, drawn, marginRef.current)
+      if (clamped && clamped.to === drawn - 1 + marginRef.current) {
+        // The fit: every held bar plus the Wall's room at the FITTED spacing
+        // (fitMarginBars), not at the zoomed-out one the view is leaving.
+        const margin = fitMarginBars(drawn, RIGHT_OFFSET, wallPxRef.current, ts.width())
+        marginRef.current = margin
+        clamped = { from: 0, to: drawn - 1 + margin }
+      }
       if (clamped) ts.setVisibleLogicalRange({ from: clamped.from as Logical, to: clamped.to as Logical })
       if (wantsOlderBars(clamped ?? view, drawn)) void loadOlderRef.current()
       emitViewport(clamped ?? view)
@@ -954,9 +976,20 @@ export default function MarketChart({
     drawnRef.current = bars.length
     const key = `${symbol}:${tf}`
     if (fitOnceRef.current !== key) {
+      const ts = chart.timeScale()
       const older = bars.length - candles.length
-      if (older > 0) chart.timeScale().setVisibleLogicalRange({ from: older as Logical, to: (bars.length - 1 + marginRef.current) as Logical })
-      else chart.timeScale().fitContent()
+      if (isPrintTf(tf)) {
+        // A print frame opens at PRINT_BAR_SPACING with the newest bar at the
+        // right, however few bars the ring holds — fitContent() on the first
+        // print froze one bar across the plot (lib/chart-viewport).
+        const margin = marginBarsFor(wallPxRef.current, PRINT_BAR_SPACING, RIGHT_OFFSET)
+        const open = printOpeningView(bars.length, margin, ts.width())
+        if (open) {
+          marginRef.current = margin
+          ts.setVisibleLogicalRange({ from: open.from as Logical, to: open.to as Logical })
+        }
+      } else if (older > 0) ts.setVisibleLogicalRange({ from: older as Logical, to: (bars.length - 1 + marginRef.current) as Logical })
+      else ts.fitContent()
       fitOnceRef.current = key
     }
     setGeomTick((n) => n + 1)

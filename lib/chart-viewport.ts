@@ -20,7 +20,28 @@
 //     in bars when it can, and fits every held bar (plus the right margin)
 //     when it is wider than all of them — so once the feed has nothing older,
 //     the zoom-out stops with the candles spanning the plot.
+//
+//  Two more rules (2026-10-13, Nate on /t/ETH?tf=1s: "I can't seem to zoom
+//  out"):
+//
+//   · printOpeningView — a PRINT frame (1s: bars built from the relay's
+//     prints) opens at PRINT_BAR_SPACING per bar with the newest bar at the
+//     right, whatever it holds. It used to open on fitContent(): a fit of
+//     the FIRST print — one bar across the whole plot — and the engine keeps
+//     that spacing as bars arrive, so two bars filled 1,900 px and a readable
+//     chart sat fifty wheel notches away. The clamp never runs on a print
+//     frame either: there is nothing older to page, and a zoom-out past the
+//     first print shows the time before it empty, which is the truth.
+//   · fitMarginBars — the right margin a FIT carries for the Wall's pixels,
+//     solved at the fitted spacing. The margin is a bar count in the engine;
+//     counted at a zoomed-out spacing it was hundreds of bars, the fit
+//     included them, and the candles landed in a 58 px sliver at the left of
+//     an empty plot — and stayed there, because the engine drops an offset
+//     written in the same frame as a range write and the margin sync trusted
+//     its own memory (engineRightOffset is what it reads now).
 // ─────────────────────────────────────────────────────────────────────────
+
+import { marginBarsFor } from '@/lib/wall'
 
 export interface LogicalView {
   from: number
@@ -49,4 +70,47 @@ export function clampToFirstBar(view: LogicalView, bars: number, rightOffset: nu
 export function wantsOlderBars(view: LogicalView, bars: number): boolean {
   if (bars <= 0) return false
   return view.from < Math.max(view.to - view.from, PRELOAD_MIN_BARS)
+}
+
+/** A print frame's opening density: the engine's own default (what Reset
+ *  restores) — a second bar every 6 px, so a 900 px plot holds 2½ minutes of
+ *  prints and a 1,500 px plot four. */
+export const PRINT_BAR_SPACING = 6
+
+/**
+ * The view a print frame opens on: the newest bar at the right edge (plus
+ * the margin) at `barSpacing` per bar, however few bars the ring holds. The
+ * engine turns a logical range into a spacing of width / (to − from + 1), so
+ * `from` goes negative on a cold ring on purpose — the time before the relay
+ * held prints is empty, not missing, and the plot fills as the ring does.
+ */
+export function printOpeningView(bars: number, rightOffset: number, width: number, barSpacing = PRINT_BAR_SPACING): LogicalView | null {
+  if (bars <= 0 || !(width > 0) || !(barSpacing > 0)) return null
+  const to = bars - 1 + rightOffset
+  return { from: to - width / barSpacing + 1, to }
+}
+
+/**
+ * The right margin, in bars, that a fit of every held bar carries for
+ * `marginPx` of room (the Wall) beside the engine's own `rightOffset` bars —
+ * a fixed point of lib/wall marginBarsFor at the FITTED spacing,
+ * width / (bars + margin), never the count the zoomed-out spacing gave.
+ */
+export function fitMarginBars(bars: number, rightOffset: number, marginPx: number, width: number): number {
+  if (bars <= 0 || !(width > 0) || !(marginPx > 0)) return rightOffset
+  // Start from the spacing that leaves the pixels beside the bars, then settle.
+  let margin = marginBarsFor(marginPx, Math.max(width - marginPx, width * 0.25) / (bars + rightOffset), rightOffset)
+  for (let i = 0; i < 4; i++) {
+    const next = marginBarsFor(marginPx, width / (bars + margin), rightOffset)
+    if (next === margin) break
+    margin = next
+  }
+  return margin
+}
+
+/** The right offset the engine holds, in bars, read off its visible logical
+ *  range: the range's `to` is the newest bar's index plus the offset. */
+export function engineRightOffset(view: LogicalView, bars: number): number | null {
+  if (bars <= 0) return null
+  return view.to - (bars - 1)
 }

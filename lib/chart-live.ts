@@ -117,10 +117,13 @@ export function barsFromPrints(prints: readonly Print[], tfSec: number): Candle[
   return out
 }
 
-/** How much of a print frame the relay hands a new viewer: the minutes it
- *  already holds (lib/dune LIVE_BACKFILL_MS). A cold instance holds less and
- *  the frame builds as you watch — said in the foot. */
-export const PRINT_KEEP_MS = 5 * 60_000
+/** How much of a print frame the BROWSER keeps while you watch: half an
+ *  hour of prints (≤ 1,800 one-second bars, under the chart's 2,200 cap), so
+ *  a tab left open can zoom out past the relay's backfill — which is what a
+ *  new viewer starts with: the minutes the relay already holds (lib/dune
+ *  LIVE_BACKFILL_MS, five), less on a cold instance. The frame builds as you
+ *  watch; the pill says the bars are built from prints. */
+export const PRINT_KEEP_MS = 30 * 60_000
 
 /** The pill's words. */
 export function tailWords(status: 'idle' | 'connecting' | 'live' | 'reconnecting' | 'unconfigured' | 'closed', feed: ChartLiveFeed | null, tf: ChartTf): string {
