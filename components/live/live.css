@@ -36,6 +36,21 @@
 .live__mcount { font-size: 9.5px; color: var(--muted-2); }
 .live__dex { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
 .live__dex::after { content: ':'; }
+.live__mown, .live__mseat { display: inline-flex; align-items: center; }
+.live__mown { gap: 0; }
+.live__mown .live__m { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; }
+.live__mx { height: 28px; padding: 0 8px 0 6px; border: 1px solid var(--line); border-left: 0; border-top-right-radius: 999px; border-bottom-right-radius: 999px; background: transparent; color: var(--muted-2); font-size: 13px; line-height: 1; cursor: pointer; }
+.live__mx:hover { color: var(--fg); border-color: var(--muted-2); }
+.live__add { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.live__add input { height: 28px; width: 210px; padding: 0 12px; border: 1px dashed var(--line); border-radius: 999px; background: transparent; color: var(--fg); font-size: 12px; }
+.live__add input:focus { outline: none; border-color: var(--accent); border-style: solid; }
+.live__add input::placeholder { color: var(--muted-2); }
+.live__add input:disabled { opacity: .5; }
+.live__addbtn { height: 28px; padding: 0 12px; border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; }
+.live__addbtn:disabled { opacity: .45; cursor: not-allowed; }
+.live__addnote { font-size: 10.5px; }
+.live__addnote--dim { color: var(--muted-2); }
+.live__addnote--warn { color: var(--sell, #e5484d); }
 .live__venue { font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); margin-left: 5px; }
 .live-row[data-venue="dex"] .live__venue { color: var(--mk-series-3, var(--muted)); }
 .live__venues { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 10px 8px; }
@@ -187,6 +202,8 @@
   .live__table td.live__col-act { padding-left: 2px; }
   .live__dex { display: none; }
   .live__venue { display: none; }
+  .live__add input { width: 140px; }
+  .live__addnote { display: none; }
 }
 
 /* MOBILE (squad pre-gtm, 2026-10-07). /live under a thumb was the site's least touchable page — 175 sub-44 targets

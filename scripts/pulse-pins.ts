@@ -218,7 +218,7 @@ export function pulsePins(check: Check): void {
     !!doorRule && Number(doorRule[1]) * 2 + 18 >= 44 && Number(doorRule[1]) <= 13, doorRule ? `inset ${doorRule[1]}px` : 'no door rule')
   const feedSrc = readFileSync('lib/tape-feed.ts', 'utf8')
   check('pulse: the stream opens on the fallback list the moment the band mounts through connectTape (Dune\'s perp venues through the relay, filtered to the pick; the venue\'s keyless socket when the relay has no key — onSource names which, and the band prints that word) and the venue\'s pick re-aims the SAME stream (setMarkets: the relay\'s filter, or unsubscribe the drops and subscribe the adds) — never a reconnect drawn as a quiet second; /live\'s hlTapeFeed.connect still stands',
-    /useState<readonly string\[\]>\(PULSE_FALLBACK_MARKETS\)/.test(slot) && /connectTape\(marketsRef\.current/.test(slot) && /onSource: setSource/.test(slot) && /\{ venues: PULSE_VENUES, filter: true \}/.test(slot) && /PULSE_VENUE_WORD\[source\]/.test(slot) && /data-source=\{source\}/.test(slot) && /handleRef\.current\?\.setMarkets\(markets\)/.test(slot) && /\}, \[streamOn\]\)/.test(slot) && !/feedFor\(/.test(slot) &&
+    /useState<readonly string\[\]>\(PULSE_FALLBACK_MARKETS\)/.test(slot) && /connectTape\(marketsRef\.current/.test(slot) && /onSource: setSource/.test(slot) && /\{ venues: PULSE_VENUES, filter: true \}/.test(slot) && /PULSE_VENUE_WORD\[source\]/.test(slot) && /data-source=\{source\}/.test(slot) && /handleRef\.current\?\.setMarkets\(aim\)/.test(slot) && /\}, \[streamOn\]\)/.test(slot) && !/feedFor\(/.test(slot) &&
       /hlSub\(coin, 'unsubscribe'\)/.test(feedSrc) && /export function connectHlTape/.test(feedSrc) && /export function connectTape/.test(feedSrc) && /if \(s === 'unconfigured'\) \{/.test(feedSrc) && /connect\(markets, handlers\) \{\s*return openHlTape\(markets, handlers\)\.close/.test(feedSrc))
   check('pulse: the band is calm — no tape rows, no row flashes, nothing animates under reduced motion, and the socket follows the tab (visibilitychange → pulseStreamWanted)',
     !/<table/.test(slot) && !/live-row|TapeRow/.test(slot) && /prefers-reduced-motion: reduce/.test(css) && /animation: none/.test(css) && /transition: none/.test(css) && /visibilitychange/.test(slot) && /pulseStreamWanted\(vis, now\)/.test(slot) && /pulseVisibilityStep\(prev, document\.hidden/.test(slot))
@@ -227,7 +227,7 @@ export function pulsePins(check: Check): void {
   check('pulse: the band mounts in the splash\'s lead seat (HomeSurface) as a default export with no props, and `/` is a public markets path (looking needs no wallet)',
     /<PulseSlot \/>/.test(home) && /export default function PulseSlot\(\)/.test(slot) && isMarketsPath('/') && isPublicAppPath('/'))
   check('pulse: the door and the views are links in the band\'s head (a URL never fires a turn): /live with prefetch off, and the three views from PULSE_VIEW_LINKS',
-    /href=\{pulseLiveHref\(pick\)\}/.test(slot) && pulseLiveHref(null) === PULSE_LIVE_HREF && /PULSE_VIEW_LINKS\.map/.test(slot) && !/openDoor\([^)]*PULSE_LIVE_HREF/.test(slot) && slot.indexOf('PULSE_VIEW_LINKS.map') < slot.indexOf('</header>') && /data-markets=\{markets\.length\}/.test(slot))
+    /href=\{pulseLiveHref\(pick\)\}/.test(slot) && pulseLiveHref(null) === PULSE_LIVE_HREF && /PULSE_VIEW_LINKS\.map/.test(slot) && !/openDoor\([^)]*PULSE_LIVE_HREF/.test(slot) && slot.indexOf('PULSE_VIEW_LINKS.map') < slot.indexOf('</header>') && /data-markets=\{aim\.length\}/.test(slot))
 
   // ── The token pick (2026-10-06: "add the token options to track") ─────
   const ethBars = pulseBars(FIXTURE, NOW, undefined, 'ETH')
@@ -241,7 +241,7 @@ export function pulsePins(check: Check): void {
     pulsePick('ETH', ['BTC', 'ETH']) === 'ETH' && pulsePick('DOGE', ['BTC', 'ETH']) === null && pulsePick(null, ['ETH']) === null &&
       pulseLiveHref('xyz:SNDK') === '/live?m=xyz%3ASNDK' && pulseLiveHref(null) === '/live')
   check('pulse pick: the chip row renders All + one button per streamed market, the pick reaches pulseBars and pulseTiles, the remembered pick is read after mount (try/catch), and the row is fixed-height and leaves the phone (the 160px budget holds)',
-    /className="pulse__markets"/.test(slot) && /markets\.map\(\(m\)/.test(slot) && /pulseBars\(fills, now, undefined, pick\)/.test(slot) && /pulseTiles\(fills, now, chipOk, pick\)/.test(slot) &&
+    /className="pulse__markets"/.test(slot) && /chipRow\(own, markets, null, markets\.length\)\.map\(\(\{ market: m, own: isOwn \}\)/.test(slot) && /pulseBars\(fills, now, undefined, pick\)/.test(slot) && /pulseTiles\(fills, now, chipOk, pick\)/.test(slot) &&
       /matchMedia\('\(min-width: 641px\)'\)\.matches\) return\s*try \{\s*const m = window\.localStorage\.getItem\(PULSE_PICK_KEY\)/.test(slot) &&
       /\.pulse__markets \{[^}]*height: 28px/.test(css) && /@container pulse \(max-width: 560px\) \{[^]*?\.pulse__markets \{ display: none; \}/.test(css))
 }

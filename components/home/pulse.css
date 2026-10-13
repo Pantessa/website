@@ -41,6 +41,16 @@
 .pulse__m:hover { color: var(--fg); border-color: var(--muted-2); }
 .pulse__m.is-on { color: var(--fg); background: var(--surf-2, var(--surf-1)); border-color: var(--fg); }
 .pulse__m:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pulse__mown, .pulse__mseat { flex: 0 0 auto; display: inline-flex; align-items: center; }
+.pulse__mown .pulse__m { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; }
+.pulse__mx { height: 28px; padding: 0 8px 0 5px; border: 1px solid var(--line); border-left: 0; border-top-right-radius: 999px; border-bottom-right-radius: 999px; background: transparent; color: var(--muted-2); font-size: 13px; line-height: 1; cursor: pointer; }
+.pulse__mx:hover { color: var(--fg); border-color: var(--muted-2); }
+.pulse__add { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; }
+.pulse__add input { height: 28px; width: 112px; padding: 0 10px; border: 1px dashed var(--line); border-radius: 999px; background: transparent; color: var(--fg); font-size: 12px; }
+.pulse__add input:focus { outline: none; border-color: var(--accent); border-style: solid; width: 180px; }
+.pulse__add input::placeholder { color: var(--muted-2); }
+.pulse__add input:disabled { opacity: .5; }
+.pulse__addnote { font-size: 10.5px; color: var(--sell, #e5484d); white-space: nowrap; }
 .pulse__mcount { font-size: 9.5px; color: var(--muted-2); }
 .pulse__m:not([data-kind="stock"]) .pulse__dex { color: var(--muted-2); }
 

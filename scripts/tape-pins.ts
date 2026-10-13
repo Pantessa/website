@@ -53,6 +53,7 @@ import {
   type DunePerpTrade,
 } from '../lib/dune'
 import { simulateLadder } from './ask-ladder'
+import { LIVE_MARKETS_KEY, MAX_OWN_MARKETS, OWN_SOURCE_NOTE, addLiveMarkets, chipRow, knownMarkets, openingOwnMarkets, parseLiveMarketMemory, removeLiveMarket, serializeLiveMarketMemory, watchlistMarkets } from '../lib/live-markets'
 import { capabilityTarget } from '../lib/venue-capability'
 import { tradeTarget } from '../lib/trade-venue-gate'
 import { composeExecAsk } from '../lib/trade-asks'
@@ -228,6 +229,31 @@ export function tapePins(check: Check): void {
   const busy = busiestMarkets([fill({ id: 'a', market: 'BTC', usd: 50, at: T0 }), fill({ id: 'b', market: 'ETH', usd: 500, at: T0 }), fill({ id: 'c', market: 'ETH', usd: 1, at: T0 - 59_000 }), fill({ id: 'd', market: 'SOL', usd: 9_999, at: T0 - 61_000 }), fill({ id: 'e', market: 'ARB', usd: 50, at: T0 })], T0 + 500, 3)
   check('tape: the busiest markets are the ones with the most dollars in the last minute (the firehose\'s chip row), ties by name, nothing older than the window, capped',
     busy.join(',') === 'ETH,ARB,BTC' && busiestMarkets([], T0, 5).length === 0 && TAPE_MAX_FILLS >= 110 * (TAPE_KEEP_MS / 1000), busy.join(','))
+
+  // ── Your own markets (lib/live-markets, 2026-10-13) ───────────────────
+  const UNI = ['BTC', 'ETH', 'UNI', 'kPEPE', 'xyz:NVDA', 'xyz:AAPL', 'HYPE']
+  const mem = parseLiveMarketMemory(serializeLiveMarketMemory({ own: ['UNI', 'XYZ:nvda', 'UNI', 'bad market'], at: 5 }))
+  check('own markets: the memory round-trips in the venue\'s spelling (xyz: lowercased, duplicates and bad shapes dropped), an EMPTY memory is a real one (a hand cleared the row), and any defect reads as nothing remembered',
+    !!mem && mem.own.join(',') === 'UNI,xyz:nvda' && mem.at === 5 && parseLiveMarketMemory(serializeLiveMarketMemory({ own: [], at: 1 }))?.own.length === 0 && parseLiveMarketMemory('nope') === null && parseLiveMarketMemory(JSON.stringify({ v: 2, own: ['UNI'] })) === null && parseLiveMarketMemory(null) === null && LIVE_MARKETS_KEY === 'pantessa.live.markets.v1', JSON.stringify(mem))
+  const watch = watchlistMarkets(['AAPL', 'cbBTC', 'USDC', 'eth', 'PEPE', 'NOPE', 'ETH', 'NVDA'], UNI)
+  check('own markets: the watchlist resolves to venue markets in list order — AAPL is the xyz:AAPL perp, cbBTC is BTC, pepe is kPEPE, money and unknown names drop, duplicates fold; nothing while the universe is unknown',
+    watch.join(',') === 'xyz:AAPL,BTC,ETH,kPEPE,xyz:NVDA' && watchlistMarkets(['AAPL'], []).length === 0 && watchlistMarkets(Array.from({ length: 30 }, (_, i) => `T${i}`), Array.from({ length: 30 }, (_, i) => `T${i}`)).length === MAX_OWN_MARKETS, watch.join(','))
+  check('own markets: the row opens on the memory (even an empty one — never re-seeded), else the watchlist, else nothing; only a hand\'s source wears "as you left them"',
+    openingOwnMarkets({ memory: { own: [], at: 1 }, watch: ['ETH'] }).source === 'memory' && openingOwnMarkets({ memory: { own: [], at: 1 }, watch: ['ETH'] }).own.length === 0 && openingOwnMarkets({ memory: { own: ['UNI'], at: 1 }, watch: ['ETH'] }).own.join() === 'UNI' &&
+      openingOwnMarkets({ memory: null, watch: ['ETH', 'BTC'] }).source === 'watchlist' && openingOwnMarkets({ memory: null, watch: [] }).source === null && OWN_SOURCE_NOTE.watchlist === 'from your watchlist' && OWN_SOURCE_NOTE.memory === 'as you left them')
+  const add = addLiveMarkets('uni, nvda OPENAI btc nope', knownMarkets(UNI, ['OPENAI', 'btc']), ['BTC'])
+  check('own markets: a typed list adds several at once in the venue\'s spelling (uni → UNI, nvda → xyz:NVDA), a name the stream has printed resolves even off the venue\'s list (OPENAI on Lighter), an already-held market is skipped silently, an unknown name is named back; remove drops one',
+    add.added.join(',') === 'UNI,xyz:NVDA,OPENAI' && add.unknown.join(',') === 'nope' && add.full.length === 0 && removeLiveMarket(['BTC', 'UNI'], 'BTC').join() === 'UNI' && knownMarkets(['BTC'], ['btc', 'ETH']).join(',') === 'BTC,ETH', JSON.stringify(add))
+  const row = chipRow(['UNI', 'ETH'], ['BTC', 'ETH', 'SOL', 'DOGE'], 'xyz:MU', 2)
+  check('own markets: the chip row leads with yours in your order (wearing the remove button), then the page\'s own list minus what you hold, capped, the active filter kept in view',
+    row.map((e) => `${e.market}${e.own ? '*' : ''}`).join(',') === 'xyz:MU,UNI*,ETH*,BTC,SOL' && chipRow([], ['BTC'], null, 5).length === 1 && chipRow([], ['BTC'], 'BTC', 5).length === 1, row.map((e) => e.market).join(','))
+  check('own markets: both rows read the memory on mount, write it ONLY from a hand (add / remove — a watchlist default is never remembered as yours), read the watchlist as a second instance (`holdings: false`, never the rail\'s reconcile claim), and the venue socket\'s subscription carries your own markets',
+    (() => {
+      const live = readFileSync('components/live/LiveFeed.tsx', 'utf8')
+      const slot = readFileSync('components/home/PulseSlot.tsx', 'utf8')
+      const hand = (src: string) => (src.match(/writeLiveMarketMemory\(next\)/g) ?? []).length === 2 && (src.match(/handRef\.current = true/g) ?? []).length === 2 && /readLiveMarketMemory\(\)/.test(src) && /useWatchlists\(\{ holdings: false \}\)/.test(src) && /openingOwnMarkets\(\{ memory: null, watch: watchlistMarkets\(watchSymbols, universe\) \}\)/.test(src) && /if \(handRef\.current \|\| ownSource === 'memory'/.test(src) && /insertReplacementText/.test(src)
+      return hand(live) && hand(slot) && /feed\.connect\(\[\.\.\.new Set\(\[\.\.\.markets, \.\.\.own\]\)\], handlers\)/.test(live) && /chipRow\(own, busiest \?\? markets \?\? \[\.\.\.FALLBACK_MARKETS\], filter, CHIP_MARKETS\)/.test(live) && /const aim = useMemo\(\(\) => \[\.\.\.new Set\(\[\.\.\.own, \.\.\.markets\]\)\], \[own, markets\]\)/.test(slot) && /chipRow\(own, markets, null, markets\.length\)/.test(slot)
+    })())
 
   // ── Formats ───────────────────────────────────────────────────────────
   check('tape: dollars print like a tape ($898.53 · $1.53K · $83.85K · $1.20M), the axis in short units, a price at its own precision, a size without trailing zeros, an address as 0x98da_f13b',

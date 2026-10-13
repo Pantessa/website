@@ -67,6 +67,9 @@ import {
   type TriggerThresholds,
 } from '@/lib/tape'
 import { feedFor, openDuneTape, readTapeUniverse, type FeedHandlers, type FeedStatus } from '@/lib/tape-feed'
+import { useWatchlists } from '@/components/markets/watchlist/useWatchlists'
+import { resolveMarket } from '@/lib/battle'
+import { MAX_OWN_MARKETS, OWN_SOURCE_NOTE, addLiveMarkets, chipRow, knownMarkets, openingOwnMarkets, readLiveMarketMemory, removeLiveMarket, watchlistMarkets, writeLiveMarketMemory, type OwnSource } from '@/lib/live-markets'
 import { DEFAULT_LIVE_VENUES, DUNE_VENUES, type DuneVenueId } from '@/lib/dune'
 
 const RULES: readonly TriggerRule[] = ['big-print', 'whale-repeat', 'flow-skew']
@@ -97,21 +100,83 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
   const seenRef = useRef(new Set<string>())
   const fillsRef = useRef<TapeFill[]>([])
   fillsRef.current = fills
-
-  // The venue's socket needs a subscription list: its busiest books, read
-  // once; the fallback list if the read fails. The relay carries every
-  // market, so this only runs for the fallback. `?m=` narrows the view,
-  // never the subscription.
+  // Your own markets (lib/live-markets): a hand's list leads the chip row,
+  // remembered in this browser; the watchlist stands in until a hand
+  // touches it. The venue's list + what the stream printed resolve a name.
+  const [own, setOwn] = useState<string[]>([])
+  const [ownSource, setOwnSource] = useState<OwnSource>(null)
+  const [universe, setUniverse] = useState<string[]>([])
+  const [draft, setDraft] = useState('')
+  const [addNote, setAddNote] = useState<{ text: string; tone: 'warn' | 'dim' } | null>(null)
+  const handRef = useRef(false)
+  const wl = useWatchlists({ holdings: false })
+  const watchSymbols = useMemo(() => {
+    if (!wl.ready) return [] as string[]
+    const activeId = (wl.active as { id?: string } | null)?.id
+    const ordered = [...wl.lists].sort((a, b) => (a.id === activeId ? -1 : b.id === activeId ? 1 : 0))
+    const out: string[] = []
+    for (const l of ordered) for (const sym of l.symbols) if (!out.includes(sym)) out.push(sym)
+    return out
+  }, [wl.ready, wl.lists, wl.active])
   useEffect(() => {
-    if (source !== 'hyperliquid' || markets) return
+    const mem = readLiveMarketMemory()
+    if (mem) {
+      setOwn(mem.own)
+      setOwnSource('memory')
+    }
+  }, [])
+  // The watchlist default: only while no memory and no hand (fluid until touched).
+  useEffect(() => {
+    if (handRef.current || ownSource === 'memory' || !universe.length) return
+    const d = openingOwnMarkets({ memory: null, watch: watchlistMarkets(watchSymbols, universe) })
+    if (d.source === 'watchlist') {
+      setOwn(d.own)
+      setOwnSource('watchlist')
+    }
+  }, [watchSymbols, universe, ownSource])
+  const addOwn = useCallback(
+    (raw: string) => {
+      const known = knownMarkets(universe, new Set(fillsRef.current.map((f) => f.market)))
+      const r = addLiveMarkets(raw, known, own)
+      if (r.added.length) {
+        handRef.current = true
+        const next = [...own, ...r.added]
+        setOwn(next)
+        setOwnSource('memory')
+        writeLiveMarketMemory(next)
+        setDraft('')
+      }
+      if (r.unknown.length) setAddNote({ text: `no venue here prints ${r.unknown.map((u) => u.toUpperCase()).join(', ')} yet`, tone: 'warn' })
+      else if (r.full.length) setAddNote({ text: `the row holds ${MAX_OWN_MARKETS} of yours`, tone: 'warn' })
+      else setAddNote(null)
+    },
+    [own, universe],
+  )
+  const removeOwn = useCallback(
+    (m: string) => {
+      handRef.current = true
+      const next = removeLiveMarket(own, m)
+      setOwn(next)
+      setOwnSource('memory')
+      writeLiveMarketMemory(next)
+    },
+    [own],
+  )
+
+  // The venue's universe, read once: the venue socket's subscription list
+  // (its busiest books; the fallback list if the read fails) and the names
+  // a typed market resolves against. `?m=` narrows the view, never the
+  // subscription.
+  useEffect(() => {
     const ac = new AbortController()
     readTapeUniverse(ac.signal).then(({ main, xyz }) => {
       if (ac.signal.aborted) return
       const picked = pickTapeMarkets(main, xyz)
       setMarkets(picked.length ? picked : [...FALLBACK_MARKETS])
+      setUniverse([...main, ...xyz].filter((r) => !r.delisted).sort((a, b) => b.volumeUsd - a.volumeUsd).map((r) => r.name))
     })
     return () => ac.abort()
-  }, [source, markets])
+  }, [])
 
   // The stream. Reconnects itself; this effect only opens and closes it. A
   // block Dune replaces (op UPDATE) is retracted before its new fills merge.
@@ -131,8 +196,9 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
     }
     if (source === 'dune') return openDuneTape([], handlers, { venues, filter: false }).close
     if (!markets) return
-    return feed.connect(markets, handlers)
-  }, [feed, source, venues, markets])
+    // The venue's socket subscribes per market: your own ride along.
+    return feed.connect([...new Set([...markets, ...own])], handlers)
+  }, [feed, source, venues, markets, own])
 
   // The clock the buckets and tiles read: once a second, and the buffer is
   // pruned on the same beat so a quiet market's tape still ages out.
@@ -219,7 +285,8 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
   }, [source, chipBeat])
   const busiest = chips?.busiest ?? null
   const marketCount = chips?.count ?? null
-  const marketList = busiest ? (filter && !busiest.includes(filter) ? [filter, ...busiest] : busiest) : (markets ?? [...FALLBACK_MARKETS])
+  const entries = chipRow(own, busiest ?? markets ?? [...FALLBACK_MARKETS], filter, CHIP_MARKETS)
+  const marketList = entries.map((e) => e.market)
 
   return (
     <>
@@ -248,15 +315,66 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
             All
             <span className="mono live__mcount">{marketCount ?? marketList.length}</span>
           </button>
-          {marketList.map((m) => {
+          {entries.map(({ market: m, own: isOwn }) => {
             const tm = tapeMarket(m)
-            return (
-              <button key={m} type="button" className={`live__m${filter === m ? ' is-on' : ''}`} onClick={() => pickFilter(filter === m ? null : m)} data-kind={tm.kind}>
+            const chip = (
+              <button type="button" className={`live__m${filter === m ? ' is-on' : ''}`} onClick={() => pickFilter(filter === m ? null : m)} data-kind={tm.kind} data-own={isOwn || undefined}>
                 {tm.dex && <span className="live__dex mono">{tm.dex}</span>}
                 {tm.ticker}
               </button>
             )
+            return isOwn ? (
+              <span key={m} className="live__mown">
+                {chip}
+                <button type="button" className="live__mx" onClick={() => removeOwn(m)} aria-label={`Remove ${m} from your markets`} title="Remove">
+                  ×
+                </button>
+              </span>
+            ) : (
+              <span key={m} className="live__mseat">{chip}</span>
+            )
           })}
+          <form
+            className="live__add"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (draft.trim()) addOwn(draft)
+            }}
+          >
+            <input
+              id="live-add"
+              list="live-universe"
+              value={draft}
+              onChange={(e) => {
+                const v = e.target.value
+                setDraft(v)
+                // A pick from the suggestion list lands at once; typing waits for Add.
+                const picked = (e.nativeEvent as InputEvent).inputType === 'insertReplacementText'
+                if (picked && resolveMarket(v, universe)) addOwn(v)
+              }}
+              placeholder={own.length >= MAX_OWN_MARKETS ? 'your row is full' : '+ your own · uni, pepe, nvda'}
+              aria-label="Add your own markets, several with commas"
+              autoComplete="off"
+              disabled={own.length >= MAX_OWN_MARKETS}
+            />
+            <datalist id="live-universe">
+              {universe.slice(0, 400).map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+            <button type="submit" className="live__addbtn" disabled={own.length >= MAX_OWN_MARKETS || !draft.trim()}>
+              Add
+            </button>
+            {addNote ? (
+              <span className={`live__addnote mono live__addnote--${addNote.tone}`} role="status">
+                {addNote.text}
+              </span>
+            ) : ownSource === 'watchlist' && own.length ? (
+              <span className="live__addnote mono live__addnote--dim">{OWN_SOURCE_NOTE.watchlist} · remembered once you touch it</span>
+            ) : (
+              <span className="live__addnote mono live__addnote--dim">commas add several · remembered here</span>
+            )}
+          </form>
         </div>
 
         <GuideSeat surface="live" posture="phone" />
