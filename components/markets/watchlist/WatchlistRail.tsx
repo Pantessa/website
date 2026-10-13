@@ -3,9 +3,12 @@
 // The watchlist rail (MARKETS/WATCH) — the TradingView-shaped column beside
 // the chart: list picker (unlimited lists), collapsible sections, rows of
 // mark · symbol · last · chg%, a ⋯ menu per row (remove, move to section,
-// set alert, Buy/Sell chips), the add-ticker search, "Import from
-// TradingView", and the needs-you strip where fired alerts hand you their
-// chip. A row the wallet holds also shows the position beside its price
+// set alert, Buy/Sell chips), the add-ticker search and "Import from
+// TradingView". Fired and armed alerts are NOT here any more (2026-10-13,
+// Nate: "remove the alerts bar"): they live behind the bell beside Ask in
+// the top strip (shell/RailAlerts), reading the same alerts instance this
+// rail's "Set an alert" form writes (alerts-context). A row the wallet holds
+// also shows the position beside its price
 // (lib/watchlists heldPosition). Guests build lists in localStorage; signing
 // in adopts them. While the lists load, or a wallet check can still fill an
 // empty list, the rows area brews instead of calling itself empty
@@ -22,7 +25,7 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Bell, BellRing, Check, ChevronDown, ChevronRight, ClipboardPaste, Link2, MoreHorizontal, Plus, Trash2, Wallet, X } from 'lucide-react'
+import { Bell, ChevronDown, ChevronRight, ClipboardPaste, Link2, MoreHorizontal, Plus, Trash2, Wallet, X } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
@@ -31,9 +34,10 @@ import { PantessaMark } from '@/components/Logo'
 import { chartPairFor } from '@/lib/charts'
 import { venuesFor } from '@/lib/symbol-venues'
 import { useToast } from '@/lib/toast'
-import { DEFAULT_LIST_NAME, RAIL_BREW_COPY, firedAlertLines, fmtQuotePrice, heldAutofillNote, heldPosition, heldTitle, quoteCellState, railBrewPhase, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
+import { DEFAULT_LIST_NAME, RAIL_BREW_COPY, fmtQuotePrice, heldAutofillNote, heldPosition, heldTitle, quoteCellState, railBrewPhase, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
 import AddTicker from './AddTicker'
 import AlertForm from './AlertForm'
+import { useSharedAlerts } from './alerts-context'
 import FundWallet from './FundWallet'
 import ImportModal from './ImportModal'
 import { useAlerts, useQuotes, useWatchlists } from './useWatchlists'
@@ -82,7 +86,12 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   // A row's "Sell $10" shows only while the connected wallet holds it (lib/sell-gate).
   const walletHeld = useHeld()
   const tradable = useTradable()
-  const alerts = useAlerts(wl.mode === 'authed')
+  // The side column's one alerts read (alerts-context) when the rail is
+  // inside it: the bell beside Ask shows a rule the moment this form sets it.
+  // A rail mounted elsewhere keeps its own read.
+  const sharedAlerts = useSharedAlerts()
+  const ownAlerts = useAlerts(sharedAlerts ? false : wl.mode === 'authed')
+  const alerts = sharedAlerts ?? ownAlerts
   const [pickerOpen, setPickerOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [rowMenu, setRowMenu] = useState<string | null>(null)
@@ -92,7 +101,6 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   const [alertFor, setAlertFor] = useState<string | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
-  const [alertsOpen, setAlertsOpen] = useState(false)
   // Density (MK2): compact rows hide the company name and tighten the row;
   // remembered per browser. SSR + first paint = comfortable.
   const [dense, setDense] = useState(false)
@@ -264,7 +272,6 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   const rows = active && wl.ready ? sectionedRows(active) : []
   const sections = (active?.sections ?? []).map((s) => s.name)
   const pageSym = symbol ? chartPairFor(symbol)?.symbol ?? symbol : null
-  const activeAlerts = alerts.alerts.filter((a) => a.status !== 'fired')
 
   return (
     <div ref={rootRef} className={`wl${className ? ` ${className}` : ''}`} data-mode={wl.mode} data-density={dense ? 'compact' : 'comfortable'}>
@@ -424,36 +431,8 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
         </div>
       </div>
 
-      {/* ── Needs you: fired alerts hand you their chip ───────────── */}
-      {alerts.notifications.length > 0 && (
-        <div className="wl__fired" role="status">
-          {alerts.notifications.slice(0, 3).map((n) => {
-            const line = firedAlertLines(n, quotes[n.symbol]?.last)
-            return (
-            <div key={n.id} className="wl__firedRow">
-              <BellRing className="wl__firedIcon" aria-hidden />
-              <div className="min-w-0 flex-1">
-                <div className="wl__firedTitle">{line.headline}</div>
-                <div className="wl__firedMeta mono">{line.meta}</div>
-                {n.actionAsk && (
-                  <button type="button" className="wl__chip wl__chip--accent" onClick={() => send(n.actionAsk!, false)} title={sendLabelFor(false)}>
-                    {n.actionAsk}
-                  </button>
-                )}
-              </div>
-              <button type="button" className="wl__icon" aria-label="Dismiss" onClick={() => alerts.dismiss([n.id])}>
-                <Check className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            )
-          })}
-          {alerts.notifications.length > 3 && (
-            <button type="button" className="wl__link mono" onClick={() => alerts.dismiss('all')}>
-              +{alerts.notifications.length - 3} more · clear all
-            </button>
-          )}
-        </div>
-      )}
+      {/* Fired alerts used to land here as a "needs you" strip — they are on
+          the top strip's bell now (shell/RailAlerts). */}
 
       {/* ── Add ticker ────────────────────────────────────────────── */}
       <div className="wl__addWrap">
@@ -684,32 +663,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
         <FundWallet holder={wl.holder} empty={wl.walletEmpty && !brew} cardFunding={wl.cardFunding} onLanded={wl.recheckWallet} />
       </div>
 
-      {/* ── Alerts (armed) ────────────────────────────────────────── */}
-      {wl.mode === 'authed' && activeAlerts.length > 0 && (
-        <div className="wl__alerts">
-          <button type="button" className="wl__sectionHead" onClick={() => setAlertsOpen((o) => !o)} aria-expanded={alertsOpen}>
-            {alertsOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            <Bell className="h-3 w-3" /> Alerts
-            <span className="wl__popMeta mono">{activeAlerts.length}</span>
-          </button>
-          {alertsOpen &&
-            activeAlerts.map((a) => (
-              <div key={a.id} className="wl__alertRow">
-                <span className="wl__alertLabel">
-                  {a.symbol} {a.condition === 'above' ? '≥' : a.condition === 'below' ? '≤' : '±'} {a.condition === 'pct_move' ? `${a.value}%` : `$${fmtQuotePrice(a.value)}`}
-                  {a.actionAsk ? <span className="wl__muted"> · hands you a chip</span> : null}
-                  {a.status === 'paused' ? <span className="wl__muted"> · paused</span> : null}
-                </span>
-                <button type="button" className="wl__link mono" onClick={() => alerts.setStatus(a.id, a.status === 'paused' ? 'resume' : 'pause')}>
-                  {a.status === 'paused' ? 'resume' : 'pause'}
-                </button>
-                <button type="button" className="wl__icon" aria-label="Delete alert" onClick={() => alerts.remove(a.id)}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-        </div>
-      )}
+      {/* The armed-alerts section used to sit here — it is in the bell's popover now (shell/RailAlerts). */}
 
       {/* ── Foot ──────────────────────────────────────────────────── */}
       <div className="wl__foot mono">

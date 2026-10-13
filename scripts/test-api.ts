@@ -23459,11 +23459,13 @@ async function main() {
     // watch list and sidebar top right fixed same as in the normal markets
     // page"): the same docked rail from the first line, footer under the page.
     check(
-      '/t/AAPL: the watchlist rail docks right like /markets (main.sym + the frame rail holding the watchlist then the symbol card, the footer under the page)',
+      '/t/AAPL: the watchlist rail docks right like /markets (main.sym + the frame rail holding the order ticket then the watchlist and nothing under it, the footer under the page)',
       /class="mkt-frame mkt-frame--sym"/.test(tAapl) &&
-        // RE-PINNED 2026-10-13 (cockpit): main wears the cockpit class; the rail's first child is the order ticket, then the watchlist, then the symbol card.
+        // RE-PINNED 2026-10-13 (cockpit): main wears the cockpit class; the rail's first child is the order ticket, then the watchlist.
+        // RE-PINNED 2026-10-13 (rail-declutter): the About card (data-slot="symbol-card") is GONE — Nate: "takes up too much room". Nothing follows the watchlist.
         /<main class="sym sym--cockpit" data-symbol="AAPL"/.test(tAapl) &&
-        /<aside class="mkt-frame__rail"[^>]*><section class="mkt-railticket" data-slot="order-ticket"[\s\S]*?data-slot="watchlist"[\s\S]*?data-slot="symbol-card"/.test(tAapl) &&
+        /<aside class="mkt-frame__rail"[^>]*><section class="mkt-railticket" data-slot="order-ticket"[\s\S]*?data-slot="watchlist"/.test(tAapl) &&
+        !/data-slot="symbol-card"/.test(tAapl) && !/About AAPL/.test(tAapl) &&
         /class="mkt-frame__foot"><footer class="footer"/.test(tAapl) &&
         /\.mkt-frame--sym > \.sym \{[^}]*grid-area: main;/.test(shellCss),
     )
@@ -23488,7 +23490,9 @@ async function main() {
           [2, route === '/t/AAPL' ? 4 : 2].includes((html.match(/aria-label="Workspace"/g) ?? []).length) &&
           [2, route === '/t/AAPL' ? 4 : 2].includes((html.match(/aria-label="MARKETS" aria-current="page"/g) ?? []).length) &&
           !/<header class="nav/.test(html) && !html.includes('nav__tabs') && !html.includes('data-ask-door="nav"') &&
-          /<div class="mkt-frame__side"><div class="mkt-frame__top" data-slot="top-strip"><button[^>]*data-ask-door="rail"[^>]*>[\s\S]*?<\/button><div class="mkt-frame__acct"><\/div><\/div><aside class="mkt-frame__rail"/.test(html) &&
+          // RE-PINNED 2026-10-13 (rail-declutter): the alerts bell (RailAlerts, data-slot="alerts") sits between Ask and the account seat; it is in the server HTML, its popover is not.
+          /<div class="mkt-frame__side"><div class="mkt-frame__top" data-slot="top-strip"><button[^>]*data-ask-door="rail"[^>]*>[\s\S]*?<\/button><div class="mkt-frame__alerts" data-slot="alerts"><button type="button" class="mkt-frame__bell" aria-label="Alerts"[^>]*aria-expanded="false"[^>]*>[\s\S]*?<\/button><\/div><div class="mkt-frame__acct"><\/div><\/div><aside class="mkt-frame__rail"/.test(html) &&
+          !html.includes('mkt-alertpop') &&
           html.includes('data-ask-door="pill"'),
         `workspace=${(html.match(/aria-label="Workspace"/g) ?? []).length} nav=${/<header class="nav/.test(html)}`,
       )
@@ -23962,7 +23966,8 @@ async function main() {
       tAapl.includes('Apple') && /data-symbol="AAPL"/.test(tAapl) &&
         tAapl.includes('Robinhood Chain · 24/7') && tAapl.includes('Token trades 24/7 on Robinhood Chain') &&
         tabLabels.every((l) => new RegExp(`data-tab="${l.toLowerCase()}"[^>]*>${l}<`).test(tAapl)) &&
-        /data-slot="watchlist"/.test(tAapl) && /data-slot="symbol-card"/.test(tAapl) &&
+        // RE-PINNED 2026-10-13 (rail-declutter): no symbol card in the rail any more.
+        /data-slot="watchlist"/.test(tAapl) && !/data-slot="symbol-card"/.test(tAapl) &&
         /aria-label="Full screen chart"/.test(tAapl) &&
         // the Overview chips ship in the server HTML with the /chat prefill fallback
         tAapl.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of AAPL')}`) &&
@@ -27365,9 +27370,17 @@ async function main() {
         /const sendLabelFor = \(handoff: boolean\) => \(onAsk \? 'sends in chat' : handoff \? 'runs in the app' : 'prefills chat · you send it'\)/.test(railSrcA),
     )
 
+    // RE-PINNED 2026-10-13 (rail-declutter): the fired-alert chip moved off the rail to the bell beside Ask
+    // (shell/RailAlerts). It never hands off to the app: it goes through the Ask door on the SAME page
+    // (openDoor send:true — the dock under the chart on /t, the ⌘K sheet elsewhere), where the sentence is the
+    // visible first message and the wallet signs or nothing moves. The rail composes no fired chip any more.
+    const bellSrcA = await readFile('components/markets/shell/RailAlerts.tsx', 'utf8')
     check(
-      'arrival/core: only asks the PAGE composed for a symbol with an EVM home hand off — a fired alert\'s stored actionAsk keeps the prefill (nothing pins what createAlert accepted), and so do the rail\'s blind Buy/Sell templates on a coin that lives off-EVM (SOL, XRP, DOGE), whose handoff would open the app with a clarify (the rail\'s DCA chip is gone, 2026-09-16)',
-      /send\(n\.actionAsk!, false\)/.test(railSrcA) &&
+      'arrival/core: only asks the PAGE composed for a symbol with an EVM home hand off — a fired alert\'s stored actionAsk never hands off (nothing pins what createAlert accepted): the bell beside Ask sends it through the Ask door on the same page, and the rail\'s blind Buy/Sell templates on a coin that lives off-EVM (SOL, XRP, DOGE) keep the prefill, since their handoff would open the app with a clarify (the rail\'s DCA chip is gone, 2026-09-16)',
+      !/actionAsk/.test(railSrcA) && !/writeArrivalIntent/.test(bellSrcA) && !/handOff/.test(bellSrcA) &&
+        /openDoor\(ask, \{ send: true, mcps: askAppSlugs\(ask\) \}\)/.test(bellSrcA) &&
+        /const \{ act, door \} = useConnectToAct\(\{ run, redirectFor: promptHref \}\)/.test(bellSrcA) &&
+        /act\(n\.actionAsk!\)/.test(bellSrcA) && /\{door\}/.test(bellSrcA) &&
         /send\(`Buy \$10 of \$\{sym\}`, handoffable\(sym\)\)/.test(railSrcA) &&
         /send\(`Sell \$10 of \$\{sym\}`, handoffable\(sym\)\)/.test(railSrcA) &&
         !/DCA \$10 into/.test(railSrcA) &&
