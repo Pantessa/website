@@ -10,6 +10,7 @@
 import { chartPairFor, parseChartAsk, type Candle, type ChartPair, type ChartSource } from '@/lib/charts'
 import { ROBINHOOD_TICKERS, ROBINHOOD_TICKER_NAMES } from '@/lib/robinhood-tickers'
 import { APP_CHAINS } from '@/lib/chains'
+import { writeDepthParams, type DepthSettings } from '@/lib/depth'
 
 // ── Sections ────────────────────────────────────────────────────────────────
 
@@ -660,23 +661,26 @@ export function parseBoardParam(search: string): BoardMode | null {
   return raw === 'spot' || raw === 'perps' || raw === 'heat' ? raw : null
 }
 
-/** The URL with the view and board set or cleared, every other param preserved. */
-export function viewUrl(view: ChartView, board: BoardMode | null, pathname: string, search: string): string {
+/** The URL with the view, the board and the Depth view's settings set or
+ *  cleared, every other param preserved. The Depth keys ride only on the
+ *  Depth view and spell only what is not the default (lib/depth). */
+export function viewUrl(view: ChartView, board: BoardMode | null, pathname: string, search: string, depth: DepthSettings | null = null): string {
   const params = new URLSearchParams(search)
   if (view === 'field') params.set('view', 'battlefield')
   else if (view === 'depth') params.set('view', 'depth')
   else params.delete('view')
   if (view === 'field' && board) params.set('board', board)
   else params.delete('board')
+  writeDepthParams(params, view === 'depth' ? depth : null)
   const q = params.toString()
   return q ? `${pathname}?${q}` : pathname
 }
 
-/** replaceState mirror of the view and board (the ?tab= idiom). */
-export function syncViewParam(view: ChartView, board: BoardMode | null): void {
+/** replaceState mirror of the view, the board and the Depth settings (the ?tab= idiom). */
+export function syncViewParam(view: ChartView, board: BoardMode | null, depth: DepthSettings | null = null): void {
   if (typeof window === 'undefined') return
   const { pathname, search } = window.location
-  const next = viewUrl(view, board, pathname, search)
+  const next = viewUrl(view, board, pathname, search, depth)
   if (next === `${pathname}${search}`) return
   window.history.replaceState(null, '', next)
 }

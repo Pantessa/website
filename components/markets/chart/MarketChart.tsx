@@ -74,6 +74,7 @@ import TheWall, { marginBarsFor, type WallStatus } from './TheWall'
 import { parseBoardParam, parseViewParam, syncViewParam, type BoardMode, type ChartView } from '@/lib/markets'
 import { hasPerpCold } from '@/lib/symbol-venues'
 import DepthChart from './DepthChart'
+import { DEFAULT_DEPTH_SETTINGS, parseDepthSettings, type DepthSettings } from '@/lib/depth'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
@@ -318,6 +319,9 @@ export default function MarketChart({
   // The board the Battlefield shows; null = its own default. `?view=battlefield&board=spot`
   // opens straight onto it (a shared link), and the switch mirrors into the URL.
   const [board, setBoard] = useState<BoardMode | null>(null)
+  // The Depth view's window · unit · overlay: read from the URL on mount and
+  // mirrored on every switch, so a shared link opens on the exact picture.
+  const [depthSettings, setDepthSettings] = useState<DepthSettings>(DEFAULT_DEPTH_SETTINGS)
   // The Wall on the right margin needs room: while it draws, the chart keeps
   // enough bars right of the last candle for its pixels (lib/wall
   // marginBarsFor) instead of RIGHT_OFFSET. The margin is a bar count in the
@@ -347,6 +351,7 @@ export default function MarketChart({
     const b = parseBoardParam(window.location.search)
     if (v !== 'candles') setView(v)
     if (b) setBoard(b)
+    setDepthSettings(parseDepthSettings(window.location.search))
   }, [battlefield])
   useEffect(() => {
     if (!battlefield) return
@@ -354,8 +359,8 @@ export default function MarketChart({
       viewMirroredRef.current = true
       return
     }
-    syncViewParam(view, view === 'field' ? board : null)
-  }, [battlefield, view, board])
+    syncViewParam(view, view === 'field' ? board : null, view === 'depth' ? depthSettings : null)
+  }, [battlefield, view, board, depthSettings])
 
   // The newest bar has left the view: the plot offers a way back ("Live").
   const [away, setAway] = useState(false)
@@ -1673,7 +1678,7 @@ export default function MarketChart({
           </div>
         )}
         {fieldOn && tokens && <FrontBoard symbol={pair.symbol} pair={pair} tf={tf} bars={candles} tokens={tokens} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} board={board} onBoard={setBoard} />}
-        {depthOn && tokens && <DepthChart symbol={pair.symbol} pair={pair} tokens={tokens} last={last} perpListed={hasPerpCold(pair.symbol)} printSink={depthPrintRef} printStatus={liveFeed ? tailStatus : null} printLabel={liveFeed?.label ?? null} onLevel={onLimit} />}
+        {depthOn && tokens && <DepthChart symbol={pair.symbol} pair={pair} tokens={tokens} last={last} perpListed={hasPerpCold(pair.symbol)} printSink={depthPrintRef} printStatus={liveFeed ? tailStatus : null} printLabel={liveFeed?.label ?? null} onLevel={onLimit} settings={depthSettings} onSettings={setDepthSettings} />}
         {wallOn && tokens && <TheWall geom={geom} bars={bars} symbol={pair.symbol} pair={pair} tf={tf} tokens={tokens} last={last} hostRef={wrapRef} onStatus={setWallStatus} />}
         {!altOn && <DrawingLayer
           geom={geom}
@@ -1795,6 +1800,7 @@ export default function MarketChart({
           tf={tf}
           view={battlefield ? view : 'candles'}
           board={fieldOn ? board : null}
+          depth={depthOn ? depthSettings : null}
           lines={lines}
           onClose={() => setShareOpen(false)}
           capture={async () => {
