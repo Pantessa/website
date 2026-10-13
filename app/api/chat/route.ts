@@ -179,6 +179,7 @@ import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { COW_VAULT_RELAYER } from '@/lib/cow-guardrails'
 import { chartPairFor, parseChartAsk } from '@/lib/charts'
 import { marketReadAsk, marketReadChips, marketReadWords } from '@/lib/market-read'
+import { symbolName } from '@/lib/markets'
 import { NEXT_STEP_QUESTION, refusalNextSteps } from '@/lib/refusal-next-step'
 import { readTape, techSummary } from '@/lib/markets-ai-context'
 import { getNews, ageLabel } from '@/lib/news'
@@ -984,18 +985,23 @@ async function handleChatTurn(req: NextRequest) {
     if (marketRead) {
       const pair = chartPairFor(marketRead.symbol)
       if (pair) {
-        const [tape, news] = await Promise.all([
+        // The daily tape carries the rating and the averages; the hourly tape
+        // carries the honest 24h move (a daily bar's "24h ago" is the open of
+        // a session, not a day ago).
+        const [tape, hourly, news] = await Promise.all([
           readTape(pair.symbol, '1d').catch(() => null),
-          marketRead.kind === 'trend' ? Promise.resolve(null) : getNews(pair.symbol, 3).catch(() => null),
+          readTape(pair.symbol, '1h').catch(() => null),
+          marketRead.kind === 'trend' ? Promise.resolve(null) : getNews(pair.symbol, 8).catch(() => null),
         ])
         nativeTrace({ type: 'select', service: `${pair.source} (native read)`, endpoint: `tape · ${pair.label}`, priceUsd: 0, reason: 'native market read — our own tape + the news ladder, never the planner narrating a price' })
         const reply = marketReadWords({
           pair,
           kind: marketRead.kind,
-          last: tape?.last ?? null,
-          change24hPct: tape?.change24hPct ?? null,
+          last: hourly?.last ?? tape?.last ?? null,
+          change24hPct: hourly?.change24hPct ?? tape?.change24hPct ?? null,
           tech: techSummary(tape?.tech ?? null),
           tf: tape?.tf,
+          name: symbolName(pair.symbol),
           news: marketRead.kind === 'trend' ? null : (news?.items ?? []).map((n) => ({ title: n.title, url: n.url, source: n.source, age: ageLabel(n.publishedAt) })),
         })
         const options = marketReadChips(pair)

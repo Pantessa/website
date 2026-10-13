@@ -165,7 +165,7 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   const iRead = chat.indexOf('const marketRead = marketReadAsk(message)')
   const iSwap = chat.indexOf('// ── Swap intent: Pantessa-NATIVE transaction building')
   check('chat route: the market-read gate sits right after the chart gate, before every money layer', iChart > 0 && iRead > iChart && iRead < iSwap)
-  check('chat route: the read answers with the chart + chips and never throws (feeds caught)', /readTape\(pair\.symbol, '1d'\)\.catch\(\(\) => null\)/.test(chat) && /getNews\(pair\.symbol, 3\)\.catch\(\(\) => null\)/.test(chat) && /buildPath: 'native-market-read'/.test(chat))
+  check('chat route: the read answers with the chart + chips and never throws (feeds caught)', /readTape\(pair\.symbol, '1d'\)\.catch\(\(\) => null\)/.test(chat) && /getNews\(pair\.symbol, 8\)\.catch\(\(\) => null\)/.test(chat) && /readTape\(pair\.symbol, '1h'\)\.catch\(\(\) => null\)/.test(chat) && /buildPath: 'native-market-read'/.test(chat))
   check('chat route: the chart reply no longer offers DCA (retired 2026-09-16)', !/Tap Buy, Sell, or DCA/.test(chat))
   const mask = readFileSync(join(__dirname, '../app/api/markets/ask/route.ts'), 'utf8')
   check('markets ask: a read question answers from the tape when the model is down or walled', /if \(read\) return readAnswer\('none'\)/.test(mask) && /if \(read\) return readAnswer\('wall'\)/.test(mask))

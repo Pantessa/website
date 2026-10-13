@@ -49,6 +49,8 @@ import { parseAlertAsk, parseDrawAsk, parseOverlayAsk } from '../lib/markets-ai'
 import { validateProposedAsk } from '../lib/markets-ai-ladder'
 import { walletFlags } from '../lib/wallet-flags'
 import { alertActionChips } from '../lib/watchlists'
+import { composeLineActions, composeZoneActions } from '../lib/chart-actions'
+import { chipMenu } from '../lib/markets-ai'
 import { APP_CHAINS } from '../lib/chains'
 import { gasStateFor, type WalletChainView } from '../lib/wallet-view'
 import { asksAboutOwnWallet } from '../lib/own-wallet-read'
@@ -205,6 +207,18 @@ export function enumerate(): Row[] {
       add('pick alert follow', tag, alertFollowAsk(sym))
       const plan = pickAlertPlan(sym)
       if (plan && 'followAsk' in plan) add('pick alert plan', tag, (plan as { followAsk?: string | null }).followAsk ?? null)
+    })
+    safe('chart actions', () => {
+      // lib/chart-actions — the chips a drawn level / zone offers (above and
+      // below market, both sides of a zone, straddling).
+      for (const k of [0.8, 0.95, 1.05, 1.2]) for (const a of composeLineActions({ symbol: p.symbol, source: p.source, price: Number((last * k).toPrecision(5)), last })) add('chart level/zone offers (lib/chart-actions)', `${tag} · level ${k}×`, a.action.ask)
+      for (const [a, b] of [[0.8, 0.9], [1.1, 1.2], [0.95, 1.05]]) for (const o of composeZoneActions({ symbol: p.symbol, source: p.source, p1: last * a, p2: last * b, last })) add('chart level/zone offers (lib/chart-actions)', `${tag} · zone ${a}–${b}×`, o.action.ask)
+    })
+    safe('ai brief menu', () => {
+      // lib/markets-ai chipMenu — the AiBrief's menu (the route ladder-filters
+      // it before the model picks; the inventory reads it UNFILTERED so a drop
+      // is visible here, not silent).
+      for (const c of chipMenu({ pair: p, last, tech: null })) add('AI brief menu (chipMenu, unfiltered)', tag, c.ask)
     })
     safe('alert action chips', () => {
       // lib/watchlists alertActionChips — the chips a saved alert offers and

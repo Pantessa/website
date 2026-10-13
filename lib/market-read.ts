@@ -107,6 +107,19 @@ export interface MarketReadFacts {
   tf?: string
   /** Newest first; empty when every hop came back empty; null = not read. */
   news: { title: string; url: string; source: string; age: string }[] | null
+  /** The company / coin name ("Tesla") — a headline must name the symbol or
+   *  this to be shown (the search feeds return neighbours: a TSLA read once
+   *  carried "U.S. Bancorp Stock Looks Below Fair Value"). */
+  name?: string
+}
+
+/** Does this headline talk about this market? */
+export function headlineAbout(title: string, symbol: string, name?: string): boolean {
+  const t = ` ${title.toLowerCase()} `
+  const sym = symbol.toLowerCase()
+  if (new RegExp(`[^a-z0-9$]\\$?${sym.replace(/[^a-z0-9]/g, '')}[^a-z0-9]`).test(t)) return true
+  const word = String(name ?? '').toLowerCase().replace(/[,.]/g, '').split(/\s+/).filter((w) => w.length >= 3 && !/^(inc|corp|corporation|the|class|holdings|group|company|co|ltd|plc|token|coin)$/.test(w))[0]
+  return !!word && t.includes(word)
 }
 
 export function fmtReadPrice(n: number): string {
@@ -138,8 +151,9 @@ export function marketReadWords(f: MarketReadFacts): string {
     out.push(`On the ${tf} chart the 26-indicator rating reads **${f.tech.summary}** (moving averages ${f.tech.movingAverages} · oscillators ${f.tech.oscillators}${rsi})${avg.length ? `; price is ${avg.join(' and ')}` : ''}.`)
   }
   if (f.kind !== 'trend') {
-    if (f.news && f.news.length) {
-      out.push(`In the news:\n${f.news.slice(0, 3).map((n) => `- [${n.title.replace(/[[\]]/g, '')}](${n.url}) — ${n.source}, ${n.age}`).join('\n')}`)
+    const about = (f.news ?? []).filter((n) => headlineAbout(n.title, sym, f.name))
+    if (f.news && about.length) {
+      out.push(`In the news:\n${about.slice(0, 3).map((n) => `- [${n.title.replace(/[[\]]/g, '')}](${n.url}) — ${n.source}, ${n.age}`).join('\n')}`)
     } else if (f.news) {
       out.push(`No ${sym} headlines came back from the news feeds just now, so the read above is the tape alone.`)
     }
