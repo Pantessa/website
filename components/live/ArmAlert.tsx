@@ -4,19 +4,19 @@
 // price alert on this market through the EXISTING alerts — POST /api/alerts
 // (lib/watchlists-store createAlert), the per-minute sweep, the bell in
 // shell/RailAlerts. The rules are lib/pick-alerts (pure, pinned); this file
-// is the browser: the session gate, the shared alerts instance when the page
-// provides one, the direct POST when it doesn't, the held arm across the
-// sign-in door.
+// is the browser: the session gate, ONE POST per arm on the session cookie,
+// the page's shared alerts instance refreshed so the bell counts it at once,
+// the held arm across the sign-in door.
 //
 // Seats (the coordinator's one-line mounts):
 //   scoreboard — a small per-row control in the battle's recruit cell
-//                (44px under a coarse pointer); on /live the row's alerts
-//                instance is MarketsSide's, so the bell counts it at once.
+//                (44px under a coarse pointer); on /live the page's alerts
+//                instance is MarketsSide's — refreshed after the POST.
 //   deck       — one control for the deck's market on the splash. The deck
 //                sits BESIDE the index's side column, not inside it, so there
-//                is no shared instance: the arm POSTs directly and says so on
-//                `window` (ALERTS_CHANGED_EVENT) and the index's bell
-//                re-reads now instead of at its next 30s poll.
+//                is no shared instance: the arm says so on `window`
+//                (ALERTS_CHANGED_EVENT) and the index's bell re-reads now
+//                instead of at its next 30s poll.
 //   strip      — "Watch these": one alert per pick in one consent (the pure
 //                plan names what it skips: unpriceable, already armed, over
 //                the cap). Takes `markets`. Unmounted until a picker head
@@ -39,9 +39,11 @@ import { useSharedAlerts } from '@/components/markets/watchlist/alerts-context'
 import { shownError } from '@/lib/fetch-words'
 import {
   ALERTS_CHANGED_EVENT,
+  ARM_RETRY_MS,
   DEFAULT_ALERT_PCT,
   HELD_ARM_KEY,
   armGate,
+  isNoPriceYet,
   armLabel,
   armedWords,
   heldArmRecord,
@@ -73,8 +75,11 @@ interface Armed {
   basePrice: number | null
 }
 
-/** The direct door when the page provides no shared alerts instance. */
-async function postAlert(body: PickAlertBody): Promise<{ basePrice: number | null }> {
+/** ONE arm = one POST with the session cookie; the server's own words come
+ *  back as the error (so a "No live price" answer is recognizable). `tell`
+ *  announces the write on `window` for a bell outside this subtree (the
+ *  deck on `/`); a page with a shared instance refreshes that instead. */
+async function postAlert(body: PickAlertBody, tell: boolean): Promise<{ basePrice: number | null }> {
   const res = await fetch('/api/alerts', {
     method: 'POST',
     credentials: 'same-origin',
@@ -83,9 +88,11 @@ async function postAlert(body: PickAlertBody): Promise<{ basePrice: number | nul
   })
   const json = (await res.json().catch(() => null)) as { alert?: { basePrice?: number | null }; error?: string } | null
   if (!res.ok) throw new Error(json?.error || `Alerts: ${res.status}`)
-  try {
-    window.dispatchEvent(new Event(ALERTS_CHANGED_EVENT))
-  } catch {}
+  if (tell) {
+    try {
+      window.dispatchEvent(new Event(ALERTS_CHANGED_EVENT))
+    } catch {}
+  }
   return { basePrice: json?.alert?.basePrice ?? null }
 }
 
@@ -113,26 +120,41 @@ export default function ArmAlert({ market, seat, markets, pct = DEFAULT_ALERT_PC
   const sharedOn = plan ? isPctAlertOn(shared?.alerts, plan.symbol, pct) : false
   const armedOne = plan ? (sharedOn ? { symbol: plan.symbol, basePrice: (shared?.alerts ?? []).find((a) => a.symbol === plan.symbol && a.condition === 'pct_move' && a.status !== 'fired')?.basePrice ?? null } : done && !Array.isArray(done) ? done : null) : null
 
+  // ONE arm = one POST. The shared instance (the page's bell) is refreshed
+  // after it lands, so the count flips at once; a page without one is told
+  // on `window`. The server anchors the rule on its own quote read; when
+  // that read missed the venue for a moment ("No live price for X") the tap
+  // retries once after ARM_RETRY_MS, then says so. Nothing else is retried.
+  const armRow = useCallback(
+    async (p: PickAlertPlan, retried = false): Promise<Armed> => {
+      try {
+        const r = await postAlert(p.body, !shared)
+        if (shared) void shared.refresh()
+        return { symbol: p.symbol, basePrice: r.basePrice }
+      } catch (e) {
+        if (!retried && isNoPriceYet((e as Error)?.message)) {
+          await new Promise((r) => setTimeout(r, ARM_RETRY_MS))
+          return armRow(p, true)
+        }
+        throw e
+      }
+    },
+    [shared],
+  )
+
   const armOne = useCallback(
     async (p: PickAlertPlan) => {
       setBusy(true)
       setError(null)
       try {
-        if (shared) {
-          const a = await shared.create(p.body)
-          if (!a) throw new Error(shared.error || 'Nothing was saved; try again in a moment.')
-          setDone({ symbol: a.symbol, basePrice: a.basePrice })
-        } else {
-          const r = await postAlert(p.body)
-          setDone({ symbol: p.symbol, basePrice: r.basePrice })
-        }
+        setDone(await armRow(p))
       } catch (e) {
         setError(shownError(e, 'Alerts', 'Nothing was saved; try again in a moment.'))
       } finally {
         setBusy(false)
       }
     },
-    [shared],
+    [armRow],
   )
 
   const armMany = useCallback(
@@ -141,16 +163,7 @@ export default function ArmAlert({ market, seat, markets, pct = DEFAULT_ALERT_PC
       setError(null)
       const armed: Armed[] = []
       try {
-        for (const p of plans) {
-          if (shared) {
-            const a = await shared.create(p.body)
-            if (!a) throw new Error(shared.error || 'Nothing was saved; try again in a moment.')
-            armed.push({ symbol: a.symbol, basePrice: a.basePrice })
-          } else {
-            const r = await postAlert(p.body)
-            armed.push({ symbol: p.symbol, basePrice: r.basePrice })
-          }
-        }
+        for (const p of plans) armed.push(await armRow(p))
       } catch (e) {
         setError(shownError(e, 'Alerts', armed.length ? `${armed.length} armed, then it stopped; try the rest again.` : 'Nothing was saved; try again in a moment.'))
       } finally {
@@ -158,7 +171,7 @@ export default function ArmAlert({ market, seat, markets, pct = DEFAULT_ALERT_PC
         setBusy(false)
       }
     },
-    [shared],
+    [armRow],
   )
 
   // A guest's tap leaves a record while the door is open (the Google lane

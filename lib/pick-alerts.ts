@@ -47,6 +47,15 @@ export const HELD_ARM_TTL_MS = 10 * 60_000
  *  bell re-reads at once instead of at its next 30s poll. */
 export const ALERTS_CHANGED_EVENT = 'pantessa:alerts-changed'
 
+/** A tap retries ONCE, this long after a "no live price" answer: the server's
+ *  quote read missed the venue for a moment (measured: the first read seconds
+ *  after a cold start answered nothing for HYPE while the venue was fine). */
+export const ARM_RETRY_MS = 1500
+/** The server's own refusal when its quote read found no price (createAlert). */
+export function isNoPriceYet(message: string | null | undefined): boolean {
+  return /^No live price for /.test(String(message ?? ''))
+}
+
 export type ArmSeat = 'scoreboard' | 'deck' | 'strip'
 
 /** The body POST /api/alerts takes for a pick alert. `basePrice` is left to
