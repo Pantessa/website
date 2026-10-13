@@ -158,8 +158,10 @@ async function served() {
     check(`served icon ${icon.sizes} 200`, r.status === 200 && /image\/png/.test(r.headers.get('content-type') ?? ''), `${r.status}`)
   }
   const html = await (await fetch(`${BASE}/story`)).text()
-  check('served theme-color (dark) = --bg', new RegExp(`<meta name="theme-color" media="\\(prefers-color-scheme: dark\\)" content="${THEME_COLORS.dark}"`).test(html))
-  check('served theme-color (light) = --bg', new RegExp(`<meta name="theme-color" media="\\(prefers-color-scheme: light\\)" content="${THEME_COLORS.light}"`).test(html))
+  const metas = [...html.matchAll(/<meta name="theme-color"[^>]*>/g)].map((m) => m[0])
+  const metaFor = (scheme: string) => metas.find((m) => m.includes(`media="(prefers-color-scheme: ${scheme})"`)) ?? ''
+  check('served theme-color (dark) = --bg', metaFor('dark').includes(`content="${THEME_COLORS.dark}"`), metaFor('dark') || 'missing')
+  check('served theme-color (light) = --bg', metaFor('light').includes(`content="${THEME_COLORS.light}"`), metaFor('light') || 'missing')
 }
 
 served()

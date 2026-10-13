@@ -434,6 +434,30 @@ function main() {
     writeFileSync(args[mdAt + 1], out.join('\n'))
     console.log(`\nwrote ${args[mdAt + 1]}`)
   }
+  // --compact <out.md>: one line per file (file:line → token), the shape the
+  // lane file's `## For <LANE>` blocks carry.
+  const cAt = args.indexOf('--compact')
+  if (cAt >= 0) {
+    const short = (t: string | null) => (t ?? '').replace(/^var\((--[\w-]+)\)$/, '$1')
+    const out: string[] = []
+    for (const lane of ['CONSISTENCY', 'MARKETS-MOBILE', 'FLOW-MOBILE', 'DEADENDS', 'QA', 'UNOWNED'] as Lane[]) {
+      const rows = byLane.get(lane) ?? []
+      if (!rows.length) continue
+      const byFile = new Map<string, Row[]>()
+      for (const r of rows) {
+        if (!byFile.has(r.file)) byFile.set(r.file, [])
+        byFile.get(r.file)!.push(r)
+      }
+      out.push(`### ${lane} — ${rows.length} rows in ${byFile.size} files`, '')
+      for (const [f, rs] of [...byFile.entries()].sort((a, b) => b[1].length - a[1].length)) {
+        const cells = rs.map((r) => `L${r.line} \`${r.literal.replace(/`/g, "'").slice(0, 48)}\`→${r.token ? short(r.token) : '?'}`)
+        out.push(`- \`${f}\` (${rs.length}): ${cells.join(' · ')}`)
+      }
+      out.push('')
+    }
+    writeFileSync(args[cAt + 1], out.join('\n'))
+    console.log(`wrote ${args[cAt + 1]}`)
+  }
   const jsonAt = args.indexOf('--json')
   if (jsonAt >= 0) writeFileSync(args[jsonAt + 1], JSON.stringify(all, null, 1))
 }

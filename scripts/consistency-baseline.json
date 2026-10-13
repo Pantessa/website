@@ -1,12 +1,9 @@
 {
- "app/activity/page.tsx": {
-  "font-px": 13
- },
  "app/agents/[handle]/page.tsx": {
-  "font-px": 13
+  "font-px": 2
  },
  "app/agents/page.tsx": {
-  "font-px": 21
+  "font-px": 4
  },
  "app/dashboard/activity/page.tsx": {
   "tw-color": 5
@@ -96,12 +93,11 @@
  "app/incidents/[id]/page.tsx": {
   "color": 1,
   "tw-color": 7,
-  "font-px": 6
+  "font-px": 2
  },
  "app/incidents/page.tsx": {
   "color": 2,
-  "tw-color": 1,
-  "font-px": 4
+  "tw-color": 1
  },
  "app/l/[handle]/page.tsx": {
   "font-px": 16
@@ -123,7 +119,7 @@
   "radius-px": 1
  },
  "app/not-found.tsx": {
-  "font-px": 3
+  "font-px": 1
  },
  "app/p/[slug]/page.tsx": {
   "tw-color": 10,
@@ -133,22 +129,12 @@
   "tw-color": 1,
   "font-px": 10
  },
- "app/rebrand/page.tsx": {
-  "font-px": 18
- },
  "app/roster/page.tsx": {
-  "font-px": 16
- },
- "app/servers/[slug]/page.tsx": {
-  "font-px": 1
+  "font-px": 3
  },
  "app/servers/add/page.tsx": {
   "color": 1,
-  "tw-color": 3,
-  "font-px": 2
- },
- "app/story/page.tsx": {
-  "font-px": 1
+  "tw-color": 3
  },
  "app/w/[address]/page.tsx": {
   "color": 3,
@@ -156,8 +142,8 @@
  },
  "app/x402-design.css": {
   "color": 270,
-  "font-px": 722,
-  "radius-px": 338
+  "font-px": 409,
+  "radius-px": 190
  },
  "components/AccountSwitchBanner.tsx": {
   "tw-color": 2,
@@ -776,8 +762,8 @@
  },
  "components/landing/landing.css": {
   "color": 4,
-  "font-px": 38,
-  "radius-px": 10
+  "font-px": 19,
+  "radius-px": 8
  },
  "components/live/Battle.tsx": {
   "color": 11

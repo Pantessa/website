@@ -147,7 +147,7 @@ export default async function ServiceDetailPage({ params }: Params) {
     <header className="svc__head">
       {underReview && (
         <div
-          className="mono text-[11px] px-3 py-2 mb-3 rounded-lg border border-[var(--line-2)] text-[color:var(--muted)]"
+          className="mono text-[length:var(--fs-xs)] px-3 py-2 mb-3 rounded-lg border border-[var(--line-2)] text-[color:var(--muted)]"
           data-testid="review-banner"
         >
           {server.reviewStatus === 'rejected' ? 'NOT APPROVED' : 'PENDING REVIEW'} — only you
