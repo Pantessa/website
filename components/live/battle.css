@@ -197,23 +197,24 @@ html[data-theme="light"] .battle {
    row (Hold and Fullscreen keep their words in their titles), the Siege's field as tall as the column is wide,
    the Front's field sized to what is left of the screen. */
 @media (max-width: 640px) {
-  /* Both seats (the deck's stage and the page): one 44px row of controls that scrolls when it must, and the
-     armies as ONE scrolling row — one row, so each pill is a whole 44px target (3–4 wrapped rows were 132–198px
-     on /live and 80–124px in the deck). */
+  /* Both seats (the deck's stage and the page): one 44px row of controls that scrolls when it must. In the
+     deck's stage the armies are ONE scrolling row — one row, so each pill is a whole 44px target (3 wrapped rows
+     were 80–124px); the page keeps its wrapping picker, whose last item is the add box (a scrolling row would
+     hide it past the edge). */
   .battle__controls { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .battle__controls::-webkit-scrollbar { display: none; }
   .battle__controls > * { flex: 0 0 auto; }
   .battle__btn { width: 44px; padding: 0; gap: 0; font-size: 0; justify-content: center; }
   .battle__since button { padding: 0 7px; }
-  .battle__chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
-  .battle__chips::-webkit-scrollbar { display: none; }
-  .battle__chips > * { flex: 0 0 auto; }
+  .battle--stage .battle__chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
+  .battle--stage .battle__chips::-webkit-scrollbar { display: none; }
+  .battle--stage .battle__chips > * { flex: 0 0 auto; }
   @media (hover: none) {
-    .battle__pick { height: 44px; }
-    .battle__pick::after { inset: 0; }
+    .battle--stage .battle__pick { height: 44px; }
+    .battle--stage .battle__pick::after { inset: 0; }
   }
   /* The page's field: the Front sized to what is left of the screen, the Siege as tall as the column is wide
      (its radius is min(w, h) / 2 − 40 — battle-draw — so height past the width is empty field). */
-  .battle[data-seat="page"] .battle__stage { height: clamp(300px, calc(100svh - 420px), 480px); }
-  .battle[data-seat="page"][data-view="siege"] .battle__stage { height: clamp(300px, calc(100cqw + 16px), 460px); }
+  .battle[data-seat="page"] .battle__stage { height: clamp(300px, calc(100svh - 500px), 480px); }
+  .battle[data-seat="page"][data-view="siege"] .battle__stage { height: clamp(300px, min(calc(100cqw + 16px), calc(100svh - 452px)), 460px); }
 }
