@@ -109,7 +109,7 @@ function pure() {
   pin('/live: no share → the page\'s own metadata, no images key (the file card stays)', /if \(!share\) return BASE/.test(page) && !/images/.test(page.slice(page.indexOf('const BASE'), page.indexOf('\n}\n', page.indexOf('const BASE')))))
   const share = src('components/live/ShareLive.tsx')
   pin('the share control: a journey label per view, the URL from lib/live-share, the window read on press', /data-journey=\{`Share \$\{view\}`\}/.test(share) && /shareUrlFor\(/.test(share) && /window\.location\.search/.test(share.slice(share.indexOf('const onShare'), share.indexOf('const word'))) && !/useSearchParams/.test(share))
-  pin('the share control: clipboard with a Copied state, navigator.share under a coarse pointer, 44px under a thumb', /navigator\.clipboard/.test(share) && /'Copied'/.test(share) && /navigator\.share\(/.test(share) && /pointer: coarse/.test(share) && /inset: -4px 0/.test(share))
+  pin('the share control: clipboard with a Copied state, navigator.share under a coarse pointer, 44px under a thumb', /navigator\.clipboard/.test(share) && /'Copied'/.test(share) && /navigator\.share\(/.test(share) && /pointer: coarse/.test(share) && /inset: -4px/.test(share) && /hover: none/.test(share))
   pin('the share control renders nothing market-shaped (the server HTML and the first client render agree)', !/\{list|\{chosen|\{markets|\{pick\.markets/.test(share.slice(share.indexOf('return (\n    <>'))))
 }
 
