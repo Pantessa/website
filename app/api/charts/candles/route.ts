@@ -34,6 +34,10 @@ export async function GET(req: NextRequest) {
   if (!/^[A-Za-z0-9$._-]{1,16}$/.test(symbolRaw)) {
     return NextResponse.json({ error: 'bad symbol' }, { status: 400 })
   }
+  // A tokenized stock has no minute bar (lib/charts tfsForSource): refuse by name, never a 5-minute bar wearing 1m.
+  if (tf === '1m' && chartPairFor(symbolRaw)?.source === 'robinhood') {
+    return NextResponse.json({ symbol: symbolRaw.toUpperCase(), tf, candles: [], error: 'no 1m bars for a stock' }, { status: 400, headers: NO_STORE })
+  }
   const beforeRaw = req.nextUrl.searchParams.get('before')
   if (beforeRaw !== null) return olderPage(symbolRaw, tf, beforeRaw)
   // The deep read (30s cache, shared with the technicals) runs beside the

@@ -53,6 +53,8 @@ import {
   type DunePerpTrade,
 } from '../lib/dune'
 import { simulateLadder } from './ask-ladder'
+import { LIVE_TAIL_TFS, applyPrint, bucketOf, chartLiveFeed, printOf, tailIsLive, tailWords } from '../lib/chart-live'
+import { CHART_TFS, tfsForSource } from '../lib/charts'
 import { LIVE_MARKETS_KEY, MAX_OWN_MARKETS, OWN_SOURCE_NOTE, addLiveMarkets, chipRow, knownMarkets, openingOwnMarkets, parseLiveMarketMemory, removeLiveMarket, serializeLiveMarketMemory, watchlistMarkets } from '../lib/live-markets'
 import { capabilityTarget } from '../lib/venue-capability'
 import { tradeTarget } from '../lib/trade-venue-gate'
@@ -253,6 +255,32 @@ export function tapePins(check: Check): void {
       const slot = readFileSync('components/home/PulseSlot.tsx', 'utf8')
       const hand = (src: string) => (src.match(/writeLiveMarketMemory\(next\)/g) ?? []).length === 2 && (src.match(/handRef\.current = true/g) ?? []).length === 2 && /readLiveMarketMemory\(\)/.test(src) && /useWatchlists\(\{ holdings: false \}\)/.test(src) && /openingOwnMarkets\(\{ memory: null, watch: watchlistMarkets\(watchSymbols, universe\) \}\)/.test(src) && /if \(handRef\.current \|\| ownSource === 'memory'/.test(src) && /insertReplacementText/.test(src)
       return hand(live) && hand(slot) && /feed\.connect\(\[\.\.\.new Set\(\[\.\.\.markets, \.\.\.own\]\)\], handlers\)/.test(live) && /chipRow\(own, busiest \?\? markets \?\? \[\.\.\.FALLBACK_MARKETS\], filter, CHIP_MARKETS\)/.test(live) && /const aim = useMemo\(\(\) => \[\.\.\.new Set\(\[\.\.\.own, \.\.\.markets\]\)\], \[own, markets\]\)/.test(slot) && /chipRow\(own, markets, null, markets\.length\)/.test(slot)
+    })())
+
+  // ── The chart's live tail (lib/chart-live, 2026-10-13) ────────────────
+  const hype = chartLiveFeed({ symbol: 'HYPE', source: 'hyperliquid', pair: 'HYPE' })
+  const uni = chartLiveFeed({ symbol: 'UNI', source: 'coinbase', pair: 'UNI-USD' })
+  const eth = chartLiveFeed({ symbol: 'ETH', source: 'coinbase', pair: 'ETH-USD' })
+  check('chart tail: only the chart\'s OWN instrument drives its tail — a perp takes HyperCore prints for its coin, a trial-covered coin takes DEX spot prints under its printed symbols (ETH ← WETH + ETH, BTC ← WBTC + cbBTC), a coin outside the trial and every stock take nothing',
+    hype?.venues.join() === 'hypercore' && hype.markets.join() === 'HYPE' && uni?.venues.join(',') === 'dex-ethereum,dex-base,dex-arbitrum' && uni.markets.join() === 'UNI' && eth?.markets.join(',') === 'WETH,ETH' && chartLiveFeed({ symbol: 'BTC', source: 'coinbase', pair: 'BTC-USD' })?.markets.join(',') === 'WBTC,cbBTC' &&
+      chartLiveFeed({ symbol: 'DOGE', source: 'coinbase', pair: 'DOGE-USD' }) === null && chartLiveFeed({ symbol: 'AAPL', source: 'robinhood', pair: 'AAPL' }) === null && chartLiveFeed(null) === null)
+  check('chart tail: the tail follows the prints on 1m · 15m · 1H only (4H and 1D poll), the 1m frame leads the list, and a stock\'s list has no 1m (its tape has no minute bar)',
+    LIVE_TAIL_TFS.join(',') === '1m,15m,1h' && tailIsLive('1h', hype) && !tailIsLive('4h', hype) && !tailIsLive('1d', hype) && !tailIsLive('1m', null) && CHART_TFS[0].key === '1m' && CHART_TFS.length === 5 && tfsForSource('robinhood').every((t) => t.key !== '1m') && tfsForSource('coinbase').length === 5 && tfsForSource('hyperliquid')[0].key === '1m')
+  const T = 1_791_880_000_000 // ms
+  const b0 = bucketOf(T, 60)
+  const open = applyPrint(null, { at: T, price: 7.4, size: 10 }, 60)
+  const up = applyPrint(open!.bar, { at: T + 5_000, price: 7.5, size: 2 }, 60)
+  const down = applyPrint(up!.bar, { at: T + 9_000, price: 7.3, size: 1 }, 60)
+  const next = applyPrint(down!.bar, { at: (b0 + 60) * 1000 + 100, price: 7.35, size: 4 }, 60)
+  check('chart tail: a print stretches the tail\'s high and low, moves its close and adds its size; a print in a newer bucket opens a new bar at its price; a print older than the tail is history the venue closed (ignored); a zero price is noise',
+    !!open && open.fresh && open.bar.t === b0 && open.bar.o === 7.4 && open.bar.v === 10 && !!up && !up.fresh && up.bar.h === 7.5 && up.bar.c === 7.5 && up.bar.v === 12 && !!down && down.bar.l === 7.3 && down.bar.h === 7.5 && down.bar.c === 7.3 && down.bar.o === 7.4 && down.bar.v === 13 &&
+      !!next && next.fresh && next.bar.t === b0 + 60 && next.bar.o === 7.35 && next.bar.v === 4 && applyPrint(next.bar, { at: T, price: 7.9, size: 1 }, 60) === null && applyPrint(null, { at: T, price: 0, size: 1 }, 60) === null && printOf({ at: 1, price: 2, size: 3 }).size === 3, JSON.stringify([open, up, down, next]))
+  check('chart tail: the pill says where the prints come from and whether the tail is live, says "polled" by name for a frame or an instrument that polls, and names a keyless relay',
+    tailWords('live', hype, '15m') === 'Hyperliquid prints · live' && tailWords('live', uni, '1m') === 'DEX prints · live' && tailWords('live', hype, '1d') === 'polled · prints on 1m–1H' && tailWords('live', null, '1m') === 'polled' && tailWords('unconfigured', hype, '1m') === 'polled · relay has no key' && tailWords('reconnecting', uni, '1h') === 'DEX prints · reconnecting')
+  check('chart tail: MarketChart opens the relay filtered to the instrument\'s own prints only on a live frame, updates the engine\'s last bar in place (never setData per print), re-applies a live bar the poll has not reached yet, and a stock never asks for 1m',
+    (() => {
+      const src = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
+      return /openDuneTape\(liveFeed\.markets/.test(src) && /\{ venues: liveFeed\.venues, filter: true \}/.test(src) && /if \(!liveFeed \|\| !tailIsLive\(tf, liveFeed\)\)/.test(src) && /applyPrint\(tailRef\.current, printOf\(f\), tfSec\)/.test(src) && /cs\.update\(\{ time: r\.bar\.t as UTCTimestamp/.test(src) && /tailRef\.current = bars\[bars\.length - 1\] \?\? null/.test(src) && /tfsForSource\(pair\?\.source\)/.test(src) && /pair\?\.source === 'robinhood' && tf === '1m'/.test(src) && /data-tail=\{/.test(src)
     })())
 
   // ── Formats ───────────────────────────────────────────────────────────
