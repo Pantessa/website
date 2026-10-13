@@ -56,6 +56,10 @@ export function marketReadAsk(text: string, symbolHint?: string | null): MarketR
   let t = raw.replace(/\s+/g, ' ')
   for (let i = 0; i < 3; i++) t = t.replace(/^(?:hey|hi|yo|ok|okay|so|please|pls|can you|could you|would you|tell me|show me|explain)[,!]?\s+/i, '')
   if (/0x[0-9a-f]{6,}|https?:\/\//i.test(t)) return null
+  // A read never swallows an order riding the same sentence ("why is ETH
+  // moving? buy $10 of it", "…, then long $20 of HYPE"): a sized money verb
+  // or a "then" leaves it to the ladder (the jobs compiler, the swap gate).
+  if (/\bthen\b|\b(?:buy|sell|swap|long|short|stake|supply|lend|bridge|send|deposit)\s+\$?\d/i.test(t)) return null
   const hint = symbolHint ? chartPairFor(symbolHint)?.symbol ?? null : null
   let m: RegExpMatchArray | null
   // "Why is ETH moving?" · "why is tsla down today" · "why's BTC pumping"

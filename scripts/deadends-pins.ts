@@ -143,7 +143,7 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   ]
   for (const [q, sym, kind] of reads) { const r = marketReadAsk(q); check(`market read: "${q}" → ${sym} ${kind}`, r?.symbol === sym && r.kind === kind, JSON.stringify(r)) }
   check('market read: the page names the symbol ("what\'s the trend?" on /t/HYPE)', marketReadAsk("What's the trend?", 'HYPE')?.symbol === 'HYPE' && marketReadAsk("What's the trend?") === null)
-  for (const q of ['eth price', 'buy eth', 'Buy $25 of ETH', 'why is it moving', 'why is the market down', 'how do I start?', 'what is staking?', 'Show me the ETH chart', 'why is ZZQX moving', 'what is moving 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 'should I buy now', 'is aave safe?', 'is this a scam'])
+  for (const q of ['eth price', 'buy eth', 'Buy $25 of ETH', 'why is it moving', 'why is the market down', 'how do I start?', 'what is staking?', 'Show me the ETH chart', 'why is ZZQX moving', 'what is moving 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 'should I buy now', 'is aave safe?', 'is this a scam', 'why is ETH moving? buy $10 of it', 'why is HYPE pumping, then long $20 of HYPE on hyperliquid'])
     check(`market read stays out of: "${q}"`, marketReadAsk(q) === null, JSON.stringify(marketReadAsk(q)))
   for (const q of ['Why is ETH moving?', 'What is the current price and 24h change for ETH?', 'What is moving TSLA right now — price, 24h change, and the news behind it?']) {
     const o = simulateLadder(q)
