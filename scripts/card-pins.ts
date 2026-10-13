@@ -101,7 +101,7 @@ function pure() {
   // ── source rules ──
   const route = src('app/api/og/live/route.tsx')
   pin('the route reads the venue once with a timeout, the xyz dex only for a stock perp', /metaAndAssetCtxs/.test(route) && /AbortSignal\.timeout\(/.test(route) && /wantXyz/.test(route) && !/wss:/.test(route))
-  pin('the route never 500s: a throw falls to the generic card, a generic throw redirects to /live\'s own', /catch \{\s*return generic\(\)/.test(route) && /status: 307/.test(route) && /\/live\/opengraph-image/.test(route) && !/status: 5\d\d/.test(route))
+  pin('the route never 500s: a throw falls to the generic card, a generic throw redirects to /live\'s own; a pick the venue lists none of is generic', /catch \{\s*return generic\(\)/.test(route) && /if \(!out\) return generic\(\)/.test(route) && /!rows\.some\(\(r\) => r\.listed\)/.test(route) && /status: 307/.test(route) && /\/live\/opengraph-image/.test(route) && !/status: 5\d\d/.test(route))
   pin('a live card holds ~60s, a warming one 15s; the miss says so', /max-age=60/.test(route) && /max-age=15/.test(route) && /FEED WARMING UP/.test(route) && /24H MOVE/.test(route) && /cardRankNote\(/.test(route))
   pin('the card credits only Hyperliquid for its numbers', /PRICES · HYPERLIQUID/.test(route) && !/Dune/i.test(route.replace(/^\s*\/\/.*$/gm, '')))
   const page = src('app/live/page.tsx')
@@ -120,7 +120,7 @@ async function serve() {
   const pngOf = async (p: string) => {
     const r = await get(p)
     const buf = Buffer.from(await r.arrayBuffer())
-    return { status: r.status, type: r.headers.get('content-type') ?? '', cache: r.headers.get('cache-control') ?? '', buf, magic: buf.subarray(0, 8).toString('hex') === '89504e470d0a1a0a' }
+    return { status: r.status, type: r.headers.get('content-type') ?? '', cache: r.headers.get('cache-control') ?? '', card: r.headers.get('x-pantessa-card') ?? '', buf, magic: buf.subarray(0, 8).toString('hex') === '89504e470d0a1a0a' }
   }
   const ogLines = (html: string) => (html.match(/<meta (property|name)="(og|twitter):[^"]*" content="[^"]*"/g) ?? []).sort()
   const ogOf = (html: string, key: string) => html.match(new RegExp(`<meta (?:property|name)="${key}" content="([^"]*)"`))?.[1]?.replace(/&amp;/g, '&') ?? null
@@ -136,10 +136,20 @@ async function serve() {
   pin(`serve: ?t=HYPE,ETH&view=front → 200 PNG (${two.buf.length} B)`, two.status === 200 && two.type === 'image/png' && two.magic && two.buf.length > 20_000)
   const tapeCard = await pngOf('/api/og/live?t=xyz:NVDA,KPEPE,UNI')
   pin(`serve: a tape card with a stock perp and a k-coin → 200 PNG (${tapeCard.buf.length} B)`, tapeCard.status === 200 && tapeCard.magic && tapeCard.buf.length > 20_000)
-  const garbage = await pngOf(`/api/og/live?t=${encodeURIComponent('<script>alert(1)</script>')}&view=${encodeURIComponent('"><img>')}`)
+  pin(`serve: a real pick is the pick composition (x-pantessa-card: ${card.card})`, card.card === 'pick' || card.card === 'warming')
+  // QA's gate probes, verbatim shapes: garbage, a 10KB t, fifty unlisted markets, no input, a hostile view.
+  const garbage = await pngOf('/api/og/live?t=%3Cscript%3Ealert(1)%3C%2Fscript%3E,%00,../../etc,%F0%9F%92%A9&view=%22onload')
   const bare = await pngOf('/api/og/live')
-  const long = await pngOf(`/api/og/live?t=${'A,'.repeat(400)}`)
-  pin(`serve: garbage / no input / an over-long t → 200, the generic composition (${garbage.buf.length} · ${bare.buf.length} · ${long.buf.length} B)`, [garbage, bare, long].every((r) => r.status === 200 && r.type === 'image/png' && r.magic && r.buf.length > 20_000) && !garbage.buf.equals(card.buf))
+  const long = await pngOf(`/api/og/live?t=${'A'.repeat(10240)}&view=map`)
+  const fifty = await pngOf(`/api/og/live?t=${Array.from({ length: 50 }, (_, i) => `M${i}`).join(',')}&view=siege`)
+  const hostile = await pngOf(`/api/og/live?view=${encodeURIComponent('"><svg/onload=alert(1)>')}&t=${encodeURIComponent('<img src=x onerror=alert(1)>,"><script>alert(2)</script>')}`)
+  const generics = { garbage, bare, long, fifty, hostile }
+  pin(
+    `serve: garbage / no input / a 10KB t / fifty unlisted markets / a hostile view → 200, the generic composition (${Object.entries(generics).map(([k, r]) => `${k} ${r.status} ${r.card} ${r.buf.length}B`).join(' · ')})`,
+    Object.values(generics).every((r) => r.status === 200 && r.type === 'image/png' && r.magic && r.buf.length > 20_000 && r.card === 'generic'),
+  )
+  const noView = await pngOf('/api/og/live?t=HYPE')
+  pin(`serve: no view is the tape's pick card (${noView.card})`, noView.status === 200 && noView.magic && (noView.card === 'pick' || noView.card === 'warming'))
 
   const withT = await (await get('/live?t=HYPE', BOT)).text()
   const img = ogOf(withT, 'og:image')

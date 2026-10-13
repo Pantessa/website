@@ -23,8 +23,8 @@ import { fmtPrice, fmtUsd, tapeMarket } from '@/lib/tape'
 // venue's 24h move as the proxy and says "24h" on its face. A feed miss draws
 // dashes and "feed warming up"; a market the venue doesn't list says so. The
 // numbers are Hyperliquid's and the card credits Hyperliquid — no other feed.
-// Unknown input (no `t`, garbage, an over-long `t`) answers the generic /live
-// card. It never 500s: a render that throws falls to the generic card, and a
+// Unknown input (no `t`, garbage, an over-long `t`, or a pick the venue lists
+// none of) answers the generic /live card. It never 500s: a render that throws falls to the generic card, and a
 // generic card that throws redirects to /live's own.
 
 export const runtime = 'nodejs'
@@ -270,10 +270,13 @@ function Card({ share, rows, warm, asOf }: { share: LiveShare; rows: CardRow[]; 
   )
 }
 
-async function renderShare(share: LiveShare): Promise<{ png: ArrayBuffer; warm: boolean }> {
+/** null = the venue answered and lists none of the picked markets: a card of
+ *  dashes says nothing, so the caller serves the generic card. */
+async function renderShare(share: LiveShare): Promise<{ png: ArrayBuffer; warm: boolean } | null> {
   const [[serif, serifItalic, sans, sansSemi], venue] = await Promise.all([fonts(), readVenue(share.markets)])
   const rows = cardRows(share, venue ? venue.rows : null)
   const warm = venue != null
+  if (warm && !rows.some((r) => r.listed)) return null
   const res = new ImageResponse(<Card share={share} rows={rows} warm={warm} asOf={venue?.asOf ?? null} />, {
     ...SIZE,
     fonts: [
@@ -288,14 +291,16 @@ async function renderShare(share: LiveShare): Promise<{ png: ArrayBuffer; warm: 
   return { png: await res.arrayBuffer(), warm }
 }
 
-function png(body: ArrayBuffer, cache: string): Response {
-  return new Response(body, { status: 200, headers: { 'content-type': 'image/png', 'cache-control': cache } })
+/** `x-pantessa-card` names the composition served (pick · warming · generic) —
+ *  for the pins and anyone debugging an unfurl. */
+function png(body: ArrayBuffer, cache: string, card: 'pick' | 'warming' | 'generic'): Response {
+  return new Response(body, { status: 200, headers: { 'content-type': 'image/png', 'cache-control': cache, 'x-pantessa-card': card } })
 }
 
 async function generic(): Promise<Response> {
   try {
     const res = await LiveCard()
-    return png(await res.arrayBuffer(), CACHE_LIVE)
+    return png(await res.arrayBuffer(), CACHE_LIVE, 'generic')
   } catch {
     return new Response(null, { status: 307, headers: { location: '/live/opengraph-image', 'cache-control': CACHE_MISS } })
   }
@@ -311,8 +316,9 @@ export async function GET(req: Request): Promise<Response> {
   }
   if (!share) return generic()
   try {
-    const { png: body, warm } = await renderShare(share)
-    return png(body, warm ? CACHE_LIVE : CACHE_MISS)
+    const out = await renderShare(share)
+    if (!out) return generic()
+    return png(out.png, out.warm ? CACHE_LIVE : CACHE_MISS, out.warm ? 'pick' : 'warming')
   } catch {
     return generic()
   }
