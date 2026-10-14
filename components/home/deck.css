@@ -208,3 +208,115 @@
     .deck__ch::after, .deck__flick::after { content: ''; position: absolute; inset: -4px 0; }
   }
 }
+
+/* PHONE (squad gtm-3h, 2026-10-13 — measured by squad-gtm3h-2026-10-13/shots/phone.mjs, coarse pointer, real
+   mobile viewport; numbers in PHONE.md). Before → after:
+   - the ACTIVE channel chip was a 36px target on every phone cell: its 44px hit area is the ::after and the
+     desktop underline rule (`.deck__ch.is-on::after`) wins on specificity and hides it → the hit area comes back,
+     the underline stays off;
+   - the ladder's door ("Open the depth view", 126×18) and every tape market link (23–71×18) → 44px hit areas;
+   - the tape stage: 49px rows with "s…" / "830…" / a cut chip at 320 → Side steps out (the row's ink and the
+     chip say it), the chip draws its pill inside a 44px box (the /live idiom), rows 45px;
+   - the battle channels made the deck 766–862px tall (stagebar 98, armies 3 rows, a 198px field — a 59px Siege
+     — and a 357px scoreboard): one 44px controls row, one scrolling army row, a taller Siege field, the
+     recruit chips side by side when they fit;
+   - with the book on, the ladder REPLACED the channel (the Pulse chip lit over a stage showing only the
+     ladder) → the ladder stacks under the channel. */
+@media (max-width: 640px) {
+  /* The book under the stage, not instead of it. */
+  .deck[data-book="on"] .deck__chan { display: block; }
+  .deck[data-book="on"] .deck__book { border-top: 1px solid var(--line); }
+  /* A split stage grew the pulse's plot to meet the ladder (200px); stacked, it keeps the phone's plot
+     (lib/pulse PULSE_CHART_H_PHONE). */
+  .deck[data-book="on"] .pulse[data-seat="stage"] { --pulse-plot-h: 52px; }
+  /* The ladder's door: an 18px line, 13px of reach above and below. */
+  .ladder__door { position: relative; }
+  .ladder__door::after { content: ''; position: absolute; inset: -13px -6px; }
+
+  /* ── The tape stage ── */
+  .deck__tape th:nth-child(2), .deck__tape td:nth-child(2) { display: none; }
+  .deck__tape th:nth-child(1) { width: 22%; }
+  .deck__tape th:nth-child(4) { width: 22%; }
+  .deck__tape th:nth-child(5) { width: 23%; }
+  .deck__tape th:nth-child(8) { width: 33%; }
+  .deck__tape th, .deck__tape td { padding-left: 4px; padding-right: 4px; }
+  .deck__tape td.num { font-size: 11px; letter-spacing: -0.01em; }
+  .deck__tape .deck__dex, .deck__tape .deck__venue, .deck__tape .deck__chip-usd { display: none; }
+  .deck__tape .deck__chip { padding: 0 8px; font-size: 11px; }
+  .deck__tape td.deck__act { padding-left: 2px; }
+  .deck__noact { white-space: normal; line-height: 12px; }
+
+  /* ── The tape stage's pick row (PICK, 2026-10-13: `.pulse__markets.deck__picks.deck__tapepick`, the pulse's 28px
+     chips) → one 44px scrolling row: every chip, its ×, the add field and the All chip are whole targets. ── */
+  .deck__tapepick { height: 44px; align-items: center; }
+  .deck__tapepick .pulse__m, .deck__tapepick .pulse__mx, .deck__tapepick .pulse__add input { height: 44px; }
+  .deck__tapepick .pulse__m { min-width: 44px; justify-content: center; }
+  .deck__tapepick .pulse__mx { min-width: 44px; padding: 0 12px 0 8px; }
+  .deck__tapepick .pulse__add input:focus { width: 150px; }
+
+  /* ── The battle channels ── (the one-row controls and the scrolling army row are battle.css's PHONE block,
+     both seats) */
+  /* The Siege's radius is min(w, h) / 2 − 40 (battle-draw): a 200px field drew a 59px arena. As tall as the
+     column is wide (capped), so the arena takes the width. */
+  .deck__chan .battle--stage[data-view="siege"] .battle__stage { height: clamp(240px, 92cqw, 340px); }
+  /* The scoreboard: Backers steps out (the field draws the backers), the recruit chips sit side by side and
+     wrap only when they must. */
+  .deck__chan .battle--stage .battle__table th:nth-child(5), .deck__chan .battle--stage .battle__table td:nth-child(5) { display: none; }
+  .deck__chan .battle--stage .battle__table th:nth-child(2) { width: 25%; }
+  .deck__chan .battle--stage .battle__table th:nth-child(3) { width: 21%; }
+  .deck__chan .battle--stage .battle__table th:nth-child(8) { width: 46%; }
+  .deck__chan .battle--stage .battle__table td:nth-child(8) { padding-right: 2px; }
+  .deck__chan .battle--stage .battle__pct { font-size: 12px; }
+  .deck__chan .battle--stage .battle__recruit { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0 4px; }
+  .deck__chan .battle--stage .battle__table td { padding-top: 0; padding-bottom: 0; height: 46px; }
+  .deck__chan .battle--stage .battle__table .battle__chip { padding: 0 7px; font-size: 10.5px; }
+  @media (hover: none) {
+    /* The active chip's hit area (the desktop underline rule hid it). */
+    .deck__ch.is-on::after { display: block; inset: -4px 0; height: auto; background: none; }
+    /* Tape rows: one 44px band; the chip keeps its pill, drawn by ::before inside a 44px box (a table cell
+       clips anything outside it, so the hit area has to be the box itself). */
+    .deck__tape td { padding-top: 0; padding-bottom: 0; height: 44px; }
+    .deck__tape .deck__mlink { min-height: 44px; min-width: 44px; }
+    .deck__tape .deck__chip { min-height: 44px; height: 44px; min-width: 44px; border-color: transparent; background: transparent; position: relative; isolation: isolate; }
+    .deck__tape .deck__chip::before { content: ''; position: absolute; inset: 10px 0; z-index: -1; border-radius: 999px; border: 1px solid transparent; }
+    .deck__tape .deck__chip--buy::before { background: color-mix(in srgb, var(--mk-up, var(--accent)) 18%, var(--surf-1)); border-color: color-mix(in srgb, var(--mk-up, var(--accent)) 55%, transparent); }
+    .deck__tape .deck__chip--sell::before { background: color-mix(in srgb, var(--mk-down, var(--sell)) 16%, var(--surf-1)); border-color: color-mix(in srgb, var(--mk-down, var(--sell)) 55%, transparent); }
+  }
+}
+/* PHONE — under 375 the side-by-side chips never fit (264px of table); they stack and Ground takes the width
+   ("+2.30%" was cut at 320). */
+@media (max-width: 374px) {
+  .deck__chan .battle--stage .battle__table th:nth-child(1) { width: 9%; }
+  .deck__chan .battle--stage .battle__table td:nth-child(1) { padding-left: 4px; padding-right: 0; }
+  .deck__chan .battle--stage .battle__table th:nth-child(2) { width: 25%; }
+  .deck__chan .battle--stage .battle__table th:nth-child(3) { width: 24%; }
+  .deck__chan .battle--stage .battle__table th:nth-child(8) { width: 42%; }
+  .deck__tape .deck__chip { padding: 0 6px; font-size: 10.5px; } /* "Short AZTEC" was cut by 2px at 320 */
+}
+/* PHONE — the seats other lanes mount in the bar (ALERTS's `.armalert--deck`): on a phone the bar is a row of 36px pills
+   (the channel idiom), so a seat there is a 36px bordered pill with a 44px hit area — never a 44px item that grows the bar
+   (45px → 52px would move the first board row toward the 740px budget). */
+@media (max-width: 640px) {
+  .deck__bar .armalert--deck { align-self: center; min-height: 0; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; position: relative; }
+  @media (hover: none) {
+    .deck__bar .armalert--deck::after { content: ''; position: absolute; inset: -4px 0; }
+  }
+}
+/* PHONE — ARENA's sheet trigger in the bar ("+ Your markets", 2026-10-13) sat AFTER the door chip, at x=462 — past
+   the bar's right edge at every phone width (a returning visitor never saw it without scrolling the bar). It rides
+   second, after the switch; the 34px "Change" trigger in the stage's pick head and the tape's row gets a 44px hit
+   area (it measured 83×34 in every battle and tape cell). */
+@media (max-width: 640px) {
+  .deck__flick { order: -2; }
+  .deck__bar .picksheet--deck { order: -1; }
+  @media (hover: none) {
+    .deck__stage .picksheet__trigger { position: relative; }
+    .deck__stage .picksheet__trigger::after { content: ''; position: absolute; inset: -5px 0; }
+  }
+}
+/* PHONE — at 320 the bar is 286px: Book (88) + the pill (118) + Pulse (77) don't fit, and the picked channel must stay
+   in view (measured: Pulse 238–315 against a bar ending at 303). Under 375 the pill keeps its place after the channels
+   (the sheet opens by itself on a first visit). */
+@media (max-width: 374px) {
+  .deck__bar .picksheet--deck { order: 0; }
+}
