@@ -3,6 +3,7 @@ import Footer from '@/components/Footer'
 import LiveSurface from '@/components/live/LiveSurface'
 import MarketsShell from '@/components/markets/shell/MarketsShell'
 import { readTradability } from '@/lib/tradability-store'
+import { cardAlt, cardUrlFor, parseLiveShare, shareDescription, shareText } from '@/lib/live-share'
 import '@/components/live/live.css'
 import '@/components/live/battle.css'
 
@@ -23,11 +24,33 @@ const TITLE = 'Live feed — every print is a button'
 const DESCRIPTION =
   'Hyperliquid, Lighter and DEX fills as they land through Dune\'s real-time feed: notional per second by taker flow, the largest print, the hot market, the taker split, and the tape. Every row offers the sentence that does the same — your wallet signs it.'
 
-export const metadata: Metadata = {
+const BASE: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   openGraph: { title: TITLE, description: DESCRIPTION, siteName: 'Pantessa', type: 'website' },
   twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
+}
+
+// A shared pick unfurls as ITS card (GTM squad 2026-10-13, lane CARD): when
+// `?t=` names a market, og:image + twitter:image are app/api/og/live drawn for
+// that view, those markets and that window, and the title names them. No `t`
+// (or garbage) → exactly the page's own metadata, and Next's file convention
+// (./opengraph-image, ./twitter-image) supplies the generic card — setting
+// `images` here is what tells Next to step aside (resolve-metadata keeps the
+// file card only when the page's openGraph/twitter carry no `images` key).
+// Pure: no fetch, so a bot's blocking metadata never waits on the venue.
+export async function generateMetadata({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }): Promise<Metadata> {
+  const share = parseLiveShare(await searchParams)
+  if (!share) return BASE
+  const title = `${shareText(share.view, share.pick, share.since)} · Pantessa Live`
+  const description = shareDescription(share.view, share.markets, share.since)
+  const image = { url: cardUrlFor(share), width: 1200, height: 630, alt: cardAlt(share.view, share.markets), type: 'image/png' }
+  return {
+    title,
+    description,
+    openGraph: { title, description, siteName: 'Pantessa', type: 'website', images: [image] },
+    twitter: { card: 'summary_large_image', title, description, images: [{ url: image.url, alt: image.alt, width: image.width, height: image.height, type: image.type }] },
+  }
 }
 
 export const dynamic = 'force-dynamic'

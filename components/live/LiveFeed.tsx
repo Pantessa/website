@@ -67,9 +67,10 @@ import {
   type TriggerThresholds,
 } from '@/lib/tape'
 import { feedFor, openDuneTape, readTapeUniverse, type FeedHandlers, type FeedStatus } from '@/lib/tape-feed'
-import { useWatchlists } from '@/components/markets/watchlist/useWatchlists'
 import { resolveMarket } from '@/lib/battle'
-import { MAX_OWN_MARKETS, OWN_SOURCE_NOTE, addLiveMarkets, chipRow, knownMarkets, openingOwnMarkets, readLiveMarketMemory, removeLiveMarket, watchlistMarkets, writeLiveMarketMemory, type OwnSource } from '@/lib/live-markets'
+import { chipRow, knownMarkets } from '@/lib/live-markets'
+import { MAX_PICK, addToPick, pickSourceWord } from '@/lib/market-pick'
+import { useMarketPick } from '@/lib/use-market-pick'
 import { DEFAULT_LIVE_VENUES, DUNE_VENUES, type DuneVenueId } from '@/lib/dune'
 import { BIG_PRINT_CHOICES } from '@/lib/print-alerts'
 import ServerTriggers from '@/components/live/ServerTriggers'
@@ -92,7 +93,14 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
   const [status, setStatus] = useState<FeedStatus>('idle')
   const [statusDetail, setStatusDetail] = useState<string | undefined>(undefined)
   const [now, setNow] = useState(() => Date.now())
-  const [filter, setFilter] = useState<string | null>(() => readFilter())
+  // THE ONE PICK (lib/use-market-pick, GTM squad 2026-10-13): your markets
+  // lead the chip row — the list The Front, The Siege and the deck read — and
+  // the filter is the pick's LENS (`?m=`, mirrored by the store; a market the
+  // URL names that is not a pick reads as no lens), or a PEEK at one of the
+  // busiest books: this page's alone, never in the URL, never remembered.
+  const pick = useMarketPick({ seat: 'page' })
+  const [peek, setPeek] = useState<string | null>(null)
+  const filter = peek ?? pick.lens
   const [paused, setPaused] = useState(false)
   const [frozen, setFrozen] = useState<TapeFill[] | null>(null)
   const [events, setEvents] = useState<TriggerEvent[]>([])
@@ -101,67 +109,35 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
   const seenRef = useRef(new Set<string>())
   const fillsRef = useRef<TapeFill[]>([])
   fillsRef.current = fills
-  // Your own markets (lib/live-markets): a hand's list leads the chip row,
-  // remembered in this browser; the watchlist stands in until a hand
-  // touches it. The venue's list + what the stream printed resolve a name.
-  const [own, setOwn] = useState<string[]>([])
-  const [ownSource, setOwnSource] = useState<OwnSource>(null)
-  const [universe, setUniverse] = useState<string[]>([])
+  // Your own markets are the pick: a hand adds several at once, resolved
+  // against the venue's list plus what the stream printed.
+  const own = pick.markets
+  const universe = pick.universe
   const [draft, setDraft] = useState('')
   const [addNote, setAddNote] = useState<{ text: string; tone: 'warn' | 'dim' } | null>(null)
-  const handRef = useRef(false)
-  const wl = useWatchlists({ holdings: false })
-  const watchSymbols = useMemo(() => {
-    if (!wl.ready) return [] as string[]
-    const activeId = (wl.active as { id?: string } | null)?.id
-    const ordered = [...wl.lists].sort((a, b) => (a.id === activeId ? -1 : b.id === activeId ? 1 : 0))
-    const out: string[] = []
-    for (const l of ordered) for (const sym of l.symbols) if (!out.includes(sym)) out.push(sym)
-    return out
-  }, [wl.ready, wl.lists, wl.active])
-  useEffect(() => {
-    const mem = readLiveMarketMemory()
-    if (mem) {
-      setOwn(mem.own)
-      setOwnSource('memory')
-    }
-  }, [])
-  // The watchlist default: only while no memory and no hand (fluid until touched).
-  useEffect(() => {
-    if (handRef.current || ownSource === 'memory' || !universe.length) return
-    const d = openingOwnMarkets({ memory: null, watch: watchlistMarkets(watchSymbols, universe) })
-    if (d.source === 'watchlist') {
-      setOwn(d.own)
-      setOwnSource('watchlist')
-    }
-  }, [watchSymbols, universe, ownSource])
   const addOwn = useCallback(
     (raw: string) => {
-      const known = knownMarkets(universe, new Set(fillsRef.current.map((f) => f.market)))
-      const r = addLiveMarkets(raw, known, own)
-      if (r.added.length) {
-        handRef.current = true
-        const next = [...own, ...r.added]
-        setOwn(next)
-        setOwnSource('memory')
-        writeLiveMarketMemory(next)
-        setDraft('')
-      }
+      const known = knownMarkets(pick.universe, new Set(fillsRef.current.map((f) => f.market)))
+      const r = addToPick(raw, known, pick.markets)
+      if (r.added.length) pick.set([...pick.markets, ...r.added], 'hand')
       if (r.unknown.length) setAddNote({ text: `no venue here prints ${r.unknown.map((u) => u.toUpperCase()).join(', ')} yet`, tone: 'warn' })
-      else if (r.full.length) setAddNote({ text: `the row holds ${MAX_OWN_MARKETS} of yours`, tone: 'warn' })
+      else if (r.full.length) setAddNote({ text: `your row holds ${MAX_PICK} — remove one to add ${r.full.join(', ')}`, tone: 'dim' })
       else setAddNote(null)
+      setDraft(r.unknown.join(', '))
     },
-    [own, universe],
+    [pick],
   )
+  useEffect(() => {
+    if (!addNote) return
+    const id = setTimeout(() => setAddNote(null), 6000)
+    return () => clearTimeout(id)
+  }, [addNote])
   const removeOwn = useCallback(
     (m: string) => {
-      handRef.current = true
-      const next = removeLiveMarket(own, m)
-      setOwn(next)
-      setOwnSource('memory')
-      writeLiveMarketMemory(next)
+      if (peek === m) setPeek(null)
+      pick.remove(m)
     },
-    [own],
+    [pick, peek],
   )
 
   // The venue's universe, read once: the venue socket's subscription list
@@ -174,7 +150,6 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
       if (ac.signal.aborted) return
       const picked = pickTapeMarkets(main, xyz)
       setMarkets(picked.length ? picked : [...FALLBACK_MARKETS])
-      setUniverse([...main, ...xyz].filter((r) => !r.delisted).sort((a, b) => b.volumeUsd - a.volumeUsd).map((r) => r.name))
     })
     return () => ac.abort()
   }, [])
@@ -256,16 +231,18 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
     [tradable],
   )
 
+  // A chip of yours is the lens (the store mirrors it as `?m=`); one of the
+  // venue's busiest is a peek.
   const pickFilter = useCallback(
     (m: string | null) => {
-      setFilter(m)
-      if (typeof window === 'undefined') return
-      const url = new URL(window.location.href)
-      if (m) url.searchParams.set('m', m)
-      else url.searchParams.delete('m')
-      window.history.replaceState(window.history.state, '', url.toString())
+      if (m && !pick.markets.includes(m)) {
+        setPeek(m)
+        return
+      }
+      setPeek(null)
+      pick.setLens(m)
     },
-    [],
+    [pick],
   )
 
   const live = status === 'live'
@@ -304,7 +281,7 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
           </div>
           {tabs}
           <div className="live__controls">
-            <button type="button" className="live__pause" onClick={togglePause} aria-pressed={paused} title={paused ? 'Resume the tape' : 'Pause the tape'}>
+            <button type="button" className="live__pause" onClick={togglePause} aria-pressed={paused} title={paused ? 'Resume the tape' : 'Pause the tape'} data-journey={`${paused ? 'Resume' : 'Pause'} the live tape`}>
               {paused ? <Play size={13} strokeWidth={2.2} /> : <Pause size={13} strokeWidth={2.2} />}
               <span>{paused ? 'Resume' : 'Pause'}</span>
             </button>
@@ -312,7 +289,7 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
         </div>
 
         <div className="live__markets" role="group" aria-label="Markets on the tape">
-          <button type="button" className={`live__m${filter === null ? ' is-on' : ''}`} onClick={() => pickFilter(null)}>
+          <button type="button" className={`live__m${filter === null ? ' is-on' : ''}`} onClick={() => pickFilter(null)} data-journey="Show every book on the live tape">
             All
             <span className="mono live__mcount">{marketCount ?? marketList.length}</span>
           </button>
@@ -334,31 +311,31 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
                 const picked = (e.nativeEvent as InputEvent).inputType === 'insertReplacementText'
                 if (picked && resolveMarket(v, universe)) addOwn(v)
               }}
-              placeholder={own.length >= MAX_OWN_MARKETS ? 'your row is full' : '+ your own · uni, pepe, nvda'}
+              placeholder={own.length >= MAX_PICK ? 'your row is full' : '+ your own · uni, pepe, nvda'}
               aria-label="Add your own markets, several with commas"
               autoComplete="off"
-              disabled={own.length >= MAX_OWN_MARKETS}
+              disabled={own.length >= MAX_PICK}
             />
             <datalist id="live-universe">
               {universe.slice(0, 400).map((m) => (
                 <option key={m} value={m} />
               ))}
             </datalist>
-            <button type="submit" className="live__addbtn" disabled={own.length >= MAX_OWN_MARKETS || !draft.trim()}>
+            <button type="submit" className="live__addbtn" disabled={own.length >= MAX_PICK || !draft.trim()} data-journey="Add markets on the live tape">
               Add
             </button>
             {addNote ? (
               <span className={`live__addnote mono live__addnote--${addNote.tone}`} role="status">
                 {addNote.text}
               </span>
-            ) : ownSource === 'watchlist' && own.length ? (
-              <span className="live__addnote mono live__addnote--dim" title="Remembered in this browser once you add or remove one">{OWN_SOURCE_NOTE.watchlist}</span>
+            ) : pick.ready && pickSourceWord(pick.source) && own.length ? (
+              <span className="live__addnote mono live__addnote--dim" title="Remembered in this browser once you add or remove one">{pickSourceWord(pick.source)}</span>
             ) : null}
           </form>
           {entries.map(({ market: m, own: isOwn }) => {
             const tm = tapeMarket(m)
             const chip = (
-              <button type="button" className={`live__m${filter === m ? ' is-on' : ''}`} onClick={() => pickFilter(filter === m ? null : m)} data-kind={tm.kind} data-own={isOwn || undefined}>
+              <button type="button" className={`live__m${filter === m ? ' is-on' : ''}`} onClick={() => pickFilter(filter === m ? null : m)} data-kind={tm.kind} data-own={isOwn || undefined} data-journey={`${filter === m ? 'Show every book, not' : 'Narrow the live tape to'} ${tm.ticker}`}>
                 {tm.dex && <span className="live__dex mono">{tm.dex}</span>}
                 {tm.ticker}
               </button>
@@ -366,7 +343,7 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
             return isOwn ? (
               <span key={m} className="live__mown">
                 {chip}
-                <button type="button" className="live__mx" onClick={() => removeOwn(m)} aria-label={`Remove ${m} from your markets`} title="Remove">
+                <button type="button" className="live__mx" onClick={() => removeOwn(m)} aria-label={`Remove ${m} from your markets`} title="Remove" data-journey={`Remove ${tm.ticker} from your markets`}>
                   ×
                 </button>
               </span>
@@ -473,12 +450,6 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
   )
 }
 
-function readFilter(): string | null {
-  if (typeof window === 'undefined') return null
-  const m = new URLSearchParams(window.location.search).get('m')
-  return m && /^[A-Za-z0-9:]{1,24}$/.test(m) ? m : null
-}
-
 function statusWords(status: FeedStatus, detail?: string): string {
   switch (status) {
     case 'live':
@@ -519,7 +490,7 @@ function Tile({ k, v, sub, chip, onAct, bar, split }: { k: string; v: React.Reac
         </div>
       )}
       {chip && onAct && (
-        <button type="button" className={`live__chip live__chip--${chip.tone}`} onClick={() => onAct(chip.ask)} title={chip.ask}>
+        <button type="button" className={`live__chip live__chip--${chip.tone}`} onClick={() => onAct(chip.ask)} title={chip.ask} data-journey="Follow a tile on the live tape">
           {chip.label} <span className="live__chip-usd">${FOLLOW_USD}</span>
         </button>
       )}
@@ -565,7 +536,7 @@ function TapeRow({ fill, chip, onAct, showVenue }: { fill: TapeFill; chip: Follo
       <td className="mono live__col-wide num">{fill.block != null ? fill.block.toLocaleString('en-US') : <span className="live__dim">—</span>}</td>
       <td className="live__col-act">
         {chip ? (
-          <button type="button" className={`live__chip live__chip--${chip.tone}`} onClick={() => onAct(chip.ask)} title={chip.ask}>
+          <button type="button" className={`live__chip live__chip--${chip.tone}`} onClick={() => onAct(chip.ask)} title={chip.ask} data-journey="Follow a print on the live tape">
             {chip.label} <span className="live__chip-usd">${FOLLOW_USD}</span>
           </button>
         ) : (
@@ -781,7 +752,7 @@ function TriggersPanel({
               </div>
               <p className="live__etext">{e.text}</p>
               {ok && (
-                <button type="button" className={`live__chip live__chip--${ok.tone}`} onClick={() => onAct(ok.ask)} title={ok.ask}>
+                <button type="button" className={`live__chip live__chip--${ok.tone}`} onClick={() => onAct(ok.ask)} title={ok.ask} data-journey="Follow a trigger on the live tape">
                   {ok.label} <span className="live__chip-usd">${FOLLOW_USD}</span>
                 </button>
               )}
