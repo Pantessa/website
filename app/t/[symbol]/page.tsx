@@ -1,12 +1,13 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { CHART_TFS, chartPairFor, chartSymbolByName, normalizeChartSymbol, type ChartTf } from '@/lib/charts'
+import { CHART_TFS, HL_PERPS_HANDOFF_GLOBAL, chartSymbolByName, isLiveOnlyHlPair, liveHlPerpNames, normalizeChartSymbol, resolveChartPair, type ChartTf } from '@/lib/charts'
 import { parseMarketTab, parseVsParam } from '@/lib/markets'
 import { symbolPageSeo } from '@/lib/markets-seo'
 import Footer from '@/components/Footer'
 import SymbolPage from '@/components/markets/shell/SymbolPage'
 import { readTradability } from '@/lib/tradability-store'
 import MarketsShell from '@/components/markets/shell/MarketsShell'
+import HlPerpsPrime from '@/components/markets/shell/HlPerpsPrime'
 
 // /t/<symbol> — THE symbol page (Markets, 2026-09-11; the cockpit, 2026-10-13):
 // the one-line header strip, the tab strip (Overview · Chart · News ·
@@ -29,6 +30,9 @@ type Params = { params: Promise<{ symbol: string }>; searchParams: Promise<Recor
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { symbol } = await params
+  // Warm the live perp table first (a miss on a cold process → one universe
+  // read), so a perp the venue lists is titled and indexed as a chart.
+  await resolveChartPair(symbol)
   const seo = symbolPageSeo(symbol)
   return {
     title: seo.title,
@@ -49,7 +53,11 @@ export default async function TokenPage({ params, searchParams }: Params) {
   // ticker goes. The chart module knows these names (speech says "apple");
   // the page used to say "APPLE is not listed" anyway (pre-gtm 2026-10-06).
   // Redirect onto the ticker's page, query kept, so the shared URL lands.
-  if (!chartPairFor(norm)) {
+  // The live perp table warms on a miss (lib/charts resolveChartPair): /t/ZK
+  // charts on a cold process, and only a symbol the venue does not list
+  // falls through to the name redirect + the honest chartless page.
+  const pair = await resolveChartPair(norm)
+  if (!pair) {
     const named = chartSymbolByName(norm)
     if (named) {
       const q = new URLSearchParams()
@@ -75,6 +83,15 @@ export default async function TokenPage({ params, searchParams }: Params) {
   // worse than one that was never offered (lib/tradability-store; fail-soft
   // to {}, which offers everything).
   const tradable = await readTradability()
+  // A perp only the live table knows (ZK, AZTEC, an xyz market…): the
+  // browser's table is cold until a universe lands, and every client reader
+  // calls the SYNC chartPairFor — the root-level ask-door pill before this
+  // page even renders. Hand the listing down twice: an inline script the
+  // browser runs at parse time (before hydration — lib/charts takes it on
+  // its first lookup), and HlPerpsPrime for a soft navigation, which runs no
+  // inline script but renders the wrapper before every child.
+  const hlPerps = isLiveOnlyHlPair(pair) ? liveHlPerpNames() : null
+  const handoff = hlPerps ? `window.${HL_PERPS_HANDOFF_GLOBAL}=${JSON.stringify(hlPerps).replace(/</g, '\\u003c')}` : null
   // The /markets frame (no .x-main) inside the markets shell (the app spine
   // on the left, no brochure nav): SymbolPage's <main class="sym"> and the
   // side column (ask + account strip over the watchlist rail) are its two
@@ -82,13 +99,16 @@ export default async function TokenPage({ params, searchParams }: Params) {
   // rail stays docked through the last footer line.
   return (
     <>
+      {handoff && <script dangerouslySetInnerHTML={{ __html: handoff }} />}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: seo.jsonLd }} />
-      <MarketsShell sym>
-        <SymbolPage symbol={norm} initialTab={initialTab} initialTf={initialTf} initialVs={initialVs} tradable={tradable} />
-        <div className="mkt-frame__foot">
-          <Footer />
-        </div>
-      </MarketsShell>
+      <HlPerpsPrime hlPerps={hlPerps}>
+        <MarketsShell sym>
+          <SymbolPage symbol={norm} initialTab={initialTab} initialTf={initialTf} initialVs={initialVs} tradable={tradable} />
+          <div className="mkt-frame__foot">
+            <Footer />
+          </div>
+        </MarketsShell>
+      </HlPerpsPrime>
     </>
   )
 }

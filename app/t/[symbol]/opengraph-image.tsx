@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { headers } from 'next/headers'
 import { brandOgPalette } from '@/lib/brand-theme'
 import { gemMarkSvg } from '@/lib/og-marks'
-import { CHART_FEED_LABELS, type Candle, type ChartFeed } from '@/lib/charts'
+import { CHART_FEED_LABELS, resolveChartPair, type Candle, type ChartFeed } from '@/lib/charts'
 import { candleSvg, fmtOgPrice, symbolPageSeo } from '@/lib/markets-seo'
 import { TAPE_FOOTNOTE, sessionKindFor, sessionLine } from '@/lib/markets-copy'
 
@@ -56,6 +56,8 @@ type Params = { params: Promise<{ symbol: string }> }
 
 export default async function Image({ params }: Params) {
   const { symbol } = await params
+  // A perp only the live table knows needs the universe read first (lib/charts).
+  await resolveChartPair(symbol)
   const seo = symbolPageSeo(symbol)
   const pal = brandOgPalette(null)
   const series = seo.pair ? await loadSeries(seo.symbol) : { candles: [], last: null, changePct24h: null, feed: null }

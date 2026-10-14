@@ -21261,6 +21261,158 @@ async function main() {
     )
   }
 
+  // ── Live Hyperliquid perps (2026-10-13 — the GTM squad's ALERTS finding 3) ─
+  // chartPairFor's Hyperliquid side used to be a STATIC five (HYPE · SYRUP ·
+  // FARTCOIN · BRETT · AIXBT): a visitor who picked ZK / AZTEC / PURR /
+  // GRIFFAIN / kPEPE on /live or the deck had no /t chart, no quote in the
+  // alerts sweep (the alert API answered 409 "No live price") and no alert
+  // control. The table's HL half now derives from the venue's live universe
+  // (lib/hl-universe — main book + the xyz dex, cached 10 min) over the static
+  // set as the fallback; server entry points resolve through
+  // resolveChartPair (miss → warm → retry). The RULES are pure
+  // (hlChartTableFrom) and pinned on a fixture; the live half is pinned on
+  // the venue's own universe (a listing that comes and goes is READ here,
+  // never typed into a pin — the robinhood-tickers snapshot lesson).
+  console.log('— live HL perps')
+  {
+    const { hlChartTableFrom, isLiveOnlyHlPair, warmHlPerps, resolveChartPair, liveHlPerpNames, primeHlPerps, chartableSymbols, chartSymbolsIn, isMoneyAssetWord, normalizeChartSymbol } = await import('../lib/charts')
+    const { readQuotes } = await import('../lib/quotes')
+    const { hlPerpUniverseCached, resetHlUniverse } = await import('../lib/hl-universe')
+    const { ROBINHOOD_TICKER_SET } = await import('../lib/robinhood-tickers')
+
+    // Pure rules on a fixture universe (listed names only — lib/hl-universe splits delisted off first).
+    const table = hlChartTableFrom(['ZK', 'kPEPE', 'ETH', 'HYPE', 'MATIC', 'USDC', 'xyz:ZK', 'NVDA', 'SATS', 'MOVE'], ['xyz:NVDA', 'xyz:GOLD', 'xyz:XYZ100', 'xyz:ZK', 'xyz:GOLD', 'xyz:SATS'])
+    check(
+      'live HL perps (pure): ZK → ZK, kPEPE keeps the venue casing under KPEPE, an xyz perp charts under its bare ticker with the dex prefix as the coin, main beats xyz on a collision, the xyz index product is dropped',
+      table.get('ZK') === 'ZK' && table.get('KPEPE') === 'kPEPE' && table.get('GOLD') === 'xyz:GOLD' && table.get('MOVE') === 'MOVE' && !table.has('XYZ100') && !table.has('XYZZK') && !table.has('XYZGOLD'),
+      JSON.stringify([...table]),
+    )
+    check(
+      'live HL perps (pure): Coinbase first (ETH; MATIC → POL), stables never, and a Robinhood-Chain ticker never becomes a perp — xyz:NVDA leaves NVDA to the stock tape, SATS (feedless) stays chartless instead of charting the venue’s same-named coin; an empty universe is an empty table',
+      !table.has('ETH') && !table.has('MATIC') && !table.has('POL') && !table.has('USDC') && !table.has('NVDA') && !table.has('SATS') && hlChartTableFrom([], []).size === 0,
+    )
+
+    // A fixture prime (≥ 20 names, the universe-size floor) proves the resolver + the parsers' fence; the real table is put back after.
+    // The caches are RESET around it: a fixture left as the "fresh" universe would be what every later in-process read answers from.
+    resetHlUniverse()
+    primeHlPerps({ main: ['ZK', 'MOVE', 'PUMP', 'AZTEC', ...Array.from({ length: 20 }, (_, i) => `FIXT${i}`)] })
+    check(
+      'live HL perps: the static set is the fallback and stays whatever the table holds (HYPE / SYRUP chart as themselves); a primed table resolves ZK as a hyperliquid pair under its own coin, and only the table’s perps read as live-only',
+      chartPairFor('HYPE')?.pair === 'HYPE' && chartPairFor('SYRUP')?.source === 'hyperliquid' && !isLiveOnlyHlPair(chartPairFor('HYPE')) &&
+        chartPairFor('ZK')?.source === 'hyperliquid' && chartPairFor('ZK')?.pair === 'ZK' && chartPairFor('zk')?.symbol === 'ZK' && isLiveOnlyHlPair(chartPairFor('ZK')) &&
+        chartPairFor('USDC') === null && chartPairFor('NVDA')?.source === 'robinhood' && chartPairFor('ETH')?.source === 'coinbase',
+    )
+    check(
+      'live HL perps: a live-only perp that is also an English word never turns prose into a chart ask or a money word — "move my eth" names ETH alone, "show me the move chart" has no pair, "$MOVE" / "MOVE" typed as a ticker does; isMoneyAssetWord reads the static set only',
+      JSON.stringify(chartSymbolsIn('move my eth to base').map((s) => s.symbol)) === '["ETH"]' &&
+        JSON.stringify(chartSymbolsIn('Long $25 of ZK on Hyperliquid').map((s) => s.symbol)) === '["ZK"]' &&
+        parseChartAsk('show me the move chart')?.pair === null &&
+        parseChartAsk('chart $MOVE')?.pair?.pair === 'MOVE' &&
+        parseChartAsk('show me the MOVE chart')?.pair?.source === 'hyperliquid' &&
+        parseChartAsk('show me the hype chart')?.pair?.source === 'hyperliquid' &&
+        !isMoneyAssetWord('move') && !isMoneyAssetWord('pump') && isMoneyAssetWord('hype'),
+    )
+    check(
+      'live HL perps: the sitemap set (chartableSymbols) never carries a live-only perp — venue listings chart on demand, the index stays the static set',
+      chartableSymbols().every((s) => !isLiveOnlyHlPair(chartPairFor(s))) && !chartableSymbols().includes('ZK'),
+    )
+    resetHlUniverse()
+
+    // The venue, live. The rule: every LISTED main-book coin resolves to SOME pair (Coinbase, the stock tape, or the
+    // venue itself under its own casing) unless it is a stable; every listed xyz market resolves through its bare
+    // ticker the same way (the index product aside). ZK — the finding's own pick — is asserted by name while listed.
+    const warm = await warmHlPerps()
+    const live = liveHlPerpNames()
+    const main = live?.main ?? []
+    const xyz = live?.xyz ?? []
+    const stableWord = (s: string) => ['USDC', 'USDT', 'DAI', 'USDG', 'GHO', 'USDE', 'PYUSD', 'USDS', 'USDBC'].includes(normalizeChartSymbol(s))
+    // The stock fence: a main-book coin wearing a Robinhood-Chain ticker (the venue's CASHCAT perp, the feedless listing's
+    // name) stays chartless BY DESIGN — exempt from "every coin resolves", asserted the other way as `fenceLeak`.
+    const stockWord = (s: string) => ROBINHOOD_TICKER_SET.has(normalizeChartSymbol(s))
+    const mainMiss = main.filter((n) => !stableWord(n) && !stockWord(n) && normalizeChartSymbol(n).length <= 12 && normalizeChartSymbol(n) !== '' && chartPairFor(n) === null)
+    const fenced = main.filter((n) => stockWord(n) && !isChartedStock(n))
+    const fenceLeak = fenced.filter((n) => chartPairFor(n) !== null)
+    const casingMiss = main.filter((n) => { const p = chartPairFor(n); return p?.source === 'hyperliquid' && p.pair !== n })
+    const xyzMiss = xyz.filter((n) => !/:XYZ100$/.test(n)).map((n) => n.slice(n.indexOf(':') + 1)).filter((t) => !stableWord(t) && !stockWord(t) && normalizeChartSymbol(t) !== '' && chartPairFor(t) === null)
+    check(
+      'live HL perps (venue): the universe read lands (main book ≥ 100 listed, xyz dex ≥ 20), every listed main-book coin resolves (Coinbase / stock tape / the venue under its own casing) except one wearing a Robinhood ticker (the stock fence, which never leaks), every xyz market resolves through its bare ticker, and nothing the static table knew changed',
+      warm && main.length >= 100 && xyz.length >= 20 && mainMiss.length === 0 && casingMiss.length === 0 && xyzMiss.length === 0 && fenceLeak.length === 0 &&
+        chartPairFor('HYPE')?.pair === 'HYPE' && chartPairFor('AAPL')?.source === 'robinhood' && chartPairFor('ETH')?.pair === 'ETH-USD' && chartPairFor('USDC') === null && (await resolveChartPair('NOPE')) === null,
+      `main=${main.length} xyz=${xyz.length} mainMiss=${mainMiss.slice(0, 8).join(',')} casing=${casingMiss.slice(0, 4).join(',')} xyzMiss=${xyzMiss.slice(0, 8).join(',')} stockFenced=${fenced.join(',')} leak=${fenceLeak.join(',')}`,
+    )
+    const zkListed = !!hlPerpUniverseCached('main')?.listed.has('ZK')
+    const zk = chartPairFor('ZK')
+    check(
+      'live HL perps (venue): ZK — the squad’s pick — charts as a hyperliquid pair under its own coin while the venue lists it (skipped by name when delisted)',
+      !zkListed || (zk?.source === 'hyperliquid' && zk.pair === 'ZK' && zk.symbol === 'ZK' && zk.label === 'ZK / USD'),
+      zkListed ? JSON.stringify(zk) : 'ZK not listed today — vacuous',
+    )
+    // The sweep's own quote path (lib/alerts-exec liveQuotes = readQuotes): a perp the static table never knew is PRICED,
+    // not filed under `missing` — that `missing` is what used to make every ZK alert sit unquoted forever.
+    const probeSym = zkListed ? 'ZK' : main.find((n) => isLiveOnlyHlPair(chartPairFor(n))) ?? 'ZK'
+    const kpepeListed = !!hlPerpUniverseCached('main')?.listed.has('kPEPE')
+    const q = await readQuotes([probeSym, ...(kpepeListed ? ['kPEPE'] : []), 'NOPE'])
+    check(
+      'live HL perps (sweep path): readQuotes prices a live-only perp from the venue (feed hyperliquid, last > 0) and kPEPE under KPEPE; a name the venue never listed is the only `missing`',
+      (q.quotes[probeSym]?.last ?? 0) > 0 && q.quotes[probeSym]?.feed === 'hyperliquid' && (!kpepeListed || ((q.quotes.KPEPE?.last ?? 0) > 0 && q.quotes.KPEPE?.feed === 'hyperliquid')) && q.missing.join(',') === 'NOPE',
+      `${probeSym}=${q.quotes[probeSym]?.last} KPEPE=${q.quotes.KPEPE?.last} missing=${q.missing.join(',')}`,
+    )
+
+    // Over HTTP — the server process resolves on its own (a cold process warms on the miss): candles, quotes, the page, the venue map.
+    const cRes = await fetch(`${BASE}/api/charts/candles?symbol=${probeSym}&tf=1d`)
+    const cj = (await cRes.json()) as { source?: string; feed?: string; candles?: unknown[]; symbol?: string; error?: string }
+    check(
+      'live HL perps (HTTP): /api/charts/candles serves a live-only perp from the HL candleSnapshot path (source + feed hyperliquid, a daily series)',
+      cRes.status === 200 && cj.source === 'hyperliquid' && cj.feed === 'hyperliquid' && (cj.candles?.length ?? 0) >= 10 && cj.symbol === probeSym,
+      `status=${cRes.status} source=${cj.source} feed=${cj.feed} n=${cj.candles?.length} err=${cj.error ?? ''}`,
+    )
+    const qRes = await fetch(`${BASE}/api/quotes?symbols=${probeSym},KPEPE,NOPE`)
+    const qj = (await qRes.json()) as { quotes?: Record<string, { last: number; feed: string }>; missing?: string[] }
+    check(
+      'live HL perps (HTTP): /api/quotes prices the perp (the rail, the deck and the alert control read this) and files only the unlisted name as missing',
+      qRes.status === 200 && (qj.quotes?.[probeSym]?.last ?? 0) > 0 && qj.quotes?.[probeSym]?.feed === 'hyperliquid' && (qj.missing ?? []).includes('NOPE') && !(qj.missing ?? []).includes(probeSym),
+      `${probeSym}=${qj.quotes?.[probeSym]?.last} missing=${(qj.missing ?? []).join(',')}`,
+    )
+    const tRes = await fetch(`${BASE}/t/${probeSym}`)
+    const tHtml = await tRes.text()
+    check(
+      'live HL perps (HTTP): /t/<perp> is a chart page, not the chartless fallback — 200, the pair header (`<SYM> / USD`), no "No live chart", and the server hands the browser the live list as an inline script (run before hydration) so it hydrates onto the same chart',
+      tRes.status === 200 && tHtml.includes(`${probeSym} / USD`) && !tHtml.includes(`No live chart for ${probeSym}`) && /__pantessaHlPerps=\{"main":\[/.test(tHtml),
+      `status=${tRes.status} header=${tHtml.includes(`${probeSym} / USD`)} handoff=${/__pantessaHlPerps=\{"main":\[/.test(tHtml)}`,
+    )
+    const tEth = await (await fetch(`${BASE}/t/ETH`)).text()
+    check('live HL perps (HTTP): a page the static table charts (/t/ETH) carries NO live list — the handoff script rides only a live-only perp page', !/__pantessaHlPerps=\{"main":\[/.test(tEth))
+    const rRes = await fetch(`${BASE}/api/markets/routes?symbol=${probeSym}`)
+    const rj = (await rRes.json()) as { routes?: { venue: string; kind: string }[]; error?: string }
+    check(
+      'live HL perps (HTTP): /api/markets/routes answers the perp’s venue map (long/short on Hyperliquid) instead of 404 "not a charted symbol"',
+      rRes.status === 200 && (rj.routes ?? []).some((r) => r.venue === 'hyperliquid' && r.kind === 'perp'),
+      `status=${rRes.status} venues=${[...new Set((rj.routes ?? []).map((r) => r.venue))].join(',')} err=${rj.error ?? ''}`,
+    )
+
+    // The alert itself, under a throwaway SIWE session: a ±5% rule on the perp is accepted, carries a base, and is
+    // deleted again. A body with NO base: 400 on main’s rule (the client names the base), or — once website#979’s
+    // server-anchored base lands — 201 with the venue’s own read; either is the honest answer, a 409 "No live price"
+    // is the bug this block exists for.
+    const perpOwner = privateKeyToAccount(generatePrivateKey())
+    const perpSession = await signIn(perpOwner)
+    const AJ = { 'content-type': 'application/json', cookie: perpSession }
+    const withBase = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: AJ, body: JSON.stringify({ symbol: probeSym, condition: 'pct_move', value: 5, basePrice: q.quotes[probeSym]?.last ?? 1 }) })
+    const withBaseJ = (await withBase.json()) as { alert?: { id: string; symbol: string; basePrice: number | null; status: string }; error?: string }
+    const noBase = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: AJ, body: JSON.stringify({ symbol: probeSym, condition: 'pct_move', value: 5 }) })
+    const noBaseJ = (await noBase.json()) as { alert?: { id: string; basePrice: number | null }; error?: string }
+    check(
+      'live HL perps (alerts): POST /api/alerts pct_move 5 on the perp → 201 active with the base kept (symbol normalized); the base-less body is 400 (main’s rule) or 201 anchored on the server’s read (#979) — never 409 "No live price"',
+      withBase.status === 201 && withBaseJ.alert?.symbol === probeSym && withBaseJ.alert?.status === 'active' && (withBaseJ.alert?.basePrice ?? 0) > 0 &&
+        (noBase.status === 400 || (noBase.status === 201 && (noBaseJ.alert?.basePrice ?? 0) > 0)),
+      `withBase=${withBase.status} noBase=${noBase.status} ${noBaseJ.error ?? ''}`,
+    )
+    const ids = [withBaseJ.alert?.id, noBaseJ.alert?.id].filter((x): x is string => typeof x === 'string')
+    const dels = await Promise.all(ids.map((id) => fetch(`${BASE}/api/alerts?id=${id}`, { method: 'DELETE', headers: AJ })))
+    const left = (await (await fetch(`${BASE}/api/alerts`, { headers: AJ })).json()) as { alerts?: unknown[] }
+    check('live HL perps (alerts): the probe rows are deleted again — the throwaway wallet ends with zero alerts', dels.every((d) => d.status === 200) && (left.alerts?.length ?? 0) === 0, `deleted=${dels.map((d) => d.status).join(',')} left=${left.alerts?.length}`)
+  }
+
   // ── Mosaic links (executable allocations) ─────────────────────────────────
   // A shape ("tile my wallet 50% ETH, 30% USDC, 20% wstETH") is the whole
   // wire format: percentages in, same-chain-swap SENTENCES out. Two safety
