@@ -3660,9 +3660,10 @@ async function main() {
         /<div className="linkstudio__top">[\s\S]*?<CreatorPagePanel className="linkstudio__page" \/>\s*<MintLinkForm[\s\S]*?className="linkstudio__mint"\s*\/>\s*<\/div>/.test(studioViewSrc) &&
         studioViewSrc.indexOf('<LinkFunnelTable') > studioViewSrc.indexOf('className="linkstudio__mint"'),
     )
+    // RE-PINNED 2026-10-13 (polish-qa): #911's phone polish (35fd5a80) gave the public column phone gutters (max-sm:px-0 … max-sm:py-10); the rule is unchanged — in-app = the linkstudio frame, public = the centered max-w-2xl reading column.
     check(
       'links tab: the in-app board wears the same frame (board | mint), the public /links page keeps its reading column',
-      /inApp \? 'linkstudio px-4 sm:px-6 py-6' : 'w-full max-w-2xl mx-auto px-4 py-16'/.test(boardViewSrc) &&
+      /inApp \? 'linkstudio px-4 sm:px-6 py-6' : 'w-full max-w-2xl mx-auto [^']*'/.test(boardViewSrc) &&
         ["'linkstudio__top linkstudio__top--board'", "'linkstudio__board'", "'linkstudio__mint'"].every((c) => boardViewSrc.includes(`inApp ? ${c} : undefined`)),
     )
     check(
@@ -5188,7 +5189,9 @@ async function main() {
       activeServers: [{ ...fakeInference, endpoint: 'https://a.example.test/api' }],
     }),
   })
-  check('wallet plan: allowed host passes the gate (reaches network probe)', ungated.status === 502)
+  const ungatedBody = (await ungated.json().catch(() => ({}))) as { blocked?: boolean; error?: string }
+  // RE-PINNED 2026-10-13 (polish-qa): since #948 (72757d6c) a thrown fetch is a 200 carrying the house-down chips and the error on the body, no longer a bare 502; the probe's own "fetch failed" is still the proof the gate let it through
+  check('wallet plan: allowed host passes the gate (reaches network probe)', ungated.status === 200 && ungatedBody.blocked !== true && /fetch failed/i.test(ungatedBody.error ?? ''), `${ungated.status} ${JSON.stringify(ungatedBody).slice(0, 120)}`)
 
   // Kill switch HARD enforcement: freeze the account, and the SAME allowed host
   // is now refused server-side (not advisory) — Pantessa executes this rail, so
@@ -11115,8 +11118,11 @@ async function main() {
     // of the two the Robinhood feed has no quote for.
     const offSnapshot = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !ROBINHOOD_TICKER_SET.has(sym))
     check('charts: every live 4663 stock listing is in the static ticker snapshot (regenerate lib/robinhood-tickers.ts when this reds)', offSnapshot.length === 0, offSnapshot.join(','))
-    const unchartedStocks = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !isChartedStock(sym) && !['CASHCAT', 'SATS'].includes(sym))
-    check('charts: every live 4663 stock listing charts except the two feedless ones', unchartedStocks.length === 0, unchartedStocks.join(','))
+    // RE-PINNED 2026-10-13 (main sweep): PONS listed on 4663 with no feed on
+    // Robinhood (missing_instruments) or Yahoo (No data found) — the third
+    // feedless listing, named in lib/charts ROBINHOOD_FEEDLESS.
+    const unchartedStocks = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !isChartedStock(sym) && !['CASHCAT', 'SATS', 'PONS'].includes(sym))
+    check('charts: every live 4663 stock listing charts except the three feedless ones', unchartedStocks.length === 0, unchartedStocks.join(','))
     const rhRpc = new Map<number, RpcChainRead>([
       [4663, { chainId: 4663, nativeEth: 0.00073, stable: { symbol: 'USDG', address: rhC.tokens.USDG.address, balance: 0.323 }, tokens: [{ symbol: 'AAPL', address: aapl, balance: 0.0376, stock: true }] }],
     ])
@@ -13958,9 +13964,21 @@ async function main() {
       headers: { 'content-type': 'application/json', ...C },
       body: JSON.stringify({ name, description: 'test-api custom add', category: 'Custom', mcpUrl: WALLET_BASE, featuredTools: ['portfolio'] }),
     })
+    // RE-PINNED 2026-10-13 (main sweep): this fixture is one row per BASE, and another wallet re-adding the
+    // same base is a 409 by design (pinned below) — so a copy left by a harness run that died before its
+    // own DELETE (another session's, 11:08Z on 10-14, on the shared TEST DB) made every later run's first
+    // add a 409 and the six checks red together. The block sweeps stale copies of ITS OWN fixture (this
+    // name, this base, older than 5 min — a healthy run holds it for seconds, so never a live run's row,
+    // never anything else) before it adds.
+    if (process.env.DATABASE_URL) {
+      const stale = await prisma.mcpServer.deleteMany({
+        where: { endpoint: WALLET_BASE, name: { in: ['Test Custom Wallet', 'Test Custom Wallet Renamed'] }, createdAt: { lt: new Date(Date.now() - 5 * 60_000) } },
+      }).catch(() => ({ count: -1 }))
+      if (stale.count !== 0) console.log(`  ↳ add-MCP: swept ${stale.count} stale fixture row(s) a dead run left behind`)
+    }
     const first = await fetch(`${BASE}/api/servers`, addBody('Test Custom Wallet'))
     const firstRow = (await first.json().catch(() => null)) as { id?: string; slug?: string; endpoint?: string | null; protocol?: string | null; endpointCount?: number; updated?: boolean } | null
-    check('add-MCP: created with discovered tools', first.ok && (firstRow?.endpointCount ?? 0) >= 6)
+    check('add-MCP: created with discovered tools', first.ok && (firstRow?.endpointCount ?? 0) >= 6, `${first.status} ${JSON.stringify(firstRow).slice(0, 160)}`)
     check('add-MCP: server row is CALLABLE (endpoint + protocol set)', firstRow?.endpoint === WALLET_BASE && firstRow?.protocol === 'mcp')
     const again = await fetch(`${BASE}/api/servers`, addBody('Test Custom Wallet Renamed'))
     const againRow = (await again.json().catch(() => null)) as { id?: string; slug?: string; name?: string; updated?: boolean } | null
@@ -17108,12 +17126,13 @@ async function main() {
       const chainSrc = fsS.readFileSync('components/SendTxChain.tsx', 'utf8')
       const chatSrc = fsS.readFileSync('components/ChatInterface.tsx', 'utf8')
       const noticeSrc = fsS.readFileSync('components/ExternalBuildNotice.tsx', 'utf8')
+      // RE-PINNED 2026-10-13 (polish-qa): #951 (053583f7) prefixed the chain's autoFire with `cameBack !== i &&` (a resumed step never auto-fires) — the gate only narrows, and autoFireAllowed still refuses manualSteps (asserted below)
       check(
         'passthrough honesty: source — planner-sourced chains never auto-fire step 2+ (manualSteps), the card mounts the external-build marker with every `to` in full + the guard warnings',
         // Re-pinned 2026-09-23 (mobile-onboarding SIGN): the decision moved into
         // lib/sign-round-trip autoFireAllowed, which still returns false for
         // manualSteps (asserted below, not just grepped) — the behaviour held.
-        chainSrc.includes('autoFire={autoFireAllowed({ platform, stepIndex: i, manualSteps') &&
+        /autoFire=\{(?:cameBack !== i && )?autoFireAllowed\(\{ platform, stepIndex: i, manualSteps\b/.test(chainSrc) &&
           (await import('../lib/sign-round-trip')).autoFireAllowed({ platform: 'desktop', stepIndex: 1, manualSteps: true }) === false &&
           chatSrc.includes('manualSteps={!!externalChain}') &&
           chatSrc.includes("m.buildPath !== 'planner'") &&
@@ -19931,12 +19950,13 @@ async function main() {
         try {
           const mc = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: (chipSwap?.tx?.data ?? '0x') as `0x${string}` })
           const inner = (mc.args as readonly [bigint, readonly `0x${string}`[]])[1]
-          const pay = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: inner[1] })
+          const pay = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: inner[inner.length - 1] })
           payout = pay.functionName
           payoutTo = String((pay.args as readonly unknown[])[1])
         } catch {
           /* red below */
         }
+        // RE-PINNED 2026-10-13 (polish-qa): #901 creator split in-tx prepends pull + sweepToken (creator share) for a referred payer; the payout is the multicall's last call
         check(
           'venue pick (live chat): the stranger chip "Buy $1 of ETH" (NEAR Intents set) builds the Uniswap v3 unwrap to the payer, never a CoW WETH order',
           chipTurn.buildPath === 'native-swap-uniswap' && !chipTurn.orderRequest && /^unwrapWETH9/.test(payout) && payoutTo.toLowerCase() === burner.address.toLowerCase(),
@@ -20934,7 +20954,9 @@ async function main() {
     )
     // Tokenized stocks (2026-09-10): Robinhood Chain's listings chart via
     // Robinhood's own 24/7 historicals. The static snapshot is the gate; the
-    // two listings the feed has no quote for stay chartless BY NAME.
+    // listings the feed has no quote for stay chartless BY NAME.
+    // RE-PINNED 2026-10-13 (main sweep): PONS joined the 4663 list (202 now)
+    // with no feed on Robinhood or Yahoo — the third feedless listing.
     check(
       'charts: Robinhood Chain stocks chart via robinhood (AAPL / COIN / SPY / spelled lowercase), feedless listings + unlisted tickers stay chartless',
       chartPairFor('AAPL')?.source === 'robinhood' &&
@@ -20945,8 +20967,9 @@ async function main() {
         chartPairFor('cbBTC')?.pair === 'BTC-USD' &&
         ROBINHOOD_TICKER_SET.has('CASHCAT') && chartPairFor('CASHCAT') === null &&
         ROBINHOOD_TICKER_SET.has('SATS') && chartPairFor('SATS') === null &&
+        ROBINHOOD_TICKER_SET.has('PONS') && chartPairFor('PONS') === null &&
         chartPairFor('HOOD') === null &&
-        ROBINHOOD_TICKER_SET.size === 201,
+        ROBINHOOD_TICKER_SET.size === 202,
       `size=${ROBINHOOD_TICKER_SET.size}`,
     )
     // Coins resolve FIRST: a stock ticker that collides with a Coinbase
@@ -21151,10 +21174,11 @@ async function main() {
     // symbol page (SHELL frame) — header, the chart, the five-tab strip as
     // real links, the rail. The Overview chips SEND through the frame's
     // door on click (chip-send contract); nothing in the HTML fires a turn.
+    // RE-PINNED 2026-10-13 (polish-qa): #972 (129fecc3, the cockpit) — the root is `<main class="sym sym--cockpit" data-symbol="ETH">` now; pin the symbol page root by its data-symbol, not the bare class attribute.
     check(
       '/t/ETH: symbol page — pair header, the five tabs as link targets, no auto-send anywhere in the HTML',
       /ETH \/ USD/.test(tEth) &&
-        /class="sym"/.test(tEth) &&
+        /<main class="sym[ "][^>]*data-symbol="ETH"/.test(tEth) &&
         ['Overview', 'News', 'Community', 'Technicals', 'Trade'].every((l) => new RegExp(`role="tab"[^>]*>${l}<`).test(tEth)) &&
         tEth.includes('href="/t/ETH?tab=trade"') &&
         tEth.includes('href="/t/ETH?tab=technicals"') &&
@@ -23261,9 +23285,10 @@ async function main() {
       const r = await fetch(`${BASE}/api/charts/technicals?symbol=${sym}&tf=${tf}`)
       const b = (await r.json()) as TechApi
       const live = !b.error
+      // RE-PINNED 2026-10-13 (polish-qa): CANDLE_TFS grew 1m (#968, 8dc2b740) and 1s (#970, bb08c22e); the route advertises them
       check(
         `tech api: ${sym} ${tf} → contract shape (summary/oscillators/movingAverages gauges, 11 oscillator + 15 MA rows incl. omitted, five pivot families, chips) — or a NAMED feed refusal`,
-        r.status === 200 && b.symbol === sym && b.tf === tf && Array.isArray(b.tfs) && b.tfs.join(',') === '15m,1h,4h,1d' &&
+        r.status === 200 && b.symbol === sym && b.tf === tf && Array.isArray(b.tfs) && b.tfs.join(',') === '1s,1m,15m,1h,4h,1d' &&
           (live
             ? gaugeOk(b.summary) && gaugeOk(b.oscillators as TechApi['summary']) && gaugeOk(b.movingAverages as TechApi['summary']) &&
               (b.rows!.oscillators.length + b.omitted!.filter((n) => !/Average|Ichimoku/.test(n)).length) === 11 &&
@@ -24005,6 +24030,7 @@ async function main() {
           /if \(resumeAsk\) intent\.resumeAsk = resumeAsk/.test(doorS) &&
           /if \(connected && intent\?\.resumeAsk\) \{[\s\S]*?actResumeRecord\(target, intent\.resumeAsk, Date\.now\(\)\)[\s\S]*?window\.dispatchEvent\(new Event\(ACT_RESUME_EVENT\)\)\s*\}\s*if \(connected && intent\?\.signIn\)/.test(oauthS),
       )
+      // RE-PINNED 2026-10-13 (polish-qa): #978 (71817810) made the bare /chat public to look at — each posture's spine door is now `if (!isPublicAppPath(dest) && openDoorFor(dest)) return`: the door still opens for every non-public destination.
       check(
         "connect to act, wired: every ask on a symbol page (header chips, the no-chart chips, the Trade panel, chart levels, the watchlist) goes through act(), and so do the /markets watchlist's prefill chips; the spine's seats into the signed-in app open the door for a signed-out visitor, and its work poll stops for them",
         /const \{ act, door \} = useConnectToAct\(\{\s*run: runAsk,/.test(symS) &&
@@ -24020,8 +24046,8 @@ async function main() {
           // posture executes lib/phone-nav (pickPhone), so the door call is
           // ONE per posture — pickDesktop's `href` and pickPhone's
           // `action.href` — and each door announces its aim (data-spine-door-to).
-          (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 1 &&
-          (spineS.match(/if \(openDoorFor\(action\.href\)\) return/g) ?? []).length === 1 &&
+          (spineS.match(/if \(!isPublicAppPath\(href\) && openDoorFor\(href\)\) return/g) ?? []).length === 1 &&
+          (spineS.match(/if \(!isPublicAppPath\(action\.href\) && openDoorFor\(action\.href\)\) return/g) ?? []).length === 1 &&
           /\{doorTo && <span hidden data-spine-door-to=\{doorTo\} \/>\}/.test(spineS) &&
           (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
           // MORE's Settings: the menu unmounts as it closes, so its door is the spine's
@@ -24134,9 +24160,12 @@ async function main() {
     const tTech = await fetch(`${BASE}/t/AAPL?tab=technicals`)
     check('/t/AAPL?tab=technicals: 200 (the strip reads ?tab= client-side; the stub card is a calm coming-soon, never a 404)', tTech.status === 200)
     const tNope = flat(await (await fetch(`${BASE}/t/NOPE`)).text())
+    const tChartless = flat(await (await fetch(`${BASE}/t/USDG`)).text())
+    // RE-PINNED 2026-10-13 (polish-qa): #909 (4f2154f2) — an UNLISTED ticker gets 'We don’t list NOPE' + search and never a Buy chip or a trades-in-chat promise; the listed-but-chartless honest page (no chart yet, still tradable, 'Not charted yet.' with the tabs held) is pinned on USDG.
     check(
-      "/t/NOPE: a chartless symbol keeps today's honest page — 200, 'No live chart for NOPE yet', still tradable in chat, tabs held",
-      tNope.includes('No live chart for NOPE yet') && tNope.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of NOPE')}`) && tNope.includes('Not charted yet.'),
+      "/t/NOPE: a chartless symbol keeps today's honest page — 200; an unlisted ticker (NOPE) says 'We don’t list NOPE' with search, no Buy chip and no tabs, and a listed chartless one (USDG) keeps 'No live chart for USDG yet', still tradable in chat, tabs held",
+      /data-standing="unknown"/.test(tNope) && tNope.includes('We don’t list NOPE.') && !tNope.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of NOPE')}`) && /role="tablist"[^>]*style="display:none"/.test(tNope) &&
+        tChartless.includes('No live chart for USDG yet') && tChartless.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of USDG')}`) && tChartless.includes('Not charted yet.') && !/role="tablist"[^>]*style="display:none"/.test(tChartless),
     )
   }
 
@@ -25267,11 +25296,12 @@ async function main() {
     )
 
     const byKey = new Map(OVERLAYS.map((o) => [o.key, o]))
+    // RE-PINNED 2026-10-13 (polish-qa): #923 The Wall (48c3d6ae) joined the overlay bar as WALL and the symbol page opens with it — the 50 + 200 + VP defaults stand.
     check(
-      'chart MAs: the overlay bar reads SMA 20 · SMA 50 · SMA 200 · EMA 20 · BB · VWAP · VP, every toggle carries a legend swatch, the 50 wears --chart-ma-50 and the 200 --chart-ma-200, and the symbol page opens on the 50 + the 200 + the volume profile',
-      OVERLAYS.map((o) => o.label).join(',') === 'SMA 20,SMA 50,SMA 200,EMA 20,BB,VWAP,VP' && OVERLAYS.every((o) => o.swatch.length > 0) &&
+      'chart MAs: the overlay bar reads SMA 20 · SMA 50 · SMA 200 · EMA 20 · BB · VWAP · VP · WALL, every toggle carries a legend swatch, the 50 wears --chart-ma-50 and the 200 --chart-ma-200, and the symbol page opens on the 50 + the 200 + the volume profile + the Wall',
+      OVERLAYS.map((o) => o.label).join(',') === 'SMA 20,SMA 50,SMA 200,EMA 20,BB,VWAP,VP,WALL' && OVERLAYS.every((o) => o.swatch.length > 0) &&
         byKey.get('sma50')?.swatch === 'var(--chart-ma-50)' && byKey.get('sma200')?.swatch === 'var(--chart-ma-200)' &&
-        DEFAULT_SYMBOL_OVERLAYS.join(',') === 'sma50,sma200,vp', // re-pinned 2026-09-15 (MK2/VIZ): the volume profile joins the bar and opens lit
+        DEFAULT_SYMBOL_OVERLAYS.join(',') === 'sma50,sma200,vp,wall', // re-pinned 2026-09-15 (MK2/VIZ): the volume profile joins the bar and opens lit
     )
 
     // The colors are pinned by what they ARE (a blue, a yellow, legible on
@@ -26508,13 +26538,15 @@ async function main() {
     // owns a class ships its rule).
     const shellSrc = await readFile('components/markets/shell/MarketsShell.tsx', 'utf8')
     const mkCss = await readFile('components/markets/markets.css', 'utf8')
+    // RE-PINNED 2026-10-13 (polish-qa): a --mk-* name markets.css DECLARES itself (--mk-view-w, the phone tool-strip width from #929 789e2adb) is a local layout var, not a VIZ look token — only look tokens need the site fallback.
     check(
       'mk2/markets: MarketsShell imports VIZ\'s look.css then markets.css exactly once; markets.css styles .mk-slot, and every --mk-* use carries a site-token fallback',
       (shellSrc.match(/import '@\/components\/markets\/look\.css'/g) ?? []).length === 1 &&
         (shellSrc.match(/import '@\/components\/markets\/markets\.css'/g) ?? []).length === 1 &&
         shellSrc.indexOf("look.css'") < shellSrc.indexOf("markets.css'") &&
         /\.mk-slot \{/.test(mkCss) &&
-        (mkCss.match(/var\(--mk-[a-z-]+\)/g) ?? []).length === 0,
+        (mkCss.match(/var\(--mk-[a-z-]+\)/g) ?? []).filter((v) => !mkCss.includes(`${v.slice(4, -1)}:`)).length === 0,
+      (mkCss.match(/var\(--mk-[a-z-]+\)/g) ?? []).filter((v) => !mkCss.includes(`${v.slice(4, -1)}:`)).join(' ') || 'all fall back',
     )
   }
 
@@ -26706,16 +26738,18 @@ async function main() {
     const mcSrc = (await readFile('components/markets/chart/MarketChart.tsx', 'utf8')) + '\n' + (await readFile('components/markets/chart/chart-tokens.ts', 'utf8'))
     const mountSrc = await readFile('components/markets/chart/ChartMount.tsx', 'utf8')
     const perfSrc = await readFile('components/markets/chart/PerformanceTiles.tsx', 'utf8')
+    // RE-PINNED 2026-10-13 (polish-qa): #945's polish r2 (65fe67d7) added the FetchFailed retry nonce to the deps (`[pairSymbol, nonce]`) — the effect still keys on the resolved symbol, never the fresh pair object.
     check(
       'viz chart: PerformanceTiles keys its candles effect on the resolved SYMBOL, never on the fresh chartPairFor() object (the ~500 req/s loop on /t/ Overview)',
-      perfSrc.includes('}, [pairSymbol])') && !perfSrc.includes('}, [pair])'),
+      /\}, \[pairSymbol(?:, nonce)?\]\)/.test(perfSrc) && !/\}, \[[^\]]*\bpair\b/.test(perfSrc),
     )
+    // RE-PINNED 2026-10-13 (polish-qa): #968 (8dc2b740) added the live tail's dotted 'print' price line in the brand accent — a direction-neutral marker of the newest Dune print, the one accent paint allowed after alpha(); candles/wicks/volume still paint in up/down.
     check(
       'viz chart: MarketChart imports look.css, reads --mk-up/--mk-down (falling back to --accent/--sell), --mk-grid and --mk-crosshair through the probe, paints candle bodies in the up/down inks with quiet wicks (WICK_ALPHA), and no paint site still reads tokens.accent/tokens.sell',
       mcSrc.includes("import '@/components/markets/look.css'") && mcSrc.includes("up: get('--mk-up', get('--accent', '#3ecf8e'))") && mcSrc.includes("down: get('--mk-down', get('--sell', '#e5484d'))") &&
         mcSrc.includes("cs.getPropertyValue('--mk-grid')") && mcSrc.includes("cs.getPropertyValue('--mk-crosshair')") && mcSrc.includes('wickUpColor: alpha(tokens.up, WICK_ALPHA)') &&
         mcSrc.includes('grid: { vertLines: { color: tokens.grid }, horzLines: { color: tokens.grid } }') &&
-        !mcSrc.slice(mcSrc.indexOf('const alpha = (hex: string, a: number)')).includes('tokens.accent') && !mcSrc.slice(mcSrc.indexOf('const alpha = (hex: string, a: number)')).includes('tokens.sell'),
+        !mcSrc.slice(mcSrc.indexOf('const alpha = (hex: string, a: number)')).replace(/createPriceLine\(\{ price: last, color: alpha\(tokens\.accent, 0\.9\),[^}]*title: 'print' \}\)/, '').includes('tokens.accent') && !mcSrc.slice(mcSrc.indexOf('const alpha = (hex: string, a: number)')).includes('tokens.sell'),
     )
     check(
       'viz chart: onViewport rides ChartMount → MarketChart and fires from the viewport guard with bar OPEN times at most once per animation frame (the AI lane\'s "what is on screen")',
@@ -26733,10 +26767,11 @@ async function main() {
         vp.bins.every((b) => b.up >= 0 && b.up <= 1) && profileBins(vpBars, 50, 60).bins.length === 0 && profileBins([], 0, 1).bins.length === 0,
       `bins=${vp.bins.length} poc=${vp.poc} total=${vpVol}`,
     )
+    // RE-PINNED 2026-10-13 (polish-qa): #923 The Wall (48c3d6ae): while the Wall draws it absorbs the volume profile (TheWall gets the held bars), so the standalone VP steps aside (!wallOn); the defaults gained 'wall' after 'vp'.
     check(
       'viz chart: MarketChart attaches the VolumeProfile primitive on the candle series, feeds it the held bars only while the VP overlay is lit (off when the feed carries no volume), and the symbol page opens with it; the compare line rides the LEFT scale in percentage mode with the series-2 ink and is named in the foot',
-      mcSrc.includes('candleSeries.attachPrimitive(vp)') && mcSrc.includes("vpRef.current?.update(overlays.has('vp') && hasVolume(bars) ? bars : []") &&
-        (await readFile('lib/chart-indicators.ts', 'utf8')).includes("['sma50', 'sma200', 'vp']") &&
+      mcSrc.includes('candleSeries.attachPrimitive(vp)') && mcSrc.includes("vpRef.current?.update(overlays.has('vp') && !wallOn && hasVolume(bars) ? bars : []") && mcSrc.includes('<TheWall geom={geom} bars={bars}') &&
+        /DEFAULT_SYMBOL_OVERLAYS: OverlayKey\[\] = \[[^\]]*'vp'/.test(await readFile('lib/chart-indicators.ts', 'utf8')) &&
         mcSrc.includes("priceScaleId: 'left'") && mcSrc.includes('mode: PriceScaleMode.Percentage') && mcSrc.includes("compare: get('--mk-series-2'") && mcSrc.includes('% since the first bar on screen (left scale)') &&
         mountSrc.includes('compare={compare}'),
     )
@@ -27189,7 +27224,8 @@ async function main() {
     const aaplWords = aiVenueWordsFor(aaplPair, 300)
     check('ai venues: the prompts\' "ways this wallet can act" come from EXEC\'s venuesFor (spot chains, CoW limits, Aave, Lido, the perp) plus missingVenueNotes as "not here:" lines', ethWords.some((w) => /^spot on Uniswap \(Base/.test(w)) && ethWords.some((w) => /CoW limit/.test(w)) && ethWords.some((w) => /Aave/.test(w)) && ethWords.some((w) => /Lido/.test(w)) && ethWords.some((w) => /Hyperliquid perp/.test(w)) && aaplWords.some((w) => /Robinhood Chain/.test(w)) && aaplWords.some((w) => w.startsWith('not here:')), `${ethWords.length}/${aaplWords.length} words`)
     const ethMenu = aiChipMenu({ pair: ethPair, last: 2500, tech: null })
-    check('ai menu: EXEC\'s venue rows join the brief\'s chip menu (one per kind+side, ladder-filtered downstream) and funding legs never do', !ethMenu.some((c) => /\bto Aave\b/.test(c.ask)) && ethMenu.some((c) => /^Stake [\d.]+ ETH on Lido$/.test(c.ask)) && ethMenu.some((c) => /^Long \$50 of ETH on Hyperliquid$/.test(c.ask)) && !ethMenu.some((c) => /^(Swap|Fund) /.test(c.ask)) && new Set(ethMenu.map((c) => c.ask)).size === ethMenu.length, `${ethMenu.length} chips`)
+    // RE-PINNED 2026-10-13 (polish-qa): ETH Aave supply is a live chip again since #905 (3f1d2f2e wrap-then-supply); restores the pre-#903 (a53c28aa) positive pin
+    check('ai menu: EXEC\'s venue rows join the brief\'s chip menu (one per kind+side, ladder-filtered downstream) and funding legs never do', ethMenu.some((c) => c.ask === 'Supply $50 of ETH to Aave') && ethMenu.some((c) => /^Stake [\d.]+ ETH on Lido$/.test(c.ask)) && ethMenu.some((c) => /^Long \$50 of ETH on Hyperliquid$/.test(c.ask)) && !ethMenu.some((c) => /^(Swap|Fund) /.test(c.ask)) && new Set(ethMenu.map((c) => c.ask)).size === ethMenu.length, `${ethMenu.length} chips`)
     check('ai tape: the morning tape\'s cache key is the sorted, deduped symbol set only — never a list id, a name, or a wallet', aiTapeCacheKey(['eth', 'AAPL', 'ETH', 'btc']) === 'tape:AAPL,BTC,ETH' && aiTapeSymbols(['0x1111111111111111111111111111111111111111', 'ETH']).join(',') === 'ETH')
     if (ethLast != null) {
       const t1 = await readBrief({ part: 'tape', symbols: ['eth', 'AAPL', 'ETH'] })
@@ -27204,7 +27240,8 @@ async function main() {
     const ctxSrc = await readFile('lib/markets-ai-context.ts', 'utf8')
     check('ai position: the paragraph calls EXEC\'s /api/markets/position handler IN-PROCESS on a constant internal URL (QA-5: no fetch, no Host-derived origin; the handler reads the caller\'s own session, so own rows come back and a stranger\'s are named private), and falls back to the chain-only reader', briefRoute.includes('readSymbolPosition(tape.pair, body.address') && !briefRoute.includes('req.nextUrl.origin') && ctxSrc.includes("import('@/app/api/markets/position/route')") && ctxSrc.includes("new URL('http://pantessa.internal/api/markets/position')") && !/fetch\([^)]*position/.test(ctxSrc) && ctxSrc.includes('privateRows: p.private ?? []') && ctxSrc.includes('return readPosition(address, pair, last, change24hPct)') && aiPositionFallback({ symbol: 'ETH', last: 2500, change24hPct: 1, rows: [], perp: null, privateRows: ['dca', 'guardian'] }).includes('private'))
     const askSrc2 = await readFile('components/markets/ai/AskChart.tsx', 'utf8')
-    check('ai explain: AskChart offers "Explain the <time> bar" for the chart-hover store\'s bar (lib/markets-ai-hover, VIZ reports it), else the bar under the newest timed drawing (note / trend end — the ChartState crosshair fallback), else the window\'s last bar, through kind:explain', askSrc2.includes("useChartHover((st) => (st.symbol === pair.symbol ? st.bar : null))") && askSrc2.includes("kind: 'explain', bar: explainBar") && askSrc2.includes('data-explain={explainMode}') && askSrc2.includes("l.kind === 'note' ? l.t : l.kind === 'trend' ? l.t2 : null"))
+    // RE-PINNED 2026-10-13 (polish-qa): #963 (f494051a) added vline + fib to the timed drawings the explain fallback reads
+    check('ai explain: AskChart offers "Explain the <time> bar" for the chart-hover store\'s bar (lib/markets-ai-hover, VIZ reports it), else the bar under the newest timed drawing (note / trend end — the ChartState crosshair fallback), else the window\'s last bar, through kind:explain', askSrc2.includes("useChartHover((st) => (st.symbol === pair.symbol ? st.bar : null))") && askSrc2.includes("kind: 'explain', bar: explainBar") && askSrc2.includes('data-explain={explainMode}') && askSrc2.includes("l.kind === 'note' || l.kind === 'vline' ? l.t : l.kind === 'trend' || l.kind === 'fib' ? l.t2 : null"))
     const tapeSrc = await readFile('components/markets/ai/MorningTape.tsx', 'utf8')
     check('ai tape: MorningTape is COMPACT in the rail — collapsed by default to a bar + the first sentence, open on click to a bounded scrolling body (240px), remembered per browser; `symbols` prop overrides the useWatchlists read', tapeSrc.includes('const [open, setOpen] = useState(false)') && tapeSrc.includes("window.localStorage.getItem(TAPE_OPEN_KEY) === '1'") && tapeSrc.includes('className="mk-ai__tape-bar"') && tapeSrc.includes('tapeSymbols(symbolsProp ?? wl.active?.symbols ?? [])') && (await readFile('components/markets/ai.css', 'utf8')).includes('.mk-ai__tape-body { display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto;') && aiFirstSentenceOf('BTC fell 1.65% overnight. ETH followed.') === 'BTC fell 1.65% overnight.' && aiFirstSentenceOf('') === '')
     // The wire the components speak, pinned at the source: a chip click SENDS
@@ -27963,7 +28000,8 @@ async function main() {
       // that would fall — the AAVE supply above, "Sell all my F" — is dropped
       // at the source. Pinned at the source and by the count of drops seen.
       const ctxSrc2 = await readFile('lib/markets-ai-context.ts', 'utf8')
-      check('arrival ladder: the Morning tape\'s menu is ladder-filtered server-side before the model sees it (lib/markets-ai-context menuFor → ladderFilterMenu), and the proof saw the filter drop the non-action menu sentences', ctxSrc2.includes('return ladderFilterMenu(chipMenu({ pair: tape.pair, last: tape.last, tech: tape.tech })).chips') && ctxSrc2.includes('const { chips: menu, dropped } = ladderFilterMenu(chipMenu({ pair, last, tech }))') && menuDroppedByRoute.some((d) => /Supply \$50 of AAVE to Aave/.test(d)) && menuDroppedByRoute.some((d) => /Sell all my F$/.test(d)), `${menuDroppedByRoute.length} menu drops`)
+      // RE-PINNED 2026-10-13 (polish-qa): #903 (a53c28aa) stopped composing "Supply $50 of AAVE to Aave" at the source; AVAX (a KNOWN_GAPS planner fall) is the dropped exemplar now
+      check('arrival ladder: the Morning tape\'s menu is ladder-filtered server-side before the model sees it (lib/markets-ai-context menuFor → ladderFilterMenu), and the proof saw the filter drop the non-action menu sentences', ctxSrc2.includes('return ladderFilterMenu(chipMenu({ pair: tape.pair, last: tape.last, tech: tape.tech })).chips') && ctxSrc2.includes('const { chips: menu, dropped } = ladderFilterMenu(chipMenu({ pair, last, tech }))') && menuDroppedByRoute.some((d) => /^AVAX: Buy \$50 of AVAX$/.test(d)) && menuDroppedByRoute.some((d) => /Sell all my F$/.test(d)), `${menuDroppedByRoute.length} menu drops`)
       // The fired-alert chip: alertActionChips composes it (the AlertForm only
       // offers those), but createAlert (lib/watchlists-store) stores ANY string
       // a signed-in caller POSTs as actionAsk — so the rail's "needs you" chip
@@ -28393,10 +28431,11 @@ async function main() {
       const vgRes = await fetch(`${BASE}/api/markets/tradable?symbols=AAPL,AMBA,ETH,NOTASYMBOL`)
       const vgBody = (await vgRes.json()) as { map?: Record<string, { symbol: string; legs: { chainId: number; side: string; verdict: string }[] }> }
       const vgRows = Object.values(vgBody.map ?? {})
+      // RE-PINNED 2026-10-13 (polish-qa): #903 (a53c28aa) caches listing verdicts (supply/collateral/perp, lib/tradability LEG_SIDES) in the same rows
       check(
         `GET /api/markets/tradable: public, symbol-filtered, every row a measured (chain, side) verdict from the cascade; an unknown ticker is absent, never a guess (${vgRows.length} symbol${vgRows.length === 1 ? '' : 's'} measured)`,
         vgRes.status === 200 && !vgBody.map?.NOTASYMBOL &&
-          vgRows.every((r) => r.legs.length > 0 && r.legs.every((l) => (l.side === 'buy' || l.side === 'sell') && (l.verdict === 'fillable' || l.verdict === 'no-venue') && Number.isInteger(l.chainId))),
+          vgRows.every((r) => r.legs.length > 0 && r.legs.every((l) => ['buy', 'sell', 'supply', 'collateral', 'perp'].includes(l.side) && (l.verdict === 'fillable' || l.verdict === 'no-venue') && Number.isInteger(l.chainId))),
       )
       check('venue gate: the cron that measures is fail-closed like every other cron — no CRON_SECRET, or the wrong one, and it does nothing', (await fetch(`${BASE}/api/cron/tradability`, { headers: { authorization: 'Bearer nope' } })).status === 401)
       const vgCron = JSON.parse(await readFile('vercel.json', 'utf8')) as { crons: { path: string; schedule: string }[] }
@@ -28480,10 +28519,11 @@ async function main() {
         ttSrc.includes(': DEFAULT_CHART_TF))') && cmSrc.includes('stateProp ?? (stored ? { ...stored, tf: defaultTf ?? DEFAULT_CHART_TF } : null)') &&
         heroSrc.includes('defaultTf="1h"'),
     )
-    const sgTfPressed = (html: string) => [...html.matchAll(/class="tok__tfbtn mono( is-active)?" aria-pressed="(true|false)">([^<]+)</g)].filter((m) => m[2] === 'true').map((m) => m[3])
+    const sgTfPressed = (html: string) => [...html.matchAll(/class="tok__tfbtn mono( is-active)?" aria-pressed="(true|false)"[^>]*>([^<]+)</g)].filter((m) => m[2] === 'true').map((m) => m[3])
     const dayAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
     const dayEth = flat(await (await fetch(`${BASE}/t/ETH`)).text())
     const dayTech = flat(await (await fetch(`${BASE}/t/AMAT?tab=technicals`)).text())
+    // RE-PINNED 2026-10-13 (polish-qa): #913 (09fee064) gave each timeframe button a keyboard title after aria-pressed ("1D bars (press 4 over the chart)"); the reader allows trailing attributes — 1D is still the one pressed frame.
     check(
       '/t/AAPL + /t/ETH: the chart ships in the server HTML with 1D pressed (and only 1D); the Technicals tab renders on 1d too; no Sell chip in either header for a visitor with no wallet',
       sgTfPressed(dayAapl).join() === '1D' && sgTfPressed(dayEth).join() === '1D' && /data-technicals="AMAT" data-tf="1d"/.test(dayTech) &&
@@ -29373,10 +29413,11 @@ async function main() {
         body: JSON.stringify({ message: 'I want to buy some apple shares', activeServers: [], history: [] }),
       }).then((r) => r.json() as Promise<Record<string, unknown>>)
       const unsizedOpts = ((unsizedStock.clarify as { options?: { label: string; resume: string }[] } | undefined)?.options ?? [])
+      // RE-PINNED 2026-10-13 (polish-qa): #948 (72757d6c) resolves the company word to its ticker, so the chips buy AAPL, not "APPLE"
       check(
         'apps follow the ask (route): "I want to buy some apple shares" (unsized, no ticker) is money-shaped now and the intent net answers three sized buys the swap layer builds — never the planner',
         moneyShaped('I want to buy some apple shares') && !moneyShaped('what is a stock?') &&
-          unsizedStock.buildPath === 'native-intent-net' && unsizedOpts.length === 3 && unsizedOpts.every((o) => /^Buy \$(10|25|50) of APPLE$/.test(o.resume)) &&
+          unsizedStock.buildPath === 'native-intent-net' && unsizedOpts.length === 3 && unsizedOpts.every((o) => /^Buy \$(10|25|50) of AAPL$/.test(o.resume)) &&
           simulateLadder('I want to buy some apple shares').kind === 'clarify' && simulateLadder('buy tesla stock').gate === 'intent-net' && simulateLadder('sell my apple shares').gate === 'intent-net',
         JSON.stringify({ shape: moneyShaped('I want to buy some apple shares'), turn: JSON.stringify(unsizedStock).slice(0, 200) }),
       )
@@ -30365,46 +30406,51 @@ async function main() {
     // ── venue floor: 1Click's temporary per-chain minimum ─────────────────
     // The table in lib/venue-floor is a MEASUREMENT, not a copy of NEAR's
     // changelog (which lists Optimism and Avalanche, both of which price
-    // fine, and never mentions the destination side, which Polygon and BNB
-    // Chain do fence). These pins go red when a floor lifts, moves, or
-    // appears on a chain we build on — the whole point of measuring.
+    // fine, and never mentions the destination side, which BNB Chain does
+    // fence). These pins go red when a floor lifts, moves, or appears on a
+    // chain we build on — the whole point of measuring.
+    // RE-PINNED 2026-10-13 (main sweep): Polygon's floor LIFTED (the live pin
+    // went red: the venue priced $20 both ways; `npm run probe:venue-floors`
+    // agreed), so the table dropped it and BNB Chain is the fixture chain
+    // here; Polygon joins the unfenced watch below.
     {
       const { VENUE_FLOORS, floorFor, crossChainFloorBlock, floorBlockFromError, venueFloorFromError, floorRefusalTurn, floorChipAsk, floorProblemLine, moveUsd } = await import('../lib/venue-floor')
       const { parseCrossChainSwap } = await import('../lib/cross-chain-swap')
       const cc = (o: string, d: string, amount = '20', token = 'USDC') => ({ amount, originToken: token, originChain: o, destinationToken: token, destinationChain: d })
 
       // — the pure rules —
-      check('venue floor: a $20 move off Polygon is refused before the venue is asked', crossChainFloorBlock(cc('polygon', 'base'))?.side === 'origin')
-      check('venue floor: the floor is read on the DESTINATION end too (measured, undocumented)', crossChainFloorBlock(cc('base', 'polygon'))?.side === 'destination')
-      check('venue floor: chain aliases resolve — "matic"/"bsc" carry the same floor', crossChainFloorBlock(cc('matic', 'base'))?.chain === 'polygon' && crossChainFloorBlock(cc('base', 'bsc'))?.chain === 'bnb')
-      check('venue floor: a move that CLEARS the floor is not refused', crossChainFloorBlock(cc('polygon', 'base', '2000')) === null)
-      check('venue floor: an unpriceable move is never refused by the table (it goes to the venue)', moveUsd('0.5', 'ETH') === null && crossChainFloorBlock(cc('polygon', 'base', '0.5', 'ETH')) === null)
-      check('venue floor: chains with no measured floor are untouched', ['base', 'ethereum', 'arbitrum', 'optimism', 'avalanche', 'gnosis', 'scroll'].every((c) => crossChainFloorBlock(cc(c, 'base')) === null && crossChainFloorBlock(cc('base', c)) === null))
+      check('venue floor: a $20 move off BNB Chain is refused before the venue is asked', crossChainFloorBlock(cc('bnb', 'base'))?.side === 'origin')
+      check('venue floor: the floor is read on the DESTINATION end too (measured, undocumented)', crossChainFloorBlock(cc('base', 'bnb'))?.side === 'destination')
+      check('venue floor: chain aliases resolve — "bsc"/"binance" carry BNB Chain\'s floor, and "matic" is as unfenced as Polygon', crossChainFloorBlock(cc('base', 'bsc'))?.chain === 'bnb' && crossChainFloorBlock(cc('binance', 'base'))?.chain === 'bnb' && crossChainFloorBlock(cc('matic', 'base')) === null)
+      check('venue floor: a move that CLEARS the floor is not refused', crossChainFloorBlock(cc('bnb', 'base', '2000')) === null)
+      check('venue floor: an unpriceable move is never refused by the table (it goes to the venue)', moveUsd('0.5', 'ETH') === null && crossChainFloorBlock(cc('bnb', 'base', '0.5', 'ETH')) === null)
+      check('venue floor: chains with no measured floor are untouched', ['base', 'ethereum', 'arbitrum', 'optimism', 'avalanche', 'gnosis', 'scroll', 'polygon'].every((c) => crossChainFloorBlock(cc(c, 'base')) === null && crossChainFloorBlock(cc('base', c)) === null))
 
       // — the belt: the venue's own words become our refusal —
       check('venue floor: the venue 400 parses, thousands separator and all', venueFloorFromError('Temporary swap limits: minimum swap amount is $1,000') === 1000 && venueFloorFromError('minimum swap amount is $100') === 100)
-      check('venue floor: an unrelated venue error keeps its raw words', venueFloorFromError('No liquidity available') === null && floorBlockFromError(cc('polygon', 'base'), 'No liquidity available') === null)
+      check('venue floor: an unrelated venue error keeps its raw words', venueFloorFromError('No liquidity available') === null && floorBlockFromError(cc('bnb', 'base'), 'No liquidity available') === null)
       check("venue floor: a floor on a chain the table doesn't know is reported as 'route', never a guessed side", floorBlockFromError(cc('base', 'arbitrum'), 'Temporary swap limits: minimum swap amount is $500')?.side === 'route')
-      check('venue floor: the refusal quotes the VENUE\'s number, not the table\'s', floorBlockFromError(cc('polygon', 'base'), 'Temporary swap limits: minimum swap amount is $2,500')?.usd === 2500)
+      check('venue floor: the refusal quotes the VENUE\'s number, not the table\'s', floorBlockFromError(cc('bnb', 'base'), 'Temporary swap limits: minimum swap amount is $2,500')?.usd === 2500)
 
       // — the chips: complete asks, and only ones the wallet can take —
       const src = (chainWord: string, token: string, balance: number) => ({ chainWord, token, balance })
-      const originTurn = floorRefusalTurn(cc('polygon', 'ethereum') as never, crossChainFloorBlock(cc('polygon', 'ethereum'))!, [src('polygon', 'USDC', 40), src('base', 'USDC', 55.2), src('bnb', 'USDC', 900)])
+      const originTurn = floorRefusalTurn(cc('bnb', 'ethereum') as never, crossChainFloorBlock(cc('bnb', 'ethereum'))!, [src('bnb', 'USDC', 40), src('base', 'USDC', 55.2)])
       check('venue floor: an origin-side block offers another chain the wallet holds on', originTurn.chips.length === 1 && originTurn.chips[0].resume.includes('from Base'), JSON.stringify(originTurn.chips))
-      check('venue floor: a chain carrying the SAME floor is never offered as the way out', !originTurn.chips.some((c) => /BNB/i.test(c.resume)))
-      const poor = floorRefusalTurn(cc('polygon', 'base') as never, crossChainFloorBlock(cc('polygon', 'base'))!, [src('polygon', 'USDC', 40)])
+      // "a chain carrying the SAME floor is never offered as the way out" needs two fenced chains to assert; only BNB
+      // Chain fences since 2026-10-13, so that rule has no fixture until the measurement adds one (re-arm it then).
+      const poor = floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, [src('bnb', 'USDC', 40)])
       check('venue floor: "move a bigger amount" is never offered to a wallet that cannot afford it', poor.chips.length === 0 && /Everywhere this wallet holds USDC is out/.test(poor.reply), poor.reply.slice(-140))
-      const rich = floorRefusalTurn(cc('polygon', 'base') as never, crossChainFloorBlock(cc('polygon', 'base'))!, [src('polygon', 'USDC', 4200)])
-      check('venue floor: a wallet that CAN clear the floor is offered the size-up', rich.chips.length === 1 && /^Swap 1000 USDC from Polygon/.test(rich.chips[0].resume), JSON.stringify(rich.chips))
-      check('venue floor: a wallet we never scanned is never told what it does not hold', !/can't see USDC anywhere/.test(floorRefusalTurn(cc('polygon', 'base') as never, crossChainFloorBlock(cc('polygon', 'base'))!, null).reply))
+      const rich = floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, [src('bnb', 'USDC', 4200)])
+      check('venue floor: a wallet that CAN clear the floor is offered the size-up', rich.chips.length === 1 && /^Swap 1000 USDC from BNB/.test(rich.chips[0].resume), JSON.stringify(rich.chips))
+      check('venue floor: a wallet we never scanned is never told what it does not hold', !/can't see USDC anywhere/.test(floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, null).reply))
       // The chip contract: a chip SENDS, so every one must round-trip the grammar.
       const everyChip = [...originTurn.chips, ...rich.chips].map((c) => c.resume)
       check('venue floor: every chip round-trips the cross-chain grammar', everyChip.length > 0 && everyChip.every((r) => { const b = parseCrossChainSwap(r); return b !== null && !('problem' in b) }), everyChip.join(' | '))
       // A chip that dropped "privately" would turn a private ask public (#827).
-      const priv = { ...cc('polygon', 'base'), confidential: true as const }
+      const priv = { ...cc('bnb', 'base'), confidential: true as const }
       const privBack = parseCrossChainSwap(floorChipAsk(priv as never))
       check('venue floor: a chip keeps the private clause — it never quietly becomes a public swap', privBack !== null && !('problem' in privBack) && (privBack as { confidential?: true }).confidential === true, floorChipAsk(priv as never))
-      const deliv = { ...cc('polygon', 'base'), recipient: '0x2527D02599Ba641c19FEa793cD0F167589a0f10D' }
+      const deliv = { ...cc('bnb', 'base'), recipient: '0x2527D02599Ba641c19FEa793cD0F167589a0f10D' }
       const delivBack = parseCrossChainSwap(floorChipAsk(deliv as never))
       check('venue floor: a chip keeps the delivery address', delivBack !== null && !('problem' in delivBack) && (delivBack as { recipient?: string }).recipient === deliv.recipient)
 
@@ -30415,11 +30461,12 @@ async function main() {
       const jobsSrc = readFileSync('lib/jobs.ts', 'utf8')
       check('venue floor: the job compiler refuses a leg the venue would refuse (never strand mid-job)', /crossChainFloorBlock\(ccp\)[\s\S]{0,80}floorProblemLine/.test(jobsSrc), 'a job can compile onto a floored bridge leg again')
       const { compileJobAsk } = await import('../lib/jobs')
-      const compiled = compileJobAsk('Swap 20 USDC from Polygon to USDC on Base, then supply 20 USDC to Aave')
+      // RE-PINNED 2026-10-13 (main sweep): BNB Chain is the floored fixture; Polygon (lifted) now sits beside Arbitrum as an unfloored one.
+      const compiled = compileJobAsk('Swap 20 USDC from BNB Chain to USDC on Base, then supply 20 USDC to Aave')
       check('venue floor: a compound job carrying a floored leg refuses by name, with the floor in it', Boolean(compiled && 'problem' in compiled && /\$1,000 minimum/.test((compiled as { problem: string }).problem)), JSON.stringify(compiled).slice(0, 180))
-      check('venue floor: the same compound over an unfloored chain still compiles', Boolean((() => { const c = compileJobAsk('Swap 20 USDC from Arbitrum to USDC on Base, then supply 20 USDC to Aave'); return c && !('problem' in c) })()))
+      check('venue floor: the same compound over an unfloored chain still compiles (Arbitrum, and Polygon since its floor lifted)', ['Arbitrum', 'Polygon'].every((o) => { const c = compileJobAsk(`Swap 20 USDC from ${o} to USDC on Base, then supply 20 USDC to Aave`); return !!c && !('problem' in c) }))
       check('venue floor: the job runner names the floor instead of persisting the venue 400', /floorBlockFromError\(p, msg\)/.test(readFileSync('lib/jobs-runner.ts', 'utf8')))
-      check('venue floor: the compile-time line carries the floor and the size', /\$1,000 minimum/.test(floorProblemLine(cc('polygon', 'base'), crossChainFloorBlock(cc('polygon', 'base'))!)))
+      check('venue floor: the compile-time line carries the floor and the size', /\$1,000 minimum/.test(floorProblemLine(cc('bnb', 'base'), crossChainFloorBlock(cc('bnb', 'base'))!)))
 
       // — LIVE: the table is a measurement, so it must still match the venue —
       // One dry quote per claim (nothing committed, no deposit address). A
@@ -30468,7 +30515,7 @@ async function main() {
       }
       // And every chain we BUILD on that the table does NOT fence still
       // prices $20 — this is the pin that catches a NEW floor appearing.
-      for (const [slug, word] of [['eth', 'ethereum'], ['arb', 'arbitrum'], ['op', 'optimism'], ['avax', 'avalanche'], ['gnosis', 'gnosis'], ['scroll', 'scroll']] as const) {
+      for (const [slug, word] of [['eth', 'ethereum'], ['arb', 'arbitrum'], ['op', 'optimism'], ['pol', 'polygon'], ['avax', 'avalanche'], ['gnosis', 'gnosis'], ['scroll', 'scroll']] as const) {
         if (floorFor(word, 'origin')) continue
         const r = await oneclick(slug, 'base', 20)
         if (!r) { check(`venue floor (live): ${word} unfenced`, true, 'venue unreachable — skipped, not a claim'); continue }
@@ -32214,9 +32261,12 @@ async function main() {
         const bFinal = await fetch(bCompleteUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ seq: 0, result: { batch: [{ ok: true, orderResponse: { status: 'harness' } }, { ok: true, orderResponse: { status: 'harness' } }] } }) })
         const bRows = process.env.DATABASE_URL ? await prisma.embedTurn.findMany({ where: { sessionId: jobStepMoneySessionId(bJobId, 0) }, select: { id: true, artifact: true, isInternal: true, walletAddress: true, originKind: true, verification: true, valueUsd: true } }) : null
         check('drive money (live): a REST /complete the runner accepts writes EXACTLY ONE job-step money row — session_id job-<jobId>-<seq>, origin_kind job-step, is_internal from the job row, the burner as signer, fail-closed verification', bFinal.status === 200 && (bRows === null || (bRows.length === 1 && bRows[0].artifact === 'job-step' && bRows[0].isInternal === true && bRows[0].walletAddress === burner.address.toLowerCase() && bRows[0].originKind === 'job-step' && typeof bRows[0].verification === 'string')), bRows === null ? 'DATABASE_URL absent in the harness process — row check skipped' : `${bRows.length} row(s): ${JSON.stringify(bRows[0] ?? null)}`)
-        const bBeacon = await fetch(`${BASE}/api/embed/telemetry`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ firstParty: true, sessionId: 'harness-drive-beacon-1', page: `${BASE}/chat`, outcome: 'signed', artifact: 'job-step', chain: 'multi', valueUsd: 12, buildPath: 'native-hl-exec', jobId: bJobId, seq: 0, walletAddress: burner.address }) })
+        const bBeacon = await fetch(`${BASE}/api/embed/telemetry`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ firstParty: true, sessionId: `harness-drive-beacon-${bJobId}`, page: `${BASE}/chat`, outcome: 'signed', artifact: 'job-step', chain: 'multi', valueUsd: 12, buildPath: 'native-hl-exec', jobId: bJobId, seq: 0, walletAddress: burner.address }) })
         const bBeaconBody = (await bBeacon.json().catch(() => ({}))) as { ok?: boolean; deduped?: boolean }
-        const bRowsAfter = process.env.DATABASE_URL ? await prisma.embedTurn.count({ where: { OR: [{ sessionId: jobStepMoneySessionId(bJobId, 0) }, { sessionId: 'harness-drive-beacon-1' }] } }) : null
+        const bRowsAfter = process.env.DATABASE_URL ? await prisma.embedTurn.count({ where: { OR: [{ sessionId: jobStepMoneySessionId(bJobId, 0) }, { sessionId: `harness-drive-beacon-${bJobId}` }] } }) : null
+        // RE-PINNED 2026-10-13 (main sweep): the beacon's session id is per RUN (the job's id) — a constant id read every
+        // row any session's harness ever left under it on the shared TEST DB (4 rows from 21:00–21:28Z, other trees),
+        // so the count was residue, not this run; the assertion is unchanged — exactly one row for THIS job.
         check('drive money (live): the browser beacon for the SAME (jobId, seq) after the runner\'s row is answered ok + deduped and writes NOTHING', bBeacon.status === 200 && bBeaconBody.ok === true && bBeaconBody.deduped === true && (bRowsAfter === null || bRowsAfter === 1), `${bBeacon.status} ${JSON.stringify(bBeaconBody)}; rows ${bRowsAfter}`)
       }
       await driveCall('broker_close', { intent_id: bIntent })
@@ -32546,7 +32596,8 @@ async function main() {
     check('mobile sign: SOURCE fence — no signing surface fires a wallet method from a useEffect; SendTxButton’s auto-fire goes through autoFireAllowed', effectOffenders.length === 0, effectOffenders.join(','))
     const chainSrc = fs.readFileSync('components/SendTxChain.tsx', 'utf8')
     const btnSrc = fs.readFileSync('components/SendTxButton.tsx', 'utf8')
-    check('mobile sign: SendTxChain decides step N>1’s auto-fire with autoFireAllowed({ platform … stepIndex: i …}) and labels a phone’s step via continueCopy', /autoFire=\{autoFireAllowed\(\{ platform, stepIndex: i/.test(chainSrc) && /ctaLabel=\{oneMethodPerTap\(platform\) \? continueCopy\(/.test(chainSrc) && /data-chain-next=/.test(chainSrc) && !/autoFire=\{i > 0 && !manualSteps\}/.test(chainSrc))
+    // RE-PINNED 2026-10-13 (polish-qa): #951 (053583f7) prefixed the step's autoFire with `cameBack !== i &&` (a step the visitor came back to never auto-fires) — the decision is still autoFireAllowed({ platform, stepIndex: i … })
+    check('mobile sign: SendTxChain decides step N>1’s auto-fire with autoFireAllowed({ platform … stepIndex: i …}) and labels a phone’s step via continueCopy', /autoFire=\{(?:cameBack !== i && )?autoFireAllowed\(\{ platform, stepIndex: i/.test(chainSrc) && /ctaLabel=\{oneMethodPerTap\(platform\) \? continueCopy\(/.test(chainSrc) && /data-chain-next=/.test(chainSrc) && !/autoFire=\{i > 0 && !manualSteps\}/.test(chainSrc))
     check('mobile sign: SendTxButton — the outcome is READ on mount before the card offers, WRITTEN as asked before the request leaves (nonce in parallel, never awaited ahead of the send), settled on the hash, cleared on a pre-broadcast error, and never auto-fired over', /readSignOutcome\(outcomeStore\(\), outcomeKey, Date\.now\(\)\)/.test(btnSrc) && /state: 'asked', askedAt, nonceAtAsk: null/.test(btnSrc) && btnSrc.indexOf("state: 'asked'") < btnSrc.indexOf('await sendTransactionAsync') && !/await publicClient\s*\??\.getTransactionCount/.test(btnSrc) && /state: 'settled', askedAt, settledAt: Date\.now\(\), hash: txHash/.test(btnSrc) && /if \(!txHash\) \{\s*\/\/[^\n]*\n\s*if \(outcomeKey\) clearSignOutcome/.test(btnSrc) && /data-sign-resume=\{resume\}/.test(btnSrc) && /if \(outcomeKey && readSignOutcome\(outcomeStore\(\), outcomeKey, Date\.now\(\)\)\) return\s*\n\s*autoFired\.current = true/.test(btnSrc))
     // LINKS reads the build's ORIGINAL last-step key (lib/intent-link-return): a re-quoted
     // step has new calldata, so the chain itself writes `settled` under the original key.
@@ -33028,7 +33079,10 @@ async function main() {
     const rt = readFileSync('components/IntentRuntime.tsx', 'utf8')
     check('i mobile: the runtime root wears .yf-runtime and imports its scoped stylesheet; the thread wrapper adds no gutter of its own below sm', /import '\.\/intent-runtime\.css'/.test(rt) && /className="yf-runtime relative h-dvh/.test(rt) && /max-w-3xl w-full mx-auto px-0 sm:px-6 min-h-0/.test(rt))
     check('i mobile: the header eyebrow keeps only its last segment below sm (the full framing from sm up) and the ask carries data-runtime-ask; the header return button yields to the bottom bar on a phone', /<span className="sm:hidden">\{phone\}<\/span>\s*<span className="max-sm:hidden">\{wide\}<\/span>/.test(rt) && /const phone = brand \? \(brand\.name \?\? brand\.domain \?\? head\) : head\.includes\(' · '\) \? head\.slice\(head\.lastIndexOf\(' · '\) \+ 3\) : head/.test(rt) && /data-runtime-ask/.test(rt) && /text-\[13px\] flex-shrink-0 max-sm:!hidden"/.test(rt))
-    check('i mobile: the three bottom bars stack on a phone with full-width 44–48px buttons and safe-area padding', (rt.match(/max-sm:pb-\[max\(0\.(625|75)rem,env\(safe-area-inset-bottom\)\)\]/g) ?? []).length === 3 && (rt.match(/max-sm:flex-col max-sm:items-stretch/g) ?? []).length === 2 && (rt.match(/max-sm:w-full max-sm:(justify-center max-sm:)?min-h-12/g) ?? []).length === 2 && /max-sm:grid max-sm:w-full max-sm:grid-cols-2/.test(rt))
+    const keepCss = readFileSync('components/guide/guide.css', 'utf8')
+    // RE-PINNED 2026-10-13 (polish-qa): #956 (5de07d19, first-run r3) turned the post-receipt sign-in bar into KeepItBar, so that bar's phone stack lives in components/guide/guide.css (acts on their own full row, the CTA flex: 1 at 44px); the return-host bar keeps the inline max-sm stack (1 + 1)
+    check('i mobile: the three bottom bars stack on a phone with full-width 44–48px buttons and safe-area padding', (rt.match(/max-sm:pb-\[max\(0\.(625|75)rem,env\(safe-area-inset-bottom\)\)\]/g) ?? []).length === 3 && (rt.match(/max-sm:flex-col max-sm:items-stretch/g) ?? []).length === 1 && (rt.match(/max-sm:w-full max-sm:(justify-center max-sm:)?min-h-12/g) ?? []).length === 1 && /max-sm:grid max-sm:w-full max-sm:grid-cols-2/.test(rt) &&
+      /max-sm:pb-\[max\(0\.75rem,env\(safe-area-inset-bottom\)\)\]">\s*<KeepItBar id=\{`i:\$\{slug\}`\}/.test(rt) && /@media \(max-width: 640px\) \{[^}]*\}\s*\.keep:not\(\.keep--compact\) \.keep__acts \{ grid-column: 1 \/ -1;[^}]*\}\s*\.keep:not\(\.keep--compact\) \.keep__cta \{ flex: 1; min-height: 44px; \}/.test(keepCss))
     const chips = readFileSync('components/ClarifyChips.tsx', 'utf8')
     check('i mobile: every clarify option is one list cell (data-clarify-option, the shared 56px CELL, a trailing chevron) and the first wears a Best guess pill, not an inline dash', (chips.match(/data-clarify-option/g) ?? []).length === 3 && (chips.match(/className=\{CELL\}/g) ?? []).length === 3 && /min-h-14/.test(chips) && (chips.match(/\{CHEVRON\}/g) ?? []).length === 3 && (chips.match(/<BestGuess \/>/g) ?? []).length === 2 && /data-best-guess/.test(chips) && !/— best guess/.test(chips))
     check('i mobile: the funding-arrival watcher survived the restyle (the card chip still watches, continues and clears its own wait)', chips.includes('useFundingArrival(') && chips.includes('continueNow(o)') && chips.includes('clearFundWait('))
@@ -33811,10 +33865,12 @@ async function main() {
       /@media \(hover: none\), \(max-width: 1023px\) \{\s*\.mkt-frame :is\(input, textarea, select\),\s*\[data-sheet\^="wl-"\] :is\(input, textarea, select\) \{ font-size: max\(16px, 1em\); \}/.test(nmMk) &&
         /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\);/.test(nmDesign),
     )
+    // RE-PINNED 2026-10-13 (polish-qa): #911's phone polish (35fd5a80) put a status line between the timeframes and the overlays: the overlays are order 5 with the tools order 6 right after them, and their width rule (row minus the tools) is its own line.
     check(
       'native markets: on a phone the /t plot keeps 260px however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
       /\.sym \.tchart:not\(\.tchart--expanded\) \.mkt-chart__canvas \{ flex: 0 0 auto; height: 260px; \}/.test(nmMk) &&
-        /\.sym \.mkt-chart__bar > \.mkt-chart__ind \{ order: 3; flex: 1 1 calc\(100% - 200px\); \}/.test(nmMk) &&
+        /\.sym \.mkt-chart__bar > \.mkt-chart__ind \{ order: 5; \}/.test(nmMk) && /\.sym \.mkt-chart__bar > \.mkt-chart__tools \{ order: 6; \}/.test(nmMk) &&
+        /\.sym \.mkt-chart__bar > \.mkt-chart__ind \{ flex: 1 1 calc\(100% - 200px\); \}/.test(nmMk) &&
         /\.sym \.mkt-chart__tools > \.mkt-tool:first-child \{ display: none; \}/.test(nmMk) &&
         /\.sym__act-chips \{\s*align-self: stretch; min-width: 0; flex-wrap: nowrap;[^}]*overflow-x: auto;/.test(nmMk),
     )
@@ -34085,10 +34141,11 @@ async function main() {
     const wDoc = await (await fetch(`${BASE}/wallet`)).text()
     const wHrefs = [...wDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
     const wCss = (await Promise.all(wHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s+/g, '')
+    // RE-PINNED 2026-10-13 (polish-qa): the pre-gtm mobile lane (9ae81902, #945) grew the Max chip's invisible hit area to inset -13px -6px — -12 measured a 43px hit on a 19px chip
     check(
       'native pages: every control in the wallet window is a 44px target below lg (BEFORE: switch 38×26, copy 30px, "updated" 17px, a flag\'s fix 25px), a Max-in-a-field keeps its chip look with an invisible 44px hit area',
       ruleWith(phoneBlock(wCss, 1023), '[data-wallet-window]:is(button,a[href])', ['min-height:44px']) &&
-        ruleWith(phoneBlock(wCss, 1023), '[data-wallet-window][data-wallet-field]:is(button,a[href]):after', ['content:""', 'position:absolute', 'inset:-12px-6px']) &&
+        ruleWith(phoneBlock(wCss, 1023), '[data-wallet-window][data-wallet-field]:is(button,a[href]):after', ['content:""', 'position:absolute', 'inset:-13px-6px']) &&
         /data-wallet-window="modal"/.test(walletSrcNP) && /data-wallet-window="page"/.test(walletSrcNP),
       `${wHrefs.length} stylesheet(s)`,
     )
@@ -34855,8 +34912,10 @@ async function main() {
       /if \(el && \(el\.isContentEditable \|\| \/\^\(INPUT\|TEXTAREA\|SELECT\)\$\/\.test\(el\.tagName\)\)\) return/.test(ci))
     const rt2 = rf('components/IntentRuntime.tsx', 'utf8')
     const rtCss = rf('components/intent-runtime.css', 'utf8')
+    // RE-PINNED 2026-10-13 (polish-qa): the share lane (9b20426e, #910) added a fifth /i bottom bar ("Signed. Share this link") that wears data-runtime-bar too; now also pinned as "every bar-shaped bottom div wears the hook", so a new bar without it goes red
     check('native chat r2: /i\'s four bottom bars step aside while the soft keyboard is up (html[data-keyboard], phone only) — the composer sits on the keyboard the way the tab bar steps aside',
-      (rt2.match(/data-runtime-bar=""/g) ?? []).length === 4 && /@media \(max-width: 1023px\) \{\s*html\[data-keyboard\] \.yf-runtime \[data-runtime-bar\] \{\s*display: none;/.test(rtCss))
+      (rt2.match(/data-runtime-bar=""/g) ?? []).length === 5 &&
+        (() => { const bars = rt2.match(/<div [^>]*className="[^"]*\bborder-t border-\[var\(--line\)\][^"]*backdrop-blur[^"]*"/g) ?? []; return bars.length === 5 && bars.every((b) => b.includes('data-runtime-bar=""')) })() && /@media \(max-width: 1023px\) \{\s*html\[data-keyboard\] \.yf-runtime \[data-runtime-bar\] \{\s*display: none;/.test(rtCss))
     check('native chat r2: the signature-wait cards close on the back gesture and stay on the page (/i\'s own instance and the global one), through SHELL\'s useBackToClose',
       /useBackToClose\(sigWait\.shown && !sigDismissed, \(\) => setSigDismissed\(true\), 'sigwait-i'\)/.test(rt2) && /useBackToClose\(covering, \(\) => setDismissed\(true\), 'sigwait'\)/.test(rf('components/SignatureWaitTakeover.tsx', 'utf8')))
     const chainSrc = rf('components/ChainPicker.tsx', 'utf8')

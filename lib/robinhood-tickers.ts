@@ -1,6 +1,7 @@
 // Robinhood Chain's tokenized equities — a STATIC snapshot of the Uniswap
 // official token list for chain 4663 (https://tokens.uniswap.org), taken
-// 2026-09-10 (202 entries; cbBTC dropped — it is a coin and charts as BTC).
+// 2026-09-10, refreshed 2026-10-13 (203 entries, PONS listed since; cbBTC dropped
+// — it is a coin and charts as BTC).
 //
 // Why a static copy exists next to the live list (lib/token-list.ts): the
 // chart resolver (lib/charts.ts) is PURE and CLIENT-SAFE — it decides,
@@ -150,6 +151,7 @@ export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
   ["PL", "Planet Labs PBC"],
   ["PLTR", "Palantir Technologies"],
   ["POET", "POET Technologies"],
+  ["PONS", "Pons"],
   ["POWL", "Powell Industries Inc."],
   ["PR", "Permian Resources"],
   ["PWR", "Quanta Services Inc."],

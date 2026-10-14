@@ -3571,6 +3571,16 @@ async function buildAaveSupplyTurn(
           },
         ],
       }
+      // Venue pre-flight (lib/venue-preflight): every door that turns a
+      // compiled ask into a job runs it just above its createJob, so no
+      // funding leg ever moves for a buy no venue can fill. A wrap-then-
+      // supply job carries no such buy today, so this is a no-op that keeps
+      // the invariant literal (the harness pins every createJob door).
+      const wrapUnfillable = await unfillableFundedBuyReason(compiled)
+      if (wrapUnfillable) {
+        trace({ type: 'note', level: 'warn', label: `native aave layer: venue pre-flight refuses the ETH supply job — ${wrapUnfillable.slice(0, 160)}` })
+        return NextResponse.json({ reply: `🛑 ${wrapUnfillable}`, buildPath: 'native-job' })
+      }
       const job = await createJob(walletAddress, compiled, 'chat', { internal: jobOpts.internal === true, ...(jobOpts.birth ?? {}) })
       await advanceJob(job).catch(() => {})
       trace({ type: 'status', label: `native aave layer: ETH supply compiled as wrap ${wrapEth} ETH → supply ${planned.amount} WETH (${planned.picked.spokeName})` })
