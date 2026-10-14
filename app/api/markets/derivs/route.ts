@@ -6,7 +6,7 @@
 // 500: a symbol with no perpetual answers empty series and the field draws
 // without them. Tokenized stocks have no perpetual and are refused by name.
 import { NextRequest, NextResponse } from 'next/server'
-import { CHART_TFS, chartPairFor, type ChartTf } from '@/lib/charts'
+import { CHART_TFS, resolveChartPair, type ChartTf } from '@/lib/charts'
 import { readDerivs } from '@/lib/derivs-read'
 import type { DerivsBody } from '@/lib/derivs'
 
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get('symbol') ?? ''
   const tf = (req.nextUrl.searchParams.get('tf') ?? '1d') as ChartTf
   if (!/^[A-Za-z0-9]{1,12}$/.test(raw) || !CHART_TFS.some((t) => t.key === tf)) return NextResponse.json({ error: 'bad symbol or tf' }, { status: 400, headers: { 'cache-control': 'no-store' } })
-  const pair = chartPairFor(raw)
+  const pair = await resolveChartPair(raw)
   if (!pair) return NextResponse.json({ error: 'no chart for that symbol' }, { status: 404, headers: { 'cache-control': 'no-store' } })
   if (pair.source === 'robinhood') return NextResponse.json({ ...empty(pair.symbol, tf, []), reason: 'A tokenized stock has no perpetual market to read.' }, { headers: HEADERS })
   try {

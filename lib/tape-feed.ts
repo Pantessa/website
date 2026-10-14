@@ -26,6 +26,7 @@
 // with backoff on its own; the status it reports is what the page prints.
 
 import { DEFAULT_LIVE_VENUES, venueWords, type DuneVenueId, type LiveStreamEvent } from '@/lib/dune'
+import { primeHlUniverse } from '@/lib/hl-universe'
 import { fillFromHl, pickTapeMarkets, subscriptionDelta, type HlWsTrade, type TapeFields, type TapeFill, type TapeSource, type TapeVenue, type UniverseRow } from '@/lib/tape'
 
 export type FeedStatus = 'idle' | 'connecting' | 'live' | 'reconnecting' | 'unconfigured' | 'closed'
@@ -444,6 +445,11 @@ export async function readTapeUniverse(signal?: AbortSignal): Promise<{ main: Un
     }
   }
   const [main, xyz] = await Promise.all([read(), read('xyz')])
+  // The same two halves are the chart pair table's source (lib/charts via
+  // lib/hl-universe): prime it here so a browser on /live resolves every
+  // picked perp (its /t link, its alert control) without a second read.
+  primeHlUniverse('main', main)
+  primeHlUniverse('xyz', xyz)
   return { main, xyz }
 }
 
