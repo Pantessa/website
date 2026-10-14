@@ -29,6 +29,7 @@ import {
   LEG_SIDES,
   TRADABILITY_MAX_AGE_MS,
   TRADABILITY_PROBE_USD,
+  staleLegs,
   tradeLegsFor,
   type LegSide,
   type LegVerdict,
@@ -97,16 +98,20 @@ export interface TradabilityRefresh {
   unknown: number
   /** Legs still waiting for their turn when the budget ran out. */
   left: number
+  /** Legs measured recently enough to be left alone this pass. */
+  fresh: number
   ms: number
   /** The venue LISTINGS pass (Aave reserves, the Hyperliquid universe). */
   listings?: ListingRefresh
 }
 
 /**
- * Measure the stalest legs and write them back. Oldest-first (a leg with no
- * row at all is infinitely old), bounded by a wall-clock budget so the
- * function returns inside its 30s. `unknown` is NOT written: a leg whose
- * read timed out keeps its last verdict and its place in the queue.
+ * Measure the stale legs and write them back. Oldest-first (a leg with no
+ * row at all is infinitely old), only legs past `TRADABILITY_REFRESH_AFTER_MS`
+ * (`staleLegs`; explicit `legs` are always read — a probe asked for them),
+ * bounded by a wall-clock budget so the function returns inside its 30s.
+ * `unknown` is NOT written: a leg whose read timed out keeps its last
+ * verdict and its place in the queue.
  */
 export async function refreshTradability(opts: { budgetMs?: number; concurrency?: number; legs?: TradeLeg[] } = {}): Promise<TradabilityRefresh> {
   const budgetMs = opts.budgetMs ?? 20_000
@@ -121,9 +126,9 @@ export async function refreshTradability(opts: { budgetMs?: number; concurrency?
   } catch {
     /* an unreadable cache is a cold cache: measure in board order */
   }
-  const queue = [...legs].sort((a, b) => (known.get(keyOf(a)) ?? 0) - (known.get(keyOf(b)) ?? 0))
+  const queue = staleLegs(legs, (l) => known.get(keyOf(l)), started, opts.legs ? 0 : undefined)
 
-  const out: TradabilityRefresh = { read: 0, fillable: 0, noVenue: 0, unknown: 0, left: 0, ms: 0 }
+  const out: TradabilityRefresh = { read: 0, fillable: 0, noVenue: 0, unknown: 0, left: 0, fresh: legs.length - queue.length, ms: 0 }
   // The listings first: two venue reads cover every supply and perp chip on
   // the board, so they never wait behind 480 swap quotes.
   if (!opts.legs) out.listings = await refreshListings({ known })

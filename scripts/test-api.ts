@@ -34828,6 +34828,37 @@ async function main() {
     }
   }
 
+  // ── cron cost (2026-10-14): the tradability walk reads only STALE legs ──
+  // Measured: one 4663 leg = 5 eth_calls ≈ 130 Alchemy CU, and the
+  // 10-minute oldest-first walk re-read every leg ~45× a day (~70M CU a
+  // month) for a verdict trusted 24h. The rule is pure so it pins here
+  // without a database; the store must use it, and the dark roster cron
+  // (HOUSE_MANAGER_KEY never set on prod) must stay off the schedule.
+  {
+    const { staleLegs, TRADABILITY_REFRESH_AFTER_MS, TRADABILITY_MAX_AGE_MS } = await import('../lib/tradability')
+    const H = 60 * 60 * 1000
+    const now = 1_000 * H
+    const legs = [
+      { k: 'fresh', at: now - 1 * H },
+      { k: 'edge', at: now - TRADABILITY_REFRESH_AFTER_MS },
+      { k: 'old', at: now - 20 * H },
+      { k: 'never', at: undefined },
+    ]
+    const due = staleLegs(legs, (l) => l.at, now).map((l) => l.k)
+    check('cron cost: staleLegs leaves a fresh leg alone, reads the edge/old/never-read legs oldest first', due.join(',') === 'never,old,edge', due.join(','))
+    check('cron cost: the refresh floor is a quarter of the trust window (every leg measured ~4× before it could read unknown)',
+      TRADABILITY_REFRESH_AFTER_MS === TRADABILITY_MAX_AGE_MS / 4 && TRADABILITY_REFRESH_AFTER_MS === 6 * H, String(TRADABILITY_REFRESH_AFTER_MS))
+    check('cron cost: an explicit `after` of 0 reads everything (a probe that asks for legs gets them)', staleLegs(legs, (l) => l.at, now, 0).length === 4)
+    const store = readFileSync('lib/tradability-store.ts', 'utf8')
+    check('cron cost: the board walk queues through staleLegs, and explicit legs bypass the floor',
+      /const queue = staleLegs\(legs, [^\n]*opts\.legs \? 0 : undefined\)/.test(store) && /fresh: legs\.length - queue\.length/.test(store))
+    const vercel = JSON.parse(readFileSync('vercel.json', 'utf8')) as { crons: { path: string; schedule: string }[] }
+    const paths = vercel.crons.map((c) => c.path)
+    check('cron cost: the roster cron is OFF the schedule until HOUSE_MANAGER_KEY ships (route kept)', !paths.includes('/api/cron/roster') && existsSync('app/api/cron/roster/route.ts'), paths.join(' '))
+    check('cron cost: the tradability cron stays every 10 minutes (a cold board still warms fast; a warm one costs nothing)',
+      vercel.crons.find((c) => c.path === '/api/cron/tradability')?.schedule === '*/10 * * * *')
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

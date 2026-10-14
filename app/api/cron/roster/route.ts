@@ -14,9 +14,15 @@ export const maxDuration = 60
 
 // The house manager's heartbeat (FIRST-HIRE sprint, premortem find #1):
 // before this, the Rebalancer only ran when a human typed `manager:once` —
-// a stranger who hired got eternal silence. Vercel cron hits this every 5
+// a stranger who hired got eternal silence. Vercel cron hit this every 5
 // minutes; for each HIRED shape slot bound to the HOUSE identity it runs
 // the same decide→open path the script runs.
+//
+// NOT SCHEDULED (2026-10-14): `HOUSE_MANAGER_KEY` has never been set on
+// Production, so every tick was the silent no-op below — 8,640 function
+// invocations a month doing nothing. The route stays; when the First Manager
+// goes live (FLIP-DAY.md), put `{ "path": "/api/cron/roster", "schedule":
+// "*/5 * * * *" }` back in vercel.json in the SAME PR that sets the key.
 //
 // SECURITY SEMANTICS (the inverse of manager:once's default):
 //   • Auth: CRON_SECRET bearer, guardian pattern — no secret set = 401
