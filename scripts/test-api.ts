@@ -24540,8 +24540,21 @@ async function main() {
     // ── Alerts: CRUD, the cron’s per-symbol dedup, a fixture firing ─────────
     check('alerts: GET without a session → 401', (await fetch(`${BASE}/api/alerts`)).status === 401)
     const badAlert = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbol: 'AAPL', condition: 'sideways', value: 1 }) })
-    const badPct = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbol: 'AAPL', condition: 'pct_move', value: 5 }) })
-    check('alerts: bad condition → 400 by name; pct_move without the armed price → 400', badAlert.status === 400 && badPct.status === 400)
+    // RE-PINNED 2026-10-13 (gtm3h): a base-less pct_move is no longer a 400 —
+    // createAlert anchors it on the server's OWN quote read (lib/watchlists-store,
+    // lane ALERTS: a client never chooses the level it is measured from). The
+    // probe now expects 201 with basePrice = that read (within 5% of the live
+    // AAPL quote this run saw), or 409 by name when the feed misses; the row is
+    // deleted in the cleanup below. The 400 half moves to a percent the rule
+    // still refuses (150).
+    const badPct = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbol: 'AAPL', condition: 'pct_move', value: 150 }) })
+    const baseless = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbol: 'AAPL', condition: 'pct_move', value: 5 }) })
+    const baselessBody = (await baseless.json()) as { alert?: { id: string; condition: string; value: number; basePrice: number | null }; error?: string }
+    const baselessOk =
+      baseless.status === 201
+        ? baselessBody.alert?.condition === 'pct_move' && baselessBody.alert.value === 5 && Number(baselessBody.alert.basePrice) > 0 && (!qAAPL || Math.abs(Number(baselessBody.alert.basePrice) - qAAPL.last) / qAAPL.last < 0.05)
+        : baseless.status === 409 && /No live price for AAPL/.test(baselessBody.error ?? '')
+    check('alerts: bad condition → 400 by name; pct_move at 150% → 400; a base-less pct_move → 201 anchored on the server’s own read (within 5% of the live AAPL quote), or 409 by name when the feed misses', badAlert.status === 400 && badPct.status === 400 && baselessOk, `${baseless.status} base=${baselessBody.alert?.basePrice} live=${qAAPL?.last} ${baselessBody.error ?? ''}`)
     const mk = async (body: object) => ((await (await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify(body) })).json()) as { alert: { id: string; status: string; actionAsk: string | null } }).alert
     const a1 = await mk({ symbol: 'AAPL', condition: 'below', value: 1, actionAsk: 'Sell $50 of AAPL' })
     const a2 = await mk({ symbol: 'aapl', condition: 'above', value: 1e9 })
@@ -24583,7 +24596,7 @@ async function main() {
     check('alerts cron: registered in vercel.json every minute', vercelJson.crons.some((c) => c.path === '/api/cron/alerts' && c.schedule === '* * * * *'))
 
     // Cleanup — every row this block minted, then prove the wallets are empty.
-    for (const id of [a1.id, a2.id, a3.id]) await fetch(`${BASE}/api/alerts?id=${id}`, { method: 'DELETE', headers: { cookie: wlSession } })
+    for (const id of [a1.id, a2.id, a3.id, ...(baselessBody.alert?.id ? [baselessBody.alert.id] : [])]) await fetch(`${BASE}/api/alerts?id=${id}`, { method: 'DELETE', headers: { cookie: wlSession } }) // RE-PINNED 2026-10-13 (gtm3h): the base-less row goes too
     for (const id of [cl.id, big.id, ol.id, ...adoptedLists.map((l) => l.id)]) await fetch(`${BASE}/api/watchlists?id=${id}`, { method: 'DELETE', headers: { cookie: wlSession } })
     await fetch(`${BASE}/api/watchlists?id=${fl.id}`, { method: 'DELETE', headers: { cookie: wlMallorySession } })
     const leftLists = (await (await fetch(`${BASE}/api/watchlists`, { headers: { cookie: wlSession } })).json()) as { lists: unknown[] }
