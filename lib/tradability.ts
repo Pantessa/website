@@ -119,6 +119,25 @@ export type TradabilityMap = Readonly<Record<string, SymbolTradability>>
  *  because the refresher stopped. */
 export const TRADABILITY_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
+/** How long a measured verdict is left ALONE by the refresher. Under this
+ *  age a leg is not re-read; the cron that finds nothing older does nothing.
+ *  A quarter of the trust window, so every leg is measured ~4× before it
+ *  could ever read unknown — and the board costs four passes a day, not one
+ *  continuous walk (measured 2026-10-14: a 4663 leg is 5 eth_calls ≈ 130
+ *  Alchemy CU; the 10-minute walk re-read every leg ~45× a day). */
+export const TRADABILITY_REFRESH_AFTER_MS = TRADABILITY_MAX_AGE_MS / 4
+
+/** The legs due for a read, oldest first. A leg with no row is infinitely
+ *  old; a leg younger than `after` is left alone. Pure, so the rule pins
+ *  without a database. */
+export function staleLegs<L>(legs: readonly L[], checkedAtOf: (l: L) => number | undefined, now = Date.now(), after = TRADABILITY_REFRESH_AFTER_MS): L[] {
+  return legs
+    .map((l) => [l, checkedAtOf(l) ?? 0] as const)
+    .filter(([, at]) => now - at >= after)
+    .sort((a, b) => a[1] - b[1])
+    .map(([l]) => l)
+}
+
 function fresh(leg: TradableLeg, now: number): boolean {
   const at = Date.parse(leg.checkedAt)
   return Number.isFinite(at) && now - at < TRADABILITY_MAX_AGE_MS

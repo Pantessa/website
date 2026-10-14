@@ -19,10 +19,6 @@
       "schedule": "* * * * *"
     },
     {
-      "path": "/api/cron/roster",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/cron/alerts",
       "schedule": "* * * * *"
     },
