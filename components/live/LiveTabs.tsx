@@ -11,6 +11,7 @@
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { LIVE_VIEWS, type LiveView } from '@/lib/battle'
+import ShareLive from '@/components/live/ShareLive'
 
 const CARRIED = ['t', 'since', 'pick'] as const
 
@@ -49,6 +50,7 @@ export default function LiveTabs({ view }: { view: LiveView }) {
           {v.label}
         </Link>
       ))}
+      <ShareLive view={view} seat="live" />{/* seat: CARD (GTM squad 2026-10-13) */}
     </nav>
   )
 }

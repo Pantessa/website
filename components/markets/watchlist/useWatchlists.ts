@@ -26,6 +26,7 @@
 
 import { notAnswering, shownError } from '@/lib/fetch-words'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ALERTS_CHANGED_EVENT } from '@/lib/pick-alerts'
 import { useSession } from '@/lib/session'
 import {
   DEFAULT_LIST_NAME,
@@ -56,6 +57,22 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const body = (await res.json().catch(() => ({}))) as T & { error?: string }
   if (!res.ok) throw new Error(body?.error ?? notAnswering('Your watchlist'))
   return body
+}
+
+// ── One lists read per commit (2026-10-13) ──────────────────────────────────
+// Several instances mount in one commit (the rail, the Morning tape beside it,
+// the pick's subscriber on `/`) and each loads the same account's lists; the
+// GET is shared while it is IN FLIGHT, so one commit makes one request.
+// Nothing is cached: a load after it settled (a refresh, a sign-in) reads fresh.
+const listReads = new Map<string, Promise<{ lists: WatchlistShape[] }>>()
+function readLists(modeKey: string): Promise<{ lists: WatchlistShape[] }> {
+  const hit = listReads.get(modeKey)
+  if (hit) return hit
+  const read = api<{ lists: WatchlistShape[] }>('/api/watchlists').finally(() => {
+    if (listReads.get(modeKey) === read) listReads.delete(modeKey)
+  })
+  listReads.set(modeKey, read)
+  return read
 }
 
 // ── Holdings reads ──────────────────────────────────────────────────────────
@@ -269,7 +286,7 @@ export function useWatchlists(opts: WatchlistsOptions = {}): WatchlistsApi {
       }
     }
     try {
-      const { lists: rows } = await api<{ lists: WatchlistShape[] }>('/api/watchlists')
+      const { lists: rows } = await readLists(modeKey)
       update(() => rows)
       setError(null)
     } catch (e) {
@@ -723,7 +740,16 @@ export function useAlerts(enabled: boolean, intervalMs = 30_000): AlertsApi {
     const t = setInterval(() => {
       if (typeof document === 'undefined' || !document.hidden) void refresh()
     }, intervalMs)
-    return () => clearInterval(t)
+    // ALERTS ON YOUR PICK (GTM squad 2026-10-13, additive): a control that
+    // armed outside this instance's provider (the deck on `/` sits beside the
+    // index's side column, not inside it) says so on `window`, and the bell
+    // re-reads now instead of at its next poll.
+    const onChanged = () => void refresh()
+    window.addEventListener(ALERTS_CHANGED_EVENT, onChanged)
+    return () => {
+      clearInterval(t)
+      window.removeEventListener(ALERTS_CHANGED_EVENT, onChanged)
+    }
   }, [refresh, enabled, intervalMs])
 
   const create = useCallback<AlertsApi['create']>(
