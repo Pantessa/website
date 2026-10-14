@@ -13968,10 +13968,11 @@ async function main() {
     // same base is a 409 by design (pinned below) — so a copy left by a harness run that died before its
     // own DELETE (another session's, 11:08Z on 10-14, on the shared TEST DB) made every later run's first
     // add a 409 and the six checks red together. The block sweeps stale copies of ITS OWN fixture (this
-    // name, this base, older than 30 min — never a live run's row, never anything else) before it adds.
+    // name, this base, older than 5 min — a healthy run holds it for seconds, so never a live run's row,
+    // never anything else) before it adds.
     if (process.env.DATABASE_URL) {
       const stale = await prisma.mcpServer.deleteMany({
-        where: { endpoint: WALLET_BASE, name: { in: ['Test Custom Wallet', 'Test Custom Wallet Renamed'] }, createdAt: { lt: new Date(Date.now() - 30 * 60_000) } },
+        where: { endpoint: WALLET_BASE, name: { in: ['Test Custom Wallet', 'Test Custom Wallet Renamed'] }, createdAt: { lt: new Date(Date.now() - 5 * 60_000) } },
       }).catch(() => ({ count: -1 }))
       if (stale.count !== 0) console.log(`  ↳ add-MCP: swept ${stale.count} stale fixture row(s) a dead run left behind`)
     }
