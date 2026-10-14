@@ -13964,9 +13964,20 @@ async function main() {
       headers: { 'content-type': 'application/json', ...C },
       body: JSON.stringify({ name, description: 'test-api custom add', category: 'Custom', mcpUrl: WALLET_BASE, featuredTools: ['portfolio'] }),
     })
+    // RE-PINNED 2026-10-13 (main sweep): this fixture is one row per BASE, and another wallet re-adding the
+    // same base is a 409 by design (pinned below) — so a copy left by a harness run that died before its
+    // own DELETE (another session's, 11:08Z on 10-14, on the shared TEST DB) made every later run's first
+    // add a 409 and the six checks red together. The block sweeps stale copies of ITS OWN fixture (this
+    // name, this base, older than 30 min — never a live run's row, never anything else) before it adds.
+    if (process.env.DATABASE_URL) {
+      const stale = await prisma.mcpServer.deleteMany({
+        where: { endpoint: WALLET_BASE, name: { in: ['Test Custom Wallet', 'Test Custom Wallet Renamed'] }, createdAt: { lt: new Date(Date.now() - 30 * 60_000) } },
+      }).catch(() => ({ count: -1 }))
+      if (stale.count !== 0) console.log(`  ↳ add-MCP: swept ${stale.count} stale fixture row(s) a dead run left behind`)
+    }
     const first = await fetch(`${BASE}/api/servers`, addBody('Test Custom Wallet'))
     const firstRow = (await first.json().catch(() => null)) as { id?: string; slug?: string; endpoint?: string | null; protocol?: string | null; endpointCount?: number; updated?: boolean } | null
-    check('add-MCP: created with discovered tools', first.ok && (firstRow?.endpointCount ?? 0) >= 6)
+    check('add-MCP: created with discovered tools', first.ok && (firstRow?.endpointCount ?? 0) >= 6, `${first.status} ${JSON.stringify(firstRow).slice(0, 160)}`)
     check('add-MCP: server row is CALLABLE (endpoint + protocol set)', firstRow?.endpoint === WALLET_BASE && firstRow?.protocol === 'mcp')
     const again = await fetch(`${BASE}/api/servers`, addBody('Test Custom Wallet Renamed'))
     const againRow = (await again.json().catch(() => null)) as { id?: string; slug?: string; name?: string; updated?: boolean } | null
