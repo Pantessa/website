@@ -22,6 +22,7 @@
 // I/O shell (composeWalletView) fails soft per chain and never throws for one
 // bad RPC — a chain that didn't answer is `failedChains`, never "empty".
 
+import { ROBINHOOD_CHAIN_COINS } from '@/lib/robinhood-tickers'
 import { erc20Abi, formatEther, formatUnits } from 'viem'
 import { APP_CHAINS, chainById, gasIsStable, primaryStable, publicClientFor, STABLE_GAS_FLOOR, STABLE_GAS_RESERVE, type AppChain } from '@/lib/chains'
 import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib/alchemy'
@@ -42,6 +43,13 @@ const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11' as const
 /** Every curated STOCK token on Robinhood Chain (list warmed by the caller),
  *  infra excluded — pure, so the harness primes a list and checks the cut. */
 export function robinhoodStockTokens(): TokenInfo[] {
+  return robinhoodListedTokens().filter((t) => !ROBINHOOD_CHAIN_COINS.has(t.symbol))
+}
+
+/** Every curated 4663 token minus the infra classes — the stocks AND the
+ *  coins listed there (cbBTC, PONS). The balance read walks this (a held
+ *  coin is still a holding); the STOCK set is this minus the coins. */
+export function robinhoodListedTokens(): TokenInfo[] {
   const rh = chainById(STOCK_CHAIN_ID)
   if (!rh) return []
   const infra = new Set<string>([...Object.keys(rh.stables), rh.wrappedNative?.toLowerCase() ?? ''].map((a) => a.toLowerCase()))
@@ -286,7 +294,7 @@ export async function readStockBalances(address: `0x${string}`): Promise<NonNull
   const client = publicClientFor(STOCK_CHAIN_ID)
   if (!client) return []
   await ensureTokenList(STOCK_CHAIN_ID).catch(() => {})
-  const list = robinhoodStockTokens()
+  const list = robinhoodListedTokens()
   if (list.length === 0) return []
   const results = await client.multicall({
     contracts: list.map((t) => ({ address: t.address as `0x${string}`, abi: erc20Abi, functionName: 'balanceOf' as const, args: [address] as const })),
@@ -299,7 +307,7 @@ export async function readStockBalances(address: `0x${string}`): Promise<NonNull
     if (r.status !== 'success' || typeof r.result !== 'bigint' || r.result <= BigInt(0)) return
     const t = list[i]
     const balance = Number(formatUnits(r.result, t.decimals))
-    if (balance > 0) out.push({ symbol: t.symbol, address: t.address as `0x${string}`, balance, stock: true })
+    if (balance > 0) out.push({ symbol: t.symbol, address: t.address as `0x${string}`, balance, ...(ROBINHOOD_CHAIN_COINS.has(t.symbol) ? {} : { stock: true as const }) })
   })
   return out
 }

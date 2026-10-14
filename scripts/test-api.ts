@@ -88,7 +88,7 @@ import {
   isMarketsPath,
 } from '../lib/markets'
 import { composeAsk as composeTradeAsk, sidesFor as tradeSidesFor, tradeAsks } from '../lib/trade-asks'
-import { ROBINHOOD_TICKER_SET } from '../lib/robinhood-tickers'
+import { ROBINHOOD_CHAIN_COINS, ROBINHOOD_TICKER_SET } from '../lib/robinhood-tickers'
 import { normalizeSpokenAsk } from '../lib/voice-ask'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
@@ -11116,9 +11116,13 @@ async function main() {
     // that never reached the snapshot would stay chartless in silence — so
     // every live stock must be in the snapshot, and charted unless it is one
     // of the two the Robinhood feed has no quote for.
-    const offSnapshot = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !ROBINHOOD_TICKER_SET.has(sym))
+    // RE-PINNED 2026-10-13 (polish, QA-X2): the coin exclusion is the named
+    // set lib/robinhood-tickers ROBINHOOD_CHAIN_COINS (cbBTC, PONS), never a
+    // literal here — and robinhoodStockTokens() already leaves them out.
+    const offSnapshot = [...stockSyms].filter((sym) => !ROBINHOOD_CHAIN_COINS.has(sym) && !ROBINHOOD_TICKER_SET.has(sym))
     check('charts: every live 4663 stock listing is in the static ticker snapshot (regenerate lib/robinhood-tickers.ts when this reds)', offSnapshot.length === 0, offSnapshot.join(','))
-    const unchartedStocks = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !isChartedStock(sym) && !['CASHCAT', 'SATS'].includes(sym))
+    const unchartedStocks = [...stockSyms].filter((sym) => !ROBINHOOD_CHAIN_COINS.has(sym) && !isChartedStock(sym) && !['CASHCAT', 'SATS'].includes(sym))
+    check('charts: the 4663 coins (cbBTC, PONS) are never in the stock set', ![...stockSyms].some((sym) => ROBINHOOD_CHAIN_COINS.has(sym)), [...stockSyms].filter((sym) => ROBINHOOD_CHAIN_COINS.has(sym)).join(','))
     check('charts: every live 4663 stock listing charts except the two feedless ones', unchartedStocks.length === 0, unchartedStocks.join(','))
     const rhRpc = new Map<number, RpcChainRead>([
       [4663, { chainId: 4663, nativeEth: 0.00073, stable: { symbol: 'USDG', address: rhC.tokens.USDG.address, balance: 0.323 }, tokens: [{ symbol: 'AAPL', address: aapl, balance: 0.0376, stock: true }] }],
@@ -30249,43 +30253,46 @@ async function main() {
     // fine, and never mentions the destination side, which Polygon and BNB
     // Chain do fence). These pins go red when a floor lifts, moves, or
     // appears on a chain we build on — the whole point of measuring.
+    // RE-PINNED 2026-10-13 (polish): NEAR lifted the Polygon floor (QA-X3;
+    // `npm run probe:venue-floors` 21:3xZ: polygon prices $20 both ends, BNB
+    // still 400s at $1,000). The pure pins use BNB as the floored example now.
     {
       const { VENUE_FLOORS, floorFor, crossChainFloorBlock, floorBlockFromError, venueFloorFromError, floorRefusalTurn, floorChipAsk, floorProblemLine, moveUsd } = await import('../lib/venue-floor')
       const { parseCrossChainSwap } = await import('../lib/cross-chain-swap')
       const cc = (o: string, d: string, amount = '20', token = 'USDC') => ({ amount, originToken: token, originChain: o, destinationToken: token, destinationChain: d })
 
       // — the pure rules —
-      check('venue floor: a $20 move off Polygon is refused before the venue is asked', crossChainFloorBlock(cc('polygon', 'base'))?.side === 'origin')
-      check('venue floor: the floor is read on the DESTINATION end too (measured, undocumented)', crossChainFloorBlock(cc('base', 'polygon'))?.side === 'destination')
-      check('venue floor: chain aliases resolve — "matic"/"bsc" carry the same floor', crossChainFloorBlock(cc('matic', 'base'))?.chain === 'polygon' && crossChainFloorBlock(cc('base', 'bsc'))?.chain === 'bnb')
-      check('venue floor: a move that CLEARS the floor is not refused', crossChainFloorBlock(cc('polygon', 'base', '2000')) === null)
-      check('venue floor: an unpriceable move is never refused by the table (it goes to the venue)', moveUsd('0.5', 'ETH') === null && crossChainFloorBlock(cc('polygon', 'base', '0.5', 'ETH')) === null)
-      check('venue floor: chains with no measured floor are untouched', ['base', 'ethereum', 'arbitrum', 'optimism', 'avalanche', 'gnosis', 'scroll'].every((c) => crossChainFloorBlock(cc(c, 'base')) === null && crossChainFloorBlock(cc('base', c)) === null))
+      check('venue floor: a $20 move off BNB Chain is refused before the venue is asked', crossChainFloorBlock(cc('bnb', 'base'))?.side === 'origin')
+      check('venue floor: the floor is read on the DESTINATION end too (measured, undocumented)', crossChainFloorBlock(cc('base', 'bnb'))?.side === 'destination')
+      check('venue floor: chain aliases resolve — "bsc"/"binance" carry the BNB floor; "matic" (Polygon, lifted) carries none', crossChainFloorBlock(cc('bsc', 'base'))?.chain === 'bnb' && crossChainFloorBlock(cc('base', 'bsc'))?.chain === 'bnb' && crossChainFloorBlock(cc('matic', 'base')) === null)
+      check('venue floor: a move that CLEARS the floor is not refused', crossChainFloorBlock(cc('bnb', 'base', '2000')) === null)
+      check('venue floor: an unpriceable move is never refused by the table (it goes to the venue)', moveUsd('0.5', 'ETH') === null && crossChainFloorBlock(cc('bnb', 'base', '0.5', 'ETH')) === null)
+      check('venue floor: chains with no measured floor are untouched', ['base', 'ethereum', 'arbitrum', 'optimism', 'polygon', 'avalanche', 'gnosis', 'scroll'].every((c) => crossChainFloorBlock(cc(c, 'base')) === null && crossChainFloorBlock(cc('base', c)) === null))
 
       // — the belt: the venue's own words become our refusal —
       check('venue floor: the venue 400 parses, thousands separator and all', venueFloorFromError('Temporary swap limits: minimum swap amount is $1,000') === 1000 && venueFloorFromError('minimum swap amount is $100') === 100)
-      check('venue floor: an unrelated venue error keeps its raw words', venueFloorFromError('No liquidity available') === null && floorBlockFromError(cc('polygon', 'base'), 'No liquidity available') === null)
+      check('venue floor: an unrelated venue error keeps its raw words', venueFloorFromError('No liquidity available') === null && floorBlockFromError(cc('bnb', 'base'), 'No liquidity available') === null)
       check("venue floor: a floor on a chain the table doesn't know is reported as 'route', never a guessed side", floorBlockFromError(cc('base', 'arbitrum'), 'Temporary swap limits: minimum swap amount is $500')?.side === 'route')
-      check('venue floor: the refusal quotes the VENUE\'s number, not the table\'s', floorBlockFromError(cc('polygon', 'base'), 'Temporary swap limits: minimum swap amount is $2,500')?.usd === 2500)
+      check('venue floor: the refusal quotes the VENUE\'s number, not the table\'s', floorBlockFromError(cc('bnb', 'base'), 'Temporary swap limits: minimum swap amount is $2,500')?.usd === 2500)
 
       // — the chips: complete asks, and only ones the wallet can take —
       const src = (chainWord: string, token: string, balance: number) => ({ chainWord, token, balance })
-      const originTurn = floorRefusalTurn(cc('polygon', 'ethereum') as never, crossChainFloorBlock(cc('polygon', 'ethereum'))!, [src('polygon', 'USDC', 40), src('base', 'USDC', 55.2), src('bnb', 'USDC', 900)])
-      check('venue floor: an origin-side block offers another chain the wallet holds on', originTurn.chips.length === 1 && originTurn.chips[0].resume.includes('from Base'), JSON.stringify(originTurn.chips))
-      check('venue floor: a chain carrying the SAME floor is never offered as the way out', !originTurn.chips.some((c) => /BNB/i.test(c.resume)))
-      const poor = floorRefusalTurn(cc('polygon', 'base') as never, crossChainFloorBlock(cc('polygon', 'base'))!, [src('polygon', 'USDC', 40)])
+      const originTurn = floorRefusalTurn(cc('bnb', 'ethereum') as never, crossChainFloorBlock(cc('bnb', 'ethereum'))!, [src('bnb', 'USDC', 40), src('base', 'USDC', 55.2), src('polygon', 'USDC', 900)])
+      check('venue floor: an origin-side block offers every other chain the wallet holds on (Polygon too, now its floor lifted)', originTurn.chips.length === 2 && originTurn.chips.some((c) => c.resume.includes('from Base')) && originTurn.chips.some((c) => c.resume.includes('from Polygon')), JSON.stringify(originTurn.chips))
+      check('venue floor: the floored chain itself is never offered as the way out', !originTurn.chips.some((c) => /from BNB/i.test(c.resume)))
+      const poor = floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, [src('bnb', 'USDC', 40)])
       check('venue floor: "move a bigger amount" is never offered to a wallet that cannot afford it', poor.chips.length === 0 && /Everywhere this wallet holds USDC is out/.test(poor.reply), poor.reply.slice(-140))
-      const rich = floorRefusalTurn(cc('polygon', 'base') as never, crossChainFloorBlock(cc('polygon', 'base'))!, [src('polygon', 'USDC', 4200)])
-      check('venue floor: a wallet that CAN clear the floor is offered the size-up', rich.chips.length === 1 && /^Swap 1000 USDC from Polygon/.test(rich.chips[0].resume), JSON.stringify(rich.chips))
-      check('venue floor: a wallet we never scanned is never told what it does not hold', !/can't see USDC anywhere/.test(floorRefusalTurn(cc('polygon', 'base') as never, crossChainFloorBlock(cc('polygon', 'base'))!, null).reply))
+      const rich = floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, [src('bnb', 'USDC', 4200)])
+      check('venue floor: a wallet that CAN clear the floor is offered the size-up', rich.chips.length === 1 && /^Swap 1000 USDC from BNB/i.test(rich.chips[0].resume), JSON.stringify(rich.chips))
+      check('venue floor: a wallet we never scanned is never told what it does not hold', !/can't see USDC anywhere/.test(floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, null).reply))
       // The chip contract: a chip SENDS, so every one must round-trip the grammar.
       const everyChip = [...originTurn.chips, ...rich.chips].map((c) => c.resume)
       check('venue floor: every chip round-trips the cross-chain grammar', everyChip.length > 0 && everyChip.every((r) => { const b = parseCrossChainSwap(r); return b !== null && !('problem' in b) }), everyChip.join(' | '))
       // A chip that dropped "privately" would turn a private ask public (#827).
-      const priv = { ...cc('polygon', 'base'), confidential: true as const }
+      const priv = { ...cc('bnb', 'base'), confidential: true as const }
       const privBack = parseCrossChainSwap(floorChipAsk(priv as never))
       check('venue floor: a chip keeps the private clause — it never quietly becomes a public swap', privBack !== null && !('problem' in privBack) && (privBack as { confidential?: true }).confidential === true, floorChipAsk(priv as never))
-      const deliv = { ...cc('polygon', 'base'), recipient: '0x2527D02599Ba641c19FEa793cD0F167589a0f10D' }
+      const deliv = { ...cc('bnb', 'base'), recipient: '0x2527D02599Ba641c19FEa793cD0F167589a0f10D' }
       const delivBack = parseCrossChainSwap(floorChipAsk(deliv as never))
       check('venue floor: a chip keeps the delivery address', delivBack !== null && !('problem' in delivBack) && (delivBack as { recipient?: string }).recipient === deliv.recipient)
 
@@ -30296,11 +30303,11 @@ async function main() {
       const jobsSrc = readFileSync('lib/jobs.ts', 'utf8')
       check('venue floor: the job compiler refuses a leg the venue would refuse (never strand mid-job)', /crossChainFloorBlock\(ccp\)[\s\S]{0,80}floorProblemLine/.test(jobsSrc), 'a job can compile onto a floored bridge leg again')
       const { compileJobAsk } = await import('../lib/jobs')
-      const compiled = compileJobAsk('Swap 20 USDC from Polygon to USDC on Base, then supply 20 USDC to Aave')
+      const compiled = compileJobAsk('Swap 20 USDC from BNB Chain to USDC on Base, then supply 20 USDC to Aave')
       check('venue floor: a compound job carrying a floored leg refuses by name, with the floor in it', Boolean(compiled && 'problem' in compiled && /\$1,000 minimum/.test((compiled as { problem: string }).problem)), JSON.stringify(compiled).slice(0, 180))
       check('venue floor: the same compound over an unfloored chain still compiles', Boolean((() => { const c = compileJobAsk('Swap 20 USDC from Arbitrum to USDC on Base, then supply 20 USDC to Aave'); return c && !('problem' in c) })()))
       check('venue floor: the job runner names the floor instead of persisting the venue 400', /floorBlockFromError\(p, msg\)/.test(readFileSync('lib/jobs-runner.ts', 'utf8')))
-      check('venue floor: the compile-time line carries the floor and the size', /\$1,000 minimum/.test(floorProblemLine(cc('polygon', 'base'), crossChainFloorBlock(cc('polygon', 'base'))!)))
+      check('venue floor: the compile-time line carries the floor and the size', /\$1,000 minimum/.test(floorProblemLine(cc('bnb', 'base'), crossChainFloorBlock(cc('bnb', 'base'))!)))
 
       // — LIVE: the table is a measurement, so it must still match the venue —
       // One dry quote per claim (nothing committed, no deposit address). A
@@ -30349,7 +30356,9 @@ async function main() {
       }
       // And every chain we BUILD on that the table does NOT fence still
       // prices $20 — this is the pin that catches a NEW floor appearing.
-      for (const [slug, word] of [['eth', 'ethereum'], ['arb', 'arbitrum'], ['op', 'optimism'], ['avax', 'avalanche'], ['gnosis', 'gnosis'], ['scroll', 'scroll']] as const) {
+      // RE-PINNED 2026-10-13 (polish): Polygon joins the unfenced list — its
+      // floor lifted; this loop goes red if it ever comes back.
+      for (const [slug, word] of [['eth', 'ethereum'], ['arb', 'arbitrum'], ['op', 'optimism'], ['pol', 'polygon'], ['avax', 'avalanche'], ['gnosis', 'gnosis'], ['scroll', 'scroll']] as const) {
         if (floorFor(word, 'origin')) continue
         const r = await oneclick(slug, 'base', 20)
         if (!r) { check(`venue floor (live): ${word} unfenced`, true, 'venue unreachable — skipped, not a claim'); continue }
@@ -34868,6 +34877,37 @@ async function main() {
         /text\/event-stream/.test(ctype) && hello && fills >= 3 && tagged === fills && effectful > 0 && [...venuesSeen].every((v) => v === 'hyperliquid' || v === 'lighter'),
         `fills=${fills} tagged=${tagged} effect=${effectful} venues=${[...venuesSeen].join(',')} hello=${hello} ctype=${ctype}`)
     }
+  }
+
+  /* POLISH:DEADENDS — every sentence the product offers is backed by a response (squad polish, 2026-10-13). */
+  {
+    console.log('— polish deadends: the market read door, a next step on every refusal, the inventory')
+    const DEAD_PROSE = /\bI can['’]t\b|\bI cannot\b|I (?:do not|don['’]t) have (?:access|real-time|live)|\bYahoo\b|this environment|process\.env|prisma/i
+    const wallet = '0x' + 'd3adbeef'.repeat(5)
+    const post = (message: string, extra: Record<string, unknown> = {}) =>
+      fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ message, history: [], activeServers: [], sessionId: `harness-polish-deadends-${Date.now()}`, ...extra }) })
+        .then((r) => r.json() as Promise<Record<string, any>>).catch(() => null)
+    const read = await post('Why is ETH moving?')
+    check('polish deadends: "Why is ETH moving?" (the guide hint, the ask door chip) answers from our tape — the live chart, the chart + lead-order chips, no planner, no "I can\'t"',
+      read?.buildPath === 'native-market-read' && read.chart?.symbol === 'ETH' && (read.clarify?.options ?? []).some((o: any) => o.resume === 'Show me the ETH chart') && /\*\*ETH\*\*/.test(String(read.reply)) && !DEAD_PROSE.test(String(read.reply)),
+      `${read?.buildPath} ${String(read?.reply).slice(0, 160)}`)
+    const doorChip = await post('What is moving TSLA right now — price, 24h change, and the news behind it?')
+    check('polish deadends: the ask door\'s /t chip on a stock is the same native read', doorChip?.buildPath === 'native-market-read' && doorChip.chart?.symbol === 'TSLA', String(doorChip?.buildPath))
+    const opinion = await post('is TSLA a good trade right now')
+    check('polish deadends: an opinion ask gets the tape and the call left to the reader (the planner invented levels)', opinion?.buildPath === 'native-market-read' && /That call is yours to make/.test(String(opinion.reply)), String(opinion?.reply).slice(0, 160))
+    const aave = await post('supply 10 USDC to aave on base', { walletAddress: wallet })
+    check('polish deadends: a native wall that names its fix carries it as a chip (the refusal\'s own words)',
+      aave?.nextSteps === true && aave.clarify?.options?.[0]?.resume === 'supply 10 USDC to Aave on Ethereum', JSON.stringify(aave?.clarify ?? aave?.reply).slice(0, 200))
+    const unknown = await post('buy $10 of ZZQX', { walletAddress: wallet })
+    check('polish deadends: an unknown token never ends bare — what works today rides the refusal', (unknown?.clarify?.options ?? []).length > 0 && ((unknown?.clarify?.options ?? []) as any[]).every((o) => simulateLadder(o.resume).kind !== 'planner'), JSON.stringify(unknown?.clarify ?? unknown?.reply).slice(0, 200))
+    const typo = await post('buy $10 of AAPLE', { walletAddress: wallet })
+    check('polish deadends: a typo\'d ticker is offered the listed one (AAPLE → AAPL) or the stock door', (typo?.clarify?.options ?? []).some((o: any) => /AAPL\b/.test(o.resume)), JSON.stringify(typo?.clarify ?? typo?.reply).slice(0, 200))
+    const ma = await fetch(`${BASE}/api/markets/ask`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ symbol: 'ETH', question: 'What is the trend in the ETH candles on screen?' }) }).then((r) => r.json() as Promise<Record<string, any>>).catch(() => null)
+    check('polish deadends: the AI bar\'s trend question chip answers (model, wall or tape) — never a dead end', !!ma && ['answer', 'chart', 'alert', 'act'].includes(ma.kind) && !DEAD_PROSE.test(String(ma.text ?? ma.say ?? '')) && String(ma.text ?? ma.say ?? '').length > 20, JSON.stringify(ma).slice(0, 200))
+    const { enumerate } = await import('./deadend-inventory')
+    const inv = enumerate()
+    const falls = inv.filter((r) => r.verdict === 'planner' || r.verdict === 'refusal')
+    check(`polish deadends: the inventory — ${inv.length} offered sentences, 0 planner, 0 bare refusal`, inv.length > 1500 && falls.length === 0, falls.slice(0, 5).map((r) => `[${r.surface}] ${r.sentence}`).join(' | '))
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)

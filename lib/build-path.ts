@@ -133,6 +133,7 @@ export const VENUE_OF_JOB_BUILDER: Record<string, string> = {
   'native-nft-buy': 'opensea',
   'native-aave': 'aave',
   'native-aave-repay': 'aave',
+  'native-weth-wrap': 'aave',
   'native-morpho-repay': 'morpho',
   'native-lido': 'lido',
 }

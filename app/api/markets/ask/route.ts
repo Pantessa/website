@@ -33,7 +33,7 @@ import { modelAvailable, modelLabel, modelMocked, modelText } from '@/lib/market
 import { admitMarketsAi } from '@/lib/markets-ai-fence'
 import { readPosition, readTape, techSummary } from '@/lib/markets-ai-context'
 import { validateProposedAsk } from '@/lib/markets-ai-ladder'
-import { marketReadAsk, marketReadWords } from '@/lib/market-read'
+import { marketReadAsk, marketReadWords, type MarketReadKind } from '@/lib/market-read'
 import { parseChartState } from '@/lib/chart-state'
 import { alertRuleProblem, type AlertRule } from '@/lib/watchlists'
 import { symbolName } from '@/lib/markets'
@@ -133,7 +133,10 @@ export async function POST(req: NextRequest) {
     const i = candles.findIndex((c) => c.t === body.bar!.t)
     const prev = i > 0 ? { c: candles[i - 1].c } : null
     const text = await modelText({ system: EXPLAIN_SYSTEM, user: explainUserPrompt({ symbol, tf, bar: body.bar, prev, tech, verdict: body.verdict ? RATING_LABELS[body.verdict] : null }), maxTokens: EXPLAIN_MAX_TOKENS, surface: 'markets-explain', apiKey: explainAdm.apiKey, owner: explainAdm.owner, mock: { scenario } })
-    const out = cleanProse(text ?? explainFallback(body.bar), 400)
+    // A model sentence that dead-ends ("I can't see…") never explains a bar:
+    // the bar's own numbers do (README §A rule 3).
+    const said = text ? cleanProse(text, 400) : ''
+    const out = said && !DEAD_END_PROSE.test(said) ? said : cleanProse(explainFallback(body.bar), 400)
     explainCache.set(key, { at: Date.now(), text: out })
     return answer({ kind: 'answer', text: out }, { deterministic: !text, model })
   }
@@ -179,9 +182,10 @@ export async function POST(req: NextRequest) {
   // (POLISH/DEADENDS 2026-10-13: the AI bar's own question chip read "The
   // model is not available right now").
   const read = marketReadAsk(question, symbol)
-  const tapeWords = (kind: 'price' | 'trend') => marketReadWords({ pair, kind, last, change24hPct: tape.change24hPct, tech, tf, news: null })
-  const readAnswer = (model: string) =>
-    answer({ kind: 'answer', text: tapeWords(read!.kind === 'move' ? 'trend' : read!.kind) }, { deterministic: true, model })
+  // No news read on the page's lane (the News tab is one tap away): a "move"
+  // read here is the tape's trend.
+  const tapeWords = (kind: MarketReadKind) => marketReadWords({ pair, kind: kind === 'move' ? 'trend' : kind, last, change24hPct: tape.change24hPct, tech, tf, news: null })
+  const readAnswer = (model: string) => answer({ kind: 'answer', text: tapeWords(read!.kind) }, { deterministic: true, model })
   // The model's prose is checked before it reaches the page: a reply that
   // says it can't (no feed, "try Yahoo Finance", "in this environment") is a
   // dead end with our name on it — the tape's own read answers instead, plus

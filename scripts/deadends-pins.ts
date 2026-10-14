@@ -61,9 +61,10 @@ for (const [ask, re] of net) {
   const o = simulateLadder(ask)
   check(`net: "${ask}" → chips`, o.kind === 'clarify' && o.gate === 'intent-net' && !!o.chips && re.test(o.note ?? ''), `${o.kind}/${o.gate} ${o.note ?? ''}`)
 }
-// RE-PINNED 2026-10-13 (polish): "why is eth moving" left this list — it is
-// the market-read door now (pinned below), never planner prose.
-for (const q of ['what should I buy', 'what is a stop loss', 'is aapl a buy', 'buy now', 'run it back', 'tell me a joke', 'what is the apy on aave?'])
+// RE-PINNED 2026-10-13 (polish): "why is eth moving" and "is aapl a buy" left
+// this list — they are the market-read door now (pinned below; the planner
+// invented support/resistance levels for them), never planner prose.
+for (const q of ['what should I buy', 'what is a stop loss', 'buy now', 'run it back', 'tell me a joke', 'what is the apy on aave?'])
   check(`still prose: "${q}"`, simulateLadder(q).kind === 'planner', JSON.stringify(simulateLadder(q)))
 check('moneyShaped: asset name is evidence', moneyShaped('buy apple') && moneyShaped('short btc') && moneyShaped('buy bitcoin'))
 check('moneyShaped: English-word tickers are prose', !moneyShaped('buy now') && !moneyShaped('run it') && !moneyShaped('snap out of it'))
@@ -138,10 +139,11 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
     ['What is moving AAPL right now — price, 24h change, and the news behind it?', 'AAPL', 'move'], ["what's going on with apple", 'AAPL', 'move'], ['how is NVDA doing', 'NVDA', 'move'],
     ['What is the current price and 24h change for ETH?', 'ETH', 'price'], ["what's the price of bitcoin", 'BTC', 'price'],
     ['What is the trend in the SOL candles on screen?', 'SOL', 'trend'],
+    ['is TSLA a good trade right now', 'TSLA', 'opinion'], ['should I buy HYPE', 'HYPE', 'opinion'], ['is aapl a buy', 'AAPL', 'opinion'], ['is now a good time to buy ETH', 'ETH', 'opinion'], ['what do you think about bitcoin', 'BTC', 'opinion'], ['can you tell me why ETH is moving', 'ETH', 'move'],
   ]
   for (const [q, sym, kind] of reads) { const r = marketReadAsk(q); check(`market read: "${q}" → ${sym} ${kind}`, r?.symbol === sym && r.kind === kind, JSON.stringify(r)) }
   check('market read: the page names the symbol ("what\'s the trend?" on /t/HYPE)', marketReadAsk("What's the trend?", 'HYPE')?.symbol === 'HYPE' && marketReadAsk("What's the trend?") === null)
-  for (const q of ['eth price', 'buy eth', 'Buy $25 of ETH', 'why is it moving', 'why is the market down', 'how do I start?', 'what is staking?', 'Show me the ETH chart', 'why is ZZQX moving', 'what is moving 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'])
+  for (const q of ['eth price', 'buy eth', 'Buy $25 of ETH', 'why is it moving', 'why is the market down', 'how do I start?', 'what is staking?', 'Show me the ETH chart', 'why is ZZQX moving', 'what is moving 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 'should I buy now', 'is aave safe?', 'is this a scam', 'why is ETH moving? buy $10 of it', 'why is HYPE pumping, then long $20 of HYPE on hyperliquid'])
     check(`market read stays out of: "${q}"`, marketReadAsk(q) === null, JSON.stringify(marketReadAsk(q)))
   for (const q of ['Why is ETH moving?', 'What is the current price and 24h change for ETH?', 'What is moving TSLA right now — price, 24h change, and the news behind it?']) {
     const o = simulateLadder(q)
@@ -156,6 +158,10 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   for (const w of [full, empty]) check('market read words: never "I can\'t" / Yahoo / this environment / an env var', !/I can['’]t|I cannot|yahoo|this environment|process\.env|[A-Z]{3,}_[A-Z]{3,}_?KEY|prisma/i.test(w))
   const trend = marketReadWords({ pair: eth, kind: 'trend', last: 2500, change24hPct: -1, tech: null, news: null })
   check('market read words: a trend read carries no news line', !/news|headlines/i.test(trend) && /down 1\.00%/.test(trend))
+  const opinion = marketReadWords({ pair: eth, kind: 'opinion', last: 2500, change24hPct: 1, tech: null, news: [], name: 'Ethereum' })
+  check('market read words: an opinion read leaves the call to the reader and invents nothing', /That call is yours to make/.test(opinion) && /nothing invented/.test(opinion) && !/support|resistance/i.test(opinion), opinion)
+  const { headlineAbout } = require('../lib/market-read') as typeof import('../lib/market-read')
+  check('market read: a headline must name the market (the search feeds return neighbours)', headlineAbout('Tesla target lowered by analysts', 'TSLA', 'Tesla') && !headlineAbout('U.S. Bancorp (USB) Stock Looks Below Fair Value', 'TSLA', 'Tesla') && headlineAbout('Why $TSLA dropped', 'TSLA', 'Tesla') && !headlineAbout('Bitcoin rallies', 'ETH', 'Ethereum'))
   for (const sym of ['ETH', 'AAPL', 'HYPE', 'SOL', 'UNI']) {
     const chips = marketReadChips(cp(sym)!)
     check(`market read chips (${sym}): the chart + the lead order, every one builds`, chips.length === 2 && chips.every((c) => builds(c.resume) && simulateLadder(c.resume).kind === 'action') && !chips.some((c) => /^Sell/.test(c.resume)), JSON.stringify(chips))
@@ -165,7 +171,7 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   const iRead = chat.indexOf('const marketRead = marketReadAsk(message)')
   const iSwap = chat.indexOf('// ── Swap intent: Pantessa-NATIVE transaction building')
   check('chat route: the market-read gate sits right after the chart gate, before every money layer', iChart > 0 && iRead > iChart && iRead < iSwap)
-  check('chat route: the read answers with the chart + chips and never throws (feeds caught)', /readTape\(pair\.symbol, '1d'\)\.catch\(\(\) => null\)/.test(chat) && /getNews\(pair\.symbol, 3\)\.catch\(\(\) => null\)/.test(chat) && /buildPath: 'native-market-read'/.test(chat))
+  check('chat route: the read answers with the chart + chips and never throws (feeds caught)', /readTape\(pair\.symbol, '1d'\)\.catch\(\(\) => null\)/.test(chat) && /getNews\(pair\.symbol, 8\)\.catch\(\(\) => null\)/.test(chat) && /readTape\(pair\.symbol, '1h'\)\.catch\(\(\) => null\)/.test(chat) && /buildPath: 'native-market-read'/.test(chat))
   check('chat route: the chart reply no longer offers DCA (retired 2026-09-16)', !/Tap Buy, Sell, or DCA/.test(chat))
   const mask = readFileSync(join(__dirname, '../app/api/markets/ask/route.ts'), 'utf8')
   check('markets ask: a read question answers from the tape when the model is down or walled', /if \(read\) return readAnswer\('none'\)/.test(mask) && /if \(read\) return readAnswer\('wall'\)/.test(mask))
@@ -173,7 +179,7 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   {
     const re = mask.match(/const DEAD_END_PROSE = (\/.*\/i)\n/)
     const rx = re ? (eval(re[1]) as RegExp) : null
-    check('markets ask: model prose that dead-ends is replaced by the tape\'s read (I can\'t · no real-time access · Yahoo · this environment · an env var)', !!rx && ['I can\'t see live prices.', "I don't have access to real-time data", 'Try Yahoo Finance', 'not available in this environment', 'set ANTHROPIC_API_KEY'].every((t) => rx.test(t)) && !['The trend is up on the daily chart.', 'Support sits near 2,400.'].some((t) => rx.test(t)) && /const h = honest\(m\.text\)/.test(mask) && /const h = honest\(modelProse\(text\)\)/.test(mask))
+    check('markets ask: model prose that dead-ends is replaced by the tape\'s read (I can\'t · no real-time access · Yahoo · this environment · an env var)', !!rx && ['I can\'t see live prices.', "I don't have access to real-time data", 'Try Yahoo Finance', 'not available in this environment', 'set ANTHROPIC_API_KEY'].every((t) => rx.test(t)) && !['The trend is up on the daily chart.', 'Support sits near 2,400.'].some((t) => rx.test(t)) && /const h = honest\(m\.text\)/.test(mask) && /const h = honest\(modelProse\(text\)\)/.test(mask) && /said && !DEAD_END_PROSE\.test\(said\) \? said : cleanProse\(explainFallback/.test(mask))
   }
 }
 // ── POLISH: composers speak the order the route would offer ───────────────
@@ -208,7 +214,14 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   check('next step: planner prose on a money ask gets the grammar\'s read (net chips)', prose.length > 0 && prose.every((c) => bn(c.resume)), JSON.stringify(prose))
   const market = refusalNextSteps('is TSLA a good trade at this price, should I size up', 'Here is a balanced view…', bn, { planner: true })
   check('next step: planner prose naming a market gets its chart + lead order', market.map((c) => c.resume).join('|') === 'Show me the TSLA chart|Buy $25 of TSLA', JSON.stringify(market))
+  check('next step: a listing fact said "right now" is not a feed blip (no Try again loop)', refusalNextSteps('supply 10 FOO to aave', "🏦 FOO isn't an active, supplyable Aave v4 reserve on Ethereum right now — ask “where can I earn on FOO?” to see what's listed.", bn).length === 0)
   check('next step: never re-offers the refused ask on a permanent wall', refusalNextSteps('supply 10 USDC to Aave on Ethereum', 'Say “supply 10 USDC to Aave on Ethereum”', bn).length === 0)
+  const zz = refusalNextSteps('buy $10 of ZZQX', '🔄 I don\'t know the token “ZZQX” on Base — use a known symbol (USDC, …).', bn, { planner: true })
+  check('next step: an unknown token offers what works today (the starter chips), every one builds', zz.length === 3 && zz.every((c) => bn(c.resume)), JSON.stringify(zz))
+  const typo = refusalNextSteps('buy $10 of AAPLE', '🔄 I don\'t know the token “AAPLE” on Base — use a known symbol (USDC, …).', bn, { planner: true })
+  check('next step: a typo\'d token offers the listed symbol one edit away (AAPLE → AAPL)', typo.length === 1 && typo[0].resume === 'buy $10 of AAPL' && typo[0].label === 'Buy $10 of AAPL', JSON.stringify(typo))
+  const hlUnknown = refusalNextSteps('long $10 of ZZQX on hyperliquid', '📈 **ZZQX** isn\'t a Hyperliquid perp, and nothing listed is close to it.', bn)
+  check('next step: an unlisted perp (a native wall) still gets what works', hlUnknown.length > 0 && hlUnknown.every((c) => bn(c.resume)), JSON.stringify(hlUnknown))
   check('next step: namedMarket reads tickers and household names, never English words', namedMarket('sell my $TSLA now') === 'TSLA' && namedMarket('buy some apple') === 'AAPL' && namedMarket('put it all on red') === null)
   const chat = readFileSync(join(__dirname, '../app/api/chat/route.ts'), 'utf8')
   const iBelt = chat.indexOf('refusalNextSteps(askText, preData.reply, buildsNatively')
@@ -225,6 +238,26 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   const said = [...chat.matchAll(/(?:[Ss]ay|[Tt]ry|[Aa]sk|e\.g\.|like)[^“\n]{0,40}“([^”\n]{4,140})”/g)].map((m) => m[1]).filter((x) => !READ_OR_CONTEXT.test(x) && !/[`<]/.test(x)) // nested templates / <placeholders> are prose
   const dead = said.map((x) => fill(x).replace(/[.,;:!?…]+$/, '')).filter((x) => !bn(x))
   check(`chat route: every money sentence the refusal copy tells you to say builds (${said.length} quoted)`, said.length >= 10 && dead.length === 0, dead.join(' | '))
+}
+
+// ── POLISH R2: the three dead ends QA found that no lane owned ────────────
+{
+  const { BUILD_PATH_OF_JOB_BUILDER } = require('../lib/job-step-telemetry') as typeof import('../lib/job-step-telemetry')
+  const { venueOfBuildPath } = require('../lib/build-path') as typeof import('../lib/build-path')
+  check('QA-X1: a signed ETH→WETH wrap step reports a path and a venue (was NULL — no venue, the #819 class)', BUILD_PATH_OF_JOB_BUILDER['native-weth-wrap'] === 'native-aave-op' && venueOfBuildPath(BUILD_PATH_OF_JOB_BUILDER['native-weth-wrap']) === 'aave' && venueOfBuildPath('native-weth-wrap') === 'aave')
+  const jobsSrc = readFileSync(join(__dirname, '../lib/jobs.ts'), 'utf8')
+  const SELF_PATHED = ['native-swap', 'native-lifi-swap', 'native-hl-exec', 'wait', 'native-hl-guardian']
+  const unpathed = [...new Set([...jobsSrc.matchAll(/builder: '([a-z0-9-]+)'/g)].map((m) => m[1]))].filter((b) => !SELF_PATHED.includes(b) && !BUILD_PATH_OF_JOB_BUILDER[b])
+  check('QA-X1: every sign builder the jobs compiler emits has a path', unpathed.length === 0, unpathed.join(','))
+  const { VENUE_FLOORS, crossChainFloorBlock } = require('../lib/venue-floor') as typeof import('../lib/venue-floor')
+  const cc = (o: string, d: string) => ({ amount: '20', originToken: 'USDC', originChain: o, destinationToken: 'USDC', destinationChain: d })
+  check('QA-X3: Polygon\'s lifted floor no longer refuses a $20 move (probe:venue-floors 2026-10-13); BNB still does', !('polygon' in VENUE_FLOORS) && crossChainFloorBlock(cc('polygon', 'base')) === null && crossChainFloorBlock(cc('base', 'polygon')) === null && crossChainFloorBlock(cc('bnb', 'base'))?.usd === 1000)
+  check('QA-X3: "Swap 20 USDC from Polygon to USDC on Base" builds natively (was refused by our own table)', simulateLadder('Swap 20 USDC from Polygon to USDC on Base').kind === 'action')
+  const { ROBINHOOD_CHAIN_COINS, ROBINHOOD_TICKER_SET } = require('../lib/robinhood-tickers') as typeof import('../lib/robinhood-tickers')
+  const { isChartedStock } = require('../lib/charts') as typeof import('../lib/charts')
+  check('QA-X2: PONS (and cbBTC) are 4663 COINS — named, out of the equity snapshot, never a charted stock', ROBINHOOD_CHAIN_COINS.has('PONS') && ROBINHOOD_CHAIN_COINS.has('cbBTC') && !ROBINHOOD_TICKER_SET.has('PONS') && !isChartedStock('PONS'))
+  const wv = readFileSync(join(__dirname, '../lib/wallet-view.ts'), 'utf8')
+  check('QA-X2: the stock set leaves the coins out, the balance read still walks them (a held coin is a holding)', /robinhoodListedTokens\(\)\.filter\(\(t\) => !ROBINHOOD_CHAIN_COINS\.has\(t\.symbol\)\)/.test(wv) && /const list = robinhoodListedTokens\(\)/.test(wv))
 }
 
 console.log(`\npins:deadends — ${pass} passed, ${fail} failed`)

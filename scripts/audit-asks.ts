@@ -48,6 +48,9 @@ const CORPUS: Entry[] = [
   { ask: 'What is the current price and 24h change for ETH?', source: 'example prompt (lib/examples)', expect: 'action' },
   { ask: "what's going on with apple", source: 'stranger phrasing (market read, household name)', expect: 'action' },
   { ask: 'What is the trend in the AAPL candles on screen?', source: 'AI bar question chip (lib/markets-ai-suggestions) — the chat lane reads it too', expect: 'action' },
+  // Opinion asks get the tape, not the model's invented levels.
+  { ask: 'is TSLA a good trade right now', source: 'live sweep 2026-10-13 (the planner invented "support near $238" for TSLA at $378)', expect: 'action' },
+  { ask: 'should I buy HYPE', source: 'live sweep 2026-10-13 (opinion → the tape)', expect: 'action' },
   // The composers now offer the perp for a non-EVM home (was "Buy $50 of SOL" → the refusal door).
   { ask: 'Long $50 of SOL on Hyperliquid', source: 'overview chip (lib/trade-asks composeAsk, non-EVM home)', expect: 'action' },
   { ask: 'Short $50 of XRP on Hyperliquid', source: 'overview chip (lib/trade-asks composeAsk, non-EVM home)', expect: 'action' },

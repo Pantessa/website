@@ -14,10 +14,10 @@
 // then hand the facts here. Every number on the reply is one we measured;
 // nothing is a forecast and nothing says "I can't".
 
-import { chartPairFor, chartSymbolByName, normalizeChartSymbol, type ChartPair } from '@/lib/charts'
+import { chartPairFor, chartSymbolByName, isMoneyAssetWord, normalizeChartSymbol, type ChartPair } from '@/lib/charts'
 import { execAsks } from '@/lib/trade-asks'
 
-export type MarketReadKind = 'move' | 'price' | 'trend'
+export type MarketReadKind = 'move' | 'price' | 'trend' | 'opinion'
 
 export interface MarketReadAsk {
   symbol: string
@@ -33,6 +33,10 @@ function symbolOf(raw: string | undefined): string | null {
   const word = raw.replace(/^\$/, '').replace(/[?.!,'’]+$/, '')
   const norm = normalizeChartSymbol(word)
   if (!norm || NOT_A_SYMBOL.has(norm)) return null
+  // A lowercase word is a market only when it can't be English ("should I
+  // buy now" is not ServiceNow): the money-asset fence lib/charts keeps.
+  const typedAsTicker = /^[A-Z0-9.]+$/.test(word) || raw.startsWith('$')
+  if (!typedAsTicker && !isMoneyAssetWord(word)) return null
   return chartPairFor(norm)?.symbol ?? chartSymbolByName(word) ?? null
 }
 
@@ -52,6 +56,10 @@ export function marketReadAsk(text: string, symbolHint?: string | null): MarketR
   let t = raw.replace(/\s+/g, ' ')
   for (let i = 0; i < 3; i++) t = t.replace(/^(?:hey|hi|yo|ok|okay|so|please|pls|can you|could you|would you|tell me|show me|explain)[,!]?\s+/i, '')
   if (/0x[0-9a-f]{6,}|https?:\/\//i.test(t)) return null
+  // A read never swallows an order riding the same sentence ("why is ETH
+  // moving? buy $10 of it", "…, then long $20 of HYPE"): a sized money verb
+  // or a "then" leaves it to the ladder (the jobs compiler, the swap gate).
+  if (/\bthen\b|\b(?:buy|sell|swap|long|short|stake|supply|lend|bridge|send|deposit)\s+\$?\d/i.test(t)) return null
   const hint = symbolHint ? chartPairFor(symbolHint)?.symbol ?? null : null
   let m: RegExpMatchArray | null
   // "Why is ETH moving?" · "why is tsla down today" · "why's BTC pumping"
@@ -80,6 +88,19 @@ export function marketReadAsk(text: string, symbolHint?: string | null): MarketR
     const s = symbolOf(m[1])
     return s ? { symbol: s, kind: 'price' } : null
   }
+  // An OPINION about one market ("is TSLA a good trade right now", "should I
+  // buy HYPE", "is aapl a buy"). The planner answered these with invented
+  // levels — a live sweep (2026-10-13) read "support near $238 and resistance
+  // at $265" for TSLA at $378. The honest answer is the tape and the call
+  // left to the reader.
+  if ((m = t.match(/^(?:is|are)\s+(?:now\s+(?:a\s+)?good\s+time\s+to\s+(?:buy|sell|get)\s+)?(\$?[A-Za-z][A-Za-z0-9.]{0,14})\s+(?:a\s+|an\s+)?(?:good|bad|smart|safe)?\s*(?:buy|sell|trade|investment|entry|bet|long|short)\b/i))) {
+    const s = symbolOf(m[1])
+    return s ? { symbol: s, kind: 'opinion' } : null
+  }
+  if ((m = t.match(/^(?:is\s+(?:it|now)\s+(?:a\s+)?(?:good|bad)\s+time\s+to\s+(?:buy|sell|get|long|short)|should\s+I\s+(?:buy|sell|long|short|get|hold|dump|ape(?:\s+into)?)(?:\s+(?:some|more|any))?|what\s+do\s+you\s+think\s+(?:about|of))\s+(\$?[A-Za-z][A-Za-z0-9.]{0,14})\b/i))) {
+    const s = symbolOf(m[1])
+    return s ? { symbol: s, kind: 'opinion' } : null
+  }
   // "What is the trend in the ETH candles on screen?" · "what's the trend?" (on a symbol page)
   if ((m = t.match(/^what(?:'s|’s| is)\s+the\s+(?:trend|setup|read)\b(?:\s+(?:in|on|for|of)\s+(?:the\s+)?(\$?[A-Za-z][A-Za-z0-9.]{0,14}))?/i))) {
     const s = symbolOf(m[1]) ?? hint
@@ -107,6 +128,19 @@ export interface MarketReadFacts {
   tf?: string
   /** Newest first; empty when every hop came back empty; null = not read. */
   news: { title: string; url: string; source: string; age: string }[] | null
+  /** The company / coin name ("Tesla") — a headline must name the symbol or
+   *  this to be shown (the search feeds return neighbours: a TSLA read once
+   *  carried "U.S. Bancorp Stock Looks Below Fair Value"). */
+  name?: string
+}
+
+/** Does this headline talk about this market? */
+export function headlineAbout(title: string, symbol: string, name?: string): boolean {
+  const t = ` ${title.toLowerCase()} `
+  const sym = symbol.toLowerCase()
+  if (new RegExp(`[^a-z0-9$]\\$?${sym.replace(/[^a-z0-9]/g, '')}[^a-z0-9]`).test(t)) return true
+  const word = String(name ?? '').toLowerCase().replace(/[,.]/g, '').split(/\s+/).filter((w) => w.length >= 3 && !/^(inc|corp|corporation|the|class|holdings|group|company|co|ltd|plc|token|coin)$/.test(w))[0]
+  return !!word && t.includes(word)
 }
 
 export function fmtReadPrice(n: number): string {
@@ -122,6 +156,7 @@ const FEED_WORD: Record<string, string> = { coinbase: 'Coinbase spot', hyperliqu
 export function marketReadWords(f: MarketReadFacts): string {
   const sym = f.pair.symbol
   const out: string[] = []
+  if (f.kind === 'opinion') out.push(`🧭 That call is yours to make — here's what the ${sym} tape says, with nothing invented.`)
   if (f.last != null) {
     const ch = f.change24hPct
     const move = ch == null ? '' : Math.abs(ch) < 0.05 ? ', flat over 24h' : `, ${ch > 0 ? 'up' : 'down'} ${Math.abs(ch).toFixed(2)}% over 24h`
@@ -138,8 +173,9 @@ export function marketReadWords(f: MarketReadFacts): string {
     out.push(`On the ${tf} chart the 26-indicator rating reads **${f.tech.summary}** (moving averages ${f.tech.movingAverages} · oscillators ${f.tech.oscillators}${rsi})${avg.length ? `; price is ${avg.join(' and ')}` : ''}.`)
   }
   if (f.kind !== 'trend') {
-    if (f.news && f.news.length) {
-      out.push(`In the news:\n${f.news.slice(0, 3).map((n) => `- [${n.title.replace(/[[\]]/g, '')}](${n.url}) — ${n.source}, ${n.age}`).join('\n')}`)
+    const about = (f.news ?? []).filter((n) => headlineAbout(n.title, sym, f.name))
+    if (f.news && about.length) {
+      out.push(`In the news:\n${about.slice(0, 3).map((n) => `- [${n.title.replace(/[[\]]/g, '')}](${n.url}) — ${n.source}, ${n.age}`).join('\n')}`)
     } else if (f.news) {
       out.push(`No ${sym} headlines came back from the news feeds just now, so the read above is the tape alone.`)
     }

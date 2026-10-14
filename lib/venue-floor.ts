@@ -26,7 +26,7 @@
 //  exact body services/near-intents sends). Every EVM chain we can build a
 //  deposit on, both directions, plus the non-EVM chains the grammar accepts:
 //
-//    Polygon      $1,000   origin AND destination
+//    Polygon      $1,000   origin AND destination  (LIFTED — re-measured 2026-10-13: prices $20)
 //    BNB Chain    $1,000   origin AND destination
 //    Tron         $100     origin only (as a destination it prices at $20)
 //    Ethereum, Base, Arbitrum, Optimism, Avalanche, Gnosis, Scroll,
@@ -46,8 +46,8 @@
 import { canonicalChainWord, prettyChainWord } from '@/lib/chain-lexicon'
 import { crossChainAskSentence, type CrossChainSwapParams, type MoveSource } from '@/lib/cross-chain-swap'
 
-/** Which end of the move a floor applies to. Polygon and BNB Chain fence
- *  both; the sides are kept apart because Tron fences only the origin, so
+/** Which end of the move a floor applies to. BNB Chain fences both (and
+ *  Polygon did, until 2026-10); the sides are kept apart because Tron fences only the origin, so
  *  "per chain" would have been the wrong shape to build. */
 export type FloorSide = 'origin' | 'destination'
 
@@ -61,7 +61,9 @@ export interface VenueFloor {
 /** Keyed by CANONICAL chain word (lib/chain-lexicon), so the typo aliases
  *  the grammar accepts ("matic", "bsc", "binance") all land here. */
 export const VENUE_FLOORS: Readonly<Record<string, VenueFloor>> = {
-  polygon: { usd: 1000, sides: ['origin', 'destination'] },
+  // Polygon's $1,000 floor (both ends, measured 2026-09-22) LIFTED by
+  // 2026-10-13: `npm run probe:venue-floors` priced $20 off and onto Polygon
+  // (QA-X3, squad polish). The table refused a move the venue fills.
   bnb: { usd: 1000, sides: ['origin', 'destination'] },
 }
 
