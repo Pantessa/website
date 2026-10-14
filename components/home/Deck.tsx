@@ -29,6 +29,7 @@ import Battle from '@/components/live/Battle'
 import ShareLive from '@/components/live/ShareLive'
 import ArmAlert from '@/components/live/ArmAlert'
 import PickSheet from '@/components/live/PickSheet'
+import PickReads from '@/components/live/PickReads'
 import { useMarketPick } from '@/lib/use-market-pick'
 import { useTradable } from '@/lib/use-tradable'
 import { PULSE_WHY_BY_SOURCE } from '@/lib/pulse'
@@ -102,6 +103,7 @@ export default function Deck() {
 
   return (
     <section className="deck" data-deck data-channel={ch} data-book={book ? 'on' : 'off'} data-status={report.status} aria-label="Live channels">
+      <PickReads />{/* the page's ONE watchlist + holdings subscriber for the pick (lib/use-market-pick) — renders nothing */}
       <div className="deck__bar">
         <nav className="deck__tabs" role="tablist" aria-label="Channels" ref={tabsRef}>
           {DECK_CHANNELS.map((c) => {

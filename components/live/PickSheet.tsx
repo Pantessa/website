@@ -23,18 +23,17 @@
 // only after mount + a short delay — the server renders NOTHING here, so the
 // deck's SSR frame stays byte-identical (the deck pins read it); a dismiss
 // writes the same flag. The words come from lib/market-pick pickSourceWord
-// and lib/battle PICK_MODES; the lists from the same reads the surfaces
-// already make (the watchlist hook, the held read, the venue's contexts),
+// and lib/battle PICK_MODES; the lists from the reads the page already made
+// (the pick's one subscriber publishes the watchlist and the wallet's
+// holdings — components/live/PickReads; the venue's contexts are read here),
 // taken only while the panel is open so a closed seat costs nothing.
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
-import { useWatchlists } from '@/components/markets/watchlist/useWatchlists'
-import { useHeld } from '@/lib/use-held'
 import { heldArmies, pickList, resolveMarket, type ArmyContext } from '@/lib/battle'
 import { readArmyContexts } from '@/lib/battle-feed'
 import { watchlistMarkets } from '@/lib/live-markets'
 import { MAX_PICK, pickSourceWord } from '@/lib/market-pick'
-import type { MarketPickState } from '@/lib/use-market-pick'
+import { usePickReads, type MarketPickState } from '@/lib/use-market-pick'
 import {
   PICK_SHEET_OFFER_DELAY_MS,
   fillRows,
@@ -149,18 +148,10 @@ function PickSheetPanel({ pick, seat, how, titleId, onClose }: { pick: MarketPic
   }, [])
   const universe = useMemo(() => (pick.universe.length ? pick.universe : ctxs ? [...ctxs.keys()] : []), [pick.universe, ctxs])
 
-  // Yours: the watchlist (a second instance, lists only — never a wallet
-  // read of its own) and the connected wallet's holdings (the shared read).
-  const wl = useWatchlists({ holdings: false })
-  const watchSymbols = useMemo(() => {
-    if (!wl.ready) return [] as string[]
-    const activeId = (wl.active as { id?: string } | null)?.id
-    const ordered = [...wl.lists].sort((a, b) => (a.id === activeId ? -1 : b.id === activeId ? 1 : 0))
-    const out: string[] = []
-    for (const l of ordered) for (const sym of l.symbols) if (!out.includes(sym)) out.push(sym)
-    return out
-  }, [wl.ready, wl.lists, wl.active])
-  const held = useHeld()
+  // Yours: the watchlist's symbols and the connected wallet's holdings as the
+  // page's one subscriber published them (components/live/PickReads) — the
+  // panel reads no lists and no wallet of its own.
+  const { watchSymbols, held } = usePickReads()
 
   const rows = useMemo<FillRow[]>(() => {
     const watch = universe.length ? watchlistMarkets(watchSymbols, universe, MAX_PICK) : []
