@@ -59,6 +59,22 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return body
 }
 
+// ── One lists read per commit (2026-10-13) ──────────────────────────────────
+// Several instances mount in one commit (the rail, the Morning tape beside it,
+// the pick's subscriber on `/`) and each loads the same account's lists; the
+// GET is shared while it is IN FLIGHT, so one commit makes one request.
+// Nothing is cached: a load after it settled (a refresh, a sign-in) reads fresh.
+const listReads = new Map<string, Promise<{ lists: WatchlistShape[] }>>()
+function readLists(modeKey: string): Promise<{ lists: WatchlistShape[] }> {
+  const hit = listReads.get(modeKey)
+  if (hit) return hit
+  const read = api<{ lists: WatchlistShape[] }>('/api/watchlists').finally(() => {
+    if (listReads.get(modeKey) === read) listReads.delete(modeKey)
+  })
+  listReads.set(modeKey, read)
+  return read
+}
+
 // ── Holdings reads ──────────────────────────────────────────────────────────
 // The read itself is shared with the page (lib/held-read: the YOU HOLD pill
 // and the Sell chips read the same one, holdings + the empty-wallet and card
@@ -270,7 +286,7 @@ export function useWatchlists(opts: WatchlistsOptions = {}): WatchlistsApi {
       }
     }
     try {
-      const { lists: rows } = await api<{ lists: WatchlistShape[] }>('/api/watchlists')
+      const { lists: rows } = await readLists(modeKey)
       update(() => rows)
       setError(null)
     } catch (e) {

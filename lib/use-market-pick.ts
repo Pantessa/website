@@ -26,8 +26,17 @@
 // wallet's holdings (held ≤4s while a wallet may still answer — Battle's
 // rule) → the venue's top gainers → the fallback trio (after 6s). ONLY a
 // hand writes the memory; another tab's hand arrives through `storage`.
+//
+// THE READS (2026-10-13, after the squad's QA FINAL counted one GET
+// /api/watchlists per `useMarketPick()` instance — six on `/`, two on /live):
+// the two inputs only a hook can read, the watchlist and the wallet's
+// holdings, are read by ONE subscriber per page — components/live/PickReads,
+// mounted once by the deck and once by /live's surface — and published here
+// (`publishPickReads`). Every instance reads the store, and the opening is
+// decided HERE, once, as each input lands (`decide`) — no instance runs an
+// opening effect of its own.
 
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect } from 'react'
 import { create } from 'zustand'
 import { DEFAULT_PICK, pickList, resolveMarket, type OwnAdd } from '@/lib/battle'
 import { readArmyContexts } from '@/lib/battle-feed'
@@ -53,9 +62,7 @@ import {
   type PickSource,
 } from '@/lib/market-pick'
 import { readTapeUniverse } from '@/lib/tape-feed'
-import { useHeld } from '@/lib/use-held'
-import { useSession } from '@/lib/session'
-import { useWatchlists } from '@/components/markets/watchlist/useWatchlists'
+import type { HeldSymbol } from '@/lib/watchlists'
 
 export type PickSeat = 'page' | 'stage'
 
@@ -70,6 +77,15 @@ export interface MarketPickState {
   setLens: (market: string | null) => void
   /** The opening has painted (additive, lane PICK): false on the server render and until a read decides. */
   ready?: boolean
+}
+
+/** What the page's one subscriber publishes (components/live/PickReads): the
+ *  watchlist's symbols in list order (the active list first), the wallet's
+ *  holdings (null = no wallet, or no read yet), and whether nobody is here. */
+export interface PickReads {
+  watchSymbols: readonly string[]
+  held: readonly HeldSymbol[] | null
+  signedOut: boolean
 }
 
 /** How long the opening holds for a wallet's holdings before the venue's pick paints (Battle's rule). */
@@ -89,6 +105,13 @@ interface PickStore {
   venue: string[]
   heldWaited: boolean
   venueWaited: boolean
+  /** The subscriber's reads as published (raw) … */
+  watchSymbols: readonly string[]
+  held: readonly HeldSymbol[] | null
+  signedOut: boolean
+  /** …and resolved against the universe: the opening's own inputs. */
+  watch: string[]
+  heldMarkets: string[] | null
   /** Paint a pick; `write` (default: a hand's) puts it in this browser's memory. */
   show: (markets: readonly string[], source: PickSource, write?: boolean) => void
   setLensRaw: (m: string | null) => void
@@ -105,6 +128,12 @@ export const usePickStore = create<PickStore>((set) => ({
   venue: [],
   heldWaited: false,
   venueWaited: false,
+  watchSymbols: [],
+  held: null,
+  // Until the subscriber says otherwise, a wallet may still answer: the opening holds (≤4s) rather than guess.
+  signedOut: false,
+  watch: [],
+  heldMarkets: null,
   show: (markets, source, write = source === 'hand') => {
     const next = cleanPick(markets)
     if (write) writeMarketPick(next)
@@ -113,6 +142,60 @@ export const usePickStore = create<PickStore>((set) => ({
   setLensRaw: (m) => set((s) => (s.lensRaw === m ? s : { lensRaw: m })),
 }))
 
+// ── The opening, decided here as each input lands ────────────────────────────
+
+/** The opening's two resolved inputs, from the raw reads and the universe. */
+function resolvedReads(s: Pick<PickStore, 'watchSymbols' | 'held' | 'universe'>): Pick<PickStore, 'watch' | 'heldMarkets'> {
+  const { watchSymbols, held, universe } = s
+  return {
+    watch: universe.length ? watchlistPick(watchSymbols, universe) : [],
+    // Holdings raise nothing until the universe can spell them (a stock would miss its xyz:).
+    heldMarkets: held && universe.length ? heldPick(held, universe) : null,
+  }
+}
+
+/** The rule every instance used to run in its own effect, run once here;
+ *  replacesPick keeps a hand and a link from ever being overwritten by a default. */
+function decide(): void {
+  const s = usePickStore.getState()
+  if (!s.memoryRead) return
+  const { memory, universe, venue, watch, heldMarkets, signedOut, heldWaited, venueWaited } = s
+  // Defaults wait for the universe (watchlist and holdings resolve against it) or the venue's deadline.
+  if (memory === null && !universe.length && !venueWaited) return
+  // The link was applied on the page seat's mount (it outranks all of this).
+  const d = openingPick({ url: [], memory, watch, held: heldMarkets, venue, waitForHeld: !signedOut && !heldWaited })
+  if (!d) return
+  if (d.source === 'fallback' && !venueWaited) return
+  if (!replacesPick(s.ready ? { markets: s.markets, source: s.source } : null, d)) return
+  // A memory or a link already holds the venue's spelling once the universe is known.
+  const spelled = universe.length ? d.markets.map((m) => resolveMarket(m, universe) ?? m) : d.markets
+  // A memory read back is a hand's, but not a new write.
+  s.show(spelled, d.source, false)
+}
+
+/** Take an input, then decide again. */
+function take(patch: Partial<PickStore>): void {
+  usePickStore.setState(patch)
+  decide()
+}
+
+/** The one subscriber's publish (components/live/PickReads): the raw reads,
+ *  resolved against whatever universe the page knows by now. */
+export function publishPickReads(r: PickReads): void {
+  const s = usePickStore.getState()
+  if (s.watchSymbols === r.watchSymbols && s.held === r.held && s.signedOut === r.signedOut) return
+  take({ watchSymbols: r.watchSymbols, held: r.held, signedOut: r.signedOut, ...resolvedReads({ watchSymbols: r.watchSymbols, held: r.held, universe: s.universe }) })
+}
+
+/** The published reads, for a surface that lists them itself (the first-run
+ *  sheet fills "From your watchlist" / "From your wallet" from these): the raw
+ *  symbols and holdings — the store's resolved lists are the opening's own. */
+export function usePickReads(): { watchSymbols: readonly string[]; held: readonly HeldSymbol[] | null } {
+  const watchSymbols = usePickStore((s) => s.watchSymbols)
+  const held = usePickStore((s) => s.held)
+  return { watchSymbols, held }
+}
+
 // ── Once per page load: the memory, the other tabs, the venue's reads ────────
 
 let booted = false
@@ -120,15 +203,15 @@ function bootPick(): void {
   if (booted || typeof window === 'undefined') return
   booted = true
   const st = usePickStore
-  st.setState({ memory: readMarketPick(), memoryRead: true })
+  take({ memory: readMarketPick(), memoryRead: true })
   // Another tab's hand: the row follows, nothing written back.
   window.addEventListener('storage', (e) => {
     if (e.key !== MARKET_PICK_KEY) return
     const m = parseMarketPick(e.newValue)
     if (m) st.getState().show(m.markets, 'hand', false)
   })
-  window.setTimeout(() => st.setState({ heldWaited: true }), PICK_HELD_WAIT_MS)
-  window.setTimeout(() => st.setState({ venueWaited: true }), PICK_VENUE_WAIT_MS)
+  window.setTimeout(() => take({ heldWaited: true }), PICK_HELD_WAIT_MS)
+  window.setTimeout(() => take({ venueWaited: true }), PICK_VENUE_WAIT_MS)
   // The venue answers in 2–3s (measured 2026-10-13 on `/` and /live); a read
   // that comes back empty (a refused or dropped request on a busy page) is
   // tried again, three times, before the fallback trio is all there is.
@@ -142,13 +225,14 @@ function bootPick(): void {
       // A link spells a market in caps; the venue spells kPEPE with its k.
       const s = st.getState()
       const fixed = s.markets.map((m) => resolveMarket(m, names) ?? m)
-      st.setState(samePick(fixed, s.markets) ? { universe: names } : { universe: names, markets: fixed })
+      // The reads resolve against the universe, so they are re-read with it.
+      take({ universe: names, ...(samePick(fixed, s.markets) ? {} : { markets: fixed }), ...resolvedReads({ watchSymbols: s.watchSymbols, held: s.held, universe: names }) })
     })
   }
   const readVenue = (n: number): void => {
     void readArmyContexts().then((ctx) => {
       const venue = pickList(ctx, 'gainers').slice(0, DEFAULT_PICK).map((r) => r.market)
-      if (venue.length) st.setState({ venue })
+      if (venue.length) take({ venue })
       else if (n < 3) window.setTimeout(() => readVenue(n + 1), 2500 * (n + 1))
     })
   }
@@ -169,11 +253,6 @@ export function useMarketPick(opts: { seat?: PickSeat } = {}): MarketPickState {
   const lensRaw = usePickStore((s) => s.lensRaw)
   const ready = usePickStore((s) => s.ready)
   const universe = usePickStore((s) => s.universe)
-  const memory = usePickStore((s) => s.memory)
-  const memoryRead = usePickStore((s) => s.memoryRead)
-  const venue = usePickStore((s) => s.venue)
-  const heldWaited = usePickStore((s) => s.heldWaited)
-  const venueWaited = usePickStore((s) => s.venueWaited)
 
   useEffect(() => bootPick(), [])
 
@@ -193,41 +272,6 @@ export function useMarketPick(opts: { seat?: PickSeat } = {}): MarketPickState {
     const lens = m ? normalizeMarket(m) : null
     if (lens) usePickStore.getState().setLensRaw(lens)
   }, [onPage])
-
-  // The inputs only a hook can read: the watchlist (no second wallet read)
-  // and the wallet's holdings.
-  const { signedOut } = useSession()
-  const held = useHeld()
-  const wl = useWatchlists({ holdings: false })
-  const watchSymbols = useMemo(() => {
-    if (!wl.ready) return [] as string[]
-    const activeId = (wl.active as { id?: string } | null)?.id
-    const ordered = [...wl.lists].sort((a, b) => (a.id === activeId ? -1 : b.id === activeId ? 1 : 0))
-    const out: string[] = []
-    for (const l of ordered) for (const sym of l.symbols) if (!out.includes(sym)) out.push(sym)
-    return out
-  }, [wl.ready, wl.lists, wl.active])
-  const watch = useMemo(() => (universe.length ? watchlistPick(watchSymbols, universe) : []), [watchSymbols, universe])
-  // Holdings raise nothing until the universe can spell them (a stock would miss its xyz:).
-  const heldMarkets = useMemo(() => (held && universe.length ? heldPick(held, universe) : null), [held, universe])
-
-  // The opening, decided again as each read lands; replacesPick keeps a
-  // hand and a link from ever being overwritten by a default.
-  useEffect(() => {
-    if (!memoryRead) return
-    // Defaults wait for the universe (watchlist and holdings resolve against it) or the venue's deadline.
-    if (memory === null && !universe.length && !venueWaited) return
-    // The link was applied on the page seat's mount (it outranks all of this).
-    const d = openingPick({ url: [], memory, watch, held: heldMarkets, venue, waitForHeld: !signedOut && !heldWaited })
-    if (!d) return
-    if (d.source === 'fallback' && !venueWaited) return
-    const s = usePickStore.getState()
-    if (!replacesPick(s.ready ? { markets: s.markets, source: s.source } : null, d)) return
-    // A memory or a link already holds the venue's spelling once the universe is known.
-    const spelled = universe.length ? d.markets.map((m) => resolveMarket(m, universe) ?? m) : d.markets
-    // A memory read back is a hand's, but not a new write.
-    s.show(spelled, d.source, false)
-  }, [memoryRead, memory, watch, heldMarkets, venue, signedOut, heldWaited, venueWaited, universe])
 
   // The URL mirror (the page seat on /live only): `?t=` is the pick, `?m=` the
   // lens; everything else in the address stays as the view wrote it.
