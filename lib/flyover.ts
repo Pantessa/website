@@ -809,6 +809,21 @@ export interface BoardRow {
 
 export type BoardBy = 'net' | 'gross' | 'move'
 
+/**
+ * Stablecoins hold land (a DEX plot of USDT is a real market that printed)
+ * but never rank as a winner or a loser: a dollar pegged to a dollar has no
+ * move to win, and its "net flow" is the other side of someone else's
+ * trade. Compared on the bare ticker, upper-cased, non-alphanumerics dropped
+ * (a venue spells USDT0 as `USD₮0`).
+ */
+export const STABLE_TICKERS: ReadonlySet<string> = new Set([
+  'USDC', 'USDT', 'USDT0', 'USD0', 'DAI', 'USDE', 'USDG', 'USDS', 'USD1', 'PYUSD', 'FDUSD', 'GHO', 'FRAX', 'LUSD', 'TUSD', 'BUSD', 'USDB', 'USDP', 'USDD', 'SUSD', 'CRVUSD', 'EURC', 'EURS', 'EURT',
+])
+
+export function isStablePlot(market: string): boolean {
+  return STABLE_TICKERS.has(plotName(market).toUpperCase().replace(/[^A-Z0-9]/g, ''))
+}
+
 export function boardByFor(lens: FlyoverLens): BoardBy {
   return lens === 'flow' ? 'net' : lens === 'activity' ? 'gross' : 'move'
 }
@@ -827,8 +842,10 @@ const byKey = (a: BoardRow, b: BoardRow) => (a.market < b.market ? -1 : a.market
  * sinkers the biggest net sellers (< 0). `gross`: the busiest plots, split
  * by which side carried them (net ≥ 0 rides with the risers). `move`: the
  * biggest price moves up and down (no move = on neither). Ties by name.
+ * A stablecoin plot (isStablePlot) is on neither side in any lens.
  */
-export function leaderboard(rows: readonly BoardRow[], n = 5, by: BoardBy = 'net'): { risers: BoardRow[]; sinkers: BoardRow[] } {
+export function leaderboard(allRows: readonly BoardRow[], n = 5, by: BoardBy = 'net'): { risers: BoardRow[]; sinkers: BoardRow[] } {
+  const rows = allRows.filter((r) => !isStablePlot(r.market))
   if (by === 'gross') {
     const busy = rows.filter((r) => r.grossUsd > 0)
     return {

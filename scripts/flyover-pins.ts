@@ -53,6 +53,7 @@ import {
   isBigPrint,
   labelTier,
   layoutWorld,
+  isStablePlot,
   leaderboard,
   lensHasSea,
   meteorTag,
@@ -276,6 +277,14 @@ export function flyoverPins(check: Check): void {
   const move = leaderboard(rows, 5, 'move')
   check('flyover leaderboard: by net — risers are the biggest net buyers, sinkers the biggest net sellers, ties by name, zero on neither side, five a side',
     net.risers.map((r) => r.market).join(',') === 'B,A,F' && net.sinkers.map((r) => r.market).join(',') === 'C,G,D' && leaderboard(rows, 1).risers.length === 1)
+  const stableRows = [...rows, row('USDT', 5_000, 9_000, 0.01), row('USD\u20ae0', -5_000, 9_000, -0.02), row('EURC', 0, 100, 0.5)]
+  const stableNet = leaderboard(stableRows, 5, 'net')
+  check('flyover leaderboard: a stablecoin plot never ranks as a winner or a loser in any lens (USDT, USDT0 in the venue\'s own spelling, EURC) - it still holds land',
+    isStablePlot('USDT') && isStablePlot('dex:USD\u20ae0'.replace('dex:', '')) && isStablePlot('USDe') && !isStablePlot('BTC') && !isStablePlot('xyz:NVDA') && !isStablePlot('ETH') &&
+      stableNet.risers.map((r) => r.market).join(',') === net.risers.map((r) => r.market).join(',') && stableNet.sinkers.map((r) => r.market).join(',') === net.sinkers.map((r) => r.market).join(',') &&
+      !leaderboard(stableRows, 5, 'gross').risers.some((r) => isStablePlot(r.market)) && !leaderboard(stableRows, 5, 'move').risers.some((r) => isStablePlot(r.market)) &&
+      !leaderboard(stableRows, 5, 'move').sinkers.some((r) => isStablePlot(r.market)))
+
   check('flyover leaderboard: by gross (Activity) — the busiest, split by which side carried them; by move — the biggest moves up and down, no move on neither; each lens picks its own',
     gross.risers.map((r) => r.market).join(',') === 'B,A,F,E' && gross.sinkers.map((r) => r.market).join(',') === 'C,G,D' && move.risers.map((r) => r.market).join(',') === 'C,A' && move.sinkers.map((r) => r.market).join(',') === 'G,B,F' &&
       boardByFor('flow') === 'net' && boardByFor('activity') === 'gross' && boardByFor('move') === 'move' && boardHeads('flow').risers === 'Rising' && boardHeads('flow').sinkers === 'Sinking')
