@@ -29,7 +29,7 @@ import type { FeedStatus } from '@/lib/tape-feed'
 
 // ── The channels ─────────────────────────────────────────────────────────────
 
-export type DeckChannel = 'pulse' | 'tape' | 'front' | 'siege'
+export type DeckChannel = 'pulse' | 'tape' | 'front' | 'siege' | 'flyover'
 
 export interface DeckChannelDef {
   id: DeckChannel
@@ -43,13 +43,15 @@ export interface DeckChannelDef {
   door: string
 }
 
-/** Four channels, in bar order. The Map is deliberately not one (Nate,
- *  2026-10-13: "no need to add the map as an option on the home"). */
+/** Five channels, in bar order. The Map is deliberately not one (Nate,
+ *  2026-10-13: "no need to add the map as an option on the home"); The
+ *  Flyover joined 2026-10-15 (Nate: "add the flyover to the tab"). */
 export const DECK_CHANNELS: readonly DeckChannelDef[] = [
   { id: 'pulse', label: 'Pulse', blurb: 'the market, per second', view: 'tape', door: 'Open the live tape' },
   { id: 'tape', label: 'Tape', blurb: 'every print is a button', view: 'tape', door: 'Open the full tape' },
   { id: 'front', label: 'The Front', blurb: 'time × percent, the armies', view: 'front', door: 'Open The Front' },
   { id: 'siege', label: 'The Siege', blurb: 'the polar arena', view: 'siege', door: 'Open The Siege' },
+  { id: 'flyover', label: 'The Flyover', blurb: 'every market as land', view: 'flyover', door: 'Open The Flyover' },
 ]
 
 export const DECK_DEFAULT_CHANNEL: DeckChannel = 'pulse'
@@ -64,6 +66,15 @@ export function deckChannel(id: DeckChannel): DeckChannelDef {
 
 export function isDeckBattle(id: DeckChannel): id is 'front' | 'siege' {
   return id === 'front' || id === 'siege'
+}
+
+/** A channel that plays a /live view at /live's own size (2026-10-15 — Nate:
+ *  "when the user clicks on the tabs … tape, the front … make the chart
+ *  larger, same size as we do on the live page"). Only the pulse keeps the
+ *  band's height: it is the SSR frame, and the first board row must stay
+ *  inside the phone's first screen. */
+export function isDeckFullSize(id: DeckChannel): boolean {
+  return id !== 'pulse'
 }
 
 /** Where a channel's door goes. The tape doors carry the pulse's pick as
@@ -241,6 +252,7 @@ export interface StageReport {
 export function deckSourceLine(ch: DeckChannel, r: StageReport): string {
   const words = pulseStatusWords(r.status, r.detail, { markets: r.markets, hidden: r.hidden })
   if (isDeckBattle(ch)) return `${PULSE_VENUE_WORD[r.source]} fills · Hyperliquid mids · ${words}`
+  if (ch === 'flyover') return `${PULSE_VENUE_WORD[r.source]} · every venue · ${words}`
   return `${PULSE_VENUE_WORD[r.source]} · ${words}`
 }
 
