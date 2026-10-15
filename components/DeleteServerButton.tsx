@@ -45,16 +45,16 @@ export default function DeleteServerButton({ slug, name }: { slug: string; name:
 
   return (
     <div className="mt-10 border-t border-[color:var(--line)] pt-6 flex flex-col items-start gap-2">
-      <p className="text-[11px] uppercase tracking-wide text-[color:var(--muted-2)] font-medium">Admin</p>
+      <p className="text-[length:var(--fs-xs)] uppercase tracking-wide text-[color:var(--muted-2)] font-medium">Admin</p>
       {confirming ? (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[13px] text-[color:var(--muted)]">
-            Permanently delete <span className="text-white font-medium">{name}</span> and its endpoints?
+          <span className="text-[length:var(--fs-md)] text-[color:var(--muted)]">
+            Permanently delete <span className="text-[color:var(--fg)] font-medium">{name}</span> and its endpoints?
           </span>
           <button
             onClick={remove}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-md border border-red-500/60 bg-red-500/10 px-3 py-1.5 text-[13px] font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-red-500/60 bg-red-500/10 px-3 py-1.5 text-[length:var(--fs-md)] font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
           >
             <Trash2 width={14} height={14} />
             {busy ? 'Deleting…' : 'Yes, delete'}
@@ -62,7 +62,7 @@ export default function DeleteServerButton({ slug, name }: { slug: string; name:
           <button
             onClick={() => setConfirming(false)}
             disabled={busy}
-            className="rounded-md border border-[color:var(--line)] px-3 py-1.5 text-[13px] text-[color:var(--muted)] transition-colors hover:text-white disabled:opacity-50"
+            className="rounded-md border border-[color:var(--line)] px-3 py-1.5 text-[length:var(--fs-md)] text-[color:var(--muted)] transition-colors hover:text-[color:var(--fg)] disabled:opacity-50"
           >
             Cancel
           </button>
@@ -70,13 +70,13 @@ export default function DeleteServerButton({ slug, name }: { slug: string; name:
       ) : (
         <button
           onClick={() => setConfirming(true)}
-          className="inline-flex items-center gap-1.5 rounded-md border border-red-500/60 px-3 py-1.5 text-[13px] font-medium text-red-400 transition-colors hover:bg-red-500/10"
+          className="inline-flex items-center gap-1.5 rounded-md border border-red-500/60 px-3 py-1.5 text-[length:var(--fs-md)] font-medium text-red-400 transition-colors hover:bg-red-500/10"
         >
           <Trash2 width={14} height={14} />
           Delete Server
         </button>
       )}
-      {error && <p className="text-[12px] text-red-400">{error}</p>}
+      {error && <p className="text-[length:var(--fs-sm)] text-red-400">{error}</p>}
     </div>
   )
 }

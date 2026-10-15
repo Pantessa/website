@@ -23,7 +23,7 @@ const DIM_LABELS: Record<string, string> = {
 
 function DimBar({ label, weight, score }: { label: string; weight: number; score: number | null }) {
   return (
-    <div className="flex items-center gap-2 text-[12px]">
+    <div className="flex items-center gap-2 text-[length:var(--fs-sm)]">
       <span className="w-28 flex-shrink-0 text-[color:var(--muted)]">{label}</span>
       <div className="flex-1 h-1.5 rounded-full bg-[color-mix(in_srgb,var(--fg)_8%,transparent)] overflow-hidden">
         {score != null && (
@@ -81,7 +81,7 @@ export default function RoutabilityPanel({ slug, initial }: { slug: string; init
         <button
           onClick={() => void run()}
           disabled={running}
-          className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-1.5 text-[length:var(--fs-sm)] font-medium px-3 py-1.5 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] disabled:opacity-50 transition-colors"
           title="Run the routability linter against this service (probes + a live planner test, nothing paid)"
         >
           {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
@@ -89,10 +89,10 @@ export default function RoutabilityPanel({ slug, initial }: { slug: string; init
         </button>
       </div>
 
-      {error && <p className="mt-2 text-[12px] text-red-400">{error}</p>}
+      {error && <p className="mt-2 text-[length:var(--fs-sm)] text-red-400">{error}</p>}
 
       {!report && !error && (
-        <p className="mt-2 text-[12px] text-[color:var(--muted-2)]">
+        <p className="mt-2 text-[length:var(--fs-sm)] text-[color:var(--muted-2)]">
           Not yet graded. Diagnostics check param schemas, description quality, live health, and run the actual routing
           planner against this service&rsquo;s own tools — construction only, nothing is paid or executed.
         </p>
@@ -106,10 +106,10 @@ export default function RoutabilityPanel({ slug, initial }: { slug: string; init
               style={{ color: gradeC, border: `1px solid ${gradeC}`, background: `color-mix(in srgb, ${gradeC} 12%, transparent)` }}
             >
               <span className="text-[18px]">{report.score}</span>
-              <span className="text-[11px] text-[color:var(--muted-2)]">/100</span>
-              <span className="text-[13px] ml-1">{report.grade}</span>
+              <span className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">/100</span>
+              <span className="text-[length:var(--fs-md)] ml-1">{report.grade}</span>
             </span>
-            <span className="text-[11px] mono text-[color:var(--muted-2)]">
+            <span className="text-[length:var(--fs-xs)] mono text-[color:var(--muted-2)]">
               linted {new Date(report.lintedAt).toLocaleString()}
             </span>
           </div>
@@ -121,14 +121,14 @@ export default function RoutabilityPanel({ slug, initial }: { slug: string; init
           </div>
 
           <details className="group">
-            <summary className="cursor-pointer text-[12px] mono text-[color:var(--muted)] hover:text-[color:var(--fg)] inline-flex items-center gap-1">
+            <summary className="cursor-pointer text-[length:var(--fs-sm)] mono text-[color:var(--muted)] hover:text-[color:var(--fg)] inline-flex items-center gap-1">
               <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
               {report.dimensions.reduce((n, d) => n + d.checks.length, 0)} checks
             </summary>
             <ul className="mt-2 space-y-1">
               {report.dimensions.flatMap((d) =>
                 d.checks.map((c, i) => (
-                  <li key={`${d.key}-${i}`} className="flex items-start gap-1.5 text-[12px]">
+                  <li key={`${d.key}-${i}`} className="flex items-start gap-1.5 text-[length:var(--fs-sm)]">
                     {c.ok ? (
                       <Check className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-emerald-400" />
                     ) : (
@@ -145,37 +145,37 @@ export default function RoutabilityPanel({ slug, initial }: { slug: string; init
 
           {report.fixes.length > 0 ? (
             <div>
-              <h3 className="text-[12px] font-medium text-[color:var(--fg)]">Suggested fixes</h3>
+              <h3 className="text-[length:var(--fs-sm)] font-medium text-[color:var(--fg)]">Suggested fixes</h3>
               <ol className="mt-1 space-y-1 list-decimal list-inside">
                 {report.fixes.map((f, i) => (
-                  <li key={i} className="text-[12px] text-[color:var(--muted)]">{f}</li>
+                  <li key={i} className="text-[length:var(--fs-sm)] text-[color:var(--muted)]">{f}</li>
                 ))}
               </ol>
             </div>
           ) : (
-            <p className="text-[12px] text-emerald-400">No fixes suggested — routable as built.</p>
+            <p className="text-[length:var(--fs-sm)] text-emerald-400">No fixes suggested — routable as built.</p>
           )}
 
           {report.fixes.length > 0 && (
             <details className="group rounded-lg border border-[var(--line)] p-3">
-              <summary className="cursor-pointer text-[12px] font-medium text-[color:var(--fg)] inline-flex items-center gap-1.5">
+              <summary className="cursor-pointer text-[length:var(--fs-sm)] font-medium text-[color:var(--fg)] inline-flex items-center gap-1.5">
                 <Wrench className="w-3.5 h-3.5" />
                 Fix it with Claude Code
                 <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
               </summary>
-              <p className="mt-2 text-[12px] text-[color:var(--muted)]">
+              <p className="mt-2 text-[length:var(--fs-sm)] text-[color:var(--muted)]">
                 Paste this into Claude Code inside the MCP&rsquo;s repo — it carries the failing checks, the fix list,
                 and the conventions the router grades against.
               </p>
               <div className="relative mt-2">
                 <button
                   onClick={() => void copyPrompt()}
-                  className="absolute right-2 top-2 inline-flex items-center gap-1 text-[11px] mono px-2 py-1 rounded-md border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] transition-colors bg-[color:var(--surf-1)]"
+                  className="absolute right-2 top-2 inline-flex items-center gap-1 text-[length:var(--fs-xs)] mono px-2 py-1 rounded-md border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] transition-colors bg-[color:var(--surf-1)]"
                 >
                   {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                   {copied ? 'Copied' : 'Copy prompt'}
                 </button>
-                <pre className="max-h-64 overflow-auto rounded-md bg-[color-mix(in_srgb,var(--fg)_3%,transparent)] border border-[var(--line)] p-3 text-[11px] leading-relaxed text-[color:var(--muted)] whitespace-pre-wrap">
+                <pre className="max-h-64 overflow-auto rounded-md bg-[color-mix(in_srgb,var(--fg)_3%,transparent)] border border-[var(--line)] p-3 text-[length:var(--fs-xs)] leading-relaxed text-[color:var(--muted)] whitespace-pre-wrap">
                   {buildUpgradePrompt(report)}
                 </pre>
               </div>

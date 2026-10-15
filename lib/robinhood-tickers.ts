@@ -2,6 +2,9 @@
 // official token list for chain 4663 (https://tokens.uniswap.org), taken
 // 2026-09-10, refreshed 2026-10-13 (203 entries, PONS listed since; cbBTC dropped
 // — it is a coin and charts as BTC).
+// 2026-10-13 (squad polish, QA-X2): every 4663 listing that is a COIN (cbBTC, PONS —
+// CoinGecko `pons`; no Robinhood instrument, no Yahoo data) is named in
+// ROBINHOOD_CHAIN_COINS below and stays out of the stock set; the snapshot keeps it.
 //
 // Why a static copy exists next to the live list (lib/token-list.ts): the
 // chart resolver (lib/charts.ts) is PURE and CLIENT-SAFE — it decides,
@@ -12,7 +15,7 @@
 // listing fails a gate instead of silently staying chartless.
 //
 // Regenerate (paste the output over the table below):
-//   node -e "fetch('https://tokens.uniswap.org').then(r=>r.json()).then(j=>console.log(j.tokens.filter(t=>t.chainId===4663&&t.symbol!=='cbBTC').sort((a,b)=>a.symbol.localeCompare(b.symbol)).map(t=>'  ['+JSON.stringify(t.symbol)+', '+JSON.stringify(t.name)+'],').join('\n')))"
+//   node -e "fetch('https://tokens.uniswap.org').then(r=>r.json()).then(j=>console.log(j.tokens.filter(t=>t.chainId===4663&&!['cbBTC','PONS'].includes(t.symbol)).sort((a,b)=>a.symbol.localeCompare(b.symbol)).map(t=>'  ['+JSON.stringify(t.symbol)+', '+JSON.stringify(t.name)+'],').join('\n')))"
 
 /** [ticker, company name] for every listed equity, A→Z. */
 export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
@@ -225,3 +228,10 @@ export const ROBINHOOD_TICKER_NAMES: Readonly<Record<string, string>> = Object.f
 
 /** The ticker set, for membership checks. */
 export const ROBINHOOD_TICKER_SET: ReadonlySet<string> = new Set(ROBINHOOD_TICKERS.map(([s]) => s))
+
+/** Robinhood Chain listings that are COINS, not equities (exact symbols as
+ *  the list spells them). They are read as balances like any token but are
+ *  never a stock: no stock chips, no stock chart, not in the snapshot.
+ *  Add a symbol here when the live list gains a non-equity (the harness's
+ *  "every live 4663 stock listing" checks go red until it is named). */
+export const ROBINHOOD_CHAIN_COINS: ReadonlySet<string> = new Set(['cbBTC', 'PONS'])

@@ -78,20 +78,20 @@ export default function RateService({
             </button>
           ))}
         </div>
-        <span className="text-[12px] text-[color:var(--muted)] mono">
+        <span className="text-[length:var(--fs-sm)] text-[color:var(--muted)] mono">
           {average != null ? `${average.toFixed(1)} · ${count} rating${count === 1 ? '' : 's'}` : 'no ratings yet'}
         </span>
       </div>
       {!address ? (
-        <button onClick={() => signIn()} className="text-[12px] text-left underline decoration-dotted underline-offset-2 text-[color:var(--muted)] hover:text-white w-fit">
+        <button onClick={() => signIn()} className="text-[length:var(--fs-sm)] text-left underline decoration-dotted underline-offset-2 text-[color:var(--muted)] hover:text-[color:var(--fg)] w-fit">
           Sign in to rate this service
         </button>
       ) : yourRating ? (
-        <span className="text-[11px] text-[color:var(--muted-2)]">Your rating: {yourRating}★ — click to change</span>
+        <span className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">Your rating: {yourRating}★ — click to change</span>
       ) : (
-        <span className="text-[11px] text-[color:var(--muted-2)]">Click a star to rate</span>
+        <span className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">Click a star to rate</span>
       )}
-      {err ? <span className="text-[11px] text-[#ff6b6b]">{err}</span> : null}
+      {err ? <span className="text-[length:var(--fs-xs)] text-[#ff6b6b]">{err}</span> : null}
     </div>
   )
 }

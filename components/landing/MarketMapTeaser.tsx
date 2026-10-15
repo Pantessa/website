@@ -34,6 +34,10 @@ export default function MarketMapTeaser() {
       </div>
       <div className="lmap__map">
         <MarketMap section="all" onOpen={(symbol) => router.push(`/t/${encodeURIComponent(symbol)}`)} />
+        {/* Under a finger on a phone the map's cells are 30px squares (README
+            rule B5): the whole map becomes ONE tap into the markets instead,
+            and the cells stop taking taps (landing.css). Desktop unchanged. */}
+        <SpineLink href={MARKETS_HREF} className="lmap__tap" aria-label={`${MAP_TEASER.cta} — the whole index`} data-journey="Open the market map" />
       </div>
       <div className="lmap__foot">
         <span className="mono">{UNLIMITED_LINE} · {TAPE_FOOTNOTE}</span>

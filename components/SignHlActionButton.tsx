@@ -443,13 +443,13 @@ export default function SignHlActionButton({
   return (
     <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1.5">
       {status === 'filled' ? (
-        <div className="flex items-center gap-2 text-[12px]">
+        <div className="flex items-center gap-2 text-[length:var(--fs-sm)]">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
           <span className="text-emerald-400 font-medium">
             {fill ? `Filled ${fill.totalSz} ${hl.expected.coin} @ ${fill.avgPx}` : 'Order accepted (unfilled — IOC expired)'}
           </span>
           {viaAgent && (
-            <span className="inline-flex items-center gap-1 text-[11px] text-[color:var(--muted)]" title="Your consent signature authorized this exact action; your approved Pantessa agent submitted it.">
+            <span className="inline-flex items-center gap-1 text-[length:var(--fs-xs)] text-[color:var(--muted)]" title="Your consent signature authorized this exact action; your approved Pantessa agent submitted it.">
               <ShieldCheck className="w-3 h-3" /> via your Pantessa agent
             </span>
           )}
@@ -463,12 +463,12 @@ export default function SignHlActionButton({
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
           {hl.feeApproval && feeDone && (
-            <span className="inline-flex items-center gap-1 text-[12px] text-emerald-400">
+            <span className="inline-flex items-center gap-1 text-[length:var(--fs-sm)] text-emerald-400">
               <CheckCircle2 className="w-3.5 h-3.5" /> {hl.feeApproval.maxFeeRate} fee cap approved
             </span>
           )}
           {hl.pre && preDone && (
-            <span className="inline-flex items-center gap-1 text-[12px] text-emerald-400">
+            <span className="inline-flex items-center gap-1 text-[length:var(--fs-sm)] text-emerald-400">
               <CheckCircle2 className="w-3.5 h-3.5" /> {hl.pre.expected.leverage}x leverage set
             </span>
           )}
@@ -483,8 +483,8 @@ export default function SignHlActionButton({
             {buttonLabel}
           </button>
           <SignatureWaitOpenApp waiting={status === 'signing' || status === 'enabling'} />
-          {enabledNote && <span className="text-[12px] text-[color:var(--muted)]" data-hl-rearmed="enable">{enabledNote}</span>}
-          {error && <span className="text-[12px] text-red-400">{error}</span>}
+          {enabledNote && <span className="text-[length:var(--fs-sm)] text-[color:var(--muted)]" data-hl-rearmed="enable">{enabledNote}</span>}
+          {error && <span className="text-[length:var(--fs-sm)] text-red-400">{error}</span>}
         </div>
       )}
     </div>

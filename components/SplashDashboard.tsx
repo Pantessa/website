@@ -240,7 +240,7 @@ export function SplashDashboard({
             {chrome && (
               <div className="mb-4 flex items-center gap-2">
                 <Wallet className="h-4 w-4 text-[color:var(--muted-2)]" />
-                <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
+                <span className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]">
                   Connected · {shortAddr(address)} · reading
                 </span>
               </div>
@@ -259,7 +259,7 @@ export function SplashDashboard({
               ) : (
                 <div className="mb-4 flex items-center gap-2">
                   <Wallet className="h-4 w-4 text-[color:var(--muted-2)]" />
-                  <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
+                  <span className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]">
                     Connected · {shortAddr(address)}
                   </span>
                 </div>
@@ -294,7 +294,7 @@ export function SplashDashboard({
         )}
 
         {hint && (
-          <p className="mt-4 text-center text-[11px] text-[color:var(--muted-2)]">
+          <p className="mt-4 text-center text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
             Tap a chip to run it — or just start typing.
           </p>
         )}
@@ -418,7 +418,7 @@ export function TileCard({
           title={`Open ${cleanServerName(head.mcpName)}'s server page`}
         >
           <BrandIcon server={iconServer} size={20} />
-          <h3 className="truncate text-sm font-semibold text-white underline-offset-4 group-hover/head:underline">
+          <h3 className="truncate text-sm font-semibold text-[color:var(--fg)] underline-offset-4 group-hover/head:underline">
             {cleanServerName(head.mcpName)}
           </h3>
           <ExternalLink className="h-3 w-3 flex-shrink-0 text-[color:var(--muted-2)] opacity-0 transition-opacity group-hover/head:opacity-100" />
@@ -448,7 +448,7 @@ function PendingTileCard({ server }: { server: McpServer }) {
       <div aria-hidden className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
       <div className="mb-3 flex items-center gap-2">
         <BrandIcon server={server} size={20} />
-        <h3 className="truncate text-sm font-semibold text-white">{cleanServerName(server.name)}</h3>
+        <h3 className="truncate text-sm font-semibold text-[color:var(--fg)]">{cleanServerName(server.name)}</h3>
       </div>
       <div aria-hidden className="space-y-2">
         <div className="h-7 w-32 animate-pulse rounded bg-white/10" />
@@ -476,7 +476,7 @@ function ErrorBody({ tile, onRetry }: { tile: ErrorTile; onRetry?: () => void })
         <button
           type="button"
           onClick={onRetry}
-          className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+          className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] px-2.5 py-1 text-[length:var(--fs-xs)] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-[color:var(--fg)]"
         >
           <RefreshCw className="h-3 w-3" /> Retry
         </button>
@@ -510,7 +510,7 @@ function ActivityBody({ tile }: { tile: ActivityTile }) {
                 <Icon className="h-3 w-3" />
               </span>
               <div className="min-w-0">
-                <div className="truncate font-medium text-white">
+                <div className="truncate font-medium text-[color:var(--fg)]">
                   {verb} {r.amount && `${r.amount} `}
                   {r.asset}
                 </div>
@@ -580,7 +580,7 @@ function LineRow({
             onClick={(e) => e.stopPropagation()}
             aria-label={info.label}
             title={info.label}
-            className="grid h-6 w-6 place-items-center rounded-md text-[color:var(--muted-2)] opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/5 hover:text-white"
+            className="grid h-6 w-6 place-items-center rounded-md text-[color:var(--muted-2)] opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/5 hover:text-[color:var(--fg)]"
           >
             <Info className="h-3.5 w-3.5" />
           </a>
@@ -624,8 +624,8 @@ function RowsBody({ tile, onPick }: { tile: RowsTile; onPick: (p: string, slug?:
     <div className="flex-1">
       {tile.headline && (
         <div className="mb-3">
-          <span className="text-2xl font-semibold tracking-tight text-white">{tile.headline.value}</span>
-          <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">{tile.headline.caption}</span>
+          <span className="text-2xl font-semibold tracking-tight text-[color:var(--fg)]">{tile.headline.value}</span>
+          <span className="ml-2 text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">{tile.headline.caption}</span>
         </div>
       )}
       {tile.viz && (
@@ -644,7 +644,7 @@ function RowsBody({ tile, onPick }: { tile: RowsTile; onPick: (p: string, slug?:
                   ? 'text-[color:var(--accent)]'
                   : r.tone === 'neg'
                     ? 'text-red-400'
-                    : 'text-white'
+                    : 'text-[color:var(--fg)]'
               }
             >
               {r.value}
@@ -684,8 +684,8 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
     <div className="flex-1">
       {tile.totalUsd !== null && (
         <div className="mb-3">
-          <span className="text-2xl font-semibold tracking-tight text-white">{usd(tile.totalUsd)}</span>
-          <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">
+          <span className="text-2xl font-semibold tracking-tight text-[color:var(--fg)]">{usd(tile.totalUsd)}</span>
+          <span className="ml-2 text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
             {tile.chain.includes('·') ? 'total portfolio' : `total on ${tile.chain}`}
           </span>
         </div>
@@ -707,7 +707,7 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
                   {/* The row's own chain when the tile is multichain, else
                       the tile's — a company mark is only right on 4663. */}
                   <TokenIcon symbol={h.symbol} size={24} chain={h.chain ?? tile.chain} />
-                  <span className="font-medium text-white">{h.symbol}</span>
+                  <span className="font-medium text-[color:var(--fg)]">{h.symbol}</span>
                   {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
                   {h.chain && (
                     <span className="min-w-0 truncate whitespace-nowrap rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>
@@ -718,7 +718,7 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
                 <div className="flex items-center gap-2">
                   <Sparkline symbol={h.symbol} width={56} height={20} className="hidden sm:block" />
                   <div className="text-right">
-                    <div className="flex items-baseline justify-end gap-1.5 text-white">
+                    <div className="flex items-baseline justify-end gap-1.5 text-[color:var(--fg)]">
                       <Delta24 symbol={h.symbol} />
                       <span>{h.valueUsd !== null ? usd(h.valueUsd) : '—'}</span>
                     </div>
@@ -769,7 +769,7 @@ function NftsBody({ tile, onPick }: { tile: NftsTile; onPick: (p: string, slug?:
               style={active ? { boxShadow: '0 0 0 2px var(--accent)' } : undefined}
             >
               <NftThumb url={n.imageUrl} label={n.name} fill />
-              <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-4 text-left text-[9px] text-white opacity-0 transition-opacity group-hover:opacity-100">
+              <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-4 text-left text-[9px] text-[color:var(--fg)] opacity-0 transition-opacity group-hover:opacity-100">
                 {n.name}
               </span>
             </button>
@@ -779,7 +779,7 @@ function NftsBody({ tile, onPick }: { tile: NftsTile; onPick: (p: string, slug?:
       {selected ? (
         <div className="mt-3 rounded-xl border border-[var(--line)] bg-white/[0.02] p-2.5">
           <div className="flex items-baseline justify-between gap-2 text-xs">
-            <span className="truncate font-medium text-white">{selected.name}</span>
+            <span className="truncate font-medium text-[color:var(--fg)]">{selected.name}</span>
             <span className="shrink-0 text-[10px] text-[color:var(--muted)]">
               {selected.floor ?? selected.collectionName} · {selected.chain}
             </span>
@@ -854,7 +854,7 @@ function ProposalsBody({ tile }: { tile: ProposalsTile }) {
               >
                 <Avatar url={p.avatarUrl} label={p.spaceName} size={22} />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-medium text-white" title={p.title}>
+                  <div className="truncate text-xs font-medium text-[color:var(--fg)]" title={p.title}>
                     {p.title}
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-[10px] text-[color:var(--muted-2)]">
@@ -948,7 +948,7 @@ function InlineActionChips({
           type="button"
           title={a.prompt}
           onClick={() => onPick(a.prompt, slug)}
-          className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+          className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[length:var(--fs-xs)] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-[color:var(--fg)]"
         >
           {a.label}
         </button>
@@ -961,7 +961,7 @@ function InlineActionChips({
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
           title={info.label}
-          className="flex items-center gap-1 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted-2)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+          className="flex items-center gap-1 rounded-full border border-[var(--line)] px-2.5 py-1 text-[length:var(--fs-xs)] text-[color:var(--muted-2)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-[color:var(--fg)]"
         >
           <Info className="h-3 w-3" />
           {info.label}
@@ -992,7 +992,7 @@ function PromptChips({
             type="button"
             title={p.prompt}
             onClick={() => onPick(p.prompt, slug)}
-            className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+            className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[length:var(--fs-xs)] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-[color:var(--fg)]"
           >
             {p.label}
           </button>

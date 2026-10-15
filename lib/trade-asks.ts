@@ -60,12 +60,18 @@ export function sidesFor(pair: ChartPair): TradeSide[] {
 export function composeAsk(pair: ChartPair, side: TradeSide, opts: { usd?: number; pct?: number } = {}): string {
   const sym = pair.symbol
   const usd = opts.usd ?? 10
+  // A coin whose home is not an EVM chain (SOL, XRP, DOGE) trades here as
+  // the Hyperliquid perp — the only honest whole (lib/token-home). Composing
+  // "Buy $50 of SOL" sent a stranger to the route's refusal door first
+  // (POLISH/DEADENDS 2026-10-13: 24 offered sentences refused before acting);
+  // the chip now says the order the door would have offered.
+  const perp = pair.source === 'hyperliquid' || !!tokenHome(sym)
   switch (side) {
     case 'buy':
       // The HL parser DEMANDS the venue word ("long eth" alone is ambiguous).
-      return pair.source === 'hyperliquid' ? `Long $${usd} of ${sym} on Hyperliquid` : `Buy $${usd} of ${sym}`
+      return perp ? `Long $${usd} of ${sym} on Hyperliquid` : `Buy $${usd} of ${sym}`
     case 'sell':
-      return pair.source === 'hyperliquid' ? `Short $${usd} of ${sym} on Hyperliquid` : `Sell $${usd} of ${sym}`
+      return perp ? `Short $${usd} of ${sym} on Hyperliquid` : `Sell $${usd} of ${sym}`
     case 'protect':
       return pair.source === 'hyperliquid'
         ? `Protect my ${sym} long with a ${opts.pct ?? 5}% stop`
@@ -74,8 +80,8 @@ export function composeAsk(pair: ChartPair, side: TradeSide, opts: { usd?: numbe
 }
 
 export const SIDE_LABEL: Record<TradeSide, (pair: ChartPair) => string> = {
-  buy: (p) => (p.source === 'hyperliquid' ? `Long ${p.symbol}` : `Buy ${p.symbol}`),
-  sell: (p) => (p.source === 'hyperliquid' ? `Short ${p.symbol}` : `Sell ${p.symbol}`),
+  buy: (p) => (p.source === 'hyperliquid' || tokenHome(p.symbol) ? `Long ${p.symbol}` : `Buy ${p.symbol}`),
+  sell: (p) => (p.source === 'hyperliquid' || tokenHome(p.symbol) ? `Short ${p.symbol}` : `Sell ${p.symbol}`),
   protect: () => 'Protect with a stop',
 }
 

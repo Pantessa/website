@@ -119,7 +119,7 @@ export default function StoryPage() {
       <main className="x-main x-main--fluid">
         {/* THE WAY BACK (squad front-door, 2026-10-06): this is the story; the
             app is one tap away at `/`. Slim, mono, above the movers tape. */}
-        <p className="mono px-4 py-1.5 text-center text-[10.5px] uppercase leading-4 tracking-[0.12em] text-[color:var(--muted)]" data-story-top>
+        <p className="mono px-4 py-1.5 text-center text-[length:var(--fs-xs)] uppercase leading-4 tracking-[0.12em] text-[color:var(--muted)]" data-story-top>
           <span>{SPLASH.storyTopline}.</span>{' '}
           <Link href={MARKETS_HREF} className="whitespace-nowrap text-[color:var(--accent)] underline-offset-4 hover:text-[color:var(--fg)] hover:underline">
             {SPLASH.storyToplineCta} →

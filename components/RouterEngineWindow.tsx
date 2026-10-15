@@ -51,7 +51,7 @@ export default function RouterEngineWindow() {
           <button
             onClick={() => setEngineWindowOpen(true)}
             title="Show the routing engine"
-            className="flex-1 flex flex-col items-center gap-3 pt-3 text-[color:var(--muted)] hover:text-white transition-colors"
+            className="flex-1 flex flex-col items-center gap-3 pt-3 text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
           >
             <PanelRightOpen className="w-4 h-4" />
             <span className="text-[10px] tracking-widest [writing-mode:vertical-rl] rotate-180 mono uppercase">
@@ -98,7 +98,7 @@ function EnginePanel({ trace, onClose }: { trace: RouterTraceEvent[]; onClose: (
     <div className="flex flex-col h-full min-w-0">
       <div className="flex-shrink-0 flex items-center gap-2 px-3 h-12 border-b border-[var(--line)] bg-black/40">
         <Terminal className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent)' }} />
-        <span className="text-[11px] font-medium text-white mono uppercase tracking-wide">Routing Engine</span>
+        <span className="text-[length:var(--fs-xs)] font-medium text-[color:var(--fg)] mono uppercase tracking-wide">Routing Engine</span>
         <span className="ml-auto text-[10px] text-[color:var(--muted-2)] mono whitespace-nowrap">
           {settled.length} call{settled.length === 1 ? '' : 's'} · ${spent.toFixed(3)}
         </span>
@@ -107,14 +107,14 @@ function EnginePanel({ trace, onClose }: { trace: RouterTraceEvent[]; onClose: (
           disabled={trace.length === 0}
           aria-label="Copy trace"
           title="Copy the full trace (paste it into a bug report)"
-          className="flex-shrink-0 w-7 h-7 grid place-items-center rounded-md text-[color:var(--muted)] hover:text-white hover:bg-white/5 transition-colors disabled:opacity-40"
+          className="flex-shrink-0 w-7 h-7 grid place-items-center rounded-md text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:bg-white/5 transition-colors disabled:opacity-40"
         >
           {copied ? <Check className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} /> : <Copy className="w-3.5 h-3.5" />}
         </button>
         <button
           onClick={onClose}
           aria-label="Close engine window"
-          className="flex-shrink-0 w-7 h-7 grid place-items-center rounded-md text-[color:var(--muted)] hover:text-white hover:bg-white/5 transition-colors"
+          className="flex-shrink-0 w-7 h-7 grid place-items-center rounded-md text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:bg-white/5 transition-colors"
         >
           <X className="w-3.5 h-3.5" />
         </button>

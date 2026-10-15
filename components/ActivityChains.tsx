@@ -137,7 +137,7 @@ function StepFace({ step }: { step: ChainStep }) {
 export default function ActivityChains({ chains }: { chains: BuiltChain[] }) {
   if (!chains.length) {
     return (
-      <p className="text-[13px] text-[color:var(--muted-2)] py-4">
+      <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)] py-4">
         No multi-step chains yet — the first compiled job lights this up.
       </p>
     )

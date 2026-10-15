@@ -134,8 +134,8 @@ export default function ParticleHeader() {
       <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-zinc-950 to-transparent" />
       {/* Title */}
       <div className="relative z-10 flex flex-col items-center justify-center h-full">
-        <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white select-none">
-          <span className="text-white">Yeet</span>
+        <h1 className="text-4xl md:text-5xl font-black tracking-tight text-[color:var(--fg)] select-none">
+          <span className="text-[color:var(--fg)]">Yeet</span>
           <span className="text-zinc-400">ful</span>
         </h1>
         <p className="mt-1 text-zinc-500 text-sm font-medium tracking-widest uppercase">

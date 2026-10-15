@@ -29,7 +29,7 @@ export default function NetworkPulse() {
         title="View all network activity"
       >
         <span className="dir__statnum mono">${stats.settledUsd.toFixed(2)}</span>
-        <span className="dir__statlbl group-hover:text-white transition-colors">
+        <span className="dir__statlbl group-hover:text-[color:var(--fg)] transition-colors">
           settled on-network →
         </span>
       </Link>

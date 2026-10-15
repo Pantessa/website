@@ -51,7 +51,7 @@ export default function EarnPanel() {
     if (!loading) return null
     return (
       <section className="mb-6">
-        <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+        <h2 className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
           Earn · your MCP servers
         </h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3 min-w-0">
@@ -73,7 +73,7 @@ export default function EarnPanel() {
   if (k.callsServed === 0) {
     return (
       <section className="mb-6">
-        <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+        <h2 className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
           Earn · your MCP servers
         </h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3 min-w-0">
@@ -83,7 +83,7 @@ export default function EarnPanel() {
           <Kpi label="Paying agents" value="0" />
         </div>
         <Card>
-          <p className="text-sm font-semibold text-white">Start earning from your MCP</p>
+          <p className="text-sm font-semibold text-[color:var(--fg)]">Start earning from your MCP</p>
           <p className="text-xs text-[color:var(--muted-2)] mt-0.5 max-w-md">
             Run an MCP server? Three steps and every paid call lands here — total, last 30 days,
             calls served, paying agents.
@@ -96,16 +96,16 @@ export default function EarnPanel() {
               { n: 3, label: 'Report each paid call', hint: 'One async, non-blocking SDK line after settlement.', href: '/docs', cta: 'How' },
             ].map((s) => (
               <li key={s.n} className="flex items-start gap-3">
-                <span className="flex-shrink-0 mt-0.5 w-5 h-5 grid place-items-center rounded-full bg-emerald-500/15 text-emerald-400 text-[11px] font-semibold mono">
+                <span className="flex-shrink-0 mt-0.5 w-5 h-5 grid place-items-center rounded-full bg-emerald-500/15 text-emerald-400 text-[length:var(--fs-xs)] font-semibold mono">
                   {s.n}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="text-xs font-medium text-white">{s.label}</span>
-                  <span className="block text-[11px] text-[color:var(--muted-2)] mt-0.5">{s.hint}</span>
+                  <span className="text-xs font-medium text-[color:var(--fg)]">{s.label}</span>
+                  <span className="block text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mt-0.5">{s.hint}</span>
                 </span>
                 <Link
                   href={s.href}
-                  className="flex-shrink-0 inline-flex items-center text-[11px] font-medium px-2.5 py-1 max-lg:min-h-11 rounded-md border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors"
+                  className="flex-shrink-0 inline-flex items-center text-[length:var(--fs-xs)] font-medium px-2.5 py-1 max-lg:min-h-11 rounded-md border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] transition-colors"
                 >
                   {s.cta} →
                 </Link>
@@ -113,7 +113,7 @@ export default function EarnPanel() {
             ))}
           </ol>
 
-          <p className="mono text-[11px] text-[color:var(--muted-2)] mt-4 mb-2">
+          <p className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mt-4 mb-2">
             Or paste this into Claude Code — it wires the report into your server:
           </p>
           <CopyBlock text={PAYEE_CLAUDE_PROMPT} label="Copy prompt" maxHeightClassName="max-h-56" />
@@ -133,13 +133,13 @@ export default function EarnPanel() {
 
   return (
     <section className="mb-6">
-      <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+      <h2 className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
         Earn · your MCP servers
       </h2>
 
       {/* Honesty line: reported numbers are self-reported telemetry; the trust
           layer is how much we confirmed against an on-chain settlement. */}
-      <p className="text-[11px] text-[color:var(--muted-2)] mb-2">
+      <p className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mb-2">
         Self-reported by your MCPs · <span className="text-emerald-400">{usd(k.verifiedEarnedUsd)} verified on-chain</span>
         {k.flaggedCalls > 0 && (
           <span className="text-amber-400"> · {k.flaggedCalls} report{k.flaggedCalls === 1 ? '' : 's'} not backed by a settlement tx</span>
@@ -189,7 +189,7 @@ export default function EarnPanel() {
               <li key={m.slug} className="flex items-center gap-3 min-w-0">
                 <Link
                   href={`/servers/${m.slug}`}
-                  className="text-xs font-medium text-white truncate min-w-0 hover:underline underline-offset-2"
+                  className="text-xs font-medium text-[color:var(--fg)] truncate min-w-0 hover:underline underline-offset-2"
                 >
                   {m.name}
                 </Link>

@@ -1,0 +1,832 @@
+{
+ "app/agents/[handle]/page.tsx": {
+  "font-px": 2
+ },
+ "app/agents/page.tsx": {
+  "font-px": 4
+ },
+ "app/dashboard/activity/page.tsx": {
+  "tw-color": 5
+ },
+ "app/dashboard/admin/desk/page.tsx": {
+  "color": 9,
+  "tw-color": 17,
+  "font-px": 18
+ },
+ "app/dashboard/admin/flows/page.tsx": {
+  "color": 8,
+  "tw-color": 19,
+  "font-px": 17
+ },
+ "app/dashboard/admin/page.tsx": {
+  "color": 32,
+  "tw-color": 40,
+  "font-px": 36
+ },
+ "app/dashboard/agents/page.tsx": {
+  "tw-color": 2,
+  "font-px": 2
+ },
+ "app/dashboard/approvals/page.tsx": {
+  "tw-color": 12,
+  "font-px": 1
+ },
+ "app/dashboard/embeds/page.tsx": {
+  "tw-color": 2
+ },
+ "app/dashboard/failures/page.tsx": {
+  "color": 2,
+  "tw-color": 2,
+  "font-px": 8
+ },
+ "app/dashboard/guardian/page.tsx": {
+  "font-px": 1
+ },
+ "app/dashboard/keys/page.tsx": {
+  "tw-color": 2,
+  "font-px": 1
+ },
+ "app/dashboard/layout.tsx": {
+  "font-px": 1
+ },
+ "app/dashboard/mcp-requests/page.tsx": {
+  "tw-color": 1,
+  "font-px": 14
+ },
+ "app/dashboard/org/page.tsx": {
+  "tw-color": 2
+ },
+ "app/dashboard/page.tsx": {
+  "tw-color": 19,
+  "font-px": 1
+ },
+ "app/dashboard/receipts/page.tsx": {
+  "tw-color": 16
+ },
+ "app/dashboard/routing/page.tsx": {
+  "tw-color": 2
+ },
+ "app/dashboard/treasury/page.tsx": {
+  "color": 5,
+  "tw-color": 11,
+  "font-px": 2
+ },
+ "app/embed/embed.css": {
+  "color": 2
+ },
+ "app/error.tsx": {
+  "font-px": 1
+ },
+ "app/global-error.tsx": {
+  "color": 4,
+  "font-px": 4,
+  "radius-px": 2
+ },
+ "app/globals.css": {
+  "color": 3,
+  "font-px": 1,
+  "radius-px": 1
+ },
+ "app/inbox/[address]/page.tsx": {
+  "font-px": 9
+ },
+ "app/incidents/[id]/page.tsx": {
+  "color": 1,
+  "tw-color": 7,
+  "font-px": 2
+ },
+ "app/incidents/page.tsx": {
+  "color": 2,
+  "tw-color": 1
+ },
+ "app/l/[handle]/page.tsx": {
+  "font-px": 16
+ },
+ "app/layout.tsx": {
+  "tw-color": 1
+ },
+ "app/links/embed/generator.tsx": {
+  "color": 7,
+  "tw-color": 1,
+  "font-px": 16,
+  "radius-px": 1
+ },
+ "app/links/embed/page.tsx": {
+  "font-px": 2
+ },
+ "app/native-shell.css": {
+  "color": 1,
+  "radius-px": 1
+ },
+ "app/not-found.tsx": {
+  "font-px": 1
+ },
+ "app/p/[slug]/page.tsx": {
+  "tw-color": 10,
+  "font-px": 4
+ },
+ "app/r/[slug]/page.tsx": {
+  "tw-color": 1,
+  "font-px": 10
+ },
+ "app/roster/page.tsx": {
+  "font-px": 3
+ },
+ "app/servers/add/page.tsx": {
+  "color": 1,
+  "tw-color": 3
+ },
+ "app/w/[address]/page.tsx": {
+  "color": 3,
+  "font-px": 19
+ },
+ "app/x402-design.css": {
+  "color": 270,
+  "font-px": 409,
+  "radius-px": 190
+ },
+ "components/AccountSwitchBanner.tsx": {
+  "tw-color": 1
+ },
+ "components/ActivityCharts.tsx": {
+  "font-px": 5
+ },
+ "components/ActivityFlow.tsx": {
+  "color": 5
+ },
+ "components/ActivityOverview.tsx": {
+  "tw-color": 4,
+  "font-px": 16
+ },
+ "components/AddMcpModal.tsx": {
+  "tw-color": 12,
+  "font-px": 10
+ },
+ "components/AdminCharts.tsx": {
+  "font-px": 3
+ },
+ "components/AgentsPanel.tsx": {
+  "tw-color": 17,
+  "font-px": 5
+ },
+ "components/ApiKeysPanel.tsx": {
+  "color": 2,
+  "tw-color": 13,
+  "font-px": 1
+ },
+ "components/AppModeWorkspace.tsx": {
+  "tw-color": 14,
+  "font-px": 10
+ },
+ "components/AppSpine.tsx": {
+  "tw-color": 17,
+  "font-px": 18
+ },
+ "components/AppsRailTab.tsx": {
+  "tw-color": 4,
+  "font-px": 2,
+  "radius-px": 2
+ },
+ "components/ArmDcaButton.tsx": {
+  "tw-color": 3
+ },
+ "components/ArmSpotGuardButton.tsx": {
+  "tw-color": 3
+ },
+ "components/AuthButton.tsx": {
+  "tw-color": 9
+ },
+ "components/BlogChart.tsx": {
+  "color": 5
+ },
+ "components/BlogCoverArt.tsx": {
+  "color": 45
+ },
+ "components/BrandColorField.tsx": {
+  "color": 4,
+  "tw-color": 1
+ },
+ "components/Button.tsx": {
+  "tw-color": 11
+ },
+ "components/CandleChart.tsx": {
+  "font-px": 2
+ },
+ "components/ChainPicker.tsx": {
+  "tw-color": 2,
+  "font-px": 1
+ },
+ "components/ChartOverlay.tsx": {
+  "tw-color": 6,
+  "font-px": 17
+ },
+ "components/ChatInterface.tsx": {
+  "tw-color": 22,
+  "font-px": 16
+ },
+ "components/ChatLoader.tsx": {
+  "color": 31
+ },
+ "components/ChatRail.tsx": {
+  "tw-color": 1,
+  "font-px": 1
+ },
+ "components/ChatSignInGate.tsx": {
+  "tw-color": 9,
+  "font-px": 2,
+  "radius-px": 1
+ },
+ "components/ChatsRailTab.tsx": {
+  "tw-color": 7,
+  "font-px": 2
+ },
+ "components/ClaimMcp.tsx": {
+  "color": 1,
+  "font-px": 1,
+  "radius-px": 1
+ },
+ "components/ClarifyChips.tsx": {
+  "font-px": 12
+ },
+ "components/ConnectAgentCard.tsx": {
+  "tw-color": 5
+ },
+ "components/ConnectWallet.tsx": {
+  "tw-color": 22
+ },
+ "components/CopyBlock.tsx": {
+  "tw-color": 3
+ },
+ "components/CreateAccountButton.tsx": {
+  "color": 4
+ },
+ "components/CreatorPageModal.tsx": {
+  "tw-color": 3,
+  "font-px": 2
+ },
+ "components/CreatorPagePanel.tsx": {
+  "tw-color": 4,
+  "font-px": 21
+ },
+ "components/CreatorPageStudio.tsx": {
+  "tw-color": 5,
+  "font-px": 26
+ },
+ "components/DashAskBar.tsx": {
+  "font-px": 1
+ },
+ "components/DashboardCharts.tsx": {
+  "tw-color": 2,
+  "font-px": 8
+ },
+ "components/DeleteServerButton.tsx": {
+  "tw-color": 8
+ },
+ "components/DeskLogCharts.tsx": {
+  "font-px": 2
+ },
+ "components/DeskLogSection.tsx": {
+  "color": 8,
+  "tw-color": 1
+ },
+ "components/DeskTranscript.tsx": {
+  "font-px": 3
+ },
+ "components/EarnPanel.tsx": {
+  "tw-color": 8,
+  "font-px": 1
+ },
+ "components/EmbedChat.tsx": {
+  "color": 1,
+  "tw-color": 1
+ },
+ "components/EmbedInsights.tsx": {
+  "tw-color": 12,
+  "font-px": 15
+ },
+ "components/EmbedInstall.tsx": {
+  "tw-color": 4,
+  "font-px": 4
+ },
+ "components/EmbedThisChat.tsx": {
+  "tw-color": 3,
+  "font-px": 4
+ },
+ "components/EmbedsPanel.tsx": {
+  "tw-color": 1,
+  "font-px": 4
+ },
+ "components/EmbedsSummaryCard.tsx": {
+  "font-px": 1
+ },
+ "components/ExternalBuildNotice.tsx": {
+  "tw-color": 4
+ },
+ "components/FundAccountCard.tsx": {
+  "color": 2,
+  "tw-color": 7
+ },
+ "components/GrowthCharts.tsx": {
+  "color": 8,
+  "font-px": 8
+ },
+ "components/GuardianPanel.tsx": {
+  "color": 6,
+  "tw-color": 11,
+  "font-px": 1
+ },
+ "components/GuardianPolicyCard.tsx": {
+  "color": 1,
+  "tw-color": 5,
+  "font-px": 2
+ },
+ "components/HireConsentFrame.tsx": {
+  "font-px": 1
+ },
+ "components/IntentLinksBoard.tsx": {
+  "tw-color": 1,
+  "font-px": 8
+ },
+ "components/IntentRuntime.tsx": {
+  "tw-color": 17,
+  "font-px": 48
+ },
+ "components/JobCard.tsx": {
+  "font-px": 14
+ },
+ "components/JobDetailOverlay.tsx": {
+  "tw-color": 8,
+  "font-px": 11
+ },
+ "components/JobsPanel.tsx": {
+  "color": 1,
+  "tw-color": 9,
+  "font-px": 4
+ },
+ "components/JobsRailTab.tsx": {
+  "tw-color": 2,
+  "font-px": 14
+ },
+ "components/LaunchToken.tsx": {
+  "color": 1,
+  "font-px": 1,
+  "radius-px": 3
+ },
+ "components/LazyCharts.tsx": {
+  "tw-color": 1
+ },
+ "components/LinkEarningsPanel.tsx": {
+  "font-px": 3
+ },
+ "components/LinkFunnelTable.tsx": {
+  "tw-color": 3,
+  "font-px": 2
+ },
+ "components/LinkRetired.tsx": {
+  "font-px": 2
+ },
+ "components/LinksBoardView.tsx": {
+  "font-px": 12
+ },
+ "components/LinksHeroView.tsx": {
+  "color": 14,
+  "font-px": 3
+ },
+ "components/LinksRailTab.tsx": {
+  "tw-color": 10,
+  "font-px": 16
+ },
+ "components/LinksStudioView.tsx": {
+  "font-px": 5
+ },
+ "components/LinksSummaryCard.tsx": {
+  "tw-color": 12,
+  "font-px": 13
+ },
+ "components/LinksWorkspace.tsx": {
+  "font-px": 2
+ },
+ "components/LivePill.tsx": {
+  "font-px": 1
+ },
+ "components/LiveRoutingFeed.tsx": {
+  "color": 2,
+  "tw-color": 3,
+  "font-px": 1
+ },
+ "components/Logo.tsx": {
+  "color": 2
+ },
+ "components/ManagerRow.tsx": {
+  "font-px": 4
+ },
+ "components/McpServerCard.tsx": {
+  "color": 1
+ },
+ "components/MessageReceipts.tsx": {
+  "tw-color": 7
+ },
+ "components/MintLinkForm.tsx": {
+  "tw-color": 1,
+  "font-px": 21
+ },
+ "components/MintLinkModal.tsx": {
+  "tw-color": 3,
+  "font-px": 7
+ },
+ "components/MosaicStudio.tsx": {
+  "tw-color": 7,
+  "font-px": 4
+ },
+ "components/MosaicTileBar.tsx": {
+  "font-px": 1
+ },
+ "components/MyServersPanel.tsx": {
+  "tw-color": 15,
+  "font-px": 3
+ },
+ "components/NavAccount.tsx": {
+  "tw-color": 5
+ },
+ "components/NftGalleryCard.tsx": {
+  "tw-color": 2,
+  "font-px": 7
+ },
+ "components/NftMarketCard.tsx": {
+  "tw-color": 2,
+  "font-px": 8
+ },
+ "components/OnboardingChecklist.tsx": {
+  "tw-color": 7
+ },
+ "components/OrgMembersView.tsx": {
+  "color": 5,
+  "tw-color": 1,
+  "font-px": 2
+ },
+ "components/OrgReport.tsx": {
+  "tw-color": 2,
+  "font-px": 2
+ },
+ "components/ParticleHeader.tsx": {
+  "color": 2,
+  "tw-color": 6
+ },
+ "components/PayToAgentsCard.tsx": {
+  "tw-color": 14,
+  "font-px": 3
+ },
+ "components/PaymentConfirm.tsx": {
+  "tw-color": 4,
+  "font-px": 1
+ },
+ "components/PaymentWeb.tsx": {
+  "color": 1
+ },
+ "components/PlanPanel.tsx": {
+  "color": 2,
+  "font-px": 7
+ },
+ "components/PortfolioCard.tsx": {
+  "tw-color": 3,
+  "font-px": 7
+ },
+ "components/PrivateSwapToggle.tsx": {
+  "tw-color": 1
+ },
+ "components/Providers.tsx": {
+  "color": 2
+ },
+ "components/RateService.tsx": {
+  "color": 1
+ },
+ "components/ReputationBoard.tsx": {
+  "color": 4,
+  "font-px": 7
+ },
+ "components/ReputationPanel.tsx": {
+  "color": 6,
+  "font-px": 1
+ },
+ "components/RosterHome.tsx": {
+  "font-px": 2
+ },
+ "components/RosterTranscript.tsx": {
+  "font-px": 3
+ },
+ "components/RoutabilityPanel.tsx": {
+  "tw-color": 5,
+  "font-px": 1
+ },
+ "components/RouteTraceTerminal.tsx": {
+  "color": 4
+ },
+ "components/RouterEngineWindow.tsx": {
+  "tw-color": 4,
+  "font-px": 2
+ },
+ "components/RouterTraceLines.tsx": {
+  "color": 4,
+  "tw-color": 1
+ },
+ "components/SampleCallDemo.tsx": {
+  "tw-color": 5,
+  "font-px": 2
+ },
+ "components/SendTxButton.tsx": {
+  "font-px": 8
+ },
+ "components/SendTxChain.tsx": {
+  "tw-color": 2,
+  "font-px": 10
+ },
+ "components/SentHomeNotice.tsx": {
+  "font-px": 1
+ },
+ "components/ServerApproveToggle.tsx": {
+  "tw-color": 2
+ },
+ "components/SettlementLine.tsx": {
+  "tw-color": 2
+ },
+ "components/ShareActions.tsx": {
+  "tw-color": 1,
+  "font-px": 3
+ },
+ "components/ShareButton.tsx": {
+  "tw-color": 9,
+  "font-px": 4
+ },
+ "components/ShareReceiptButton.tsx": {
+  "tw-color": 1,
+  "font-px": 3
+ },
+ "components/SharedGone.tsx": {
+  "font-px": 1
+ },
+ "components/SharedJobLog.tsx": {
+  "tw-color": 1,
+  "font-px": 4
+ },
+ "components/ShortlistBar.tsx": {
+  "color": 2
+ },
+ "components/SignGrantButton.tsx": {
+  "tw-color": 4
+ },
+ "components/SignHlActionButton.tsx": {
+  "tw-color": 5
+ },
+ "components/SignNftListingButton.tsx": {
+  "tw-color": 4
+ },
+ "components/SignOrderButton.tsx": {
+  "tw-color": 4,
+  "font-px": 5
+ },
+ "components/SignVoteButton.tsx": {
+  "tw-color": 3
+ },
+ "components/SignatureWaitTakeover.tsx": {
+  "tw-color": 1
+ },
+ "components/SignedTxLines.tsx": {
+  "tw-color": 1
+ },
+ "components/SiteAccount.tsx": {
+  "tw-color": 5
+ },
+ "components/SpendPolicyControls.tsx": {
+  "tw-color": 8
+ },
+ "components/SpendPolicyFix.tsx": {
+  "tw-color": 8,
+  "font-px": 1
+ },
+ "components/SplashDashboard.tsx": {
+  "tw-color": 27,
+  "font-px": 15
+ },
+ "components/TeamRailTab.tsx": {
+  "tw-color": 7,
+  "font-px": 16
+ },
+ "components/ThinkingToolsBoard.tsx": {
+  "tw-color": 6,
+  "font-px": 8
+ },
+ "components/TokenChartButton.tsx": {
+  "tw-color": 2
+ },
+ "components/TokenIcon.tsx": {
+  "color": 3
+ },
+ "components/TreasuryCharts.tsx": {
+  "color": 2,
+  "font-px": 5
+ },
+ "components/VoiceButton.tsx": {
+  "font-px": 1
+ },
+ "components/VoteChoiceButtons.tsx": {
+  "tw-color": 5
+ },
+ "components/WalletAppHandoff.tsx": {
+  "tw-color": 1
+ },
+ "components/WalletPage.tsx": {
+  "tw-color": 1,
+  "font-px": 2
+ },
+ "components/WalletPanel.tsx": {
+  "color": 2,
+  "tw-color": 17,
+  "font-px": 41
+ },
+ "components/WalletRebalance.tsx": {
+  "tw-color": 4,
+  "font-px": 29
+ },
+ "components/WalletSendForm.tsx": {
+  "tw-color": 4,
+  "font-px": 18
+ },
+ "components/WelcomeNudge.tsx": {
+  "tw-color": 4
+ },
+ "components/arrival/arrival.css": {
+  "font-px": 4,
+  "radius-px": 4
+ },
+ "components/chart-theme.ts": {
+  "color": 19,
+  "font-px": 2,
+  "radius-px": 2
+ },
+ "components/chat/EmptyState.tsx": {
+  "tw-color": 3,
+  "font-px": 3
+ },
+ "components/chat/SimpleArtifactReply.tsx": {
+  "font-px": 3
+ },
+ "components/chat/SimpleFundingReply.tsx": {
+  "font-px": 5
+ },
+ "components/chat/chat-phone.css": {
+  "font-px": 7,
+  "radius-px": 4
+ },
+ "components/guide/guide.css": {
+  "color": 2,
+  "font-px": 26,
+  "radius-px": 11
+ },
+ "components/home/apps-row.css": {
+  "font-px": 4,
+  "radius-px": 2
+ },
+ "components/home/deck.css": {
+  "font-px": 33,
+  "radius-px": 7
+ },
+ "components/home/pulse.css": {
+  "color": 2,
+  "font-px": 27,
+  "radius-px": 7
+ },
+ "components/intent-runtime.css": {
+  "font-px": 3,
+  "radius-px": 1
+ },
+ "components/landing/landing.css": {
+  "color": 4,
+  "font-px": 19,
+  "radius-px": 8
+ },
+ "components/live/Battle.tsx": {
+  "color": 11
+ },
+ "components/live/ShareLive.tsx": {
+  "color": 1
+ },
+ "components/live/arena.css": {
+  "color": 4,
+  "font-px": 17,
+  "radius-px": 9
+ },
+ "components/live/arm-alert.css": {
+  "color": 1,
+  "font-px": 4,
+  "radius-px": 1
+ },
+ "components/live/battle.css": {
+  "color": 1,
+  "font-px": 31,
+  "radius-px": 10
+ },
+ "components/live/live.css": {
+  "color": 7,
+  "font-px": 44,
+  "radius-px": 17
+ },
+ "components/markets/ai.css": {
+  "font-px": 25,
+  "radius-px": 16
+ },
+ "components/markets/chart/MarketChart.tsx": {
+  "font-px": 4
+ },
+ "components/markets/chart/battlefield.css": {
+  "color": 8,
+  "font-px": 33,
+  "radius-px": 11
+ },
+ "components/markets/chart/chart-tokens.ts": {
+  "color": 18
+ },
+ "components/markets/chart/depth.css": {
+  "color": 5,
+  "font-px": 10,
+  "radius-px": 5
+ },
+ "components/markets/chart/volume-profile.ts": {
+  "color": 2
+ },
+ "components/markets/comm.css": {
+  "font-px": 29,
+  "radius-px": 15
+ },
+ "components/markets/earn/earn.css": {
+  "font-px": 13,
+  "radius-px": 3
+ },
+ "components/markets/look.css": {
+  "color": 4,
+  "font-px": 21,
+  "radius-px": 4
+ },
+ "components/markets/markets.css": {
+  "font-px": 53,
+  "radius-px": 18
+ },
+ "components/markets/technicals/Fundamentals.tsx": {
+  "color": 1,
+  "font-px": 1
+ },
+ "components/markets/technicals/RatingGauge.tsx": {
+  "font-px": 4
+ },
+ "components/markets/technicals/TechnicalsBadge.tsx": {
+  "font-px": 2
+ },
+ "components/markets/technicals/TechnicalsTab.tsx": {
+  "tw-color": 1,
+  "font-px": 17
+ },
+ "components/markets/technicals/fundamentals.css": {
+  "font-px": 11,
+  "radius-px": 7
+ },
+ "components/markets/trade/trade.css": {
+  "color": 7,
+  "font-px": 54,
+  "radius-px": 23
+ },
+ "components/markets/viz/FlowPanel.tsx": {
+  "font-px": 1
+ },
+ "components/mobile/mobile.css": {
+  "color": 4
+ },
+ "components/panels/GovernancePanel.tsx": {
+  "tw-color": 4,
+  "font-px": 3
+ },
+ "components/panels/SwapPanel.tsx": {
+  "tw-color": 2,
+  "font-px": 2
+ },
+ "components/sign-cta.ts": {
+  "tw-color": 1,
+  "font-px": 1
+ },
+ "components/skeleton/skeleton.css": {
+  "font-px": 1,
+  "radius-px": 4
+ },
+ "components/splash/Hero.tsx": {
+  "tw-color": 2,
+  "font-px": 6
+ },
+ "components/splash/Sparkline.tsx": {
+  "tw-color": 1,
+  "font-px": 1
+ },
+ "components/splash/viz.tsx": {
+  "font-px": 14
+ },
+ "components/wallet-marks.tsx": {
+  "radius-px": 1
+ }
+}

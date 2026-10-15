@@ -42,7 +42,7 @@ export default function TileBar({ slices, size = 'lg' }: { slices: MosaicSlice[]
           title={`${s.pct}% ${s.token}`}
         >
           <span
-            className={`mono truncate ${size === 'lg' ? 'text-[11px]' : 'text-[9.5px]'} font-semibold tabular-nums`}
+            className={`mono truncate ${size === 'lg' ? 'text-[length:var(--fs-xs)]' : 'text-[9.5px]'} font-semibold tabular-nums`}
             style={{ color: tileInk(i) }}
           >
             {s.pct}% {s.token}

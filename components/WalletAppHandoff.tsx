@@ -126,14 +126,14 @@ export default function WalletAppHandoff() {
         <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl border border-[var(--line)] bg-[var(--surf-2)]">
           <MetaMaskWalletMark size={26} />
         </div>
-        <h2 className="text-[17px] font-semibold text-[color:var(--fg)]">{title}</h2>
-        <p className="mt-2 text-[13px] leading-relaxed text-[color:var(--muted)]">{body}</p>
+        <h2 className="text-[length:var(--fs-lg)] font-semibold text-[color:var(--fg)]">{title}</h2>
+        <p className="mt-2 text-[length:var(--fs-md)] leading-relaxed text-[color:var(--muted)]">{body}</p>
         {escape ? (
           <>
             {browser?.intent && (
               <a
                 href={browser.intent}
-                className="btn btn--solid mt-5 inline-flex w-full items-center justify-center gap-2 text-[13px]"
+                className="btn btn--solid mt-5 inline-flex w-full items-center justify-center gap-2 text-[length:var(--fs-md)]"
               >
                 Open in Chrome
               </a>
@@ -141,11 +141,11 @@ export default function WalletAppHandoff() {
             <button
               type="button"
               onClick={copyLink}
-              className={`btn ${browser?.intent ? 'mt-2' : 'btn--solid mt-5'} inline-flex w-full items-center justify-center gap-2 text-[13px]`}
+              className={`btn ${browser?.intent ? 'mt-2' : 'btn--solid mt-5'} inline-flex w-full items-center justify-center gap-2 text-[length:var(--fs-md)]`}
             >
               {copied ? <><Check className="w-4 h-4" /> Copied</> : cta}
             </button>
-            <p className="mt-3 break-all text-[12px] leading-relaxed text-[color:var(--muted-2)]">
+            <p className="mt-3 break-all text-[length:var(--fs-sm)] leading-relaxed text-[color:var(--muted-2)]">
               {typeof location === 'undefined' ? '' : location.href}
             </p>
           </>
@@ -154,11 +154,11 @@ export default function WalletAppHandoff() {
             <button
               type="button"
               onClick={openWalletAppNow}
-              className="btn btn--solid mt-5 inline-flex w-full items-center justify-center gap-2 text-[13px]"
+              className="btn btn--solid mt-5 inline-flex w-full items-center justify-center gap-2 text-[length:var(--fs-md)]"
             >
               {cta}
             </button>
-            <p className="mt-3 text-[12px] leading-relaxed text-[color:var(--muted-2)]">
+            <p className="mt-3 text-[length:var(--fs-sm)] leading-relaxed text-[color:var(--muted-2)]">
               Nothing moves until you approve it there.
             </p>
           </>
