@@ -6,14 +6,14 @@
 .flyover {
   --fly-up: var(--mk-up, var(--accent));
   --fly-down: var(--mk-down, var(--sell));
-  --fly-glass: rgb(12 13 14 / 0.8);
+  --fly-glass: rgb(12 13 14 / 0.9);
   --fly-glass-line: rgb(255 255 255 / 0.12);
   --fly-stage-h: clamp(480px, calc(100dvh - 210px), 860px);
   container-type: inline-size;
   container-name: flyover;
 }
 html[data-theme="light"] .flyover {
-  --fly-glass: rgb(255 255 255 / 0.88);
+  --fly-glass: rgb(255 255 255 / 0.94);
   --fly-glass-line: rgb(16 21 18 / 0.12);
 }
 .flyover .up { color: var(--fly-up); }

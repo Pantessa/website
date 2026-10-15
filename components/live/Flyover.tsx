@@ -240,7 +240,9 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
   }, [source, hlMarkets])
 
   // ── Fills into the ledger (and the sky) ────────────────────────────────
+  const batchMsRef = useRef(0)
   const onBatch = useCallback((fills: readonly TapeFill[], backfill: boolean) => {
+    const t0 = performance.now()
     const ledger = ledgerRef.current
     const t = Date.now()
     const sc = sceneRef.current
@@ -272,6 +274,7 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
       const add = bigs
       setSky((prev) => add.reduce((log, f) => pushSky(log, f), prev))
     }
+    if (!backfill) batchMsRef.current = Math.max(batchMsRef.current, performance.now() - t0)
   }, [])
 
   // ── The stream. Reconnects itself; this effect only opens and closes it ─
@@ -383,11 +386,30 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
       const right = side ? Math.max(0, sr.right - side.getBoundingClientRect().left) : 0
       const bottom = skyEl ? Math.min(140, Math.max(0, sr.bottom - skyEl.getBoundingClientRect().top) * 0.6) : 0
       sc.setInsets(right, bottom)
+      // No label under a panel: the side column's own children (the board, the
+      // readout), the sky log and the status pill, in canvas px.
+      const rel = (el: Element | null) => {
+        if (!el) return null
+        const r = el.getBoundingClientRect()
+        return r.width && r.height ? { x0: r.left - sr.left - 4, y0: r.top - sr.top - 4, x1: r.right - sr.left + 4, y1: r.bottom - sr.top + 4 } : null
+      }
+      const panels = [...(side?.children ?? []), skyEl, stage.querySelector('.flyover__status')].map(rel).filter((r): r is { x0: number; y0: number; x1: number; y1: number } => r !== null)
+      sc.setExclusions(panels)
     }
     measure()
     const ro = new ResizeObserver(measure)
     for (const el of [stageRef.current, sideRef.current, skyRef.current]) if (el) ro.observe(el)
-    return () => ro.disconnect()
+    // The readout card comes and goes inside the side column: watch its children too.
+    const mo = new MutationObserver(() => {
+      for (const el of sideRef.current?.children ?? []) ro.observe(el)
+      measure()
+    })
+    if (sideRef.current) mo.observe(sideRef.current, { childList: true })
+    for (const el of sideRef.current?.children ?? []) ro.observe(el)
+    return () => {
+      ro.disconnect()
+      mo.disconnect()
+    }
   }, [sceneState])
 
   // ── The hint, once per browser ─────────────────────────────────────────
@@ -410,6 +432,7 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
   const stepRef = useRef<((force?: boolean) => void) | null>(null)
   useEffect(() => {
     const step = (force = false) => {
+      const tickStart = performance.now()
       const t = Date.now()
       setNow(t)
       const ledger = ledgerRef.current
@@ -514,18 +537,23 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
           sc.setPick(pickRows.map((r) => r.key))
         }
         setHud({ markets: info.size, drawn: drawn.length, fillsPerSec: Math.round(n / 10), board, continents, pickRows, firstPrint: info.size > 0 })
-        // For the drive and for anyone debugging: what the world holds right now.
-        const st = sc?.stats()
-        if (st && mainRef.current) {
-          mainRef.current.dataset.plots = String(st.plots)
-          mainRef.current.dataset.drops = String(st.drops)
-          mainRef.current.dataset.labels = String(st.labels)
-          mainRef.current.dataset.frames = String(st.frames)
-          mainRef.current.dataset.camera = st.camera
-        }
+      }
+      // For the drive and for anyone debugging: what the world holds right now.
+      const st = sceneRef.current?.stats()
+      if (st && mainRef.current) {
+        mainRef.current.dataset.plots = String(st.plots)
+        mainRef.current.dataset.drops = String(st.drops)
+        mainRef.current.dataset.labels = String(st.labels)
+        mainRef.current.dataset.frames = String(st.frames)
+        mainRef.current.dataset.camera = st.camera
+        // The main-thread budget: this second's hand and the slowest live batch since the last.
+        mainRef.current.dataset.tickMs = (performance.now() - tickStart).toFixed(2)
+        mainRef.current.dataset.batchMs = batchMsRef.current.toFixed(2)
+        batchMsRef.current = 0
       }
       // The first pick market is the default pinned readout, once, when it has a plot.
-      if (!userPinnedRef.current && pickReady && !pin && pickRows.length && layout) {
+      // Six seconds in, so every venue's backfill has landed and the pick's home plot is drawn.
+      if (!userPinnedRef.current && pickReady && !pin && pickRows.length && layout && t - openedRef.current >= 6_000) {
         userPinnedRef.current = true
         setPinned(pickRows[0].key)
         sceneRef.current?.setPinned(pickRows[0].key)
