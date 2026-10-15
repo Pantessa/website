@@ -1,7 +1,7 @@
 'use client'
 
 // The canonical dashboard/app button. Before this, dashboard buttons were
-// hand-rolled Tailwind strings repeated across files (bg-white solids, bordered
+// hand-rolled Tailwind strings repeated across files (bg-[var(--fg)] solids, bordered
 // ghosts, amber/emerald variants) with slightly different padding, focus, and
 // loading handling. <Button> centralizes those into typed variants so new
 // buttons are consistent and every button gets the same focus-visible ring,
@@ -28,9 +28,9 @@ const SIZE: Record<Size, string> = {
 }
 
 const VARIANT: Record<Variant, string> = {
-  primary: 'bg-white text-zinc-950 hover:bg-zinc-200',
-  secondary: 'border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white',
-  accent: 'bg-emerald-400 text-black hover:bg-emerald-300',
+  primary: 'bg-[var(--fg)] text-zinc-950 hover:bg-zinc-200',
+  secondary: 'border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)]',
+  accent: 'bg-emerald-400 text-[color:var(--bg)] hover:bg-emerald-300',
   danger: 'border border-red-500/40 text-red-400 hover:bg-red-500/10',
   warning: 'border border-amber-500/40 text-amber-400 hover:bg-amber-500/10',
 }

@@ -3628,6 +3628,7 @@
     transition: color var(--dur-2), background var(--dur-2);
   }
   .flowmap__opt:hover { color: var(--fg); }
+  @media (pointer: coarse) { .flowmap__opt { min-height: var(--tap); } } /* rule B5: 26 → 44 under a finger */
   .flowmap__opt.is-on { background: color-mix(in srgb, var(--accent) 15%, transparent); color: color-mix(in srgb, var(--accent) 85%, var(--fg)); }
   .flowmap__svg { width: 100%; height: auto; overflow: visible; display: block; }
   .flowmap__ribbon { transition: opacity var(--dur-2) ease; }

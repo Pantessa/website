@@ -148,7 +148,7 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
               className="flex w-full min-h-[56px] items-center gap-3 py-2 text-left disabled:opacity-60"
             >
               <span className="min-w-0 flex-1">
-                <span className="block text-[15px] font-medium text-[color:var(--fg)]">{isPublic ? 'Public link on' : 'Private chat'}</span>
+                <span className="block text-[length:var(--fs-base)] font-medium text-[color:var(--fg)]">{isPublic ? 'Public link on' : 'Private chat'}</span>
                 <span className="block text-[12.5px] leading-snug text-[color:var(--muted)]">
                   {isPublic ? 'Anyone with the link can view this chat (read-only).' : 'Only you can see it. Turn on a link to share it.'}
                 </span>
@@ -157,20 +157,20 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
                 <Loader2 className="w-5 h-5 animate-spin text-[color:var(--muted)]" />
               ) : (
                 <span aria-hidden className={cn('relative h-[31px] w-[51px] flex-shrink-0 rounded-full transition-colors', isPublic ? 'bg-emerald-500' : 'bg-[var(--surf-2)] border border-[var(--line)]')}>
-                  <span className={cn('absolute top-[2px] h-[27px] w-[27px] rounded-full bg-white shadow transition-all', isPublic ? 'left-[22px]' : 'left-[2px]')} />
+                  <span className={cn('absolute top-[2px] h-[27px] w-[27px] rounded-full bg-[var(--fg)] shadow transition-all', isPublic ? 'left-[22px]' : 'left-[2px]')} />
                 </span>
               )}
             </button>
             {isPublic && shareUrl ? (
               <div className="mt-2 flex items-center gap-2 border-t border-[var(--line)] pt-3">
                 <span className="min-w-0 flex-1 truncate mono text-[12.5px] text-[color:var(--muted)]">{shareUrl.replace(/^https?:\/\//, '')}</span>
-                <button type="button" onClick={copy} aria-label="Copy share link" className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-solid border-[var(--line-2)] px-4 text-[13px] font-medium text-[color:var(--fg)]">
+                <button type="button" onClick={copy} aria-label="Copy share link" className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-solid border-[var(--line-2)] px-4 text-[length:var(--fs-md)] font-medium text-[color:var(--fg)]">
                   {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                   {copied ? 'Copied' : 'Copy'}
                 </button>
               </div>
             ) : (
-              <div className="mt-1 flex items-center gap-1.5 text-[12px] text-[color:var(--muted-2)]">
+              <div className="mt-1 flex items-center gap-1.5 text-[length:var(--fs-sm)] text-[color:var(--muted-2)]">
                 <Lock className="w-3.5 h-3.5" /> Private to your wallet
               </div>
             )}
@@ -187,7 +187,7 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
               <p className="text-xs font-semibold text-[color:var(--fg)]">
                 {isPublic ? 'Public link' : 'Private chat'}
               </p>
-              <p className="text-[11px] text-[color:var(--muted-2)] mt-0.5 leading-snug">
+              <p className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mt-0.5 leading-snug">
                 {isPublic
                   ? 'Anyone with the link can view this chat (read-only).'
                   : 'Only you can see this chat. Turn on a share link below.'}
@@ -207,7 +207,7 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
             >
               <span
                 className={cn(
-                  'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all',
+                  'absolute top-0.5 w-4 h-4 rounded-full bg-[var(--fg)] transition-all',
                   isPublic ? 'left-[18px]' : 'left-0.5'
                 )}
               />
@@ -215,7 +215,7 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
           </div>
 
           {busy && (
-            <div className="flex items-center gap-2 text-[11px] text-[color:var(--muted)]">
+            <div className="flex items-center gap-2 text-[length:var(--fs-xs)] text-[color:var(--muted)]">
               <Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…
             </div>
           )}
@@ -223,13 +223,13 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
           {isPublic && shareUrl && (
             <div className="flex items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--bg)] py-1 pl-2 pr-1">
               <Globe className="w-3.5 h-3.5 text-[color:var(--muted-2)] flex-shrink-0" />
-              <span className="flex-1 text-[11px] text-[color:var(--muted)] truncate mono">
+              <span className="flex-1 text-[length:var(--fs-xs)] text-[color:var(--muted)] truncate mono">
                 {shareUrl.replace(/^https?:\/\//, '')}
               </span>
               <button
                 type="button"
                 onClick={copy}
-                className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-solid border-[var(--line-2)] px-2 py-1 text-[11px] font-medium text-[color:var(--fg)] transition-colors hover:bg-[var(--surf-2)]"
+                className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-solid border-[var(--line-2)] px-2 py-1 text-[length:var(--fs-xs)] font-medium text-[color:var(--fg)] transition-colors hover:bg-[var(--surf-2)]"
                 aria-label="Copy share link"
               >
                 {copied ? (
@@ -243,7 +243,7 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
           )}
 
           {!isPublic && (
-            <div className="flex items-center gap-1.5 text-[11px] text-[color:var(--muted-2)]">
+            <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
               <Lock className="w-3 h-3" /> Private to your wallet
             </div>
           )}

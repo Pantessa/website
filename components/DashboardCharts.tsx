@@ -15,6 +15,7 @@ import {
 } from 'recharts'
 
 import { useChartColors } from '@/components/chart-theme'
+import { cleanServerName } from '@/lib/utils'
 
 function dayLabel(iso: string): string {
   const d = new Date(iso)
@@ -71,9 +72,12 @@ export function SpendByAgent({ perAgent }: { perAgent: { service: string; spent:
     return <EmptyChart label="No spend yet — services you pay will show here." cta={{ href: '/chat?prompt=Swap%20%241%20worth%20of%20ETH%20to%20USDC%20on%20Base', label: 'Make your first ask →' }} />
   }
   const height = Math.max(160, perAgent.length * 34)
+  // Display-time brand rule (lib/utils cleanServerName): the axis prints the
+  // name a visitor should read, never the data row's legacy label.
+  const rows = perAgent.map((r) => ({ ...r, service: cleanServerName(r.service) }))
   return (
     <ChartBox height={height}>
-      <BarChart data={perAgent} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
+      <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
         <CartesianGrid stroke={C.grid} horizontal={false} />
         <XAxis
           type="number"

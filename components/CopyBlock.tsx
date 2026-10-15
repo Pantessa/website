@@ -42,7 +42,7 @@ export default function CopyBlock({
       <button
         onClick={copy}
         aria-label={copied ? 'Copied' : label}
-        className="absolute right-2.5 top-2.5 z-10 flex items-center gap-1.5 text-xs font-semibold px-3 py-2 max-lg:min-h-10 rounded-lg bg-white text-zinc-950 shadow-md ring-1 ring-black/10 hover:bg-zinc-200 transition-colors"
+        className="absolute right-2.5 top-2.5 z-10 flex items-center gap-1.5 text-xs font-semibold px-3 py-2 max-lg:min-h-10 rounded-lg bg-[var(--fg)] text-zinc-950 shadow-md ring-1 ring-black/10 hover:bg-zinc-200 transition-colors"
       >
         {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
         {copied ? 'Copied' : label}
@@ -50,7 +50,7 @@ export default function CopyBlock({
       {/* pt-12 keeps the first line clear of the floating button; the docs prose
           rules override padding on those pages so they're unaffected. */}
       <pre
-        className={`mono select-all overflow-x-auto max-w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 pb-4 pt-12 text-[12px] leading-relaxed text-[color:var(--muted)] ${
+        className={`mono select-all overflow-x-auto max-w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 pb-4 pt-12 text-[length:var(--fs-sm)] leading-relaxed text-[color:var(--muted)] ${
           maxHeightClassName ? `${maxHeightClassName} overflow-y-auto` : ''
         }`}
       >

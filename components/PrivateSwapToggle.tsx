@@ -64,8 +64,8 @@ export default function PrivateSwapToggle({
       <div className="flex items-center gap-2.5">
         <EyeOff className={`h-4 w-4 shrink-0 ${on ? 'text-[color:var(--accent)]' : 'text-[color:var(--muted)]'}`} aria-hidden />
         <div className="min-w-0 flex-1">
-          <div className="text-[12px] font-medium leading-tight text-[color:var(--fg)]">Private mode</div>
-          <div className="text-[11px] leading-snug text-[color:var(--muted)]">
+          <div className="text-[length:var(--fs-sm)] font-medium leading-tight text-[color:var(--fg)]">Private mode</div>
+          <div className="text-[length:var(--fs-xs)] leading-snug text-[color:var(--muted)]">
             {on ? 'The route between your deposit and the payout stays off the public record.' : 'Keep the route between your deposit and the payout off the public record. Same price, same single signature.'}
           </div>
         </div>
@@ -83,7 +83,7 @@ export default function PrivateSwapToggle({
       </div>
 
       {on && privacy.recipient && (
-        <p className="mt-2 text-[11px] leading-snug text-[color:var(--muted)] [overflow-wrap:anywhere]">
+        <p className="mt-2 text-[length:var(--fs-xs)] leading-snug text-[color:var(--muted)] [overflow-wrap:anywhere]">
           Delivering to <span className="font-mono text-[color:var(--fg)]">{privacy.recipient}</span>.{' '}
           {live && !disabled && (
             <button type="button" className="underline underline-offset-2 hover:text-[color:var(--fg)]" onClick={() => onSend('deliver it back to my wallet')}>
@@ -95,7 +95,7 @@ export default function PrivateSwapToggle({
 
       {on && !privacy.recipient && (
         <div className="mt-2">
-          <p className="text-[11px] leading-snug text-[color:var(--muted)]">
+          <p className="text-[length:var(--fs-xs)] leading-snug text-[color:var(--muted)]">
             Your deposit and the payout are still public transfers, and right now both touch this wallet, so they are easy to match. For real privacy, deliver to an address that isn&apos;t linked to this one.
           </p>
           {privacy.canDeliverElsewhere && live && (
@@ -117,18 +117,18 @@ export default function PrivateSwapToggle({
                 autoComplete="off"
                 disabled={disabled}
                 aria-label="Delivery address"
-                className="min-w-0 flex-1 rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 font-mono text-[11px] text-[color:var(--fg)] placeholder:font-sans placeholder:text-[color:var(--muted-2)] focus:border-[var(--accent)] focus:outline-none"
+                className="min-w-0 flex-1 rounded-md border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 font-mono text-[length:var(--fs-xs)] text-[color:var(--fg)] placeholder:font-sans placeholder:text-[color:var(--muted-2)] focus:border-[var(--accent)] focus:outline-none"
               />
               <button
                 type="submit"
                 disabled={disabled || !address.trim()}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--line-2)] px-2 py-1.5 text-[11px] text-[color:var(--fg)] hover:border-[var(--accent)] disabled:opacity-40"
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--line-2)] px-2 py-1.5 text-[length:var(--fs-xs)] text-[color:var(--fg)] hover:border-[var(--accent)] disabled:opacity-40"
               >
                 Rebuild <ArrowRight className="h-3 w-3" />
               </button>
             </form>
           )}
-          {problem && <p className="mt-1 text-[11px] leading-snug text-amber-400">{problem}</p>}
+          {problem && <p className="mt-1 text-[length:var(--fs-xs)] leading-snug text-amber-400">{problem}</p>}
         </div>
       )}
     </div>

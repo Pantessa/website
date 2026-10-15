@@ -70,7 +70,7 @@ export default function ConnectAgentCard({
   return (
     <div className="rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 mb-6">
       <div className="flex items-center justify-between gap-3 mb-1">
-        <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-[color:var(--fg)] flex items-center gap-2">
           <Cable className="w-4 h-4 text-[color:var(--muted)]" />
           Connect an agent
           <span className="font-normal text-[color:var(--muted-2)]">
@@ -79,7 +79,7 @@ export default function ConnectAgentCard({
         </h2>
         <button
           onClick={copy}
-          className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-white text-zinc-950 hover:bg-zinc-200 transition-colors"
+          className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[var(--fg)] text-zinc-950 hover:bg-zinc-200 transition-colors"
         >
           {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
           {copied ? 'Copied' : 'Copy snippet'}
@@ -89,13 +89,13 @@ export default function ConnectAgentCard({
           asks for it as YEETFUL_GRANT_ID in .env, where digging it out of the
           code snippet below is a papercut. */}
       <div className="mt-3 flex items-center gap-x-2 gap-y-1 flex-wrap">
-        <span className="text-[11px] text-[color:var(--muted-2)]">
+        <span className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
           Your expense account · <code className="mono">YEETFUL_GRANT_ID</code>
         </span>
         <button
           onClick={copyId}
           title="Copy your grant id"
-          className="flex items-center gap-1.5 min-w-0 max-w-full max-lg:min-h-10 text-[11px] mono px-2.5 py-1 rounded-lg border border-[var(--line)] bg-black/40 text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"
+          className="flex items-center gap-1.5 min-w-0 max-w-full max-lg:min-h-10 text-[length:var(--fs-xs)] mono px-2.5 py-1 rounded-lg border border-[var(--line)] bg-black/40 text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] transition-colors"
         >
           <span className="truncate">{grantId}</span>
           {idCopied ? (
@@ -105,15 +105,15 @@ export default function ConnectAgentCard({
           )}
         </button>
       </div>
-      <pre className="mt-3 text-[11px] leading-relaxed mono text-[color:var(--muted)] bg-black/40 border border-[var(--line)] rounded-xl p-3 overflow-x-auto select-all">
+      <pre className="mt-3 text-[length:var(--fs-xs)] leading-relaxed mono text-[color:var(--muted)] bg-black/40 border border-[var(--line)] rounded-xl p-3 overflow-x-auto select-all">
         {snippet}
       </pre>
-      <p className="text-[11px] text-[color:var(--muted-2)] mt-2.5">
+      <p className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mt-2.5">
         <code className="mono">npm install pantessa</code> · set{' '}
         <code className="mono">YEETFUL_API_KEY</code>{' '}in your agent&apos;s env (mint above) ·{' '}
         <Link
           href="/docs"
-          className="underline decoration-dotted underline-offset-2 hover:text-white transition-colors"
+          className="underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)] transition-colors"
         >
           docs
         </Link>{' '}
@@ -122,7 +122,7 @@ export default function ConnectAgentCard({
           href="https://github.com/Pantessa/example-agent"
           target="_blank"
           rel="noopener noreferrer"
-          className="underline decoration-dotted underline-offset-2 hover:text-white transition-colors"
+          className="underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)] transition-colors"
         >
           Yeetful/example-agent
         </a>{' '}
@@ -131,7 +131,7 @@ export default function ConnectAgentCard({
           href="https://www.npmjs.com/package/pantessa"
           target="_blank"
           rel="noopener noreferrer"
-          className="underline decoration-dotted underline-offset-2 hover:text-white transition-colors"
+          className="underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)] transition-colors"
         >
           yeetful on npm
         </a>

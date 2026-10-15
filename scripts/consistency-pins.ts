@@ -11,8 +11,8 @@
 //      radii that a token should replace (scripts/consistency-audit.ts's own
 //      scanner) may only go DOWN from scripts/consistency-baseline.json. A new
 //      file starts at 0. A swap lowers the count; a new literal fails here.
-//      `--lower` ratchets the baseline down to today's counts (refuses if any
-//      file went UP).
+//      `--lower` ratchets every cell to min(baseline, today) — a cell that
+//      went UP keeps its baseline and stays red.
 //   5. With BASE set (a running server): the served manifest + the two
 //      media-keyed theme-color metas on `/`.
 //
@@ -106,6 +106,26 @@ for (const size of ['192x192', '512x512']) {
   check(`manifest icon ${size} on disk`, !!icon && existsSync(join(ROOT, 'public', icon.src)), icon?.src ?? 'missing')
 }
 
+// ── 3b. Brand at display time (QA-C3 / QA-F6) ─────────────────────────────
+// Every surface that prints a server / service name routes it through
+// lib/utils cleanServerName (Yeetful → Pantessa, suffixes off). The data rows
+// keep their legacy labels on purpose (CLAUDE.md IDENTITY); the screen never does.
+const BRAND_SITES: Array<[string, RegExp]> = [
+  ['components/ActivityOverview.tsx', /\{cleanServerName\(r\.service\)\}/],
+  ['components/ThinkingToolsBoard.tsx', /\{cleanServerName\(r\.name\)\}/],
+  ['components/RouterTraceLines.tsx', /selected<\/span> \{cleanServerName\(event\.service\)\}/],
+  ['components/LiveRoutingFeed.tsx', /\{cleanServerName\(c\.service\)\}/],
+  ['components/ReputationBoard.tsx', /\{cleanServerName\(row\.name\)\}/],
+  ['components/ActiveServerBar.tsx', /\{cleanServerName\(s\.name\)\}/],
+  ['components/ShortlistBar.tsx', /\{cleanServerName\(s\.name\)\}/],
+  ['components/MyServersPanel.tsx', /\{cleanServerName\(s\.name\)\}/],
+  ['components/PayToAgentsCard.tsx', /\{cleanServerName\(s\.name\)\}/],
+  ['components/DashboardCharts.tsx', /service: cleanServerName\(r\.service\)/],
+  ['components/McpServerCard.tsx', /\{cleanServerName\(server\.name\)\}/],
+]
+for (const [f, re] of BRAND_SITES) check(`brand: ${f} prints server names through cleanServerName`, re.test(readFileSync(join(ROOT, f), 'utf8')))
+check('brand: the SDK is named pantessa in dashboard copy', !/yeetful SDK/.test(readFileSync(join(ROOT, 'components/ApiKeysPanel.tsx'), 'utf8') + readFileSync(join(ROOT, 'components/AgentsPanel.tsx'), 'utf8')))
+
 // ── 4. The fence ───────────────────────────────────────────────────────────
 type Counts = Record<string, Partial<Record<Kind, number>>>
 const now: Counts = {}
@@ -138,11 +158,19 @@ if (seed || !existsSync(BASELINE)) {
   const total = (c: Counts) => Object.values(c).reduce((s, v) => s + Object.values(v).reduce((x, y) => x + (y ?? 0), 0), 0)
   check('fence: no file gained a literal color / palette class / px font / px radius', ups.length === 0, ups.length ? `\n   ${ups.join('\n   ')}\n   → use a token (scripts/consistency-audit.ts prints which)` : `${total(now)} fenced literals today (baseline ${total(was)}; ${downs.length} file·kind cells went down)`)
   if (lower) {
-    if (ups.length) console.log('refusing --lower: a file went UP')
-    else {
-      writeFileSync(BASELINE, JSON.stringify(now, null, 1) + '\n')
-      console.log(`baseline lowered: ${total(was)} → ${total(now)}`)
+    // Ratchet: every cell becomes min(baseline, today). A cell that went UP
+    // keeps its baseline (and keeps this pin red) — lowering never accepts a gain.
+    const next: Counts = {}
+    for (const f of new Set([...Object.keys(now), ...Object.keys(was)])) {
+      const cell: Partial<Record<Kind, number>> = {}
+      for (const k of FENCED) {
+        const v = Math.min(was[f]?.[k] ?? 0, now[f]?.[k] ?? 0)
+        if (v) cell[k] = v
+      }
+      if (Object.keys(cell).length) next[f] = cell
     }
+    writeFileSync(BASELINE, JSON.stringify(next, null, 1) + '\n')
+    console.log(`baseline lowered: ${total(was)} → ${total(next)}${ups.length ? ` (${ups.length} cells that went UP keep their baseline)` : ''}`)
   } else if (downs.length) console.log(`   (${downs.length} cells are below the baseline — run with --lower to ratchet)`)
 }
 
@@ -157,6 +185,18 @@ async function served() {
     const r = await fetch(`${BASE}${icon.src}`)
     check(`served icon ${icon.sizes} 200`, r.status === 200 && /image\/png/.test(r.headers.get('content-type') ?? ''), `${r.status}`)
   }
+  // No served page prints the word Yeetful outside the deliberate wire ids
+  // (QA's filter, scripts/polish-crawl.ts): SSR text only — scripts, styles
+  // and attributes are not words a visitor reads. /rebrand names it on purpose.
+  const WIRE = /formerly yeetful|yeetful,? inc\.?|@yeetful\/[\w-]+|yeetful[-_.@/][\w.-]*|[\w-]+\.yeetful\.com|YEETFUL_\w+|['"\x60]yeetful['"\x60]|npm (?:i(?:nstall)? )?yeetful/gi
+  const ROUTES = ['/', '/t/ETH', '/t/AAPL', '/live', '/chat', '/links', '/story', '/docs', '/docs/first-five-minutes', '/docs/markets', '/docs/embed', '/docs/links', '/docs/trust', '/docs/transactions', '/docs/privacy', '/docs/terms', '/pricing', '/blog', '/servers', '/compare', '/activity', '/agents', '/roster', '/mosaic', '/tools', '/benchmarks', '/incidents', '/router', '/servers/add', '/i/buy-aapl', '/nope-404-polish']
+  const leaks: string[] = []
+  for (const r of ROUTES) {
+    const page = await (await fetch(`${BASE}${r}`)).text()
+    const text = page.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, '\n').replace(/&amp;/g, '&').replace(/&#x27;|&#39;/g, "'")
+    for (const line of text.split('\n')) if (/yeetful/i.test(line.replace(WIRE, ''))) leaks.push(`${r}: ${line.trim().slice(0, 80)}`)
+  }
+  check(`brand: no served page (${ROUTES.length} routes) prints Yeetful outside the wire ids`, leaks.length === 0, leaks.slice(0, 6).join(' | '))
   const html = await (await fetch(`${BASE}/story`)).text()
   const metas = [...html.matchAll(/<meta name="theme-color"[^>]*>/g)].map((m) => m[0])
   const metaFor = (scheme: string) => metas.find((m) => m.includes(`media="(prefers-color-scheme: ${scheme})"`)) ?? ''

@@ -59,11 +59,11 @@ interface GuardianState {
 }
 
 const box = 'rounded-xl border border-[color:var(--border,rgba(128,128,128,0.25))] p-4'
-const label = 'mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]'
+const label = 'mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]'
 const btn =
-  'inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--border,rgba(128,128,128,0.3))] px-3 py-1.5 text-[13px] font-medium hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed'
+  'inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--border,rgba(128,128,128,0.3))] px-3 py-1.5 text-[length:var(--fs-md)] font-medium hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed'
 const input =
-  'w-full rounded-lg border border-[color:var(--border,rgba(128,128,128,0.3))] bg-transparent px-2.5 py-1.5 text-[13px]'
+  'w-full rounded-lg border border-[color:var(--border,rgba(128,128,128,0.3))] bg-transparent px-2.5 py-1.5 text-[length:var(--fs-md)]'
 
 function statusChip(status: string) {
   const tone =
@@ -74,7 +74,7 @@ function statusChip(status: string) {
         : status === 'error'
           ? 'border-red-500/40 text-red-500'
           : 'border-[color:var(--border,rgba(128,128,128,0.3))] text-[color:var(--muted-2)]'
-  return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${tone}`}>{status}</span>
+  return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[length:var(--fs-xs)] font-medium ${tone}`}>{status}</span>
 }
 
 export default function GuardianPanel() {
@@ -206,13 +206,13 @@ export default function GuardianPanel() {
 
   const selected = useMemo(() => positions?.find((p) => p.coin === coin) ?? null, [positions, coin])
 
-  if (!state && error) return <p className="text-[13px] text-[color:var(--muted-2)]">{error}</p>
-  if (!state) return <p className="text-[13px] text-[color:var(--muted-2)]">Loading…</p>
+  if (!state && error) return <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)]">{error}</p>
+  if (!state) return <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)]">Loading…</p>
 
   return (
     <div className="flex flex-col gap-5 max-w-3xl">
       {state.testnet && (
-        <p className="text-[12px] rounded-lg border border-amber-500/40 text-amber-500 px-3 py-2">
+        <p className="text-[length:var(--fs-sm)] rounded-lg border border-amber-500/40 text-amber-500 px-3 py-2">
           Running against Hyperliquid <strong>Testnet</strong> (HL_GUARDIAN_TESTNET).
         </p>
       )}
@@ -223,14 +223,14 @@ export default function GuardianPanel() {
           <div>
             <h2 className={label}>Agent delegation</h2>
             {delegationLive && state.delegation ? (
-              <p className="text-[13px] mt-1">
+              <p className="text-[length:var(--fs-md)] mt-1">
                 <ShieldCheck className="inline w-4 h-4 mr-1 text-emerald-500" aria-hidden />
                 Active — agent <span className="mono">{state.delegation.agentAddress.slice(0, 10)}…</span> can{' '}
                 <strong>trade</strong> this account (withdrawals stay wallet-only, enforced by Hyperliquid). Expires{' '}
                 {new Date(state.delegation.expiresAt).toLocaleDateString()}.
               </p>
             ) : (
-              <p className="text-[13px] mt-1 text-[color:var(--muted-2)]">
+              <p className="text-[length:var(--fs-md)] mt-1 text-[color:var(--muted-2)]">
                 One signature approves a Pantessa-held agent key on your Hyperliquid account. The key can close
                 positions under your policies — it can <strong>never withdraw</strong>. Revocable here (or in the HL
                 app) any time; expires automatically after 90 days.
@@ -253,9 +253,9 @@ export default function GuardianPanel() {
       <section className={box}>
         <h2 className={label}>Arm a policy</h2>
         {positions === null ? (
-          <p className="text-[13px] mt-2 text-[color:var(--muted-2)]">Reading your Hyperliquid positions…</p>
+          <p className="text-[length:var(--fs-md)] mt-2 text-[color:var(--muted-2)]">Reading your Hyperliquid positions…</p>
         ) : positions.length === 0 ? (
-          <p className="text-[13px] mt-2 text-[color:var(--muted-2)]">No open perp positions on this account — nothing to guard.</p>
+          <p className="text-[length:var(--fs-md)] mt-2 text-[color:var(--muted-2)]">No open perp positions on this account — nothing to guard.</p>
         ) : (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
@@ -289,7 +289,7 @@ export default function GuardianPanel() {
               </div>
             </div>
             {selected && (
-              <p className="text-[12px] mt-2 text-[color:var(--muted-2)]">
+              <p className="text-[length:var(--fs-sm)] mt-2 text-[color:var(--muted-2)]">
                 {selected.coin} {selected.side} · entry {selected.entryPx} · mark {selected.markPx ?? '—'} · uPnL $
                 {selected.unrealizedPnl.toFixed(2)}
                 {selected.liquidationPx != null && <> · liq {selected.liquidationPx}</>}
@@ -309,14 +309,14 @@ export default function GuardianPanel() {
           <ul className="mt-2 divide-y divide-[color:var(--border,rgba(128,128,128,0.15))]">
             {state.policies.map((p) => (
               <li key={p.id} className="py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                <div className="text-[13px]">
+                <div className="text-[length:var(--fs-md)]">
                   <span className="font-medium">
                     {p.coin} {p.side}
                   </span>{' '}
                   · {p.kind.replace('_', ' ')} at {p.triggerMode === 'price' ? `px ${p.triggerValue}` : `${p.triggerValue}% from entry`}
                   <span className="ml-2">{statusChip(p.status)}</span>
                   {p.lastChecked && (
-                    <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">checked {new Date(p.lastChecked).toLocaleTimeString()}</span>
+                    <span className="ml-2 text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">checked {new Date(p.lastChecked).toLocaleTimeString()}</span>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -349,7 +349,7 @@ export default function GuardianPanel() {
           <ul className="mt-2 divide-y divide-[color:var(--border,rgba(128,128,128,0.15))]">
             {state.runs.map((r) => (
               <li key={r.id} className="py-2 text-[12.5px]">
-                <span className="mono text-[11px] text-[color:var(--muted-2)] mr-2">{new Date(r.createdAt).toLocaleString()}</span>
+                <span className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mr-2">{new Date(r.createdAt).toLocaleString()}</span>
                 {statusChip(r.action)}
                 {r.valueUsd != null && <span className="ml-2 font-medium">${r.valueUsd.toFixed(2)}</span>}
                 <div className="text-[color:var(--muted-2)] mt-0.5">{r.reason}</div>
@@ -359,7 +359,7 @@ export default function GuardianPanel() {
         </section>
       )}
 
-      {(error || notice) && <p className={`text-[13px] ${error ? 'text-red-500' : 'text-emerald-500'}`}>{error || notice}</p>}
+      {(error || notice) && <p className={`text-[length:var(--fs-md)] ${error ? 'text-red-500' : 'text-emerald-500'}`}>{error || notice}</p>}
     </div>
   )
 }

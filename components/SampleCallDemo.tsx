@@ -16,7 +16,7 @@ export default function SampleCallDemo() {
       <button
         type="button"
         onClick={() => setShown(true)}
-        className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border border-solid border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors"
+        className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border border-solid border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] transition-colors"
       >
         <Play className="w-3.5 h-3.5" />
         See a sample receipt (demo)
@@ -37,15 +37,15 @@ export default function SampleCallDemo() {
         <span className="text-[color:var(--muted-2)]">You ask:</span> What&apos;s the current price of
         ETH?
       </p>
-      <p className="text-xs text-white mt-2 leading-relaxed">
+      <p className="text-xs text-[color:var(--fg)] mt-2 leading-relaxed">
         ETH is trading around <span className="font-medium">$3,480</span>, up ~2.1% on the day.
         Routed to the cheapest proven source — priced, receipted.
       </p>
 
       {/* Mirrors the real MessageReceipts footnote shape. */}
       <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1">
-        <div className="text-[11px] mono text-[color:var(--muted)]">💸 $0.0050 over 1 x402 call</div>
-        <div className="flex items-center gap-2 text-[11px] mono text-[color:var(--muted-2)] min-w-0">
+        <div className="text-[length:var(--fs-xs)] mono text-[color:var(--muted)]">💸 $0.0050 over 1 x402 call</div>
+        <div className="flex items-center gap-2 text-[length:var(--fs-xs)] mono text-[color:var(--muted-2)] min-w-0">
           <span className="text-emerald-400">✓</span>
           <span className="text-[color:var(--muted)] truncate">Pantessa · Claude</span>
           <span className="flex-shrink-0">$0.0050</span>
@@ -55,7 +55,7 @@ export default function SampleCallDemo() {
         </div>
       </div>
 
-      <p className="mt-2.5 text-[11px] text-[color:var(--muted-2)] flex items-center gap-1.5">
+      <p className="mt-2.5 text-[length:var(--fs-xs)] text-[color:var(--muted-2)] flex items-center gap-1.5">
         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
         That&apos;s a real call&apos;s receipt — connect a wallet and ask anything to make it yours.
       </p>

@@ -117,12 +117,12 @@ export default function ApiKeysPanel({
 
   return (
     <div className="rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 mb-6">
-      <h2 className="text-sm font-semibold text-white mb-1">
+      <h2 className="text-sm font-semibold text-[color:var(--fg)] mb-1">
         API keys
         <span className="font-normal text-[color:var(--muted-2)]">
           {' '}
           — track your agents&apos; x402 payment usage (spend policy + receipts, synced by the
-          yeetful SDK)
+          pantessa SDK)
         </span>
       </h2>
 
@@ -133,12 +133,12 @@ export default function ApiKeysPanel({
             “{minted.label}” minted — copy it now, you won&apos;t see it again.
           </p>
           <div className="flex items-center gap-2 mt-2">
-            <code className="flex-1 min-w-0 text-[11px] mono text-white bg-black/40 rounded-lg px-2.5 py-2 break-all select-all">
+            <code className="flex-1 min-w-0 text-[length:var(--fs-xs)] mono text-[color:var(--fg)] bg-black/40 rounded-lg px-2.5 py-2 break-all select-all">
               {minted.secret}
             </code>
             <button
               onClick={copySecret}
-              className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg bg-white text-zinc-950 hover:bg-zinc-200 transition-colors"
+              className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg bg-[var(--fg)] text-zinc-950 hover:bg-zinc-200 transition-colors"
             >
               {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
               {copied ? 'Copied' : 'Copy'}
@@ -146,7 +146,7 @@ export default function ApiKeysPanel({
           </div>
           <button
             onClick={() => setMinted(null)}
-            className="mt-2 text-[11px] text-[color:var(--muted)] hover:text-white transition-colors underline underline-offset-2 decoration-dotted"
+            className="mt-2 text-[length:var(--fs-xs)] text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors underline underline-offset-2 decoration-dotted"
           >
             I&apos;ve saved it — dismiss
           </button>
@@ -166,7 +166,7 @@ export default function ApiKeysPanel({
           aria-label="API key label"
           aria-invalid={!!error}
           className={cn(
-            'flex-1 min-w-0 px-3 py-2 max-lg:min-h-10 max-lg:text-base rounded-lg bg-black/30 border text-white placeholder-[color:var(--muted)] text-xs focus:outline-none transition-colors',
+            'flex-1 min-w-0 px-3 py-2 max-lg:min-h-10 max-lg:text-base rounded-lg bg-black/30 border text-[color:var(--fg)] placeholder-[color:var(--muted)] text-xs focus:outline-none transition-colors',
             error
               ? 'border-[#ff5d5d] focus:border-[#ff5d5d]'
               : 'border-[var(--line)] focus:border-[var(--accent)]',
@@ -182,7 +182,7 @@ export default function ApiKeysPanel({
           Mint key
         </Button>
       </div>
-      {error && <p className="text-[11px] text-red-400 mt-2" role="alert">{error}</p>}
+      {error && <p className="text-[length:var(--fs-xs)] text-red-400 mt-2" role="alert">{error}</p>}
 
       {/* List */}
       {!keys ? (
@@ -201,7 +201,7 @@ export default function ApiKeysPanel({
               key={k.id}
               className="flex items-center gap-3 px-3 py-2 rounded-xl border border-[var(--line)] bg-black/20"
             >
-              <span className="mono text-[11px] text-white flex-shrink-0">{k.prefix}…</span>
+              <span className="mono text-[length:var(--fs-xs)] text-[color:var(--fg)] flex-shrink-0">{k.prefix}…</span>
               <span className="text-xs text-[color:var(--muted)] truncate flex-1 min-w-0">
                 {k.label}
               </span>
@@ -212,7 +212,7 @@ export default function ApiKeysPanel({
                 onClick={() => void revoke(k.id)}
                 onBlur={() => setConfirmRevoke((c) => (c === k.id ? null : c))}
                 className={cn(
-                  'flex-shrink-0 flex items-center gap-1 text-[11px] px-2 py-1 max-lg:min-h-10 rounded-md transition-colors',
+                  'flex-shrink-0 flex items-center gap-1 text-[length:var(--fs-xs)] px-2 py-1 max-lg:min-h-10 rounded-md transition-colors',
                   confirmRevoke === k.id
                     ? 'bg-red-500/15 text-red-400 border border-red-500/30'
                     : 'text-[color:var(--muted-2)] hover:text-red-400',

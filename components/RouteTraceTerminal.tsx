@@ -29,7 +29,7 @@ export default function RouteTraceTerminal({
   }, [trace.length, autoscroll])
 
   return (
-    <div ref={bodyRef} className={cn('overflow-y-auto px-3 py-3 mono text-[11px] leading-relaxed', className)}>
+    <div ref={bodyRef} className={cn('overflow-y-auto px-3 py-3 mono text-[length:var(--fs-xs)] leading-relaxed', className)}>
       {trace.length === 0 ? (
         <p className="text-[color:var(--muted-2)]">
           {emptyHint ?? (
@@ -147,7 +147,7 @@ export function TraceLine({ event }: { event: RouterTraceEvent }) {
       )
     case 'select':
       return (
-        <p className="text-white [overflow-wrap:anywhere]">
+        <p className="text-[color:var(--fg)] [overflow-wrap:anywhere]">
           <span style={{ color: 'var(--accent)' }}>✓ selected</span> {event.service}
           {event.endpoint ? <span className="text-[color:var(--muted)]"> {shortEndpoint(event.endpoint)}</span> : null}
           {event.priceUsd ? <span className="text-[color:var(--muted)]"> ${event.priceUsd}</span> : null}
@@ -174,7 +174,7 @@ export function TraceLine({ event }: { event: RouterTraceEvent }) {
                   href={`https://basescan.org/tx/${r.txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[color:var(--muted)] underline decoration-dotted underline-offset-2 hover:text-white"
+                  className="text-[color:var(--muted)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)]"
                   title="View on BaseScan"
                 >
                   {r.txHash.slice(0, 10)}…
@@ -203,7 +203,7 @@ export function TraceLine({ event }: { event: RouterTraceEvent }) {
     }
     case 'eip712':
       return (
-        <p className="text-white [overflow-wrap:anywhere]">
+        <p className="text-[color:var(--fg)] [overflow-wrap:anywhere]">
           <PenLine className="inline w-3 h-3 -mt-0.5 mr-0.5" style={{ color: 'var(--accent)' }} />
           <span style={{ color: 'var(--accent)' }}>sign {event.scheme.toUpperCase()}</span>{' '}
           <span className="text-[color:var(--muted)]">{event.summary}</span>

@@ -91,7 +91,7 @@ export function PolicySwitch({
         'flex items-center gap-2.5 px-3 py-2 max-lg:min-h-10 rounded-lg border transition-colors disabled:opacity-50',
         enabled
           ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/[0.06]'
-          : 'border-[var(--line-2)] text-[color:var(--muted)] hover:text-white',
+          : 'border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)]',
         className,
       )}
     >
@@ -103,7 +103,7 @@ export function PolicySwitch({
       >
         <span
           className={cn(
-            'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+            'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-[var(--fg)] transition-transform',
             enabled && 'translate-x-4',
           )}
         />
@@ -188,12 +188,12 @@ export function BudgetEditor({
             if (e.key === 'Enter') void save()
             if (e.key === 'Escape') cancel()
           }}
-          className="w-16 bg-transparent border-b border-[var(--line-2)] text-white outline-none focus:border-emerald-400"
+          className="w-16 bg-transparent border-b border-[var(--line-2)] text-[color:var(--fg)] outline-none focus:border-emerald-400"
         />
         <button onClick={() => void save()} disabled={saving} className="text-emerald-400 hover:text-emerald-300 disabled:opacity-50" aria-label="Save daily budget">
           {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
         </button>
-        <button onClick={cancel} disabled={saving} className="text-[color:var(--muted-2)] hover:text-white disabled:opacity-50" aria-label="Cancel">
+        <button onClick={cancel} disabled={saving} className="text-[color:var(--muted-2)] hover:text-[color:var(--fg)] disabled:opacity-50" aria-label="Cancel">
           <X className="w-3.5 h-3.5" />
         </button>
       </span>
@@ -206,7 +206,7 @@ export function BudgetEditor({
       disabled={disabled}
       title="Edit the daily budget"
       className={cn(
-        'group inline-flex items-center gap-1 mono text-xs text-[color:var(--muted)] hover:text-white transition-colors disabled:opacity-50',
+        'group inline-flex items-center gap-1 mono text-xs text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors disabled:opacity-50',
         className,
       )}
     >

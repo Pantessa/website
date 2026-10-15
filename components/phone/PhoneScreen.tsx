@@ -76,7 +76,7 @@ export default function PhoneScreen({
   return (
     <section data-phone-panel={name} aria-label={title} className="absolute inset-0 z-[45] flex flex-col bg-[var(--bg)]">
       <header className="flex-shrink-0 flex items-center gap-2 pl-4 pr-2 min-h-12 border-b border-[var(--line)]">
-        <h1 className="flex-1 min-w-0 mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] truncate">{title}</h1>
+        <h1 className="flex-1 min-w-0 mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] truncate">{title}</h1>
         {action}
       </header>
       <div ref={scrollerRef} data-app-scroll="" className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain flex flex-col [-webkit-overflow-scrolling:touch]">

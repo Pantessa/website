@@ -43,7 +43,7 @@ export default function MessageReceipts({ meta }: { meta: unknown }) {
     <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1">
       {/* The paid-total summary that used to be the text footer's 💸 line. */}
       {paid.length > 0 && (
-        <div className="text-[11px] mono text-[color:var(--muted)]">
+        <div className="text-[length:var(--fs-xs)] mono text-[color:var(--muted)]">
           💸 ${total.toFixed(total < 0.01 ? 4 : 2)} over {paid.length} x402 call
           {paid.length === 1 ? '' : 's'}
           {payer ? ` · ${payer}` : ''}
@@ -52,7 +52,7 @@ export default function MessageReceipts({ meta }: { meta: unknown }) {
       {receipts.map((r, i) => (
         <div
           key={`${r.name}-${i}`}
-          className="flex items-center gap-2 text-[11px] mono text-[color:var(--muted-2)] min-w-0"
+          className="flex items-center gap-2 text-[length:var(--fs-xs)] mono text-[color:var(--muted-2)] min-w-0"
         >
           <span className={r.ok ? 'text-emerald-400' : 'text-amber-400'}>
             {r.ok ? '✓' : '✗'}

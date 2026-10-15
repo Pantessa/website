@@ -34,7 +34,7 @@ export default function HouseLinkChip({ link }: { link: HouseLink }) {
           ))}
         </span>
       )}
-      <span className="text-[13px] text-[color:var(--fg)] group-hover:text-[color:var(--accent)] transition-colors">
+      <span className="text-[length:var(--fs-md)] text-[color:var(--fg)] group-hover:text-[color:var(--accent)] transition-colors">
         &ldquo;{link.ask}&rdquo;
       </span>
     </Link>

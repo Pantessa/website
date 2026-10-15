@@ -95,7 +95,7 @@ export default function EmbedsPanel() {
           <div className="mt-3">
             <p className="text-[13.5px] leading-relaxed text-[color:var(--muted)] max-w-[70ch]">
               Put the full Pantessa chat — compose MCPs, guardrails, receipts, signing with the
-              visitor&rsquo;s own wallet — on any site. Create a <strong className="text-white font-medium">public embed key</strong>{' '}
+              visitor&rsquo;s own wallet — on any site. Create a <strong className="text-[color:var(--fg)] font-medium">public embed key</strong>{' '}
               (safe in page source), paste one prompt into Claude, and your embeds report back here
               with every site and every turn.
             </p>
@@ -112,14 +112,14 @@ export default function EmbedsPanel() {
               {keys.map((k) => (
                 <li
                   key={k.id}
-                  className="flex items-center justify-between gap-3 py-2 border-b border-[color:var(--line)] last:border-0 text-[13px] min-w-0"
+                  className="flex items-center justify-between gap-3 py-2 border-b border-[color:var(--line)] last:border-0 text-[length:var(--fs-md)] min-w-0"
                 >
                   <span className="min-w-0 flex items-baseline gap-2.5 flex-wrap">
                     <span className="mono text-[color:var(--accent)]">{k.key}</span>
                     <span className="text-[color:var(--muted-2)] truncate">{k.label}</span>
                   </span>
                   <span className="flex items-center gap-2 flex-shrink-0">
-                    <span className="mono text-[11px] text-[color:var(--muted-2)]">
+                    <span className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
                       {k.sites.length} site{k.sites.length === 1 ? '' : 's'}
                     </span>
                     <button
@@ -138,15 +138,15 @@ export default function EmbedsPanel() {
             <EmbedInstall embedKey={primary.key} className="mt-4" />
             <p className="mt-2 text-[12.5px] text-[color:var(--muted-2)]">
               Then{' '}
-              <Link href="/servers" className="underline underline-offset-2 decoration-dotted hover:text-white">
+              <Link href="/servers" className="underline underline-offset-2 decoration-dotted hover:text-[color:var(--fg)]">
                 pick the MCPs
               </Link>{' '}
               for your set, or{' '}
-              <Link href="/servers/add" className="underline underline-offset-2 decoration-dotted hover:text-white">
+              <Link href="/servers/add" className="underline underline-offset-2 decoration-dotted hover:text-[color:var(--fg)]">
                 add your own MCP
               </Link>
               . Full contract in{' '}
-              <Link href="/docs/embed" className="underline underline-offset-2 decoration-dotted hover:text-white">
+              <Link href="/docs/embed" className="underline underline-offset-2 decoration-dotted hover:text-[color:var(--fg)]">
                 the embed docs
               </Link>
               .
@@ -162,12 +162,12 @@ export default function EmbedsPanel() {
             <CardTitle serif eyebrow="YOUR EMBEDS">
               Connected sites
             </CardTitle>
-            <Link href="/dashboard/embeds" className="mono text-[12px] text-[color:var(--accent)] hover:underline underline-offset-2">
+            <Link href="/dashboard/embeds" className="mono text-[length:var(--fs-sm)] text-[color:var(--accent)] hover:underline underline-offset-2">
               Open analytics →
             </Link>
           </div>
           {sites.length === 0 ? (
-            <p className="text-[13px] text-[color:var(--muted-2)] mt-2">
+            <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)] mt-2">
               Nothing sighted yet — this list fills in the moment your embed mounts and the first
               prompt runs.
             </p>
@@ -176,7 +176,7 @@ export default function EmbedsPanel() {
               {sites.map((s) => (
                 <li
                   key={s.origin}
-                  className="flex items-center justify-between gap-3 py-2 border-b border-[color:var(--line)] last:border-0 text-[13px] min-w-0"
+                  className="flex items-center justify-between gap-3 py-2 border-b border-[color:var(--line)] last:border-0 text-[length:var(--fs-md)] min-w-0"
                 >
                   <span className="min-w-0 flex items-center gap-2.5">
                     <Globe className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--muted-2)]" />
@@ -185,7 +185,7 @@ export default function EmbedsPanel() {
                         href={s.pageUrl ?? s.origin}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-white hover:underline underline-offset-2 truncate block"
+                        className="text-[color:var(--fg)] hover:underline underline-offset-2 truncate block"
                         title={s.pageUrl ?? s.origin}
                       >
                         {s.origin.replace(/^https?:\/\//, '')}

@@ -125,7 +125,7 @@ export default function SwapPanel({
         onChange={(e) => set(e.target.value.toUpperCase())}
         list={listId}
         placeholder={label === 'Sell' ? suggestions[0] : suggestions[1]}
-        className="mt-0.5 w-full rounded-lg border border-[var(--line)] bg-transparent px-2 py-1.5 text-sm font-medium text-white outline-none transition-colors placeholder:text-[color:var(--muted-2)] focus:border-[var(--line-2)]"
+        className="mt-0.5 w-full rounded-lg border border-[var(--line)] bg-transparent px-2 py-1.5 text-sm font-medium text-[color:var(--fg)] outline-none transition-colors placeholder:text-[color:var(--muted-2)] focus:border-[var(--line-2)]"
       />
       <datalist id={listId}>
         {suggestions.map((s) => (
@@ -144,7 +144,7 @@ export default function SwapPanel({
           onClick={flip}
           aria-label="Flip tokens"
           title="Flip"
-          className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg border border-[var(--line)] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:text-white"
+          className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg border border-[var(--line)] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:text-[color:var(--fg)]"
         >
           <ArrowDown className="h-3.5 w-3.5 rotate-[-90deg]" />
         </button>
@@ -157,7 +157,7 @@ export default function SwapPanel({
           onChange={(e) => setAmount(e.target.value)}
           inputMode="decimal"
           placeholder="0.0"
-          className="mt-0.5 w-full rounded-lg border border-[var(--line)] bg-transparent px-2 py-1.5 text-sm font-medium text-white outline-none transition-colors placeholder:text-[color:var(--muted-2)] focus:border-[var(--line-2)]"
+          className="mt-0.5 w-full rounded-lg border border-[var(--line)] bg-transparent px-2 py-1.5 text-sm font-medium text-[color:var(--fg)] outline-none transition-colors placeholder:text-[color:var(--muted-2)] focus:border-[var(--line-2)]"
         />
       </label>
 
@@ -185,13 +185,13 @@ export default function SwapPanel({
             >
               {quote.expectedOut && (
                 <div className="mb-1">
-                  <span className="text-2xl font-semibold tracking-tight text-white">~{quote.expectedOut}</span>
-                  <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">{buyToken} expected</span>
+                  <span className="text-2xl font-semibold tracking-tight text-[color:var(--fg)]">~{quote.expectedOut}</span>
+                  <span className="ml-2 text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">{buyToken} expected</span>
                 </div>
               )}
-              <p className="text-[11px] leading-relaxed text-[color:var(--muted)]">{quote.summary}</p>
+              <p className="text-[length:var(--fs-xs)] leading-relaxed text-[color:var(--muted)]">{quote.summary}</p>
               {quote.warns.map((w) => (
-                <p key={w} className="mt-1 flex items-start gap-1 text-[11px] text-amber-400">
+                <p key={w} className="mt-1 flex items-start gap-1 text-[length:var(--fs-xs)] text-amber-400">
                   <ShieldAlert className="mt-0.5 h-3 w-3 flex-shrink-0" /> {w}
                 </p>
               ))}
@@ -238,7 +238,7 @@ export default function SwapPanel({
                 <motion.p
                   initial={reduced ? false : { opacity: 0, scale: 0.96 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="mt-2 text-[11px] text-[color:var(--accent)]"
+                  className="mt-2 text-[length:var(--fs-xs)] text-[color:var(--accent)]"
                 >
                   ✓ Settled on-chain — every step confirmed.
                 </motion.p>
@@ -250,7 +250,7 @@ export default function SwapPanel({
               key="blocked"
               initial={reduced ? false : { opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex items-start gap-1.5 text-[11px] leading-relaxed text-red-400"
+              className="flex items-start gap-1.5 text-[length:var(--fs-xs)] leading-relaxed text-red-400"
             >
               <ShieldX className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
               <span>
@@ -264,7 +264,7 @@ export default function SwapPanel({
               key="error"
               initial={reduced ? false : { opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="text-[11px] text-[color:var(--muted)]"
+              className="text-[length:var(--fs-xs)] text-[color:var(--muted)]"
             >
               {quote.message}
             </motion.p>
@@ -274,7 +274,7 @@ export default function SwapPanel({
               key="idle"
               initial={false}
               animate={{ opacity: 1 }}
-              className="text-[11px] leading-relaxed text-[color:var(--muted)]"
+              className="text-[length:var(--fs-xs)] leading-relaxed text-[color:var(--muted)]"
             >
               Pick two tokens and an amount — the quote, guardrails and built
               transaction come from the same layer chat uses.

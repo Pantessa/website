@@ -166,7 +166,7 @@ export default function SignNftListingButton({
   return (
     <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1.5">
       {started && (
-        <div className="flex items-center gap-1.5 text-[11px] mono flex-wrap">
+        <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] mono flex-wrap">
           {steps.map((s, i) => {
             const st = stepState(s.key)
             return (
@@ -193,7 +193,7 @@ export default function SignNftListingButton({
       )}
 
       {status === 'live' ? (
-        <div className="flex items-center gap-2 text-[12px]">
+        <div className="flex items-center gap-2 text-[length:var(--fs-sm)]">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
           <span className="text-emerald-400 font-medium">Listing is live on OpenSea</span>
           {summary && <span className="text-[color:var(--muted)] truncate">— {summary}</span>}
@@ -208,7 +208,7 @@ export default function SignNftListingButton({
           <button
             onClick={() => void run()}
             disabled={inFlight}
-            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-1.5 text-[length:var(--fs-sm)] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] disabled:opacity-50 transition-colors"
             title={needsApproval ? 'Approve OpenSea once for this collection, then sign the gasless listing' : 'Sign this listing with your wallet — gasless; it only executes if a buyer pays full price'}
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
@@ -225,8 +225,8 @@ export default function SignNftListingButton({
                       : 'Sign & list on OpenSea'}
           </button>
           <SignatureWaitOpenApp waiting={status === 'approving' || status === 'signing'} />
-          {note && <span className="text-[12px] text-[color:var(--muted)]" data-nft-rearmed="1">{note}</span>}
-          {error && <span className="text-[12px] text-red-400">{error}</span>}
+          {note && <span className="text-[length:var(--fs-sm)] text-[color:var(--muted)]" data-nft-rearmed="1">{note}</span>}
+          {error && <span className="text-[length:var(--fs-sm)] text-red-400">{error}</span>}
         </div>
       )}
     </div>

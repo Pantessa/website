@@ -113,7 +113,7 @@ export default function ArmDcaButton({ offer }: { offer: DcaArmOfferWire }) {
 
   return (
     <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1.5">
-      <div className="flex items-start gap-2 text-[12px] text-[color:var(--muted)]">
+      <div className="flex items-start gap-2 text-[length:var(--fs-sm)] text-[color:var(--muted)]">
         <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5" />
         <div className="space-y-0.5">
           <div className="text-[color:var(--fg)] font-medium">Autopilot cap: {capLine}</div>
@@ -122,7 +122,7 @@ export default function ArmDcaButton({ offer }: { offer: DcaArmOfferWire }) {
       </div>
 
       {status === 'armed' ? (
-        <div className="flex items-center gap-2 text-[12px]">
+        <div className="flex items-center gap-2 text-[length:var(--fs-sm)]">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
           <span className="text-emerald-400 font-medium">Autopilot armed</span>
           {enforced && <span className="text-[color:var(--muted)] truncate">— {enforced}</span>}
@@ -132,15 +132,15 @@ export default function ArmDcaButton({ offer }: { offer: DcaArmOfferWire }) {
           <button
             onClick={() => void arm()}
             disabled={inFlight}
-            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-1.5 text-[length:var(--fs-sm)] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] disabled:opacity-50 transition-colors"
             title="Sign the one-time spending permission that arms this schedule"
           >
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
             {status === 'signing' ? 'Confirm in your wallet…' : status === 'arming' ? 'Arming…' : status === 'error' ? 'Retry — sign & arm autopilot' : 'Sign & arm autopilot'}
           </button>
           <SignatureWaitOpenApp waiting={status === 'signing'} />
-          {note && <span className="text-[12px] text-[color:var(--muted)]" data-arm-rearmed="switch">{note}</span>}
-          {error && <span className="text-[12px] text-red-400">{error}</span>}
+          {note && <span className="text-[length:var(--fs-sm)] text-[color:var(--muted)]" data-arm-rearmed="switch">{note}</span>}
+          {error && <span className="text-[length:var(--fs-sm)] text-red-400">{error}</span>}
         </div>
       )}
     </div>

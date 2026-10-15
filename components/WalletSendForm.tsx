@@ -148,7 +148,7 @@ export default function WalletSendForm({
 
   if (funded.length === 0) {
     return (
-      <div className="rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-3.5 py-3 text-[12px] text-[color:var(--muted)]">
+      <div className="rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-3.5 py-3 text-[length:var(--fs-sm)] text-[color:var(--muted)]">
         Nothing to send yet — this wallet holds nothing on any chain. Add funds with a card or receive from another wallet first.
       </div>
     )
@@ -195,7 +195,7 @@ export default function WalletSendForm({
                 onClick={() => setChainId(c.id)}
                 disabled={phase !== 'form'}
                 className={cn(
-                  'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] transition-colors disabled:opacity-60',
+                  'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[length:var(--fs-sm)] transition-colors disabled:opacity-60',
                   on ? 'border-[color:var(--accent)] tint-bg-accent-10 text-[color:var(--fg)]' : 'border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)]',
                 )}
               >
@@ -222,13 +222,13 @@ export default function WalletSendForm({
                   onClick={() => { setTokenKey(key); setAll(false); setAmount(''); setBuilt(null); setPhase('form') }}
                   disabled={phase === 'building'}
                   className={cn(
-                    'inline-flex items-baseline gap-1.5 rounded-full border px-2.5 py-1 text-[12px] transition-colors disabled:opacity-60',
+                    'inline-flex items-baseline gap-1.5 rounded-full border px-2.5 py-1 text-[length:var(--fs-sm)] transition-colors disabled:opacity-60',
                     on ? 'border-[color:var(--accent)] tint-bg-accent-10 text-[color:var(--fg)]' : 'border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)]',
                   )}
                   title={h.native ? 'Native ETH — also this chain’s gas' : h.address}
                 >
                   <span className="font-medium">{h.symbol}</span>
-                  <span className="mono text-[11px] opacity-80">{fmtBal(h.balance)}</span>
+                  <span className="mono text-[length:var(--fs-xs)] opacity-80">{fmtBal(h.balance)}</span>
                 </button>
               )
             })}
@@ -260,9 +260,9 @@ export default function WalletSendForm({
                 aria-label="Amount"
                 aria-invalid={problem?.field === 'amount' || undefined}
                 disabled={phase === 'building'}
-                className={cn('min-w-0 flex-1 bg-transparent px-2.5 py-1.5 mono text-[13px] max-lg:text-[16px] text-[color:var(--fg)] outline-none placeholder:text-[color:var(--muted-2)]', all && 'text-[color:var(--muted)]')}
+                className={cn('min-w-0 flex-1 bg-transparent px-2.5 py-1.5 mono text-[length:var(--fs-md)] max-lg:text-[16px] text-[color:var(--fg)] outline-none placeholder:text-[color:var(--muted-2)]', all && 'text-[color:var(--muted)]')}
               />
-              <span className="pr-1.5 text-[11px] text-[color:var(--muted)]">{holding?.symbol}</span>
+              <span className="pr-1.5 text-[length:var(--fs-xs)] text-[color:var(--muted)]">{holding?.symbol}</span>
               <button
                 type="button"
                 onClick={() => { setAll(true); setAmount('') }}
@@ -289,7 +289,7 @@ export default function WalletSendForm({
               autoComplete="off"
               spellCheck={false}
               disabled={phase === 'building'}
-              className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 mono text-[13px] max-lg:text-[16px] text-[color:var(--fg)] outline-none focus:border-[var(--line-2)] placeholder:text-[color:var(--muted-2)]"
+              className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 mono text-[length:var(--fs-md)] max-lg:text-[16px] text-[color:var(--fg)] outline-none focus:border-[var(--line-2)] placeholder:text-[color:var(--muted-2)]"
             />
             <span className="mt-1 block text-[10.5px] text-[color:var(--muted-2)]">same address on every chain · transfers are irreversible</span>
           </label>
@@ -309,7 +309,7 @@ export default function WalletSendForm({
             type="button"
             onClick={() => void review()}
             disabled={phase === 'building' || !holding || !to.trim() || (!all && !(Number(amount) > 0))}
-            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] text-black px-4 py-1.5 text-[12.5px] font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] text-[color:var(--bg)] px-4 py-1.5 text-[12.5px] font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
             {phase === 'building' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
             {phase === 'building' ? 'Checking…' : 'Review send'}
@@ -323,7 +323,7 @@ export default function WalletSendForm({
       {/* Review — the guarded build, then the sign card. */}
       {phase === 'review' && built && chainView && (
         <div className="space-y-2">
-          <div className="text-[13px] font-medium text-[color:var(--fg)] [overflow-wrap:anywhere]">{built.summary}</div>
+          <div className="text-[length:var(--fs-md)] font-medium text-[color:var(--fg)] [overflow-wrap:anywhere]">{built.summary}</div>
           <div className="text-[11.5px] text-[color:var(--muted)]">{built.note}</div>
           <ul className="space-y-1">
             {built.guardrails.checks.map((c) => (
@@ -342,7 +342,7 @@ export default function WalletSendForm({
             <>
               {/* The failed check is already on the list above in red — the
                   refusal is that same note, so say only what it means. */}
-              <div className="text-[12px] text-[color:var(--fail)]">Not offered — nothing was built. Change the amount or the recipient and review again.</div>
+              <div className="text-[length:var(--fs-sm)] text-[color:var(--fail)]">Not offered — nothing was built. Change the amount or the recipient and review again.</div>
               {built.guardrails.policyBlock && <SpendPolicyFix block={built.guardrails.policyBlock} onFixed={() => void review()} retryLabel="Review again" />}
             </>
           ) : built.tx ? (

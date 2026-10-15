@@ -28,7 +28,7 @@ interface JobRow {
   steps: StepLite[]
 }
 
-const label = 'mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]'
+const label = 'mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]'
 
 function chip(status: string) {
   const tone =
@@ -39,7 +39,7 @@ function chip(status: string) {
         : status === 'canceled'
           ? 'border-[color:var(--line-2)] text-[color:var(--muted-2)]'
           : 'border-sky-500/40 text-sky-500'
-  return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${tone}`}>{status.replace(/_/g, ' ')}</span>
+  return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[length:var(--fs-xs)] font-medium ${tone}`}>{status.replace(/_/g, ' ')}</span>
 }
 
 function stepIcon(s: StepLite) {
@@ -71,10 +71,10 @@ export default function JobsPanel() {
     return () => clearInterval(t)
   }, [load])
 
-  if (!jobs) return <p className="text-[13px] text-[color:var(--muted-2)]">Loading jobs…</p>
+  if (!jobs) return <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)]">Loading jobs…</p>
   if (jobs.length === 0) {
     return (
-      <p className="text-[13px] text-[color:var(--muted-2)]">
+      <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)]">
         No jobs yet. Chain steps in one chat ask — “deposit 12 usdc to hyperliquid, then long $12 of eth on
         hyperliquid, then protect my eth long with a 5% stop” — and the whole run lands here with a receipt per step.
       </p>
@@ -86,7 +86,7 @@ export default function JobsPanel() {
       {jobs.map((j) => (
         <li key={j.id} className="py-2.5">
           <button className="w-full flex items-center justify-between gap-3 text-left" onClick={() => setOpen(open === j.id ? null : j.id)}>
-            <span className="text-[13px] truncate">{j.title}</span>
+            <span className="text-[length:var(--fs-md)] truncate">{j.title}</span>
             <span className="flex items-center gap-2 flex-shrink-0">
               {j.valueUsd != null && j.valueUsd > 0 && <span className="mono text-[11.5px]">${j.valueUsd.toFixed(2)}</span>}
               {chip(j.status)}
@@ -96,7 +96,7 @@ export default function JobsPanel() {
           {open === j.id && (
             <div className="mt-2 ml-1 space-y-1">
               {j.steps.map((s) => (
-                <div key={s.seq} className="flex items-center gap-2 text-[12px]">
+                <div key={s.seq} className="flex items-center gap-2 text-[length:var(--fs-sm)]">
                   {stepIcon(s)}
                   <span className={s.status === 'pending' ? 'text-[color:var(--muted-2)]' : ''}>{s.title}</span>
                   {s.valueUsd != null && <span className="mono text-[10.5px] text-[color:var(--muted)]">${s.valueUsd.toFixed(2)}</span>}

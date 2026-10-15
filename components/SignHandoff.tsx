@@ -56,14 +56,14 @@ export default function SignHandoff({ ask, mcps, agent }: { ask: string; mcps: s
     <main className="min-h-[calc(100vh-4rem)] max-w-xl mx-auto px-4 py-12 flex flex-col">
       <div className="flex items-center gap-2 mb-8">
         <YeetfulMark size={15} />
-        <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
+        <span className="mono text-[length:var(--fs-xs)] uppercase tracking-widest text-[color:var(--muted-2)]">
           Agent handoff · review &amp; sign
         </span>
       </div>
 
       {cleanedAsk ? (
         <>
-          <p className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
+          <p className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
             {cleanedAgent ? `${cleanedAgent} prepared this ask` : 'An agent prepared this ask'}
           </p>
           <blockquote className="text-xl leading-snug font-medium text-[color:var(--fg)] border-l-2 border-[var(--accent)] pl-4 mb-8">
@@ -76,7 +76,7 @@ export default function SignHandoff({ ask, mcps, agent }: { ask: string; mcps: s
                 <ShieldCheck className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'var(--accent)' }} />
                 <div>
                   <p className="text-sm font-semibold text-[color:var(--fg)]">{c.title}</p>
-                  <p className="text-[13px] leading-relaxed text-[color:var(--muted)]">{c.body}</p>
+                  <p className="text-[length:var(--fs-md)] leading-relaxed text-[color:var(--muted)]">{c.body}</p>
                 </div>
               </li>
             ))}
@@ -88,7 +88,7 @@ export default function SignHandoff({ ask, mcps, agent }: { ask: string; mcps: s
           >
             Review &amp; build <ArrowRight className="w-4 h-4" />
           </SpineLink>
-          <p className="text-[12px] text-[color:var(--muted-2)] mt-3">
+          <p className="text-[length:var(--fs-sm)] text-[color:var(--muted-2)] mt-3">
             The ask lands prefilled in the chat — nothing sends, builds, or moves until you act.
           </p>
         </>
@@ -97,7 +97,7 @@ export default function SignHandoff({ ask, mcps, agent }: { ask: string; mcps: s
           <h1 className="text-xl font-semibold text-[color:var(--fg)] mb-2">Nothing to review</h1>
           <p className="text-sm text-[color:var(--muted)] mb-6 max-w-md">
             This page expects a link from an agent carrying an ask, like{' '}
-            <code className="mono text-[12px]">/sign?ask=Buy%20%2412%20of%20AAPL</code>. If you landed
+            <code className="mono text-[length:var(--fs-sm)]">/sign?ask=Buy%20%2412%20of%20AAPL</code>. If you landed
             here by hand, the chat is the front door.
           </p>
           <SpineLink href="/chat" className="btn btn--ghost self-start">

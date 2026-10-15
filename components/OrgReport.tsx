@@ -72,8 +72,8 @@ export function OrgReportView({
           {RANGES.map((r) => (
             <button
               key={r.days}
-              className={`mono text-[11px] px-2.5 rounded-md min-h-[40px] transition-colors ${
-                days === r.days ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted-2)] hover:text-white'
+              className={`mono text-[length:var(--fs-xs)] px-2.5 rounded-md min-h-[40px] transition-colors ${
+                days === r.days ? 'bg-[var(--surf-2)] text-[color:var(--fg)]' : 'text-[color:var(--muted-2)] hover:text-[color:var(--fg)]'
               }`}
               onClick={() => onDays(r.days)}
             >
@@ -81,7 +81,7 @@ export function OrgReportView({
             </button>
           ))}
           <button
-            className="flex items-center gap-1.5 text-[11px] px-3 rounded-md min-h-[40px] bg-white text-zinc-950 hover:bg-zinc-200 disabled:opacity-50 transition-colors ml-1"
+            className="flex items-center gap-1.5 text-[length:var(--fs-xs)] px-3 rounded-md min-h-[40px] bg-[var(--fg)] text-zinc-950 hover:bg-zinc-200 disabled:opacity-50 transition-colors ml-1"
             onClick={download}
             disabled={!data}
           >
@@ -153,18 +153,18 @@ function Breakdown({
 }) {
   return (
     <div className="min-w-0">
-      <p className="text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">{title}</p>
+      <p className="text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">{title}</p>
       {rows.length === 0 ? (
         <p className="text-xs text-[color:var(--muted-2)]">—</p>
       ) : (
         <ul className="space-y-1.5">
           {rows.slice(0, 8).map((r, i) => (
             <li key={i} className="flex items-baseline gap-2 min-w-0">
-              <span className="text-xs text-white truncate min-w-0" title={r.name}>
+              <span className="text-xs text-[color:var(--fg)] truncate min-w-0" title={r.name}>
                 {r.name}
               </span>
               {r.sub && <span className="text-[10px] text-[color:var(--muted-2)] truncate hidden sm:inline">{r.sub}</span>}
-              <span className="mono text-[11px] text-[color:var(--muted)] ml-auto flex-shrink-0">
+              <span className="mono text-[length:var(--fs-xs)] text-[color:var(--muted)] ml-auto flex-shrink-0">
                 {fmt(r.spent)} · {r.calls}
               </span>
             </li>
