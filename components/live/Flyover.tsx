@@ -94,6 +94,8 @@ import type { FlyoverScene, SceneInks, SceneLabel } from './flyover-scene'
 
 const HINT_KEY = 'pantessa.live.flyover.hint'
 const HINT_MS = 6_000
+/** Backfilled prints ingested per task. */
+const BACKFILL_SLICE = 1_500
 /** Drops one batch may spawn (a burst still reads; the frame stays cheap). */
 const DROPS_PER_BATCH = 120
 /** Venue toggles, in the bar's words. */
@@ -274,15 +276,43 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
       const add = bigs
       setSky((prev) => add.reduce((log, f) => pushSky(log, f), prev))
     }
-    if (!backfill) batchMsRef.current = Math.max(batchMsRef.current, performance.now() - t0)
+    batchMsRef.current = Math.max(batchMsRef.current, performance.now() - t0)
   }, [])
+
+  // The relay's backfill is thousands of prints at once (five minutes of every
+  // venue): it lands in slices of BACKFILL_SLICE, one per task, so no slice
+  // holds the main thread past the frame budget.
+  const backfillRef = useRef<{ queue: TapeFill[][]; timer: ReturnType<typeof setTimeout> | null }>({ queue: [], timer: null })
+  const onBackfill = useCallback(
+    (fills: readonly TapeFill[]) => {
+      const b = backfillRef.current
+      for (let i = 0; i < fills.length; i += BACKFILL_SLICE) b.queue.push(fills.slice(i, i + BACKFILL_SLICE))
+      const drain = () => {
+        b.timer = null
+        const next = b.queue.shift()
+        if (!next) return
+        onBatch(next, true)
+        if (b.queue.length) b.timer = setTimeout(drain, 0)
+      }
+      if (!b.timer) b.timer = setTimeout(drain, 0)
+    },
+    [onBatch],
+  )
+  useEffect(
+    () => () => {
+      const b = backfillRef.current
+      if (b.timer) clearTimeout(b.timer)
+      b.queue = []
+    },
+    [],
+  )
 
   // ── The stream. Reconnects itself; this effect only opens and closes it ─
   useEffect(() => {
     if (!streamOn) return
     const handlers: FeedHandlers = {
       onFills: (batch) => onBatch(batch, false),
-      onBackfill: (fills) => onBatch(fills, true),
+      onBackfill: (fills) => onBackfill(fills),
       onRetract: (venue, block) => {
         retract(ledgerRef.current, venue, block)
       },
@@ -299,7 +329,7 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
     if (source === 'dune') return openDuneTape([], handlers, { venues, filter: false, backfill: true }).close
     if (!hlMarkets) return
     return hlTapeFeed.connect(hlMarkets, handlers)
-  }, [source, venues, hlMarkets, streamOn, onBatch])
+  }, [source, venues, hlMarkets, streamOn, onBatch, onBackfill])
 
   // ── The scene: three, lazily, after mount ──────────────────────────────
   const inksNow = useCallback((): SceneInks => {

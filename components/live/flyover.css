@@ -168,7 +168,13 @@ html[data-theme="light"] .flyover {
   .flyover__bar > .flyover__controls { margin-left: auto; }
 }
 @container flyover (max-width: 420px) {
-  .flyover__board { grid-template-columns: 1fr; }
+  /* Two columns still: each row the name over its continent, and the lens's figure. */
+  .flyover__board { gap: 6px; padding: 8px 6px 6px; }
+  .flyover__row { grid-template-columns: 1fr auto; gap: 4px; padding: 3px 4px; }
+  .flyover__rown { flex-direction: column; align-items: flex-start; gap: 0; }
+  .flyover__rowc { font-size: 8.5px; }
+  .flyover__rows { display: none; }
+  .flyover__rowv { font-size: 11px; }
   .flyover__h { font-size: 17px; }
   .flyover__btn > span { display: none; }
   .flyover__btn { width: 34px; padding: 0; justify-content: center; }

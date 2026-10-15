@@ -1496,6 +1496,23 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
   }
   resize()
   applyInks()
+  // Compile every program now, with the pooled objects shown for the moment:
+  // a material compiled on its first visible frame (the first meteor, the
+  // first flag) is a hitch of tens of milliseconds mid-flight.
+  {
+    const hidden: { visible: boolean }[] = []
+    for (const m of meteors) for (const o of [m.head, m.trail, m.ring, m.tag]) if (!o.visible) (o.visible = true, hidden.push(o))
+    for (const o of [outline]) if (!o.visible) (o.visible = true, hidden.push(o))
+    const counts = [beacons.count, poles.count, pennants.count]
+    beacons.count = poles.count = pennants.count = 1
+    try {
+      renderer.compile(scene, camera)
+    } catch {
+      // a driver that refuses an early compile compiles on first use instead
+    }
+    for (const o of hidden) o.visible = false
+    ;[beacons.count, poles.count, pennants.count] = counts
+  }
 
   return {
     setWorld,
