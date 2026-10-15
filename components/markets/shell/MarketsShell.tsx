@@ -18,12 +18,15 @@ import '@/components/markets/markets.css'
 // and the spine's tab bar is the frame's last row, in flow. The document
 // never scrolls, so Safari's toolbar never collapses and the bar never
 // drifts. No bottom reserve: the scroller ends where the bar begins.
-export default function MarketsShell({ sym = false, children }: { sym?: boolean; children: React.ReactNode }) {
+// `surface` names which spine seat lights: the markets pages leave it, the
+// public progress pages (/leaderboard, /analytics — 2026-10-15) ride the same
+// frame and light their own seat.
+export default function MarketsShell({ sym = false, surface = 'markets', children }: { sym?: boolean; surface?: 'markets' | 'leaderboard' | 'analytics'; children: React.ReactNode }) {
   const frame = { [FRAME_ATTR]: '' }
   const scroll = { [SCROLL_ATTR]: '' }
   return (
     <div className="mkt-shell" {...frame}>
-      <AppSpine surface="markets" />
+      <AppSpine surface={surface} />
       <div className={sym ? 'mkt-frame mkt-frame--sym' : 'mkt-frame'} {...scroll}>
         {children}
       </div>

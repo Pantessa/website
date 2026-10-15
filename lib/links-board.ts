@@ -17,7 +17,7 @@ import { COUNTED_TURN_WHERE, INTERNAL_TRAFFIC_WHERE, REAL_TRAFFIC_SQL } from '@/
 // surfaces (dashboard list, claims) keep seeing them.
 // …and (S-2, 2026-09-08) receipt-counted only: a `signed` beacon the
 // verifier refuted or could not read never ranks a link on the public board.
-const NOT_HARNESS: Prisma.EmbedTurnWhereInput = {
+export const NOT_HARNESS: Prisma.EmbedTurnWhereInput = {
   AND: [{ NOT: { OR: [{ sessionId: { startsWith: 'harness-' } }, INTERNAL_TRAFFIC_WHERE] } }, COUNTED_TURN_WHERE],
 }
 
@@ -230,8 +230,11 @@ export async function creatorPages(limit = 50): Promise<CreatorPageRow[]> {
 
 // ── The link economy, per day ───────────────────────────────────────────────
 // Links minted + signed conversions + guardrail-priced dollars, bucketed by
-// UTC day — the daily pulse chart on /activity and the admin Adoption page.
-// Server truth only (intent_links rows; embed_turns signed notional).
+// UTC day — the daily pulse chart on /activity, /analytics and the admin
+// Adoption page. Server truth only (intent_links rows; embed_turns signed
+// notional). Mints are fenced by is_internal (2026-10-15 — every test:api run
+// mints hundreds of links from throwaway wallets, and the public chart was
+// drawing them as a 2,652-link day; the #699 rule, one series over).
 
 export interface LinkDayPoint {
   day: string
@@ -246,7 +249,7 @@ export async function linkDailySeries(days = 30): Promise<LinkDayPoint[]> {
     const [mintRows, convRows] = await Promise.all([
       prisma.$queryRaw<{ day: Date; n: number }[]>`
         SELECT date_trunc('day', created_at) AS day, count(*)::int AS n
-        FROM intent_links WHERE created_at >= ${since}
+        FROM intent_links WHERE created_at >= ${since} AND NOT is_internal
         GROUP BY 1 ORDER BY 1`,
       prisma.$queryRaw<{ day: Date; n: number; usd: number }[]>`
         SELECT date_trunc('day', created_at) AS day, count(*)::int AS n,
