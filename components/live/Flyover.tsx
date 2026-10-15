@@ -126,7 +126,22 @@ interface Hud {
 
 const EMPTY_HUD: Hud = { markets: 0, drawn: 0, fillsPerSec: 0, board: { risers: [], sinkers: [] }, continents: [], pickRows: [], firstPrint: false }
 
-export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; tabs?: ReactNode }) {
+export interface FlyoverProps {
+  tradable: TradabilityMap
+  tabs?: ReactNode
+  /** 'page' = /live (the frame, the Continents rail, the URL mirror); 'stage' =
+   *  a channel on the splash's deck (components/home/Deck, 2026-10-15): the
+   *  same world at the same size, the deck's bar and foot standing in for the
+   *  title and the rail, and the URL left alone (it is the home page's). */
+  seat?: 'page' | 'stage'
+  /** The stage seat reports the feed to the deck's foot. */
+  onReport?: (r: { status: FeedStatus; detail?: string; source: TapeSource; markets: number; hidden: boolean }) => void
+  /** The deck's ladder follows the land's top HyperCore riser (pinned first). */
+  onBookMarket?: (market: string | null) => void
+}
+
+export default function Flyover({ tradable, tabs, seat = 'page', onReport, onBookMarket }: FlyoverProps) {
+  const onPage = seat === 'page'
   const params = useSearchParams()
   const [w, setW] = useState<FlyoverWindow>(() => parseFlyoverWindow(params?.get('w')))
   const [lens, setLens] = useState<FlyoverLens>(() => parseLens(params?.get('lens')))
@@ -154,7 +169,7 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
   const [now, setNow] = useState(() => Date.now())
   const [mounted, setMounted] = useState(false)
 
-  const pick = useMarketPick({ seat: 'page' })
+  const pick = useMarketPick({ seat })
   const ledgerRef = useRef(createLedger())
   const infoRef = useRef<Map<string, PlotInfo>>(new Map())
   const layoutRef = useRef<WorldLayout | null>(null)
@@ -184,10 +199,10 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
 
   // ── The URL: ?w= and ?lens= off their defaults, everything else kept ───
   useEffect(() => {
-    if (typeof window === 'undefined') return
+    if (typeof window === 'undefined' || !onPage) return
     const next = window.location.pathname + flyoverSearch(window.location.search, w, lens)
     if (next !== window.location.pathname + window.location.search) window.history.replaceState(window.history.state, '', next)
-  }, [w, lens])
+  }, [w, lens, onPage])
 
   // ── Visibility: a hidden tab closes the stream after 15 s ──────────────
   useEffect(() => {
@@ -603,6 +618,21 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
     stepRef.current?.(true)
   }, [w, lens])
 
+  // The stage seat's reports to the deck: the feed for its foot, and the market
+  // its ladder follows (the top riser on HyperCore — the book the ladder reads).
+  const onReportRef = useRef(onReport)
+  onReportRef.current = onReport
+  const onBookMarketRef = useRef(onBookMarket)
+  onBookMarketRef.current = onBookMarket
+  const hiddenNow = vis ? !vis.visible : false
+  useEffect(() => {
+    onReportRef.current?.({ status, detail, source, markets: hud.markets, hidden: hiddenNow })
+  }, [status, detail, source, hud.markets, hiddenNow])
+  const bookLead = hud.board.risers.find((r) => r.continent === 'hypercore' || r.continent === 'hypercore-xyz')?.market ?? null
+  useEffect(() => {
+    onBookMarketRef.current?.(bookLead)
+  }, [bookLead])
+
   // ── The act door ───────────────────────────────────────────────────────
   const openDoor = useAskDoor((s) => s.openDoor)
   const run = useCallback((ask: string) => openDoor(ask, { send: true, mcps: askAppSlugs(ask) }), [openDoor])
@@ -928,20 +958,24 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
   )
 
   const waiting = !hud.firstPrint
+  // The page seat is /live's main column; the stage seat is a plain block in the deck.
+  const Shell = (onPage ? 'main' : 'div') as 'main'
   return (
     <>
-      <main ref={mainRef} className={`mkt-frame__main flyover${fakeFull ? ' flyover--full' : ''}`} data-status={status} data-paused={paused || undefined} data-lens={lens} data-scene={sceneState}>
-        <h1 className="sr-only">{viewDef.label}</h1>
+      <Shell ref={mainRef} className={`${onPage ? 'mkt-frame__main ' : ''}flyover${onPage ? '' : ' flyover--stage'}${fakeFull ? ' flyover--full' : ''}`} data-status={status} data-paused={paused || undefined} data-lens={lens} data-scene={sceneState} data-seat={seat}>
+        {onPage && <h1 className="sr-only">{viewDef.label}</h1>}
         <span ref={fontProbeRef} className="mono flyover__fontprobe" aria-hidden>
           0
         </span>
 
-        <div className="mkt-frame__bar flyover__bar">
+        <div className={`${onPage ? 'mkt-frame__bar ' : ''}flyover__bar`}>
+          {onPage && (
           <div className="flyover__title">
             <span className={`mk-dot ${live ? 'mk-dot--open' : 'mk-dot--closed'} flyover__pulse`} aria-hidden />
             <span className="flyover__h">{viewDef.label}</span>
             <span className="flyover__sub mono">{viewDef.blurb}</span>
           </div>
+          )}
           {tabs}
           <div className="flyover__controls">
             <button type="button" className="flyover__btn" onClick={togglePause} aria-pressed={paused} title={paused ? 'Resume the land' : 'Hold the land (the ledger keeps filling)'} data-journey={`${paused ? 'Resume' : 'Hold'} the Flyover`}>
@@ -1098,8 +1132,9 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
             ))}
           </ul>
         </section>
-      </main>
+      </Shell>
 
+      {onPage && (
       <MarketsSide label="Continents">
         <div data-slot="flyover-rail" className="flyover__rail">
           <header className="flyover__rh">
@@ -1141,6 +1176,7 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
           <p className="flyover__note2">Every plot is a sentence your wallet can sign. Nothing here fires on its own.</p>
         </div>
       </MarketsSide>
+      )}
       {door}
     </>
   )

@@ -31,6 +31,7 @@ import {
   fmtLadderPrice,
   fmtLadderUsd,
   isDeckBattle,
+  isDeckFullSize,
   parseDeckBook,
   parseDeckChannel,
   serializeDeckBook,
@@ -87,8 +88,8 @@ const FILLS: TapeFill[] = [fill('a', 1_000), fill('h', 3_000, { market: 'HYPE', 
 export function deckPins(check: Check): void {
   // ── The channels ──────────────────────────────────────────────────────
   check(
-    "deck: four channels in bar order — Pulse · Tape · The Front · The Siege — each with a word, a blurb and a door, each a door to a /live view under that view's own label; The Map is deliberately not one (Nate, 2026-10-13); the default is the pulse and an unknown word is the pulse",
-    DECK_CHANNELS.map((c) => c.id).join() === 'pulse,tape,front,siege' &&
+    "deck: five channels in bar order — Pulse · Tape · The Front · The Siege · The Flyover (RE-PINNED 2026-10-15 (deck full size): Nate: add the flyover to the tab) — each with a word, a blurb and a door, each a door to a /live view under that view's own label; The Map is deliberately not one (Nate, 2026-10-13); the default is the pulse and an unknown word is the pulse",
+    DECK_CHANNELS.map((c) => c.id).join() === 'pulse,tape,front,siege,flyover' &&
       DECK_CHANNELS.every((c) => c.label.length > 0 && c.blurb.length > 0 && c.door.length > 0) &&
       deckChannelsMatchViews() &&
       !DECK_CHANNELS.some((c) => c.view === 'map') &&
@@ -99,7 +100,10 @@ export function deckPins(check: Check): void {
       parseDeckChannel(null) === 'pulse' &&
       isDeckBattle('front') &&
       isDeckBattle('siege') &&
-      !isDeckBattle('tape'),
+      !isDeckBattle('tape') &&
+      !isDeckBattle('flyover') &&
+      parseDeckChannel('flyover') === 'flyover' &&
+      deckHref('flyover') === '/live?view=flyover',
   )
   check(
     "deck: a channel's door is a real /live link — the pulse and tape doors carry the pulse's pick as /live's ?m= (lib/pulse pulseLiveHref), the battle doors are the views' own URLs",
@@ -231,6 +235,19 @@ export function deckPins(check: Check): void {
   const deck = readFileSync('components/home/Deck.tsx', 'utf8')
   const ladder = readFileSync('components/home/BookLadder.tsx', 'utf8')
   const tape = readFileSync('components/home/TapeStage.tsx', 'utf8')
+  const flyover = readFileSync('components/live/Flyover.tsx', 'utf8')
+  check(
+    "deck: every channel but the pulse plays at /live's own size (Nate 2026-10-15: \"same size as we do on the live page\") — the battle fields carry battle.css's page-seat heights, the tape stage holds as tall as The Front's field with twenty rows (ten on a phone), The Flyover rides its own stage height in a stage seat (no rail, no URL mirror, loaded only when picked); the pulse keeps the band's height (the SSR frame)",
+    !isDeckFullSize('pulse') && isDeckFullSize('tape') && isDeckFullSize('front') && isDeckFullSize('siege') && isDeckFullSize('flyover') &&
+      cssRules.includes('.deck__chan .battle--stage .battle__stage { height: clamp(420px, calc(100dvh - 400px), 760px); }') &&
+      cssRules.includes('.deck__chan .battle--stage[data-view="siege"] .battle__stage { height: clamp(460px, calc(100dvh - 400px), 820px); }') &&
+      cssRules.includes('.deck[data-channel="tape"] .deck__tapestage { display: flex; flex-direction: column; min-height: clamp(420px, calc(100dvh - 400px), 760px); }') &&
+      !/\.battle__stage \{ height: (200|240)px/.test(cssRules) &&
+      /const Flyover = dynamic\(\(\) => import\('@\/components\/live\/Flyover'\), \{ ssr: false/.test(deck) &&
+      /<Flyover tradable=\{tradable\} seat="stage" onReport=\{setReport\} onBookMarket=\{setHot\} \/>/.test(deck) &&
+      /if \(typeof window === 'undefined' \|\| !onPage\) return/.test(flyover) &&
+      /\{onPage && \(\s*<MarketsSide label="Continents">/.test(flyover),
+  )
   const home = readFileSync('components/home/HomeSurface.tsx', 'utf8')
   const pulse = readFileSync('components/home/PulseSlot.tsx', 'utf8')
   const battle = readFileSync('components/live/Battle.tsx', 'utf8')
@@ -303,7 +320,7 @@ export function deckPins(check: Check): void {
       /setInterval\(\(\) => setNow\(Date\.now\(\)\), 1000\)/.test(ladder),
   )
   check(
-    "deck: the tape stage is the /live pattern — connectTape on /live's own pick (pickTapeMarkets; the fallback list first, the same socket re-aimed), Dune's perp venues filtered, the chip lib/tape followAsk gated by canTradeAsk with the measured verdicts (useTradable), every act through the connect-to-act door into the ask door's sheet, eight rows",
+    "deck: the tape stage is the /live pattern — connectTape on /live's own pick (pickTapeMarkets; the fallback list first, the same socket re-aimed), Dune's perp venues filtered, the chip lib/tape followAsk gated by canTradeAsk with the measured verdicts (useTradable), every act through the connect-to-act door into the ask door's sheet, twenty rows (RE-PINNED 2026-10-15 (deck full size))",
     /pickTapeMarkets\(main, xyz\)/.test(tape) &&
       /useState<readonly string\[\]>\(FALLBACK_MARKETS\)/.test(tape) &&
       /connectTape\(markets, \{/.test(tape) &&
@@ -315,7 +332,7 @@ export function deckPins(check: Check): void {
       /useConnectToAct\(\{ run, redirectFor: promptHref \}\)/.test(tape) &&
       /openDoor\(ask, \{ send: true, mcps: askAppSlugs\(ask\) \}\)/.test(tape) &&
       /\{door\}/.test(tape) &&
-      /export const TAPE_STAGE_ROWS = 8/.test(tape),
+      /export const TAPE_STAGE_ROWS = 20/.test(tape),
   )
   check(
     "deck: the live dot is honest — only the picked channel wears one, lit only while that channel's feed is live (an inactive channel has no feed to claim); a thumb gets 44px chips, 36px channel pills with a 44px hit area (the battle picker's idiom) and a 44px door; nothing animates under reduced motion",

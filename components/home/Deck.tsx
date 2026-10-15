@@ -3,7 +3,7 @@
 // THE DECK's seat on the splash (2026-10-13 — Nate: "make it easier to find
 // tape, the front, the siege … a little option called Streaming Order book
 // that the user can flick and see the streams coming"). The pulse band grew
-// a BAR of four channels and a STAGE: Pulse (the band as it was, less its
+// a BAR of channels (five since The Flyover joined, 2026-10-15) and a STAGE: Pulse (the band as it was, less its
 // own head and foot — the deck carries them), Tape (/live's tape, small), The
 // Front and The Siege (the battle views in their stage seat). A channel tab
 // is a real link to its /live page (a URL never fires a turn; pasted or with
@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import PulseSlot from '@/components/home/PulseSlot'
 import TapeStage from '@/components/home/TapeStage'
 import BookLadder from '@/components/home/BookLadder'
@@ -36,7 +37,12 @@ import { PULSE_WHY_BY_SOURCE } from '@/lib/pulse'
 import { DECK_BOOK_KEY, DECK_CHANNELS, DECK_DEFAULT_CHANNEL, deckBookMarket, deckChannel, deckHref, deckSourceLine, deckSwitchWords, isDeckBattle, parseDeckBook, serializeDeckBook, type DeckChannel, type StageReport } from '@/lib/deck'
 import type { TapeFill } from '@/lib/tape'
 import '@/components/live/battle.css'
+import '@/components/live/flyover.css'
 import './deck.css'
+
+// The Flyover channel (2026-10-15): /live's world in its stage seat, loaded only
+// when picked — `/` never carries its shell (three.js is lazier still, inside it).
+const Flyover = dynamic(() => import('@/components/live/Flyover'), { ssr: false, loading: () => <div className="deck__tapeempty mono">raising the land…</div> })
 
 const FRESH: StageReport = { status: 'connecting', source: 'dune', markets: 0, hidden: false }
 
@@ -119,6 +125,7 @@ export default function Deck() {
                 onClick={(e) => onTab(e, c.id)}
                 data-channel={c.id}
                 data-journey={`Channel ${c.label}`}
+                title={c.blurb}
               >
                 <b className="deck__chname">
                   {on && <i className={`mk-dot ${live ? 'mk-dot--open' : 'mk-dot--closed'} deck__dot`} aria-hidden />}
@@ -156,6 +163,7 @@ export default function Deck() {
           {ch === 'pulse' && <PulseSlot seat="stage" onReport={setReport} onFills={onFills} onBookMarket={setHot} onPick={setPick} />}
           {ch === 'tape' && <TapeStage onReport={setReport} onFills={onFills} onBookMarket={setHot} />}
           {isDeckBattle(ch) && <Battle key={ch} view={ch} tradable={tradable} seat="stage" onReport={setReport} onFills={onFills} onLeader={setHot} />}
+          {ch === 'flyover' && <Flyover tradable={tradable} seat="stage" onReport={setReport} onBookMarket={setHot} />}
         </div>
         {book && <BookLadder market={bookMarket} fillsRef={fillsRef} source={report.source} />}
       </div>
