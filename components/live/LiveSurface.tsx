@@ -1,14 +1,15 @@
 'use client'
 
-// /live's body: which view the URL asks for. The tape and the battle views
-// each own their subscriptions, so switching tabs closes one stream and
-// opens the other.
+// /live's body: which view the URL asks for. The tape, the battle views and
+// The Flyover (2026-10-15) each own their subscriptions, so switching tabs
+// closes one stream and opens the other.
 
 import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import type { TradabilityMap } from '@/lib/tradability'
 import { isBattleView, parseLiveView } from '@/lib/battle'
 import Battle from '@/components/live/Battle'
+import Flyover from '@/components/live/Flyover'
 import LiveFeed from '@/components/live/LiveFeed'
 import LiveTabs from '@/components/live/LiveTabs'
 import PickReads from '@/components/live/PickReads'
@@ -22,7 +23,7 @@ function Surface({ tradable }: { tradable: TradabilityMap }) {
   return (
     <>
       <PickReads />
-      {isBattleView(view) ? <Battle key={view} view={view} tradable={tradable} tabs={tabs} /> : <LiveFeed tradable={tradable} tabs={tabs} />}
+      {isBattleView(view) ? <Battle key={view} view={view} tradable={tradable} tabs={tabs} /> : view === 'flyover' ? <Flyover tradable={tradable} tabs={tabs} /> : <LiveFeed tradable={tradable} tabs={tabs} />}
     </>
   )
 }

@@ -33,7 +33,9 @@ import { tapeMarket, type TapeFill, type TapeSide } from '@/lib/tape'
 // ── Views and the URL ────────────────────────────────────────────────────────
 
 export type BattleView = 'front' | 'siege' | 'map'
-export type LiveView = 'tape' | BattleView
+/** `flyover` (2026-10-15, lib/flyover): every market as terrain — not a
+ *  battle view (no armies, no window of its own here). */
+export type LiveView = 'tape' | BattleView | 'flyover'
 
 export interface LiveViewDef {
   id: LiveView
@@ -46,6 +48,7 @@ export const LIVE_VIEWS: readonly LiveViewDef[] = [
   { id: 'front', label: 'The Front', blurb: 'time by percent move; each army’s front line, fills landing on it' },
   { id: 'siege', label: 'The Siege', blurb: 'a polar arena; the most ground holds the hill' },
   { id: 'map', label: 'The Map', blurb: 'land as wide as open interest, as high as percent move' },
+  { id: 'flyover', label: 'The Flyover', blurb: 'every market as land: buys raise it, sells sink it, color is the move' },
 ]
 
 export function parseLiveView(raw: string | null | undefined): LiveView {
@@ -53,7 +56,7 @@ export function parseLiveView(raw: string | null | undefined): LiveView {
 }
 
 export function isBattleView(v: LiveView): v is BattleView {
-  return v !== 'tape'
+  return v === 'front' || v === 'siege' || v === 'map'
 }
 
 /** `/live` with the view, the armies and the window, nothing default spelled out. */

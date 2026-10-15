@@ -84,7 +84,7 @@ function routes(): string[] {
   } catch { /* run from the repo root */ }
   return [
     '/', '/t/AAPL', '/t/ETH', '/t/HYPE', '/t/NOTREAL',
-    '/live', '/live?view=front', '/live?view=siege', '/live?view=map',
+    '/live', '/live?view=front', '/live?view=siege', '/live?view=map', '/live?view=flyover',
     '/chat', '/chat?tab=jobs', '/chat?tab=links', '/chat?tab=mcps', '/wallet',
     ...house,
     '/links', '/story', '/docs', '/docs/first-five-minutes', '/docs/links', '/docs/markets',

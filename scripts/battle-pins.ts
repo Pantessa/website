@@ -79,8 +79,9 @@ const ctx = (markPx: number, oiCoins: number, prevDayPx: number): ArmyContext =>
 
 export function battlePins(check: Check): void {
   // ── Views and the URL ─────────────────────────────────────────────────
-  check('battle: /live has four views — the tape and three battle projections; an unknown view is the tape; the URL spells only what is not default and round-trips',
-    LIVE_VIEWS.map((v) => v.id).join(',') === 'tape,front,siege,map' && parseLiveView('siege') === 'siege' && parseLiveView('nope') === 'tape' && parseLiveView(null) === 'tape' && isBattleView('map') && !isBattleView('tape') &&
+  // RE-PINNED 2026-10-15 (flyover): a fifth view, The Flyover (lib/flyover), which is NOT a battle view.
+  check('battle: /live has five views — the tape, three battle projections and The Flyover (not a battle view); an unknown view is the tape; the URL spells only what is not default and round-trips',
+    LIVE_VIEWS.map((v) => v.id).join(',') === 'tape,front,siege,map,flyover' && parseLiveView('siege') === 'siege' && parseLiveView('nope') === 'tape' && parseLiveView(null) === 'tape' && isBattleView('map') && !isBattleView('tape') && !isBattleView('flyover') &&
       liveUrl('tape', [], '1h') === '/live' && liveUrl('front', ['BTC', 'xyz:NVDA'], '15m') === '/live?view=front&t=BTC%2Cxyz%3ANVDA&since=15m' && liveUrl('map', ['ETH'], '1h') === '/live?view=map&t=ETH' &&
       parseFrontTokens(new URLSearchParams(liveUrl('front', ['BTC', 'xyz:NVDA'], '15m').split('?')[1]).get('t')).join(',') === 'BTC,xyz:NVDA')
 

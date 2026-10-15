@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import LiveCard from '@/app/live/opengraph-image'
 import { fmtPct, isBattleView } from '@/lib/battle'
-import { ARMY_INKS, cardEyebrow, cardFoot, cardRankNote, cardRowHeight, cardRows, groundShare, headlineSize, parseLiveShare, shareName, viewLabel, type CardRow, type LiveShare, type VenueRow } from '@/lib/live-share'
+import { ARMY_INKS, cardEyebrow, cardFoot, cardRankNote, cardRowHeight, cardRows, cardTagline, groundShare, headlineSize, parseLiveShare, shareName, type CardRow, type LiveShare, type VenueRow } from '@/lib/live-share'
 import { armySliceNote } from '@/lib/market-pick'
 import { gemMarkSvg } from '@/lib/og-marks'
 import { fmtPrice, fmtUsd, tapeMarket } from '@/lib/tape'
@@ -173,7 +173,7 @@ function Card({ share, rows, warm, asOf }: { share: LiveShare; rows: CardRow[]; 
             paddingRight: 10,
           }}
         >
-          {battle ? `on ${viewLabel(share.view)}.` : 'on the live tape.'}
+          {cardTagline(share.view)}
         </span>
         <div style={{ display: 'flex', flexDirection: 'column', marginTop: 18, gap: 10, fontSize: 14, letterSpacing: 2.6, color: MUTED, whiteSpace: 'nowrap' }}>
           {cardRankNote(share.view, share.since).map((l) => (
@@ -195,7 +195,7 @@ function Card({ share, rows, warm, asOf }: { share: LiveShare; rows: CardRow[]; 
       {/* right: the picked markets */}
       <div style={{ position: 'absolute', left: 618, top: 56, width: 518, height: 518, display: 'flex', flexDirection: 'column', borderRadius: 22, border: '1.5px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 22px', borderBottom: `1.5px solid ${LINE}` }}>
-          <span style={{ color: INK, fontSize: 14, fontWeight: 600, letterSpacing: 3 }}>{battle ? 'STANDINGS · 24H MOVE' : 'YOUR TAPE · 24H'}</span>
+          <span style={{ color: INK, fontSize: 14, fontWeight: 600, letterSpacing: 3 }}>{share.view === 'flyover' ? 'YOUR PLOTS · 24H' : battle ? 'STANDINGS · 24H MOVE' : 'YOUR TAPE · 24H'}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, letterSpacing: 2.5, color: warm ? ACCENT : MUTED }}>
             <div style={{ display: 'flex', width: 7, height: 7, borderRadius: 4, background: warm ? ACCENT : MUTED }} />
             <span>{warm && asOf != null ? `HYPERLIQUID · ${fmtUtc(asOf)}` : 'FEED WARMING UP'}</span>
