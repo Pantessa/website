@@ -372,6 +372,7 @@ import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
 import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
+import { flyoverPins } from './flyover-pins'
 import { orderTicketPins } from './order-ticket-pins'
 import { depthPins } from './depth-pins'
 import { deckPins } from './deck-pins'
@@ -34976,6 +34977,8 @@ async function main() {
   tapePins(check)
   // The battle views on /live (2026-10-06): windows and anchors, the percent track, the range, units, bursts, rank, the picker, the projections.
   battlePins(check)
+  // THE FLYOVER (2026-10-15): every market as terrain — the ledger, the ladders, the layout, the cap, the board, the readout, the chips, the legend, the wiring.
+  flyoverPins(check)
   // Where a chainless swap builds (2026-10-06): the home-chain table and
   // rule, the chain card's come-back plan, the wallet view's kept rows.
   spotHomePins(check)

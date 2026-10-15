@@ -102,7 +102,7 @@ function routes(): string[] {
     '/', '/t/AAPL', '/t/ETH', '/t/HYPE', '/t/NOTREAL',
     ...['chart', 'news', 'community', 'technicals', 'trade'].map((t) => `/t/ETH?tab=${t}`),
     '/t/AAPL?tab=trade', '/t/HYPE?tab=trade',
-    '/live', '/live?view=front', '/live?view=siege', '/live?view=map',
+    '/live', '/live?view=front', '/live?view=siege', '/live?view=map', '/live?view=flyover',
     '/chat', '/chat?tab=jobs', '/chat?tab=links', '/chat?tab=mcps', '/wallet',
     ...house,
     `/l/${handle}`, `/p/${pub}`,
