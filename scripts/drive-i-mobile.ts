@@ -228,8 +228,8 @@ async function measure(page: Pw): Promise<Measured> {
 }
 
 async function main() {
-  const require_ = createRequire('/Users/nategeier/anchor.js')
-  const { chromium, devices } = require_('playwright-core') as { chromium: Pw; devices: Pw }
+  const require_ = createRequire(process.env.PLAYWRIGHT_CORE ? import.meta.url : '/Users/nategeier/anchor.js')
+  const { chromium, devices } = require_(process.env.PLAYWRIGHT_CORE || 'playwright-core') as { chromium: Pw; devices: Pw }
   if (SHOTS) mkdirSync(SHOTS, { recursive: true })
   const browser = await chromium.launch({
     executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',

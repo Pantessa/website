@@ -88,7 +88,7 @@ import {
   isMarketsPath,
 } from '../lib/markets'
 import { composeAsk as composeTradeAsk, sidesFor as tradeSidesFor, tradeAsks } from '../lib/trade-asks'
-import { ROBINHOOD_TICKER_SET } from '../lib/robinhood-tickers'
+import { ROBINHOOD_CHAIN_COINS, ROBINHOOD_TICKER_SET } from '../lib/robinhood-tickers'
 import { normalizeSpokenAsk } from '../lib/voice-ask'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
@@ -11117,13 +11117,17 @@ async function main() {
     // that never reached the snapshot would stay chartless in silence — so
     // every live stock must be in the snapshot, and charted unless it is one
     // of the two the Robinhood feed has no quote for.
-    const offSnapshot = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !ROBINHOOD_TICKER_SET.has(sym))
+    // RE-PINNED 2026-10-13 (polish, QA-X2): the coin exclusion is the named
+    // set lib/robinhood-tickers ROBINHOOD_CHAIN_COINS (cbBTC, PONS), never a
+    // literal here — and robinhoodStockTokens() already leaves them out.
+    const offSnapshot = [...stockSyms].filter((sym) => !ROBINHOOD_CHAIN_COINS.has(sym) && !ROBINHOOD_TICKER_SET.has(sym))
     check('charts: every live 4663 stock listing is in the static ticker snapshot (regenerate lib/robinhood-tickers.ts when this reds)', offSnapshot.length === 0, offSnapshot.join(','))
     // RE-PINNED 2026-10-13 (main sweep): PONS listed on 4663 with no feed on
     // Robinhood (missing_instruments) or Yahoo (No data found) — the third
     // feedless listing, named in lib/charts ROBINHOOD_FEEDLESS.
     const unchartedStocks = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !isChartedStock(sym) && !['CASHCAT', 'SATS', 'PONS'].includes(sym))
     check('charts: every live 4663 stock listing charts except the three feedless ones', unchartedStocks.length === 0, unchartedStocks.join(','))
+    check('charts: the 4663 coins (cbBTC, PONS) are never in the stock set', ![...stockSyms].some((sym) => ROBINHOOD_CHAIN_COINS.has(sym)), [...stockSyms].filter((sym) => ROBINHOOD_CHAIN_COINS.has(sym)).join(','))
     const rhRpc = new Map<number, RpcChainRead>([
       [4663, { chainId: 4663, nativeEth: 0.00073, stable: { symbol: 'USDG', address: rhC.tokens.USDG.address, balance: 0.323 }, tokens: [{ symbol: 'AAPL', address: aapl, balance: 0.0376, stock: true }] }],
     ])
@@ -12503,9 +12507,19 @@ async function main() {
     const pfGated = (src: string) => {
       const creates = [...src.matchAll(/await createJob\(/g)].map((m) => m.index)
       const guards = [...src.matchAll(/unfillableFundedBuyReason\(/g)].map((m) => m.index)
-      return creates.length > 0 && creates.every((c) => guards.some((g) => g < c && c - g < 2_500))
+      // A job built BY HAND from fixed builders is not a compiled ask: the Aave
+      // ETH wrap-then-supply (#905, 3f1d2f2e) is wrap → supply — no funding leg,
+      // no native-lifi-swap buy — so the guard would read nothing there. A hand-
+      // built job that carries a funded buy (or wraps compileJobAsk) is NOT exempt.
+      const handBuilt = (c: number) => {
+        const win = src.slice(Math.max(0, c - 2_500), c)
+        const lit = win.lastIndexOf('const compiled: CompiledJob = {')
+        return lit >= 0 && !/native-lifi-swap|compileJobAsk\(/.test(win.slice(lit))
+      }
+      return creates.length > 0 && creates.every((c) => handBuilt(c) || guards.some((g) => g < c && c - g < 2_500))
     }
     const pfDoors = { chat: pfGated(pfChatSrc), api: pfGated(pfJobsSrc), broker: pfGated(pfBrokerSrc) }
+    // RE-PINNED 2026-10-13 (polish-qa): #905 (3f1d2f2e, Aave ETH wrap-then-supply) added a third chat createJob for a hand-built wrap → supply job with no funded buy; hand-built literals without a native-lifi-swap step are exempt, every compiled-ask door still needs the guard
     check(
       'venue pre-flight (wiring): EVERY door that turns a compiled ask into a job runs the guard just above its createJob — both chat doors (the jobs gate and the HL auto-funded one), the agent-facing jobs API (whose dry run reports it too, so a plan that validates clean cannot then 400) and the broker desk',
       pfDoors.chat && pfDoors.api && pfDoors.broker && pfJobsSrc.includes('if (unfillable) return NextResponse.json({ error: unfillable }, { status: 400 })'),
@@ -15186,8 +15200,8 @@ async function main() {
     body: JSON.stringify({ message: 'Sell all my AAPL for USDG on Robinhood Chain', activeServers: [], walletAddress: emptyWallet }),
   }).then((r) => r.json())
   check(
-    'native swap: "sell all my AAPL" on an empty wallet refuses by name (no build, no clarify, no planner)',
-    typeof sellAllEmpty.reply === 'string' && /don't hold any AAPL on Robinhood Chain/.test(sellAllEmpty.reply) && !sellAllEmpty.txChain && !sellAllEmpty.txRequest && !sellAllEmpty.clarify && sellAllEmpty.buildPath === 'native-swap-balance',
+    'native swap: "sell all my AAPL" on an empty wallet refuses by name (no build, no planner; a next-step chip may ride the refusal — RE-PINNED 2026-10-15 (polish sweep): the DEADENDS rule puts a next step on every refusal, so a clarify is allowed only when nextSteps marks it)',
+    typeof sellAllEmpty.reply === 'string' && /don't hold any AAPL on Robinhood Chain/.test(sellAllEmpty.reply) && !sellAllEmpty.txChain && !sellAllEmpty.txRequest && (!sellAllEmpty.clarify || sellAllEmpty.nextSteps === true) && sellAllEmpty.buildPath === 'native-swap-balance',
     JSON.stringify(sellAllEmpty).slice(0, 300),
   )
   check('native swap: sell-all with no wallet asks to connect', (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'sell my entire ETH balance', activeServers: [] }) }).then((r) => r.json())).connectWallet === true)
@@ -27184,7 +27198,7 @@ async function main() {
       const m = await askRoute({ symbol: 'ETH', tf: '1h', question: 'what is the trend on screen?', visible: { from: 0, to: 4102444800 } })
       check('ai ask: a question the grammars do not claim goes to the (mocked) model and comes back as prose', m.res.status === 200 && m.j.kind === 'answer' && m.j.deterministic === false && m.j.model === 'mock' && typeof m.j.text === 'string')
       const p = await askRoute({ symbol: 'ETH', tf: '1h', question: 'do it for me', mockScenario: 'poisoned' })
-      check('ai ask poisoned: a model "act" carrying an address is dropped by the fence — the answer is prose, names the refusal, and carries no address', p.j.kind === 'answer' && /can't turn that into a chip/.test(String(p.j.text)) && !/0x[0-9a-fA-F]{4,}/.test(String(p.j.text)) && !('chip' in p.j))
+      check('ai ask poisoned: a model "act" carrying an address is dropped by the fence — the answer is prose, names the refusal, and carries no address (RE-PINNED 2026-10-15 (polish sweep): DEADENDS reworded the refusal without "can\'t")', p.j.kind === 'answer' && /doesn't build as an order on this page|can't turn that into a chip/.test(String(p.j.text)) && !/0x[0-9a-fA-F]{4,}/.test(String(p.j.text)) && !('chip' in p.j))
       const pc = await askRoute({ symbol: 'ETH', tf: '1h', question: 'mark it up', mockScenario: 'poisoned-chart' })
       const pcState = parseChartState(pc.j.state)
       check('ai ask poisoned-chart: a model "chart" with a zero line, a 50× line and an address in a note keeps only the sane note, with the address blanked', pc.j.kind === 'chart' && !!pcState && pcState.lines.length === 1 && pcState.lines[0].kind === 'note' && !JSON.stringify(pcState).includes('0x1111') && JSON.stringify(pcState).includes('[address removed]'), `kind=${pc.j.kind} state=${JSON.stringify(pcState)}`)
@@ -28002,7 +28016,7 @@ async function main() {
       // at the source. Pinned at the source and by the count of drops seen.
       const ctxSrc2 = await readFile('lib/markets-ai-context.ts', 'utf8')
       // RE-PINNED 2026-10-13 (polish-qa): #903 (a53c28aa) stopped composing "Supply $50 of AAVE to Aave" at the source; AVAX (a KNOWN_GAPS planner fall) is the dropped exemplar now
-      check('arrival ladder: the Morning tape\'s menu is ladder-filtered server-side before the model sees it (lib/markets-ai-context menuFor → ladderFilterMenu), and the proof saw the filter drop the non-action menu sentences', ctxSrc2.includes('return ladderFilterMenu(chipMenu({ pair: tape.pair, last: tape.last, tech: tape.tech })).chips') && ctxSrc2.includes('const { chips: menu, dropped } = ladderFilterMenu(chipMenu({ pair, last, tech }))') && menuDroppedByRoute.some((d) => /^AVAX: Buy \$50 of AVAX$/.test(d)) && menuDroppedByRoute.some((d) => /Sell all my F$/.test(d)), `${menuDroppedByRoute.length} menu drops`)
+      check('arrival ladder: the Morning tape\'s menu is ladder-filtered server-side before the model sees it (lib/markets-ai-context menuFor → ladderFilterMenu), and the proof saw the filter drop the non-action menu sentences', ctxSrc2.includes('return ladderFilterMenu(chipMenu({ pair: tape.pair, last: tape.last, tech: tape.tech })).chips') && ctxSrc2.includes('const { chips: menu, dropped } = ladderFilterMenu(chipMenu({ pair, last, tech }))') && menuDroppedByRoute.length > 0 /* RE-PINNED 2026-10-15 (polish sweep): DEADENDS made the former exemplars (the AVAX buy, the single-letter sells) land natively, so the proof is the filter's wiring + a non-empty drop list */, `${menuDroppedByRoute.length} menu drops`)
       // The fired-alert chip: alertActionChips composes it (the AlertForm only
       // offers those), but createAlert (lib/watchlists-store) stores ANY string
       // a signed-in caller POSTs as actionAsk — so the rail's "needs you" chip
@@ -34787,7 +34801,7 @@ async function main() {
     check('native shell: useSwipeToClose(panelRef, onClose, side) is the one drag — pointer events (touch + mouse, button 0), the panel follows, shouldDismissDrag decides, the exit starts from --sheet-from on the panel, phone posture only',
       /export function useSwipeToClose\(panelRef: RefObject<HTMLElement \| null>, onClose: \(reason: 'swipe'\) => void, side: 'bottom' \| 'left' = 'bottom'\)/.test(swipeHook) && /shouldDismissDrag\(delta, d\.v, size\)/.test(swipeHook) && /panel\.style\.setProperty\('--sheet-from', /.test(swipeHook) && /if \(e\.pointerType === 'mouse' && e\.button !== 0\) return/.test(swipeHook) && /if \(!isPhoneViewport\(\) \|\| !panelRef\.current\) return/.test(swipeHook) && /onPointerCancel: end/.test(swipeHook))
     check('native shell: the Sheet wears both hooks (useBackToClose(open, dismiss, historyKey); useSwipeToClose(panelRef, dismiss, side) spread on the grabber and the head), traps Tab, locks the document\'s scroll while open and returns focus to the opener',
-      /useBackToClose\(open, dismiss, historyKey\)/.test(sheetSrc) && /const \{ handleProps: dragHandlers \} = useSwipeToClose\(panelRef, dismiss, side\)/.test(sheetSrc) && /className="sheet__grabber" aria-hidden \{\.\.\.dragHandlers\}/.test(sheetSrc) && /className="sheet__head" \{\.\.\.dragHandlers\}/.test(sheetSrc) &&
+      /useBackToClose\(open && dismissible, dismiss, historyKey\)/.test(sheetSrc) /* RE-PINNED 2026-10-15 (polish sweep): FLOW-MOBILE's dismissible sheets own the back entry only while dismissible */ && /const \{ handleProps: (?:drag|swipe)Handlers \} = useSwipeToClose\(panelRef, dismiss, side\)/.test(sheetSrc) && /className="sheet__grabber" aria-hidden \{\.\.\.dragHandlers\}/.test(sheetSrc) && /className="sheet__head" \{\.\.\.dragHandlers\}/.test(sheetSrc) &&
         /const trapTab = \(e: KeyboardEvent\)/.test(sheetSrc) && /html\.style\.overflow = 'hidden'/.test(sheetSrc) && /opener\?\.focus\?\.\(\{ preventScroll: true \}\)/.test(sheetSrc) && !/shouldDismissDrag|sheetHistory\(\)/.test(code(sheetSrc)))
     check('native shell: a bottom sheet pads the landscape notch (env(safe-area-inset-left/right)) and, on a landscape phone, may take everything above the status bar',
       /\.sheet\[data-side='bottom'\] \.sheet__panel \{[^}]*padding: 0 env\(safe-area-inset-right\) env\(safe-area-inset-bottom\) env\(safe-area-inset-left\);/.test(sheetCss) &&
@@ -34915,7 +34929,7 @@ async function main() {
     const rtCss = rf('components/intent-runtime.css', 'utf8')
     // RE-PINNED 2026-10-13 (polish-qa): the share lane (9b20426e, #910) added a fifth /i bottom bar ("Signed. Share this link") that wears data-runtime-bar too; now also pinned as "every bar-shaped bottom div wears the hook", so a new bar without it goes red
     check('native chat r2: /i\'s four bottom bars step aside while the soft keyboard is up (html[data-keyboard], phone only) — the composer sits on the keyboard the way the tab bar steps aside',
-      (rt2.match(/data-runtime-bar=""/g) ?? []).length === 5 &&
+      (rt2.match(/data-runtime-bar=""/g) ?? []).length >= 5 /* RE-PINNED 2026-10-15 (polish sweep): FLOW-MOBILE's keep-it sheet wears the hook too; the rule is every bar-shaped div is hooked */ &&
         (() => { const bars = rt2.match(/<div [^>]*className="[^"]*\bborder-t border-\[var\(--line\)\][^"]*backdrop-blur[^"]*"/g) ?? []; return bars.length === 5 && bars.every((b) => b.includes('data-runtime-bar=""')) })() && /@media \(max-width: 1023px\) \{\s*html\[data-keyboard\] \.yf-runtime \[data-runtime-bar\] \{\s*display: none;/.test(rtCss))
     check('native chat r2: the signature-wait cards close on the back gesture and stay on the page (/i\'s own instance and the global one), through SHELL\'s useBackToClose',
       /useBackToClose\(sigWait\.shown && !sigDismissed, \(\) => setSigDismissed\(true\), 'sigwait-i'\)/.test(rt2) && /useBackToClose\(covering, \(\) => setDismissed\(true\), 'sigwait'\)/.test(rf('components/SignatureWaitTakeover.tsx', 'utf8')))
@@ -35040,6 +35054,37 @@ async function main() {
         /text\/event-stream/.test(ctype) && hello && fills >= 3 && tagged === fills && effectful > 0 && [...venuesSeen].every((v) => v === 'hyperliquid' || v === 'lighter'),
         `fills=${fills} tagged=${tagged} effect=${effectful} venues=${[...venuesSeen].join(',')} hello=${hello} ctype=${ctype}`)
     }
+  }
+
+  /* POLISH:DEADENDS — every sentence the product offers is backed by a response (squad polish, 2026-10-13). */
+  {
+    console.log('— polish deadends: the market read door, a next step on every refusal, the inventory')
+    const DEAD_PROSE = /\bI can['’]t\b|\bI cannot\b|I (?:do not|don['’]t) have (?:access|real-time|live)|\bYahoo\b|this environment|process\.env|prisma/i
+    const wallet = '0x' + 'd3adbeef'.repeat(5)
+    const post = (message: string, extra: Record<string, unknown> = {}) =>
+      fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ message, history: [], activeServers: [], sessionId: `harness-polish-deadends-${Date.now()}`, ...extra }) })
+        .then((r) => r.json() as Promise<Record<string, any>>).catch(() => null)
+    const read = await post('Why is ETH moving?')
+    check('polish deadends: "Why is ETH moving?" (the guide hint, the ask door chip) answers from our tape — the live chart, the chart + lead-order chips, no planner, no "I can\'t"',
+      read?.buildPath === 'native-market-read' && read.chart?.symbol === 'ETH' && (read.clarify?.options ?? []).some((o: any) => o.resume === 'Show me the ETH chart') && /\*\*ETH\*\*/.test(String(read.reply)) && !DEAD_PROSE.test(String(read.reply)),
+      `${read?.buildPath} ${String(read?.reply).slice(0, 160)}`)
+    const doorChip = await post('What is moving TSLA right now — price, 24h change, and the news behind it?')
+    check('polish deadends: the ask door\'s /t chip on a stock is the same native read', doorChip?.buildPath === 'native-market-read' && doorChip.chart?.symbol === 'TSLA', String(doorChip?.buildPath))
+    const opinion = await post('is TSLA a good trade right now')
+    check('polish deadends: an opinion ask gets the tape and the call left to the reader (the planner invented levels)', opinion?.buildPath === 'native-market-read' && /That call is yours to make/.test(String(opinion.reply)), String(opinion?.reply).slice(0, 160))
+    const aave = await post('supply 10 USDC to aave on base', { walletAddress: wallet })
+    check('polish deadends: a native wall that names its fix carries it as a chip (the refusal\'s own words)',
+      aave?.nextSteps === true && aave.clarify?.options?.[0]?.resume === 'supply 10 USDC to Aave on Ethereum', JSON.stringify(aave?.clarify ?? aave?.reply).slice(0, 200))
+    const unknown = await post('buy $10 of ZZQX', { walletAddress: wallet })
+    check('polish deadends: an unknown token never ends bare — what works today rides the refusal', (unknown?.clarify?.options ?? []).length > 0 && ((unknown?.clarify?.options ?? []) as any[]).every((o) => simulateLadder(o.resume).kind !== 'planner'), JSON.stringify(unknown?.clarify ?? unknown?.reply).slice(0, 200))
+    const typo = await post('buy $10 of AAPLE', { walletAddress: wallet })
+    check('polish deadends: a typo\'d ticker is offered the listed one (AAPLE → AAPL) or the stock door', (typo?.clarify?.options ?? []).some((o: any) => /AAPL\b/.test(o.resume)), JSON.stringify(typo?.clarify ?? typo?.reply).slice(0, 200))
+    const ma = await fetch(`${BASE}/api/markets/ask`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ symbol: 'ETH', question: 'What is the trend in the ETH candles on screen?' }) }).then((r) => r.json() as Promise<Record<string, any>>).catch(() => null)
+    check('polish deadends: the AI bar\'s trend question chip answers (model, wall or tape) — never a dead end', !!ma && ['answer', 'chart', 'alert', 'act'].includes(ma.kind) && !DEAD_PROSE.test(String(ma.text ?? ma.say ?? '')) && String(ma.text ?? ma.say ?? '').length > 20, JSON.stringify(ma).slice(0, 200))
+    const { enumerate } = await import('./deadend-inventory')
+    const inv = enumerate()
+    const falls = inv.filter((r) => r.verdict === 'planner' || r.verdict === 'refusal')
+    check(`polish deadends: the inventory — ${inv.length} offered sentences, 0 planner, 0 bare refusal`, inv.length > 1500 && falls.length === 0, falls.slice(0, 5).map((r) => `[${r.surface}] ${r.sentence}`).join(' | '))
   }
 
   // ── cron cost (2026-10-14): the tradability walk reads only STALE legs ──

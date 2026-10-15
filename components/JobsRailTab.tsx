@@ -41,7 +41,7 @@ function IconBtn({ label, danger, onClick, children }: { label: string; danger?:
       aria-label={label}
       className={cn(
         'grid h-6 w-6 place-items-center rounded-md text-[color:var(--muted-2)] transition-colors',
-        danger ? 'hover:text-[color:var(--fail)] hover:bg-[color:color-mix(in_srgb,var(--fail)_10%,transparent)]' : 'hover:text-white hover:bg-[var(--surf-1)]',
+        danger ? 'hover:text-[color:var(--fail)] hover:bg-[color:color-mix(in_srgb,var(--fail)_10%,transparent)]' : 'hover:text-[color:var(--fg)] hover:bg-[var(--surf-1)]',
       )}
     >
       {children}

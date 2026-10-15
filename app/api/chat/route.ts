@@ -178,6 +178,11 @@ import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-fun
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { COW_VAULT_RELAYER } from '@/lib/cow-guardrails'
 import { chartPairFor, parseChartAsk } from '@/lib/charts'
+import { marketReadAsk, marketReadChips, marketReadWords } from '@/lib/market-read'
+import { symbolName } from '@/lib/markets'
+import { NEXT_STEP_QUESTION, refusalNextSteps } from '@/lib/refusal-next-step'
+import { readTape, techSummary } from '@/lib/markets-ai-context'
+import { getNews, ageLabel } from '@/lib/news'
 import { ensureTokenList } from '@/lib/token-list'
 import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
 import { resolveProposal } from '@/lib/snapshot-read'
@@ -514,6 +519,19 @@ export async function POST(req: NextRequest) {
       const artifactData = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
       after(() => recordTurnExpectations(reqBody, artifactData))
     }
+    // Every refusal carries a next step (POLISH/DEADENDS 2026-10-13,
+    // lib/refusal-next-step): a money ask answered with words and nothing to
+    // tap gets the sentences its own refusal names (“say … and I'll build
+    // it”), a retry when the wall was a feed, and — for the planner's prose —
+    // the grammar's read and the market's chart + lead order. The ORIGINAL
+    // turn is what the failures queue logs below (a chip is not a fix).
+    const askText = typeof reqBody.message === 'string' ? reqBody.message : ''
+    const preData = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
+    const preKind = classifyTurn(preData).kind
+    if (reqBody.phase !== 'execute' && askText.trim() && moneyShaped(askText) && preData && (preKind === 'native-wall' || preKind === 'planner-answer' || preKind === 'blocked') && typeof preData.reply === 'string' && !preData.clarify) {
+      const options = refusalNextSteps(askText, preData.reply, buildsNatively, { planner: preKind === 'planner-answer' })
+      if (options.length) res = NextResponse.json({ ...preData, clarify: { question: NEXT_STEP_QUESTION, options }, nextSteps: true }, { status: res.status })
+    }
     // The API harness provokes walls on purpose — its probes opt out.
     if (req.headers.get('x-yf-no-ask-log') === '1') return res
     // The journey log (lib/journey-server.ts): this ask and the shape of what
@@ -523,10 +541,10 @@ export async function POST(req: NextRequest) {
       const turnBody = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
       after(() => recordTurn(req.headers, reqBody, turnBody, { streamed: false, startedAt: turnStartedAt, finishedAt: turnFinishedAt }))
     }
-    const message = typeof reqBody.message === 'string' ? reqBody.message : ''
+    const message = askText
     if (reqBody.phase === 'execute' || !message.trim() || !moneyShaped(message)) return res
-    const data = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
-    const { kind } = classifyTurn(data)
+    const data = preData
+    const kind = preKind
     if (!kind) return res
     const wallet =
       typeof reqBody.walletAddress === 'string' && isAddress(reqBody.walletAddress) ? getAddress(reqBody.walletAddress) : null
@@ -950,10 +968,50 @@ async function handleChatTurn(req: NextRequest) {
         reason: 'native chart read — the overlay opens in-chat instead of the planner narrating a price',
       })
       return NextResponse.json({
-        reply: `📈 Here's the live ${pair.label} chart (${pair.source === 'coinbase' ? 'Coinbase spot' : pair.source === 'hyperliquid' ? 'Hyperliquid perp' : 'Robinhood 24/7 stock'} candles). Tap Buy, Sell, or DCA on it and I'll build the transaction — your wallet signs.`,
+        reply: `📈 Here's the live ${pair.label} chart (${pair.source === 'coinbase' ? 'Coinbase spot' : pair.source === 'hyperliquid' ? 'Hyperliquid perp' : 'Robinhood 24/7 stock'} candles). Tap an order on it and I'll build the transaction — your wallet signs.`,
         chart: { symbol: pair.symbol, label: pair.label, source: pair.source, url: `/t/${pair.symbol}` },
         buildPath: 'native-chart',
       })
+    }
+
+    // ── Native market READ (POLISH/DEADENDS 2026-10-13). "Why is ETH moving?"
+    //    is a sentence the product OFFERS (the guide, the ask door's chip on
+    //    every symbol page, the empty chat's example). The planner holds no
+    //    price feed and answered "try Yahoo Finance" (the 09-15 tweet
+    //    stranger). Answer from our own tape + the news ladder, with the live
+    //    chart and the lead order as chips. A feed that throws still answers
+    //    (the chart keeps polling) — never a dead end, never a 500.
+    const marketRead = marketReadAsk(message)
+    if (marketRead) {
+      const pair = chartPairFor(marketRead.symbol)
+      if (pair) {
+        // The daily tape carries the rating and the averages; the hourly tape
+        // carries the honest 24h move (a daily bar's "24h ago" is the open of
+        // a session, not a day ago).
+        const [tape, hourly, news] = await Promise.all([
+          readTape(pair.symbol, '1d').catch(() => null),
+          readTape(pair.symbol, '1h').catch(() => null),
+          marketRead.kind === 'trend' ? Promise.resolve(null) : getNews(pair.symbol, 8).catch(() => null),
+        ])
+        nativeTrace({ type: 'select', service: `${pair.source} (native read)`, endpoint: `tape · ${pair.label}`, priceUsd: 0, reason: 'native market read — our own tape + the news ladder, never the planner narrating a price' })
+        const reply = marketReadWords({
+          pair,
+          kind: marketRead.kind,
+          last: hourly?.last ?? tape?.last ?? null,
+          change24hPct: hourly?.change24hPct ?? tape?.change24hPct ?? null,
+          tech: techSummary(tape?.tech ?? null),
+          tf: tape?.tf,
+          name: symbolName(pair.symbol),
+          news: marketRead.kind === 'trend' ? null : (news?.items ?? []).map((n) => ({ title: n.title, url: n.url, source: n.source, age: ageLabel(n.publishedAt) })),
+        })
+        const options = marketReadChips(pair)
+        return NextResponse.json({
+          reply,
+          chart: { symbol: pair.symbol, label: pair.label, source: pair.source, url: `/t/${pair.symbol}` },
+          clarify: { question: `Act on ${pair.symbol}?`, options },
+          buildPath: 'native-market-read',
+        })
+      }
     }
 
     // ── Swap intent: Pantessa-NATIVE transaction building ──────────────────────
@@ -1366,7 +1424,7 @@ async function handleChatTurn(req: NextRequest) {
         if (aaveOpAsk.otherChain) {
           nativeTrace({ type: 'note', level: 'info', label: `native aave layer: non-Ethereum chain (${aaveOpAsk.otherChain}) — Aave v4 is Ethereum-only, no build` })
           return NextResponse.json({
-            reply: `🏦 Aave v4 is live on **Ethereum only** today — I can't build a ${aaveOpAsk.op} on ${aaveOpAsk.otherChain}. Say “${aaveOpAsk.op} ${aaveOpAsk.amount ?? 'all my'} ${aaveOpAsk.token.toUpperCase()} on Ethereum” and I'll prepare it.`,
+            reply: `🏦 Aave v4 is live on **Ethereum only** today — I can't build a ${aaveOpAsk.op} on ${aaveOpAsk.otherChain}. Say “${aaveOpAsk.op} ${aaveOpAsk.amount ?? 'all my'} ${aaveOpAsk.token.toUpperCase()} on Aave on Ethereum” and I'll prepare it.`,
           })
         }
         nativeTrace({ type: 'status', label: `native aave layer claimed the turn: ${aaveOpAsk.op} ${aaveOpAsk.max ? `all ${aaveOpAsk.token.toUpperCase()}` : `${aaveOpAsk.amount} ${aaveOpAsk.token.toUpperCase()}`}${aaveOpAsk.explicitAave ? '' : ' (set-hint: Aave selected)'} — planner bypassed` })
@@ -3813,7 +3871,7 @@ async function buildAaveOpTurn(
     }
     if (!params.max && Number(params.amount) > Number(supplyPos.withdrawable ?? 0)) {
       return NextResponse.json({
-        reply: `🏦 Your withdrawable ${token} on Aave v4 ${supplyPos.spoke ?? ''} is ${supplyPos.withdrawable} (asked: ${params.amount}) — say “withdraw all my ${token}” and I'll build the full withdrawal.`,
+        reply: `🏦 Your withdrawable ${token} on Aave v4 ${supplyPos.spoke ?? ''} is ${supplyPos.withdrawable} (asked: ${params.amount}) — say “withdraw all my ${token} from Aave” and I'll build the full withdrawal.`,
       })
     }
   }
@@ -3827,7 +3885,7 @@ async function buildAaveOpTurn(
     }
     if (!params.max && Number(params.amount) > Number(debtPos.debt ?? 0)) {
       return NextResponse.json({
-        reply: `🏦 Your ${token} debt on Aave v4 ${debtPos.spoke ?? ''} is ${debtPos.debt} (asked: ${params.amount}) — say “repay all my ${token} debt” and I'll build the full repayment, accrued interest included.`,
+        reply: `🏦 Your ${token} debt on Aave v4 ${debtPos.spoke ?? ''} is ${debtPos.debt} (asked: ${params.amount}) — say “repay all my ${token} debt on Aave” and I'll build the full repayment, accrued interest included.`,
       })
     }
   }

@@ -39,6 +39,24 @@ const CORPUS: Entry[] = [
   // The live dead-end that started this audit
   { ask: 'swap 1 USDC from base to Etheruem', source: 'live 2026-07-22', expect: 'action' },
 
+  // POLISH (2026-10-13, DEADENDS): the market READ door — every read the
+  // product OFFERS answers from our own tape + the news ladder (the guide's
+  // hint, the ask door's chip on every /t page, the empty chat's example).
+  { ask: 'Why is ETH moving?', source: 'guide hint CTA (lib/guide)', expect: 'action' },
+  { ask: 'Why is TSLA moving?', source: 'guide hint CTA on a stock (the 09-15 tweet stranger got "try Yahoo Finance")', expect: 'action' },
+  { ask: 'What is moving HYPE right now — price, 24h change, and the news behind it?', source: 'ask door chip on /t (lib/ask-door)', expect: 'action' },
+  { ask: 'What is the current price and 24h change for ETH?', source: 'example prompt (lib/examples)', expect: 'action' },
+  { ask: "what's going on with apple", source: 'stranger phrasing (market read, household name)', expect: 'action' },
+  { ask: 'What is the trend in the AAPL candles on screen?', source: 'AI bar question chip (lib/markets-ai-suggestions) — the chat lane reads it too', expect: 'action' },
+  // Opinion asks get the tape, not the model's invented levels.
+  { ask: 'is TSLA a good trade right now', source: 'live sweep 2026-10-13 (the planner invented "support near $238" for TSLA at $378)', expect: 'action' },
+  { ask: 'should I buy HYPE', source: 'live sweep 2026-10-13 (opinion → the tape)', expect: 'action' },
+  // The composers now offer the perp for a non-EVM home (was "Buy $50 of SOL" → the refusal door).
+  { ask: 'Long $50 of SOL on Hyperliquid', source: 'overview chip (lib/trade-asks composeAsk, non-EVM home)', expect: 'action' },
+  { ask: 'Short $50 of XRP on Hyperliquid', source: 'overview chip (lib/trade-asks composeAsk, non-EVM home)', expect: 'action' },
+  { ask: 'Long $25 of SOL on Hyperliquid', source: 'tape follow of a "SOL" printed on a Base pool (lib/tape)', expect: 'action' },
+  { ask: 'Long $50 of HYPE on Hyperliquid', source: 'alert chip on a perp alert (lib/watchlists alertActionChips)', expect: 'action' },
+
   // The order ticket (2026-10-06): the sized shapes the header's form composes
   // (lib/order-ticket; the full matrix is pinned in scripts/order-ticket-pins.ts).
   { ask: 'Buy $12.50 of UNI', source: 'order ticket (dollar box)', expect: 'action' },

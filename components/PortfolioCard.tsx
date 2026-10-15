@@ -38,7 +38,7 @@ export default function PortfolioCard({ data }: { data: PortfolioDisplay }) {
             Portfolio · {shortAddr(data.owner)}
           </span>
         </div>
-        <span className="text-2xl font-semibold tracking-tight text-white">{usd(data.totalUsd)}</span>
+        <span className="text-2xl font-semibold tracking-tight text-[color:var(--fg)]">{usd(data.totalUsd)}</span>
       </div>
 
       {/* Per-chain subtotal chips */}
@@ -49,7 +49,7 @@ export default function PortfolioCard({ data }: { data: PortfolioDisplay }) {
               key={c.chain}
               className="inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-white/[0.03] px-2 py-0.5 text-[10px] text-[color:var(--muted)]"
             >
-              <span className="font-medium text-white">{c.chain}</span>
+              <span className="font-medium text-[color:var(--fg)]">{c.chain}</span>
               {usd(c.usd)}
               <span className="text-[color:var(--muted-2)]">
                 · {c.holdings} asset{c.holdings === 1 ? '' : 's'}
@@ -70,7 +70,7 @@ export default function PortfolioCard({ data }: { data: PortfolioDisplay }) {
                   <TokenDot h={h} />
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-medium text-white">{h.symbol}</span>
+                      <span className="font-medium text-[color:var(--fg)]">{h.symbol}</span>
                       {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
                       <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>
                     </div>
@@ -80,7 +80,7 @@ export default function PortfolioCard({ data }: { data: PortfolioDisplay }) {
                 <div className="flex flex-shrink-0 items-center gap-1">
                   <ChartHoverButton symbol={h.symbol} />
                   <div className="text-right">
-                    <div className="text-white">{h.valueUsd !== null && h.valueUsd !== undefined ? usd(h.valueUsd) : '—'}</div>
+                    <div className="text-[color:var(--fg)]">{h.valueUsd !== null && h.valueUsd !== undefined ? usd(h.valueUsd) : '—'}</div>
                     <div className="text-[10px] text-[color:var(--muted-2)]">
                       {h.balance} {h.symbol}
                     </div>

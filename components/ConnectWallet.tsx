@@ -50,7 +50,7 @@ export default function ConnectWallet() {
                     type="button"
                     className={cn(
                       'flex items-center gap-2 px-3.5 py-1.5 rounded-full',
-                      'bg-white text-zinc-950 text-xs font-semibold',
+                      'bg-[var(--fg)] text-zinc-950 text-xs font-semibold',
                       'hover:bg-zinc-200 active:scale-[0.98] transition-all duration-150',
                       'shadow-sm shadow-black/40'
                     )}

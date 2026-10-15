@@ -577,7 +577,7 @@ export function guidePins(check: Check): void {
   check(
     'first-run: the keep-it moment — after a signed receipt, /i and /chat show what happened and ONE invitation to sign in and keep it ("Nothing moves."), with "Not now" and no modal; the chat banner turns into it only once a receipt exists, and the receipt is reported from the one place every signed turn passes (reportEmbedSigned)',
     /role="note"/.test(keepSrc) && !/role="dialog"|createPortal/.test(keepSrc) && /Nothing moves\./.test(KEEP_IT.body) && KEEP_IT.later === 'Not now' &&
-      /signed && needsSignIn && \([\s\S]{0,400}<KeepItBar id=\{`i:\$\{slug\}`\}/.test(iRt) && !/Sign in & save/.test(iRt) &&
+      /signed && needsSignIn && (?:!?phone && )?\([\s\S]{0,400}<KeepItBar id=\{`i:\$\{slug\}`\}/.test(iRt) /* RE-PINNED 2026-10-15 (polish sweep): FLOW-MOBILE mounts the one invitation per posture — inline on a desktop, a sheet on a phone */ && !/Sign in & save/.test(iRt) &&
       /if \(awaitingSignature && receipt\) \{/.test(gateSrc) && /noteSignedReceipt\(\{ artifact: info\.artifact/.test(src('components/ChatInterface.tsx')),
   )
   check(

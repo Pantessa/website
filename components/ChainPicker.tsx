@@ -74,12 +74,12 @@ export default function ChainPicker() {
         className={
           'flex items-center gap-1.5 px-2.5 min-h-[40px] md:min-h-[32px] rounded-lg border transition-colors ' +
           (selected
-            ? 'bg-[var(--surf-2)] border-white/30 text-white'
-            : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)]')
+            ? 'bg-[var(--surf-2)] border-white/30 text-[color:var(--fg)]'
+            : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)]')
         }
       >
         {SelectedMark ? <SelectedMark size={16} /> : <Globe className="w-4 h-4" />}
-        <span className="text-[11px] whitespace-nowrap font-medium mono hidden sm:inline">
+        <span className="text-[length:var(--fs-xs)] whitespace-nowrap font-medium mono hidden sm:inline">
           {selected ? selected.short.toUpperCase() : 'ALL CHAINS'}
         </span>
         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -98,7 +98,7 @@ export default function ChainPicker() {
                   role="option"
                   aria-selected={active}
                   onClick={() => pick(c.id)}
-                  className="flex w-full min-h-[52px] items-center gap-3 px-4 text-left text-[15px] text-[color:var(--fg)] active:bg-[var(--surf-1)]"
+                  className="flex w-full min-h-[52px] items-center gap-3 px-4 text-left text-[length:var(--fs-base)] text-[color:var(--fg)] active:bg-[var(--surf-1)]"
                 >
                   {c.id === null ? (
                     <Globe className="w-[22px] h-[22px] text-[color:var(--muted-2)]" />
@@ -128,7 +128,7 @@ export default function ChainPicker() {
             role="option"
             aria-selected={!selected}
             onClick={() => pick(null)}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-white transition-colors hover:bg-[var(--surf-2)]"
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[length:var(--fs-md)] text-[color:var(--fg)] transition-colors hover:bg-[var(--surf-2)]"
           >
             <Globe className="w-[18px] h-[18px] text-[color:var(--muted-2)]" />
             <span className="flex-1">All supported chains</span>
@@ -144,7 +144,7 @@ export default function ChainPicker() {
                 role="option"
                 aria-selected={active}
                 onClick={() => pick(c.id)}
-                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-white transition-colors hover:bg-[var(--surf-2)]"
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[length:var(--fs-md)] text-[color:var(--fg)] transition-colors hover:bg-[var(--surf-2)]"
               >
                 {Mark ? <Mark size={18} /> : <span className="w-[18px] h-[18px] rounded-full" style={{ background: c.color }} />}
                 <span className="flex-1">{c.name}</span>

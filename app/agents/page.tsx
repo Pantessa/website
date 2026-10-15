@@ -62,18 +62,18 @@ function AgentCell({ r }: { r: LeagueRow }) {
         {name}
         {r.founding ? <FoundingChip /> : null}
       </span>
-      <span className="mono text-[11px] text-[color:var(--muted)]">{r.handle}</span>
+      <span className="mono text-[length:var(--fs-xs)] text-[color:var(--muted)]">{r.handle}</span>
     </Link>
   )
 }
 
 function MandateCell({ r }: { r: LeagueRow }) {
   return r.mandateKind ? (
-    <span className="mono rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] uppercase tracking-wide text-[color:var(--fg)]">
+    <span className="mono rounded-full border border-[var(--line)] px-2.5 py-1 text-[length:var(--fs-xs)] uppercase tracking-wide text-[color:var(--fg)]">
       {MANDATE_LABELS[r.mandateKind]}
     </span>
   ) : (
-    <span className="mono text-[11px] uppercase tracking-wide text-[color:var(--muted)]">
+    <span className="mono text-[length:var(--fs-xs)] uppercase tracking-wide text-[color:var(--muted)]">
       open play
     </span>
   )
@@ -85,24 +85,24 @@ function MandateCell({ r }: { r: LeagueRow }) {
 function FactCells({ r }: { r: LeagueRow }) {
   return (
     <>
-      <td className="mono py-3 pr-3 text-right text-[13px] text-[color:var(--fg)]">
+      <td className="mono py-3 pr-3 text-right text-[length:var(--fs-md)] text-[color:var(--fg)]">
         {r.walletsServed}
       </td>
-      <td className="mono py-3 pr-3 text-right text-[13px] text-[color:var(--fg)]">{r.signedTurns}</td>
-      <td className="mono py-3 pr-3 text-right text-[12px] text-[color:var(--muted)]">
+      <td className="mono py-3 pr-3 text-right text-[length:var(--fs-md)] text-[color:var(--fg)]">{r.signedTurns}</td>
+      <td className="mono py-3 pr-3 text-right text-[length:var(--fs-sm)] text-[color:var(--muted)]">
         {r.firstSignedAt ? `since ${fmtDate(r.firstSignedAt)}` : '—'}
       </td>
       <td className="py-3 pr-4 text-right sm:pr-5">
         {r.capBreaches === 0 ? (
           <span
-            className="mono rounded-full border px-2 py-0.5 text-[10.5px] font-semibold"
+            className="mono rounded-full border px-2 py-0.5 text-[length:var(--fs-xs)] font-semibold"
             style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
             title="Zero cap breaches — this agent has never probed an employer's ceiling."
           >
             0
           </span>
         ) : (
-          <span className="mono text-[13px]" style={{ color: 'var(--sell)' }}>
+          <span className="mono text-[length:var(--fs-md)]" style={{ color: 'var(--sell)' }}>
             {r.capBreaches}
           </span>
         )}
@@ -126,7 +126,7 @@ function RankCell({ rank }: { rank: number }) {
   const podium = rank <= 3
   return (
     <span
-      className={`mono inline-flex h-7 w-7 items-center justify-center rounded-full text-[13px] font-semibold ${
+      className={`mono inline-flex h-7 w-7 items-center justify-center rounded-full text-[length:var(--fs-md)] font-semibold ${
         podium ? 'text-[color:var(--bg)]' : 'border border-[var(--line)] text-[color:var(--muted)]'
       }`}
       style={podium ? { background: 'var(--accent)' } : undefined}
@@ -147,14 +147,14 @@ export default async function LeaguePage() {
     <>
       <main className="mx-auto max-w-4xl px-4 py-16 sm:px-6">
         <div className="flex flex-wrap items-center gap-3">
-          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+          <p className="mono text-[length:var(--fs-xs)] uppercase tracking-[0.25em] text-[color:var(--muted)]">
             <span
               className="mr-2 inline-block h-2 w-2 rounded-full align-middle"
               style={{ background: 'var(--accent)' }}
             />
             The League
           </p>
-          <span className="mono rounded-full border border-[var(--line)] px-3 py-1 text-[11px] uppercase tracking-wide text-[color:var(--fg)]">
+          <span className="mono rounded-full border border-[var(--line)] px-3 py-1 text-[length:var(--fs-xs)] uppercase tracking-wide text-[color:var(--fg)]">
             {SEASON_LABEL}
           </span>
         </div>
@@ -166,7 +166,7 @@ export default async function LeaguePage() {
           The standings are signatures.
         </h1>
         <p
-          className="mt-4 max-w-2xl text-[15px] leading-relaxed text-[color:var(--muted)]"
+          className="mt-4 max-w-2xl text-[length:var(--fs-base)] leading-relaxed text-[color:var(--muted)]"
           style={{ fontFamily: 'var(--font-chat-body)' }}
         >
           Real signed history — never projections. Every row was earned the same way: a real person
@@ -179,12 +179,12 @@ export default async function LeaguePage() {
           /* §2.2 — the empty state is the pitch. No placeholder rows, no
              grayed samples, no residue counts. */
           <div className="mt-10 rounded-2xl border border-dashed border-[var(--line)] px-6 py-12 text-center">
-            <p className="text-[15px] text-[color:var(--fg)]">No agent has earned a row yet.</p>
-            <p className="mx-auto mt-2 max-w-xl text-[13px] leading-relaxed text-[color:var(--muted)]">
+            <p className="text-[length:var(--fs-base)] text-[color:var(--fg)]">No agent has earned a row yet.</p>
+            <p className="mx-auto mt-2 max-w-xl text-[length:var(--fs-md)] leading-relaxed text-[color:var(--muted)]">
               A row costs exactly one thing: a real person signing a real proposal. Records here are
               on-chain signatures — we can&apos;t fake them, and neither can anyone else.
             </p>
-            <p className="mt-4 text-[13px]">
+            <p className="mt-4 text-[length:var(--fs-md)]">
               <span className="text-[color:var(--muted)]">Building an agent?</span>{' '}
               <Link href="/docs/roster" className="underline text-[color:var(--fg)]">
                 Listing is open
@@ -198,7 +198,7 @@ export default async function LeaguePage() {
                 <h2 className="text-[18px] font-semibold text-[color:var(--fg)]">
                   The opening roster
                 </h2>
-                <span className="text-[12px] text-[color:var(--muted)]">
+                <span className="text-[length:var(--fs-sm)] text-[color:var(--muted)]">
                   a roster, not a race — ordered by tenure; ranks appear at five qualified agents
                 </span>
               </div>
@@ -240,7 +240,7 @@ export default async function LeaguePage() {
           </>
         )}
 
-        <p className="mt-6 text-[12px] text-[color:var(--muted)]">
+        <p className="mt-6 text-[length:var(--fs-sm)] text-[color:var(--muted)]">
           Every figure is an employer-counted fact — never a projection, never a return. Order
           {ordinals
             ? ' = distinct real employers, then signed proposals, then a clean cap record, then tenure.'

@@ -181,27 +181,27 @@ export default function SpendPolicyFix({
         <ShieldAlert className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" aria-hidden />
         <div className="min-w-0 space-y-1.5">
           <p className="text-[12.5px] leading-relaxed">{explain(block)}</p>
-          {note && <p className={`text-[12px] ${phase === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>{note}</p>}
+          {note && <p className={`text-[length:var(--fs-sm)] ${phase === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>{note}</p>}
           <div className="flex flex-wrap items-center gap-2 pt-0.5">
             {action && phase !== 'rebuilding' && (
               <button
                 onClick={() => void action.run()}
                 disabled={phase === 'fixing'}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 px-2.5 py-1 text-[12px] font-medium text-amber-300 hover:bg-amber-500/10 transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 px-2.5 py-1 text-[length:var(--fs-sm)] font-medium text-amber-300 hover:bg-amber-500/10 transition-colors disabled:opacity-50"
               >
                 {phase === 'fixing' && <Loader2 className="w-3 h-3 animate-spin" aria-hidden />}
                 {action.label}
               </button>
             )}
             {phase === 'rebuilding' && onFixed && (
-              <span className="inline-flex items-center gap-1.5 text-[12px] text-[color:var(--muted)]">
+              <span className="inline-flex items-center gap-1.5 text-[length:var(--fs-sm)] text-[color:var(--muted)]">
                 <Loader2 className="w-3 h-3 animate-spin" aria-hidden /> Rebuilding with the new policy…
               </span>
             )}
             {phase !== 'rebuilding' && onFixed && (
               <button
                 onClick={() => void onFixed()}
-                className="rounded-lg border border-[var(--line-2)] px-2.5 py-1 text-[12px] text-[color:var(--muted)] hover:text-white transition-colors"
+                className="rounded-lg border border-[var(--line-2)] px-2.5 py-1 text-[length:var(--fs-sm)] text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
               >
                 {retryLabel}
               </button>
@@ -210,7 +210,7 @@ export default function SpendPolicyFix({
               href="/dashboard/approvals"
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 text-[12px] text-[color:var(--muted)] hover:text-white transition-colors"
+              className="inline-flex items-center gap-1 text-[length:var(--fs-sm)] text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
             >
               Spending policy <ExternalLink className="w-3 h-3" aria-hidden />
             </a>

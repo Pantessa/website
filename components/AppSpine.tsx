@@ -56,7 +56,7 @@ import { PHONE_MQ } from '@/lib/phone-shell'
 import { scrollAppToTop } from '@/lib/app-scroller'
 import { ARRIVAL_SCREEN, moreLit as moreLitFor, phoneScreenFromSearch, phoneTap, seatForScreen, tabForScreen, type PhoneSeat } from '@/lib/phone-nav'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
-import Sheet from '@/components/mobile/Sheet'
+import Sheet, { SHEET_ROW } from '@/components/mobile/Sheet'
 import { rememberSignInReturn, signedOutJustNow, useSession } from '@/lib/session'
 import { useRunningWork } from '@/lib/use-running-work'
 import { rosterEnabledClient } from '@/lib/roster-client'
@@ -453,8 +453,9 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // (the settings page, or the TEAM screen showing over the chat).
   const moreTab = TABS.find((t) => PHONE_MORE_TABS.has(t.tab))
   const moreLit = moreLitFor(surface, phoneScreen)
-  const moreItem =
-    'flex w-full items-center gap-3 rounded-xl px-3 py-2 min-h-[52px] text-left text-[color:var(--muted)] hover:bg-[var(--surf-2)] hover:text-[color:var(--fg)] active:bg-[var(--surf-1)] transition-colors select-none'
+  // The one sheet-row class (components/mobile/Sheet SHEET_ROW, polish R1):
+  // every lane's sheet list wears it, so MORE is the reference.
+  const moreItem = SHEET_ROW
 
   return (
     <>

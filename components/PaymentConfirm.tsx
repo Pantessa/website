@@ -45,15 +45,15 @@ export default function PaymentConfirm({
 
   return (
     <div className="max-w-[85vw] lg:max-w-[80%] rounded-2xl rounded-tl-sm border border-[var(--line)] bg-[var(--surf-1)] p-4 space-y-3">
-      <div className="flex items-center gap-2 text-[13px] text-[color:var(--muted)]">
+      <div className="flex items-center gap-2 text-[length:var(--fs-md)] text-[color:var(--muted)]">
         <Wallet className="w-4 h-4" />
         Confirm payment
       </div>
 
       <div className="flex items-baseline gap-1.5">
-        <span className="text-2xl font-semibold text-white tabular-nums">{fmt(total)}</span>
+        <span className="text-2xl font-semibold text-[color:var(--fg)] tabular-nums">{fmt(total)}</span>
         <span className="text-sm text-[color:var(--muted)]">USDC</span>
-        <span className="text-[12px] text-[color:var(--muted-2)]">
+        <span className="text-[length:var(--fs-sm)] text-[color:var(--muted-2)]">
           · {payments.length} x402 call{payments.length === 1 ? '' : 's'} · from your wallet
           {soleRecipient ? (
             <>
@@ -67,13 +67,13 @@ export default function PaymentConfirm({
           mobile round 3). Same rule as ExternalBuildNotice: every `to` readable
           before the signature. */}
       {soleRecipient ? (
-        <p className="mono text-[12px] leading-snug text-[color:var(--muted)] [overflow-wrap:anywhere]" data-payee-full={soleRecipient}>
+        <p className="mono text-[length:var(--fs-sm)] leading-snug text-[color:var(--muted)] [overflow-wrap:anywhere]" data-payee-full={soleRecipient}>
           pays <span className="text-[color:var(--fg)]">{soleRecipient}</span>
         </p>
       ) : null}
 
       {(payments.length > 1 || payments.some(aboveListing)) && (
-        <ul className="space-y-1 text-[12px]">
+        <ul className="space-y-1 text-[length:var(--fs-sm)]">
           {payments.map((p) => (
             <li key={p.id} className="flex items-center justify-between gap-3 text-[color:var(--muted)]">
               <span className="truncate">
@@ -84,7 +84,7 @@ export default function PaymentConfirm({
                   </span>
                 ) : null}
                 {p.payTo && !soleRecipient ? (
-                  <span className="block mono text-[11px] leading-snug text-[color:var(--muted-2)] [overflow-wrap:anywhere] whitespace-normal" data-payee-full={p.payTo}>
+                  <span className="block mono text-[length:var(--fs-xs)] leading-snug text-[color:var(--muted-2)] [overflow-wrap:anywhere] whitespace-normal" data-payee-full={p.payTo}>
                     {p.payTo}
                   </span>
                 ) : null}
@@ -102,7 +102,7 @@ export default function PaymentConfirm({
         <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-400" />
         <span>
           Your wallet may flag this as a “deceptive request” — a known false-positive Blockaid shows
-          for x402 micropayments. You’re authorizing exactly <span className="text-white">{fmt(total)} USDC</span>.
+          for x402 micropayments. You’re authorizing exactly <span className="text-[color:var(--fg)]">{fmt(total)} USDC</span>.
           The wallet shows it in raw base units (<span className="tabular-nums">{baseUnits.toLocaleString()}</span> = {fmt(total)},
           since USDC has 6 decimals) — not {baseUnits.toLocaleString()} dollars.
         </span>
@@ -113,7 +113,7 @@ export default function PaymentConfirm({
           onClick={onConfirm}
           disabled={busy}
           aria-busy={busy}
-          className="inline-flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 max-lg:min-h-10 rounded-full bg-emerald-400 text-black hover:bg-emerald-300 disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-1.5 text-[length:var(--fs-md)] font-medium px-4 py-2 max-lg:min-h-10 rounded-full bg-emerald-400 text-[color:var(--bg)] hover:bg-emerald-300 disabled:opacity-50 transition-colors"
         >
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
           {busy ? 'Confirming…' : `Pay ${fmt(total)} & continue`}
@@ -121,7 +121,7 @@ export default function PaymentConfirm({
         <button
           onClick={onCancel}
           disabled={busy}
-          className="text-[13px] px-4 py-2 max-lg:min-h-10 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] disabled:opacity-50 transition-colors"
+          className="text-[length:var(--fs-md)] px-4 py-2 max-lg:min-h-10 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] disabled:opacity-50 transition-colors"
         >
           Cancel
         </button>

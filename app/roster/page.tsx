@@ -49,7 +49,7 @@ export default async function RosterPreviewPage() {
             The optional env hash lights the record trust anchor — reconcile
             the var name with UI/UX's house-identity env. */}
         <section className="mt-14" aria-label="Meet your first manager">
-          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+          <p className="mono text-[length:var(--fs-xs)] uppercase tracking-[0.25em] text-[color:var(--muted)]">
             Meet your first manager
           </p>
           <div className="mt-4">
@@ -61,7 +61,7 @@ export default async function RosterPreviewPage() {
               cta={
                 <a
                   href="#managers"
-                  className="mono rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--bg)]"
+                  className="mono rounded-full px-4 py-1.5 text-[length:var(--fs-xs)] font-semibold uppercase tracking-wide text-[color:var(--bg)]"
                   style={{ background: 'var(--accent)' }}
                 >
                   Hire it
@@ -69,7 +69,7 @@ export default async function RosterPreviewPage() {
               }
             />
           </div>
-          <p className="mt-2 text-[12px] text-[color:var(--muted)]">
+          <p className="mt-2 text-[length:var(--fs-sm)] text-[color:var(--muted)]">
             The house shape-keeper: give it a target like &ldquo;keep me 60/40 ETH/USDC&rdquo; and it
             watches the drift — every fix arrives as a card only you can sign.
           </p>
@@ -77,7 +77,7 @@ export default async function RosterPreviewPage() {
 
         {/* How it works — the four stops, in the order a wallet meets them. */}
         <section className="mt-16" aria-label="How the Roster works">
-          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+          <p className="mono text-[length:var(--fs-xs)] uppercase tracking-[0.25em] text-[color:var(--muted)]">
             How it works
           </p>
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -104,11 +104,11 @@ export default async function RosterPreviewPage() {
               },
             ].map((s) => (
               <div key={s.n} className="rounded-2xl border border-[var(--line)] p-4">
-                <div className="mono text-[11px]" style={{ color: 'var(--accent)' }}>
+                <div className="mono text-[length:var(--fs-xs)]" style={{ color: 'var(--accent)' }}>
                   {s.n}
                 </div>
                 <div className="mt-1.5 text-[14px] font-semibold text-[color:var(--fg)]">{s.t}</div>
-                <div className="mt-1.5 text-[12.5px] leading-relaxed text-[color:var(--muted)]">{s.d}</div>
+                <div className="mt-1.5 text-[length:var(--fs-sm)] leading-relaxed text-[color:var(--muted)]">{s.d}</div>
               </div>
             ))}
           </div>
@@ -119,7 +119,7 @@ export default async function RosterPreviewPage() {
             (never shipped to the client raw), founding rows are owner-set.
             Hiring happens in the Team tab — every row routes there. */}
         <section className="mt-16" id="managers" aria-label="Hireable managers">
-          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+          <p className="mono text-[length:var(--fs-xs)] uppercase tracking-[0.25em] text-[color:var(--muted)]">
             The managers
           </p>
           <div className="mt-4 space-y-3">
@@ -135,7 +135,7 @@ export default async function RosterPreviewPage() {
                     m.hireable ? (
                       <SpineLink
                         href="/chat?tab=team"
-                        className="mono rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--bg)]"
+                        className="mono rounded-full px-4 py-1.5 text-[length:var(--fs-xs)] font-semibold uppercase tracking-wide text-[color:var(--bg)]"
                         style={{ background: 'var(--accent)' }}
                       >
                         Hire it
@@ -145,16 +145,16 @@ export default async function RosterPreviewPage() {
                     )
                   }
                 />
-                {m.note && <p className="mt-1 px-1 text-[12px] text-[color:var(--muted)]">{m.note}</p>}
+                {m.note && <p className="mt-1 px-1 text-[length:var(--fs-sm)] text-[color:var(--muted)]">{m.note}</p>}
               </div>
             ))}
             {managers.length === 0 && (
-              <p className="text-[13px] text-[color:var(--muted)]">
+              <p className="text-[length:var(--fs-md)] text-[color:var(--muted)]">
                 No managers are listed yet — the storefront fills as the house Rebalancer arms and founding agents earn records.
               </p>
             )}
           </div>
-          <p className="mt-3 text-[12.5px] text-[color:var(--muted)]">
+          <p className="mt-3 text-[length:var(--fs-sm)] text-[color:var(--muted)]">
             Hiring happens in the{' '}
             <SpineLink href="/chat?tab=team" className="underline">
               Team tab
@@ -165,7 +165,7 @@ export default async function RosterPreviewPage() {
 
         {/* The proof — the QA session replayed. */}
         <section className="mt-14" aria-label="A real proof session">
-          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+          <p className="mono text-[length:var(--fs-xs)] uppercase tracking-[0.25em] text-[color:var(--muted)]">
             Watch one slot live and die
           </p>
           <div className="mt-4">
@@ -173,7 +173,7 @@ export default async function RosterPreviewPage() {
           </div>
         </section>
 
-        <p className="mt-12 text-[13px] text-[color:var(--muted)]">
+        <p className="mt-12 text-[length:var(--fs-md)] text-[color:var(--muted)]">
           The standings behind the staff:{' '}
           <Link href="/agents" className="underline">
             the League

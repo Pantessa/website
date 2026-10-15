@@ -36,13 +36,13 @@ export default function SignedTxLines({ meta }: { meta: unknown }) {
   const settled = claimsSettled(meta)
   return (
     <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1">
-      <div className="text-[11px] mono text-[color:var(--muted)]">
+      <div className="text-[length:var(--fs-xs)] mono text-[color:var(--muted)]">
         ✍️ Signed{settled ? ' & settled' : ''} on-chain — {txs.length} transaction{txs.length === 1 ? '' : 's'}
       </div>
       {txs.map((tx) => {
         const chain = chainById(tx.chainId)
         return (
-          <div key={tx.hash} className="flex items-center gap-1.5 text-[11px] mono text-[color:var(--muted-2)] min-w-0">
+          <div key={tx.hash} className="flex items-center gap-1.5 text-[length:var(--fs-xs)] mono text-[color:var(--muted-2)] min-w-0">
             <span className="text-emerald-400 flex-shrink-0">✓</span>
             {tx.title && <span className="text-[color:var(--muted)] truncate">{tx.title}</span>}
             <a

@@ -323,7 +323,7 @@ export default function MosaicStudio({ from }: { from?: string }) {
   // ── Render ─────────────────────────────────────────────────────────────
   const sumBadge = (
     <span
-      className={`mono text-[11px] tabular-nums px-2 py-0.5 rounded-full border ${
+      className={`mono text-[length:var(--fs-xs)] tabular-nums px-2 py-0.5 rounded-full border ${
         sumOk ? 'border-emerald-400/40 text-emerald-400' : 'border-amber-400/40 text-amber-400'
       }`}
       style={{ background: 'var(--surf-1)' }}
@@ -336,7 +336,7 @@ export default function MosaicStudio({ from }: { from?: string }) {
   // names no destination (lib/app-entry signInLandingFor, read on press).
   const signInDoor = cdpEnabled ? (
     <CreateAccountButton
-      className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity"
+      className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[var(--accent)] text-[color:var(--bg)] text-sm font-semibold hover:opacity-90 transition-opacity"
       label={
         <>
           <LogIn className="w-4 h-4" strokeWidth={2.5} />
@@ -350,7 +350,7 @@ export default function MosaicStudio({ from }: { from?: string }) {
       disabled={signingIn}
       type="button"
       title="Connect a wallet and sign in — one step"
-      className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
+      className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[var(--accent)] text-[color:var(--bg)] text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
     >
       {signingIn ? <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} /> : <LogIn className="w-4 h-4" strokeWidth={2.5} />}
       <span>{signingIn ? 'Signing in…' : 'Sign in to mint'}</span>
@@ -362,14 +362,14 @@ export default function MosaicStudio({ from }: { from?: string }) {
       {/* ── THE STUDIO ──────────────────────────────────────────────────── */}
       <section ref={studioRef} style={{ scrollMarginTop: 96 }}>
         <div className="flex items-baseline justify-between gap-4 mb-3 flex-wrap">
-          <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">The studio</h2>
+          <h2 className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]">The studio</h2>
           {isConnected && address && (
             <button
               type="button"
               onClick={() => void readAllocation()}
               disabled={reading}
               title="Read your wallet's current allocation as a starting shape"
-              className="inline-flex items-center gap-1.5 mono text-[11px] text-[color:var(--accent)] hover:underline underline-offset-2 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 mono text-[length:var(--fs-xs)] text-[color:var(--accent)] hover:underline underline-offset-2 disabled:opacity-50"
             >
               {reading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanLine className="w-3.5 h-3.5" />}
               {reading ? 'Reading…' : 'Read my allocation'}
@@ -378,9 +378,9 @@ export default function MosaicStudio({ from }: { from?: string }) {
         </div>
 
         <div className="rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-4 py-4 sm:px-5 sm:py-5 space-y-4">
-          {readErr && <p className="text-[12px] text-amber-400">{readErr}</p>}
+          {readErr && <p className="text-[length:var(--fs-sm)] text-amber-400">{readErr}</p>}
           {readInfo && (
-            <div className="text-[12px] text-[color:var(--muted)]">
+            <div className="text-[length:var(--fs-sm)] text-[color:var(--muted)]">
               <p>
                 Read {fmtUsd(readInfo.totalUsd)} on {MOSAIC_CHAIN_LABELS[readInfo.chain]} — tokens under 3% folded
                 into the {MOSAIC_STABLE} tile.
@@ -398,7 +398,7 @@ export default function MosaicStudio({ from }: { from?: string }) {
           )}
 
           {parentSlug && (
-            <p className="flex items-center gap-2 text-[12px] text-[color:var(--muted)]">
+            <p className="flex items-center gap-2 text-[length:var(--fs-sm)] text-[color:var(--muted)]">
               <GitFork className="w-3.5 h-3.5 text-[color:var(--accent)]" />
               <span>
                 Forking{' '}
@@ -427,7 +427,7 @@ export default function MosaicStudio({ from }: { from?: string }) {
                   onChange={(e) => setToken(r.id, e.target.value)}
                   placeholder="TOKEN"
                   aria-label="Token symbol"
-                  className="mono w-32 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                  className="mono w-32 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[length:var(--fs-md)] [@media(pointer:coarse)]:text-[length:var(--fs-input)] [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
                 />
                 <input
                   value={r.pct}
@@ -438,14 +438,15 @@ export default function MosaicStudio({ from }: { from?: string }) {
                   step="any"
                   placeholder="%"
                   aria-label="Percent"
-                  className="mono w-20 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-[color:var(--fg)] tabular-nums focus:outline-none focus:border-[var(--accent)]"
+                  className="mono w-20 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[length:var(--fs-md)] [@media(pointer:coarse)]:text-[length:var(--fs-input)] [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--fg)] tabular-nums focus:outline-none focus:border-[var(--accent)]"
                 />
-                <span className="mono text-[12px] text-[color:var(--muted-2)]">%</span>
+                <span className="mono text-[length:var(--fs-sm)] text-[color:var(--muted-2)]">%</span>
                 <button
                   type="button"
                   onClick={() => removeRow(r.id)}
                   aria-label={`Remove the ${r.token || 'empty'} tile`}
-                  className="w-7 h-7 grid place-items-center rounded-lg text-[color:var(--muted-2)] hover:text-[color:var(--fg)] hover:bg-[var(--surf-2)] transition-colors"
+                  data-journey="Remove a tile"
+                  className="w-7 h-7 [@media(pointer:coarse)]:w-[var(--tap)] [@media(pointer:coarse)]:h-[var(--tap)] shrink-0 grid place-items-center rounded-lg text-[color:var(--muted-2)] hover:text-[color:var(--fg)] hover:bg-[var(--surf-2)] transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -459,7 +460,8 @@ export default function MosaicStudio({ from }: { from?: string }) {
               onClick={addRow}
               disabled={rows.length >= 8}
               title={rows.length >= 8 ? 'A shape keeps to 8 tiles so the batch stays signable' : 'Add a tile'}
-              className="inline-flex items-center gap-1.5 mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] disabled:opacity-40 transition-colors"
+              data-journey="Add a tile"
+              className="inline-flex items-center gap-1.5 mono text-[length:var(--fs-sm)] [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--muted)] hover:text-[color:var(--fg)] disabled:opacity-40 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" /> add a tile
             </button>
@@ -469,7 +471,8 @@ export default function MosaicStudio({ from }: { from?: string }) {
                 type="button"
                 onClick={normalize}
                 title="Scale every tile proportionally to sum exactly 100"
-                className="inline-flex items-center gap-1.5 mono text-[12px] text-[color:var(--accent)] hover:underline underline-offset-2"
+                data-journey="Scale the tiles to 100"
+                className="inline-flex items-center gap-1.5 mono text-[length:var(--fs-sm)] [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--accent)] hover:underline underline-offset-2"
               >
                 <Wand2 className="w-3.5 h-3.5" /> make it 100
               </button>
@@ -477,12 +480,12 @@ export default function MosaicStudio({ from }: { from?: string }) {
             {/* min-w-0 + a max width: a <select> is as wide as its longest
                 option, and "Auto — each wallet’s dominant chain" pushed the
                 studio 38px past a 375px viewport. */}
-            <label className="ml-auto inline-flex items-center gap-2 mono text-[12px] text-[color:var(--muted)] min-w-0 max-w-full">
+            <label className="ml-auto inline-flex items-center gap-2 mono text-[length:var(--fs-sm)] text-[color:var(--muted)] min-w-0 max-w-full">
               chain
               <select
                 value={chain}
                 onChange={(e) => setChain(e.target.value as ChainChoice)}
-                className="min-w-0 max-w-[220px] rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                className="min-w-0 max-w-[220px] rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-[length:var(--fs-sm)] [@media(pointer:coarse)]:text-[length:var(--fs-input)] [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
               >
                 {CHAIN_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -501,28 +504,28 @@ export default function MosaicStudio({ from }: { from?: string }) {
             </p>
             {ask ? (
               <p
-                className="text-[15px] text-[color:var(--fg)]"
+                className="text-[length:var(--fs-base)] text-[color:var(--fg)]"
                 style={{ fontFamily: 'var(--font-chat-display)', letterSpacing: '-0.01em' }}
               >
                 &ldquo;{ask}&rdquo;
               </p>
             ) : (
-              <p className="text-[13px] text-[color:var(--muted-2)]">Name at least two tiles to shape a mosaic.</p>
+              <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)]">Name at least two tiles to shape a mosaic.</p>
             )}
-            {problem && <p className="mt-1.5 text-[12px] text-amber-400">{problem}</p>}
+            {problem && <p className="mt-1.5 text-[length:var(--fs-sm)] text-amber-400">{problem}</p>}
           </div>
 
           {/* ── MINT ─────────────────────────────────────────────────────── */}
           {minted ? (
             <div className="rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-4 space-y-3">
-              <p className="text-[13px] text-[color:var(--muted)]">
+              <p className="text-[length:var(--fs-md)] text-[color:var(--muted)]">
                 Minted. Anyone who opens it gets this shape compiled against their OWN wallet:
               </p>
               <button
                 type="button"
                 onClick={() => copyUrl(minted)}
                 title="Copy the link"
-                className="inline-flex items-center gap-1.5 mono text-[13px] text-[color:var(--accent)] hover:underline break-all text-left"
+                className="inline-flex items-center gap-1.5 mono text-[length:var(--fs-md)] text-[color:var(--accent)] hover:underline break-all text-left"
               >
                 {copied ? <Check className="w-3.5 h-3.5 flex-shrink-0" /> : <Copy className="w-3.5 h-3.5 flex-shrink-0" />}
                 {absoluteUrl(minted.url)}
@@ -542,17 +545,17 @@ export default function MosaicStudio({ from }: { from?: string }) {
                   href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${minted.ask}” — open it and your wallet gets its own version. One signature chain.`)}&url=${encodeURIComponent(absoluteUrl(minted.url))}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
+                  className="mono text-[length:var(--fs-sm)] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
                 >
                   post it
                 </a>
-                <a href={minted.url} className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline">
+                <a href={minted.url} className="mono text-[length:var(--fs-sm)] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline">
                   open it
                 </a>
                 <button
                   type="button"
                   onClick={() => setMinted(null)}
-                  className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
+                  className="mono text-[length:var(--fs-sm)] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
                 >
                   edit &amp; mint another
                 </button>
@@ -561,7 +564,7 @@ export default function MosaicStudio({ from }: { from?: string }) {
           ) : needAuth ? (
             <div className="flex flex-wrap items-center gap-3">
               {signInDoor}
-              <p className="text-[12px] text-[color:var(--muted)]">
+              <p className="text-[length:var(--fs-sm)] text-[color:var(--muted)]">
                 Minting needs an account — the link is yours, and conversions credit your address.
               </p>
             </div>
@@ -575,12 +578,12 @@ export default function MosaicStudio({ from }: { from?: string }) {
               >
                 {minting ? 'Minting…' : parentSlug ? 'Mint the fork' : 'Mint this shape as a link'}
               </button>
-              {mintErr && <p className="text-[12px] text-amber-400">{mintErr}</p>}
+              {mintErr && <p className="text-[length:var(--fs-sm)] text-amber-400">{mintErr}</p>}
             </div>
           )}
         </div>
 
-        <p className="mono text-[11px] text-[color:var(--muted-2)] mt-3">
+        <p className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mt-3">
           A shape, not a promise — every leg is built and guard-checked at sign time; nothing here is
           financial advice.
         </p>
@@ -589,25 +592,26 @@ export default function MosaicStudio({ from }: { from?: string }) {
       {/* ── THE WALL ────────────────────────────────────────────────────── */}
       <section>
         <div className="flex items-baseline justify-between gap-4 mb-3 flex-wrap">
-          <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">The wall</h2>
+          <h2 className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]">The wall</h2>
           <Link
             href="/links"
-            className="mono text-[11px] text-[color:var(--accent)] hover:underline underline-offset-2"
+            data-journey="Open all intent links"
+            className="mono text-[length:var(--fs-xs)] [@media(pointer:coarse)]:inline-flex [@media(pointer:coarse)]:items-center [@media(pointer:coarse)]:min-h-[var(--tap)] text-[color:var(--accent)] hover:underline underline-offset-2"
           >
             All intent links →
           </Link>
         </div>
 
         {wall == null && !wallErr && (
-          <p className="mono text-[12px] text-[color:var(--muted-2)]">Loading the wall…</p>
+          <p className="mono text-[length:var(--fs-sm)] text-[color:var(--muted-2)]">Loading the wall…</p>
         )}
         {wallErr && (
-          <p className="mono text-[12px] text-[color:var(--muted-2)]">
+          <p className="mono text-[length:var(--fs-sm)] text-[color:var(--muted-2)]">
             The wall is unreachable right now — the studio above still works.
           </p>
         )}
         {wall != null && wall.length === 0 && (
-          <p className="mono text-[12px] text-[color:var(--muted-2)]">
+          <p className="mono text-[length:var(--fs-sm)] text-[color:var(--muted-2)]">
             No mosaics on the wall yet — mint the first shape.
           </p>
         )}
@@ -617,7 +621,7 @@ export default function MosaicStudio({ from }: { from?: string }) {
             {wall.map((row) => (
               <div key={row.slug} className="rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-4 py-3.5 space-y-2.5">
                 <TileBar slices={row.slices} size="sm" />
-                <p className="text-[13px] text-[color:var(--fg)] leading-snug">&ldquo;{row.ask}&rdquo;</p>
+                <p className="text-[length:var(--fs-md)] text-[color:var(--fg)] leading-snug">&ldquo;{row.ask}&rdquo;</p>
                 <p className="mono text-[10.5px] text-[color:var(--muted-2)] tabular-nums flex flex-wrap gap-x-2 gap-y-0.5">
                   {row.signedUsd > 0 && <span className="text-[color:var(--accent)]">{fmtUsd(row.signedUsd)} moved</span>}
                   <span>
@@ -657,7 +661,7 @@ export default function MosaicStudio({ from }: { from?: string }) {
                 <div className="flex items-center gap-4">
                   <a
                     href={`/i/${row.slug}`}
-                    className="mono text-[12px] text-[color:var(--accent)] hover:underline underline-offset-2"
+                    className="mono text-[length:var(--fs-sm)] text-[color:var(--accent)] hover:underline underline-offset-2"
                   >
                     Open
                   </a>
@@ -665,7 +669,7 @@ export default function MosaicStudio({ from }: { from?: string }) {
                     type="button"
                     onClick={() => forkRow(row)}
                     title="Load this shape into the studio — the mint carries its lineage"
-                    className="inline-flex items-center gap-1.5 mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
+                    className="inline-flex items-center gap-1.5 mono text-[length:var(--fs-sm)] text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
                   >
                     <GitFork className="w-3.5 h-3.5" /> Fork this shape
                   </button>

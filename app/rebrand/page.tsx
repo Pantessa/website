@@ -32,28 +32,28 @@ export default function RebrandPage() {
       <main className="x-main">
         <section className="max-w-2xl mx-auto px-4 max-sm:px-0 py-16 max-sm:py-10">
           <div className="flex items-center gap-2 mb-6">
-            <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
+            <span className="mono text-[length:var(--fs-xs)] uppercase tracking-widest text-[color:var(--muted-2)]">
               Company record · Updated August 11, 2026
             </span>
           </div>
 
           <h1 className="text-3xl font-semibold text-[color:var(--fg)] mb-3">{TITLE}</h1>
 
-          <p className="text-[15px] leading-relaxed text-[color:var(--muted)] max-w-xl mb-10">
+          <p className="text-[length:var(--fs-base)] leading-relaxed text-[color:var(--muted)] max-w-xl mb-10">
             On August 5, 2026 we renamed the company and product from Yeetful to Pantessa.
             Same team, same product, same model: an agent that builds guarded transactions
             which only your own wallet can sign. Nothing about custody, keys, or fees
             changed with the name.
           </p>
 
-          <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
+          <h2 className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
             What changed
           </h2>
-          <ul className="text-[15px] leading-relaxed text-[color:var(--muted)] max-w-xl mb-10 list-disc pl-5 space-y-2">
+          <ul className="text-[length:var(--fs-base)] leading-relaxed text-[color:var(--muted)] max-w-xl mb-10 list-disc pl-5 space-y-2">
             <li>
               <span className="text-[color:var(--fg)]">The domain.</span>{' '}
-              <span className="mono text-[13px]">www.yeetful.com</span> now redirects (HTTP 307) to{' '}
-              <span className="mono text-[13px]">www.pantessa.com</span>. The redirect is
+              <span className="mono text-[length:var(--fs-md)]">www.yeetful.com</span> now redirects (HTTP 307) to{' '}
+              <span className="mono text-[length:var(--fs-md)]">www.pantessa.com</span>. The redirect is
               deliberate and stays up: every previously shared link, embed install, and
               receipt page keeps working.
             </li>
@@ -70,9 +70,9 @@ export default function RebrandPage() {
             </li>
             <li>
               <span className="text-[color:var(--fg)]">What deliberately did not change.</span>{' '}
-              MCP service hosts (<span className="mono text-[13px]">*.yeetful.com</span>), issued
-              API-key prefixes (<span className="mono text-[13px]">yf_</span> /{' '}
-              <span className="mono text-[13px]">yfe_</span>), and the embed&apos;s postMessage
+              MCP service hosts (<span className="mono text-[length:var(--fs-md)]">*.yeetful.com</span>), issued
+              API-key prefixes (<span className="mono text-[length:var(--fs-md)]">yf_</span> /{' '}
+              <span className="mono text-[length:var(--fs-md)]">yfe_</span>), and the embed&apos;s postMessage
               source string. These are wire identifiers baked into installed integrations and
               stored allowlists; renaming them would break software our users already run.
             </li>
@@ -87,17 +87,17 @@ export default function RebrandPage() {
             </li>
           </ul>
 
-          <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
+          <h2 className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
             The blocklist history, in our own words
           </h2>
-          <div className="text-[15px] leading-relaxed text-[color:var(--muted)] max-w-xl mb-10 space-y-4">
+          <div className="text-[length:var(--fs-base)] leading-relaxed text-[color:var(--muted)] max-w-xl mb-10 space-y-4">
             <p>
               Earlier this year, to demonstrate our embeddable chat, we hosted forks of two
               open-source DEX interfaces (the Uniswap interface and CoW Swap) with our embed
               mounted, on our own subdomains. A DEX&apos;s interface served from a domain that
               is not the DEX&apos;s is the exact pattern wallet-security blocklists exist to
               catch, and{' '}
-              <span className="mono text-[13px]">uniswap-embed.yeetful.com</span> was listed by
+              <span className="mono text-[length:var(--fs-md)]">uniswap-embed.yeetful.com</span> was listed by
               MetaMask (eth-phishing-detect) and by SEAL.
             </p>
             <p>
@@ -123,10 +123,10 @@ export default function RebrandPage() {
             </p>
           </div>
 
-          <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
+          <h2 className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
             Why this page exists
           </h2>
-          <p className="text-[15px] leading-relaxed text-[color:var(--muted)] max-w-xl mb-10">
+          <p className="text-[length:var(--fs-base)] leading-relaxed text-[color:var(--muted)] max-w-xl mb-10">
             A subdomain of yeetful.com sits on two blocklists, and yeetful.com now redirects
             to a brand-new domain. To an automated reputation system, that sequence can
             resemble flagged infrastructure rotating to a fresh name. It is the opposite — a
@@ -141,11 +141,11 @@ export default function RebrandPage() {
             helps.
           </p>
 
-          <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
+          <h2 className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
             Verify it yourself
           </h2>
           <div className="overflow-x-auto mb-12">
-            <table className="w-full text-[13px] text-[color:var(--muted)]">
+            <table className="w-full text-[length:var(--fs-md)] text-[color:var(--muted)]">
               <tbody className="[&_td]:py-2 [&_td]:pr-4 [&_td]:align-top [&_tr]:border-b [&_tr]:border-[color:var(--line)]">
                 <tr>
                   <td className="text-[color:var(--fg)] whitespace-nowrap">The redirect</td>
@@ -183,12 +183,13 @@ export default function RebrandPage() {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            <Link href="/" className="btn btn--solid text-[13px]">
+            <Link href="/" className="btn btn--solid text-[length:var(--fs-md)]" data-journey="Open Pantessa">
               Go to Pantessa
             </Link>
             <Link
               href="/activity"
-              className="mono text-[12px] text-[color:var(--accent)] hover:underline underline-offset-2"
+              data-journey="Open network activity"
+              className="mono text-[length:var(--fs-sm)] text-[color:var(--accent)] hover:underline underline-offset-2 inline-flex items-center min-h-[var(--tap)]"
             >
               See live network activity →
             </Link>

@@ -33,6 +33,7 @@ import { modelAvailable, modelLabel, modelMocked, modelText } from '@/lib/market
 import { admitMarketsAi } from '@/lib/markets-ai-fence'
 import { readPosition, readTape, techSummary } from '@/lib/markets-ai-context'
 import { validateProposedAsk } from '@/lib/markets-ai-ladder'
+import { marketReadAsk, marketReadWords, type MarketReadKind } from '@/lib/market-read'
 import { parseChartState } from '@/lib/chart-state'
 import { alertRuleProblem, type AlertRule } from '@/lib/watchlists'
 import { symbolName } from '@/lib/markets'
@@ -132,7 +133,10 @@ export async function POST(req: NextRequest) {
     const i = candles.findIndex((c) => c.t === body.bar!.t)
     const prev = i > 0 ? { c: candles[i - 1].c } : null
     const text = await modelText({ system: EXPLAIN_SYSTEM, user: explainUserPrompt({ symbol, tf, bar: body.bar, prev, tech, verdict: body.verdict ? RATING_LABELS[body.verdict] : null }), maxTokens: EXPLAIN_MAX_TOKENS, surface: 'markets-explain', apiKey: explainAdm.apiKey, owner: explainAdm.owner, mock: { scenario } })
-    const out = cleanProse(text ?? explainFallback(body.bar), 400)
+    // A model sentence that dead-ends ("I can't see…") never explains a bar:
+    // the bar's own numbers do (README §A rule 3).
+    const said = text ? cleanProse(text, 400) : ''
+    const out = said && !DEAD_END_PROSE.test(said) ? said : cleanProse(explainFallback(body.bar), 400)
     explainCache.set(key, { at: Date.now(), text: out })
     return answer({ kind: 'answer', text: out }, { deterministic: !text, model })
   }
@@ -171,16 +175,38 @@ export async function POST(req: NextRequest) {
   // "the first one") goes to the ticket without a model call.
   if (orderLive && relayShortcut(question, order)) return answer({ kind: 'relay' }, { deterministic: true, model: 'none' })
 
+  // A READ of this market ("what's the trend on screen?", "why is it
+  // moving?") always has an answer from our own tape — the model adds the
+  // judgement when it is there; when it isn't (down, or the fence's wall),
+  // the read still answers instead of a sentence about the model
+  // (POLISH/DEADENDS 2026-10-13: the AI bar's own question chip read "The
+  // model is not available right now").
+  const read = marketReadAsk(question, symbol)
+  // No news read on the page's lane (the News tab is one tap away): a "move"
+  // read here is the tape's trend.
+  const tapeWords = (kind: MarketReadKind) => marketReadWords({ pair, kind: kind === 'move' ? 'trend' : kind, last, change24hPct: tape.change24hPct, tech, tf, news: null })
+  const readAnswer = (model: string) => answer({ kind: 'answer', text: tapeWords(read!.kind) }, { deterministic: true, model })
+  // The model's prose is checked before it reaches the page: a reply that
+  // says it can't (no feed, "try Yahoo Finance", "in this environment") is a
+  // dead end with our name on it — the tape's own read answers instead, plus
+  // the one sentence that always builds here.
+  const honest = (text: string): { text: string; replaced: boolean } =>
+    DEAD_END_PROSE.test(text)
+      ? { text: `${tapeWords('trend')}\n\nSay the trade (“buy $25 of ${symbol}”) and it builds right here for your wallet to sign.`, replaced: true }
+      : { text, replaced: false }
+
   // ── The model ────────────────────────────────────────────────────────────
   // With an order live, a message the page can't read still reaches the
   // ticket (the app has its own planner); without one, say what still works.
   if (!modelAvailable()) {
     if (orderLive) return answer({ kind: 'relay' }, { deterministic: true, model: 'none' })
+    if (read) return readAnswer('none')
     return answer({ kind: 'answer', text: 'The model is not available right now. Drawings ("draw a line at 180"), alerts ("tell me when it crosses 4k") and complete asks ("buy $25 of ' + symbol + '") still work.' }, { deterministic: true, model: 'none' })
   }
   const adm = await admitMarketsAi(req.headers, body, 'markets-ask')
   if (adm.wall) {
     if (orderLive) return answer({ kind: 'relay' }, { deterministic: true, model: 'wall' })
+    if (read) return readAnswer('wall')
     return answer({ kind: 'answer', text: adm.wall }, { deterministic: true, model: 'wall' })
   }
 
@@ -207,12 +233,13 @@ export async function POST(req: NextRequest) {
     order,
   }
   const text = await modelText({ system: ASK_SYSTEM, user: askUserPrompt(ctx), maxTokens: ASK_MAX_TOKENS, surface: 'markets-ask', apiKey: adm.apiKey, owner: adm.owner, mock: { scenario } })
-  if (!text) return answer({ kind: 'answer', text: 'The model did not answer — try again in a moment.' }, { deterministic: true, model })
+  if (!text) return read ? readAnswer(model) : answer({ kind: 'answer', text: 'The model did not answer — try again in a moment.' }, { deterministic: true, model })
   const m = parseModelAnswer(text)
   // Unparsed: the model's prose, or the words it meant — never its JSON.
   if (!m) {
     console.warn('[markets/ask] model answer did not parse', { chars: text.length, head: text.slice(0, 80) })
-    return answer({ kind: 'answer', text: modelProse(text) }, { deterministic: false, model })
+    const h = honest(modelProse(text))
+    return answer({ kind: 'answer', text: h.text }, { deterministic: h.replaced, model })
   }
 
   switch (m.kind) {
@@ -224,7 +251,7 @@ export async function POST(req: NextRequest) {
       const v = validateProposedAsk(m.ask, symbol)
       if (!v.ok) {
         console.warn('[markets/ask] model act dropped by the fence', { why: v.why })
-        return answer({ kind: 'answer', text: `${m.say ? `${cleanProse(m.say, 300)} ` : ''}I can't turn that into a chip here (${v.why}). Try the buy or protect chips above, or say the amount and the ticker.` }, { deterministic: false, model })
+        return answer({ kind: 'answer', text: `${m.say ? `${cleanProse(m.say, 300)} ` : ''}That one doesn't build as an order on this page (${v.why}). The chips above do, or say the amount and the ticker ("buy $25 of ${symbol}").` }, { deterministic: false, model })
       }
       return answer({ kind: 'act', say: cleanProse(m.say || 'Building it in your order ticket — your wallet signs.', 300), chip: { label: v.ask, ask: v.ask } }, { deterministic: false, model })
     }
@@ -240,10 +267,15 @@ export async function POST(req: NextRequest) {
       if (carried && !carried.ok) console.warn('[markets/ask] alert action dropped by the fence', { why: carried.why })
       return answer({ ...alertAnswer(rule), say: cleanProse(m.say || alertAnswer(rule).say, 300), ...(carried?.ok ? { actionAsk: carried.ask } : {}) }, { deterministic: false, model })
     }
-    default:
-      return answer({ kind: 'answer', text: m.text }, { deterministic: false, model })
+    default: {
+      const h = honest(m.text)
+      return answer({ kind: 'answer', text: h.text }, { deterministic: h.replaced, model })
+    }
   }
 }
+
+/** Prose that leaves a reader nowhere (README §A rule 3). */
+const DEAD_END_PROSE = /\bI can['’]t\b|\bI cannot\b|\bI (?:do not|don['’]t) have (?:access|real-time|live)|\bYahoo\b|\bthis environment\b|\bas an AI\b|process\.env|[A-Z]{3,}_(?:API_)?KEY\b/i
 
 function alertAnswer(rule: AlertRule): Extract<AskAnswer, { kind: 'alert' }> {
   return { kind: 'alert', say: `Alert ready: ${alertPreview(rule)}. Confirm to save it — nothing is sent for you when it fires.`, rule, label: alertPreview(rule) }

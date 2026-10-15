@@ -80,7 +80,7 @@ export default function ManagerRow({
         {handle ? (
           <Link
             href={`/agents/${handle}`}
-            className="mono text-[11px] uppercase tracking-wide text-[color:var(--muted)] underline-offset-2 hover:text-[color:var(--fg)] hover:underline"
+            className="mono text-[length:var(--fs-xs)] uppercase tracking-wide text-[color:var(--muted)] underline-offset-2 hover:text-[color:var(--fg)] hover:underline"
             title="The public record — real signed history, never projections."
           >
             {recordBits.length ? `Record · ${recordBits.join(' · ')}` : 'Record'} →

@@ -72,7 +72,7 @@ export function SplashHero({
         <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <div className="flex min-w-0 items-center gap-2">
             <Wallet className="h-4 w-4 shrink-0 text-[color:var(--muted-2)]" />
-            <span className="mono truncate text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
+            <span className="mono truncate text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]">
               Connected · {shortAddr(address)} · live read
             </span>
           </div>
@@ -97,10 +97,10 @@ export function SplashHero({
         <div className={`mt-4 grid gap-6 ${merged ? 'lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : ''}`}>
           {/* ── what Pantessa noticed ── */}
           <div className="min-w-0">
-            <h2 className="text-[22px] leading-tight text-white" style={{ fontFamily: 'var(--font-chat-display)', letterSpacing: '-0.01em' }}>
+            <h2 className="text-[22px] leading-tight text-[color:var(--fg)]" style={{ fontFamily: 'var(--font-chat-display)', letterSpacing: '-0.01em' }}>
               What Pantessa noticed
             </h2>
-            <p className="mt-0.5 text-[11px] text-[color:var(--muted-2)]">
+            <p className="mt-0.5 text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
               {briefing?.subtitle ?? 'live read of this wallet — tap a chip to act, your wallet signs'}
             </p>
 
@@ -109,7 +109,7 @@ export function SplashHero({
                 {fired.map((r, i) => (
                   <li
                     key={`fired-${i}`}
-                    className="mono flex items-baseline justify-between gap-3 rounded-lg border border-dashed px-3 py-1.5 text-[11px]"
+                    className="mono flex items-baseline justify-between gap-3 rounded-lg border border-dashed px-3 py-1.5 text-[length:var(--fs-xs)]"
                     style={{ borderColor: 'color-mix(in srgb, var(--accent) 35%, transparent)', color: 'var(--accent)' }}
                   >
                     <span className="truncate max-lg:whitespace-normal">✓ {r.label}</span>
@@ -145,12 +145,12 @@ export function SplashHero({
                         className={`flex w-full items-center gap-3 py-2 text-left [@media(hover:none)]:min-h-11 ${acts.length ? 'cursor-pointer' : 'cursor-default'}`}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="truncate max-lg:whitespace-normal text-xs font-medium text-white">{r.label}</div>
+                          <div className="truncate max-lg:whitespace-normal text-xs font-medium text-[color:var(--fg)]">{r.label}</div>
                           {r.sub && <div className="truncate max-lg:whitespace-normal text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
                         </div>
                         <Sparkline symbol={sparkSymbolFor(r)} width={64} height={20} className="hidden sm:block" />
                         {r.value && (
-                          <span className="shrink-0 text-[11px] tabular-nums" style={{ color: r.tone === 'pos' ? 'var(--accent)' : 'var(--gold)' }}>
+                          <span className="shrink-0 text-[length:var(--fs-xs)] tabular-nums" style={{ color: r.tone === 'pos' ? 'var(--accent)' : 'var(--gold)' }}>
                             {r.value}
                           </span>
                         )}
@@ -199,14 +199,14 @@ function AttentionRow({ row, slug, onPick }: { row: StatRow; slug: string; onPic
     >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-          <span className="text-sm font-medium text-white">{row.label}</span>
+          <span className="text-sm font-medium text-[color:var(--fg)]">{row.label}</span>
           {row.value && (
-            <span className="mono text-[11px] uppercase tracking-wider" style={{ color: 'var(--sell)' }}>
+            <span className="mono text-[length:var(--fs-xs)] uppercase tracking-wider" style={{ color: 'var(--sell)' }}>
               {row.value}
             </span>
           )}
         </div>
-        {row.sub && <p className="mt-0.5 text-[11px] leading-snug text-[color:var(--muted)]">{row.sub}</p>}
+        {row.sub && <p className="mt-0.5 text-[length:var(--fs-xs)] leading-snug text-[color:var(--muted)]">{row.sub}</p>}
         {(primary || row.chartSymbol) && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {primary && (
@@ -214,7 +214,7 @@ function AttentionRow({ row, slug, onPick }: { row: StatRow; slug: string; onPic
                 type="button"
                 title={primary.prompt}
                 onClick={() => onPick(primary.prompt, slug)}
-                className="rounded-full px-3 py-1 text-[11px] font-semibold transition-opacity hover:opacity-90 [@media(hover:none)]:min-h-11 [@media(hover:none)]:px-4 [@media(hover:none)]:text-[13px]"
+                className="rounded-full px-3 py-1 text-[length:var(--fs-xs)] font-semibold transition-opacity hover:opacity-90 [@media(hover:none)]:min-h-11 [@media(hover:none)]:px-4 [@media(hover:none)]:text-[length:var(--fs-md)]"
                 style={{ background: 'var(--accent)', color: 'var(--ink)' }}
               >
                 {primary.label}
@@ -239,7 +239,7 @@ function Chips({ actions, chart, slug, onPick }: { actions: SuggestedPrompt[]; c
           type="button"
           title={a.prompt}
           onClick={() => onPick(a.prompt, slug)}
-          className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white [@media(hover:none)]:min-h-11 [@media(hover:none)]:px-3.5 [@media(hover:none)]:text-[12.5px]"
+          className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[length:var(--fs-xs)] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-[color:var(--fg)] [@media(hover:none)]:min-h-11 [@media(hover:none)]:px-3.5 [@media(hover:none)]:text-[12.5px]"
         >
           {a.label}
         </button>

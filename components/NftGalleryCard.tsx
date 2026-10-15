@@ -22,7 +22,7 @@ function Thumb({ url, label }: { url: string | null; label: string }) {
   const [failed, setFailed] = useState(false)
   if (failed || !url) {
     return (
-      <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-lg bg-white/10 text-[11px] font-semibold text-[color:var(--muted)]">
+      <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-lg bg-white/10 text-[length:var(--fs-xs)] font-semibold text-[color:var(--muted)]">
         {label.replace(/^#/, '').slice(0, 1).toUpperCase() || '?'}
       </span>
     )
@@ -39,7 +39,7 @@ function Row({ n, onPick }: { n: NftRow; onPick?: (prompt: string) => void }) {
       <div className="flex min-w-0 items-center gap-2">
         <Thumb url={n.imageUrl} label={n.name} />
         <div className="min-w-0">
-          <div className="truncate font-medium text-white">{n.name}</div>
+          <div className="truncate font-medium text-[color:var(--fg)]">{n.name}</div>
           <div className="truncate text-[10px] text-[color:var(--muted-2)]">
             <span className="capitalize">{n.collectionName}</span> · {n.chain}
             {n.standard === 'erc1155' ? ' · 1155' : ''}
@@ -53,7 +53,7 @@ function Row({ n, onPick }: { n: NftRow; onPick?: (prompt: string) => void }) {
             <button
               key={a.label}
               onClick={() => onPick(a.prompt)}
-              className="rounded-full border border-[var(--line)] bg-white/[0.03] px-2 py-0.5 text-[10px] text-[color:var(--muted)] hover:border-[var(--accent)] hover:text-white"
+              className="rounded-full border border-[var(--line)] bg-white/[0.03] px-2 py-0.5 text-[10px] text-[color:var(--muted)] hover:border-[var(--accent)] hover:text-[color:var(--fg)]"
             >
               {a.label}
             </button>
@@ -64,7 +64,7 @@ function Row({ n, onPick }: { n: NftRow; onPick?: (prompt: string) => void }) {
             target="_blank"
             rel="noopener noreferrer"
             title={n.infoLabel ?? 'View on OpenSea'}
-            className="rounded-full border border-[var(--line)] px-1.5 py-0.5 text-[10px] text-[color:var(--muted-2)] hover:text-white"
+            className="rounded-full border border-[var(--line)] px-1.5 py-0.5 text-[10px] text-[color:var(--muted-2)] hover:text-[color:var(--fg)]"
           >
             ⓘ
           </a>

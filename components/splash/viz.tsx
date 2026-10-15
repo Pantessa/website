@@ -117,12 +117,12 @@ export function MoneyMapPanel({ map }: { map: MoneyMap }) {
     <div data-splash-moneymap className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-semibold tracking-tight text-white tabular-nums" style={{ fontFamily: 'var(--font-chat-display)' }}>
+          <span className="text-2xl font-semibold tracking-tight text-[color:var(--fg)] tabular-nums" style={{ fontFamily: 'var(--font-chat-display)' }}>
             {fmtUsd(sum.totalUsd)}
           </span>
           <span className="mono text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]">on the map</span>
         </div>
-        <span className="mono text-[11px] tabular-nums text-[color:var(--muted)]">
+        <span className="mono text-[length:var(--fs-xs)] tabular-nums text-[color:var(--muted)]">
           <span style={{ color: 'var(--accent)' }}>{sum.workingPct}%</span> working or watched
           {exposed > 0 && (
             <>
@@ -135,10 +135,10 @@ export function MoneyMapPanel({ map }: { map: MoneyMap }) {
       <SegmentBar segments={segments} height={14} />
       <ul className="grid grid-cols-1 gap-x-5 gap-y-1.5 min-[420px]:grid-cols-2" aria-label="money map legend">
         {sum.segments.map((s) => (
-          <li key={s.bucket} className="flex min-w-0 items-center gap-2 text-[11px]" title={`${s.blurb} — ${s.facts.map((f) => `${fmtUsd(f.usd)} ${f.label}`).join(', ')}`}>
+          <li key={s.bucket} className="flex min-w-0 items-center gap-2 text-[length:var(--fs-xs)]" title={`${s.blurb} — ${s.facts.map((f) => `${fmtUsd(f.usd)} ${f.label}`).join(', ')}`}>
             <Swatch color={BUCKET_COLOR[s.bucket]} hatch={s.bucket === 'stuck'} />
             <span className="truncate text-[color:var(--muted)]">{s.label}</span>
-            <span className="ml-auto shrink-0 tabular-nums text-white">{fmtUsd(s.usd)}</span>
+            <span className="ml-auto shrink-0 tabular-nums text-[color:var(--fg)]">{fmtUsd(s.usd)}</span>
             <span className="mono w-7 shrink-0 text-right text-[10px] tabular-nums text-[color:var(--muted-2)]">{pct(s.pct)}</span>
           </li>
         ))}
@@ -174,7 +174,7 @@ export function AllocationViz({ viz, chain }: { viz: Extract<TileViz, { kind: 'a
       <SegmentBar segments={segments} height={10} />
       <ul className="flex flex-wrap gap-x-3 gap-y-1" aria-label="allocation legend">
         {viz.slices.map((s, i) => (
-          <li key={s.label} className="flex items-center gap-1.5 text-[11px]" title={`${s.label} · ${fmtUsd(s.usd)}`}>
+          <li key={s.label} className="flex items-center gap-1.5 text-[length:var(--fs-xs)]" title={`${s.label} · ${fmtUsd(s.usd)}`}>
             {s.symbol ? <TokenIcon symbol={s.symbol} size={14} chain={chain} /> : <Swatch color={rampColor(i, named, true)} />}
             <span className="text-[color:var(--muted)]">{s.label}</span>
             <span className="mono text-[10px] tabular-nums text-[color:var(--muted-2)]">{pct((s.usd / viz.totalUsd) * 100)}</span>
@@ -239,12 +239,12 @@ export function LendingViz({ viz }: { viz: Extract<TileViz, { kind: 'lending' }>
   const max = Math.max(viz.suppliedUsd ?? 0, viz.borrowedUsd ?? 0) || 1
   const yearly = viz.suppliedUsd != null && viz.netApyPct != null ? (viz.suppliedUsd * viz.netApyPct) / 100 : null
   const Bar = ({ label, usd, color }: { label: string; usd: number; color: string }) => (
-    <div className="flex items-center gap-2 text-[11px]">
+    <div className="flex items-center gap-2 text-[length:var(--fs-xs)]">
       <span className="w-14 shrink-0 text-[color:var(--muted)]">{label}</span>
       <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surf-2)]">
         <div className="h-full rounded-full" style={{ width: `${Math.max(2, (usd / max) * 100)}%`, background: color }} />
       </div>
-      <span className="w-16 shrink-0 text-right tabular-nums text-white">{fmtUsd(usd)}</span>
+      <span className="w-16 shrink-0 text-right tabular-nums text-[color:var(--fg)]">{fmtUsd(usd)}</span>
     </div>
   )
   return (
@@ -310,7 +310,7 @@ export function YieldViz({ viz }: { viz: Extract<TileViz, { kind: 'yield' }> }) 
         <span className="mono absolute bottom-0 right-0 text-[9px] text-[color:var(--muted-2)]">12 mo</span>
       </div>
       <p className="mono text-[10px] text-[color:var(--muted-2)]">
-        ≈ <span className="text-white">{fmtUsd(gain)}</span> a year at {viz.aprPct.toFixed(2)}% · {viz.caption} · a projection, not a promise
+        ≈ <span className="text-[color:var(--fg)]">{fmtUsd(gain)}</span> a year at {viz.aprPct.toFixed(2)}% · {viz.caption} · a projection, not a promise
       </p>
     </div>
   )
@@ -330,9 +330,9 @@ export function PositionsViz({ viz }: { viz: Extract<TileViz, { kind: 'positions
         const liqTone = liq == null ? 'var(--muted-2)' : liq < 10 ? 'var(--sell)' : liq < 25 ? 'var(--gold)' : 'var(--accent)'
         return (
           <div key={`${p.coin}-${p.side}`} className="flex items-center gap-3">
-            <div className="flex w-[7.5rem] shrink-0 items-center gap-1.5 text-[11px]">
+            <div className="flex w-[7.5rem] shrink-0 items-center gap-1.5 text-[length:var(--fs-xs)]">
               <TokenIcon symbol={p.coin} size={16} />
-              <span className="font-medium text-white">{p.coin}</span>
+              <span className="font-medium text-[color:var(--fg)]">{p.coin}</span>
               <span className="mono text-[9px] uppercase text-[color:var(--muted-2)]">
                 {p.side}
                 {p.leverage ? ` ${p.leverage}x` : ''}
@@ -346,7 +346,7 @@ export function PositionsViz({ viz }: { viz: Extract<TileViz, { kind: 'positions
               />
             </div>
             <span className="flex w-[4.75rem] shrink-0 flex-col items-end text-right leading-tight tabular-nums">
-              <span className="text-[11px] font-medium text-white" title="position value (notional)">{fmtUsd(p.valueUsd)}</span>
+              <span className="text-[length:var(--fs-xs)] font-medium text-[color:var(--fg)]" title="position value (notional)">{fmtUsd(p.valueUsd)}</span>
               <span className="text-[10px]" style={{ color: up ? 'var(--accent)' : 'var(--sell)' }} title="unrealized PnL">
                 {up ? '+' : '−'}
                 {fmtUsd(Math.abs(p.pnlUsd))}
@@ -390,18 +390,18 @@ export function CadenceViz({ viz }: { viz: Extract<TileViz, { kind: 'cadence' }>
   return (
     <div data-splash-viz="cadence" className="flex flex-col gap-2">
       <div className="flex items-baseline gap-2">
-        <span className="text-xl font-semibold tracking-tight text-white tabular-nums">{fmtUsd(viz.monthlyUsd)}</span>
-        <span className="text-[11px] text-[color:var(--muted-2)]">a month on the calendar · {active.length} active</span>
+        <span className="text-xl font-semibold tracking-tight text-[color:var(--fg)] tabular-nums">{fmtUsd(viz.monthlyUsd)}</span>
+        <span className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">a month on the calendar · {active.length} active</span>
       </div>
       {segments.length > 0 && <SegmentBar segments={segments} height={8} />}
       <ul className="flex flex-col gap-1">
         {viz.items.map((i, idx) => {
           const st = STATE_LABEL[i.state]
           return (
-            <li key={`${i.token}-${idx}`} className="flex items-center gap-2 text-[11px]">
+            <li key={`${i.token}-${idx}`} className="flex items-center gap-2 text-[length:var(--fs-xs)]">
               <span aria-hidden className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: st.color, boxShadow: i.state === 'due' ? `0 0 0 3px color-mix(in srgb, ${st.color} 25%, transparent)` : undefined }} />
               <TokenIcon symbol={i.token} size={14} />
-              <span className="text-white">
+              <span className="text-[color:var(--fg)]">
                 {fmtUsd(i.buyUsd)} → {i.token}
               </span>
               <span className="text-[color:var(--muted-2)]">{i.cadence}</span>
