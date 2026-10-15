@@ -898,7 +898,8 @@ export function fmtNet(usd: number): string {
 export function fmtPctAscii(pct: number | null): string {
   if (pct === null || !Number.isFinite(pct)) return 'n/a'
   const a = Math.abs(pct)
-  const places = a >= 10 ? 1 : a > 0 && a < 0.01 ? 3 : 2
+  if (a < 0.0005) return '0.00%'
+  const places = a >= 10 ? 1 : a < 0.01 ? 3 : 2
   const sign = pct > 0 ? '+' : pct < 0 ? '-' : ''
   return `${sign}${a.toFixed(places)}%`
 }

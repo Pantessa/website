@@ -303,7 +303,7 @@ export function flyoverPins(check: Check): void {
   }
   check('flyover formats: three significant dollars, signed net, signed ASCII percent, grouped prices, ages',
     fmtUsd3(950) === '$950' && fmtUsd3(86_300) === '$86.3K' && fmtUsd3(230_000) === '$230K' && fmtUsd3(1_290_000) === '$1.29M' && fmtUsd3(-4_500) === '-$4.50K' && fmtNet(1_060_000) === '+$1.06M' && fmtNet(-230_000) === '-$230K' && fmtNet(0) === '$0' &&
-      fmtPctAscii(0.0412) === '+0.04%' && fmtPctAscii(-1.2) === '-1.20%' && fmtPctAscii(0.004) === '+0.004%' && fmtPctAscii(12.34) === '+12.3%' && fmtPctAscii(null) === 'n/a' &&
+      fmtPctAscii(0.0412) === '+0.04%' && fmtPctAscii(-1.2) === '-1.20%' && fmtPctAscii(0.004) === '+0.004%' && fmtPctAscii(12.34) === '+12.3%' && fmtPctAscii(null) === 'n/a' && fmtPctAscii(-0.0001) === '0.00%' &&
       fmtPx(81_279.4) === '81,279' && fmtPx(2_512.44) === '2,512.4' && fmtPx(182.346) === '182.35' && fmtPx(0.132481) === '0.1325' && fmtPx(null) === 'n/a' && fmtAgo(40_400) === '40s ago' && fmtAgo(185_000) === '3m ago')
 
   // ── The chips ─────────────────────────────────────────────────────────

@@ -118,6 +118,9 @@ export interface FlyoverScene {
   setContinentLabels(labels: readonly ContinentLabel[]): void
   /** The Flow and Move lenses draw a sea; Activity bare ground. */
   setSea(on: boolean): void
+  /** Pixels the HUD covers on the right and the bottom of the canvas: the
+   *  world is centred (and fitted) in the space that is left. */
+  setInsets(right: number, bottom: number): void
   drop(key: string, side: 'buy' | 'sell', usd: number): void
   meteor(key: string, side: 'buy' | 'sell', usd: number, tag: string): void
   setPick(keys: readonly string[]): void
@@ -141,14 +144,14 @@ export interface FlyoverScene {
   /** Called on any hand on the camera (drag, wheel, touch, keys). */
   onInteract(cb: () => void): void
   /** Live counters for the drive: plots drawn, drops alive, frames. */
-  stats(): { plots: number; drops: number; frames: number; labels: number }
+  stats(): { plots: number; drops: number; frames: number; labels: number; camera: string }
   dispose(): void
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /** World units per story. */
-const STORY = 4.5
+const STORY = 9
 const SEABED = -(MAX_STORIES + 0.8) * STORY
 const SEA_Y = -0.06
 const SLOT_CAP = 232
@@ -160,7 +163,7 @@ const DIE_MS = 1100
 const OMEGA = 11
 const DROP_FALL_MS = 700
 const DROP_FLASH_MS = 180
-const DROP_FALL_H = 26
+const DROP_FALL_H = 34
 const METEOR_FALL_MS = 950
 const METEOR_FALL_H = 78
 const RING_MS = 1500
@@ -218,14 +221,14 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
 
   // ── The ground ─────────────────────────────────────────────────────────
   const planeGeo = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2)
-  const seabedMat = new MeshStandardMaterial({ roughness: 1, metalness: 0 })
+  const seabedMat = new MeshBasicMaterial()
   const seabed = new Mesh(planeGeo, seabedMat)
   seabed.position.y = SEABED
-  const shelfMat = new MeshStandardMaterial({ roughness: 0.95, metalness: 0 })
+  const shelfMat = new MeshBasicMaterial()
   const shelves = new InstancedMesh(planeGeo, shelfMat, 8)
   shelves.count = 0
   shelves.frustumCulled = false
-  const seaMat = new MeshStandardMaterial({ transparent: true, opacity: 0.55, depthWrite: false, roughness: 0.32, metalness: 0.04 })
+  const seaMat = new MeshBasicMaterial({ transparent: true, opacity: 0.6, depthWrite: false })
   const sea = new Mesh(planeGeo, seaMat)
   sea.position.y = SEA_Y
   sea.renderOrder = 1
@@ -233,12 +236,41 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
   const grid = new LineSegments(new BufferGeometry(), gridMat)
   grid.position.y = SEA_Y + 0.03
   grid.renderOrder = 2
-  scene.add(seabed, shelves, sea, grid)
+  // The coasts: every continent's outline at sea level (one draw call).
+  const coastMat = new LineBasicMaterial({ transparent: true, opacity: 0.9, depthWrite: false })
+  const coasts = new LineSegments(new BufferGeometry(), coastMat)
+  coasts.position.y = SEA_Y + 0.05
+  coasts.renderOrder = 2
+  scene.add(seabed, shelves, sea, grid, coasts)
   let seaOn = true
 
   // ── The plots ──────────────────────────────────────────────────────────
   const boxGeo = new BoxGeometry(1, 1, 1).translate(0, 0.5, 0)
   const plotMat = new MeshStandardMaterial({ roughness: 0.62, metalness: 0.05 })
+  // A little self-light in the plot's own color (its move): the land reads on
+  // a dark ground without a bloom pass. Set per theme in applyInks.
+  const selfLight = { value: 0.2 }
+  // Under the sea, the water takes over: a fragment below sea level mixes
+  // toward the water's ink by its depth, so a sinker's top reads as sunk (its
+  // red still showing a story down, gone by four) and every column's sides
+  // fade into the sea instead of standing like a building.
+  const waterInk = { value: new Color(0x0a1a30) }
+  const seaY = { value: SEA_Y }
+  plotMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uSelfLight = selfLight
+    shader.uniforms.uWater = waterInk
+    shader.uniforms.uSeaY = seaY
+    shader.vertexShader = shader.vertexShader
+      .replace('void main() {', 'varying float vFyY;\nvoid main() {')
+      .replace(
+        '#include <project_vertex>',
+        '#include <project_vertex>\n\tvec4 fyW = vec4( transformed, 1.0 );\n\t#ifdef USE_INSTANCING\n\tfyW = instanceMatrix * fyW;\n\t#endif\n\tvFyY = ( modelMatrix * fyW ).y;',
+      )
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', `uniform float uSelfLight;\nuniform vec3 uWater;\nuniform float uSeaY;\nvarying float vFyY;\nvoid main() {`)
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += diffuseColor.rgb * uSelfLight;')
+      .replace('#include <opaque_fragment>', `\tif ( vFyY < uSeaY ) outgoingLight = mix( outgoingLight, uWater, clamp( ( uSeaY - vFyY ) / ${(STORY * 4).toFixed(1)}, 0.0, 0.9 ) );\n#include <opaque_fragment>`)
+  }
   const plots = new InstancedMesh(boxGeo, plotMat, SLOT_CAP)
   plots.instanceMatrix.setUsage(DynamicDrawUsage)
   plots.frustumCulled = false
@@ -381,7 +413,9 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
     canvas: HTMLCanvasElement
     tex: CanvasTexture
     text: string
+    /** The plate's width (what clashes) and the canvas's (what is drawn), CSS px. */
     wPx: number
+    cw: number
     hPx: number
     priority: number
     forced: boolean
@@ -393,14 +427,17 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
   let labelKeysOrder: string[] = []
 
   interface GroundLabel {
-    mesh: Mesh<PlaneGeometry, MeshBasicMaterial>
+    sprite: Sprite
     canvas: HTMLCanvasElement
     tex: CanvasTexture
     text: string
-    aspect: number
+    wPx: number
+    cw: number
+    hPx: number
   }
   const ground = new Map<ContinentId, GroundLabel>()
-  const groundGeo = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2)
+  let insetR = 0
+  let insetB = 0
 
   // ── World bounds and camera ────────────────────────────────────────────
   let layout: WorldLayout = { continents: [], plots: [], width: 0, depth: 0 }
@@ -432,17 +469,22 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
     fgC.set(inks.fg)
     upC.set(inks.up)
     downC.set(inks.down)
-    neutral.set(inks.surf).lerp(fgC, inks.light ? 0.13 : 0.16)
+    neutral.set(inks.surf).lerp(fgC, inks.light ? 0.26 : 0.24)
     hemi.color.set(0xffffff)
     hemi.groundColor.copy(bg).lerp(fgC, 0.15)
+    selfLight.value = inks.light ? 0.06 : 0.22
     hemi.intensity = inks.light ? 1.35 : 1.05
     sun.intensity = inks.light ? 1.15 : 1.7
-    seabedC.copy(bg).lerp(fgC, inks.light ? 0.1 : 0.05)
+    seabedC.copy(bg).lerp(fgC, inks.light ? 0.12 : 0.012)
     seabedMat.color.copy(seabedC)
-    shelfMat.color.copy(bg).lerp(fgC, inks.light ? 0.16 : 0.1)
-    seaMat.color.copy(bg).lerp(C.set(inks.water), inks.light ? 0.3 : 0.38)
-    seaMat.opacity = inks.light ? 0.5 : 0.58
-    gridMat.color.copy(bg).lerp(fgC, inks.light ? 0.22 : 0.16)
+    shelfMat.color.copy(bg).lerp(fgC, inks.light ? 0.2 : 0.03)
+    seaMat.color.copy(bg).lerp(C.set(inks.water), inks.light ? 0.3 : 0.045)
+    seaMat.opacity = inks.light ? 0.34 : 0.4
+    // Depth reads as the water's own ink: a navy on dark ground, a chart-blue on paper.
+    if (inks.light) waterInk.value.copy(bg).lerp(C.set(inks.water), 0.5)
+    else waterInk.value.copy(seaMat.color)
+    gridMat.color.copy(bg).lerp(fgC, inks.light ? 0.2 : 0.035)
+    coastMat.color.copy(bg).lerp(fgC, inks.light ? 0.45 : 0.22)
     outlineMat.color.copy(fgC)
     beaconMat.color.set(inks.accent)
     poleMat.color.copy(fgC).lerp(bg, 0.25)
@@ -451,15 +493,15 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
       m.ring.material.color.copy(fgC)
     }
     for (const e of labels.values()) drawLabel(e)
-    for (const [id, g] of ground) drawGround(id, g, g.text)
+    for (const g of ground.values()) drawGround(g, g.text)
     applySeaMode()
   }
 
   function applySeaMode(): void {
     if (seaOn) {
       seaMat.transparent = true
-      seaMat.opacity = inks.light ? 0.5 : 0.58
-      seaMat.color.copy(new Color(inks.bg)).lerp(C.set(inks.water), inks.light ? 0.3 : 0.38)
+      seaMat.opacity = inks.light ? 0.34 : 0.4
+      seaMat.color.copy(new Color(inks.bg)).lerp(C.set(inks.water), inks.light ? 0.3 : 0.045)
       seaMat.depthWrite = false
     } else {
       // Bare ground: opaque, the continents' floor ink.
@@ -486,89 +528,102 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
     ctx.font = subFont
     const sw = d.sub ? ctx.measureText(d.sub).width : 0
     const padX = 7 * LABEL_PX
-    const w = Math.ceil(Math.max(tw, sw) + padX * 2)
+    const pw = Math.ceil(Math.max(tw, sw) + padX * 2)
     const h = Math.ceil((d.sub ? 34 : 21) * LABEL_PX)
+    // The canvas grows in steps, so a figure that changes width every second
+    // reuses its texture (WebGL2 storage is fixed once allocated); the plate
+    // is drawn centred in it.
+    const w = Math.ceil(pw / 48) * 48
     if (c.width !== w || c.height !== h) {
       c.width = w
       c.height = h
+      e.tex = renewTexture(e.tex, c, e.sprite.material)
     }
     ctx.clearRect(0, 0, w, h)
+    const x0 = (w - pw) / 2
     const r = 6 * LABEL_PX
     const tone = d.tone === 'up' ? inks.up : d.tone === 'down' ? inks.down : inks.line
     ctx.globalAlpha = 0.9
     ctx.fillStyle = inks.surf
-    roundRect(ctx, 1, 1, w - 2, h - 2, r)
+    roundRect(ctx, x0 + 1, 1, pw - 2, h - 2, r)
     ctx.fill()
     ctx.globalAlpha = 1
     ctx.lineWidth = 1.5 * LABEL_PX
     ctx.strokeStyle = tone
-    roundRect(ctx, 1, 1, w - 2, h - 2, r)
+    roundRect(ctx, x0 + 1, 1, pw - 2, h - 2, r)
     ctx.stroke()
     ctx.textBaseline = 'alphabetic'
     ctx.font = titleFont
     ctx.fillStyle = inks.fg
-    ctx.fillText(d.title, padX, 15 * LABEL_PX)
+    ctx.fillText(d.title, x0 + padX, 15 * LABEL_PX)
     if (d.sub) {
       ctx.font = subFont
       ctx.fillStyle = d.tone === 'flat' ? inks.muted : tone
-      ctx.fillText(d.sub, padX, 28 * LABEL_PX)
+      ctx.fillText(d.sub, x0 + padX, 28 * LABEL_PX)
     }
-    e.wPx = w / LABEL_PX
+    e.cw = w / LABEL_PX
+    e.wPx = pw / LABEL_PX
     e.hPx = h / LABEL_PX
     e.tex.needsUpdate = true
   }
 
-  function drawGround(id: ContinentId, g: GroundLabel, text: string): void {
+  function drawGround(g: GroundLabel, text: string): void {
     const ctx = g.canvas.getContext('2d')
     if (!ctx) return
     const [title, sub] = text.split('\n')
-    const S = 3
-    const titleFont = `600 ${30 * S}px ${opts.fontUi}`
-    const subFont = `500 ${17 * S}px ${opts.fontMono}`
+    const S = LABEL_PX
+    const titleFont = `700 ${10 * S}px ${opts.fontUi}`
+    const subFont = `500 ${9.5 * S}px ${opts.fontMono}`
+    const upper = title.toUpperCase()
     ctx.font = titleFont
-    const tw = ctx.measureText(title).width
+    const tw = ctx.measureText(upper).width + upper.length * 1.2 * S
     ctx.font = subFont
     const sw = sub ? ctx.measureText(sub).width : 0
-    const w = Math.ceil(Math.max(tw, sw) + 8 * S)
-    const h = Math.ceil(62 * S)
+    const pad = 6 * S
+    const pw = Math.ceil(Math.max(tw, sw) + pad * 2)
+    const w = Math.ceil(pw / 64) * 64
+    const h = Math.ceil(32 * S)
     if (g.canvas.width !== w || g.canvas.height !== h) {
       g.canvas.width = w
       g.canvas.height = h
+      g.tex = renewTexture(g.tex, g.canvas, g.sprite.material)
     }
     ctx.clearRect(0, 0, w, h)
+    // A quiet plate so the name reads over land, sea or a tower (left-aligned: the sprite hangs from its left edge).
+    ctx.globalAlpha = inks.light ? 0.82 : 0.72
+    ctx.fillStyle = inks.bg
+    roundRect(ctx, 0, 0, pw, h, 6 * S)
+    ctx.fill()
+    ctx.globalAlpha = 1
     ctx.textBaseline = 'alphabetic'
     ctx.font = titleFont
     ctx.fillStyle = inks.fg
-    ctx.globalAlpha = inks.light ? 0.85 : 0.8
-    ctx.fillText(title, 4 * S, 30 * S)
+    let x = pad
+    for (const ch of upper) {
+      ctx.fillText(ch, x, 13 * S)
+      x += ctx.measureText(ch).width + 1.2 * S
+    }
     if (sub) {
       ctx.font = subFont
       ctx.fillStyle = inks.muted
-      ctx.globalAlpha = 1
-      ctx.fillText(sub, 4 * S, 54 * S)
+      ctx.fillText(sub, pad, 26 * S)
     }
-    ctx.globalAlpha = 1
-    g.aspect = h / w
+    g.wPx = pw / S
+    g.cw = w / S
+    g.hPx = h / S
     g.text = text
     g.tex.needsUpdate = true
-    placeGround(id, g)
   }
 
-  function placeGround(id: ContinentId, g: GroundLabel): void {
-    const c = layout.continents.find((x) => x.id === id)
-    if (!c) {
-      g.mesh.visible = false
-      return
-    }
-    // Lying on the water at the continent's front shore, left-aligned with it.
-    const worldH = 8.5
-    let w = worldH / g.aspect
-    const maxW = c.rect.w
-    const hh = w > maxW ? (worldH * maxW) / w : worldH
-    w = Math.min(w, maxW)
-    g.mesh.scale.set(w, 1, hh)
-    g.mesh.position.set(c.rect.x + w / 2, SEA_Y + 0.05, c.rect.z + c.rect.d + 1.2 + hh / 2)
-    g.mesh.visible = true
+  /** A canvas that changed size needs a new texture: WebGL2 texture storage
+   *  is allocated once (three uses texStorage2D), so re-uploading a resized
+   *  canvas into the old one draws stale or torn text. */
+  function renewTexture(old: CanvasTexture, canvas: HTMLCanvasElement, mat: SpriteMaterial): CanvasTexture {
+    old.dispose()
+    const t = makeTexture(canvas)
+    mat.map = t
+    mat.needsUpdate = true
+    return t
   }
 
   function makeTexture(canvas: HTMLCanvasElement): CanvasTexture {
@@ -650,9 +705,18 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
     seabed.scale.set(span, 1, span)
     sea.scale.set(span, 1, span)
     buildGrid()
-    // Ground labels follow their continents.
-    for (const [id, g] of ground) placeGround(id, g)
-    for (const [id, g] of ground) if (!next.continents.some((c) => c.id === id)) g.mesh.visible = false
+    const cpts: number[] = []
+    for (const c of next.continents) {
+      const x0 = c.rect.x - 0.6
+      const z0 = c.rect.z - 0.6
+      const x1 = c.rect.x + c.rect.w + 0.6
+      const z1 = c.rect.z + c.rect.d + 0.6
+      cpts.push(x0, 0, z0, x1, 0, z0, x1, 0, z0, x1, 0, z1, x1, 0, z1, x0, 0, z1, x0, 0, z1, x0, 0, z0)
+    }
+    coasts.geometry.dispose()
+    const cg = new BufferGeometry()
+    cg.setAttribute('position', new Float32BufferAttribute(cpts, 3))
+    coasts.geometry = cg
     updateFog()
     if (!fitted && next.plots.length) {
       fitted = true
@@ -677,8 +741,9 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
   function updateFog(): void {
     const r = camera.position.distanceTo(controls.target)
     const f = scene.fog as Fog
-    f.near = r * 0.9 + 40
-    f.far = r * 2.6 + Math.max(worldW, worldD) * 1.4
+    const span = Math.max(worldW, worldD)
+    f.near = r + span * 0.6
+    f.far = f.near + r * 2.2 + span
   }
 
   function setHeights(stories: ReadonlyMap<string, number>): void {
@@ -710,7 +775,7 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
         sprite.renderOrder = 10
         sprite.visible = false
         scene.add(sprite)
-        e = { sprite, canvas, tex, text: '', wPx: 0, hPx: 0, priority: 0, forced: false, shown: false, def: d }
+        e = { sprite, canvas, tex, text: '', wPx: 0, cw: 0, hPx: 0, priority: 0, forced: false, shown: false, def: d }
         labels.set(d.key, e)
       }
       e.priority = d.priority
@@ -733,7 +798,9 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
   }
 
   function setContinentLabels(list: readonly ContinentLabel[]): void {
+    const keep = new Set<ContinentId>()
     for (const l of list) {
+      keep.add(l.id)
       const text = `${l.title}\n${l.sub}`
       let g = ground.get(l.id)
       if (!g) {
@@ -741,13 +808,22 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
         canvas.width = 8
         canvas.height = 8
         const tex = makeTexture(canvas)
-        const mesh = new Mesh(groundGeo, new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }))
-        mesh.renderOrder = 3
-        scene.add(mesh)
-        g = { mesh, canvas, tex, text: '', aspect: 0.2 }
+        const sprite = new Sprite(new SpriteMaterial({ map: tex, sizeAttenuation: false, depthTest: false, depthWrite: false, transparent: true, fog: false }))
+        sprite.center.set(0, 1)
+        sprite.renderOrder = 9
+        sprite.visible = false
+        scene.add(sprite)
+        g = { sprite, canvas, tex, text: '', wPx: 0, cw: 0, hPx: 0 }
         ground.set(l.id, g)
       }
-      if (g.text !== text) drawGround(l.id, g, text)
+      if (g.text !== text) drawGround(g, text)
+    }
+    for (const [id, g] of ground) {
+      if (keep.has(id)) continue
+      scene.remove(g.sprite)
+      g.sprite.material.dispose()
+      g.tex.dispose()
+      ground.delete(id)
     }
   }
 
@@ -755,6 +831,35 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
     const P11 = camera.projectionMatrix.elements[5]
     labelScale = 2 / (P11 * H)
     const boxes: number[] = []
+    // The continents' names first: few, and they hold their spot. Anchored at
+    // the continent's front-left shore.
+    for (const [id, g] of ground) {
+      const c = layout.continents.find((x) => x.id === id)
+      if (!c) {
+        g.sprite.visible = false
+        continue
+      }
+      V.set(c.rect.x, SEA_Y + 0.2, c.rect.z + c.rect.d + 1.5)
+      g.sprite.position.copy(V)
+      V.project(camera)
+      if (V.z > 1 || V.x < -1.3 || V.x > 1.05 || V.y < -1.2 || V.y > 1.1) {
+        g.sprite.visible = false
+        continue
+      }
+      const px = (V.x * 0.5 + 0.5) * W
+      const py = (-V.y * 0.5 + 0.5) * H
+      let clash = false
+      for (let i = 0; i < boxes.length; i += 4) {
+        if (px - 2 < boxes[i + 2] && px + g.wPx + 2 > boxes[i] && py - 2 < boxes[i + 3] && py + g.hPx + 2 > boxes[i + 1]) {
+          clash = true
+          break
+        }
+      }
+      g.sprite.visible = !clash
+      if (clash) continue
+      g.sprite.scale.set(g.cw * labelScale, g.hPx * labelScale, 1)
+      boxes.push(px - 2, py - 2, px + g.wPx + 2, py + g.hPx + 2)
+    }
     for (const e of labelOrder) {
       const slot = slotOf.get(e.def.key)
       if (slot === undefined || state[slot] !== 1) {
@@ -791,7 +896,7 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
       }
       boxes.push(x0, y0, x1, y1)
       e.sprite.visible = true
-      e.sprite.scale.set(e.wPx * labelScale, e.hPx * labelScale, 1)
+      e.sprite.scale.set(e.cw * labelScale, e.hPx * labelScale, 1)
     }
   }
 
@@ -827,7 +932,7 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
     dX[i] = rNow[o] + w * (0.18 + Math.random() * 0.64)
     dZ[i] = rNow[o + 1] + d * (0.18 + Math.random() * 0.64)
     dT0[i] = performance.now()
-    dSize[i] = Math.min(2.4, 0.38 + Math.sqrt(Math.max(0, usd)) / 150)
+    dSize[i] = Math.min(3, 0.7 + Math.sqrt(Math.max(0, usd)) / 110)
     dAlive[i] = 1
     drops.setColorAt(i, C.set(side === 'buy' ? inks.up : inks.down))
     if (drops.instanceColor) drops.instanceColor.needsUpdate = true
@@ -847,7 +952,7 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
     m.x = rNow[o] + rNow[o + 2] / 2
     m.z = rNow[o + 1] + rNow[o + 3] / 2
     m.t0 = performance.now()
-    m.size = Math.min(4.2, 1.6 + Math.sqrt(usd) / 260)
+    m.size = Math.min(5.5, 2.2 + Math.sqrt(usd) / 220)
     m.reach = Math.max(6, Math.max(rNow[o + 2], rNow[o + 3]) * 0.75)
     const ink = side === 'buy' ? inks.up : inks.down
     m.head.material.color.set(ink)
@@ -860,17 +965,23 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
       const font = `600 ${12 * S}px ${opts.fontMono}`
       ctx.font = font
       const tw = ctx.measureText(tagText).width
-      const w = Math.ceil(tw + 16 * S)
+      const pw = Math.ceil(tw + 16 * S)
+      const w = Math.ceil(pw / 64) * 64
       const h = 24 * S
-      m.tagCanvas.width = w
-      m.tagCanvas.height = h
+      if (m.tagCanvas.width !== w || m.tagCanvas.height !== h) {
+        m.tagCanvas.width = w
+        m.tagCanvas.height = h
+        m.tagTex = renewTexture(m.tagTex, m.tagCanvas, m.tag.material)
+      }
+      ctx.clearRect(0, 0, w, h)
       ctx.font = font
+      const x0 = (w - pw) / 2
       ctx.fillStyle = ink
-      roundRect(ctx, 0, 0, w, h, 7 * S)
+      roundRect(ctx, x0, 0, pw, h, 7 * S)
       ctx.fill()
       ctx.fillStyle = inks.light ? '#ffffff' : inks.bg
       ctx.textBaseline = 'middle'
-      ctx.fillText(tagText, 8 * S, h / 2 + 1)
+      ctx.fillText(tagText, x0 + 8 * S, h / 2 + 1)
       m.tagW = w / S
       m.tagH = h / S
       m.tagTex.needsUpdate = true
@@ -894,10 +1005,13 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
 
   /** The distance at which the whole world fits the frame from (polar, az). */
   function fitDistance(polar: number, az: number): number {
+    // The land's own corners (a two-row world is narrower in front than its
+    // bounding box), at sea level and a little above.
     const corners: [number, number, number][] = []
-    const hw = worldW / 2 + 6
-    const hd = worldD / 2 + 14
-    for (const x of [-hw, hw]) for (const y of [-2, 14]) for (const z of [-hd, hd]) corners.push([x, y, z])
+    for (const c of layout.continents) {
+      for (const x of [c.rect.x - 1, c.rect.x + c.rect.w + 1]) for (const z of [c.rect.z - 1, c.rect.z + c.rect.d + 4]) for (const y of [-1, 8]) corners.push([x, y, z])
+    }
+    if (!corners.length) for (const x of [-worldW / 2, worldW / 2]) for (const z of [-worldD / 2, worldD / 2]) corners.push([x, 0, z])
     const target = V2.set(0, 0, 0)
     let lo = 20
     let hi = 6000
@@ -906,9 +1020,11 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
       placeCamera(target, mid, polar, az)
       camera.updateMatrixWorld()
       let ok = true
+      const xMax = 1 - (2 * insetR) / W - 0.04
+      const yMin = -1 + (2 * insetB) / H + 0.06
       for (const [x, y, z] of corners) {
         V.set(x, y, z).project(camera)
-        if (Math.abs(V.x) > 0.94 || Math.abs(V.y) > 0.86 || V.z > 1) {
+        if (V.x < -0.97 || V.x > xMax || V.y < yMin || V.y > 0.9 || V.z > 1) {
           ok = false
           break
         }
@@ -919,7 +1035,7 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
     return hi
   }
 
-  const FIT_POLAR = 0.98
+  const FIT_POLAR = 0.86
   const FIT_AZ = -0.38
 
   function fitAll(instant = false): void {
@@ -1274,16 +1390,53 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
   raf = requestAnimationFrame(frame)
 
   // ── Size ───────────────────────────────────────────────────────────────
+  /** Shift the picture's centre left by half the right inset and up by half
+   *  the bottom one: the world sits in the middle of the space the HUD leaves. */
+  function applyViewOffset(): void {
+    const dx = Math.min(insetR, W * 0.45) / 2
+    const dy = Math.min(insetB, H * 0.35) / 2
+    if (dx < 1 && dy < 1) camera.clearViewOffset()
+    else camera.setViewOffset(W + 2 * dx, H + 2 * dy, 2 * dx, 2 * dy, W, H)
+    camera.updateProjectionMatrix()
+  }
+
+  function setInsets(right: number, bottom: number): void {
+    const r = Math.max(0, Math.round(right))
+    const b = Math.max(0, Math.round(bottom))
+    if (r === insetR && b === insetB) return
+    const atFit = fitted && !tween.on && isAtFit()
+    const touringFit = fitted && touringOn && controls.target.lengthSq() < 1e-6
+    insetR = r
+    insetB = b
+    applyViewOffset()
+    if (atFit) fitAll(true)
+    else if (touringFit) {
+      const s = spherical()
+      const d = fitDistance(FIT_POLAR, FIT_AZ)
+      placeCamera(V2.set(0, 0, 0), d, s.polar, s.az)
+      updateFog()
+    }
+  }
+
+  function isAtFit(): boolean {
+    const s = spherical()
+    return Math.abs(s.az - FIT_AZ) < 1e-3 && Math.abs(s.polar - FIT_POLAR) < 1e-3 && controls.target.lengthSq() < 1e-6
+  }
+
   function resize(): void {
     W = Math.max(1, canvas.clientWidth)
     H = Math.max(1, canvas.clientHeight)
     renderer.setSize(W, H, false)
     camera.aspect = W / H
-    camera.updateProjectionMatrix()
-    if (fitted && !tween.on) {
-      // Keep the frame's subject: refit only while nobody has flown.
+    applyViewOffset()
+    // Keep the frame's subject: refit while nobody has flown (the tour orbits
+    // the fit, so it keeps the new distance and its own angle).
+    if (fitted && !tween.on && isAtFit()) fitAll(true)
+    else if (fitted && touringOn && controls.target.lengthSq() < 1e-6) {
       const s = spherical()
-      if (Math.abs(s.az - FIT_AZ) < 1e-3 && Math.abs(s.polar - FIT_POLAR) < 1e-3) fitAll(true)
+      const r = fitDistance(FIT_POLAR, FIT_AZ)
+      placeCamera(V2.set(0, 0, 0), r, s.polar, s.az)
+      updateFog()
     }
     placeLabels()
   }
@@ -1300,6 +1453,7 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
       seaOn = on
       applySeaMode()
     },
+    setInsets,
     drop,
     meteor,
     setPick,
@@ -1331,7 +1485,10 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
       for (let i = 0; i < highSlot; i++) if (state[i] === 1) live++
       let shown = 0
       for (const e of labels.values()) if (e.sprite.visible) shown++
-      return { plots: live, drops: dropsAlive, frames, labels: shown }
+      const t = controls.target
+      const c = camera.position
+      const camera_ = `t ${t.x.toFixed(1)},${t.y.toFixed(1)},${t.z.toFixed(1)} c ${c.x.toFixed(1)},${c.y.toFixed(1)},${c.z.toFixed(1)} vp ${W}x${H} in ${insetR},${insetB} world ${worldW.toFixed(0)}x${worldD.toFixed(0)} tour ${touringOn ? 1 : 0}`
+      return { plots: live, drops: dropsAlive, frames, labels: shown, camera: camera_ }
     },
     dispose() {
       disposed = true
@@ -1344,7 +1501,7 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
       }
       labels.clear()
       for (const g of ground.values()) {
-        g.mesh.material.dispose()
+        g.sprite.material.dispose()
         g.tex.dispose()
       }
       ground.clear()
@@ -1355,8 +1512,8 @@ export function createFlyoverScene(canvas: HTMLCanvasElement, opts: SceneOpts): 
         ;(m.tag.material as SpriteMaterial).dispose()
         m.tagTex.dispose()
       }
-      for (const g of [planeGeo, boxGeo, squareGeo, beaconGeo, poleGeo, pennantGeo, dropGeo, headGeo, trailGeo, ringGeo, groundGeo, grid.geometry]) g.dispose()
-      for (const m of [seabedMat, shelfMat, seaMat, gridMat, plotMat, outlineMat, beaconMat, poleMat, pennantMat, dropMat]) m.dispose()
+      for (const g of [planeGeo, boxGeo, squareGeo, beaconGeo, poleGeo, pennantGeo, dropGeo, headGeo, trailGeo, ringGeo, grid.geometry, coasts.geometry]) g.dispose()
+      for (const m of [seabedMat, shelfMat, seaMat, gridMat, coastMat, plotMat, outlineMat, beaconMat, poleMat, pennantMat, dropMat]) m.dispose()
       plots.dispose()
       drops.dispose()
       shelves.dispose()

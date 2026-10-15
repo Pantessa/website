@@ -166,6 +166,9 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hoverCardRef = useRef<HTMLDivElement>(null)
   const fontProbeRef = useRef<HTMLSpanElement>(null)
+  const hudRef = useRef<HTMLDivElement>(null)
+  const sideRef = useRef<HTMLDivElement>(null)
+  const skyRef = useRef<HTMLDivElement>(null)
   const pausedRef = useRef(false)
   const reducedRef = useRef(false)
   const hiddenRef = useRef(false)
@@ -362,6 +365,31 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
     sceneRef.current?.setSea(lensHasSea(lens))
   }, [lens, sceneState])
 
+  // ── The HUD's footprint: the world centres in the space it leaves ──────
+  useEffect(() => {
+    if (sceneState !== 'ready') return
+    const measure = () => {
+      const sc = sceneRef.current
+      const stage = stageRef.current
+      const side = sideRef.current
+      const skyEl = skyRef.current
+      if (!sc || !stage) return
+      const overlaid = !!side && getComputedStyle(side).position === 'absolute'
+      if (!overlaid) {
+        sc.setInsets(0, 0)
+        return
+      }
+      const sr = stage.getBoundingClientRect()
+      const right = side ? Math.max(0, sr.right - side.getBoundingClientRect().left) : 0
+      const bottom = skyEl ? Math.min(140, Math.max(0, sr.bottom - skyEl.getBoundingClientRect().top) * 0.6) : 0
+      sc.setInsets(right, bottom)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    for (const el of [stageRef.current, sideRef.current, skyRef.current]) if (el) ro.observe(el)
+    return () => ro.disconnect()
+  }, [sceneState])
+
   // ── The hint, once per browser ─────────────────────────────────────────
   useEffect(() => {
     if (sceneState !== 'ready') return
@@ -479,13 +507,22 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
           sc.setContinentLabels(
             continents.map((x) => {
               const def = continentDef(x.id)
-              return { id: x.id, title: def.label, sub: `${fmtUsd3(x.gross)} / ${win} · net ${fmtNet(x.net)} · ${x.count} ${x.count === 1 ? 'market' : 'markets'}` }
+              return { id: x.id, title: def.label, sub: `${fmtUsd3(x.gross)}/${win} · net ${fmtNet(x.net)} · ${x.count} mkt${x.count === 1 ? '' : 's'}` }
             }),
           )
           sc.setFlags([...board.risers.slice(0, 3).map((r) => ({ key: r.key, dir: 1 as const })), ...board.sinkers.slice(0, 3).map((r) => ({ key: r.key, dir: -1 as const }))])
           sc.setPick(pickRows.map((r) => r.key))
         }
         setHud({ markets: info.size, drawn: drawn.length, fillsPerSec: Math.round(n / 10), board, continents, pickRows, firstPrint: info.size > 0 })
+        // For the drive and for anyone debugging: what the world holds right now.
+        const st = sc?.stats()
+        if (st && mainRef.current) {
+          mainRef.current.dataset.plots = String(st.plots)
+          mainRef.current.dataset.drops = String(st.drops)
+          mainRef.current.dataset.labels = String(st.labels)
+          mainRef.current.dataset.frames = String(st.frames)
+          mainRef.current.dataset.camera = st.camera
+        }
       }
       // The first pick market is the default pinned readout, once, when it has a plot.
       if (!userPinnedRef.current && pickReady && !pin && pickRows.length && layout) {
@@ -849,6 +886,18 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
           </div>
           {tabs}
           <div className="flyover__controls">
+            <button type="button" className="flyover__btn" onClick={togglePause} aria-pressed={paused} title={paused ? 'Resume the land' : 'Hold the land (the ledger keeps filling)'} data-journey={`${paused ? 'Resume' : 'Hold'} the Flyover`}>
+              {paused ? <Play size={13} strokeWidth={2.2} /> : <Pause size={13} strokeWidth={2.2} />}
+              <span>{paused ? 'Resume' : 'Hold'}</span>
+            </button>
+            <button type="button" className="flyover__btn" onClick={toggleTour} aria-pressed={touring} disabled={sceneState !== 'ready'} title={touring ? 'Stop the tour (T)' : 'Tour: a slow orbit (T)'} data-journey={`${touring ? 'Stop' : 'Start'} the Flyover tour`}>
+              <Plane size={13} strokeWidth={2.2} />
+              <span>Tour</span>
+            </button>
+            <button type="button" className="flyover__btn" onClick={() => sceneRef.current?.fitAll()} disabled={sceneState !== 'ready'} title="Fit every continent (F)" data-journey="Fit the Flyover">
+              <Crosshair size={13} strokeWidth={2.2} />
+              <span>Fit</span>
+            </button>
             <button type="button" className="flyover__btn" onClick={toggleFull} title={isFull ? 'Leave fullscreen' : 'Fullscreen'} data-journey={`${isFull ? 'Leave' : 'Open'} Flyover fullscreen`}>
               {isFull ? <Minimize2 size={13} strokeWidth={2.2} /> : <Maximize2 size={13} strokeWidth={2.2} />}
               <span>{isFull ? 'Exit' : 'Fullscreen'}</span>
@@ -892,20 +941,6 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
               Fly
             </button>
           </form>
-          <div className="flyover__acts">
-            <button type="button" className="flyover__btn" onClick={togglePause} aria-pressed={paused} title={paused ? 'Resume the land' : 'Hold the land (the ledger keeps filling)'} data-journey={`${paused ? 'Resume' : 'Hold'} the Flyover`}>
-              {paused ? <Play size={13} strokeWidth={2.2} /> : <Pause size={13} strokeWidth={2.2} />}
-              <span>{paused ? 'Resume' : 'Hold'}</span>
-            </button>
-            <button type="button" className="flyover__btn" onClick={toggleTour} aria-pressed={touring} disabled={sceneState !== 'ready'} title={touring ? 'Stop the tour (T)' : 'Tour: a slow orbit (T)'} data-journey={`${touring ? 'Stop' : 'Start'} the Flyover tour`}>
-              <Plane size={13} strokeWidth={2.2} />
-              <span>Tour</span>
-            </button>
-            <button type="button" className="flyover__btn" onClick={() => sceneRef.current?.fitAll()} disabled={sceneState !== 'ready'} title="Fit every continent (F)" data-journey="Fit the Flyover">
-              <Crosshair size={13} strokeWidth={2.2} />
-              <span>Fit</span>
-            </button>
-          </div>
           {flyNote && (
             <span className="flyover__note mono" role="status">
               {flyNote}
@@ -956,17 +991,19 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
             )}
           </div>
 
-          <div className="flyover__hud">
-            {pinnedInfo && (
-              <div className="flyover__card flyover__card--pinned" role="dialog" aria-label={`${plotName(pinnedInfo.market)} readout`}>
-                {card(pinnedInfo, 'pinned')}
-              </div>
-            )}
-            <aside className="flyover__board" aria-label="Leaderboard">
-              {boardCol(heads.risers, hud.board.risers, 'up')}
-              {boardCol(heads.sinkers, hud.board.sinkers, 'down')}
-            </aside>
-            <div className="flyover__sky" aria-label="Big prints">
+          <div className="flyover__hud" ref={hudRef}>
+            <div className="flyover__side" ref={sideRef}>
+              <aside className="flyover__board" aria-label="Leaderboard">
+                {boardCol(heads.risers, hud.board.risers, 'up')}
+                {boardCol(heads.sinkers, hud.board.sinkers, 'down')}
+              </aside>
+              {pinnedInfo && (
+                <div className="flyover__card flyover__card--pinned" role="dialog" aria-label={`${plotName(pinnedInfo.market)} readout`}>
+                  {card(pinnedInfo, 'pinned')}
+                </div>
+              )}
+            </div>
+            <div className="flyover__sky" aria-label="Big prints" ref={skyRef}>
               <h3 className="flyover__colh mono">Meteors · prints of $50K or more</h3>
               <ol aria-live="polite">
                 {sky.length === 0 && <li className="flyover__dim mono">none yet</li>}
@@ -1037,7 +1074,7 @@ export default function Flyover({ tradable, tabs }: { tradable: TradabilityMap; 
                 <button type="button" className="flyover__cont" onClick={() => flyTo(r.key)} disabled={sceneState !== 'ready'} data-journey={`Flyover pick ${plotName(r.market)}`}>
                   <span className="flyover__contn">{plotName(r.market)}</span>
                   <span className="flyover__contv mono">
-                    <span className={r.sums.netUsd > 0 ? 'up' : r.sums.netUsd < 0 ? 'down' : ''}>net {fmtNet(r.sums.netUsd)}</span> · {fmtPctAscii(r.sums.movePct)} · {r.sums.count} fills
+                    <span className={r.sums.netUsd > 0 ? 'up' : r.sums.netUsd < 0 ? 'down' : ''}>net {fmtNet(r.sums.netUsd)}</span> · {fmtPctAscii(r.sums.movePct)} · {r.sums.count} {r.sums.count === 1 ? 'fill' : 'fills'}
                   </span>
                 </button>
               </li>
