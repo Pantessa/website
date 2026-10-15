@@ -43,7 +43,7 @@ import {
 } from 'lightweight-charts'
 import { ChartCandlestick, ChevronsRight, Layers2, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, RotateCcw, Rows3, Ruler, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, Trash2, TrendingUp, Undo2 } from 'lucide-react'
 import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, isPrintTf, tfsForSource, type Candle, type ChartTf } from '@/lib/charts'
-import { PRINT_KEEP_MS, applyPrint, barsFromPrints, chartLiveFeed, printOf, tailIsLive, tailWords } from '@/lib/chart-live'
+import { PRINT_KEEP_MS, applyPrint, barsFromPrints, chartLiveFeed, printOf, seedThenPrints, tailIsLive, tailWords, type Print } from '@/lib/chart-live'
 import { syncTfParam } from '@/lib/markets'
 import type { TapeFill } from '@/lib/tape'
 import { openDuneTape, type FeedStatus } from '@/lib/tape-feed'
@@ -88,6 +88,8 @@ const POOL_POLL_MS = 30_000
 const HISTORY_CAP = 2_200
 /** A print frame's window: three minutes of second bars (MAX_CANDLES's twin). */
 const PRINT_WINDOW = 180
+/** How often a print frame re-reads the venue's trade tape until Dune's first print takes over. */
+const VENUE_TRADES_POLL_MS = 5_000
 /** At the cap the oldest bars stay off the canvas as the rolling lines'
  *  warm-up, so an SMA 200 still starts at the first candle on screen. Only a
  *  feed with nothing older shows a line starting partway in. */
@@ -279,6 +281,11 @@ export default function MarketChart({
   // numbers only. No venue serves a second bar.
   const printFrame = isPrintTf(tf)
   const printsRef = useRef<TapeFill[]>([])
+  // …and the HISTORY before Dune's first print: the venue's own trade tape
+  // (/api/charts/trades), so the frame opens full instead of waiting minutes
+  // for a thin coin's next print (lib/chart-live seedThenPrints).
+  const venuePrintsRef = useRef<Print[]>([])
+  const rebuildPrintsRef = useRef<() => void>(() => {})
   /** The frame is a shareable address on the symbol page (`?tf=`). */
   useEffect(() => {
     if (urlTf) syncTfParam(tf, DEFAULT_CHART_TF)
@@ -948,6 +955,12 @@ export default function MarketChart({
     // key effect clears it a beat later). Drawing that would mark the NEW
     // frame fitted with the old bars, and the new frame would open at the old
     // one's zoom: AAPL on 4H opened with the left half of the plot empty.
+    if (!bars.length && isPrintTf(tf) && data?.tf === tf && data.symbol === pair?.symbol) {
+      // A print frame with nothing yet: the frame it left must not stay on the canvas.
+      cs.setData([])
+      vs.setData([])
+      return
+    }
     if (!bars.length || data?.tf !== tf || data.symbol !== pair?.symbol) return
     // A stock's extended hours: the candles and their volume go quiet and the
     // bands shade the stretch behind them, so an hour of pre-market dust reads
@@ -1000,6 +1013,44 @@ export default function MarketChart({
   // place (never a setData) and moves the dotted "print" line; a frame or an
   // instrument that polls opens nothing, and the foot says so.
   const liveFeed = useMemo(() => chartLiveFeed(pair), [pair])
+  // A print frame's bars: the venue's trade tape up to Dune's first print,
+  // Dune's prints from there (seedThenPrints) — re-derived once a second so
+  // the lines and the volume follow.
+  rebuildPrintsRef.current = () => {
+    if (!isPrintTf(tf) || !pair) return
+    const handedOff = printsRef.current.length > 0
+    const bars = barsFromPrints(seedThenPrints(venuePrintsRef.current, printsRef.current.map(printOf), Date.now()), FRAME_SEC[tf])
+    setHistory(bars)
+    setData({ symbol: pair.symbol, label: pair.label, source: pair.source, feed: handedOff ? 'dune prints' : `${pair.source} trades`, tf, candles: bars.slice(-PRINT_WINDOW) })
+  }
+  const pairKey = pair ? `${pair.source}:${pair.symbol}` : ''
+  useEffect(() => {
+    if (!isPrintTf(tf) || !pairKey) return
+    const symbolNow = pairKey.slice(pairKey.indexOf(':') + 1)
+    venuePrintsRef.current = []
+    let dead = false
+    const pull = async () => {
+      // Dune holds the live edge once it has printed: the history it hands off from is already here.
+      if (liveFeed && printsRef.current.length > 0 && venuePrintsRef.current.length > 0) return
+      try {
+        const res = await fetch(`/api/charts/trades?symbol=${encodeURIComponent(symbolNow)}`, { cache: 'no-store' })
+        const d = (await res.json()) as { prints?: Print[] }
+        if (dead || !Array.isArray(d.prints) || d.prints.length === 0) return
+        venuePrintsRef.current = d.prints
+        rebuildPrintsRef.current()
+      } catch {
+        // the next pull tries again; Dune's prints still draw
+      }
+    }
+    void pull()
+    const poll = setInterval(pull, VENUE_TRADES_POLL_MS)
+    const ticker = setInterval(() => rebuildPrintsRef.current(), 1_000)
+    return () => {
+      dead = true
+      clearInterval(poll)
+      clearInterval(ticker)
+    }
+  }, [pairKey, tf, liveFeed])
   useEffect(() => {
     // The Depth view wants the prints on every frame (they land on the book,
     // not on a bar); the candles only on a live frame.
@@ -1010,22 +1061,17 @@ export default function MarketChart({
     const tailLive = tailIsLive(tf, liveFeed)
     const tfSec = FRAME_SEC[tf]
     const print = isPrintTf(tf)
-    const p = pair
     printsRef.current = []
-    // A print frame's bars, from the ring: history + the engine's series in one.
-    const rebuild = () => {
-      if (!print || !p) return
-      const bars = barsFromPrints(printsRef.current.map(printOf), tfSec)
-      setHistory(bars)
-      setData({ symbol: p.symbol, label: p.label, source: p.source, feed: 'dune prints', tf, candles: bars.slice(-PRINT_WINDOW) })
-    }
-    const ticker = print ? setInterval(rebuild, 1_000) : null
     const handle = openDuneTape(liveFeed.markets, {
       onStatus: (s) => setTailStatus(s),
       onBackfill: (fills) => {
         if (!print) return
-        printsRef.current = fills.filter((f) => f.at >= Date.now() - PRINT_KEEP_MS)
-        rebuild()
+        // One backfill per venue: merge them (each used to REPLACE the last,
+        // so only the final venue's minutes survived), never a print twice.
+        const floor = Date.now() - PRINT_KEEP_MS
+        const seen = new Set(printsRef.current.map((f) => f.id))
+        printsRef.current = [...printsRef.current, ...fills.filter((f) => f.at >= floor && !seen.has(f.id))].sort((a, b) => a.at - b.at)
+        rebuildPrintsRef.current()
       },
       onFills: (batch) => {
         depthPrintRef.current?.(batch)
@@ -1061,7 +1107,6 @@ export default function MarketChart({
       },
     }, { venues: liveFeed.venues, filter: true, backfill: print })
     return () => {
-      if (ticker) clearInterval(ticker)
       handle.close()
       const cs = candleRef.current
       if (cs && printLineRef.current) {
@@ -1696,10 +1741,12 @@ export default function MarketChart({
           </p>
         )}
         {candles.length === 0 && (
-          <div className={`mkt-chart__empty${data?.error || stale ? '' : ' is-loading'}`} role="status" aria-label={data?.error || stale ? undefined : 'Loading candles'} data-fetch-failed={data?.error || stale ? '' : undefined}>
+          <div className={`mkt-chart__empty${data?.error || stale || (isPrintTf(tf) && data?.tf === tf) ? '' : ' is-loading'}`} role="status" aria-label={data?.error || stale ? undefined : 'Loading candles'} data-fetch-failed={data?.error || stale ? '' : undefined}>
             {/* stale with no bars = the read failed outright (a 5xx answers no
                 `candles` at all): say so instead of a skeleton forever (pre-gtm POLISH r3). */}
-            {data?.error || stale ? (
+            {isPrintTf(tf) && data?.tf === tf ? (
+              <span className="text-[12px] text-[color:var(--muted-2)]">Waiting for the first trade — the bars build as they print.</span>
+            ) : data?.error || stale ? (
               <span className="text-[12px] text-[color:var(--muted-2)]">Couldn’t read the candles — retrying on its own.</span>
             ) : (
               <span className="mkt-skel" aria-hidden="true">

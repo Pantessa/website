@@ -117,8 +117,25 @@ export function barsFromPrints(prints: readonly Print[], tfSec: number): Candle[
   return out
 }
 
+/**
+ * A print frame's prints: the venue's own trade tape for the history, Dune's
+ * prints from the HANDOFF on (Nate, 2026-10-15: "draw using other data for
+ * the line parts but then start drawing with dune realtime data"). The
+ * handoff is Dune's earliest print: venue trades before it are the history,
+ * venue trades at or after it are dropped (Dune owns the live edge, so one
+ * moment is never counted twice). No Dune print yet → the venue tape alone,
+ * so the frame is never empty while a thin coin waits for its first print.
+ * Both are kept to the last PRINT_KEEP_MS.
+ */
+export function seedThenPrints(venue: readonly Print[], dune: readonly Print[], now: number, keepMs = PRINT_KEEP_MS): Print[] {
+  const floor = now - keepMs
+  const live = dune.filter((p) => p.at >= floor)
+  const handoff = live.reduce((m, p) => Math.min(m, p.at), Infinity)
+  return [...venue.filter((p) => p.at >= floor && p.at < handoff), ...live]
+}
+
 /** How much of a print frame the BROWSER keeps while you watch: half an
- *  hour of prints (≤ 1,800 one-second bars, under the chart's 2,200 cap), so
+ *  hour of prints (≤ 180 ten-second bars, under the chart's 2,200 cap), so
  *  a tab left open can zoom out past the relay's backfill — which is what a
  *  new viewer starts with: the minutes the relay already holds (lib/dune
  *  LIVE_BACKFILL_MS, five), less on a cold instance. The frame builds as you
