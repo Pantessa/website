@@ -11121,9 +11121,17 @@ async function main() {
     // literal here — and robinhoodStockTokens() already leaves them out.
     const offSnapshot = [...stockSyms].filter((sym) => !ROBINHOOD_CHAIN_COINS.has(sym) && !ROBINHOOD_TICKER_SET.has(sym))
     check('charts: every live 4663 stock listing is in the static ticker snapshot (regenerate lib/robinhood-tickers.ts when this reds)', offSnapshot.length === 0, offSnapshot.join(','))
+<<<<<<< HEAD
     const unchartedStocks = [...stockSyms].filter((sym) => !ROBINHOOD_CHAIN_COINS.has(sym) && !isChartedStock(sym) && !['CASHCAT', 'SATS'].includes(sym))
     check('charts: the 4663 coins (cbBTC, PONS) are never in the stock set', ![...stockSyms].some((sym) => ROBINHOOD_CHAIN_COINS.has(sym)), [...stockSyms].filter((sym) => ROBINHOOD_CHAIN_COINS.has(sym)).join(','))
     check('charts: every live 4663 stock listing charts except the two feedless ones', unchartedStocks.length === 0, unchartedStocks.join(','))
+=======
+    // RE-PINNED 2026-10-13 (main sweep): PONS listed on 4663 with no feed on
+    // Robinhood (missing_instruments) or Yahoo (No data found) — the third
+    // feedless listing, named in lib/charts ROBINHOOD_FEEDLESS.
+    const unchartedStocks = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !isChartedStock(sym) && !['CASHCAT', 'SATS', 'PONS'].includes(sym))
+    check('charts: every live 4663 stock listing charts except the three feedless ones', unchartedStocks.length === 0, unchartedStocks.join(','))
+>>>>>>> origin/main
     const rhRpc = new Map<number, RpcChainRead>([
       [4663, { chainId: 4663, nativeEth: 0.00073, stable: { symbol: 'USDG', address: rhC.tokens.USDG.address, balance: 0.323 }, tokens: [{ symbol: 'AAPL', address: aapl, balance: 0.0376, stock: true }] }],
     ])
@@ -13975,9 +13983,21 @@ async function main() {
       headers: { 'content-type': 'application/json', ...C },
       body: JSON.stringify({ name, description: 'test-api custom add', category: 'Custom', mcpUrl: WALLET_BASE, featuredTools: ['portfolio'] }),
     })
+    // RE-PINNED 2026-10-13 (main sweep): this fixture is one row per BASE, and another wallet re-adding the
+    // same base is a 409 by design (pinned below) — so a copy left by a harness run that died before its
+    // own DELETE (another session's, 11:08Z on 10-14, on the shared TEST DB) made every later run's first
+    // add a 409 and the six checks red together. The block sweeps stale copies of ITS OWN fixture (this
+    // name, this base, older than 5 min — a healthy run holds it for seconds, so never a live run's row,
+    // never anything else) before it adds.
+    if (process.env.DATABASE_URL) {
+      const stale = await prisma.mcpServer.deleteMany({
+        where: { endpoint: WALLET_BASE, name: { in: ['Test Custom Wallet', 'Test Custom Wallet Renamed'] }, createdAt: { lt: new Date(Date.now() - 5 * 60_000) } },
+      }).catch(() => ({ count: -1 }))
+      if (stale.count !== 0) console.log(`  ↳ add-MCP: swept ${stale.count} stale fixture row(s) a dead run left behind`)
+    }
     const first = await fetch(`${BASE}/api/servers`, addBody('Test Custom Wallet'))
     const firstRow = (await first.json().catch(() => null)) as { id?: string; slug?: string; endpoint?: string | null; protocol?: string | null; endpointCount?: number; updated?: boolean } | null
-    check('add-MCP: created with discovered tools', first.ok && (firstRow?.endpointCount ?? 0) >= 6)
+    check('add-MCP: created with discovered tools', first.ok && (firstRow?.endpointCount ?? 0) >= 6, `${first.status} ${JSON.stringify(firstRow).slice(0, 160)}`)
     check('add-MCP: server row is CALLABLE (endpoint + protocol set)', firstRow?.endpoint === WALLET_BASE && firstRow?.protocol === 'mcp')
     const again = await fetch(`${BASE}/api/servers`, addBody('Test Custom Wallet Renamed'))
     const againRow = (await again.json().catch(() => null)) as { id?: string; slug?: string; name?: string; updated?: boolean } | null
@@ -20953,7 +20973,9 @@ async function main() {
     )
     // Tokenized stocks (2026-09-10): Robinhood Chain's listings chart via
     // Robinhood's own 24/7 historicals. The static snapshot is the gate; the
-    // two listings the feed has no quote for stay chartless BY NAME.
+    // listings the feed has no quote for stay chartless BY NAME.
+    // RE-PINNED 2026-10-13 (main sweep): PONS joined the 4663 list (202 now)
+    // with no feed on Robinhood or Yahoo — the third feedless listing.
     check(
       'charts: Robinhood Chain stocks chart via robinhood (AAPL / COIN / SPY / spelled lowercase), feedless listings + unlisted tickers stay chartless',
       chartPairFor('AAPL')?.source === 'robinhood' &&
@@ -20964,8 +20986,9 @@ async function main() {
         chartPairFor('cbBTC')?.pair === 'BTC-USD' &&
         ROBINHOOD_TICKER_SET.has('CASHCAT') && chartPairFor('CASHCAT') === null &&
         ROBINHOOD_TICKER_SET.has('SATS') && chartPairFor('SATS') === null &&
+        ROBINHOOD_TICKER_SET.has('PONS') && chartPairFor('PONS') === null &&
         chartPairFor('HOOD') === null &&
-        ROBINHOOD_TICKER_SET.size === 201,
+        ROBINHOOD_TICKER_SET.size === 202,
       `size=${ROBINHOOD_TICKER_SET.size}`,
     )
     // Coins resolve FIRST: a stock ticker that collides with a Coinbase
@@ -21279,6 +21302,158 @@ async function main() {
         askDoorPlaceholder('/t/weth') === 'Ask anything about ETH — buy it, protect it, chart it…' &&
         askDoorPlaceholder('/').startsWith('Ask Pantessa'),
     )
+  }
+
+  // ── Live Hyperliquid perps (2026-10-13 — the GTM squad's ALERTS finding 3) ─
+  // chartPairFor's Hyperliquid side used to be a STATIC five (HYPE · SYRUP ·
+  // FARTCOIN · BRETT · AIXBT): a visitor who picked ZK / AZTEC / PURR /
+  // GRIFFAIN / kPEPE on /live or the deck had no /t chart, no quote in the
+  // alerts sweep (the alert API answered 409 "No live price") and no alert
+  // control. The table's HL half now derives from the venue's live universe
+  // (lib/hl-universe — main book + the xyz dex, cached 10 min) over the static
+  // set as the fallback; server entry points resolve through
+  // resolveChartPair (miss → warm → retry). The RULES are pure
+  // (hlChartTableFrom) and pinned on a fixture; the live half is pinned on
+  // the venue's own universe (a listing that comes and goes is READ here,
+  // never typed into a pin — the robinhood-tickers snapshot lesson).
+  console.log('— live HL perps')
+  {
+    const { hlChartTableFrom, isLiveOnlyHlPair, warmHlPerps, resolveChartPair, liveHlPerpNames, primeHlPerps, chartableSymbols, chartSymbolsIn, isMoneyAssetWord, normalizeChartSymbol } = await import('../lib/charts')
+    const { readQuotes } = await import('../lib/quotes')
+    const { hlPerpUniverseCached, resetHlUniverse } = await import('../lib/hl-universe')
+    const { ROBINHOOD_TICKER_SET } = await import('../lib/robinhood-tickers')
+
+    // Pure rules on a fixture universe (listed names only — lib/hl-universe splits delisted off first).
+    const table = hlChartTableFrom(['ZK', 'kPEPE', 'ETH', 'HYPE', 'MATIC', 'USDC', 'xyz:ZK', 'NVDA', 'SATS', 'MOVE'], ['xyz:NVDA', 'xyz:GOLD', 'xyz:XYZ100', 'xyz:ZK', 'xyz:GOLD', 'xyz:SATS'])
+    check(
+      'live HL perps (pure): ZK → ZK, kPEPE keeps the venue casing under KPEPE, an xyz perp charts under its bare ticker with the dex prefix as the coin, main beats xyz on a collision, the xyz index product is dropped',
+      table.get('ZK') === 'ZK' && table.get('KPEPE') === 'kPEPE' && table.get('GOLD') === 'xyz:GOLD' && table.get('MOVE') === 'MOVE' && !table.has('XYZ100') && !table.has('XYZZK') && !table.has('XYZGOLD'),
+      JSON.stringify([...table]),
+    )
+    check(
+      'live HL perps (pure): Coinbase first (ETH; MATIC → POL), stables never, and a Robinhood-Chain ticker never becomes a perp — xyz:NVDA leaves NVDA to the stock tape, SATS (feedless) stays chartless instead of charting the venue’s same-named coin; an empty universe is an empty table',
+      !table.has('ETH') && !table.has('MATIC') && !table.has('POL') && !table.has('USDC') && !table.has('NVDA') && !table.has('SATS') && hlChartTableFrom([], []).size === 0,
+    )
+
+    // A fixture prime (≥ 20 names, the universe-size floor) proves the resolver + the parsers' fence; the real table is put back after.
+    // The caches are RESET around it: a fixture left as the "fresh" universe would be what every later in-process read answers from.
+    resetHlUniverse()
+    primeHlPerps({ main: ['ZK', 'MOVE', 'PUMP', 'AZTEC', ...Array.from({ length: 20 }, (_, i) => `FIXT${i}`)] })
+    check(
+      'live HL perps: the static set is the fallback and stays whatever the table holds (HYPE / SYRUP chart as themselves); a primed table resolves ZK as a hyperliquid pair under its own coin, and only the table’s perps read as live-only',
+      chartPairFor('HYPE')?.pair === 'HYPE' && chartPairFor('SYRUP')?.source === 'hyperliquid' && !isLiveOnlyHlPair(chartPairFor('HYPE')) &&
+        chartPairFor('ZK')?.source === 'hyperliquid' && chartPairFor('ZK')?.pair === 'ZK' && chartPairFor('zk')?.symbol === 'ZK' && isLiveOnlyHlPair(chartPairFor('ZK')) &&
+        chartPairFor('USDC') === null && chartPairFor('NVDA')?.source === 'robinhood' && chartPairFor('ETH')?.source === 'coinbase',
+    )
+    check(
+      'live HL perps: a live-only perp that is also an English word never turns prose into a chart ask or a money word — "move my eth" names ETH alone, "show me the move chart" has no pair, "$MOVE" / "MOVE" typed as a ticker does; isMoneyAssetWord reads the static set only',
+      JSON.stringify(chartSymbolsIn('move my eth to base').map((s) => s.symbol)) === '["ETH"]' &&
+        JSON.stringify(chartSymbolsIn('Long $25 of ZK on Hyperliquid').map((s) => s.symbol)) === '["ZK"]' &&
+        parseChartAsk('show me the move chart')?.pair === null &&
+        parseChartAsk('chart $MOVE')?.pair?.pair === 'MOVE' &&
+        parseChartAsk('show me the MOVE chart')?.pair?.source === 'hyperliquid' &&
+        parseChartAsk('show me the hype chart')?.pair?.source === 'hyperliquid' &&
+        !isMoneyAssetWord('move') && !isMoneyAssetWord('pump') && isMoneyAssetWord('hype'),
+    )
+    check(
+      'live HL perps: the sitemap set (chartableSymbols) never carries a live-only perp — venue listings chart on demand, the index stays the static set',
+      chartableSymbols().every((s) => !isLiveOnlyHlPair(chartPairFor(s))) && !chartableSymbols().includes('ZK'),
+    )
+    resetHlUniverse()
+
+    // The venue, live. The rule: every LISTED main-book coin resolves to SOME pair (Coinbase, the stock tape, or the
+    // venue itself under its own casing) unless it is a stable; every listed xyz market resolves through its bare
+    // ticker the same way (the index product aside). ZK — the finding's own pick — is asserted by name while listed.
+    const warm = await warmHlPerps()
+    const live = liveHlPerpNames()
+    const main = live?.main ?? []
+    const xyz = live?.xyz ?? []
+    const stableWord = (s: string) => ['USDC', 'USDT', 'DAI', 'USDG', 'GHO', 'USDE', 'PYUSD', 'USDS', 'USDBC'].includes(normalizeChartSymbol(s))
+    // The stock fence: a main-book coin wearing a Robinhood-Chain ticker (the venue's CASHCAT perp, the feedless listing's
+    // name) stays chartless BY DESIGN — exempt from "every coin resolves", asserted the other way as `fenceLeak`.
+    const stockWord = (s: string) => ROBINHOOD_TICKER_SET.has(normalizeChartSymbol(s))
+    const mainMiss = main.filter((n) => !stableWord(n) && !stockWord(n) && normalizeChartSymbol(n).length <= 12 && normalizeChartSymbol(n) !== '' && chartPairFor(n) === null)
+    const fenced = main.filter((n) => stockWord(n) && !isChartedStock(n))
+    const fenceLeak = fenced.filter((n) => chartPairFor(n) !== null)
+    const casingMiss = main.filter((n) => { const p = chartPairFor(n); return p?.source === 'hyperliquid' && p.pair !== n })
+    const xyzMiss = xyz.filter((n) => !/:XYZ100$/.test(n)).map((n) => n.slice(n.indexOf(':') + 1)).filter((t) => !stableWord(t) && !stockWord(t) && normalizeChartSymbol(t) !== '' && chartPairFor(t) === null)
+    check(
+      'live HL perps (venue): the universe read lands (main book ≥ 100 listed, xyz dex ≥ 20), every listed main-book coin resolves (Coinbase / stock tape / the venue under its own casing) except one wearing a Robinhood ticker (the stock fence, which never leaks), every xyz market resolves through its bare ticker, and nothing the static table knew changed',
+      warm && main.length >= 100 && xyz.length >= 20 && mainMiss.length === 0 && casingMiss.length === 0 && xyzMiss.length === 0 && fenceLeak.length === 0 &&
+        chartPairFor('HYPE')?.pair === 'HYPE' && chartPairFor('AAPL')?.source === 'robinhood' && chartPairFor('ETH')?.pair === 'ETH-USD' && chartPairFor('USDC') === null && (await resolveChartPair('NOPE')) === null,
+      `main=${main.length} xyz=${xyz.length} mainMiss=${mainMiss.slice(0, 8).join(',')} casing=${casingMiss.slice(0, 4).join(',')} xyzMiss=${xyzMiss.slice(0, 8).join(',')} stockFenced=${fenced.join(',')} leak=${fenceLeak.join(',')}`,
+    )
+    const zkListed = !!hlPerpUniverseCached('main')?.listed.has('ZK')
+    const zk = chartPairFor('ZK')
+    check(
+      'live HL perps (venue): ZK — the squad’s pick — charts as a hyperliquid pair under its own coin while the venue lists it (skipped by name when delisted)',
+      !zkListed || (zk?.source === 'hyperliquid' && zk.pair === 'ZK' && zk.symbol === 'ZK' && zk.label === 'ZK / USD'),
+      zkListed ? JSON.stringify(zk) : 'ZK not listed today — vacuous',
+    )
+    // The sweep's own quote path (lib/alerts-exec liveQuotes = readQuotes): a perp the static table never knew is PRICED,
+    // not filed under `missing` — that `missing` is what used to make every ZK alert sit unquoted forever.
+    const probeSym = zkListed ? 'ZK' : main.find((n) => isLiveOnlyHlPair(chartPairFor(n))) ?? 'ZK'
+    const kpepeListed = !!hlPerpUniverseCached('main')?.listed.has('kPEPE')
+    const q = await readQuotes([probeSym, ...(kpepeListed ? ['kPEPE'] : []), 'NOPE'])
+    check(
+      'live HL perps (sweep path): readQuotes prices a live-only perp from the venue (feed hyperliquid, last > 0) and kPEPE under KPEPE; a name the venue never listed is the only `missing`',
+      (q.quotes[probeSym]?.last ?? 0) > 0 && q.quotes[probeSym]?.feed === 'hyperliquid' && (!kpepeListed || ((q.quotes.KPEPE?.last ?? 0) > 0 && q.quotes.KPEPE?.feed === 'hyperliquid')) && q.missing.join(',') === 'NOPE',
+      `${probeSym}=${q.quotes[probeSym]?.last} KPEPE=${q.quotes.KPEPE?.last} missing=${q.missing.join(',')}`,
+    )
+
+    // Over HTTP — the server process resolves on its own (a cold process warms on the miss): candles, quotes, the page, the venue map.
+    const cRes = await fetch(`${BASE}/api/charts/candles?symbol=${probeSym}&tf=1d`)
+    const cj = (await cRes.json()) as { source?: string; feed?: string; candles?: unknown[]; symbol?: string; error?: string }
+    check(
+      'live HL perps (HTTP): /api/charts/candles serves a live-only perp from the HL candleSnapshot path (source + feed hyperliquid, a daily series)',
+      cRes.status === 200 && cj.source === 'hyperliquid' && cj.feed === 'hyperliquid' && (cj.candles?.length ?? 0) >= 10 && cj.symbol === probeSym,
+      `status=${cRes.status} source=${cj.source} feed=${cj.feed} n=${cj.candles?.length} err=${cj.error ?? ''}`,
+    )
+    const qRes = await fetch(`${BASE}/api/quotes?symbols=${probeSym},KPEPE,NOPE`)
+    const qj = (await qRes.json()) as { quotes?: Record<string, { last: number; feed: string }>; missing?: string[] }
+    check(
+      'live HL perps (HTTP): /api/quotes prices the perp (the rail, the deck and the alert control read this) and files only the unlisted name as missing',
+      qRes.status === 200 && (qj.quotes?.[probeSym]?.last ?? 0) > 0 && qj.quotes?.[probeSym]?.feed === 'hyperliquid' && (qj.missing ?? []).includes('NOPE') && !(qj.missing ?? []).includes(probeSym),
+      `${probeSym}=${qj.quotes?.[probeSym]?.last} missing=${(qj.missing ?? []).join(',')}`,
+    )
+    const tRes = await fetch(`${BASE}/t/${probeSym}`)
+    const tHtml = await tRes.text()
+    check(
+      'live HL perps (HTTP): /t/<perp> is a chart page, not the chartless fallback — 200, the pair header (`<SYM> / USD`), no "No live chart", and the server hands the browser the live list as an inline script (run before hydration) so it hydrates onto the same chart',
+      tRes.status === 200 && tHtml.includes(`${probeSym} / USD`) && !tHtml.includes(`No live chart for ${probeSym}`) && /__pantessaHlPerps=\{"main":\[/.test(tHtml),
+      `status=${tRes.status} header=${tHtml.includes(`${probeSym} / USD`)} handoff=${/__pantessaHlPerps=\{"main":\[/.test(tHtml)}`,
+    )
+    const tEth = await (await fetch(`${BASE}/t/ETH`)).text()
+    check('live HL perps (HTTP): a page the static table charts (/t/ETH) carries NO live list — the handoff script rides only a live-only perp page', !/__pantessaHlPerps=\{"main":\[/.test(tEth))
+    const rRes = await fetch(`${BASE}/api/markets/routes?symbol=${probeSym}`)
+    const rj = (await rRes.json()) as { routes?: { venue: string; kind: string }[]; error?: string }
+    check(
+      'live HL perps (HTTP): /api/markets/routes answers the perp’s venue map (long/short on Hyperliquid) instead of 404 "not a charted symbol"',
+      rRes.status === 200 && (rj.routes ?? []).some((r) => r.venue === 'hyperliquid' && r.kind === 'perp'),
+      `status=${rRes.status} venues=${[...new Set((rj.routes ?? []).map((r) => r.venue))].join(',')} err=${rj.error ?? ''}`,
+    )
+
+    // The alert itself, under a throwaway SIWE session: a ±5% rule on the perp is accepted, carries a base, and is
+    // deleted again. A body with NO base: 400 on main’s rule (the client names the base), or — once website#979’s
+    // server-anchored base lands — 201 with the venue’s own read; either is the honest answer, a 409 "No live price"
+    // is the bug this block exists for.
+    const perpOwner = privateKeyToAccount(generatePrivateKey())
+    const perpSession = await signIn(perpOwner)
+    const AJ = { 'content-type': 'application/json', cookie: perpSession }
+    const withBase = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: AJ, body: JSON.stringify({ symbol: probeSym, condition: 'pct_move', value: 5, basePrice: q.quotes[probeSym]?.last ?? 1 }) })
+    const withBaseJ = (await withBase.json()) as { alert?: { id: string; symbol: string; basePrice: number | null; status: string }; error?: string }
+    const noBase = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: AJ, body: JSON.stringify({ symbol: probeSym, condition: 'pct_move', value: 5 }) })
+    const noBaseJ = (await noBase.json()) as { alert?: { id: string; basePrice: number | null }; error?: string }
+    check(
+      'live HL perps (alerts): POST /api/alerts pct_move 5 on the perp → 201 active with the base kept (symbol normalized); the base-less body is 400 (main’s rule) or 201 anchored on the server’s read (#979) — never 409 "No live price"',
+      withBase.status === 201 && withBaseJ.alert?.symbol === probeSym && withBaseJ.alert?.status === 'active' && (withBaseJ.alert?.basePrice ?? 0) > 0 &&
+        (noBase.status === 400 || (noBase.status === 201 && (noBaseJ.alert?.basePrice ?? 0) > 0)),
+      `withBase=${withBase.status} noBase=${noBase.status} ${noBaseJ.error ?? ''}`,
+    )
+    const ids = [withBaseJ.alert?.id, noBaseJ.alert?.id].filter((x): x is string => typeof x === 'string')
+    const dels = await Promise.all(ids.map((id) => fetch(`${BASE}/api/alerts?id=${id}`, { method: 'DELETE', headers: AJ })))
+    const left = (await (await fetch(`${BASE}/api/alerts`, { headers: AJ })).json()) as { alerts?: unknown[] }
+    check('live HL perps (alerts): the probe rows are deleted again — the throwaway wallet ends with zero alerts', dels.every((d) => d.status === 200) && (left.alerts?.length ?? 0) === 0, `deleted=${dels.map((d) => d.status).join(',')} left=${left.alerts?.length}`)
   }
 
   // ── Mosaic links (executable allocations) ─────────────────────────────────
@@ -30250,12 +30425,22 @@ async function main() {
     // ── venue floor: 1Click's temporary per-chain minimum ─────────────────
     // The table in lib/venue-floor is a MEASUREMENT, not a copy of NEAR's
     // changelog (which lists Optimism and Avalanche, both of which price
+<<<<<<< HEAD
     // fine, and never mentions the destination side, which Polygon and BNB
     // Chain do fence). These pins go red when a floor lifts, moves, or
     // appears on a chain we build on — the whole point of measuring.
     // RE-PINNED 2026-10-13 (polish): NEAR lifted the Polygon floor (QA-X3;
     // `npm run probe:venue-floors` 21:3xZ: polygon prices $20 both ends, BNB
     // still 400s at $1,000). The pure pins use BNB as the floored example now.
+=======
+    // fine, and never mentions the destination side, which BNB Chain does
+    // fence). These pins go red when a floor lifts, moves, or appears on a
+    // chain we build on — the whole point of measuring.
+    // RE-PINNED 2026-10-13 (main sweep): Polygon's floor LIFTED (the live pin
+    // went red: the venue priced $20 both ways; `npm run probe:venue-floors`
+    // agreed), so the table dropped it and BNB Chain is the fixture chain
+    // here; Polygon joins the unfenced watch below.
+>>>>>>> origin/main
     {
       const { VENUE_FLOORS, floorFor, crossChainFloorBlock, floorBlockFromError, venueFloorFromError, floorRefusalTurn, floorChipAsk, floorProblemLine, moveUsd } = await import('../lib/venue-floor')
       const { parseCrossChainSwap } = await import('../lib/cross-chain-swap')
@@ -30264,10 +30449,17 @@ async function main() {
       // — the pure rules —
       check('venue floor: a $20 move off BNB Chain is refused before the venue is asked', crossChainFloorBlock(cc('bnb', 'base'))?.side === 'origin')
       check('venue floor: the floor is read on the DESTINATION end too (measured, undocumented)', crossChainFloorBlock(cc('base', 'bnb'))?.side === 'destination')
+<<<<<<< HEAD
       check('venue floor: chain aliases resolve — "bsc"/"binance" carry the BNB floor; "matic" (Polygon, lifted) carries none', crossChainFloorBlock(cc('bsc', 'base'))?.chain === 'bnb' && crossChainFloorBlock(cc('base', 'bsc'))?.chain === 'bnb' && crossChainFloorBlock(cc('matic', 'base')) === null)
       check('venue floor: a move that CLEARS the floor is not refused', crossChainFloorBlock(cc('bnb', 'base', '2000')) === null)
       check('venue floor: an unpriceable move is never refused by the table (it goes to the venue)', moveUsd('0.5', 'ETH') === null && crossChainFloorBlock(cc('bnb', 'base', '0.5', 'ETH')) === null)
       check('venue floor: chains with no measured floor are untouched', ['base', 'ethereum', 'arbitrum', 'optimism', 'polygon', 'avalanche', 'gnosis', 'scroll'].every((c) => crossChainFloorBlock(cc(c, 'base')) === null && crossChainFloorBlock(cc('base', c)) === null))
+=======
+      check('venue floor: chain aliases resolve — "bsc"/"binance" carry BNB Chain\'s floor, and "matic" is as unfenced as Polygon', crossChainFloorBlock(cc('base', 'bsc'))?.chain === 'bnb' && crossChainFloorBlock(cc('binance', 'base'))?.chain === 'bnb' && crossChainFloorBlock(cc('matic', 'base')) === null)
+      check('venue floor: a move that CLEARS the floor is not refused', crossChainFloorBlock(cc('bnb', 'base', '2000')) === null)
+      check('venue floor: an unpriceable move is never refused by the table (it goes to the venue)', moveUsd('0.5', 'ETH') === null && crossChainFloorBlock(cc('bnb', 'base', '0.5', 'ETH')) === null)
+      check('venue floor: chains with no measured floor are untouched', ['base', 'ethereum', 'arbitrum', 'optimism', 'avalanche', 'gnosis', 'scroll', 'polygon'].every((c) => crossChainFloorBlock(cc(c, 'base')) === null && crossChainFloorBlock(cc('base', c)) === null))
+>>>>>>> origin/main
 
       // — the belt: the venue's own words become our refusal —
       check('venue floor: the venue 400 parses, thousands separator and all', venueFloorFromError('Temporary swap limits: minimum swap amount is $1,000') === 1000 && venueFloorFromError('minimum swap amount is $100') === 100)
@@ -30277,6 +30469,7 @@ async function main() {
 
       // — the chips: complete asks, and only ones the wallet can take —
       const src = (chainWord: string, token: string, balance: number) => ({ chainWord, token, balance })
+<<<<<<< HEAD
       const originTurn = floorRefusalTurn(cc('bnb', 'ethereum') as never, crossChainFloorBlock(cc('bnb', 'ethereum'))!, [src('bnb', 'USDC', 40), src('base', 'USDC', 55.2), src('polygon', 'USDC', 900)])
       check('venue floor: an origin-side block offers every other chain the wallet holds on (Polygon too, now its floor lifted)', originTurn.chips.length === 2 && originTurn.chips.some((c) => c.resume.includes('from Base')) && originTurn.chips.some((c) => c.resume.includes('from Polygon')), JSON.stringify(originTurn.chips))
       check('venue floor: the floored chain itself is never offered as the way out', !originTurn.chips.some((c) => /from BNB/i.test(c.resume)))
@@ -30284,6 +30477,16 @@ async function main() {
       check('venue floor: "move a bigger amount" is never offered to a wallet that cannot afford it', poor.chips.length === 0 && /Everywhere this wallet holds USDC is out/.test(poor.reply), poor.reply.slice(-140))
       const rich = floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, [src('bnb', 'USDC', 4200)])
       check('venue floor: a wallet that CAN clear the floor is offered the size-up', rich.chips.length === 1 && /^Swap 1000 USDC from BNB/i.test(rich.chips[0].resume), JSON.stringify(rich.chips))
+=======
+      const originTurn = floorRefusalTurn(cc('bnb', 'ethereum') as never, crossChainFloorBlock(cc('bnb', 'ethereum'))!, [src('bnb', 'USDC', 40), src('base', 'USDC', 55.2)])
+      check('venue floor: an origin-side block offers another chain the wallet holds on', originTurn.chips.length === 1 && originTurn.chips[0].resume.includes('from Base'), JSON.stringify(originTurn.chips))
+      // "a chain carrying the SAME floor is never offered as the way out" needs two fenced chains to assert; only BNB
+      // Chain fences since 2026-10-13, so that rule has no fixture until the measurement adds one (re-arm it then).
+      const poor = floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, [src('bnb', 'USDC', 40)])
+      check('venue floor: "move a bigger amount" is never offered to a wallet that cannot afford it', poor.chips.length === 0 && /Everywhere this wallet holds USDC is out/.test(poor.reply), poor.reply.slice(-140))
+      const rich = floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, [src('bnb', 'USDC', 4200)])
+      check('venue floor: a wallet that CAN clear the floor is offered the size-up', rich.chips.length === 1 && /^Swap 1000 USDC from BNB/.test(rich.chips[0].resume), JSON.stringify(rich.chips))
+>>>>>>> origin/main
       check('venue floor: a wallet we never scanned is never told what it does not hold', !/can't see USDC anywhere/.test(floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, null).reply))
       // The chip contract: a chip SENDS, so every one must round-trip the grammar.
       const everyChip = [...originTurn.chips, ...rich.chips].map((c) => c.resume)
@@ -30303,9 +30506,13 @@ async function main() {
       const jobsSrc = readFileSync('lib/jobs.ts', 'utf8')
       check('venue floor: the job compiler refuses a leg the venue would refuse (never strand mid-job)', /crossChainFloorBlock\(ccp\)[\s\S]{0,80}floorProblemLine/.test(jobsSrc), 'a job can compile onto a floored bridge leg again')
       const { compileJobAsk } = await import('../lib/jobs')
+<<<<<<< HEAD
+=======
+      // RE-PINNED 2026-10-13 (main sweep): BNB Chain is the floored fixture; Polygon (lifted) now sits beside Arbitrum as an unfloored one.
+>>>>>>> origin/main
       const compiled = compileJobAsk('Swap 20 USDC from BNB Chain to USDC on Base, then supply 20 USDC to Aave')
       check('venue floor: a compound job carrying a floored leg refuses by name, with the floor in it', Boolean(compiled && 'problem' in compiled && /\$1,000 minimum/.test((compiled as { problem: string }).problem)), JSON.stringify(compiled).slice(0, 180))
-      check('venue floor: the same compound over an unfloored chain still compiles', Boolean((() => { const c = compileJobAsk('Swap 20 USDC from Arbitrum to USDC on Base, then supply 20 USDC to Aave'); return c && !('problem' in c) })()))
+      check('venue floor: the same compound over an unfloored chain still compiles (Arbitrum, and Polygon since its floor lifted)', ['Arbitrum', 'Polygon'].every((o) => { const c = compileJobAsk(`Swap 20 USDC from ${o} to USDC on Base, then supply 20 USDC to Aave`); return !!c && !('problem' in c) }))
       check('venue floor: the job runner names the floor instead of persisting the venue 400', /floorBlockFromError\(p, msg\)/.test(readFileSync('lib/jobs-runner.ts', 'utf8')))
       check('venue floor: the compile-time line carries the floor and the size', /\$1,000 minimum/.test(floorProblemLine(cc('bnb', 'base'), crossChainFloorBlock(cc('bnb', 'base'))!)))
 
@@ -30356,8 +30563,11 @@ async function main() {
       }
       // And every chain we BUILD on that the table does NOT fence still
       // prices $20 — this is the pin that catches a NEW floor appearing.
+<<<<<<< HEAD
       // RE-PINNED 2026-10-13 (polish): Polygon joins the unfenced list — its
       // floor lifted; this loop goes red if it ever comes back.
+=======
+>>>>>>> origin/main
       for (const [slug, word] of [['eth', 'ethereum'], ['arb', 'arbitrum'], ['op', 'optimism'], ['pol', 'polygon'], ['avax', 'avalanche'], ['gnosis', 'gnosis'], ['scroll', 'scroll']] as const) {
         if (floorFor(word, 'origin')) continue
         const r = await oneclick(slug, 'base', 20)
@@ -32104,9 +32314,12 @@ async function main() {
         const bFinal = await fetch(bCompleteUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ seq: 0, result: { batch: [{ ok: true, orderResponse: { status: 'harness' } }, { ok: true, orderResponse: { status: 'harness' } }] } }) })
         const bRows = process.env.DATABASE_URL ? await prisma.embedTurn.findMany({ where: { sessionId: jobStepMoneySessionId(bJobId, 0) }, select: { id: true, artifact: true, isInternal: true, walletAddress: true, originKind: true, verification: true, valueUsd: true } }) : null
         check('drive money (live): a REST /complete the runner accepts writes EXACTLY ONE job-step money row — session_id job-<jobId>-<seq>, origin_kind job-step, is_internal from the job row, the burner as signer, fail-closed verification', bFinal.status === 200 && (bRows === null || (bRows.length === 1 && bRows[0].artifact === 'job-step' && bRows[0].isInternal === true && bRows[0].walletAddress === burner.address.toLowerCase() && bRows[0].originKind === 'job-step' && typeof bRows[0].verification === 'string')), bRows === null ? 'DATABASE_URL absent in the harness process — row check skipped' : `${bRows.length} row(s): ${JSON.stringify(bRows[0] ?? null)}`)
-        const bBeacon = await fetch(`${BASE}/api/embed/telemetry`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ firstParty: true, sessionId: 'harness-drive-beacon-1', page: `${BASE}/chat`, outcome: 'signed', artifact: 'job-step', chain: 'multi', valueUsd: 12, buildPath: 'native-hl-exec', jobId: bJobId, seq: 0, walletAddress: burner.address }) })
+        const bBeacon = await fetch(`${BASE}/api/embed/telemetry`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ firstParty: true, sessionId: `harness-drive-beacon-${bJobId}`, page: `${BASE}/chat`, outcome: 'signed', artifact: 'job-step', chain: 'multi', valueUsd: 12, buildPath: 'native-hl-exec', jobId: bJobId, seq: 0, walletAddress: burner.address }) })
         const bBeaconBody = (await bBeacon.json().catch(() => ({}))) as { ok?: boolean; deduped?: boolean }
-        const bRowsAfter = process.env.DATABASE_URL ? await prisma.embedTurn.count({ where: { OR: [{ sessionId: jobStepMoneySessionId(bJobId, 0) }, { sessionId: 'harness-drive-beacon-1' }] } }) : null
+        const bRowsAfter = process.env.DATABASE_URL ? await prisma.embedTurn.count({ where: { OR: [{ sessionId: jobStepMoneySessionId(bJobId, 0) }, { sessionId: `harness-drive-beacon-${bJobId}` }] } }) : null
+        // RE-PINNED 2026-10-13 (main sweep): the beacon's session id is per RUN (the job's id) — a constant id read every
+        // row any session's harness ever left under it on the shared TEST DB (4 rows from 21:00–21:28Z, other trees),
+        // so the count was residue, not this run; the assertion is unchanged — exactly one row for THIS job.
         check('drive money (live): the browser beacon for the SAME (jobId, seq) after the runner\'s row is answered ok + deduped and writes NOTHING', bBeacon.status === 200 && bBeaconBody.ok === true && bBeaconBody.deduped === true && (bRowsAfter === null || bRowsAfter === 1), `${bBeacon.status} ${JSON.stringify(bBeaconBody)}; rows ${bRowsAfter}`)
       }
       await driveCall('broker_close', { intent_id: bIntent })
@@ -34879,6 +35092,7 @@ async function main() {
     }
   }
 
+<<<<<<< HEAD
   /* POLISH:DEADENDS — every sentence the product offers is backed by a response (squad polish, 2026-10-13). */
   {
     console.log('— polish deadends: the market read door, a next step on every refusal, the inventory')
@@ -34908,6 +35122,37 @@ async function main() {
     const inv = enumerate()
     const falls = inv.filter((r) => r.verdict === 'planner' || r.verdict === 'refusal')
     check(`polish deadends: the inventory — ${inv.length} offered sentences, 0 planner, 0 bare refusal`, inv.length > 1500 && falls.length === 0, falls.slice(0, 5).map((r) => `[${r.surface}] ${r.sentence}`).join(' | '))
+=======
+  // ── cron cost (2026-10-14): the tradability walk reads only STALE legs ──
+  // Measured: one 4663 leg = 5 eth_calls ≈ 130 Alchemy CU, and the
+  // 10-minute oldest-first walk re-read every leg ~45× a day (~70M CU a
+  // month) for a verdict trusted 24h. The rule is pure so it pins here
+  // without a database; the store must use it, and the dark roster cron
+  // (HOUSE_MANAGER_KEY never set on prod) must stay off the schedule.
+  {
+    const { staleLegs, TRADABILITY_REFRESH_AFTER_MS, TRADABILITY_MAX_AGE_MS } = await import('../lib/tradability')
+    const H = 60 * 60 * 1000
+    const now = 1_000 * H
+    const legs = [
+      { k: 'fresh', at: now - 1 * H },
+      { k: 'edge', at: now - TRADABILITY_REFRESH_AFTER_MS },
+      { k: 'old', at: now - 20 * H },
+      { k: 'never', at: undefined },
+    ]
+    const due = staleLegs(legs, (l) => l.at, now).map((l) => l.k)
+    check('cron cost: staleLegs leaves a fresh leg alone, reads the edge/old/never-read legs oldest first', due.join(',') === 'never,old,edge', due.join(','))
+    check('cron cost: the refresh floor is a quarter of the trust window (every leg measured ~4× before it could read unknown)',
+      TRADABILITY_REFRESH_AFTER_MS === TRADABILITY_MAX_AGE_MS / 4 && TRADABILITY_REFRESH_AFTER_MS === 6 * H, String(TRADABILITY_REFRESH_AFTER_MS))
+    check('cron cost: an explicit `after` of 0 reads everything (a probe that asks for legs gets them)', staleLegs(legs, (l) => l.at, now, 0).length === 4)
+    const store = readFileSync('lib/tradability-store.ts', 'utf8')
+    check('cron cost: the board walk queues through staleLegs, and explicit legs bypass the floor',
+      /const queue = staleLegs\(legs, [^\n]*opts\.legs \? 0 : undefined\)/.test(store) && /fresh: legs\.length - queue\.length/.test(store))
+    const vercel = JSON.parse(readFileSync('vercel.json', 'utf8')) as { crons: { path: string; schedule: string }[] }
+    const paths = vercel.crons.map((c) => c.path)
+    check('cron cost: the roster cron is OFF the schedule until HOUSE_MANAGER_KEY ships (route kept)', !paths.includes('/api/cron/roster') && existsSync('app/api/cron/roster/route.ts'), paths.join(' '))
+    check('cron cost: the tradability cron stays every 10 minutes (a cold board still warms fast; a warm one costs nothing)',
+      vercel.crons.find((c) => c.path === '/api/cron/tradability')?.schedule === '*/10 * * * *')
+>>>>>>> origin/main
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)

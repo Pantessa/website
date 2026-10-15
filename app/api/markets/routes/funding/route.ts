@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { chartPairFor } from '@/lib/charts'
+import { chartPairFor, resolveChartPair } from '@/lib/charts'
 import { primaryStable } from '@/lib/chains'
 import { scanFundingSources, type FundingScan } from '@/lib/funding-plan'
 import { readFundingShortfall, ROBINHOOD_CHAIN_ID, type FundingShortfall } from '@/lib/lifi-bridge'
@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
   if (!/^[A-Za-z0-9$._-]{1,16}$/.test(symbolRaw)) return NextResponse.json({ error: 'bad symbol' }, { status: 400 })
   const address = sp.get('address')?.trim() ?? ''
   if (!ADDRESS_RE.test(address)) return NextResponse.json({ error: 'address must be a 0x-prefixed 40-hex wallet address.' }, { status: 400 })
-  const pair = chartPairFor(symbolRaw)
+  const pair = await resolveChartPair(symbolRaw)
   if (!pair) return NextResponse.json({ error: `${symbolRaw.toUpperCase()} has no venue map — not a charted symbol.` }, { status: 404 })
   const amountRaw = Number(sp.get('amount') ?? DEFAULT_ROUTE_USD)
   const amount = Number.isFinite(amountRaw) && amountRaw >= 1 && amountRaw <= 100_000 ? Math.round(amountRaw * 100) / 100 : DEFAULT_ROUTE_USD

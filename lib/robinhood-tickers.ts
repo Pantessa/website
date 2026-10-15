@@ -1,10 +1,10 @@
 // Robinhood Chain's tokenized equities — a STATIC snapshot of the Uniswap
 // official token list for chain 4663 (https://tokens.uniswap.org), taken
-// 2026-09-10 (202 entries; cbBTC dropped — it is a coin and charts as BTC).
-// 2026-10-13 (squad polish, QA-X2): the list gained PONS on 4663 — a COIN
-// (CoinGecko `pons`; Robinhood answers `missing_instruments`, Yahoo nothing),
-// not an equity. Every 4663 listing that is a coin is named in
-// ROBINHOOD_CHAIN_COINS below and stays out of the snapshot and the stock set.
+// 2026-09-10, refreshed 2026-10-13 (203 entries, PONS listed since; cbBTC dropped
+// — it is a coin and charts as BTC).
+// 2026-10-13 (squad polish, QA-X2): every 4663 listing that is a COIN (cbBTC, PONS —
+// CoinGecko `pons`; no Robinhood instrument, no Yahoo data) is named in
+// ROBINHOOD_CHAIN_COINS below and stays out of the stock set; the snapshot keeps it.
 //
 // Why a static copy exists next to the live list (lib/token-list.ts): the
 // chart resolver (lib/charts.ts) is PURE and CLIENT-SAFE — it decides,
@@ -154,6 +154,7 @@ export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
   ["PL", "Planet Labs PBC"],
   ["PLTR", "Palantir Technologies"],
   ["POET", "POET Technologies"],
+  ["PONS", "Pons"],
   ["POWL", "Powell Industries Inc."],
   ["PR", "Permian Resources"],
   ["PWR", "Quanta Services Inc."],

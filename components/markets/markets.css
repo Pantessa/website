@@ -516,7 +516,7 @@ button.mk-held:hover { border-color: var(--accent); }
    phone (≤640px): the sentence hides (it stays in the HTML for a crawler),
    the h1 and the door share a line and wrap only when 320px forces it. */
 .mk-claim { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "h1 door" "sub door"; align-items: baseline; column-gap: 18px; row-gap: 3px; padding: 12px 0 8px; }
-.mk-claim__h1 { grid-area: h1; margin: 0; font-family: var(--mk-font-display, 'Fraunces', Georgia, serif); font-weight: 500; font-size: clamp(21px, 1.9vw, 27px); line-height: 1.02; letter-spacing: -0.025em; color: var(--fg); text-wrap: balance; }
+.mk-claim__h1 { grid-area: h1; margin: 0; font-family: var(--mk-font-display, Georgia, serif); font-weight: 500; font-size: clamp(21px, 1.9vw, 27px); line-height: 1.02; letter-spacing: -0.025em; color: var(--fg); text-wrap: balance; }
 .mk-claim__sub { grid-area: sub; margin: 0; max-width: 72ch; font-size: 12.5px; line-height: 1.4; color: var(--muted); text-wrap: pretty; }
 .mk-claim__acts { grid-area: door; align-self: center; display: inline-flex; align-items: center; gap: 8px; }
 .mk-claim__door { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); white-space: nowrap; text-decoration: none; transition: color .12s ease, border-color .12s ease; }

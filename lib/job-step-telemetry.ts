@@ -73,11 +73,10 @@ export const BUILD_PATH_OF_JOB_BUILDER: Record<string, BuildPath> = {
   'native-nft-transfer': 'native-nft-transfer',
   'native-nft-list': 'native-nft-list',
   'native-aave-supply': 'native-aave-supply',
-  // The ETH → WETH wrap ahead of an Aave supply of ETH (#905, lib/aave-exec):
-  // fee-free, part of the Aave supply's money. Without a path a signed wrap
-  // wrote build_path NULL — no venue on /activity, the #819 class (QA-X1,
-  // squad polish 2026-10-13).
-  'native-weth-wrap': 'native-aave-op',
+  // The ETH → WETH wrap is the Aave ETH supply's own first leg (lib/aave-exec,
+  // the wrap-then-supply door): fee-free, no value of its own (the supply
+  // step books the dollars), reported under the venue it serves.
+  'native-weth-wrap': 'native-aave-supply',
   'native-aave-repay': 'native-aave-op',
   'native-morpho-lend': 'native-morpho-lend',
   'native-morpho-repay': 'native-morpho-op',

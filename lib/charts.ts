@@ -7,7 +7,15 @@
 //
 // Sources are keyless public market data:
 //   coinbase    — Coinbase Exchange spot candles (USD products, majors)
-//   hyperliquid — HL perp candleSnapshot (venue already in our allowlist)
+//   hyperliquid — HL perp candleSnapshot (venue already in our allowlist).
+//                 The perp set is the venue's LIVE universe (lib/hl-universe,
+//                 main book + the xyz dex, cached 10 min) over a static
+//                 fallback — any perp a visitor picks on /live or the deck
+//                 charts, quotes and alerts (2026-10-13; ZK / AZTEC / PURR /
+//                 GRIFFAIN / kPEPE used to have no pair at all). Cold, the
+//                 table is the static set: server entry points call
+//                 resolveChartPair (miss → warm → retry) and the /t page
+//                 hands its client shell the live list (primeHlUniverse).
 //   robinhood   — Robinhood's own market-data historicals for the tokenized
 //                 equities on Robinhood Chain (24/7 bounds — the same
 //                 round-the-clock tape the on-chain stock tokens track; the
@@ -31,6 +39,7 @@ export const CHART_FEED_LABELS: Record<ChartFeed, string> = {
 }
 
 import { ROBINHOOD_TICKER_SET } from '@/lib/robinhood-tickers'
+import { hlPerpUniverseCached, hlPerpUniverseFresh, hlUniverses, primeHlUniverse, type HlDex } from '@/lib/hl-universe'
 
 export type ChartTf = '1s' | '1m' | '15m' | '1h' | '4h' | '1d'
 
@@ -109,14 +118,162 @@ const COINBASE_ALIASES: Record<string, string> = {
   MATIC: 'POL',
 }
 
-/** HL perp listings we chart when Coinbase has no USD product. */
+/** HL perp listings we chart when Coinbase has no USD product — the STATIC
+ *  FALLBACK (and the only perps the free-text scanners read bare, see
+ *  isMoneyAssetWord / parseChartAsk). The live table below extends it with
+ *  every listed perp once a universe read has landed. */
 const HYPERLIQUID_PERPS = new Set(['HYPE', 'SYRUP', 'FARTCOIN', 'BRETT', 'AIXBT'])
+
+// ── The live Hyperliquid pair table ────────────────────────────────────────
+// Canonical chart symbol → the venue's own coin spelling, derived from the
+// cached universes (lib/hl-universe): 'ZK' → 'ZK', 'KPEPE' → 'kPEPE' (the
+// venue's k-prefixed thousand-lots keep their case on the wire — candleSnapshot
+// and metaAndAssetCtxs key on it), 'GOLD' → 'xyz:GOLD' (an xyz-dex perp whose
+// ticker is not a Robinhood-Chain stock). PURE on its inputs so the harness
+// pins the rules without a venue:
+//   · Coinbase first — a coin Coinbase lists keeps its Coinbase pair
+//     (chartPairFor checks it before this table; the table skips it too).
+//   · Robinhood keeps its stocks — an xyz:NVDA perp never turns /t/NVDA into
+//     a perp chart (the stock tape is the chart; the xyz perp is a venue row),
+//     and a feedless listing (SATS) stays chartless rather than charting the
+//     venue's same-named coin.
+//   · stables never chart; the xyz index product (`:XYZ100`) is not a market
+//     (lib/tape pickTapeMarkets drops it the same way); delisted rows are not
+//     passed in (lib/hl-universe splits listed from delisted).
+//   · the main book wins a ticker collision with the xyz dex.
+export function hlChartTableFrom(main: Iterable<string>, xyz: Iterable<string>): Map<string, string> {
+  const out = new Map<string, string>()
+  const take = (coin: string, ticker: string) => {
+    const norm = normalizeChartSymbol(ticker)
+    if (!norm || norm.length > 12 || STABLES.has(norm)) return
+    const symbol = COINBASE_ALIASES[norm] ?? norm
+    // The whole Robinhood-Chain listing set, feedless names included: SATS on
+    // Robinhood Chain is not the venue's SATS perp — a ticker that names a
+    // stock token never charts as a perp wearing the stock's name.
+    if (COINBASE_USD.has(symbol) || ROBINHOOD_TICKER_SET.has(symbol) || out.has(symbol)) return
+    out.set(symbol, coin)
+  }
+  for (const coin of main) {
+    if (typeof coin !== 'string' || !coin || coin.includes(':')) continue
+    take(coin, coin)
+  }
+  for (const coin of xyz) {
+    if (typeof coin !== 'string') continue
+    const i = coin.indexOf(':')
+    if (i <= 0) continue
+    const ticker = coin.slice(i + 1)
+    if (!ticker || /^XYZ100$/i.test(ticker)) continue
+    take(coin, ticker)
+  }
+  return out
+}
+
+/** The live table, rebuilt only when a universe read lands (identity-keyed
+ *  on the cached universes, so a sync lookup costs a Map get). Empty while
+ *  cold — chartPairFor then answers from the static set alone. */
+let liveTableMemo: { main: unknown; xyz: unknown; table: Map<string, string> } | null = null
+/** The server's handoff for a live-only perp page: an inline script the
+ *  browser runs at PARSE time (app/t/[symbol]/page.tsx), before any bundle
+ *  hydrates — so the first client lookup, wherever it sits in the tree (the
+ *  ask-door pill at the root reads the path's symbol before the page
+ *  renders), already holds the venue's listing. Read once, then dropped. */
+declare global {
+  // eslint-disable-next-line no-var
+  var __pantessaHlPerps: { main?: unknown; xyz?: unknown } | undefined
+}
+export const HL_PERPS_HANDOFF_GLOBAL = '__pantessaHlPerps'
+function takeHandoff(): void {
+  const g = globalThis.__pantessaHlPerps
+  if (!g) return
+  globalThis.__pantessaHlPerps = undefined
+  const list = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+  primeHlPerps({ main: list(g.main), xyz: list(g.xyz) })
+}
+function liveHlTable(): Map<string, string> {
+  if (!hlPerpUniverseCached('main')) takeHandoff()
+  const main = hlPerpUniverseCached('main')
+  const xyz = hlPerpUniverseCached('xyz')
+  if (!liveTableMemo || liveTableMemo.main !== main || liveTableMemo.xyz !== xyz) {
+    liveTableMemo = { main, xyz, table: hlChartTableFrom(main?.listed ?? [], xyz?.listed ?? []) }
+  }
+  return liveTableMemo.table
+}
+
+/** The venue coin a canonical symbol charts as on Hyperliquid, or null: the
+ *  static set first (its coin IS the symbol), then the live table. */
+function hlPerpCoinFor(symbol: string): string | null {
+  if (HYPERLIQUID_PERPS.has(symbol)) return symbol
+  return liveHlTable().get(symbol) ?? null
+}
+
+/** A perp that charts ONLY through the live table (not the static set).
+ *  The free-text scanners (parseChartAsk, chartSymbolsIn) read these only
+ *  when clearly typed as a ticker — the venue lists ME, AI, IP, OM, MOVE,
+ *  GOAT, BABY, PUMP…, and "move my eth" is not a MOVE chart. */
+export function isLiveOnlyHlPair(pair: ChartPair | null | undefined): boolean {
+  return !!pair && pair.source === 'hyperliquid' && !HYPERLIQUID_PERPS.has(pair.symbol)
+}
+
+/** Has a live universe read landed in this process (the table is more than
+ *  the static set)? Sync. */
+export function hlPerpsWarm(): boolean {
+  return hlPerpUniverseCached('main') !== null
+}
+
+/**
+ * Warm the live table: one `meta` read per dex (cached 10 min, inflight
+ * shared, a failure retried after a minute and NEVER thrown — the static set
+ * holds). Resolves once both dexes have answered or failed; true when at
+ * least the main book is held.
+ */
+export async function warmHlPerps(): Promise<boolean> {
+  const { main } = await hlUniverses()
+  return main !== null
+}
+
+/**
+ * chartPairFor with the live table warmed on a miss — for SERVER entry
+ * points that may run on a cold process (the candles proxy, readQuotes, the
+ * /t page, the venue map): a symbol the static table does not know is
+ * refused only after the venue's universe has been read (once per 10 min).
+ * A hit, a stable or a fresh table never costs a read.
+ */
+export async function resolveChartPair(symbolRaw: string): Promise<ChartPair | null> {
+  const direct = chartPairFor(symbolRaw)
+  if (direct) return direct
+  const norm = normalizeChartSymbol(symbolRaw)
+  if (!norm || norm.length > 12 || STABLES.has(norm)) return null
+  if (hlPerpUniverseFresh('main') && hlPerpUniverseFresh('xyz')) return null
+  await warmHlPerps()
+  return chartPairFor(symbolRaw)
+}
+
+/** The listed perp names the live table was built from — what a server
+ *  render hands its client shell so the browser's table matches before its
+ *  first paint (SymbolPage → primeHlPerps). Null while cold. */
+export function liveHlPerpNames(): { main: string[]; xyz: string[] } | null {
+  const main = hlPerpUniverseCached('main')
+  if (!main) return null
+  const xyz = hlPerpUniverseCached('xyz')
+  return { main: [...main.listed], xyz: xyz ? [...xyz.listed] : [] }
+}
+
+/** Prime the live table from names already in hand (the server's handoff,
+ *  or a universe another reader just fetched). Idempotent; a payload too
+ *  small to be the venue is ignored (lib/hl-universe primeHlUniverse). */
+export function primeHlPerps(names: { main: readonly string[]; xyz?: readonly string[] }): void {
+  const rows = (list: readonly string[]) => list.map((name) => ({ name }))
+  if (names.main.length) primeHlUniverse('main' satisfies HlDex, rows(names.main))
+  if (names.xyz?.length) primeHlUniverse('xyz' satisfies HlDex, rows(names.xyz))
+}
 
 /** Listed on Robinhood Chain but with NO quote on Robinhood's market-data
  *  feed (probed 2026-09-10 across all 201 listings: a batch historicals call
- *  returns an empty instrument for exactly these two). They stay chartless
- *  BY NAME rather than growing a button over an empty chart. */
-const ROBINHOOD_FEEDLESS = new Set(['CASHCAT', 'SATS'])
+ *  returns an empty instrument for exactly these two; PONS joined the list
+ *  by 2026-10-13 — `missing_instruments` on Robinhood, "No data found" on
+ *  Yahoo, a CoinGecko-imaged token, not an equity). They stay chartless BY
+ *  NAME rather than growing a button over an empty chart. */
+const ROBINHOOD_FEEDLESS = new Set(['CASHCAT', 'SATS', 'PONS'])
 
 /** A tokenized equity we hold a candle feed for. Coins are checked FIRST in
  *  chartPairFor (nothing lists AAPL as a coin, and a ticker that collides
@@ -134,7 +291,10 @@ export function normalizeChartSymbol(raw: string): string {
 }
 
 /** Resolve a token symbol to its candle source, or null (no chart button,
- *  no API pass-through). Aliases collapse first, stables refuse early. */
+ *  no API pass-through). Aliases collapse first, stables refuse early;
+ *  Coinbase before Hyperliquid (static set, then the live table) before the
+ *  Robinhood-Chain stocks. Sync — see resolveChartPair for the server path
+ *  that warms the live table on a miss. */
 export function chartPairFor(symbolRaw: string): ChartPair | null {
   const norm = normalizeChartSymbol(symbolRaw)
   if (!norm || norm.length > 12 || STABLES.has(norm)) return null
@@ -142,8 +302,9 @@ export function chartPairFor(symbolRaw: string): ChartPair | null {
   if (COINBASE_USD.has(symbol)) {
     return { symbol, source: 'coinbase', pair: `${symbol}-USD`, label: `${symbol} / USD` }
   }
-  if (HYPERLIQUID_PERPS.has(symbol)) {
-    return { symbol, source: 'hyperliquid', pair: symbol, label: `${symbol} / USD` }
+  const coin = hlPerpCoinFor(symbol)
+  if (coin) {
+    return { symbol, source: 'hyperliquid', pair: coin, label: `${symbol} / USD` }
   }
   if (isChartedStock(symbol)) {
     return { symbol, source: 'robinhood', pair: symbol, label: `${symbol} / USD` }
@@ -263,6 +424,9 @@ export function isMoneyAssetWord(word: string): boolean {
   if (!norm || norm.length < 3 || norm.length > 12) return false
   if (CHART_NAMES[norm] || CHART_STOCK_NAMES[norm]) return true
   const sym = COINBASE_ALIASES[norm] ?? norm
+  // The STATIC perp set only, never the live table: a single word has no
+  // sentence to tell "move" from MOVE or "pump" from PUMP, and a sized ask
+  // ("buy $20 of AZTEC") is money-shaped by its verb + amount already.
   if (COINBASE_USD.has(sym) || HYPERLIQUID_PERPS.has(sym)) return true
   return norm.length >= 4 && !ENGLISH_WORD_TICKERS.has(norm) && isChartedStock(norm)
 }
@@ -326,11 +490,16 @@ export function parseChartAsk(message: string): ChartAsk | null {
     if (!ticker && CHART_STOPWORDS.has(raw)) continue
     const byName = CHART_NAMES[raw] ?? CHART_STOCK_NAMES[raw]
     const sym = byName ?? raw
-    const pair = chartPairFor(sym)
+    let pair = chartPairFor(sym)
     // A stock reached by a lowercase bare ticker must be unmistakably a
     // ticker: four+ letters and not an English word ("aapl", "nvda" — yes;
     // "cost", "on", "now" — no).
     if (pair?.source === 'robinhood' && !byName && !ticker && (raw.length < 4 || ENGLISH_WORD_TICKERS.has(raw))) continue
+    // A perp only the live table knows (AI, MOVE, GOAT, PUMP…) must be
+    // typed as a ticker ("$AI", or AI in a lowercase sentence) — a bare
+    // lowercase word reads as it did before the table existed: no feed for
+    // it (the chartless answer still names the word), never a MOVE chart.
+    if (isLiveOnlyHlPair(pair) && !byName && !typedAsTicker(w, text)) pair = null
     if (pair) return { symbol: pair.symbol, pair }
     // Remember the first ticker-shaped word so a chartless ask can name it.
     if (!named && /^[A-Z][A-Z0-9]{1,11}$/.test(sym) && /[A-Z]/.test(sym)) named = sym
@@ -339,10 +508,12 @@ export function parseChartAsk(message: string): ChartAsk | null {
 }
 
 // ── MARKETS/MSG ──────────────────────────────────────────────────────────
-/** Every symbol chartPairFor accepts, in canonical form (aliases collapsed,
- *  stables + feedless listings excluded): coins, then perps, then the
- *  charted Robinhood-Chain stocks. The sitemap's /t/<sym> set and the OG
- *  route's allowlist read THIS, so a symbol is indexed iff it charts. */
+/** Every symbol chartPairFor accepts STATICALLY, in canonical form (aliases
+ *  collapsed, stables + feedless listings excluded): coins, then the static
+ *  perps, then the charted Robinhood-Chain stocks. The sitemap's /t/<sym>
+ *  set reads THIS, so a symbol is indexed iff it charts on a cold process —
+ *  the live perp table (hundreds of venue listings that come and go) charts
+ *  on demand and is deliberately NOT indexed. */
 export function chartableSymbols(): string[] {
   const out: string[] = []
   const seen = new Set<string>()
@@ -396,6 +567,7 @@ export function chartSymbolsIn(text: string): { symbol: string; at: number }[] {
     const pair = chartPairFor(byName ?? raw)
     if (!pair) return
     if (pair.source === 'robinhood' && !byName && !ticker && (raw.length < 4 || ENGLISH_WORD_TICKERS.has(raw))) return
+    if (isLiveOnlyHlPair(pair) && !byName && !typed) return
     out.push({ symbol: pair.symbol, at })
   })
   return out

@@ -18,7 +18,7 @@
 // exchange tape, extended hours included) and reports which one answered in
 // `feed`, so the chart's eyebrow never claims a source it didn't use.
 
-import { aggregateCandles, chartPairFor, type Candle, type ChartFeed, type ChartPair, type ChartSource, type ChartTf } from '@/lib/charts'
+import { aggregateCandles, resolveChartPair, type Candle, type ChartFeed, type ChartPair, type ChartSource, type ChartTf } from '@/lib/charts'
 
 const TTL_MS = 5_000
 /** Deep series (the technicals + the chart's warm-up) change slowly and cost
@@ -323,7 +323,9 @@ export interface LoadedSeries {
  * miss never evicts the chart's hot entry.
  */
 export async function loadCandleSeries(symbolRaw: string, tf: ChartTf, opts: { deep?: boolean } = {}): Promise<LoadedSeries | null> {
-  const pair = chartPairFor(symbolRaw)
+  // The live perp table warms on a miss (a cold process asked for /t/ZK's
+  // candles) — a symbol is refused only after the venue's universe answered.
+  const pair = await resolveChartPair(symbolRaw)
   if (!pair) return null
   const deep = !!opts.deep
   const key = `${deep ? 'deep:' : ''}${pair.source}:${pair.pair}:${tf}`
@@ -386,7 +388,7 @@ const asPage = (feed: ChartFeed, older: Candle[]): OlderPage => ({ feed, older: 
  * refusal, never a 500).
  */
 export async function loadCandlesBefore(symbolRaw: string, tf: ChartTf, before: number): Promise<{ pair: ChartPair; page: OlderPage } | null> {
-  const pair = chartPairFor(symbolRaw)
+  const pair = await resolveChartPair(symbolRaw)
   if (!pair) return null
   if (pair.source === 'robinhood') {
     const deep = await loadCandleSeries(symbolRaw, tf, { deep: true })

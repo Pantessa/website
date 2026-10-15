@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
-import { chartPairFor } from '@/lib/charts'
+import { resolveChartPair } from '@/lib/charts'
 import { getWalletViewCached } from '@/lib/wallet-view'
 import { fetchPositions } from '@/lib/hl-guardian-store'
 import { callMcpTool } from '@/lib/mcp-call'
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
   const address = (sp.get('address') ?? '').trim()
   if (!/^[A-Za-z0-9$._-]{1,16}$/.test(symbolRaw)) return NextResponse.json({ error: 'bad symbol' }, { status: 400 })
   if (!ADDRESS_RE.test(address)) return NextResponse.json({ error: 'address must be a 0x-prefixed 40-hex wallet address.' }, { status: 400 })
-  const pair = chartPairFor(symbolRaw)
+  const pair = await resolveChartPair(symbolRaw)
   if (!pair) return NextResponse.json({ error: `${symbolRaw.toUpperCase()} is not a charted symbol.` }, { status: 404 })
   const sym = pair.symbol
   const aliases = new Set(positionAliases(sym))
