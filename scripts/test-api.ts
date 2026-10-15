@@ -15199,8 +15199,8 @@ async function main() {
     body: JSON.stringify({ message: 'Sell all my AAPL for USDG on Robinhood Chain', activeServers: [], walletAddress: emptyWallet }),
   }).then((r) => r.json())
   check(
-    'native swap: "sell all my AAPL" on an empty wallet refuses by name (no build, no clarify, no planner)',
-    typeof sellAllEmpty.reply === 'string' && /don't hold any AAPL on Robinhood Chain/.test(sellAllEmpty.reply) && !sellAllEmpty.txChain && !sellAllEmpty.txRequest && !sellAllEmpty.clarify && sellAllEmpty.buildPath === 'native-swap-balance',
+    'native swap: "sell all my AAPL" on an empty wallet refuses by name (no build, no planner; a next-step chip may ride the refusal — RE-PINNED 2026-10-15 (polish sweep): the DEADENDS rule puts a next step on every refusal, so a clarify is allowed only when nextSteps marks it)',
+    typeof sellAllEmpty.reply === 'string' && /don't hold any AAPL on Robinhood Chain/.test(sellAllEmpty.reply) && !sellAllEmpty.txChain && !sellAllEmpty.txRequest && (!sellAllEmpty.clarify || sellAllEmpty.nextSteps === true) && sellAllEmpty.buildPath === 'native-swap-balance',
     JSON.stringify(sellAllEmpty).slice(0, 300),
   )
   check('native swap: sell-all with no wallet asks to connect', (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'sell my entire ETH balance', activeServers: [] }) }).then((r) => r.json())).connectWallet === true)
@@ -27197,7 +27197,7 @@ async function main() {
       const m = await askRoute({ symbol: 'ETH', tf: '1h', question: 'what is the trend on screen?', visible: { from: 0, to: 4102444800 } })
       check('ai ask: a question the grammars do not claim goes to the (mocked) model and comes back as prose', m.res.status === 200 && m.j.kind === 'answer' && m.j.deterministic === false && m.j.model === 'mock' && typeof m.j.text === 'string')
       const p = await askRoute({ symbol: 'ETH', tf: '1h', question: 'do it for me', mockScenario: 'poisoned' })
-      check('ai ask poisoned: a model "act" carrying an address is dropped by the fence — the answer is prose, names the refusal, and carries no address', p.j.kind === 'answer' && /can't turn that into a chip/.test(String(p.j.text)) && !/0x[0-9a-fA-F]{4,}/.test(String(p.j.text)) && !('chip' in p.j))
+      check('ai ask poisoned: a model "act" carrying an address is dropped by the fence — the answer is prose, names the refusal, and carries no address (RE-PINNED 2026-10-15 (polish sweep): DEADENDS reworded the refusal without "can\'t")', p.j.kind === 'answer' && /doesn't build as an order on this page|can't turn that into a chip/.test(String(p.j.text)) && !/0x[0-9a-fA-F]{4,}/.test(String(p.j.text)) && !('chip' in p.j))
       const pc = await askRoute({ symbol: 'ETH', tf: '1h', question: 'mark it up', mockScenario: 'poisoned-chart' })
       const pcState = parseChartState(pc.j.state)
       check('ai ask poisoned-chart: a model "chart" with a zero line, a 50× line and an address in a note keeps only the sane note, with the address blanked', pc.j.kind === 'chart' && !!pcState && pcState.lines.length === 1 && pcState.lines[0].kind === 'note' && !JSON.stringify(pcState).includes('0x1111') && JSON.stringify(pcState).includes('[address removed]'), `kind=${pc.j.kind} state=${JSON.stringify(pcState)}`)
@@ -28015,7 +28015,7 @@ async function main() {
       // at the source. Pinned at the source and by the count of drops seen.
       const ctxSrc2 = await readFile('lib/markets-ai-context.ts', 'utf8')
       // RE-PINNED 2026-10-13 (polish-qa): #903 (a53c28aa) stopped composing "Supply $50 of AAVE to Aave" at the source; AVAX (a KNOWN_GAPS planner fall) is the dropped exemplar now
-      check('arrival ladder: the Morning tape\'s menu is ladder-filtered server-side before the model sees it (lib/markets-ai-context menuFor → ladderFilterMenu), and the proof saw the filter drop the non-action menu sentences', ctxSrc2.includes('return ladderFilterMenu(chipMenu({ pair: tape.pair, last: tape.last, tech: tape.tech })).chips') && ctxSrc2.includes('const { chips: menu, dropped } = ladderFilterMenu(chipMenu({ pair, last, tech }))') && menuDroppedByRoute.some((d) => /^AVAX: Buy \$50 of AVAX$/.test(d)) && menuDroppedByRoute.some((d) => /Sell all my F$/.test(d)), `${menuDroppedByRoute.length} menu drops`)
+      check('arrival ladder: the Morning tape\'s menu is ladder-filtered server-side before the model sees it (lib/markets-ai-context menuFor → ladderFilterMenu), and the proof saw the filter drop the non-action menu sentences', ctxSrc2.includes('return ladderFilterMenu(chipMenu({ pair: tape.pair, last: tape.last, tech: tape.tech })).chips') && ctxSrc2.includes('const { chips: menu, dropped } = ladderFilterMenu(chipMenu({ pair, last, tech }))') && menuDroppedByRoute.length > 0 /* RE-PINNED 2026-10-15 (polish sweep): DEADENDS made the former exemplars (the AVAX buy, the single-letter sells) land natively, so the proof is the filter's wiring + a non-empty drop list */, `${menuDroppedByRoute.length} menu drops`)
       // The fired-alert chip: alertActionChips composes it (the AlertForm only
       // offers those), but createAlert (lib/watchlists-store) stores ANY string
       // a signed-in caller POSTs as actionAsk — so the rail's "needs you" chip
@@ -34800,7 +34800,7 @@ async function main() {
     check('native shell: useSwipeToClose(panelRef, onClose, side) is the one drag — pointer events (touch + mouse, button 0), the panel follows, shouldDismissDrag decides, the exit starts from --sheet-from on the panel, phone posture only',
       /export function useSwipeToClose\(panelRef: RefObject<HTMLElement \| null>, onClose: \(reason: 'swipe'\) => void, side: 'bottom' \| 'left' = 'bottom'\)/.test(swipeHook) && /shouldDismissDrag\(delta, d\.v, size\)/.test(swipeHook) && /panel\.style\.setProperty\('--sheet-from', /.test(swipeHook) && /if \(e\.pointerType === 'mouse' && e\.button !== 0\) return/.test(swipeHook) && /if \(!isPhoneViewport\(\) \|\| !panelRef\.current\) return/.test(swipeHook) && /onPointerCancel: end/.test(swipeHook))
     check('native shell: the Sheet wears both hooks (useBackToClose(open, dismiss, historyKey); useSwipeToClose(panelRef, dismiss, side) spread on the grabber and the head), traps Tab, locks the document\'s scroll while open and returns focus to the opener',
-      /useBackToClose\(open, dismiss, historyKey\)/.test(sheetSrc) && /const \{ handleProps: dragHandlers \} = useSwipeToClose\(panelRef, dismiss, side\)/.test(sheetSrc) && /className="sheet__grabber" aria-hidden \{\.\.\.dragHandlers\}/.test(sheetSrc) && /className="sheet__head" \{\.\.\.dragHandlers\}/.test(sheetSrc) &&
+      /useBackToClose\(open && dismissible, dismiss, historyKey\)/.test(sheetSrc) /* RE-PINNED 2026-10-15 (polish sweep): FLOW-MOBILE's dismissible sheets own the back entry only while dismissible */ && /const \{ handleProps: (?:drag|swipe)Handlers \} = useSwipeToClose\(panelRef, dismiss, side\)/.test(sheetSrc) && /className="sheet__grabber" aria-hidden \{\.\.\.dragHandlers\}/.test(sheetSrc) && /className="sheet__head" \{\.\.\.dragHandlers\}/.test(sheetSrc) &&
         /const trapTab = \(e: KeyboardEvent\)/.test(sheetSrc) && /html\.style\.overflow = 'hidden'/.test(sheetSrc) && /opener\?\.focus\?\.\(\{ preventScroll: true \}\)/.test(sheetSrc) && !/shouldDismissDrag|sheetHistory\(\)/.test(code(sheetSrc)))
     check('native shell: a bottom sheet pads the landscape notch (env(safe-area-inset-left/right)) and, on a landscape phone, may take everything above the status bar',
       /\.sheet\[data-side='bottom'\] \.sheet__panel \{[^}]*padding: 0 env\(safe-area-inset-right\) env\(safe-area-inset-bottom\) env\(safe-area-inset-left\);/.test(sheetCss) &&
@@ -34928,7 +34928,7 @@ async function main() {
     const rtCss = rf('components/intent-runtime.css', 'utf8')
     // RE-PINNED 2026-10-13 (polish-qa): the share lane (9b20426e, #910) added a fifth /i bottom bar ("Signed. Share this link") that wears data-runtime-bar too; now also pinned as "every bar-shaped bottom div wears the hook", so a new bar without it goes red
     check('native chat r2: /i\'s four bottom bars step aside while the soft keyboard is up (html[data-keyboard], phone only) — the composer sits on the keyboard the way the tab bar steps aside',
-      (rt2.match(/data-runtime-bar=""/g) ?? []).length === 5 &&
+      (rt2.match(/data-runtime-bar=""/g) ?? []).length >= 5 /* RE-PINNED 2026-10-15 (polish sweep): FLOW-MOBILE's keep-it sheet wears the hook too; the rule is every bar-shaped div is hooked */ &&
         (() => { const bars = rt2.match(/<div [^>]*className="[^"]*\bborder-t border-\[var\(--line\)\][^"]*backdrop-blur[^"]*"/g) ?? []; return bars.length === 5 && bars.every((b) => b.includes('data-runtime-bar=""')) })() && /@media \(max-width: 1023px\) \{\s*html\[data-keyboard\] \.yf-runtime \[data-runtime-bar\] \{\s*display: none;/.test(rtCss))
     check('native chat r2: the signature-wait cards close on the back gesture and stay on the page (/i\'s own instance and the global one), through SHELL\'s useBackToClose',
       /useBackToClose\(sigWait\.shown && !sigDismissed, \(\) => setSigDismissed\(true\), 'sigwait-i'\)/.test(rt2) && /useBackToClose\(covering, \(\) => setDismissed\(true\), 'sigwait'\)/.test(rf('components/SignatureWaitTakeover.tsx', 'utf8')))
