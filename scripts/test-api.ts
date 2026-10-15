@@ -35175,20 +35175,21 @@ async function main() {
       lbRes.status === 200 && /data-progress="leaderboard"/.test(lb) && /<aside [^>]*aria-label="Workspace"/.test(lb) && /class="mkt-frame__side"/.test(lb) && !/<header class="nav/.test(lb) &&
         seatLit(lb, 'LEADERS') && !seatLit(lb, 'ANALYTICS') && /data-tiles=""/.test(lb) && /data-milestone="/.test(lb) && /role="progressbar"/.test(lb) &&
         ['links', 'creators', 'wallets'].every((b) => lb.includes(`data-board="${b}"`)) &&
-        /<a [^>]*href="\/leaderboard\?w=7"[^>]*data-window="7"/.test(lb) && /<a [^>]*href="\/leaderboard"[^>]*aria-current="true"[^>]*data-window="30"/.test(lb) && /<a [^>]*href="\/leaderboard\?w=all"[^>]*data-window="0"/.test(lb) &&
+        // (Next renders a Link's href LAST — match the attributes in render order: data-window, then href.)
+        /<a [^>]*data-window="7"[^>]*href="\/leaderboard\?w=7"/.test(lb) && /<a [^>]*aria-current="true"[^>]*data-window="30"[^>]*href="\/leaderboard"/.test(lb) && /<a [^>]*data-window="0"[^>]*href="\/leaderboard\?w=all"/.test(lb) &&
         /href="https:\/\/x\.com\/intent\/tweet\?text=[^"]*moved%20through%20Pantessa[^"]*&amp;via=askPantessa"/.test(lb) &&
-        /href="\/chat\?tab=links"[^>]*data-door="mint"/.test(lb) &&
+        /<a [^>]*data-door="mint"[^>]*href="\/chat\?tab=links"/.test(lb) &&
         /<title>Leaderboard — money moved by links, creators and wallets<\/title>/.test(lb),
       `status=${lbRes.status}`,
     )
     check(
       'progress: /leaderboard?w=7 lights the 7-day window and names it; /analytics?w=all serves 200 with the ANALYTICS seat lit, the deltas absent (no previous window for all time), the two day charts, the five-stop funnel, the venue + chain boards',
-      /<a [^>]*href="\/leaderboard\?w=7"[^>]*aria-current="true"/.test(lb7) && !/<a [^>]*href="\/leaderboard"[^>]*aria-current="true"/.test(lb7) && lb7.includes('7 days') &&
+      /<a [^>]*aria-current="true"[^>]*data-window="7"[^>]*href="\/leaderboard\?w=7"/.test(lb7) && !/<a [^>]*aria-current="true"[^>]*data-window="30"/.test(lb7) && lb7.includes('7 days') &&
         anRes.status === 200 && /data-progress="analytics"/.test(an) && seatLit(an, 'ANALYTICS') && !seatLit(an, 'LEADERS') && !/<header class="nav/.test(an) &&
         /data-chart="Money moved by day"/.test(an) && /data-chart="Links by day"/.test(an) && (an.match(/role="img"/g) ?? []).length >= 2 &&
         /data-funnel=""/.test(an) && ['arrived', 'asked', 'built', 'signed', 'returned'].every((s) => an.includes(`data-stop="${s}"`)) &&
         /data-board="venues"/.test(an) && /data-board="chains"/.test(an) && !/pg__delta/.test(an) &&
-        /<a [^>]*href="\/analytics\?w=all"[^>]*aria-current="true"/.test(an),
+        /<a [^>]*aria-current="true"[^>]*data-window="0"[^>]*href="\/analytics\?w=all"/.test(an),
       `status=${anRes.status}`,
     )
     // The team's wallets never rank on the public board (the live page, the
@@ -35202,8 +35203,8 @@ async function main() {
     check(
       'progress: the spine seats LEADERS + ANALYTICS on the column and the bar (max-sm:hidden on the bar — the phone bar is full), lists both in the MORE sheet, and phone-nav folds them behind MORE; the sitemap lists both pages; Navigation hides on them',
       (lb.match(/<a [^>]*aria-label="LEADERS"[^>]*href="\/leaderboard"/g) ?? []).length === 2 && (lb.match(/<a [^>]*aria-label="ANALYTICS"[^>]*href="\/analytics"/g) ?? []).length === 2 &&
-        /<a [^>]*aria-label="LEADERS" class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/leaderboard"/.test(lb) &&
-        /<a [^>]*aria-label="ANALYTICS" class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/analytics"/.test(lb) &&
+        /<a [^>]*aria-label="LEADERS"[^>]*class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/leaderboard"/.test(lb) &&
+        /<a [^>]*aria-label="ANALYTICS"[^>]*class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/analytics"/.test(lb) &&
         /href=\{LEADERBOARD_HREF\} role="menuitem"/.test(spineSrc) && /href=\{ANALYTICS_HREF\} role="menuitem"/.test(spineSrc) &&
         /isProgressPath\(pathname\)\) return null/.test(await readFile(new URL('../components/Navigation.tsx', import.meta.url), 'utf8')) &&
         (await (await fetch(`${BASE}/sitemap.xml`)).text()).includes('/leaderboard</loc>') && (await (await fetch(`${BASE}/sitemap.xml`)).text()).includes('/analytics</loc>'),
