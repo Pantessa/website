@@ -26,16 +26,22 @@
 //  exact body services/near-intents sends). Every EVM chain we can build a
 //  deposit on, both directions, plus the non-EVM chains the grammar accepts:
 //
-//    Polygon      $1,000   origin AND destination
 //    BNB Chain    $1,000   origin AND destination
 //    Tron         $100     origin only (as a destination it prices at $20)
 //    Ethereum, Base, Arbitrum, Optimism, Avalanche, Gnosis, Scroll,
 //    Solana, NEAR, Monad, X Layer, ADI — no floor at $20.
 //
+//  RE-MEASURED 2026-10-13 (same probe): Polygon's $1,000 floor — origin AND
+//  destination on 09-22 — is GONE; the venue prices $20 both ways. The table
+//  dropped it the same day (a fenced chain the venue fills is a dead end of
+//  our own making); the harness's "unfenced" loop now watches it, so a
+//  returning floor goes red instead of reaching a user as a raw 400.
+//
 //  NEAR's changelog is STALE and must not be the source: it lists Optimism
-//  and Avalanche at $1,000 (both price $20 fine today) and says nothing
-//  about the floor applying to the destination side, which it does for
-//  Polygon and BNB Chain. Hence the probe script and the live harness pins.
+//  and Avalanche at $1,000 (both price $20 fine today) and said nothing
+//  about the floor applying to the destination side, which it did for
+//  Polygon and still does for BNB Chain. Hence the probe script and the
+//  live harness pins.
 //
 //  Tron is measured but deliberately NOT in the table: the MCP refuses a
 //  non-EVM origin before it ever quotes ("can only BUILD deposit
@@ -46,9 +52,9 @@
 import { canonicalChainWord, prettyChainWord } from '@/lib/chain-lexicon'
 import { crossChainAskSentence, type CrossChainSwapParams, type MoveSource } from '@/lib/cross-chain-swap'
 
-/** Which end of the move a floor applies to. Polygon and BNB Chain fence
- *  both; the sides are kept apart because Tron fences only the origin, so
- *  "per chain" would have been the wrong shape to build. */
+/** Which end of the move a floor applies to. BNB Chain fences both (so did
+ *  Polygon until 2026-10-13); the sides are kept apart because Tron fences
+ *  only the origin, so "per chain" would have been the wrong shape to build. */
 export type FloorSide = 'origin' | 'destination'
 
 export interface VenueFloor {
@@ -61,7 +67,6 @@ export interface VenueFloor {
 /** Keyed by CANONICAL chain word (lib/chain-lexicon), so the typo aliases
  *  the grammar accepts ("matic", "bsc", "binance") all land here. */
 export const VENUE_FLOORS: Readonly<Record<string, VenueFloor>> = {
-  polygon: { usd: 1000, sides: ['origin', 'destination'] },
   bnb: { usd: 1000, sides: ['origin', 'destination'] },
 }
 

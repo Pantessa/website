@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { chartPairFor } from '@/lib/charts'
+import { resolveChartPair } from '@/lib/charts'
 import { poolPriceFor } from '@/lib/pool-price'
 
 export const runtime = 'nodejs'
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   if (!/^[A-Za-z0-9$._-]{1,16}$/.test(symbolRaw)) {
     return NextResponse.json({ error: 'bad symbol' }, { status: 400 })
   }
-  const pair = chartPairFor(symbolRaw)
+  const pair = await resolveChartPair(symbolRaw)
   const headers = { 'cache-control': 'no-store' }
   if (!pair) return NextResponse.json({ symbol: symbolRaw.toUpperCase(), pool: null, reason: 'no chart source' }, { headers })
   if (pair.source !== 'robinhood') {

@@ -4,7 +4,7 @@
 // product, never a 500: a symbol Coinbase doesn't list answers empty sides
 // with `missing` set.
 import { NextRequest, NextResponse } from 'next/server'
-import { chartPairFor } from '@/lib/charts'
+import { resolveChartPair } from '@/lib/charts'
 import type { BookBody } from '@/lib/derivs'
 
 export const runtime = 'nodejs'
@@ -18,7 +18,7 @@ const cache = new Map<string, { at: number; body: BookBody }>()
 export async function GET(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get('symbol') ?? ''
   if (!/^[A-Za-z0-9]{1,12}$/.test(raw)) return NextResponse.json({ error: 'bad symbol' }, { status: 400, headers: { 'cache-control': 'no-store' } })
-  const pair = chartPairFor(raw)
+  const pair = await resolveChartPair(raw)
   if (!pair) return NextResponse.json({ error: 'no chart for that symbol' }, { status: 404, headers: { 'cache-control': 'no-store' } })
   const product = pair.source === 'coinbase' ? pair.pair : `${pair.symbol}-USD`
   const hit = cache.get(product)

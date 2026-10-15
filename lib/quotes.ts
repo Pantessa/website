@@ -20,7 +20,8 @@
 // symbol (never a 500 — the README contract). `readQuotes` is the injection
 // seam the cron's dedup pin counts through.
 
-import { chartPairFor, type ChartPair } from '@/lib/charts'
+import { chartPairFor, resolveChartPair, type ChartPair } from '@/lib/charts'
+import { primeHlUniverse } from '@/lib/hl-universe'
 import { normalizeWatchSymbol, sessionFor, type Quote } from '@/lib/watchlists'
 
 export const QUOTE_TTL_MS = 15_000
@@ -76,35 +77,54 @@ interface HlCtx {
   markPx?: string
   prevDayPx?: string
 }
-let hlSnapshot: { at: number; byCoin: Map<string, HlCtx> } | null = null
-let hlInflight: Promise<Map<string, HlCtx>> | null = null
+type HlDex = 'main' | 'xyz'
+const hlSnapshots: Record<HlDex, { at: number; byCoin: Map<string, HlCtx> } | null> = { main: null, xyz: null }
+const hlInflights: Record<HlDex, Promise<Map<string, HlCtx>> | null> = { main: null, xyz: null }
 
-async function hlContexts(): Promise<Map<string, HlCtx>> {
-  if (hlSnapshot && Date.now() - hlSnapshot.at < QUOTE_TTL_MS) return hlSnapshot.byCoin
-  if (hlInflight) return hlInflight
-  hlInflight = (async () => {
-    const res = await fetchWithTimeout('https://api.hyperliquid.xyz/info', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'metaAndAssetCtxs' }),
-    })
-    if (!res.ok) throw new Error(`hyperliquid ${res.status}`)
-    const [meta, ctxs] = (await res.json()) as [{ universe?: { name: string }[] }, HlCtx[]]
-    const byCoin = new Map<string, HlCtx>()
-    ;(meta.universe ?? []).forEach((u, i) => {
-      if (ctxs?.[i]) byCoin.set(u.name, ctxs[i])
-    })
-    if (byCoin.size === 0) throw new Error('hyperliquid shape')
-    hlSnapshot = { at: Date.now(), byCoin }
-    return byCoin
-  })().finally(() => {
-    hlInflight = null
+/** One dex's `metaAndAssetCtxs`: the contexts keyed by the venue's coin name
+ *  ('HYPE', 'kPEPE', 'xyz:GOLD'). The universe half primes lib/hl-universe
+ *  (the chart pair table's source), so a quotes read warms the table for
+ *  free. Throws on a bad answer. */
+async function hlDexContexts(dex: HlDex): Promise<Map<string, HlCtx>> {
+  const res = await fetchWithTimeout('https://api.hyperliquid.xyz/info', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(dex === 'main' ? { type: 'metaAndAssetCtxs' } : { type: 'metaAndAssetCtxs', dex }),
   })
-  return hlInflight
+  if (!res.ok) throw new Error(`hyperliquid ${res.status}`)
+  const [meta, ctxs] = (await res.json()) as [{ universe?: { name: string; isDelisted?: boolean }[] }, HlCtx[]]
+  const byCoin = new Map<string, HlCtx>()
+  ;(meta.universe ?? []).forEach((u, i) => {
+    if (ctxs?.[i]) byCoin.set(u.name, ctxs[i])
+  })
+  if (byCoin.size === 0) throw new Error('hyperliquid shape')
+  primeHlUniverse(dex, meta.universe ?? [])
+  return byCoin
 }
 
+/** A dex's contexts, cached QUOTE_TTL_MS with one inflight read shared —
+ *  N main-book perps still cost ONE call, and the xyz dex is read only when
+ *  an xyz pair ('xyz:GOLD') is being quoted, so the main path's venue load is
+ *  exactly what it was before the dex existed here. */
+async function hlContexts(dex: HlDex): Promise<Map<string, HlCtx>> {
+  const snap = hlSnapshots[dex]
+  if (snap && Date.now() - snap.at < QUOTE_TTL_MS) return snap.byCoin
+  if (hlInflights[dex]) return hlInflights[dex]
+  hlInflights[dex] = (async () => {
+    const byCoin = await hlDexContexts(dex)
+    hlSnapshots[dex] = { at: Date.now(), byCoin }
+    return byCoin
+  })().finally(() => {
+    hlInflights[dex] = null
+  })
+  return hlInflights[dex]
+}
+
+/** The dex a pair's coin lives on: 'xyz:GOLD' → xyz, 'HYPE' / 'kPEPE' → main. */
+const hlDexOf = (coin: string): HlDex => (coin.startsWith('xyz:') ? 'xyz' : 'main')
+
 async function fetchHyperliquid(pair: ChartPair): Promise<Quote | null> {
-  const ctx = (await hlContexts()).get(pair.pair)
+  const ctx = (await hlContexts(hlDexOf(pair.pair))).get(pair.pair)
   if (!ctx) return null
   return quoteOf(Number(ctx.markPx), Number(ctx.prevDayPx), 'hyperliquid', pair)
 }
@@ -363,6 +383,7 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
   const missing: string[] = []
   const now = Date.now()
   const toFetch: { symbol: string; pair: ChartPair }[] = []
+  const unresolved: string[] = []
   for (const s of symbols) {
     const hit = cache.get(s)
     if (hit && now - hit.at < QUOTE_TTL_MS) {
@@ -371,10 +392,19 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
     }
     const pair = chartPairFor(s)
     if (!pair) {
-      missing.push(s)
+      unresolved.push(s)
       continue
     }
     toFetch.push({ symbol: s, pair })
+  }
+  // A symbol the static table does not know may be a perp the venue lists
+  // (the alerts sweep on a ZK pick, 2026-10-13): warm the live pair table
+  // once (lib/charts resolveChartPair — cached 10 min, no read when fresh)
+  // before calling it chartless.
+  for (const s of unresolved) {
+    const pair = await resolveChartPair(s)
+    if (pair) toFetch.push({ symbol: s, pair })
+    else missing.push(s)
   }
 
   // Share in-flight reads across concurrent callers (two rails polling the
@@ -466,5 +496,6 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
 /** Test seam: wipe the cache (the cron's fixture pin runs on a cold cache). */
 export function resetQuoteCache(): void {
   cache.clear()
-  hlSnapshot = null
+  hlSnapshots.main = null
+  hlSnapshots.xyz = null
 }

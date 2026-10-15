@@ -32,11 +32,12 @@ export interface HlUniverse {
 }
 
 /** Robinhood Chain stock tickers that ALSO name a live Hyperliquid perp (a
- *  crypto coin sharing the letters; measured 2026-09-11). The cold fence
- *  never refuses these — the live universe decides. The harness pins the
- *  live intersection ⊆ this set, so a new collision fails a gate instead of
- *  the cold fence walling a real market. */
-export const HL_STOCK_TICKER_COLLISIONS: ReadonlySet<string> = new Set(['CASHCAT', 'ZETA'])
+ *  crypto coin sharing the letters; measured 2026-09-11, PONS added
+ *  2026-10-13 when it reached the 4663 token list — the harness's drift
+ *  pin caught it). The cold fence never refuses these — the live universe
+ *  decides. The harness pins the live intersection ⊆ this set, so a new
+ *  collision fails a gate instead of the cold fence walling a real market. */
+export const HL_STOCK_TICKER_COLLISIONS: ReadonlySet<string> = new Set(['CASHCAT', 'PONS', 'ZETA'])
 
 export type GuardianCoinFence =
   | { ok: true; coin: string }
