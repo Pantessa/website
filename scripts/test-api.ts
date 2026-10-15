@@ -23304,7 +23304,7 @@ async function main() {
       // RE-PINNED 2026-10-13 (polish-qa): CANDLE_TFS grew 1m (#968, 8dc2b740) and 1s (#970, bb08c22e); the route advertises them
       check(
         `tech api: ${sym} ${tf} → contract shape (summary/oscillators/movingAverages gauges, 11 oscillator + 15 MA rows incl. omitted, five pivot families, chips) — or a NAMED feed refusal`,
-        r.status === 200 && b.symbol === sym && b.tf === tf && Array.isArray(b.tfs) && b.tfs.join(',') === '1s,1m,15m,1h,4h,1d' &&
+        r.status === 200 && b.symbol === sym && b.tf === tf && Array.isArray(b.tfs) && b.tfs.join(',') === '10s,1m,15m,1h,4h,1d' &&
           (live
             ? gaugeOk(b.summary) && gaugeOk(b.oscillators as TechApi['summary']) && gaugeOk(b.movingAverages as TechApi['summary']) &&
               (b.rows!.oscillators.length + b.omitted!.filter((n) => !/Average|Ichimoku/.test(n)).length) === 11 &&

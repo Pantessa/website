@@ -80,7 +80,7 @@ import { useHeld } from '@/lib/use-held'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import { useTradable } from '@/lib/use-tradable'
 
-const POLL_MS: Record<ChartTf, number> = { '1s': 30_000, '1m': 5_000, '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
+const POLL_MS: Record<ChartTf, number> = { '10s': 30_000, '1m': 5_000, '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
 const POOL_POLL_MS = 30_000
 /** Bars the chart holds for one symbol + frame: the live window (180), its
  *  warm-up (200), and the older pages a zoom-out pulls in. Past it the chart
@@ -273,7 +273,7 @@ export default function MarketChart({
   const [tailStatus, setTailStatus] = useState<FeedStatus>('idle')
   const tailRef = useRef<Candle | null>(null)
   const printLineRef = useRef<IPriceLine | null>(null)
-  // A PRINT frame (1s): the bars are built from the prints alone — the
+  // A PRINT frame (10s): the bars are built from the prints alone — the
   // relay's backfill plus every live print — and re-derived once a second
   // so the lines and the volume follow; the venue is polled for the header's
   // numbers only. No venue serves a second bar.

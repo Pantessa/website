@@ -296,7 +296,7 @@ export function tapePins(check: Check): void {
     hype?.venues.join() === 'hypercore' && hype.markets.join() === 'HYPE' && uni?.venues.join(',') === 'dex-ethereum,dex-base,dex-arbitrum' && uni.markets.join() === 'UNI' && eth?.markets.join(',') === 'WETH,ETH' && chartLiveFeed({ symbol: 'BTC', source: 'coinbase', pair: 'BTC-USD' })?.markets.join(',') === 'WBTC,cbBTC' &&
       chartLiveFeed({ symbol: 'DOGE', source: 'coinbase', pair: 'DOGE-USD' }) === null && chartLiveFeed({ symbol: 'AAPL', source: 'robinhood', pair: 'AAPL' }) === null && chartLiveFeed(null) === null)
   check('chart tail: the tail follows the prints on 1s · 1m · 15m · 1H only (4H and 1D poll); the list leads 1s then 1m; a stock\'s list has neither (no prints, no minute bar); the Technicals gauge never reads a print frame; VENUE_TFS is every frame a venue serves',
-    LIVE_TAIL_TFS.join(',') === '1s,1m,15m,1h' && tailIsLive('1h', hype) && !tailIsLive('4h', hype) && !tailIsLive('1d', hype) && !tailIsLive('1m', null) && CHART_TFS[0].key === '1s' && CHART_TFS[1].key === '1m' && CHART_TFS.length === 6 && isPrintTf('1s') && !isPrintTf('1m') &&
+    LIVE_TAIL_TFS.join(',') === '10s,1m,15m,1h' && tailIsLive('1h', hype) && !tailIsLive('4h', hype) && !tailIsLive('1d', hype) && !tailIsLive('1m', null) && CHART_TFS[0].key === '10s' && CHART_TFS[1].key === '1m' && CHART_TFS.length === 6 && isPrintTf('10s') && !isPrintTf('1m') &&
       tfsForSource('robinhood').map((t) => t.key).join(',') === '15m,1h,4h,1d' && tfsForSource('coinbase').length === 6 && technicalsTfs('coinbase').every((t) => !isPrintTf(t.key)) && VENUE_TFS.length === 5 && VENUE_TFS[0].key === '1m')
   const TP = 1_791_880_000_000
   const ring = [{ at: TP + 2_500, price: 7.5, size: 1 }, { at: TP + 100, price: 7.4, size: 2 }, { at: TP + 1_200, price: 7.45, size: 1 }, { at: TP + 1_900, price: 7.3, size: 3 }, { at: TP + 1_500, price: 0, size: 1 }]
@@ -304,7 +304,7 @@ export function tapePins(check: Check): void {
   check('print frame: the bars come from the prints alone, oldest first whatever order they arrived in — one bar per second that printed (a quiet second is a gap, never an invented flat bar), a zero price is noise',
     pb.length === 3 && pb[0].t === Math.floor((TP + 100) / 1000) && pb[0].c === 7.4 && pb[1].o === 7.45 && pb[1].h === 7.45 && pb[1].l === 7.3 && pb[1].c === 7.3 && pb[1].v === 4 && pb[2].o === 7.5 && pb.every((b, i) => i === 0 || b.t > pb[i - 1].t), JSON.stringify(pb))
   check('print frame: the frame is a shareable address — ?tf= set for every frame but the default, which drops it, other params kept',
-    tfUrl('1s', '1d', '/t/HYPE', '') === '/t/HYPE?tf=1s' && tfUrl('1d', '1d', '/t/HYPE', '?tf=1s&tab=trade') === '/t/HYPE?tab=trade' && tfUrl('15m', '1d', '/t/UNI', '?vs=ETH') === '/t/UNI?vs=ETH&tf=15m')
+    tfUrl('10s', '1d', '/t/HYPE', '') === '/t/HYPE?tf=10s' && tfUrl('1d', '1d', '/t/HYPE', '?tf=10s&tab=trade') === '/t/HYPE?tab=trade' && tfUrl('15m', '1d', '/t/UNI', '?vs=ETH') === '/t/UNI?vs=ETH&tf=15m')
   check('print frame: the relay remembers each venue\'s last minutes of prints (an UPDATE replaces its block) and hands them to a `?backfill=1` reader before the live ones; the adapter delivers them as onBackfill; the chart asks for them only on a print frame, polls the venue for the header\'s numbers alone, re-derives its bars once a second, and the symbol page hands the chart the URL\'s frame and mirrors it back',
     (() => {
       const server = readFileSync('lib/dune-feed-server.ts', 'utf8')

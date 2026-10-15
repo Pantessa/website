@@ -72,7 +72,9 @@ export default async function TokenPage({ params, searchParams }: Params) {
   // owns the switch (replaceState, the #705 idiom). Unknown values → default.
   const tabRaw = typeof sp.tab === 'string' ? sp.tab : ''
   const initialTab = parseMarketTab(tabRaw ? `?tab=${encodeURIComponent(tabRaw)}` : '')
-  const tfRaw = typeof sp.tf === 'string' ? sp.tf : ''
+  // ?tf=1s was the print frame until it widened to 10s (2026-10-15); a shared
+  // 1s link still opens on it.
+  const tfRaw = typeof sp.tf === 'string' ? (sp.tf === '1s' ? '10s' : sp.tf) : ''
   const initialTf = CHART_TFS.some((t) => t.key === tfRaw) ? (tfRaw as ChartTf) : undefined
   // ?vs=<symbol> — compare mode (MK2): the server renders the pill so the
   // HTML matches the URL; the client mirrors changes back (replaceState).
