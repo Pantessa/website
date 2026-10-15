@@ -25,6 +25,10 @@
     {
       "path": "/api/cron/tradability",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/prints",
+      "schedule": "* * * * *"
     }
   ],
   "functions": {
@@ -33,6 +37,9 @@
     },
     "app/api/live/stream/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/cron/prints/route.ts": {
+      "maxDuration": 60
     }
   }
 }

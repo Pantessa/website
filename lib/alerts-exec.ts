@@ -29,15 +29,33 @@ function escapeHtml(s: string): string {
 }
 
 /** The alert mail, pure: subject + text + escaped html. Exported for the pin. */
-export function renderAlertEmail(input: { symbol: string; title: string; body: string; actionAsk: string | null }): { subject: string; text: string; html: string } {
+export function renderAlertEmail(input: { symbol: string; title: string; body: string; actionAsk: string | null; href?: string }): { subject: string; text: string; html: string } {
   const symbol = input.symbol.replace(/[^A-Z0-9]/g, '')
-  const href = `${SITE_URL}/t/${encodeURIComponent(symbol)}`
+  // A print alert (lib/print-alerts) points at the tape filtered to its
+  // market; a price alert at the chart. Same-site paths only.
+  const href = input.href && /^\/[A-Za-z0-9/_?=&%.:-]*$/.test(input.href) ? `${SITE_URL}${input.href}` : `${SITE_URL}/t/${encodeURIComponent(symbol)}`
   const ask = input.actionAsk ? input.actionAsk.replace(/[\r\n]+/g, ' ') : null
   return {
     subject: `${symbol} alert: ${input.title.replace(/[\r\n]+/g, ' ')}`,
-    text: `${input.body}\n\nOpen the chart: ${href}${ask ? `\nReady to send: "${ask}"` : ''}`,
-    html: `<div style="font-family:system-ui,sans-serif;max-width:480px"><h2>${escapeHtml(input.title)}</h2><p>${escapeHtml(input.body)}</p>${ask ? `<p>Ready to send: <strong>${escapeHtml(ask)}</strong></p>` : ''}<p><a href="${href}">Open the ${escapeHtml(symbol)} chart</a></p></div>`,
+    text: `${input.body}\n\n${input.href ? 'Open the tape' : 'Open the chart'}: ${href}${ask ? `\nReady to send: "${ask}"` : ''}`,
+    html: `<div style="font-family:system-ui,sans-serif;max-width:480px"><h2>${escapeHtml(input.title)}</h2><p>${escapeHtml(input.body)}</p>${ask ? `<p>Ready to send: <strong>${escapeHtml(ask)}</strong></p>` : ''}<p><a href="${href}">${input.href ? 'Open the tape' : `Open the ${escapeHtml(symbol)} chart`}</a></p></div>`,
   }
+}
+
+/** ONE write site for "an alert fired": the in-app row the bell reads and,
+ *  when the rule named a verified address, the mail — the price sweep
+ *  below and the print-alert sweep (lib/print-alerts-exec) both land here,
+ *  so the bell and the inbox carry a stream rule exactly as a price rule.
+ *  Internal (harness) rows never mail. Returns the notification id. */
+export async function notifyAlertFired(n: { owner: string; alertId: string; symbol: string; title: string; body: string; actionAsk: string | null; price: number; isInternal: boolean; email: string | null; href?: string }): Promise<string> {
+  const id = mintSlug(10)
+  await prisma.alertNotification.create({
+    data: { id, owner: n.owner.toLowerCase(), alertId: n.alertId, symbol: n.symbol, title: n.title, body: n.body, actionAsk: n.actionAsk, price: n.price, isInternal: n.isInternal },
+  })
+  if (n.email && !n.isInternal) {
+    void sendEmail({ to: n.email, ...renderAlertEmail({ symbol: n.symbol, title: n.title, body: n.body, actionAsk: n.actionAsk, href: n.href }) })
+  }
+  return id
 }
 
 export interface SweepOptions {
@@ -97,13 +115,8 @@ export async function runAlertSweep(opts: SweepOptions = {}): Promise<SweepSumma
       const body = a.actionAsk
         ? `Your alert fired at $${fmtQuotePrice(price)}. The action you set up is ready to send — it moves nothing until you sign.`
         : `Your alert fired at $${fmtQuotePrice(price)}.`
-      await prisma.alertNotification.create({
-        data: { id: mintSlug(10), owner: a.owner, alertId: a.id, symbol, title, body, actionAsk: a.actionAsk, price, isInternal: a.isInternal },
-      })
+      await notifyAlertFired({ owner: a.owner, alertId: a.id, symbol, title, body, actionAsk: a.actionAsk, price, isInternal: a.isInternal, email: a.email })
       fired.push({ id: a.id, symbol, price, owner: a.owner })
-      if (a.email && !a.isInternal) {
-        void sendEmail({ to: a.email, ...renderAlertEmail({ symbol, title, body, actionAsk: a.actionAsk }) })
-      }
     }
     if (!(live != null && live > 0) && !alerts.every((a) => a.isInternal && Number(fixture[symbol]) > 0)) unquoted.push(symbol)
   }
