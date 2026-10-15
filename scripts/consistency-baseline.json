@@ -767,7 +767,6 @@
   "radius-px": 4
  },
  "components/markets/markets.css": {
-  "color": 4,
   "font-px": 53,
   "radius-px": 18
  },
@@ -798,9 +797,7 @@
   "font-px": 1
  },
  "components/mobile/mobile.css": {
-  "color": 4,
-  "font-px": 1,
-  "radius-px": 3
+  "color": 4
  },
  "components/panels/GovernancePanel.tsx": {
   "tw-color": 4,
