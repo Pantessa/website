@@ -28,7 +28,7 @@ import type { ChartSource, ChartTf } from './charts'
 export type EquitySession = 'pre' | 'regular' | 'post' | 'overnight'
 
 /** A frame's bar length in seconds. */
-export const FRAME_SEC: Record<ChartTf, number> = { '1s': 1, '1m': 60, '15m': 900, '1h': 3600, '4h': 14_400, '1d': 86_400 }
+export const FRAME_SEC: Record<ChartTf, number> = { '10s': 10, '1m': 60, '15m': 900, '1h': 3600, '4h': 14_400, '1d': 86_400 }
 
 /** Session edges in ET minutes after midnight. */
 const PRE_OPEN = 4 * 60

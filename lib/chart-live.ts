@@ -26,7 +26,7 @@ import type { DuneVenueId } from '@/lib/dune'
 import type { TapeFill } from '@/lib/tape'
 
 /** The frames whose tail follows the prints. */
-export const LIVE_TAIL_TFS: readonly ChartTf[] = ['1s', '1m', '15m', '1h']
+export const LIVE_TAIL_TFS: readonly ChartTf[] = ['10s', '1m', '15m', '1h']
 
 export interface ChartLiveFeed {
   venues: DuneVenueId[]
@@ -100,9 +100,9 @@ export function printOf(f: Pick<TapeFill, 'at' | 'price' | 'size'>): Print {
 }
 
 /**
- * A PRINT frame's bars (1s): the whole series from the prints, oldest
+ * A PRINT frame's bars (10s): the whole series from the prints, oldest
  * first — the relay's backfill (the last minutes it already held) plus
- * every live print since. A second with no print is no bar: the engine
+ * every live print since. A ten-second slot with no print is no bar: the engine
  * draws the gap, never a flat invented candle.
  */
 export function barsFromPrints(prints: readonly Print[], tfSec: number): Candle[] {
@@ -131,7 +131,7 @@ export function tailWords(status: 'idle' | 'connecting' | 'live' | 'reconnecting
   if (!LIVE_TAIL_TFS.includes(tf)) return 'polled · prints on 1m–1H'
   switch (status) {
     case 'live':
-      return tf === '1s' ? `${feed.label} · live · bars built from prints` : `${feed.label} · live`
+      return tf === '10s' ? `${feed.label} · live · bars built from prints` : `${feed.label} · live`
     case 'connecting':
     case 'idle':
       return `${feed.label} · connecting`

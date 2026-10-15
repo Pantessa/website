@@ -41,10 +41,10 @@ export const CHART_FEED_LABELS: Record<ChartFeed, string> = {
 import { ROBINHOOD_TICKER_SET } from '@/lib/robinhood-tickers'
 import { hlPerpUniverseCached, hlPerpUniverseFresh, hlUniverses, primeHlUniverse, type HlDex } from '@/lib/hl-universe'
 
-export type ChartTf = '1s' | '1m' | '15m' | '1h' | '4h' | '1d'
+export type ChartTf = '10s' | '1m' | '15m' | '1h' | '4h' | '1d'
 
 export const CHART_TFS: { key: ChartTf; label: string }[] = [
-  { key: '1s', label: '1s' },
+  { key: '10s', label: '10s' },
   { key: '1m', label: '1m' },
   { key: '15m', label: '15m' },
   { key: '1h', label: '1H' },
@@ -54,7 +54,7 @@ export const CHART_TFS: { key: ChartTf; label: string }[] = [
 
 /** A PRINT frame: bars built from the stream's executions (lib/chart-live),
  *  not from a venue's candles — no venue serves it, the relay backfills it. */
-export const PRINT_TFS: readonly ChartTf[] = ['1s']
+export const PRINT_TFS: readonly ChartTf[] = ['10s']
 export function isPrintTf(tf: ChartTf): boolean {
   return PRINT_TFS.includes(tf)
 }

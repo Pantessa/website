@@ -35,7 +35,7 @@ export const useChartHover = create<ChartHoverState>()((set) => ({
 /** Coarse label for the chip: "Explain 14:00 bar" / "Explain Sep 14 bar". */
 export function hoverBarLabel(bar: HoverBar, tf: string | undefined): string {
   const d = new Date(bar.t * 1000)
-  const intraday = tf === '1s' || tf === '1m' || tf === '15m' || tf === '1h' || tf === '4h'
+  const intraday = tf === '10s' || tf === '1m' || tf === '15m' || tf === '1h' || tf === '4h'
   const when = intraday ? d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' }) + ' UTC' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
   return `Explain the ${when} bar`
 }
