@@ -19,8 +19,8 @@ function Figure({ label, value, tone = 'fg', note }: { label: string; value: str
   return (
     <div className="min-w-0">
       <dt className="mono text-[10.5px] uppercase tracking-wider text-[color:var(--muted-2)]">{label}</dt>
-      <dd className={`mt-1.5 mono text-[20px] leading-none tabular-nums ${ink}`}>{value}</dd>
-      {note && <dd className="mt-1.5 max-w-[300px] text-[12px] leading-snug text-[color:var(--muted)]">{note}</dd>}
+      <dd className={`mt-1.5 mono text-[length:var(--fs-xl)] leading-none tabular-nums ${ink}`}>{value}</dd>
+      {note && <dd className="mt-1.5 max-w-[300px] text-[length:var(--fs-sm)] leading-snug text-[color:var(--muted)]">{note}</dd>}
     </div>
   )
 }
@@ -78,7 +78,7 @@ export function LinkEarningsPanel({
                 // button that looked ignored. Say so instead.
                 .catch(() => setClaimMsg('Could not reach the claims desk — check your connection and try again.'))
             }
-            className="btn btn--solid text-[12px] disabled:opacity-50"
+            className="btn btn--solid text-[length:var(--fs-sm)] disabled:opacity-50"
             title={claimsOpen ? 'Claim as USDC on Base' : `Claims open at $${earnings.minClaimUsd}`}
           >
             Claim USDC
@@ -89,12 +89,12 @@ export function LinkEarningsPanel({
           )}
         </div>
       </div>
-      {claimMsg && <p className="mt-3 text-[12px] text-[color:var(--muted-2)]">{claimMsg}</p>}
+      {claimMsg && <p className="mt-3 text-[length:var(--fs-sm)] text-[color:var(--muted-2)]">{claimMsg}</p>}
       {/* The out-earn instrument: one week here vs the same week's ref-code
           payout. Shown once any recent week carried money — a creator
           deciding whether to keep posting reads cadence, not lifetime. */}
       {(earnings.weekly?.some((w) => w.signedUsd > 0) ?? false) && (
-        <div className="mt-4 pt-3 border-t border-[var(--line)] flex flex-wrap items-baseline gap-x-6 gap-y-1.5 text-[12px] text-[color:var(--muted)]">
+        <div className="mt-4 pt-3 border-t border-[var(--line)] flex flex-wrap items-baseline gap-x-6 gap-y-1.5 text-[length:var(--fs-sm)] text-[color:var(--muted)]">
           <span className="mono text-[10.5px] uppercase tracking-wider text-[color:var(--muted-2)]">
             By week · vs your ref codes
           </span>
@@ -107,7 +107,7 @@ export function LinkEarningsPanel({
           ))}
         </div>
       )}
-      <p className="mt-3 max-w-[900px] text-[11px] leading-relaxed text-[color:var(--muted-2)]">
+      <p className="mt-3 max-w-[900px] text-[length:var(--fs-xs)] leading-relaxed text-[color:var(--muted-2)]">
         Half of Pantessa&apos;s venue fee on swaps and stock buys — from your links, and from
         every later fee-bearing trade by wallets your links first brought (lifetime, first
         touch). Sales, transfers, stakes, and bridges are always fee-free. On a Uniswap swap

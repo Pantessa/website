@@ -28,6 +28,7 @@ import { isLidoGuidedAsk, parseLidoStake } from '../lib/lido-stake'
 import { parseHlIntent } from '../lib/hyperliquid-exec'
 import { parseRobinhoodBridge } from '../lib/robinhood-bridge'
 import { parseChartAsk } from '../lib/charts'
+import { marketReadAsk } from '../lib/market-read'
 import { mentionsNft, parseNftAsk, parseNftListAsk, parseNftMarketAsk } from '../lib/nft-layer'
 import { parseTransferSegment } from '../lib/transfer-exec'
 import { parseSwapIntent, detectCrossChain } from '../lib/swap-intent'
@@ -102,6 +103,13 @@ function simulateLadderInner(message: string): Outcome {
   // money verb makes the parser refuse so those layers keep their asks.
   const chart = parseChartAsk(message)
   if (chart) return chart.pair ? { gate: 'chart', kind: 'action', note: `${chart.pair.label} overlay` } : { gate: 'chart', kind: 'clarify', note: `${chart.symbol} chartless — refused by name` }
+
+  // The market READ door (POLISH/DEADENDS 2026-10-13) sits right after the
+  // chart gate in the route: "Why is ETH moving?" answers from our own tape +
+  // the news ladder, with the chart and the lead order as chips — never the
+  // planner, which holds no price feed.
+  const read = marketReadAsk(message)
+  if (read) return { gate: 'market-read', kind: 'action', note: `${read.symbol} ${read.kind}` }
 
   if (parseDcaRun(message)) return { gate: 'dca', kind: 'action', note: 'run chip' }
   const dc = parseDcaCreate(message)
@@ -227,7 +235,9 @@ function simulateLadderInner(message: string): Outcome {
     // Non-EVM homes refuse by name with the Hyperliquid side chips (the
     // route's nonEvmHomeDoor) — before any pricing touches a Base squat.
     const home = tokenHome(sw.buyToken) ?? tokenHome(sw.sellToken)
-    if (sw.mode !== 'limit' && home) return { gate: 'swap', kind: 'clarify', note: `${(tokenHome(sw.buyToken) ? sw.buyToken : sw.sellToken)!.toUpperCase()} lives on ${home} — HL door` }
+    // The door carries the Hyperliquid side chips (route hlSideChips) — a
+    // refusal WITH a next step, so it is chips:true (the inventory's rule 4).
+    if (sw.mode !== 'limit' && home) return { gate: 'swap', kind: 'clarify', chips: true, note: `${(tokenHome(sw.buyToken) ? sw.buyToken : sw.sellToken)!.toUpperCase()} lives on ${home} — HL door` }
     return { gate: 'swap', kind: 'action', note: `${sw.sellAll ? 'all (sized live)' : (sw.sellAmountHuman ?? '$' + sw.sellAmountUsd)} ${sw.sellToken ?? '(stable)'}→${sw.buyToken ?? '(stable)'}` }
   }
 

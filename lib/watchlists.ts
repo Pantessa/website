@@ -11,6 +11,7 @@
 import { chartPairFor, normalizeChartSymbol, parseChartAsk, type ChartPair, type ChartSource } from '@/lib/charts'
 import { ONRAMP_DEFAULT_NETWORK, ONRAMP_LANES_EVERYWHERE, onrampHasLane, type OnrampAsset, type OnrampLane, type OnrampNetwork } from '@/lib/onramp'
 import { ROBINHOOD_TICKERS } from '@/lib/robinhood-tickers'
+import { composeAsk } from '@/lib/trade-asks'
 
 // ── Shapes (README "Watchlists" contract) ───────────────────────────────────
 
@@ -1047,8 +1048,14 @@ export function alertActionChips(rule: AlertRule, pair: ChartPair | null, sizeUs
   const price = rule.condition === 'pct_move' ? null : rule.value
   const chips: AlertActionChip[] = []
   // Fired chips — the same two doors the token page offers, sent when it fires.
-  chips.push({ kind: 'buy', label: `Buy $${sizeUsd} of ${sym}`, ask: `Buy $${sizeUsd} of ${sym}`, runsItself: false })
-  chips.push({ kind: 'sell', label: `Sell $${sizeUsd} of ${sym}`, ask: `Sell $${sizeUsd} of ${sym}`, runsItself: false })
+  // A charted pair speaks the symbol page's own grammar (lib/trade-asks): a
+  // Hyperliquid perp or a non-EVM-home coin (SOL) is the perp order, never a
+  // "Buy $50 of HYPE" spot swap that only ever reaches a refusal door
+  // (POLISH/DEADENDS 2026-10-13, the inventory's alert rows).
+  const buyAsk = pair ? composeAsk(pair, 'buy', { usd: sizeUsd }) : `Buy $${sizeUsd} of ${sym}`
+  const sellAsk = pair ? composeAsk(pair, 'sell', { usd: sizeUsd }) : `Sell $${sizeUsd} of ${sym}`
+  chips.push({ kind: 'buy', label: buyAsk.replace(/ on Hyperliquid$/, ''), ask: buyAsk, runsItself: false })
+  chips.push({ kind: 'sell', label: sellAsk.replace(/ on Hyperliquid$/, ''), ask: sellAsk, runsItself: false })
   if (!pair || price == null) return chips
   if (rule.condition === 'below') {
     if (pair.source === 'coinbase') {

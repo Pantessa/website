@@ -67,7 +67,7 @@ export default function VoteChoiceButtons({ proposal, onSigned }: { proposal: Vo
 
   if (votedSummary) {
     return (
-      <div className="mt-2.5 pt-2 border-t border-[var(--line)] flex items-center gap-2 text-[12px]">
+      <div className="mt-2.5 pt-2 border-t border-[var(--line)] flex items-center gap-2 text-[length:var(--fs-sm)]">
         <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
         <span className="text-emerald-400 font-medium">Voted {votedSummary}</span>
         <span className="text-[color:var(--muted)] truncate">— {proposal.title}</span>
@@ -84,7 +84,7 @@ export default function VoteChoiceButtons({ proposal, onSigned }: { proposal: Vo
   }
 
   const header = (
-    <div className="text-[12px] text-[color:var(--muted)]">
+    <div className="text-[length:var(--fs-sm)] text-[color:var(--muted)]">
       <span className="text-[color:var(--fg)] font-medium">{proposal.title}</span>
       {' · '}
       {proposal.space}
@@ -106,8 +106,8 @@ export default function VoteChoiceButtons({ proposal, onSigned }: { proposal: Vo
                 key={choice}
                 onClick={() => void cast(choice, label)}
                 disabled={pending}
-                className={`inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border transition-colors disabled:opacity-50 ${
-                  isSuggested ? 'border-[var(--accent)] text-[color:var(--fg)]' : 'border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white'
+                className={`inline-flex items-center gap-1.5 text-[length:var(--fs-sm)] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border transition-colors disabled:opacity-50 ${
+                  isSuggested ? 'border-[var(--accent)] text-[color:var(--fg)]' : 'border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)]'
                 }`}
                 title={`Sign a Snapshot vote for “${label}” with your wallet`}
               >
@@ -117,7 +117,7 @@ export default function VoteChoiceButtons({ proposal, onSigned }: { proposal: Vo
             )
           })}
         </div>
-        {error && <div className="text-[12px] text-red-400">{error}</div>}
+        {error && <div className="text-[length:var(--fs-sm)] text-red-400">{error}</div>}
       </div>
     )
   }
@@ -135,7 +135,7 @@ export default function VoteChoiceButtons({ proposal, onSigned }: { proposal: Vo
     return (
       <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1.5">
         {header}
-        <div className="text-[11px] text-[color:var(--muted-2)]">
+        <div className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
           {mode === 'ranked' ? 'Click choices in your preferred order.' : 'Select one or more, then cast.'}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -148,8 +148,8 @@ export default function VoteChoiceButtons({ proposal, onSigned }: { proposal: Vo
                 key={choice}
                 onClick={() => toggle(choice)}
                 disabled={pending}
-                className={`inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border transition-colors disabled:opacity-50 ${
-                  on ? 'border-[var(--accent)] text-[color:var(--fg)]' : 'border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white'
+                className={`inline-flex items-center gap-1.5 text-[length:var(--fs-sm)] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border transition-colors disabled:opacity-50 ${
+                  on ? 'border-[var(--accent)] text-[color:var(--fg)]' : 'border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)]'
                 }`}
               >
                 {mode === 'ranked' && on ? <span style={{ color: 'var(--accent)' }}>{rank + 1}.</span> : null}
@@ -162,12 +162,12 @@ export default function VoteChoiceButtons({ proposal, onSigned }: { proposal: Vo
           <button
             onClick={submit}
             disabled={pending || selected.length === 0}
-            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--accent)] text-[color:var(--fg)] hover:bg-[var(--accent)] hover:text-black disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-1.5 text-[length:var(--fs-sm)] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--accent)] text-[color:var(--fg)] hover:bg-[var(--accent)] hover:text-[color:var(--bg)] disabled:opacity-50 transition-colors"
           >
             {pending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
             Cast vote{selected.length ? ` (${selected.length})` : ''}
           </button>
-          {error && <span className="text-[12px] text-red-400">{error}</span>}
+          {error && <span className="text-[length:var(--fs-sm)] text-red-400">{error}</span>}
         </div>
       </div>
     )
@@ -187,16 +187,16 @@ export default function VoteChoiceButtons({ proposal, onSigned }: { proposal: Vo
   return (
     <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1.5">
       {header}
-      <div className="text-[11px] text-[color:var(--muted-2)]">Distribute weight across choices, then cast.</div>
+      <div className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">Distribute weight across choices, then cast.</div>
       <div className="space-y-1">
         {proposal.choices.map((label, i) => {
           const choice = i + 1
           const w = weights[choice] ?? 0
           return (
-            <div key={choice} className="flex items-center gap-2 text-[12px]">
-              <button onClick={() => setWeight(choice, -1)} disabled={pending || w === 0} className="w-6 h-6 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white disabled:opacity-40 inline-flex items-center justify-center"><Minus className="w-3 h-3" /></button>
+            <div key={choice} className="flex items-center gap-2 text-[length:var(--fs-sm)]">
+              <button onClick={() => setWeight(choice, -1)} disabled={pending || w === 0} className="w-6 h-6 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] disabled:opacity-40 inline-flex items-center justify-center"><Minus className="w-3 h-3" /></button>
               <span className="w-6 text-center tabular-nums" style={{ color: w > 0 ? 'var(--accent)' : 'var(--muted-2)' }}>{w}</span>
-              <button onClick={() => setWeight(choice, 1)} disabled={pending} className="w-6 h-6 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white disabled:opacity-40 inline-flex items-center justify-center"><Plus className="w-3 h-3" /></button>
+              <button onClick={() => setWeight(choice, 1)} disabled={pending} className="w-6 h-6 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] disabled:opacity-40 inline-flex items-center justify-center"><Plus className="w-3 h-3" /></button>
               <span className="text-[color:var(--fg)]">{label}</span>
               {totalWeight > 0 && w > 0 ? <span className="text-[color:var(--muted-2)]">— {Math.round((w / totalWeight) * 100)}%</span> : null}
             </div>
@@ -207,12 +207,12 @@ export default function VoteChoiceButtons({ proposal, onSigned }: { proposal: Vo
         <button
           onClick={submitWeighted}
           disabled={pending || totalWeight === 0}
-          className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--accent)] text-[color:var(--fg)] hover:bg-[var(--accent)] hover:text-black disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-1.5 text-[length:var(--fs-sm)] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--accent)] text-[color:var(--fg)] hover:bg-[var(--accent)] hover:text-[color:var(--bg)] disabled:opacity-50 transition-colors"
         >
           {pending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
           Cast weighted vote
         </button>
-        {error && <span className="text-[12px] text-red-400">{error}</span>}
+        {error && <span className="text-[length:var(--fs-sm)] text-red-400">{error}</span>}
       </div>
     </div>
   )

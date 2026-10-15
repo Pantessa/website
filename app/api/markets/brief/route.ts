@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
   const now = Date.now()
   if (hit && now - hit.at < BRIEF_TTL_MS && !scenario) return replay(hit, tape.pair.symbol, tape.tf, true)
 
-  if (!modelAvailable()) return NextResponse.json({ error: 'The brief is not available right now (no model configured).' }, { status: 503 })
+  if (!modelAvailable()) return NextResponse.json({ error: 'The brief is off right now — the chart, the chips and the ask bar all still work.' }, { status: 503 })
 
   // One writer per key; a concurrent reader waits for it and replays.
   let pending = scenario ? null : inflight.get(key)
@@ -210,7 +210,7 @@ async function writeTape(req: NextRequest, symbolsRaw: string[], scenario: strin
   const now = Date.now()
   const hit = tapeCache.get(key)
   if (hit && now - hit.at < BRIEF_TTL_MS && !scenario) return replay(hit, symbols.join(' '), '1d', true)
-  if (!modelAvailable()) return NextResponse.json({ error: 'The tape is not available right now (no model configured).' }, { status: 503 })
+  if (!modelAvailable()) return NextResponse.json({ error: 'The tape read is off right now — the chart, the chips and the ask bar all still work.' }, { status: 503 })
   const pending = scenario ? null : tapeInflight.get(key)
   if (pending) {
     try {

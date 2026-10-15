@@ -74,12 +74,12 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                     type="button"
                     onClick={() => copy(l.slug)}
                     title="Copy the link"
-                    className="inline-flex items-center gap-1.5 mono text-[12px] text-[color:var(--accent)] hover:underline flex-shrink-0"
+                    className="inline-flex items-center gap-1.5 mono text-[length:var(--fs-sm)] text-[color:var(--accent)] hover:underline flex-shrink-0"
                   >
                     {copied === l.slug ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                     /i/{l.slug}
                   </button>
-                  <span className="linkfunnel__ask text-[13px] text-[color:var(--muted)] line-clamp-2 min-w-0" title={l.ask}>
+                  <span className="linkfunnel__ask text-[length:var(--fs-md)] text-[color:var(--muted)] line-clamp-2 min-w-0" title={l.ask}>
                     {l.ask}
                   </span>
                   {l.redirectUrl && (
@@ -98,7 +98,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                   )}
                 </div>
                 {(l.expiresAt || l.maxSigns !== null || l.allowCount > 0) && (
-                  <div className="mt-0.5 mono text-[11px] text-[color:var(--muted-2)]">
+                  <div className="mt-0.5 mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
                     {[
                       l.expiresAt ? `expires ${new Date(l.expiresAt).toISOString().slice(0, 10)}` : null,
                       l.maxSigns !== null ? `${l.signsCount}/${l.maxSigns} signs` : null,
@@ -112,7 +112,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                 {l.funnelVariants && (
                   <div className="mt-1 space-y-0.5">
                     {l.funnelVariants.map((v) => (
-                      <div key={v.variant} className="mono text-[11px] text-[color:var(--muted-2)] truncate">
+                      <div key={v.variant} className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] truncate">
                         {String.fromCharCode(65 + v.variant)} · &ldquo;{v.ask}&rdquo; — {v.open} open · {v.connect} connect
                         · {v.built} built ·{' '}
                         <span className={v.signed > 0 ? 'text-[color:var(--accent)]' : undefined}>{v.signed} signed</span>
@@ -121,15 +121,15 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                   </div>
                 )}
               </td>
-              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.open}</td>
-              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.connect}</td>
-              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.built}</td>
-              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.signed}</td>
-              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">
+              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[length:var(--fs-md)] tabular-nums whitespace-nowrap">{l.funnel.open}</td>
+              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[length:var(--fs-md)] tabular-nums whitespace-nowrap">{l.funnel.connect}</td>
+              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[length:var(--fs-md)] tabular-nums whitespace-nowrap">{l.funnel.built}</td>
+              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[length:var(--fs-md)] tabular-nums whitespace-nowrap">{l.funnel.signed}</td>
+              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[length:var(--fs-md)] tabular-nums whitespace-nowrap">
                 {l.signedUsd > 0 ? `$${l.signedUsd.toFixed(2)}` : '—'}
               </td>
               <td
-                className="linkfunnel__num py-3 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap text-[color:var(--accent)]"
+                className="linkfunnel__num py-3 pr-3 text-right mono text-[length:var(--fs-md)] tabular-nums whitespace-nowrap text-[color:var(--accent)]"
                 title={
                   l.earnedUsd <= 0 && l.signedUsd > 0
                     ? 'Fee-free route — bridges, transfers, stakes and sales move money but earn nothing.'
@@ -145,7 +145,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                   target="_blank"
                   rel="noopener noreferrer"
                   title="Tweet this link — the card wears your brand"
-                  className="text-[11px] mono text-[color:var(--muted-2)] hover:text-[color:var(--accent)] transition-colors mr-3"
+                  className="text-[length:var(--fs-xs)] mono text-[color:var(--muted-2)] hover:text-[color:var(--accent)] transition-colors mr-3"
                 >
                   tweet
                 </a>
@@ -178,7 +178,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                       })
                       .catch(undo)
                   }}
-                  className="text-[11px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors"
+                  className="text-[length:var(--fs-xs)] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors"
                 >
                   {revokeFailed === l.slug ? 'revoke failed · retry' : 'revoke'}
                 </button>

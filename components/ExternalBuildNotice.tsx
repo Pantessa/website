@@ -34,7 +34,7 @@ function bytesOf(data?: string): number {
 export default function ExternalBuildNotice({ builtBy, warnings, txs }: { builtBy?: string | null; warnings?: string[] | null; txs: ExternalTx[] }) {
   const who = builtBy && builtBy.trim() ? builtBy.trim() : 'a directory service'
   return (
-    <div className="mb-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-2.5 py-2 text-[12px] leading-snug" data-external-build={who}>
+    <div className="mb-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-2.5 py-2 text-[length:var(--fs-sm)] leading-snug" data-external-build={who}>
       <p className="text-amber-400 font-medium">
         Built by {who}{' — '}an external tool, not Pantessa’s native layer. Read every address below before you sign.
       </p>

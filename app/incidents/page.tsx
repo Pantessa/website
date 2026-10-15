@@ -58,9 +58,9 @@ export default async function IncidentsPage() {
         </header>
 
         <div className="overflow-x-auto -mx-1 px-1">
-          <table className="w-full border-collapse text-[13px] min-w-[720px]">
+          <table className="w-full border-collapse text-[length:var(--fs-md)] min-w-[720px]">
             <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wide text-[color:var(--muted)] mono border-b border-[var(--line)]">
+              <tr className="text-left text-[length:var(--fs-xs)] uppercase tracking-wide text-[color:var(--muted)] mono border-b border-[var(--line)]">
                 <th className="py-2 pr-2">Incident</th>
                 <th className="py-2 px-2 w-24">Status</th>
                 <th className="py-2 px-2 w-16 text-right">Count</th>
@@ -78,12 +78,12 @@ export default async function IncidentsPage() {
                         <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" style={{ color: statusColor(i.status) }} />
                         <span className="group-hover:underline">{i.title}</span>
                       </span>
-                      <span className="block mono text-[11px] text-[color:var(--muted-2)] mt-0.5">{i.signature}</span>
+                      <span className="block mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mt-0.5">{i.signature}</span>
                     </Link>
                   </td>
                   <td className="py-2 px-2">
                     <span
-                      className="inline-block rounded-md px-1.5 py-0.5 text-[11px] mono"
+                      className="inline-block rounded-md px-1.5 py-0.5 text-[length:var(--fs-xs)] mono"
                       style={{ color: statusColor(i.status), border: `1px solid ${statusColor(i.status)}` }}
                     >
                       {i.status}

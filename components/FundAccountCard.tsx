@@ -84,13 +84,13 @@ export default function FundAccountCard() {
     <Card className="mb-6">
       <div className="flex items-start justify-between gap-6 flex-wrap">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-white">Fund your account</p>
+          <p className="text-sm font-semibold text-[color:var(--fg)]">Fund your account</p>
           <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
             USDC on Base — what your agent spends per call. Your daily cap draws against this balance.
           </p>
 
           <div className="mt-4 flex items-baseline gap-2">
-            <span className="text-3xl font-semibold tracking-tight text-white tabular-nums">
+            <span className="text-3xl font-semibold tracking-tight text-[color:var(--fg)] tabular-nums">
               {usdc == null ? (isLoading ? '—' : '0.00') : usdc.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             <span className="text-sm text-[color:var(--muted)]">USDC</span>
@@ -111,7 +111,7 @@ export default function FundAccountCard() {
             </code>
             <button
               onClick={copy}
-              className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] transition-colors"
               title="Copy address"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -145,21 +145,21 @@ export default function FundAccountCard() {
             </button>
           )}
           {notSoldHere && offer && (
-            <p className="mt-3 text-[11px] text-[color:var(--muted-2)]" data-fund-card="not-sold">
+            <p className="mt-3 text-[length:var(--fs-xs)] text-[color:var(--muted-2)]" data-fund-card="not-sold">
               Stripe can’t sell USDC for {offer.currency === 'eur' ? 'euros' : 'dollars'} right now, so there’s no card top-up here. Send USDC on Base to the address above.
             </p>
           )}
           {/* The address + QR above always work, so a closed or region-blocked
               on-ramp costs the user nothing but this line. */}
-          {buyError && <div className="mt-1.5 text-[11px] text-[color:var(--sell)]">{buyError}</div>}
+          {buyError && <div className="mt-1.5 text-[length:var(--fs-xs)] text-[color:var(--sell)]">{buyError}</div>}
         </div>
 
         {/* Scan to send from a phone wallet. */}
         <div className="flex flex-col items-center gap-2">
-          <div className="rounded-xl bg-white p-2.5">
+          <div className="rounded-xl bg-[var(--fg)] p-2.5">
             <QRCodeSVG value={address} size={104} bgColor="#ffffff" fgColor="#000000" level="M" />
           </div>
-          <span className="text-[11px] text-[color:var(--muted-2)]">Scan to send on Base</span>
+          <span className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">Scan to send on Base</span>
         </div>
       </div>
     </Card>

@@ -108,7 +108,7 @@ const OUTCOME_STYLE: Record<string, string> = {
   // NOTE: never `var(--x)]/N` color modifiers — Tailwind can't opacity-modify
   // a CSS-var color and silently paints transparent (live bug: invisible bars).
   'tx-built': 'border-[color:var(--accent)] text-[color:var(--accent)]',
-  signed: 'bg-[color:var(--accent)] text-black border-transparent font-semibold',
+  signed: 'bg-[color:var(--accent)] text-[color:var(--bg)] border-transparent font-semibold',
   refused: 'border-red-400/50 text-red-400',
   error: 'border-red-400/50 text-red-400',
   'credit-gate': 'border-amber-400/40 text-amber-400',
@@ -146,16 +146,16 @@ function SessionTrail({ s }: { s: SessionLite }) {
   return (
     <div className="rounded-xl border border-[color:var(--line)] bg-[color:var(--bg)] p-3.5 min-w-0">
       <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
-        <span className="mono text-[11px] text-[color:var(--muted-2)] inline-flex items-center gap-1.5">
+        <span className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] inline-flex items-center gap-1.5">
           <Globe className="w-3 h-3" /> {s.origin.replace(/^https?:\/\//, '')}
         </span>
-        <span className="mono text-[11px] text-[color:var(--muted-2)]">
+        <span className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
           {s.turns.length} turn{s.turns.length === 1 ? '' : 's'} · {timeAgo(s.endedAt)}
         </span>
       </div>
       <ol className="flex flex-col gap-1.5">
         {s.turns.slice(-4).map((t, i) => (
-          <li key={i} className="flex items-start justify-between gap-3 text-[13px] min-w-0">
+          <li key={i} className="flex items-start justify-between gap-3 text-[length:var(--fs-md)] min-w-0">
             <span className="text-[color:var(--muted)] truncate" title={t.detail ?? t.prompt}>
               {t.prompt || <em className="text-[color:var(--muted-2)]">{t.detail ?? '(follow-up)'}</em>}
             </span>
@@ -243,7 +243,7 @@ export default function EmbedInsights() {
           <CardTitle serif eyebrow={g ? 'THE NUMBER · WHOLE SYSTEM' : 'THE NUMBER'}>
             Money moved
           </CardTitle>
-          <div className="mt-2 font-serif text-[42px] leading-none text-white tabular-nums">
+          <div className="mt-2 font-serif text-[42px] leading-none text-[color:var(--fg)] tabular-nums">
             {fmtUsd(g ? g.systemTotalUsd : t.signedUsd)}
           </div>
           <p className="mono text-[11.5px] text-[color:var(--muted-2)] mt-2">
@@ -257,7 +257,7 @@ export default function EmbedInsights() {
             <>
               {(g.standingAllTimeUsd ?? 0) >= 0 && g.attendedAllTimeUsd !== undefined && (
                 <span className="pb-1 mb-0.5 border-b border-[color:var(--line)]">
-                  <span className="text-white">{fmtUsd(g.attendedAllTimeUsd)}</span>{' '}
+                  <span className="text-[color:var(--fg)]">{fmtUsd(g.attendedAllTimeUsd)}</span>{' '}
                   <span className="text-[color:var(--muted-2)]">attended</span> ·{' '}
                   <span className="text-[color:var(--accent)]">{fmtUsd(g.standingAllTimeUsd ?? 0)}</span>{' '}
                   <span className="text-[color:var(--muted-2)]">standing — moved with nobody at the keyboard</span>
@@ -329,7 +329,7 @@ export default function EmbedInsights() {
             {data.sites.length > 0
               ? `${data.sites.length} site${data.sites.length === 1 ? ' has' : 's have'} mounted your embed — analytics fill in the moment a visitor sends a prompt.`
               : 'No sites are running your embed yet. Grab your key + the install prompt from the Keys page.'}{' '}
-            <Link href="/dashboard/keys#embed-keys" className="underline underline-offset-2 decoration-dotted hover:text-white">
+            <Link href="/dashboard/keys#embed-keys" className="underline underline-offset-2 decoration-dotted hover:text-[color:var(--fg)]">
               Embed setup →
             </Link>
           </p>
@@ -367,13 +367,13 @@ export default function EmbedInsights() {
             { label: 'Signed one', n: data.funnel.withSigned, base: data.funnel.sessions },
           ].map((row) => (
             <div key={row.label} className="flex items-center gap-3 min-w-0">
-              <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] w-44 flex-shrink-0">
+              <span className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] w-44 flex-shrink-0">
                 {row.label}
               </span>
               <div className="flex-1 h-5 rounded-md bg-white/[0.04] overflow-hidden min-w-0">
                 <div className="h-full rounded-md bg-[color:var(--accent)] opacity-80" style={{ width: `${Math.max(2, pct(row.n, row.base))}%` }} />
               </div>
-              <span className="mono text-[12px] w-16 text-right flex-shrink-0">
+              <span className="mono text-[length:var(--fs-sm)] w-16 text-right flex-shrink-0">
                 {row.n} <span className="text-[color:var(--muted-2)]">· {pct(row.n, row.base)}%</span>
               </span>
             </div>
@@ -403,7 +403,7 @@ export default function EmbedInsights() {
                 const signRate = r.built > 0 ? Math.round((r.signed / r.built) * 100) : null
                 return (
                   <div key={r.path} className="flex items-center gap-3 min-w-0">
-                    <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] w-56 flex-shrink-0 truncate" title={r.path}>
+                    <span className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] w-56 flex-shrink-0 truncate" title={r.path}>
                       {PATH_LABEL[r.path] ?? r.path}
                     </span>
                     <div className="flex-1 flex flex-col gap-0.5 min-w-0">
@@ -440,9 +440,9 @@ export default function EmbedInsights() {
           </CardTitle>
           <ul className="mt-2 flex flex-col max-h-96 overflow-y-auto">
             {data.recentAsks.map((a, i) => (
-              <li key={i} className="flex items-start justify-between gap-3 py-2 border-b border-[color:var(--line)] last:border-0 text-[13px] min-w-0">
+              <li key={i} className="flex items-start justify-between gap-3 py-2 border-b border-[color:var(--line)] last:border-0 text-[length:var(--fs-md)] min-w-0">
                 <span className="min-w-0">
-                  <span className="text-white block truncate" title={a.prompt}>
+                  <span className="text-[color:var(--fg)] block truncate" title={a.prompt}>
                     {a.prompt}
                   </span>
                   <span className="mono text-[10.5px] text-[color:var(--muted-2)]">
@@ -460,27 +460,27 @@ export default function EmbedInsights() {
             Transactions built &amp; signed
           </CardTitle>
           {data.transactions.length === 0 ? (
-            <p className="text-[13px] text-[color:var(--muted-2)] mt-2">No transactions built in this window yet.</p>
+            <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)] mt-2">No transactions built in this window yet.</p>
           ) : (
             <ul className="mt-2 flex flex-col max-h-96 overflow-y-auto">
               {data.transactions.map((x, i) => (
-                <li key={i} className="flex items-start justify-between gap-3 py-2 border-b border-[color:var(--line)] last:border-0 text-[13px] min-w-0">
+                <li key={i} className="flex items-start justify-between gap-3 py-2 border-b border-[color:var(--line)] last:border-0 text-[length:var(--fs-md)] min-w-0">
                   <span className="min-w-0">
-                    <span className="text-white block truncate">
+                    <span className="text-[color:var(--fg)] block truncate">
                       {ARTIFACT_LABEL[x.artifact ?? ''] ?? 'Transaction'}
                       {x.valueUsd != null && x.valueUsd > 0 && (
-                        <span className="mono text-[11px] text-[color:var(--accent)]"> · {fmtUsd(x.valueUsd)}</span>
+                        <span className="mono text-[length:var(--fs-xs)] text-[color:var(--accent)]"> · {fmtUsd(x.valueUsd)}</span>
                       )}
                       {x.chain && <span className="mono text-[10.5px] text-[color:var(--muted-2)]"> · {x.chain}</span>}
                       {x.buildPath && <span className="mono text-[10.5px] text-[color:var(--muted-2)]"> · {PATH_LABEL[x.buildPath] ?? x.buildPath}</span>}
                     </span>
-                    <span className="text-[color:var(--muted-2)] text-[12px] block truncate" title={x.prompt}>
+                    <span className="text-[color:var(--muted-2)] text-[length:var(--fs-sm)] block truncate" title={x.prompt}>
                       “{x.prompt || '…'}”
                     </span>
                   </span>
                   <span className="flex items-center gap-2 flex-shrink-0">
                     {x.txUrl && (
-                      <a href={x.txUrl} target="_blank" rel="noreferrer" className="mono text-[11px] text-[color:var(--accent)] inline-flex items-center gap-0.5 hover:underline">
+                      <a href={x.txUrl} target="_blank" rel="noreferrer" className="mono text-[length:var(--fs-xs)] text-[color:var(--accent)] inline-flex items-center gap-0.5 hover:underline">
                         tx <ArrowUpRight className="w-3 h-3" />
                       </a>
                     )}
@@ -507,7 +507,7 @@ export default function EmbedInsights() {
           funnel moves.
         </p>
         {data.deadEnds.length === 0 ? (
-          <p className="text-[13px] text-[color:var(--muted-2)] mt-3">None in this window. 🎉</p>
+          <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)] mt-3">None in this window. 🎉</p>
         ) : (
           <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
             {data.deadEnds.slice(0, 8).map((s, i) => (
@@ -533,7 +533,7 @@ export default function EmbedInsights() {
             </CardTitle>
           </div>
           <button
-            className="btn btn--solid !h-9 !px-4 !text-[13px]"
+            className="btn btn--solid !h-9 !px-4 !text-[length:var(--fs-md)]"
             onClick={() => {
               void navigator.clipboard.writeText(upgradePrompt(data)).then(() => {
                 setCopied(true)
@@ -557,7 +557,7 @@ export default function EmbedInsights() {
           carries the verbatim failed asks + errors and the repair playbook (missing tools → schemas
           → docs → set changes → <span className="mono">mcp:lint</span> before/after).
         </p>
-        <pre className="mt-3 rounded-xl border border-[color:var(--line)] bg-[color:var(--bg)] px-4 py-3 mono text-[12px] leading-relaxed text-[color:var(--muted)] overflow-x-auto max-h-56">
+        <pre className="mt-3 rounded-xl border border-[color:var(--line)] bg-[color:var(--bg)] px-4 py-3 mono text-[length:var(--fs-sm)] leading-relaxed text-[color:var(--muted)] overflow-x-auto max-h-56">
           {upgradePrompt(data)}
         </pre>
       </Card>
@@ -570,7 +570,7 @@ export default function EmbedInsights() {
         <div className="overflow-x-auto -mx-1 px-1 mt-2">
           <table className="w-full text-sm min-w-[640px]">
             <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
+              <tr className="text-left text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] mono">
                 <th className="py-2 pr-3 font-medium">Site</th>
                 <th className="py-2 pr-3 font-medium text-right">Turns</th>
                 <th className="py-2 pr-3 font-medium text-right">Sessions</th>
@@ -584,7 +584,7 @@ export default function EmbedInsights() {
             <tbody className="text-[color:var(--muted)]">
               {data.perSite.map((s) => (
                 <tr key={s.origin} className="border-t border-[var(--line)]">
-                  <td className="py-2 pr-3 text-white">
+                  <td className="py-2 pr-3 text-[color:var(--fg)]">
                     <a href={s.pageUrl ?? s.origin} target="_blank" rel="noreferrer" className="hover:text-[color:var(--accent)] transition-colors">
                       {s.origin.replace(/^https?:\/\//, '')}
                     </a>

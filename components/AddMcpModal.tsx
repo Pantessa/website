@@ -218,17 +218,17 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
     <>
     {submitted ? (
       <div className="px-5 py-6 space-y-3" data-testid="addmcp-submitted">
-        <div className="flex items-center gap-2 text-sm font-semibold text-white">
+        <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--fg)]">
           <ShieldCheck className="w-4 h-4 text-[color:var(--accent)]" />
           Submitted for review
         </div>
-        <p className="text-[12px] leading-relaxed text-[color:var(--muted)]">
-          <span className="text-white">{submitted.name}</span> is in your directory marked{' '}
+        <p className="text-[length:var(--fs-sm)] leading-relaxed text-[color:var(--muted)]">
+          <span className="text-[color:var(--fg)]">{submitted.name}</span> is in your directory marked{' '}
           <span className="mono text-[10.5px] uppercase">pending review</span>. A Pantessa partner checks what it
           does before it can route in chat — until then it never runs and nobody else can see it. You&apos;ll see
           the badge flip when it&apos;s approved.
         </p>
-        <p className="text-[11px] leading-relaxed text-[color:var(--muted-2)]">
+        <p className="text-[length:var(--fs-xs)] leading-relaxed text-[color:var(--muted-2)]">
           Pantessa only routes to reviewed MCPs. Every transaction still builds through Pantessa&apos;s own guarded
           layer — a reviewed MCP can read for you; it never writes the calldata you sign.
         </p>
@@ -238,7 +238,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
     <div className={phone ? 'px-5 py-4 space-y-4' : 'max-h-[68vh] overflow-y-auto px-5 py-4 space-y-4'}>
       {/* URL + discover */}
       <div>
-        <label className="block text-[11px] font-medium text-[color:var(--muted)] mb-1.5">MCP server URL</label>
+        <label className="block text-[length:var(--fs-xs)] font-medium text-[color:var(--muted)] mb-1.5">MCP server URL</label>
         <div className="flex gap-2">
           <div className="relative flex-1 min-w-0">
             <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[color:var(--muted-2)]" />
@@ -254,7 +254,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
                   discover()
                 }
               }}
-              className="w-full pr-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-white placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors"
+              className="w-full pr-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-[color:var(--fg)] placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors"
               style={{ paddingLeft: 34 }}
             />
           </div>
@@ -262,7 +262,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
             type="button"
             onClick={discover}
             disabled={!url || fetching}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[var(--surf-2)] text-white text-xs font-medium hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[var(--surf-2)] text-[color:var(--fg)] text-xs font-medium hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
           >
             {fetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
             {fetching ? 'Discovering…' : 'Discover'}
@@ -279,27 +279,27 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
       {(tools !== null || name) && (
         <div className="grid grid-cols-1 gap-3">
           <div>
-            <label className="block text-[11px] font-medium text-[color:var(--muted)] mb-1.5">Name</label>
+            <label className="block text-[length:var(--fs-xs)] font-medium text-[color:var(--muted)] mb-1.5">Name</label>
             <input
               type="text"
               value={name}
               placeholder="My MCP"
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-white placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors"
+              className="w-full px-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-[color:var(--fg)] placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors"
             />
           </div>
           <div>
-            <label className="block text-[11px] font-medium text-[color:var(--muted)] mb-1.5">Description</label>
+            <label className="block text-[length:var(--fs-xs)] font-medium text-[color:var(--muted)] mb-1.5">Description</label>
             <textarea
               rows={2}
               value={description}
               placeholder="What does this MCP do?"
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-white placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors resize-none"
+              className="w-full px-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-[color:var(--fg)] placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors resize-none"
             />
           </div>
           <div>
-            <label className="block text-[11px] font-medium text-[color:var(--muted)] mb-1.5">
+            <label className="block text-[length:var(--fs-xs)] font-medium text-[color:var(--muted)] mb-1.5">
               Logo <span className="text-[color:var(--muted-2)] font-normal">— auto-pulled, or link your own</span>
             </label>
             <div className="flex items-center gap-2.5">
@@ -314,7 +314,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
                     draggable={false}
                   />
                 ) : (
-                  <span className="mono text-[13px] font-bold text-[color:var(--muted-2)]">
+                  <span className="mono text-[length:var(--fs-md)] font-bold text-[color:var(--muted-2)]">
                     {name.replace(/[^A-Za-z]/g, '').charAt(0).toUpperCase() || '?'}
                   </span>
                 )}
@@ -327,7 +327,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
                   setLogoError(false)
                   setLogoUrl(e.target.value)
                 }}
-                className="flex-1 min-w-0 px-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-white placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors"
+                className="flex-1 min-w-0 px-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-[color:var(--fg)] placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors"
               />
             </div>
           </div>
@@ -337,7 +337,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
       {/* Why — read by the reviewer only */}
       {(tools !== null || name) && (
         <div>
-          <label className="block text-[11px] font-medium text-[color:var(--muted)] mb-1.5">
+          <label className="block text-[length:var(--fs-xs)] font-medium text-[color:var(--muted)] mb-1.5">
             For the reviewer <span className="text-[color:var(--muted-2)] font-normal">— who runs it, why you want it (optional)</span>
           </label>
           <textarea
@@ -346,7 +346,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
             maxLength={500}
             placeholder="e.g. the official Compound MCP, run by the Compound team — I want lending reads in chat"
             onChange={(e) => setRequestNote(e.target.value)}
-            className="w-full px-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-white placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors resize-none"
+            className="w-full px-3 py-2.5 rounded-xl bg-[var(--surf-1)] border border-[var(--line)] text-[color:var(--fg)] placeholder-[color:var(--muted-2)] text-xs focus:outline-none focus:border-[var(--line-2)] transition-colors resize-none"
           />
         </div>
       )}
@@ -355,7 +355,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
       {tools !== null && tools.length > 0 && (
         <div>
           <div className="flex items-baseline justify-between mb-1">
-            <span className="text-[11px] font-medium text-[color:var(--muted)]">Ping first for new accounts</span>
+            <span className="text-[length:var(--fs-xs)] font-medium text-[color:var(--muted)]">Ping first for new accounts</span>
             <span className="mono text-[10px] text-[color:var(--muted-2)]">{starredCount} starred</span>
           </div>
           <p className="text-[10.5px] leading-relaxed text-[color:var(--muted-2)] mb-2">
@@ -386,7 +386,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
                     />
                     <span className="flex-1 min-w-0">
                       <span className="flex items-center gap-2">
-                        <span className="mono text-[11px] text-white truncate">{t.name}</span>
+                        <span className="mono text-[length:var(--fs-xs)] text-[color:var(--fg)] truncate">{t.name}</span>
                         {personal && (
                           <span className="mono text-[9px] px-1.5 py-px rounded-full border border-[var(--line)] text-[color:var(--accent)] flex-shrink-0">
                             wallet-aware
@@ -414,7 +414,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
 
       {/* Guest hint */}
       {status === 'guest' && (
-        <p className="text-[11px] leading-relaxed text-[color:var(--muted)] rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-3 py-2.5">
+        <p className="text-[length:var(--fs-xs)] leading-relaxed text-[color:var(--muted)] rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-3 py-2.5">
           Adding to the shared directory needs a signed-in wallet.{' '}
           <button
             type="button"
@@ -429,7 +429,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
         </p>
       )}
 
-      {error && <p className="text-[11px] text-red-400">{error}</p>}
+      {error && <p className="text-[length:var(--fs-xs)] text-red-400">{error}</p>}
     </div>
     )}
     </>
@@ -443,7 +443,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
         <button
           type="button"
           onClick={onClose}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 transition-colors max-lg:w-full max-lg:min-h-12 max-lg:justify-center max-lg:text-[14px]"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-[var(--fg)] text-zinc-950 hover:bg-zinc-200 transition-colors max-lg:w-full max-lg:min-h-12 max-lg:justify-center max-lg:text-[14px]"
         >
           Done
         </button>
@@ -455,7 +455,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
         className={cn(
           'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors [@media(hover:none)]:min-h-10 max-lg:w-full max-lg:!min-h-12 max-lg:justify-center max-lg:text-[14px]',
           canSubmit
-            ? 'bg-white text-zinc-950 hover:bg-zinc-200'
+            ? 'bg-[var(--fg)] text-zinc-950 hover:bg-zinc-200'
             : 'bg-[var(--surf-2)] text-[color:var(--muted-2)] cursor-not-allowed',
         )}
       >
@@ -480,7 +480,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
         title="Request an MCP"
         footer={<div className="flex items-center gap-3">{footer}</div>}
       >
-        <p className="px-5 pt-1 mono text-[11px] text-[color:var(--muted-2)]">discovered from the server · reviewed by a Pantessa partner · then routes in chat</p>
+        <p className="px-5 pt-1 mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">discovered from the server · reviewed by a Pantessa partner · then routes in chat</p>
         {body}
       </Sheet>
     )
@@ -512,13 +512,13 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
                 <Plus className="w-4 h-4" strokeWidth={2.5} />
               </span>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-white">Request an MCP</div>
+                <div className="text-sm font-semibold text-[color:var(--fg)]">Request an MCP</div>
                 <div className="mono text-[10px] text-[color:var(--muted-2)]">discovered from the server · reviewed by a Pantessa partner · then routes in chat</div>
               </div>
               <button
                 onClick={onClose}
                 aria-label="Close"
-                className="w-7 h-7 grid place-items-center rounded-lg text-[color:var(--muted)] hover:text-white hover:bg-white/5 transition-colors [@media(hover:none)]:h-10 [@media(hover:none)]:w-10 [@media(hover:none)]:-mr-1.5"
+                className="w-7 h-7 grid place-items-center rounded-lg text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:bg-white/5 transition-colors [@media(hover:none)]:h-10 [@media(hover:none)]:w-10 [@media(hover:none)]:-mr-1.5"
               >
                 <X className="w-4 h-4" />
               </button>

@@ -243,7 +243,13 @@ export function deckPins(check: Check): void {
       /useState<DeckChannel>\(DECK_DEFAULT_CHANNEL\)/.test(deck) &&
       /const \[book, setBook\] = useState\(false\)/.test(deck) &&
       /useEffect\(\(\) => \{\s*try \{\s*setBook\(parseDeckBook\(window\.localStorage\.getItem\(DECK_BOOK_KEY\)\)\)/.test(deck) &&
-      !/position:\s*sticky/.test(cssRules) &&
+      // RE-PINNED 2026-10-14 (polish sweep): the polish squad's MARKETS-MOBILE made the bar's Share + alert
+      // chips sticky at the bar's right edge INSIDE the bar's own horizontal scroller (so a phone sees them without
+      // scrolling the row) — a sticky inside an overflow-x:auto row is not the body-overflow bug this fence guards
+      // against (memory sticky-dead-body-overflow). Nothing else in deck.css may be sticky.
+      cssRules.split(/position:\s*sticky/).length - 1 === 2 &&
+      /\.deck__bar > \.lshare--deck \{ position: sticky; right: 0;/.test(cssRules) &&
+      /\.deck__bar > \.armalert--deck \{ position: sticky; right: 42px;/.test(cssRules) &&
       zIndexes.every((z) => z < 20),
     `z-index values: ${zIndexes.join(',') || 'none'}`,
   )

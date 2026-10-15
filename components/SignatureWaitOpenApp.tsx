@@ -35,7 +35,7 @@ export default function SignatureWaitOpenApp({
       type="button"
       onClick={() => openWalletApp()}
       data-sign-open-app={last.app}
-      className={`inline-flex items-center gap-1.5 rounded-full border border-[var(--line-2)] px-3 py-1 text-[12px] font-medium text-[color:var(--fg)] [@media(hover:none)]:min-h-10 [@media(hover:none)]:px-4 ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border border-[var(--line-2)] px-3 py-1 text-[length:var(--fs-sm)] font-medium text-[color:var(--fg)] [@media(hover:none)]:min-h-10 [@media(hover:none)]:px-4 ${className}`}
       title={`${last.app} has this request — tap to open it`}
     >
       <Smartphone className="w-3.5 h-3.5" /> Open {last.app}

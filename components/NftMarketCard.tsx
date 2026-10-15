@@ -21,7 +21,7 @@ function Thumb({ url, label }: { url: string | null; label: string }) {
   const [failed, setFailed] = useState(false)
   if (failed || !url) {
     return (
-      <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-lg bg-white/10 text-[11px] font-semibold text-[color:var(--muted)]">
+      <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-lg bg-white/10 text-[length:var(--fs-xs)] font-semibold text-[color:var(--muted)]">
         {label.replace(/^#/, '').slice(0, 1).toUpperCase() || '?'}
       </span>
     )
@@ -39,7 +39,7 @@ function Row({ r, onPick }: { r: NftMarketRow; onPick?: (prompt: string) => void
       <div className="flex min-w-0 items-center gap-2">
         <Thumb url={r.imageUrl} label={r.name} />
         <div className="min-w-0">
-          <div className="truncate font-medium capitalize text-white">{r.name}</div>
+          <div className="truncate font-medium capitalize text-[color:var(--fg)]">{r.name}</div>
           <div className="truncate text-[10px] text-[color:var(--muted-2)]">{r.detail}</div>
         </div>
       </div>
@@ -47,7 +47,7 @@ function Row({ r, onPick }: { r: NftMarketRow; onPick?: (prompt: string) => void
         {/* Fixed width so the numbers line up down the card even when one row
             says "no floor yet" and the next says "0.0006 ETH". */}
         <div className="mr-1 min-w-[86px] text-right">
-          {r.value && <div className={`text-[11px] font-medium ${priced ? 'text-white' : 'text-[color:var(--muted-2)]'}`}>{r.value}</div>}
+          {r.value && <div className={`text-[length:var(--fs-xs)] font-medium ${priced ? 'text-[color:var(--fg)]' : 'text-[color:var(--muted-2)]'}`}>{r.value}</div>}
           {r.note && <div className="text-[10px] text-[color:var(--muted-2)]">{r.note}</div>}
         </div>
         {onPick &&
@@ -55,7 +55,7 @@ function Row({ r, onPick }: { r: NftMarketRow; onPick?: (prompt: string) => void
             <button
               key={a.label}
               onClick={() => onPick(a.prompt)}
-              className="rounded-full border border-[var(--line)] bg-white/[0.03] px-2 py-0.5 text-[10px] text-[color:var(--muted)] hover:border-[var(--accent)] hover:text-white"
+              className="rounded-full border border-[var(--line)] bg-white/[0.03] px-2 py-0.5 text-[10px] text-[color:var(--muted)] hover:border-[var(--accent)] hover:text-[color:var(--fg)]"
             >
               {a.label}
             </button>
@@ -66,7 +66,7 @@ function Row({ r, onPick }: { r: NftMarketRow; onPick?: (prompt: string) => void
             target="_blank"
             rel="noopener noreferrer"
             title={r.infoLabel ?? 'View on OpenSea'}
-            className="rounded-full border border-[var(--line)] px-1.5 py-0.5 text-[10px] text-[color:var(--muted-2)] hover:text-white"
+            className="rounded-full border border-[var(--line)] px-1.5 py-0.5 text-[10px] text-[color:var(--muted-2)] hover:text-[color:var(--fg)]"
           >
             ⓘ
           </a>
@@ -96,7 +96,7 @@ export default function NftMarketCard({ data, onPick }: { data: NftMarketDisplay
 
       {data.total && (
         <div className="mt-3">
-          <div className="text-lg font-semibold text-white">{data.total}</div>
+          <div className="text-lg font-semibold text-[color:var(--fg)]">{data.total}</div>
           {data.totalNote && <div className="text-[10px] text-[color:var(--muted-2)]">{data.totalNote}</div>}
         </div>
       )}

@@ -70,7 +70,7 @@ export default function GuardianPolicyCard({ policyId }: { policyId: string }) {
   if (gone) return null
   if (!view) {
     return (
-      <div className="mt-2.5 rounded-xl border border-[var(--line)] px-3 py-2 text-[12px] text-[color:var(--muted-2)] inline-flex items-center gap-2">
+      <div className="mt-2.5 rounded-xl border border-[var(--line)] px-3 py-2 text-[length:var(--fs-sm)] text-[color:var(--muted-2)] inline-flex items-center gap-2">
         <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden /> arming…
       </div>
     )
@@ -107,13 +107,13 @@ export default function GuardianPolicyCard({ policyId }: { policyId: string }) {
           <span className="font-medium">
             {kindLabel} · {p.coin} {p.side}
           </span>
-          <span className="mono text-[11px] text-[color:var(--muted-2)]">
+          <span className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
             {p.triggerMode === 'price' ? `@ ${p.triggerValue}` : `${p.triggerValue}% from entry`}
           </span>
         </span>
         <span className="flex items-center gap-2">
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[length:var(--fs-xs)] font-medium ${
               p.status === 'active'
                 ? 'border-[color:color-mix(in_srgb,var(--done)_40%,transparent)] text-[color:var(--done)]'
                 : closed
@@ -172,7 +172,7 @@ export default function GuardianPolicyCard({ policyId }: { policyId: string }) {
         </div>
       )}
 
-      <div className="text-[12px] text-[color:var(--muted)] mono tabular-nums">
+      <div className="text-[length:var(--fs-sm)] text-[color:var(--muted)] mono tabular-nums">
         {closed && lastRun ? (
           <>filled — {lastRun.reason.slice(0, 120)}{lastRun.valueUsd != null && <> · ${lastRun.valueUsd.toFixed(2)} moved</>}</>
         ) : live.markPx != null ? (
@@ -192,7 +192,7 @@ export default function GuardianPolicyCard({ policyId }: { policyId: string }) {
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="text-[11px] text-[color:var(--muted-2)]">
+        <span className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
           Checked every minute · every action receipted on the{' '}
           <Link href="/dashboard/guardian" className="underline underline-offset-2 decoration-dotted">
             Guardian dashboard

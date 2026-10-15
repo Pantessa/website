@@ -134,7 +134,7 @@ export default function SignGrantButton({
   if (signed) {
     return (
       <span
-        className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border border-emerald-500/40 text-emerald-400"
+        className="inline-flex items-center gap-1.5 text-[length:var(--fs-xs)] font-medium px-2.5 py-1 rounded-full border border-emerald-500/40 text-emerald-400"
         title="The grant terms carry a valid EIP-712 wallet signature"
       >
         <ShieldCheck className="w-3.5 h-3.5" />
@@ -146,20 +146,20 @@ export default function SignGrantButton({
   return (
     <span className="inline-flex items-center gap-2 flex-wrap">
       {voided && (
-        <span className="text-[11px] text-amber-400/90">terms changed — re-sign</span>
+        <span className="text-[length:var(--fs-xs)] text-amber-400/90">terms changed — re-sign</span>
       )}
       <button
         onClick={() => void sign()}
         disabled={signing || !typedData}
-        className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 max-lg:min-h-10 max-lg:px-3.5 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
+        className="inline-flex items-center gap-1.5 text-[length:var(--fs-xs)] font-medium px-2.5 py-1 max-lg:min-h-10 max-lg:px-3.5 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] disabled:opacity-50 transition-colors"
         title="Wallet-sign your caps + allowlist (EIP-712) — makes the grant a portable, attested authorization"
       >
         {signing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
         {voided ? 'Re-sign grant' : 'Sign grant'}
       </button>
       <SignatureWaitOpenApp waiting={signing} />
-      {note && <span className="text-[11px] text-[color:var(--muted)]" data-arm-rearmed="switch">{note}</span>}
-      {error && <span className="text-[11px] text-red-400">{error}</span>}
+      {note && <span className="text-[length:var(--fs-xs)] text-[color:var(--muted)]" data-arm-rearmed="switch">{note}</span>}
+      {error && <span className="text-[length:var(--fs-xs)] text-red-400">{error}</span>}
     </span>
   )
 }

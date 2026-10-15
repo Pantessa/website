@@ -26,7 +26,7 @@ function Delta({ value }: { value: number | null }) {
   if (value == null) return null
   const up = value >= 0
   return (
-    <span className={`text-[11px] mono ${up ? 'text-[color:var(--done,#34d399)]' : 'text-[color:var(--fail,#f87171)]'}`} title="vs the previous window of the same length">
+    <span className={`text-[length:var(--fs-xs)] mono ${up ? 'text-[color:var(--done,#34d399)]' : 'text-[color:var(--fail,#f87171)]'}`} title="vs the previous window of the same length">
       {up ? '+' : ''}
       {Math.round(value * 100)}%
     </span>
@@ -36,9 +36,9 @@ function Delta({ value }: { value: number | null }) {
 function Stat({ label, value, delta, sub, lead }: { label: string; value: string; delta?: number | null; sub?: React.ReactNode; lead?: boolean }) {
   return (
     <div className={`rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 min-w-0 ${lead ? 'tint-border-accent-40' : ''}`}>
-      <p className="text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">{label}</p>
+      <p className="text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)] mono">{label}</p>
       <p className="flex items-baseline gap-2 flex-wrap mt-1">
-        <span className="text-2xl font-semibold text-white tabular-nums break-all">{value}</span>
+        <span className="text-2xl font-semibold text-[color:var(--fg)] tabular-nums break-all">{value}</span>
         <Delta value={delta ?? null} />
       </p>
       {sub && <p className="text-xs text-[color:var(--muted)] mt-1 break-words">{sub}</p>}
@@ -65,13 +65,13 @@ function Funnel({ f, prev }: { f: DeskGrowth['funnel']; prev: DeskGrowth['funnel
         const pct = f.opened > 0 ? Math.round((n / f.opened) * 100) : 0
         return (
           <li key={s.key} className="grid grid-cols-[7rem_1fr_auto] items-center gap-3 min-w-0">
-            <span className="text-xs text-white truncate" title={s.note}>
+            <span className="text-xs text-[color:var(--fg)] truncate" title={s.note}>
               {s.label}
             </span>
             <span className="h-3 rounded-[4px] overflow-hidden bg-[var(--surf-2,rgba(255,255,255,0.04))] min-w-0">
               <span className="block h-full rounded-[4px]" style={{ width: `${Math.max(n > 0 ? 2 : 0, (n / max) * 100)}%`, background: `var(${MK.seq[Math.min(4, i + 1)]})` }} />
             </span>
-            <span className="text-xs mono tabular-nums text-white whitespace-nowrap">
+            <span className="text-xs mono tabular-nums text-[color:var(--fg)] whitespace-nowrap">
               {n}
               <span className="text-[color:var(--muted-2)]"> · {pct}%</span>
               {p !== n && <span className="text-[color:var(--muted-2)]"> · was {p}</span>}
@@ -88,7 +88,7 @@ export function DeskLogSection({ desk, external }: { desk: DeskGrowth | null; ex
   return (
     <section className="mt-6" data-desk-section>
       <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-        <h2 className="text-base font-semibold text-white flex items-center gap-2">
+        <h2 className="text-base font-semibold text-[color:var(--fg)] flex items-center gap-2">
           <Bot className="w-4 h-4 text-[color:var(--accent,#34E0A1)]" /> Agent desk
         </h2>
         <Link href="/dashboard/admin/desk" className="inline-flex items-center gap-1.5 text-xs text-[color:var(--accent,#34E0A1)] hover:underline whitespace-nowrap">
@@ -119,7 +119,7 @@ export function DeskLogSection({ desk, external }: { desk: DeskGrowth | null; ex
             <Card>
               <CardTitle eyebrow={`last ${w}`}>Intents · opened to settled</CardTitle>
               <Funnel f={desk.funnel} prev={desk.funnelPrev} />
-              <p className="text-[11px] text-[color:var(--muted-2)] mt-3">
+              <p className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mt-3">
                 By the intent&rsquo;s open time. <em>Executed</em>{' '}= the agent consented and the desk compiled a job it drives with its own key.{' '}
                 <em>Signed</em>{' '}= the agent posted at least one completed leg (its claim; the runner&rsquo;s wait leg checks the chain).
               </p>
@@ -127,7 +127,7 @@ export function DeskLogSection({ desk, external }: { desk: DeskGrowth | null; ex
             <Card>
               <CardTitle eyebrow={`last ${w}`}>Agent-signed money · per day</CardTitle>
               <DeskDaily series={desk.series} />
-              <p className="text-[11px] text-[color:var(--muted-2)] mt-3">Guard-priced notional of every leg an agent completed, on the day it claimed it.</p>
+              <p className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mt-3">Guard-priced notional of every leg an agent completed, on the day it claimed it.</p>
             </Card>
           </div>
           <Card className="mt-3">
@@ -139,7 +139,7 @@ export function DeskLogSection({ desk, external }: { desk: DeskGrowth | null; ex
                 {desk.byAgent.map((a) => {
                   const max = Math.max(1, ...desk.byAgent.map((x) => x.usd))
                   const who = a.handle ? (
-                    <Link href={`/agents/${a.handle}`} className="mono text-white hover:text-[color:var(--accent,#34E0A1)] truncate" title={a.name ?? a.handle}>
+                    <Link href={`/agents/${a.handle}`} className="mono text-[color:var(--fg)] hover:text-[color:var(--accent,#34E0A1)] truncate" title={a.name ?? a.handle}>
                       {a.name ?? a.handle}
                     </Link>
                   ) : (
@@ -151,7 +151,7 @@ export function DeskLogSection({ desk, external }: { desk: DeskGrowth | null; ex
                       <span className="h-3 rounded-[4px] overflow-hidden bg-[var(--surf-2,rgba(255,255,255,0.04))] min-w-0">
                         <span className="block h-full rounded-[4px]" style={{ width: `${Math.max(a.usd > 0 ? 2 : 0, (a.usd / max) * 100)}%`, background: `var(${MK.seq[3]})` }} />
                       </span>
-                      <span className="text-xs mono tabular-nums text-white whitespace-nowrap">
+                      <span className="text-xs mono tabular-nums text-[color:var(--fg)] whitespace-nowrap">
                         {usd(a.usd)}
                         <span className="text-[color:var(--muted-2)]">
                           {' '}

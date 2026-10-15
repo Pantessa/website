@@ -111,10 +111,10 @@ export function SignatureWaitModal({
             <PenLine className="w-5 h-5" style={{ color: 'var(--accent)' }} />
           )}
         </div>
-        <h2 className="text-[17px] font-semibold text-[color:var(--fg)]">
+        <h2 className="text-[length:var(--fs-lg)] font-semibold text-[color:var(--fg)]">
           {silent ? 'Signing you in…' : signingIn ? 'Waiting for your signature…' : 'One signature to continue'}
         </h2>
-        <p className="mt-2 text-[13px] leading-relaxed text-[color:var(--muted)]">
+        <p className="mt-2 text-[length:var(--fs-md)] leading-relaxed text-[color:var(--muted)]">
           {silent
             ? 'Your Pantessa wallet is signing a one-time message that proves it’s yours. There’s nothing to approve — nothing moves, nothing spends.'
             : signingIn && openApp
@@ -130,7 +130,7 @@ export function SignatureWaitModal({
             type="button"
             onClick={openApp.onOpen}
             data-sign-open-app={openApp.app}
-            className="btn btn--solid mt-5 inline-flex items-center justify-center gap-2 text-[13px]"
+            className="btn btn--solid mt-5 inline-flex items-center justify-center gap-2 text-[length:var(--fs-md)]"
           >
             <Smartphone className="w-4 h-4" /> Open {openApp.app}
           </button>
@@ -139,7 +139,7 @@ export function SignatureWaitModal({
             type="button"
             onClick={onOpenRequest}
             disabled={signingIn}
-            className="btn btn--solid mt-5 inline-flex items-center justify-center gap-2 text-[13px] disabled:opacity-60"
+            className="btn btn--solid mt-5 inline-flex items-center justify-center gap-2 text-[length:var(--fs-md)] disabled:opacity-60"
           >
             {signingIn ? (
               <>

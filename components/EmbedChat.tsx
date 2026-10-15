@@ -276,14 +276,14 @@ export default function EmbedChat({
           title="Open the full Pantessa chat"
         >
           <YeetfulMark size={13} />
-          <span className="text-[12px] font-semibold text-[color:var(--fg)]" style={{ fontFamily: 'var(--font-display)' }}>
+          <span className="text-[length:var(--fs-sm)] font-semibold text-[color:var(--fg)]" style={{ fontFamily: 'var(--font-display)' }}>
             Pantessa chat
           </span>
         </a>
         {resolved.map((server) => (
           <span
             key={server.id}
-            className="flex-shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-[var(--line)] bg-[var(--surf-2)] text-[11px] text-[color:var(--muted)]"
+            className="flex-shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-[var(--line)] bg-[var(--surf-2)] text-[length:var(--fs-xs)] text-[color:var(--muted)]"
             title={server.description}
           >
             <span className="w-3 h-3 grid place-items-center opacity-90">
@@ -317,7 +317,7 @@ export default function EmbedChat({
                   /* user dismissed the host wallet prompt */
                 })
               }
-              className="flex-shrink-0 inline-flex items-center px-2 py-0.5 rounded-full border border-[var(--line)] bg-[var(--surf-2)] text-[11px] text-[color:var(--fg)] cursor-pointer disabled:opacity-60 disabled:cursor-default hover:border-[var(--accent,#34d399)] transition-colors"
+              className="flex-shrink-0 inline-flex items-center px-2 py-0.5 rounded-full border border-[var(--line)] bg-[var(--surf-2)] text-[length:var(--fs-xs)] text-[color:var(--fg)] cursor-pointer disabled:opacity-60 disabled:cursor-default hover:border-[var(--accent,#34d399)] transition-colors"
               title="Connect the wallet from the host page — the approval pops there, not in this frame"
             >
               {connectPending ? 'Connecting…' : 'Connect host wallet'}
@@ -325,7 +325,7 @@ export default function EmbedChat({
           )}
           {contextAddress && (
             <span
-              className="flex-shrink-0 mono text-[11px] text-[color:var(--muted-2)]"
+              className="flex-shrink-0 mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)]"
               title={
                 bridgedAddress
                   ? `Connected via the host page's wallet: ${contextAddress}`

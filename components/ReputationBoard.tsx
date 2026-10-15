@@ -15,6 +15,7 @@ import { ConvRing, Medallion } from '@/components/board-ui'
 import { tierColor } from '@/components/ReputationPanel'
 import type { ReputationScore } from '@/lib/reputation'
 import type { ServiceHealth, HealthState } from '@/lib/health'
+import { cleanServerName } from '@/lib/utils'
 
 export interface ReputationRowData {
   rank: number
@@ -72,14 +73,14 @@ function Row({ row }: { row: ReputationRowData }) {
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-3 sm:gap-4 py-3 min-w-0">
-        <span className="mono text-[11px] tabular-nums text-[color:var(--muted-2)] w-5 text-right flex-shrink-0 hidden sm:block">
+        <span className="mono text-[length:var(--fs-xs)] tabular-nums text-[color:var(--muted-2)] w-5 text-right flex-shrink-0 hidden sm:block">
           {rep.qualified ? row.rank : '—'}
         </span>
-        <Medallion name={row.name} keys={[row.iconSlug, row.slug]} logoUrl={row.logoUrl} />
+        <Medallion name={cleanServerName(row.name)} keys={[row.iconSlug, row.slug]} logoUrl={row.logoUrl} />
         <div className="w-36 sm:w-52 flex-shrink-0 min-w-0">
           <Link href={`/servers/${row.slug}`} className="flex items-center gap-1.5 min-w-0 group">
             <span className="text-[color:var(--fg)] text-[14px] font-medium truncate group-hover:underline">
-              {row.name}
+              {cleanServerName(row.name)}
             </span>
             {row.callable && (
               <span
@@ -111,14 +112,14 @@ function Row({ row }: { row: ReputationRowData }) {
           {liveRatio != null ? (
             <>
               <ConvRing pct={liveRatio} color={stateColor(health!.live > 0 ? 'live' : health!.needs > 0 ? 'needs' : 'down')} />
-              <span className="mono text-[12px] tabular-nums text-[color:var(--muted)] w-9 text-right">
+              <span className="mono text-[length:var(--fs-sm)] tabular-nums text-[color:var(--muted)] w-9 text-right">
                 {health!.live}/{health!.total}
               </span>
             </>
           ) : (
             // Most services have never been probed — a dash keeps the column
             // quiet instead of stamping a chip down the whole board.
-            <span className="mono text-[12px] text-[color:var(--muted-2)]" title="No liveness probe yet">
+            <span className="mono text-[length:var(--fs-sm)] text-[color:var(--muted-2)]" title="No liveness probe yet">
               —
             </span>
           )}
@@ -137,9 +138,9 @@ function Row({ row }: { row: ReputationRowData }) {
         <button
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          aria-label={open ? `Hide ${row.name} endpoints` : `Show ${row.name} endpoints`}
+          aria-label={open ? `Hide ${cleanServerName(row.name)} endpoints` : `Show ${cleanServerName(row.name)} endpoints`}
           disabled={!hasHealth}
-          className="mono text-[11px] leading-none w-4 flex-shrink-0 text-[color:var(--muted-2)] enabled:hover:text-[color:var(--fg)] disabled:opacity-0"
+          className="mono text-[length:var(--fs-xs)] leading-none w-4 flex-shrink-0 text-[color:var(--muted-2)] enabled:hover:text-[color:var(--fg)] disabled:opacity-0"
         >
           {open ? '▾' : '▸'}
         </button>
@@ -167,7 +168,7 @@ function Row({ row }: { row: ReputationRowData }) {
             <div className="flex flex-col divide-y divide-[color:var(--line)]">
               {health!.endpoints.map((e, idx) => (
                 <div key={`${e.method}-${e.url}-${idx}`} className="flex flex-col gap-1.5 px-4 py-2.5 min-w-0">
-                  <div className="flex items-center gap-2 min-w-0 mono text-[12px]">
+                  <div className="flex items-center gap-2 min-w-0 mono text-[length:var(--fs-sm)]">
                     <span
                       className="inline-flex items-center gap-1.5 whitespace-nowrap flex-shrink-0"
                       style={{ color: stateColor(e.state) }}
@@ -196,7 +197,7 @@ function Row({ row }: { row: ReputationRowData }) {
 
 export default function ReputationBoard({ rows }: { rows: ReputationRowData[] }) {
   if (rows.length === 0) {
-    return <p className="text-[13px] text-[color:var(--muted-2)] py-4">No services to rank yet.</p>
+    return <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)] py-4">No services to rank yet.</p>
   }
   return (
     <>
