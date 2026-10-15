@@ -24,6 +24,7 @@
 // Pure: the harness pins the decision table.
 
 import { isMarketsPath } from '@/lib/markets'
+import { isProgressPath } from '@/lib/progress'
 
 /** Where a fresh login with no page to come back to goes (signInLandingFor).
  *  The splash IS the markets page now (squad front-door, 2026-10-06), so a
@@ -163,7 +164,8 @@ export function sameAppHref(a: string, b: string): boolean {
  */
 export function isPublicAppPath(href: string): boolean {
   const path = href.split(/[?#]/)[0]
-  return isMarketsPath(path) || path === '/chat' || path === '/chat/'
+  // …and the public progress pages (/leaderboard, /analytics — 2026-10-15).
+  return isMarketsPath(path) || isProgressPath(path) || path === '/chat' || path === '/chat/'
 }
 
 export type SessionStatus = 'loading' | 'authed' | 'guest'

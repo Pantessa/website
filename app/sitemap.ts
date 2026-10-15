@@ -37,6 +37,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE}/benchmarks`, changeFrequency: 'daily', priority: 0.5 },
     { url: `${SITE}/tools`, changeFrequency: 'daily', priority: 0.5 },
     { url: `${SITE}/activity`, changeFrequency: 'daily', priority: 0.7 },
+    // The public progress pages (2026-10-15): the leaderboard is a share
+    // target, so it ranks with /links.
+    { url: `${SITE}/leaderboard`, changeFrequency: 'hourly', priority: 0.8 },
+    { url: `${SITE}/analytics`, changeFrequency: 'hourly', priority: 0.7 },
     // Docs come from the registry — a page flips `ready` and it's indexed.
     ...readyPages().map((p) => ({
       url: p.slug ? `${SITE}/docs/${p.slug}` : `${SITE}/docs`,

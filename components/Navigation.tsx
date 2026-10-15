@@ -13,6 +13,7 @@ import { cdpEnabled } from '@/lib/cdp-embedded'
 import { YeetfulMark } from '@/components/Logo'
 import { AskDoorTrigger } from '@/components/AskDoor'
 import { isMarketsPath, MARKETS_HREF } from '@/lib/markets'
+import { isProgressPath } from '@/lib/progress'
 import SiteAccount, { signInLabel, signInPill } from '@/components/SiteAccount'
 import SpineLink from '@/components/SpineLink'
 import Sheet from '@/components/mobile/Sheet'
@@ -101,6 +102,8 @@ export default function Navigation() {
   // watchlist column (MarketsTopStrip), so the brochure nav is gone for
   // everyone — signed in or not. Pure path test, same on the server.
   if (isMarketsPath(pathname)) return null
+  // The public progress pages (2026-10-15): the spine is their navigation too.
+  if (isProgressPath(pathname)) return null
 
   const inDashboard = pathname.startsWith('/dashboard')
   const showDashboardCta = mounted && (isConnected || !!sessionAddress)

@@ -11234,13 +11234,14 @@ async function main() {
       const seatOrder = (h: string, tag: 'aside' | 'nav') =>
         Array.from(
           (h.match(new RegExp(`<${tag} [^>]*aria-label="Workspace"[\\s\\S]*?</${tag}>`))?.[0] ?? '').matchAll(
-            /aria-label="(MARKETS|APPS|JOBS|LINKS|WALLET|TEAM|CHATS|DOCS|Settings)"/g,
+            /aria-label="(MARKETS|APPS|JOBS|LINKS|WALLET|TEAM|CHATS|LEADERS|ANALYTICS|DOCS|Settings)"/g,
           ),
           (m) => m[1],
         ).join(' ')
-      const SPINE_SEATS = /^MARKETS APPS JOBS LINKS WALLET (TEAM )?CHATS DOCS Settings$/
+      // RE-PINNED 2026-10-15 (progress): LEADERS + ANALYTICS, the public progress pages, seat under CHATS and above DOCS.
+      const SPINE_SEATS = /^MARKETS APPS JOBS LINKS WALLET (TEAM )?CHATS LEADERS ANALYTICS DOCS Settings$/
       check(
-        'spine: the WALLET seat sits right under LINKS in both postures on /chat, /markets and /wallet (MARKETS · APPS · JOBS · LINKS · WALLET · TEAM · CHATS · DOCS · Settings; a page link, lit only on its own page); isWalletPath is exactly /wallet + /wallet/*',
+        'spine: the WALLET seat sits right under LINKS in both postures on /chat, /markets and /wallet (MARKETS · APPS · JOBS · LINKS · WALLET · TEAM · CHATS · LEADERS · ANALYTICS · DOCS · Settings; a page link, lit only on its own page); isWalletPath is exactly /wallet + /wallet/*',
         [wpChat, wpMarkets, wpHtml].every(
           (h) =>
             (h.match(/<a [^>]*aria-label="WALLET"[^>]*href="\/wallet"/g) ?? []).length === 2 &&
@@ -34183,8 +34184,9 @@ async function main() {
     const PN = await import('../lib/phone-nav')
     const AT = await import('../lib/app-tab-url')
     const SCREENS = ['chat', 'history', 'apps', 'jobs', 'links', 'team'] as const
-    const SEATS = ['markets', 'mcps', 'jobs', 'links', 'wallet', 'team', 'chats', 'docs', 'settings', 'more'] as const
-    const SURFACES = ['chat', 'markets', 'wallet', 'dashboard'] as const
+    // RE-PINNED 2026-10-15 (progress): the LEADERS + ANALYTICS page seats and their surfaces join the matrix.
+    const SEATS = ['markets', 'mcps', 'jobs', 'links', 'wallet', 'team', 'chats', 'leaderboard', 'analytics', 'docs', 'settings', 'more'] as const
+    const SURFACES = ['chat', 'markets', 'wallet', 'dashboard', 'leaderboard', 'analytics'] as const
     check(
       'native nav: the ?tab= grammar and the phone screens are one bijection (mcps↔apps, chats↔history, the rest by name; the conversation writes no tab)',
       PN.screenForTab('mcps') === 'apps' && PN.screenForTab('chats') === 'history' && PN.screenForTab('jobs') === 'jobs' && PN.screenForTab('links') === 'links' && PN.screenForTab('team') === 'team' &&
@@ -34204,7 +34206,10 @@ async function main() {
       'native nav: the lit seat — CHATS in the conversation AND on the chat list, each screen its own seat, MARKETS/WALLET/SETTINGS on their pages; MORE lights only for TEAM and SETTINGS',
       PN.litSeat('chat', 'chat') === 'chats' && PN.litSeat('chat', 'history') === 'chats' && PN.litSeat('chat', 'apps') === 'mcps' && PN.litSeat('chat', 'jobs') === 'jobs' && PN.litSeat('chat', 'links') === 'links' && PN.litSeat('chat', 'team') === 'team' &&
         PN.litSeat('markets', 'chat') === 'markets' && PN.litSeat('wallet', 'apps') === 'wallet' && PN.litSeat('dashboard', 'chat') === 'settings' &&
-        PN.moreLit('chat', 'team') && PN.moreLit('dashboard', 'chat') && !PN.moreLit('chat', 'chat') && !PN.moreLit('chat', 'apps') && !PN.moreLit('markets', 'chat') && !PN.moreLit('wallet', 'chat'),
+        PN.moreLit('chat', 'team') && PN.moreLit('dashboard', 'chat') && !PN.moreLit('chat', 'chat') && !PN.moreLit('chat', 'apps') && !PN.moreLit('markets', 'chat') && !PN.moreLit('wallet', 'chat') &&
+        // the progress pages (2026-10-15): their own seat lights, and it is folded behind MORE on a phone
+        PN.litSeat('leaderboard', 'chat') === 'leaderboard' && PN.litSeat('analytics', 'chat') === 'analytics' && PN.moreLit('leaderboard', 'chat') && PN.moreLit('analytics', 'chat') &&
+        PN.MORE_SEATS.includes('leaderboard') && PN.MORE_SEATS.includes('analytics'),
     )
     const tap = (surface: (typeof SURFACES)[number], screen: (typeof SCREENS)[number], seat: (typeof SEATS)[number], pathname = surface === 'chat' ? '/chat' : `/${surface}`) =>
       PN.phoneTap({ surface, screen, seat, pathname })
@@ -34243,6 +34248,8 @@ async function main() {
         (tap('chat', 'chat', 'docs') as { href: string }).href === '/docs' &&
         tap('dashboard', 'chat', 'settings', '/dashboard').kind === 'top' && (tap('dashboard', 'chat', 'settings', '/dashboard/keys') as { href: string }).href === '/dashboard' &&
         (tap('chat', 'chat', 'settings') as { href: string }).href === '/dashboard' &&
+        (tap('chat', 'chat', 'leaderboard') as { href: string }).href === '/leaderboard' && tap('leaderboard', 'chat', 'leaderboard', '/leaderboard').kind === 'top' &&
+        (tap('markets', 'chat', 'analytics', '/') as { href: string }).href === '/analytics' && tap('analytics', 'chat', 'analytics', '/analytics').kind === 'top' &&
         SURFACES.every((surface) => tap(surface, 'chat', 'more').kind === 'sheet'),
     )
     check(
@@ -34254,7 +34261,7 @@ async function main() {
             if (!['screen', 'top', 'navigate', 'sheet'].includes(a.kind)) return false
             if (a.kind === 'screen' && surface !== 'chat') return false
             // (`/` is the markets root — RE-PINNED 2026-10-06 (front-door))
-            if (a.kind === 'navigate' && !/^\/(chat(\?tab=[a-z]+)?|wallet|docs|dashboard)?$/.test(a.href)) return false
+            if (a.kind === 'navigate' && !/^\/(chat(\?tab=[a-z]+)?|wallet|docs|dashboard|leaderboard|analytics)?$/.test(a.href)) return false
             return true
           }),
         ),
@@ -35113,6 +35120,140 @@ async function main() {
     check('cron cost: the roster cron is OFF the schedule until HOUSE_MANAGER_KEY ships (route kept)', !paths.includes('/api/cron/roster') && existsSync('app/api/cron/roster/route.ts'), paths.join(' '))
     check('cron cost: the tradability cron stays every 10 minutes (a cold board still warms fast; a warm one costs nothing)',
       vercel.crons.find((c) => c.path === '/api/cron/tradability')?.schedule === '*/10 * * * *')
+  }
+
+  // ── PUBLIC PROGRESS PAGES — /leaderboard + /analytics (2026-10-15, Nate: "on
+  // the sidebar, can you create a leaderboard, and analytics tab for the public
+  // pages … showing progress and encourage link sharing and money moved by
+  // users and the overall system"). The rules are pure (lib/progress), the
+  // readers fenced (lib/progress-read), the pages public in the markets frame
+  // with their own spine seats; a phone folds the seats behind MORE.
+  {
+    const PG = await import('../lib/progress')
+    const AE = await import('../lib/app-entry')
+    const ADM = await import('../lib/admin')
+    check(
+      'progress: the path rules — /leaderboard and /analytics (trailing slash, query, hash tolerated) are progress paths and PUBLIC app paths; near-misses are neither; the window grammar is 7 · 30 (default, no query) · all',
+      PG.isLeaderboardPath('/leaderboard') && PG.isLeaderboardPath('/leaderboard/') && PG.isLeaderboardPath('/leaderboard?w=7') && !PG.isLeaderboardPath('/leaderboards') && !PG.isLeaderboardPath('/analytics') &&
+        PG.isAnalyticsPath('/analytics') && PG.isAnalyticsPath('/analytics#x') && !PG.isAnalyticsPath('/analytic') &&
+        PG.isProgressPath('/leaderboard') && PG.isProgressPath('/analytics') && !PG.isProgressPath('/activity') && !PG.isProgressPath('/') &&
+        AE.isPublicAppPath('/leaderboard') && AE.isPublicAppPath('/analytics?w=all') && !AE.isPublicAppPath('/wallet') &&
+        PG.parseWindow('7') === 7 && PG.parseWindow('30') === 30 && PG.parseWindow('all') === 0 && PG.parseWindow('0') === 0 && PG.parseWindow(undefined) === 30 && PG.parseWindow('99') === 30 && PG.parseWindow(['7', 'all']) === 7 &&
+        PG.windowHref('/leaderboard', 30) === '/leaderboard' && PG.windowHref('/leaderboard', 7) === '/leaderboard?w=7' && PG.windowHref('/analytics', 0) === '/analytics?w=all' &&
+        PG.chartDays(0) === 90 && PG.chartDays(7) === 7 && PG.funnelDays(0) === 365 && PG.funnelDays(30) === 30,
+    )
+    const tw = ADM.TEST_WALLETS[0]
+    const ranked = PG.rankWallets(
+      [
+        { wallet: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1', usd: 10, signed: 1 },
+        { wallet: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1', usd: 15, signed: 2, firstAt: '2026-10-01T00:00:00.000Z' },
+        { wallet: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2', usd: 30, signed: 1 },
+        { wallet: tw, usd: 1_000_000, signed: 50 },
+        { wallet: 'not-a-wallet', usd: 99, signed: 9 },
+        { wallet: '0xccccccccccccccccccccccccccccccccccccccc3', usd: 0, signed: 3 },
+      ],
+      ADM.TEST_WALLETS,
+      10,
+    )
+    check(
+      "progress: the wallet board folds one wallet's rows across case, drops the team's test wallets, non-addresses and $0 rows, ranks money first and prints SHORT addresses only",
+      ranked.length === 2 && ranked[0].rank === 1 && ranked[0].wallet === '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2' && ranked[0].short === '0xbbbb…bbb2' &&
+        ranked[1].wallet === '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1' && ranked[1].usd === 25 && ranked[1].signed === 3 && ranked[1].firstAt === '2026-10-01T00:00:00.000Z' &&
+        !ranked.some((r) => r.wallet === tw.toLowerCase()) && !ranked.some((r) => /^0x[0-9a-f]{40}$/.test(r.short)) &&
+        PG.shortAddress('0xAbCdEf0000000000000000000000000000001234') === '0xAbCd…1234',
+      JSON.stringify(ranked),
+    )
+    const m0 = PG.milestoneOf(0), m1 = PG.milestoneOf(5_500), m2 = PG.milestoneOf(10_000), m3 = PG.milestoneOf(1e12)
+    check(
+      'progress: the milestone ladder — fixed rungs, the leg from the last rung passed to the next, 0–100%, past the top reads 100 with no target',
+      m0.reached === 0 && m0.target === 1_000 && m0.pct === 0 &&
+        m1.reached === 1_000 && m1.target === 10_000 && m1.pct === 50 &&
+        m2.reached === 10_000 && m2.target === 100_000 && m2.pct === 0 &&
+        m3.target === null && m3.pct === 100 && m3.reached === PG.MILESTONES_USD[PG.MILESTONES_USD.length - 1],
+    )
+    const folded = PG.foldFunnel([
+      { source: 'direct', arrived: 10, asked: 4, built: 2, signed: 1, returned: 3 },
+      { source: 'creator link', arrived: 5, asked: 5, built: 6, signed: 1, returned: 0 },
+    ])
+    const mono = PG.monotoneFunnel(folded)
+    const now = Date.UTC(2026, 9, 15, 12)
+    const dense = PG.fillDays([{ day: '2026-10-14', usd: 5, n: 1 }], 3, now, (day) => ({ day, usd: 0, n: 0 }))
+    check(
+      'progress: the funnel folds by stop and is made monotone (a stop never reads above the one before it); day series are zero-filled and dense, oldest first, ending today; deltas read null for a fresh start',
+      folded.arrived === 15 && folded.built === 8 && mono.built === 8 && mono.signed === 2 && mono.returned === 3 &&
+        PG.monotoneFunnel({ source: 'x', arrived: 3, asked: 9, built: 9, signed: 9, returned: 9 }).signed === 3 &&
+        dense.length === 3 && dense.map((d) => d.day).join(',') === '2026-10-13,2026-10-14,2026-10-15' && dense[1].usd === 5 && dense[2].usd === 0 &&
+        PG.deltaPct(150, 100) === 50 && PG.deltaPct(50, 100) === -50 && PG.deltaPct(5, 0) === null && PG.deltaPct(0, 0) === 0 &&
+        PG.fmtUsd(12.5) === '$12.50' && PG.fmtUsd(1234) === '$1,234' && PG.fmtUsd(45_000) === '$45k' && PG.fmtUsd(2_300_000) === '$2.3M' &&
+        /\$45k moved through Pantessa in the last 7 days/.test(PG.shareLine(45_000, 7)) && /so far/.test(PG.shareLine(1, 0)),
+    )
+    // The readers are fenced on BOTH sides (#699's class): money through the
+    // links board's NOT_HARNESS (harness sessions + the internal mirror +
+    // receipt-counted), raw SQL through REAL_TRAFFIC_SQL, mints + opens by
+    // is_internal, visitors minus team/bot/internal, and the team's wallets
+    // out of the wallet board + the wallet count. Read CODE, not comments.
+    const prSrc = await readFile(new URL('../lib/progress-read.ts', import.meta.url), 'utf8')
+    const prCode = prSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    check(
+      'progress: every reader composes the public fences — NOT_HARNESS on every embed_turns read, REAL_TRAFFIC_SQL on the raw day series, isInternal:false on mints/opens/ranked links, the team/bot/internal fence on visitors, TEST_WALLETS out of the wallet board and the wallet count — and every reader fails soft',
+      /\.\.\.NOT_HARNESS,/.test(prCode) && !/prisma\.embedTurn\.(aggregate|groupBy|count|findMany)\(\{ where: \{(?![^}]*(NOT_HARNESS|turnsWhere|signedWhere))/.test(prCode) &&
+        /FROM embed_turns\s+WHERE outcome = 'signed' AND value_usd > 0 AND session_id NOT LIKE 'harness-%'\s+AND \$\{Prisma\.raw\(REAL_TRAFFIC_SQL\)\}/.test(prCode) &&
+        /prisma\.intentLink\.count\(\{ where: \{ isInternal: false, creator: \{ not: null \}/.test(prCode) &&
+        /prisma\.intentLinkEvent\.count\(\{ where: \{ kind: 'open', isInternal: false/.test(prCode) &&
+        /where: \{ id: \{ in: slugs \}, revoked: false, isInternal: false \}/.test(prCode) &&
+        /WHERE NOT is_internal AND NOT is_bot AND NOT is_team AND NOT team_claimed/.test(prCode) &&
+        /rankWallets\(\s*rows\.map[\s\S]*?TEST_WALLETS,/.test(prCode) && /new Set\(TEST_WALLETS\.map\(\(w\) => w\.toLowerCase\(\)\)\)/.test(prCode) &&
+        (prCode.match(/\} catch \{/g) ?? []).length >= 9 && /unstable_cache\(/.test(prCode) && (prCode.match(/revalidate: 120/g) ?? []).length === 2 &&
+        // …and the shared day series the links chart draws fences its MINTS too (it never did — #699's class, found on the TEST DB as a 2,652-link day).
+        /FROM intent_links WHERE created_at >= \$\{since\} AND NOT is_internal/.test(await readFile(new URL('../lib/links-board.ts', import.meta.url), 'utf8')),
+    )
+    // The pages, served: public, in the markets frame, no brochure nav, the
+    // seat lit, the window switch, the share line, the door to the studio.
+    const lbRes = await fetch(`${BASE}/leaderboard`)
+    const lb = flat(await lbRes.text())
+    const lb7 = flat(await (await fetch(`${BASE}/leaderboard?w=7`)).text())
+    const anRes = await fetch(`${BASE}/analytics?w=all`)
+    const an = flat(await anRes.text())
+    const seatLit = (h: string, label: string) => new RegExp(`<a [^>]*aria-label="${label}"[^>]*aria-current="page"`).test(h) || new RegExp(`<a [^>]*aria-current="page"[^>]*aria-label="${label}"`).test(h)
+    check(
+      'progress: /leaderboard serves 200 in the markets frame (spine + side column, no brochure nav), the LEADERS seat lit and ANALYTICS not, the tiles, the milestone ladder, three boards, the window switch aimed at itself (30 = the bare URL, current), the X share intent via @askPantessa and the mint door into the studio',
+      lbRes.status === 200 && /data-progress="leaderboard"/.test(lb) && /<aside [^>]*aria-label="Workspace"/.test(lb) && /class="mkt-frame__side"/.test(lb) && !/<header class="nav/.test(lb) &&
+        seatLit(lb, 'LEADERS') && !seatLit(lb, 'ANALYTICS') && /data-tiles=""/.test(lb) && /data-milestone="/.test(lb) && /role="progressbar"/.test(lb) &&
+        ['links', 'creators', 'wallets'].every((b) => lb.includes(`data-board="${b}"`)) &&
+        // (Next renders a Link's href LAST — match the attributes in render order: data-window, then href.)
+        /<a [^>]*data-window="7"[^>]*href="\/leaderboard\?w=7"/.test(lb) && /<a [^>]*aria-current="true"[^>]*data-window="30"[^>]*href="\/leaderboard"/.test(lb) && /<a [^>]*data-window="0"[^>]*href="\/leaderboard\?w=all"/.test(lb) &&
+        /href="https:\/\/x\.com\/intent\/tweet\?text=[^"]*moved%20through%20Pantessa[^"]*&amp;via=askPantessa"/.test(lb) &&
+        /<a [^>]*data-door="mint"[^>]*href="\/chat\?tab=links"/.test(lb) &&
+        /<title>Leaderboard — money moved by links, creators and wallets<\/title>/.test(lb),
+      `status=${lbRes.status}`,
+    )
+    check(
+      'progress: /leaderboard?w=7 lights the 7-day window and names it; /analytics?w=all serves 200 with the ANALYTICS seat lit, the deltas absent (no previous window for all time), the two day charts, the five-stop funnel, the venue + chain boards',
+      /<a [^>]*aria-current="true"[^>]*data-window="7"[^>]*href="\/leaderboard\?w=7"/.test(lb7) && !/<a [^>]*aria-current="true"[^>]*data-window="30"/.test(lb7) && lb7.includes('7 days') &&
+        anRes.status === 200 && /data-progress="analytics"/.test(an) && seatLit(an, 'ANALYTICS') && !seatLit(an, 'LEADERS') && !/<header class="nav/.test(an) &&
+        /data-chart="Money moved by day"/.test(an) && /data-chart="Links by day"/.test(an) && (an.match(/role="img"/g) ?? []).length >= 2 &&
+        /data-funnel=""/.test(an) && ['arrived', 'asked', 'built', 'signed', 'returned'].every((s) => an.includes(`data-stop="${s}"`)) &&
+        /data-board="venues"/.test(an) && /data-board="chains"/.test(an) && !/pg__delta/.test(an) &&
+        /<a [^>]*aria-current="true"[^>]*data-window="0"[^>]*href="\/analytics\?w=all"/.test(an),
+      `status=${anRes.status}`,
+    )
+    // The team's wallets never rank on the public board (the live page, the
+    // TEST DB — every drill signs from one of them).
+    const shortTest = new Set(ADM.TEST_WALLETS.map((w) => PG.shortAddress(w)))
+    const shown = Array.from(lb.matchAll(/data-wallet-short="([^"]+)"/g), (m) => m[1])
+    check('progress: no test wallet (lib/admin TEST_WALLETS) is on the served wallet board', shown.every((s) => !shortTest.has(s)), `shown=${shown.join(',')}`)
+    // The spine: both seats on the column and the bar, folded behind MORE
+    // below sm, listed in the MORE sheet; the sitemap carries both pages.
+    const spineSrc = await readFile(new URL('../components/AppSpine.tsx', import.meta.url), 'utf8')
+    check(
+      'progress: the spine seats LEADERS + ANALYTICS on the column and the bar (max-sm:hidden on the bar — the phone bar is full), lists both in the MORE sheet, and phone-nav folds them behind MORE; the sitemap lists both pages; Navigation hides on them',
+      (lb.match(/<a [^>]*aria-label="LEADERS"[^>]*href="\/leaderboard"/g) ?? []).length === 2 && (lb.match(/<a [^>]*aria-label="ANALYTICS"[^>]*href="\/analytics"/g) ?? []).length === 2 &&
+        /<a [^>]*aria-label="LEADERS"[^>]*class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/leaderboard"/.test(lb) &&
+        /<a [^>]*aria-label="ANALYTICS"[^>]*class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/analytics"/.test(lb) &&
+        /href=\{LEADERBOARD_HREF\} role="menuitem"/.test(spineSrc) && /href=\{ANALYTICS_HREF\} role="menuitem"/.test(spineSrc) &&
+        /isProgressPath\(pathname\)\) return null/.test(await readFile(new URL('../components/Navigation.tsx', import.meta.url), 'utf8')) &&
+        (await (await fetch(`${BASE}/sitemap.xml`)).text()).includes('/leaderboard</loc>') && (await (await fetch(`${BASE}/sitemap.xml`)).text()).includes('/analytics</loc>'),
+    )
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
