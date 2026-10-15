@@ -11121,17 +11121,12 @@ async function main() {
     // literal here — and robinhoodStockTokens() already leaves them out.
     const offSnapshot = [...stockSyms].filter((sym) => !ROBINHOOD_CHAIN_COINS.has(sym) && !ROBINHOOD_TICKER_SET.has(sym))
     check('charts: every live 4663 stock listing is in the static ticker snapshot (regenerate lib/robinhood-tickers.ts when this reds)', offSnapshot.length === 0, offSnapshot.join(','))
-<<<<<<< HEAD
-    const unchartedStocks = [...stockSyms].filter((sym) => !ROBINHOOD_CHAIN_COINS.has(sym) && !isChartedStock(sym) && !['CASHCAT', 'SATS'].includes(sym))
-    check('charts: the 4663 coins (cbBTC, PONS) are never in the stock set', ![...stockSyms].some((sym) => ROBINHOOD_CHAIN_COINS.has(sym)), [...stockSyms].filter((sym) => ROBINHOOD_CHAIN_COINS.has(sym)).join(','))
-    check('charts: every live 4663 stock listing charts except the two feedless ones', unchartedStocks.length === 0, unchartedStocks.join(','))
-=======
     // RE-PINNED 2026-10-13 (main sweep): PONS listed on 4663 with no feed on
     // Robinhood (missing_instruments) or Yahoo (No data found) — the third
     // feedless listing, named in lib/charts ROBINHOOD_FEEDLESS.
     const unchartedStocks = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !isChartedStock(sym) && !['CASHCAT', 'SATS', 'PONS'].includes(sym))
     check('charts: every live 4663 stock listing charts except the three feedless ones', unchartedStocks.length === 0, unchartedStocks.join(','))
->>>>>>> origin/main
+    check('charts: the 4663 coins (cbBTC, PONS) are never in the stock set', ![...stockSyms].some((sym) => ROBINHOOD_CHAIN_COINS.has(sym)), [...stockSyms].filter((sym) => ROBINHOOD_CHAIN_COINS.has(sym)).join(','))
     const rhRpc = new Map<number, RpcChainRead>([
       [4663, { chainId: 4663, nativeEth: 0.00073, stable: { symbol: 'USDG', address: rhC.tokens.USDG.address, balance: 0.323 }, tokens: [{ symbol: 'AAPL', address: aapl, balance: 0.0376, stock: true }] }],
     ])
@@ -30425,14 +30420,6 @@ async function main() {
     // ── venue floor: 1Click's temporary per-chain minimum ─────────────────
     // The table in lib/venue-floor is a MEASUREMENT, not a copy of NEAR's
     // changelog (which lists Optimism and Avalanche, both of which price
-<<<<<<< HEAD
-    // fine, and never mentions the destination side, which Polygon and BNB
-    // Chain do fence). These pins go red when a floor lifts, moves, or
-    // appears on a chain we build on — the whole point of measuring.
-    // RE-PINNED 2026-10-13 (polish): NEAR lifted the Polygon floor (QA-X3;
-    // `npm run probe:venue-floors` 21:3xZ: polygon prices $20 both ends, BNB
-    // still 400s at $1,000). The pure pins use BNB as the floored example now.
-=======
     // fine, and never mentions the destination side, which BNB Chain does
     // fence). These pins go red when a floor lifts, moves, or appears on a
     // chain we build on — the whole point of measuring.
@@ -30440,7 +30427,6 @@ async function main() {
     // went red: the venue priced $20 both ways; `npm run probe:venue-floors`
     // agreed), so the table dropped it and BNB Chain is the fixture chain
     // here; Polygon joins the unfenced watch below.
->>>>>>> origin/main
     {
       const { VENUE_FLOORS, floorFor, crossChainFloorBlock, floorBlockFromError, venueFloorFromError, floorRefusalTurn, floorChipAsk, floorProblemLine, moveUsd } = await import('../lib/venue-floor')
       const { parseCrossChainSwap } = await import('../lib/cross-chain-swap')
@@ -30449,17 +30435,10 @@ async function main() {
       // — the pure rules —
       check('venue floor: a $20 move off BNB Chain is refused before the venue is asked', crossChainFloorBlock(cc('bnb', 'base'))?.side === 'origin')
       check('venue floor: the floor is read on the DESTINATION end too (measured, undocumented)', crossChainFloorBlock(cc('base', 'bnb'))?.side === 'destination')
-<<<<<<< HEAD
-      check('venue floor: chain aliases resolve — "bsc"/"binance" carry the BNB floor; "matic" (Polygon, lifted) carries none', crossChainFloorBlock(cc('bsc', 'base'))?.chain === 'bnb' && crossChainFloorBlock(cc('base', 'bsc'))?.chain === 'bnb' && crossChainFloorBlock(cc('matic', 'base')) === null)
-      check('venue floor: a move that CLEARS the floor is not refused', crossChainFloorBlock(cc('bnb', 'base', '2000')) === null)
-      check('venue floor: an unpriceable move is never refused by the table (it goes to the venue)', moveUsd('0.5', 'ETH') === null && crossChainFloorBlock(cc('bnb', 'base', '0.5', 'ETH')) === null)
-      check('venue floor: chains with no measured floor are untouched', ['base', 'ethereum', 'arbitrum', 'optimism', 'polygon', 'avalanche', 'gnosis', 'scroll'].every((c) => crossChainFloorBlock(cc(c, 'base')) === null && crossChainFloorBlock(cc('base', c)) === null))
-=======
       check('venue floor: chain aliases resolve — "bsc"/"binance" carry BNB Chain\'s floor, and "matic" is as unfenced as Polygon', crossChainFloorBlock(cc('base', 'bsc'))?.chain === 'bnb' && crossChainFloorBlock(cc('binance', 'base'))?.chain === 'bnb' && crossChainFloorBlock(cc('matic', 'base')) === null)
       check('venue floor: a move that CLEARS the floor is not refused', crossChainFloorBlock(cc('bnb', 'base', '2000')) === null)
       check('venue floor: an unpriceable move is never refused by the table (it goes to the venue)', moveUsd('0.5', 'ETH') === null && crossChainFloorBlock(cc('bnb', 'base', '0.5', 'ETH')) === null)
       check('venue floor: chains with no measured floor are untouched', ['base', 'ethereum', 'arbitrum', 'optimism', 'avalanche', 'gnosis', 'scroll', 'polygon'].every((c) => crossChainFloorBlock(cc(c, 'base')) === null && crossChainFloorBlock(cc('base', c)) === null))
->>>>>>> origin/main
 
       // — the belt: the venue's own words become our refusal —
       check('venue floor: the venue 400 parses, thousands separator and all', venueFloorFromError('Temporary swap limits: minimum swap amount is $1,000') === 1000 && venueFloorFromError('minimum swap amount is $100') === 100)
@@ -30469,15 +30448,6 @@ async function main() {
 
       // — the chips: complete asks, and only ones the wallet can take —
       const src = (chainWord: string, token: string, balance: number) => ({ chainWord, token, balance })
-<<<<<<< HEAD
-      const originTurn = floorRefusalTurn(cc('bnb', 'ethereum') as never, crossChainFloorBlock(cc('bnb', 'ethereum'))!, [src('bnb', 'USDC', 40), src('base', 'USDC', 55.2), src('polygon', 'USDC', 900)])
-      check('venue floor: an origin-side block offers every other chain the wallet holds on (Polygon too, now its floor lifted)', originTurn.chips.length === 2 && originTurn.chips.some((c) => c.resume.includes('from Base')) && originTurn.chips.some((c) => c.resume.includes('from Polygon')), JSON.stringify(originTurn.chips))
-      check('venue floor: the floored chain itself is never offered as the way out', !originTurn.chips.some((c) => /from BNB/i.test(c.resume)))
-      const poor = floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, [src('bnb', 'USDC', 40)])
-      check('venue floor: "move a bigger amount" is never offered to a wallet that cannot afford it', poor.chips.length === 0 && /Everywhere this wallet holds USDC is out/.test(poor.reply), poor.reply.slice(-140))
-      const rich = floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, [src('bnb', 'USDC', 4200)])
-      check('venue floor: a wallet that CAN clear the floor is offered the size-up', rich.chips.length === 1 && /^Swap 1000 USDC from BNB/i.test(rich.chips[0].resume), JSON.stringify(rich.chips))
-=======
       const originTurn = floorRefusalTurn(cc('bnb', 'ethereum') as never, crossChainFloorBlock(cc('bnb', 'ethereum'))!, [src('bnb', 'USDC', 40), src('base', 'USDC', 55.2)])
       check('venue floor: an origin-side block offers another chain the wallet holds on', originTurn.chips.length === 1 && originTurn.chips[0].resume.includes('from Base'), JSON.stringify(originTurn.chips))
       // "a chain carrying the SAME floor is never offered as the way out" needs two fenced chains to assert; only BNB
@@ -30486,7 +30456,6 @@ async function main() {
       check('venue floor: "move a bigger amount" is never offered to a wallet that cannot afford it', poor.chips.length === 0 && /Everywhere this wallet holds USDC is out/.test(poor.reply), poor.reply.slice(-140))
       const rich = floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, [src('bnb', 'USDC', 4200)])
       check('venue floor: a wallet that CAN clear the floor is offered the size-up', rich.chips.length === 1 && /^Swap 1000 USDC from BNB/.test(rich.chips[0].resume), JSON.stringify(rich.chips))
->>>>>>> origin/main
       check('venue floor: a wallet we never scanned is never told what it does not hold', !/can't see USDC anywhere/.test(floorRefusalTurn(cc('bnb', 'base') as never, crossChainFloorBlock(cc('bnb', 'base'))!, null).reply))
       // The chip contract: a chip SENDS, so every one must round-trip the grammar.
       const everyChip = [...originTurn.chips, ...rich.chips].map((c) => c.resume)
@@ -30506,10 +30475,7 @@ async function main() {
       const jobsSrc = readFileSync('lib/jobs.ts', 'utf8')
       check('venue floor: the job compiler refuses a leg the venue would refuse (never strand mid-job)', /crossChainFloorBlock\(ccp\)[\s\S]{0,80}floorProblemLine/.test(jobsSrc), 'a job can compile onto a floored bridge leg again')
       const { compileJobAsk } = await import('../lib/jobs')
-<<<<<<< HEAD
-=======
       // RE-PINNED 2026-10-13 (main sweep): BNB Chain is the floored fixture; Polygon (lifted) now sits beside Arbitrum as an unfloored one.
->>>>>>> origin/main
       const compiled = compileJobAsk('Swap 20 USDC from BNB Chain to USDC on Base, then supply 20 USDC to Aave')
       check('venue floor: a compound job carrying a floored leg refuses by name, with the floor in it', Boolean(compiled && 'problem' in compiled && /\$1,000 minimum/.test((compiled as { problem: string }).problem)), JSON.stringify(compiled).slice(0, 180))
       check('venue floor: the same compound over an unfloored chain still compiles (Arbitrum, and Polygon since its floor lifted)', ['Arbitrum', 'Polygon'].every((o) => { const c = compileJobAsk(`Swap 20 USDC from ${o} to USDC on Base, then supply 20 USDC to Aave`); return !!c && !('problem' in c) }))
@@ -30563,11 +30529,6 @@ async function main() {
       }
       // And every chain we BUILD on that the table does NOT fence still
       // prices $20 — this is the pin that catches a NEW floor appearing.
-<<<<<<< HEAD
-      // RE-PINNED 2026-10-13 (polish): Polygon joins the unfenced list — its
-      // floor lifted; this loop goes red if it ever comes back.
-=======
->>>>>>> origin/main
       for (const [slug, word] of [['eth', 'ethereum'], ['arb', 'arbitrum'], ['op', 'optimism'], ['pol', 'polygon'], ['avax', 'avalanche'], ['gnosis', 'gnosis'], ['scroll', 'scroll']] as const) {
         if (floorFor(word, 'origin')) continue
         const r = await oneclick(slug, 'base', 20)
@@ -35092,7 +35053,6 @@ async function main() {
     }
   }
 
-<<<<<<< HEAD
   /* POLISH:DEADENDS — every sentence the product offers is backed by a response (squad polish, 2026-10-13). */
   {
     console.log('— polish deadends: the market read door, a next step on every refusal, the inventory')
@@ -35122,7 +35082,8 @@ async function main() {
     const inv = enumerate()
     const falls = inv.filter((r) => r.verdict === 'planner' || r.verdict === 'refusal')
     check(`polish deadends: the inventory — ${inv.length} offered sentences, 0 planner, 0 bare refusal`, inv.length > 1500 && falls.length === 0, falls.slice(0, 5).map((r) => `[${r.surface}] ${r.sentence}`).join(' | '))
-=======
+  }
+
   // ── cron cost (2026-10-14): the tradability walk reads only STALE legs ──
   // Measured: one 4663 leg = 5 eth_calls ≈ 130 Alchemy CU, and the
   // 10-minute oldest-first walk re-read every leg ~45× a day (~70M CU a
@@ -35152,7 +35113,6 @@ async function main() {
     check('cron cost: the roster cron is OFF the schedule until HOUSE_MANAGER_KEY ships (route kept)', !paths.includes('/api/cron/roster') && existsSync('app/api/cron/roster/route.ts'), paths.join(' '))
     check('cron cost: the tradability cron stays every 10 minutes (a cold board still warms fast; a warm one costs nothing)',
       vercel.crons.find((c) => c.path === '/api/cron/tradability')?.schedule === '*/10 * * * *')
->>>>>>> origin/main
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
