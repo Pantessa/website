@@ -16,7 +16,7 @@
 // agree whatever the memory holds — and the deck at `/` stays static.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { DEFAULT_WINDOW, parseFrontWindow, type LiveView } from '@/lib/battle'
+import { parseFrontWindow, type LiveView } from '@/lib/battle'
 import { shareText, shareUrlFor } from '@/lib/live-share'
 import { parsePickParam } from '@/lib/market-pick'
 import { useMarketPick } from '@/lib/use-market-pick'
@@ -70,7 +70,8 @@ export default function ShareLive({ view, seat, markets }: ShareLiveProps) {
 
   const onShare = useCallback(async () => {
     const here = new URLSearchParams(window.location.search)
-    const since = seat === 'live' ? parseFrontWindow(here.get('since')) : DEFAULT_WINDOW
+    // /live and the home deck both keep a battle's window in the address (2026-10-20).
+    const since = parseFrontWindow(here.get('since'))
     // Belt: a pick that is only the fallback trio while /live's own URL names
     // markets means the hook has not read the URL (yet) — the URL is the pick.
     const fromUrl = seat === 'live' && !markets && pick.source === 'fallback' ? parsePickParam(here.get('t')) : []

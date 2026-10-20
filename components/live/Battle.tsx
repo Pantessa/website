@@ -52,6 +52,7 @@ import { FOLLOW_USD, fmtClock, fmtPrice, fmtUsd, followAsk, mergeFills, type Fol
 import { connectTape, type FeedStatus } from '@/lib/tape-feed'
 import { PERP_VENUES } from '@/lib/dune'
 import { useMarketPick } from '@/lib/use-market-pick'
+import { deckBattleSearch } from '@/lib/deck'
 import { MAX_PICK, armiesOf, armySliceNote, pickSourceWord } from '@/lib/market-pick'
 import PickSheet from '@/components/live/PickSheet'
 import ArmAlert from '@/components/live/ArmAlert'
@@ -86,10 +87,14 @@ export interface BattleProps {
   onFills?: (buffer: readonly TapeFill[]) => void
   /** The army holding the most ground, as it changes. */
   onLeader?: (market: string | null) => void
+  /** The home deck's stage keeps this view's window and pick mode in `/`'s
+   *  address (2026-10-20); the deck writes the view and the pick itself. */
+  url?: boolean
 }
 
-export default function Battle({ view, tradable, tabs, seat = 'page', onReport, onFills, onLeader }: BattleProps) {
+export default function Battle({ view, tradable, tabs, seat = 'page', onReport, onFills, onLeader, url = false }: BattleProps) {
   const onPage = seat === 'page'
+  const readsUrl = onPage || url
   // THE ONE PICK (GTM squad 2026-10-13): lane PICK makes `armies` follow it; ARENA's sheet reads it.
   const pick = useMarketPick({ seat })
   // The armies are the pick's first five (lib/market-pick armiesOf): the URL,
@@ -98,9 +103,9 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
   // deck's stage reads none of it (`/?t=` is nobody's).
   const armies = useMemo(() => armiesOf(pick.markets), [pick.markets])
   const universe = pick.universe
-  const [since, setSince] = useState<FrontWindow>(() => (onPage ? initialWindow() : parseFrontWindow(null)))
+  const [since, setSince] = useState<FrontWindow>(() => (readsUrl ? initialWindow() : parseFrontWindow(null)))
   // Which venue list the chips show; a "fill from" press writes the pick by hand.
-  const [pickMode, setPickMode] = useState<PickMode>(() => (onPage ? initialPick() : 'gainers'))
+  const [pickMode, setPickMode] = useState<PickMode>(() => (readsUrl ? initialPick() : 'gainers'))
   const onReportRef = useRef(onReport)
   onReportRef.current = onReport
   const onFillsRef = useRef(onFills)
@@ -182,6 +187,12 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
     if (pickMode !== 'gainers') url.searchParams.set('pick', pickMode)
     window.history.replaceState(window.history.state, '', url.pathname + url.search)
   }, [onPage, view, pick.markets, pick.ready, since, pickMode])
+  // The home deck's stage: only this view's own keys, beside the deck's.
+  useEffect(() => {
+    if (onPage || !url || typeof window === 'undefined') return
+    const next = window.location.pathname + deckBattleSearch(window.location.search, since, pickMode)
+    if (next !== window.location.pathname + window.location.search) window.history.replaceState(window.history.state, '', next)
+  }, [onPage, url, since, pickMode])
 
   // ── The universe (for the add box) is the store's (pick.universe) ─────
 

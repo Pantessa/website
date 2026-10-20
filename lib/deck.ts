@@ -20,7 +20,8 @@
 // the ladder's bins, the prints, the words, the heights the SSR frame is drawn
 // at. Pinned by scripts/deck-pins.ts; drawn by components/home/Deck.tsx.
 
-import { LIVE_VIEWS, type LiveView } from '@/lib/battle'
+import { DEFAULT_WINDOW, LIVE_VIEWS, type LiveView } from '@/lib/battle'
+import { PICK_PARAM, pickParam, type PickSource } from '@/lib/market-pick'
 import { chartPairFor } from '@/lib/charts'
 import { PRINT_FADE_MS, bookWords, cumulate, type BookFeedStatus, type DepthBook, type DepthLevel } from '@/lib/depth'
 import { PULSE_VENUE_WORD, pulseLiveHref, pulseStatusWords } from '@/lib/pulse'
@@ -84,6 +85,72 @@ export function deckHref(ch: DeckChannel, pick: string | null = null): string {
   const def = deckChannel(ch)
   if (def.view === 'tape') return pulseLiveHref(pick)
   return `/live?view=${def.view}`
+}
+
+// ── The deck's address (2026-10-20 — Nate: "set urls to each of the view
+// settings so people can share tokens selected, time frame and view") ───────
+//
+// `/` speaks /live's own words: `?view=` names the channel (no view = the
+// pulse, the home's default; the tape is spelled `view=tape` here), `?t=` the
+// one pick, and each channel's own settings ride under /live's keys — a battle
+// view's `since` + `pick`, The Flyover's `w` + `lens`. Swapping `/` for `/live`
+// in a shared link opens the same view. A bare `/` on the pulse stays bare:
+// the pick is written once a visitor leaves the pulse, sets the pick by hand,
+// or arrived with a link.
+
+/** The keys a channel owns in the address; another channel's are dropped. */
+export const DECK_CHANNEL_KEYS: Readonly<Record<DeckChannel, readonly string[]>> = {
+  pulse: [],
+  tape: [],
+  front: ['since', 'pick'],
+  siege: ['since', 'pick'],
+  flyover: ['w', 'lens'],
+}
+
+const DECK_OWNED_KEYS = ['since', 'pick', 'w', 'lens'] as const
+
+/** The channel a `/?view=` names: a deck channel's view, else the pulse
+ *  (The Map is not a deck channel; `/?view=map` opens the pulse). */
+export function parseDeckView(raw: string | null | undefined): DeckChannel {
+  if (!raw || raw === 'pulse') return DECK_DEFAULT_CHANNEL
+  const hit = DECK_CHANNELS.find((c) => c.id !== 'pulse' && c.view === raw)
+  return hit ? hit.id : DECK_DEFAULT_CHANNEL
+}
+
+/** Whether `/`'s address carries the pick: off the pulse, a hand-set or
+ *  linked pick, or a `?t=` already there. */
+export function deckWritesPick(ch: DeckChannel, source: PickSource, hasPickParam: boolean): boolean {
+  return ch !== 'pulse' || source === 'hand' || source === 'url' || hasPickParam
+}
+
+/** `/`'s search for a channel and a pick: `view` set (or dropped on the
+ *  pulse), the pick written when `writePick`, another channel's keys dropped,
+ *  everything else kept as the stage wrote it. Commas and colons stay literal. */
+export function deckSearch(search: string, ch: DeckChannel, markets: readonly string[], writePick: boolean): string {
+  const q = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+  if (ch === 'pulse') q.delete('view')
+  else q.set('view', deckChannel(ch).view)
+  const own = DECK_CHANNEL_KEYS[ch]
+  for (const k of DECK_OWNED_KEYS) if (!own.includes(k)) q.delete(k)
+  if (writePick) {
+    const t = pickParam(markets)
+    if (t) q.set(PICK_PARAM, t)
+    else q.delete(PICK_PARAM)
+  }
+  const s = q.toString().replace(/%2C/gi, ',').replace(/%3A/gi, ':')
+  return s ? `?${s}` : ''
+}
+
+/** A battle stage's own keys in `/`'s address: `since` off its default,
+ *  `pick` off the gainers; everything else kept. */
+export function deckBattleSearch(search: string, since: string, pickMode: string): string {
+  const q = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+  if (since === DEFAULT_WINDOW) q.delete('since')
+  else q.set('since', since)
+  if (pickMode === 'gainers') q.delete('pick')
+  else q.set('pick', pickMode)
+  const s = q.toString().replace(/%2C/gi, ',').replace(/%3A/gi, ':')
+  return s ? `?${s}` : ''
 }
 
 /** The battle views the deck names exist on /live under the same label. */
