@@ -63,6 +63,7 @@ import {
   parseLens,
   parsePlotKey,
   plotAsks,
+  plotChartHref,
   plotKey,
   plotSize,
   prune,
@@ -105,6 +106,13 @@ const inside = (a: Rect, b: Rect) => a.x >= b.x - 1e-6 && a.z >= b.z - 1e-6 && a
 
 export function flyoverPins(check: Check): void {
   // ── The view on /live ─────────────────────────────────────────────────
+  check('flyover: a click on a plot opens its asset page — a charted coin or stock (a DEX print under its ask ticker), never gold, FX or an unlisted xyz market; a double-click still flies (the open waits one double-click)',
+    (() => {
+      const shell = readFileSync('components/live/Flyover.tsx', 'utf8')
+      return plotChartHref('BTC', 'hyperliquid') === '/t/BTC' && plotChartHref('xyz:NVDA', 'hyperliquid') === '/t/NVDA' && plotChartHref('WETH', 'dex') === '/t/ETH' &&
+        plotChartHref('xyz:GOLD', 'hyperliquid') === null && plotChartHref('USDT', 'dex') === null &&
+        /router\.push\(href\)/.test(shell) && /onDoubleClick[\s\S]{0,80}cancelOpen\(\)/.test(shell) && /OPEN_DELAY_MS = \d+/.test(shell)
+    })())
   check('flyover: /live has a fifth view, The Flyover; it is not a battle view (it reads every market, not one to five armies); ?view=flyover parses',
     LIVE_VIEWS.some((v) => v.id === 'flyover' && v.label === 'The Flyover') && parseLiveView('flyover') === 'flyover' && !isBattleView('flyover') && isBattleView('front') && isBattleView('siege') && isBattleView('map') && !isBattleView('tape'))
 

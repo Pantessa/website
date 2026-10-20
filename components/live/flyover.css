@@ -56,6 +56,8 @@ html[data-theme="light"] .flyover {
 .flyover__stage:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .flyover__canvas { display: block; width: 100%; height: 100%; cursor: grab; }
 .flyover__canvas:active { cursor: grabbing; }
+.flyover__stage[data-plot-link] .flyover__canvas { cursor: pointer; }
+.flyover__stage[data-plot-link] .flyover__canvas:active { cursor: grabbing; }
 .flyover__status { position: absolute; top: 12px; left: 12px; display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 360px); padding: 6px 11px; border: 1px solid var(--fly-glass-line); border-radius: 999px; background: var(--fly-glass); color: var(--fg); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 .flyover__statusdot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--muted-2); }
 .flyover__status[data-live] .flyover__statusdot { background: var(--fly-up); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fly-up) 25%, transparent); }
