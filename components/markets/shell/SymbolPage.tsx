@@ -87,7 +87,7 @@ import type { TicketSide } from '@/lib/order-ticket'
 const UNKNOWN_SYMBOL_PICKS = ['AAPL', 'ETH', 'HYPE'] as const
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 /** The tabs the chart shows on; everywhere else it parks (mounted, hidden). */
-export const CHART_TABS: readonly MarketTab[] = ['overview', 'chart']
+export const CHART_TABS: readonly MarketTab[] = ['overview']
 export const chartShowsOn = (tab: MarketTab): boolean => CHART_TABS.includes(tab)
 /** The rail docks (and the ticket moves into it) from this viewport width — markets.css's breakpoint. */
 const RAIL_DOCK_MIN_PX = 1024
@@ -148,8 +148,8 @@ export default function SymbolPage({
     syncMarketTab(tab)
   }, [tab])
   const showChart = chartShowsOn(tab)
-  // A build or an ask that lands in the chart's dock brings a chart tab back
-  // first (the dock parks with the chart off Overview / Chart).
+  // A build or an ask that lands in the chart's dock brings Overview back
+  // first (the dock parks with the chart off Overview).
   const showAChartTab = useCallback(() => setTab((t) => (chartShowsOn(t) ? t : 'overview')), [])
 
   // ── Compare: ?vs=<symbol> (MK2) — same URL discipline as ?tab= ──
@@ -607,13 +607,13 @@ export default function SymbolPage({
           </section>
         )}
 
-        {/* ── The tab's body (the Chart tab is the chart itself) ── */}
+        {/* ── The tab's body ── */}
         <div className="sym__main">
           <div className="sym__body" data-tab={tab}>
             {pair ? (
               tab === 'overview' ? (
                 <OverviewTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} last={stats?.last ?? null} />
-              ) : tab === 'chart' ? null : tab === 'news' ? (
+              ) : tab === 'news' ? (
                 <NewsTab symbol={sym} pair={pair} />
               ) : tab === 'community' ? (
                 <CommunityTab symbol={sym} pair={pair} chartState={chartState} onAsk={onChartAsk} onLoadChart={loadChart} />

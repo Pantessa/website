@@ -26422,13 +26422,15 @@ async function main() {
       `head=${iHead} id=${iId} meta=${iMeta} quote=${iQuote} tabs=${iTabs} act=${iAct} chart=${iChart} dock=${iDock}`,
     )
     {
-      // The Chart tab shows the chart (taller, data-tab="chart"); News parks
-      // it — the same mount, hidden, so drawings and the thread survive.
+      // RE-PINNED 2026-10-20 (drop-chart-tab): the Chart tab is gone (it was
+      // Overview's chart again); an old ?tab=chart link opens on Overview with
+      // no Chart tab in the strip. News parks the chart — the same mount,
+      // hidden, so drawings and the thread survive.
       const tChartTab = flat(await (await fetch(`${BASE}/t/AAPL?tab=chart`)).text())
       const tNewsTab = flat(await (await fetch(`${BASE}/t/AAPL?tab=news`)).text())
       check(
-        'mk2/markets: /t/AAPL?tab=chart renders the chart shown under a Chart tab lit (data-tab="chart" data-chart="shown", an empty body); ?tab=news parks the chart AND the ask dock (is-parked on both, mounted in the HTML) and renders the News body',
-        /<main class="sym sym--cockpit" data-symbol="AAPL" data-tab="chart" data-chart="shown">/.test(tChartTab) && /class="tchart sym__chart"/.test(tChartTab) && /<a href="\/t\/AAPL\?tab=chart" role="tab" aria-selected="true" class="sym__tab is-on"/.test(tChartTab) &&
+        'mk2/markets: /t/AAPL?tab=chart falls back to Overview (data-tab="overview" data-chart="shown", no Chart tab in the strip); ?tab=news parks the chart AND the ask dock (is-parked on both, mounted in the HTML) and renders the News body',
+        /<main class="sym sym--cockpit" data-symbol="AAPL" data-tab="overview" data-chart="shown">/.test(tChartTab) && /class="tchart sym__chart"/.test(tChartTab) && !/tab=chart"/.test(tChartTab) && !/>Chart<\/a>/.test(tChartTab) &&
           /<main class="sym sym--cockpit" data-symbol="AAPL" data-tab="news" data-chart="parked">/.test(tNewsTab) && /class="tchart sym__chart is-parked"/.test(tNewsTab) && /<section class="mk-askdock is-open is-parked" data-askchart="open"/.test(tNewsTab) &&
           /<div class="sym__body" data-tab="news">/.test(tNewsTab) && tNewsTab.indexOf('class="tchart sym__chart is-parked"') < tNewsTab.indexOf('class="sym__body" data-tab="news"'),
       )
