@@ -71,6 +71,8 @@ export interface Print {
   price: number
   /** Base units, the candle's volume unit. */
   size: number
+  /** The TAKER's side, when the venue says (the Tape view colors by it). */
+  side?: 'buy' | 'sell'
 }
 
 /** The bucket a print belongs to, in the frame's seconds. */

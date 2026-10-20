@@ -28,23 +28,27 @@ const TIMEOUT_MS = 6_000
 /** One Coinbase Exchange trade row → a print (null when it isn't one). */
 export function printFromCoinbase(row: unknown): Print | null {
   if (!row || typeof row !== 'object') return null
-  const r = row as { price?: unknown; size?: unknown; time?: unknown }
+  const r = row as { price?: unknown; size?: unknown; time?: unknown; side?: unknown }
   const price = Number(r.price)
   const size = Number(r.size)
   const at = typeof r.time === 'string' ? Date.parse(r.time) : NaN
   if (!(price > 0) || !Number.isFinite(at)) return null
-  return { at, price, size: Number.isFinite(size) && size > 0 ? size : 0 }
+  // Coinbase Exchange names the MAKER's side; the taker took the other one.
+  const side = r.side === 'sell' ? 'buy' : r.side === 'buy' ? 'sell' : undefined
+  return { at, price, size: Number.isFinite(size) && size > 0 ? size : 0, ...(side ? { side } : {}) }
 }
 
 /** One Hyperliquid `recentTrades` row → a print. */
 export function printFromHl(row: unknown): Print | null {
   if (!row || typeof row !== 'object') return null
-  const r = row as { px?: unknown; sz?: unknown; time?: unknown }
+  const r = row as { px?: unknown; sz?: unknown; time?: unknown; side?: unknown }
   const price = Number(r.px)
   const size = Number(r.sz)
   const at = Number(r.time)
   if (!(price > 0) || !Number.isFinite(at) || at <= 0) return null
-  return { at, price, size: Number.isFinite(size) && size > 0 ? size : 0 }
+  // Hyperliquid names the aggressor: B bought, A sold.
+  const side = r.side === 'B' ? 'buy' : r.side === 'A' ? 'sell' : undefined
+  return { at, price, size: Number.isFinite(size) && size > 0 ? size : 0, ...(side ? { side } : {}) }
 }
 
 /** Oldest first, inside the span, no future stamps. */

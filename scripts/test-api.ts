@@ -376,6 +376,7 @@ import { battlePins } from './battle-pins'
 import { flyoverPins } from './flyover-pins'
 import { orderTicketPins } from './order-ticket-pins'
 import { depthPins } from './depth-pins'
+import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
 import { homeAppsPins } from './home-apps-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
@@ -34991,6 +34992,7 @@ async function main() {
   orderTicketPins(check)
   // The Depth chart (2026-10-13): the book model and its deltas, the venue wire shapes, the window, the curve, the hover's numbers, the act at a level, the plan per chart, the words, the view's URL and wiring.
   depthPins(check)
+  chartTapePins(check)
   // THE DECK (2026-10-13): the band at the top of `/` as a bar of four channels (Pulse · Tape · The Front · The Siege) with the streaming-order-book switch — the channels and their doors, the switch's memory, the ladder's bins and prints, the words, the SSR frame, the wiring.
   deckPins(check)
   // THE APPS ROW (2026-10-13): the fleet's marks on the splash in the guide card's old seat, each a door into the chat's apps drawer with that app on — the table, the hrefs, the public chat surface, the wiring.

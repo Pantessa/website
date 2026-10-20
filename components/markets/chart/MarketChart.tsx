@@ -41,7 +41,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
-import { ChartCandlestick, ChevronsRight, Layers2, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, RotateCcw, Rows3, Ruler, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, Trash2, TrendingUp, Undo2 } from 'lucide-react'
+import { ChartCandlestick, ChevronsRight, Layers2, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, RotateCcw, Rows3, Ruler, ScrollText, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, Trash2, TrendingUp, Undo2 } from 'lucide-react'
 import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, isPrintTf, tfsForSource, type Candle, type ChartTf } from '@/lib/charts'
 import { PRINT_KEEP_MS, applyPrint, barsFromPrints, chartLiveFeed, printOf, seedThenPrints, tailIsLive, tailWords, type Print } from '@/lib/chart-live'
 import { syncTfParam } from '@/lib/markets'
@@ -74,6 +74,7 @@ import TheWall, { marginBarsFor, type WallStatus } from './TheWall'
 import { parseBoardParam, parseViewParam, syncViewParam, type BoardMode, type ChartView } from '@/lib/markets'
 import { hasPerpCold } from '@/lib/symbol-venues'
 import DepthChart from './DepthChart'
+import TapeView from './TapeView'
 import { DEFAULT_DEPTH_SETTINGS, parseDepthSettings, type DepthSettings } from '@/lib/depth'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
@@ -921,10 +922,12 @@ export default function MarketChart({
 
   const fieldOn = battlefield && view === 'field'
   const depthOn = battlefield && view === 'depth'
-  // Either other view: the candles' own chrome (tools, legend, drawings) steps aside.
-  const altOn = fieldOn || depthOn
-  // The Depth chart takes the prints off the chart's one relay stream.
+  const tapeOn = battlefield && view === 'tape'
+  // Any other view: the candles' own chrome (tools, legend, drawings) steps aside.
+  const altOn = fieldOn || depthOn || tapeOn
+  // The Depth chart and the Tape take the prints off the chart's one relay stream.
   const depthPrintRef = useRef<((fills: readonly TapeFill[]) => void) | null>(null)
+  const tapePrintRef = useRef<((fills: readonly TapeFill[]) => void) | null>(null)
   const switchView = useCallback((next: ChartView) => {
     if (next !== 'candles') {
       setTool('none')
@@ -1052,9 +1055,9 @@ export default function MarketChart({
     }
   }, [pairKey, tf, liveFeed])
   useEffect(() => {
-    // The Depth view wants the prints on every frame (they land on the book,
-    // not on a bar); the candles only on a live frame.
-    if (!liveFeed || !(tailIsLive(tf, liveFeed) || depthOn)) {
+    // The Depth view and the Tape want the prints on every frame (they land
+    // on the book / as rows, not on a bar); the candles only on a live frame.
+    if (!liveFeed || !(tailIsLive(tf, liveFeed) || depthOn || tapeOn)) {
       setTailStatus('idle')
       return
     }
@@ -1075,6 +1078,7 @@ export default function MarketChart({
       },
       onFills: (batch) => {
         depthPrintRef.current?.(batch)
+        tapePrintRef.current?.(batch)
         if (!tailLive) return
         if (print) {
           const floor = Date.now() - PRINT_KEEP_MS
@@ -1119,7 +1123,7 @@ export default function MarketChart({
       printLineRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveFeed, tf, tokens, symbol, depthOn])
+  }, [liveFeed, tf, tokens, symbol, depthOn, tapeOn])
 
   // Compare: a second symbol's candles at the chart's frame, drawn as a line
   // on the LEFT scale in percentage mode (indexed to the first bar on screen).
@@ -1568,6 +1572,14 @@ export default function MarketChart({
               <Layers2 className="h-3.5 w-3.5" />
               <span>Depth</span>
             </button>
+            {/* The Tape (2026-10-20): this instrument's prints as rows, a
+                button on each. A stock has no prints to list. */}
+            {(pair?.source === 'coinbase' || pair?.source === 'hyperliquid' || liveFeed) && (
+              <button type="button" className={`mkt-view__btn mono${view === 'tape' ? ' is-active' : ''}`} aria-pressed={view === 'tape'} title="Tape — this market's trades as they print, newest first, with the sentence that does the same on every row" onClick={() => switchView('tape')}>
+                <ScrollText className="h-3.5 w-3.5" />
+                <span>Tape</span>
+              </button>
+            )}
             {/* The Battlefield left the switch when Depth arrived (Nate,
                 2026-10-13: "remove the battlefield tab but keep the code");
                 its `?view=battlefield` deep link still opens it, and while
@@ -1659,7 +1671,7 @@ export default function MarketChart({
 
       {/* Canvas: the engine owns the bars; the SVG layer owns the drawings. */}
       <div
-        className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fieldOn ? ' is-field' : depthOn ? ' is-depth' : ''}${fill ? ' min-h-0 flex-1' : ''}`}
+        className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fieldOn ? ' is-field' : depthOn ? ' is-depth' : tapeOn ? ' is-tape' : ''}${fill ? ' min-h-0 flex-1' : ''}`}
         style={fill ? undefined : { height: heightProp }}
         onPointerEnter={() => {
           overRef.current = true
@@ -1759,6 +1771,7 @@ export default function MarketChart({
         )}
         {fieldOn && tokens && <FrontBoard symbol={pair.symbol} pair={pair} tf={tf} bars={candles} tokens={tokens} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} board={board} onBoard={setBoard} />}
         {depthOn && tokens && <DepthChart symbol={pair.symbol} pair={pair} tokens={tokens} last={last} perpListed={hasPerpCold(pair.symbol)} printSink={depthPrintRef} printStatus={liveFeed ? tailStatus : null} printLabel={liveFeed?.label ?? null} onLevel={onLimit} settings={depthSettings} onSettings={setDepthSettings} />}
+        {tapeOn && <TapeView symbol={pair.symbol} pair={pair} printSink={tapePrintRef} printStatus={liveFeed ? tailStatus : null} printLabel={liveFeed?.label ?? null} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} />}
         {wallOn && tokens && <TheWall geom={geom} bars={bars} symbol={pair.symbol} pair={pair} tf={tf} tokens={tokens} last={last} hostRef={wrapRef} onStatus={setWallStatus} />}
         {!altOn && <DrawingLayer
           geom={geom}
