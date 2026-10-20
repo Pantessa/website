@@ -53,6 +53,7 @@ import { useSession } from '@/lib/session'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS, TRY_PROMPTS } from '@/lib/examples'
 import { GUEST_TRIAL_LIMIT, GUEST_WALL_COPY, bumpGuestTurns, guestTurnsUsed, refundGuestTurn } from '@/lib/guest-trial'
+import { chatHrefFor, isDbChatId } from '@/lib/chat-ids'
 import EmptyState from '@/components/chat/EmptyState'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
@@ -1281,7 +1282,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       // Not in the embed: the iframe URL carries the embed params. Not in
       // simple mode either: /i/<slug> IS the mode flag — rewriting it to
       // /chat/<id> made a refresh reopen the full chat workspace.
-      if (!embedded && !simple) window.history.replaceState(null, '', `/chat/${chatId}`)
+      // Only a DB thread has an address of its own (lib/chat-ids
+      // chatHrefFor): a guest's LOCAL thread keeps the bare /chat, the
+      // public surface whose banner promised the answer. /chat/<localId>
+      // read as an open thread to the spine's gate (AppSpine, #757), which
+      // sent the guest home before the reply landed (2026-10-20,
+      // scripts/guest-chat-drive.mjs).
+      if (!embedded && !simple && isDbChatId(chatId)) window.history.replaceState(null, '', chatHrefFor(chatId))
     }
 
     const userMsg = raw.trim()

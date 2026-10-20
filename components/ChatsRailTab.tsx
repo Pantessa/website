@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import { Globe, Loader2, MessageSquare, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
+import { chatHrefFor, isDbChatId } from '@/lib/chat-ids'
 import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import CreateAccountButton from '@/components/CreateAccountButton'
@@ -27,12 +28,30 @@ export default function ChatsRailTab({
   onNavigate?: () => void
 }) {
   const router = useRouter()
-  const { currentChatId, chats, chatsLoading, deleteChat } = useYeetfulStore()
+  const { currentChatId, chats, chatsLoading, deleteChat, setCurrentChatId } = useYeetfulStore()
   const { address, needsSignIn, signIn, signingIn } = useSession()
 
   const go = (href: string) => {
     onNavigate?.()
     router.push(href)
+  }
+
+  // A thread's row opens it at its address (lib/chat-ids chatHrefFor). A
+  // LOCAL thread has none of its own — it lives on the bare /chat — so it
+  // is selected here and the bare page keeps it (ChatWorkspace);
+  // /chat/<localId> is an open thread's address, which the spine's gate
+  // bounces a signed-out visitor from (2026-10-20).
+  const openChat = (id: string) => {
+    if (!isDbChatId(id)) setCurrentChatId(id)
+    go(chatHrefFor(id))
+  }
+
+  // New Chat clears the current thread by hand: a local thread stays current
+  // on the bare /chat otherwise, and a push to the address you are on
+  // mounts nothing.
+  const newChat = () => {
+    setCurrentChatId(null)
+    go('/chat')
   }
 
   const handleDeleteChat = (id: string) => {
@@ -44,7 +63,7 @@ export default function ChatsRailTab({
     <>
       <div className={cn('px-3 pb-2', flat && 'pt-3')}>
         <button
-          onClick={() => go('/chat')}
+          onClick={newChat}
           className={cn(
             'w-full flex items-center gap-2 px-3 py-2 min-h-[44px] md:min-h-0 rounded-xl bg-[var(--surf-2)] border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-all text-sm font-medium',
             flat && 'min-h-[48px] md:min-h-[48px] active:bg-[var(--surf-1)]',
@@ -97,7 +116,7 @@ export default function ChatsRailTab({
               flat && 'min-h-[48px] active:bg-[var(--surf-1)]',
               currentChatId === chat.id ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-1)]',
             )}
-            onClick={() => go(`/chat/${chat.id}`)}
+            onClick={() => openChat(chat.id)}
           >
             <MessageSquare className="w-3.5 h-3.5 flex-shrink-0" />
             <span className={cn('flex-1 truncate', flat ? 'text-[13px]' : 'text-xs')}>{chat.title}</span>
