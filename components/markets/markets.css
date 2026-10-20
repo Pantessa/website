@@ -642,7 +642,6 @@ button.mk-held:hover { border-color: var(--accent); }
 .sym .tchart.is-parked, .sym .mk-askdock.is-parked { display: none !important; }
 /* The Chart tab is the chart: full height. (The battlefield / positioning
    rules above are more specific and still win when they apply.) */
-.sym--cockpit[data-tab="chart"] .tchart:not(.tchart--expanded) { height: clamp(540px, 74dvh, 820px); }
 
 /* The right column's ticket. */
 .mkt-railticket { flex: 0 0 auto; max-height: 70%; overflow: auto; scrollbar-width: thin; margin: 10px 12px 0; padding: 12px 12px 10px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: 14px; background: var(--surf-1); min-width: 0; }
