@@ -86,6 +86,37 @@ export function fmtQuotePrice(n: number | null | undefined): string {
   return n.toPrecision(3)
 }
 
+/**
+ * THE LIVE PRICE'S DECIMALS (2026-10-20, Nate: "show the same decimal in both
+ * spots, main header and title"). One ladder for the number that moves with
+ * the prints — the symbol strip's last and the tab's title — so a 10s tick
+ * on a $7 coin shows (7.1329 → 7.1330), the way Coinbase titles its tab.
+ * Thousands keep their separators (the header's $2,365.12); the 24h stats
+ * beside it stay on fmtQuotePrice (hour candles, two places is their truth).
+ */
+export function fmtLivePrice(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return '—'
+  if (n >= 10_000) return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+  if (n >= 100) return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  if (n >= 1) return n.toFixed(4)
+  if (n >= 0.01) return n.toFixed(5)
+  return n.toPrecision(3)
+}
+
+/** The tab's title while the chart is live: `$7.1329 · UNI · Pantessa` (the
+ *  price leads, as Coinbase does, so a pinned tab reads at a glance); no
+ *  price yet → null, the page keeps its SEO title. */
+export function liveTabTitle(symbol: string, last: number | null | undefined): string | null {
+  if (last == null || !Number.isFinite(last) || !(last > 0)) return null
+  return `$${fmtLivePrice(last)} · ${symbol} · Pantessa`
+}
+
+/** Is this title one of ours (a live price) rather than the page's SEO title
+ *  (`… | Pantessa Markets`)? The page tells React's metadata write from its own. */
+export function isLiveTabTitle(title: string | null | undefined): boolean {
+  return typeof title === 'string' && title.startsWith('$') && title.endsWith(' · Pantessa')
+}
+
 export function fmtPct(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return '—'
   return `${n > 0 ? '+' : ''}${n.toFixed(2)}%`
