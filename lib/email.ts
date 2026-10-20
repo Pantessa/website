@@ -3,13 +3,14 @@
 // recorded even if delivery hiccups. Disabled (no-op) when RESEND_API_KEY is
 // unset, so the app runs fine without email configured.
 //
-// The yeetful.com domain is verified in Resend (DKIM resend._domainkey +
-// SPF/return-path on send.yeetful.com), so production mail authenticates as
-// yeetful.com. Replies route to a human via EMAIL_REPLY_TO.
+// The pantessa.com domain is verified in Resend (DKIM resend._domainkey +
+// SPF/return-path on send.pantessa.com), so production mail authenticates as
+// pantessa.com. Replies route to a human via EMAIL_REPLY_TO. yeetful.com stays
+// verified too, so an EMAIL_FROM still on the old domain keeps sending.
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
-const FROM = process.env.EMAIL_FROM ?? 'Pantessa <onboarding@yeetful.com>'
-const REPLY_TO = process.env.EMAIL_REPLY_TO ?? 'nate@yeetful.com'
+const FROM = process.env.EMAIL_FROM ?? 'Pantessa <hello@pantessa.com>'
+const REPLY_TO = process.env.EMAIL_REPLY_TO ?? 'nate@pantessa.com'
 import { SITE_URL as SITE } from './site-url'
 
 export function emailEnabled(): boolean {
