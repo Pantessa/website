@@ -197,7 +197,10 @@ export async function runDcaAutoToggleTurn(
   const toggle = parseDcaAutoToggle(message)
   if (!toggle) return null
   trace({ type: 'status', label: `dca autopilot layer claimed the turn: ${toggle.op}${toggle.token ? ` ${toggle.token}` : ''} — planner bypassed` })
-  if (!wallet) return { reply: '🤖 Connect your wallet first — autopilot belongs to a wallet.' }
+  if (!wallet) {
+    // The door, not a wall (standing rule 6): the ask re-runs on connect.
+    return { reply: '🤖 Connect your wallet first — autopilot belongs to a wallet.', connectWallet: true, connectAsk: message, connectLabel: toggle.op === 'arm' ? 'Connect wallet to arm autopilot' : 'Connect wallet to turn it off', buildPath: 'native-dca-auto' }
+  }
   if (toggle.op === 'disarm' && !walletProven) {
     const { mutationGate } = await import('@/lib/chat-mutation-gate')
     trace({ type: 'note', level: 'warn', label: 'dca autopilot: disarm asked but the session does not own the wallet — answering the sign-in gate, nothing changed' })

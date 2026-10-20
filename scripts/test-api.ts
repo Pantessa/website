@@ -35011,6 +35011,36 @@ async function main() {
       JSON.stringify(j).slice(0, 200))
   }
 
+  // The native walls open the door (2026-10-20, CLAUDE.md standing rule 6 —
+  // connect to act): a wallet-less money ask that reached the Hyperliquid,
+  // spot-guard, DCA or autopilot layer used to end in words with no button.
+  // Each wall now answers the unified connect door with the ask held
+  // VERBATIM (the runtime re-runs it the moment an address lands —
+  // lib/wallet-reconnect shouldRerunConnectAsk), a button label, and its
+  // layer's buildPath; the reply keeps its words. One live check per wall,
+  // posted with no wallet and an empty set (the venue word pulls the
+  // first-party app in — lib/ask-apps followAskApps). classifyTurn reads
+  // every one as actionable, so none lands on the failures queue.
+  {
+    const walls: { layer: string; ask: string; reply: RegExp; buildPath: string }[] = [
+      { layer: 'hyperliquid order', ask: 'Long $25 of HYPE on Hyperliquid', reply: /Connect your wallet first/, buildPath: 'native-hl-exec' },
+      { layer: 'spot guard manage', ask: 'Pause my ETH spot protection', reply: /Connect your wallet first/, buildPath: 'native-spot-guard' },
+      { layer: 'spot guard arm', ask: 'Protect my spot ETH with a 10% stop loss', reply: /arm spot protection/i, buildPath: 'native-spot-guard' },
+      { layer: 'dca run', ask: 'Run my ETH dca now (schedule abcdef1234)', reply: /Connect your wallet first/, buildPath: 'native-dca' },
+      { layer: 'dca manage', ask: 'List my dcas', reply: /Connect your wallet first/, buildPath: 'native-dca' },
+      { layer: 'dca create', ask: 'Buy $10 of AAPL every week', reply: /connect your wallet first/i, buildPath: 'native-dca' },
+      { layer: 'dca autopilot', ask: 'Arm my ETH dca', reply: /Connect your wallet first/, buildPath: 'native-dca-auto' },
+    ]
+    for (const w of walls) {
+      const r = await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1' }, body: JSON.stringify({ message: w.ask, history: [], activeServers: [] }) })
+      const j = (await r.json().catch(() => ({}))) as { reply?: string; connectWallet?: boolean; connectAsk?: string; connectLabel?: string; buildPath?: string }
+      check(`native walls (${w.layer}): no wallet → the connect door with the ask held verbatim, a label, the layer's path`,
+        j.connectWallet === true && j.connectAsk === w.ask && typeof j.connectLabel === 'string' && j.connectLabel.length > 0 && j.connectLabel.length <= 60 &&
+          w.reply.test(j.reply ?? '') && j.buildPath === w.buildPath && classifyTurn(j as Record<string, unknown>).kind === null,
+        JSON.stringify(j).slice(0, 240))
+    }
+  }
+
   // Dune's real-time feeds through the relay (2026-10-13): the probe names
   // the key's state; a keyed relay streams `hello` then fills within fifteen
   // seconds (HyperCore prints ~40/s); without the key it answers 503 by name.
