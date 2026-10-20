@@ -37,8 +37,9 @@ import { useMarketPick } from '@/lib/use-market-pick'
 import PickSheet from '@/components/live/PickSheet'
 import './pulse.css'
 
-/** Rows on the stage: eight fit the stage at 1440 with the head and the foot. */
-export const TAPE_STAGE_ROWS = 8
+/** Rows on the stage: the channel plays at /live's size (2026-10-15), so twenty
+ *  rows fill The Front's field height at 1440; a phone shows the first ten. */
+export const TAPE_STAGE_ROWS = 20
 
 export default function TapeStage({ onReport, onFills, onBookMarket }: { onReport?: (r: StageReport) => void; onFills?: (buffer: readonly TapeFill[]) => void; onBookMarket?: (market: string | null) => void }) {
   const tradable = useTradable()

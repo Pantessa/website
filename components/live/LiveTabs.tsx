@@ -1,6 +1,7 @@
 'use client'
 
-// The /live views (2026-10-06): Tape · The Front · The Siege · The Map. One
+// The /live views (2026-10-06): Tape · The Front · The Siege · The Map (and
+// The Flyover, 2026-10-15, which keeps its window and lens as `w` / `lens`). One
 // strip, rendered in each view's own bar. A tab is a real link (`?view=`),
 // so a view can be shared and the back button works; the armies, the window
 // and the pick mode ride along when a battle view hands off to another.
@@ -13,7 +14,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { LIVE_VIEWS, type LiveView } from '@/lib/battle'
 import ShareLive from '@/components/live/ShareLive'
 
-const CARRIED = ['t', 'since', 'pick'] as const
+const CARRIED = ['t', 'since', 'pick', 'w', 'lens'] as const
 
 function hrefFor(id: LiveView, search: string): string {
   const params = new URLSearchParams(search)

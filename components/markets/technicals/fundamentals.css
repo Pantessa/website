@@ -179,3 +179,10 @@
   .mk-fund__ranges { justify-content: flex-end; }
   .mk-fund__chart { height: 240px; }
 }
+
+/* POLISH (MARKETS-MOBILE, 2026-10-13): the DefiLlama links in the head and the foot are 14px text; under a
+   thumb they keep their look and gain a 44px hit area (the markets idiom). */
+@media (hover: none) {
+  .mk-fund__head a, .mk-fund__foot a { position: relative; }
+  .mk-fund__head a::after, .mk-fund__foot a::after { content: ''; position: absolute; inset: -15px -6px; }
+}

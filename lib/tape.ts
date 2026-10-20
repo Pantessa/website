@@ -22,6 +22,7 @@
 // and no block; Dune's perp feeds carry both, 2026-10-13).
 
 import { chartPairFor, isChartedStock } from '@/lib/charts'
+import { tokenHome } from '@/lib/token-home'
 
 /** The taker's direction: a buy lifted the ask, a sell hit the bid. */
 export type TapeSide = 'buy' | 'sell'
@@ -475,6 +476,10 @@ export function followAsk(fill: Pick<TapeFill, 'market' | 'side'> & Partial<Pick
     if (fill.side !== 'buy') return null
     const ticker = dexAskTicker(fill.market)
     if (!TICKER_RE.test(ticker)) return null
+    // A "SOL"/"XRP" printed on a Base pool is a bridged copy; the swap layer
+    // refuses it by name (non-EVM home). The honest follow is the perp the
+    // route's own door offers (POLISH/DEADENDS 2026-10-13).
+    if (tokenHome(ticker)) return { ask: `Long $${usd} of ${ticker} on Hyperliquid`, label: `Long ${ticker}`, tone: 'buy', venue: 'hyperliquid' }
     const where = chainWord(fill.chainId ?? null)
     return { ask: `Buy $${usd} of ${ticker}${where ? ` on ${where}` : ''}`, label: `Buy ${ticker}`, tone: 'buy', venue: 'spot' }
   }

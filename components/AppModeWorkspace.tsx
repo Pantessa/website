@@ -12,6 +12,7 @@ import { chainById } from '@/lib/chains'
 import { splashCapable } from '@/lib/splash/types'
 import type { ActivityTile, HoldingsTile, NftsTile, ProposalsTile, RowsTile, SplashTile } from '@/lib/splash/types'
 import { PANEL_TITLES, derivePanels, tilePanelKind, type PanelKind } from '@/lib/panels/types'
+import { cleanServerName } from '@/lib/utils'
 
 /**
  * App Mode: the working set rendered as a persistent structured workspace —
@@ -116,7 +117,7 @@ export default function AppModeWorkspace({
     <div className="mx-auto w-full max-w-[1600px] px-1 py-4 md:px-4">
       <div className="mb-4 flex items-center gap-2">
         <Wallet className="h-4 w-4 text-[color:var(--muted-2)]" />
-        <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
+        <span className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]">
           App view · {shortAddr(address)}
         </span>
         {loading && tiles && (
@@ -124,7 +125,7 @@ export default function AppModeWorkspace({
         )}
         {/* One line of orientation — this surface and the Chat splash render
             the same live data, so first-timers need to know what flipped. */}
-        <span className="hidden md:inline text-[11px] text-[color:var(--muted-2)]">
+        <span className="hidden md:inline text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
           — your MCPs as panels · flip to Chat to just ask
         </span>
       </div>
@@ -206,7 +207,7 @@ function PanelFrame({
             <Link
               key={s.slug}
               href={`/servers/${s.slug}`}
-              title={s.name}
+              title={cleanServerName(s.name)}
               className="grid h-5 w-5 place-items-center overflow-hidden rounded-full border border-[var(--line)] bg-[var(--surf-2)]"
             >
               <BrandIcon server={s} size={12} />
@@ -229,7 +230,7 @@ function PanelFrame({
             <button
               type="button"
               onClick={onRetry}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] px-2.5 py-1 text-[length:var(--fs-xs)] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-[color:var(--fg)]"
             >
               <RefreshCw className="h-3 w-3" /> Retry
             </button>
@@ -259,7 +260,7 @@ function PanelFrame({
                     type="button"
                     title={pr.prompt}
                     onClick={() => onPick(pr.prompt, pr.slug)}
-                    className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+                    className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[length:var(--fs-xs)] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-[color:var(--fg)]"
                   >
                     {pr.label}
                   </button>
@@ -327,7 +328,7 @@ function NftGalleryBody({ tile }: { tile: NftsTile }) {
                 {n.name.replace(/^#/, '').slice(0, 1).toUpperCase()}
               </span>
             )}
-            <span className="truncate font-medium text-white">{n.name}</span>
+            <span className="truncate font-medium text-[color:var(--fg)]">{n.name}</span>
           </div>
           <div className="flex shrink-0 items-center gap-2 text-[10px] text-[color:var(--muted-2)]">
             <span>{n.floor ?? ''}</span>
@@ -346,8 +347,8 @@ function HoldingsBody({ tile, reduced }: { tile: HoldingsTile; reduced: boolean 
     <div className="flex-1">
       {tile.totalUsd !== null && (
         <div className="mb-3">
-          <CountUpUsd value={tile.totalUsd} reduced={reduced} className="text-3xl font-semibold tracking-tight text-white" />
-          <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">
+          <CountUpUsd value={tile.totalUsd} reduced={reduced} className="text-3xl font-semibold tracking-tight text-[color:var(--fg)]" />
+          <span className="ml-2 text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
             {tile.chain.includes('·') ? 'total portfolio' : `total on ${tile.chain}`}
           </span>
         </div>
@@ -368,12 +369,12 @@ function HoldingsBody({ tile, reduced }: { tile: HoldingsTile; reduced: boolean 
                   <span className="grid h-6 w-6 place-items-center rounded-full bg-white/5 text-[10px] font-semibold text-[color:var(--muted)]">
                     {h.symbol.slice(0, 3)}
                   </span>
-                  <span className="font-medium text-white">{h.symbol}</span>
+                  <span className="font-medium text-[color:var(--fg)]">{h.symbol}</span>
                   {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
                   {h.chain && <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>}
                 </div>
                 <div className="text-right">
-                  <div className="text-white">{h.valueUsd !== null ? usd(h.valueUsd) : '—'}</div>
+                  <div className="text-[color:var(--fg)]">{h.valueUsd !== null ? usd(h.valueUsd) : '—'}</div>
                   <div className="text-[10px] text-[color:var(--muted-2)]">{trimNum(h.balance)}</div>
                 </div>
               </div>
@@ -434,11 +435,11 @@ function RowsBody({ tile, reduced }: { tile: RowsTile; reduced: boolean }) {
         <div className="mb-3">
           {/* Headline values arrive pre-formatted; only pure-USD ones count up. */}
           {parseUsd(tile.headline.value) !== null ? (
-            <CountUpUsd value={parseUsd(tile.headline.value)!} reduced={reduced} className="text-2xl font-semibold tracking-tight text-white" />
+            <CountUpUsd value={parseUsd(tile.headline.value)!} reduced={reduced} className="text-2xl font-semibold tracking-tight text-[color:var(--fg)]" />
           ) : (
-            <span className="text-2xl font-semibold tracking-tight text-white">{tile.headline.value}</span>
+            <span className="text-2xl font-semibold tracking-tight text-[color:var(--fg)]">{tile.headline.value}</span>
           )}
-          <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">{tile.headline.caption}</span>
+          <span className="ml-2 text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">{tile.headline.caption}</span>
         </div>
       )}
       <div className="space-y-1.5">
@@ -451,7 +452,7 @@ function RowsBody({ tile, reduced }: { tile: RowsTile; reduced: boolean }) {
               {r.sub && <div className="text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
             </div>
             {r.value && (
-              <span className={r.tone === 'pos' ? 'text-[color:var(--accent)]' : r.tone === 'neg' ? 'text-red-400' : 'text-white'}>
+              <span className={r.tone === 'pos' ? 'text-[color:var(--accent)]' : r.tone === 'neg' ? 'text-red-400' : 'text-[color:var(--fg)]'}>
                 {r.value}
               </span>
             )}
@@ -487,7 +488,7 @@ function ActivityBody({ tile }: { tile: ActivityTile }) {
                 <Icon className="h-3 w-3" />
               </span>
               <div className="min-w-0">
-                <div className="truncate font-medium text-white">
+                <div className="truncate font-medium text-[color:var(--fg)]">
                   {verb} {r.amount && `${r.amount} `}
                   {r.asset}
                 </div>

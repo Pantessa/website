@@ -64,7 +64,24 @@
 .deck__chan .battle--stage .battle__pickhead, .deck__chan .battle--stage .battle__add { display: none; }
 .deck__chan .battle--stage .battle__chips { margin-top: 0; }
 .deck__chan .battle--stage .battle__chips > .battle__pick:nth-child(n + 7):not(.is-on) { display: none; }
-.deck__chan .battle--stage .battle__stage { height: 240px; margin-top: 8px; }
+.deck__chan .battle--stage .battle__stage { margin-top: 8px; }
+/* FULL SIZE (2026-10-15 — Nate: "when the user clicks on the tabs … tape, the front … make the chart larger,
+   same size as we do on the live page"): every channel but the pulse plays at /live's own size — the field
+   heights below are battle.css's page-seat values (desktop, then its narrow container rule), the tape stage
+   holds as tall as The Front's field, and The Flyover keeps flyover.css's own stage height. The pulse keeps
+   the band's height: it is the SSR frame (DECK_STAGE_MIN_H) and the phone's first-screen budget. */
+.deck__chan .battle--stage .battle__stage { height: clamp(420px, calc(100dvh - 400px), 760px); }
+.deck__chan .battle--stage[data-view="siege"] .battle__stage { height: clamp(460px, calc(100dvh - 400px), 820px); }
+@container battle (max-width: 760px) {
+  .deck__chan .battle--stage .battle__stage { height: clamp(300px, calc(100svh - 488px), 480px); }
+  .deck__chan .battle--stage[data-view="siege"] .battle__stage { height: clamp(300px, min(calc(100cqw + 16px), calc(100svh - 488px)), 460px); }
+}
+.deck[data-channel="tape"] .deck__tapestage { display: flex; flex-direction: column; min-height: clamp(420px, calc(100dvh - 400px), 760px); }
+.deck[data-channel="tape"] .deck__tapeempty { flex: 1 1 auto; display: grid; place-items: center; }
+.deck[data-channel="tape"] .deck__tapefoot { margin-top: auto; padding-top: 6px; }
+/* The Flyover in its stage seat: the deck's bar names it and the deck's foot carries the source and the door. */
+.deck__chan .flyover--stage { padding-top: 2px; }
+.deck__chan .flyover--stage .flyover__bar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 10px; }
 .deck__chan .battle--stage .battle__board { margin-top: 8px; }
 .deck__chan .battle--stage .battle__table { font-size: 12px; }
 
@@ -155,6 +172,17 @@
   .deck__chip:hover { transform: none; }
 }
 
+/* ── A compact bar: five channels, the share, the alert and the switch fit one row on a deck narrower
+   than 1240px (1440 with the rail docked is 986px) — the blurbs step out (each tab carries its blurb as a
+   title) and the switch says "Book". ──────────────────────────────────── */
+@container deck (max-width: 1240px) {
+  .deck__ch { min-width: 0; padding: 8px 14px; }
+  .deck__ch.is-on::after { left: 14px; right: 14px; }
+  .deck__chblurb { display: none; }
+  .deck__flick-long { display: none; }
+  .deck__flick-short { display: inline; }
+}
+
 /* ── Narrow: the book takes the whole stage ────────────────────────────── */
 @container deck (max-width: 860px) {
   .deck[data-book="on"] .deck__stage { grid-template-columns: minmax(0, 1fr); }
@@ -198,7 +226,6 @@
   .deck[data-book="on"] .deck__chan { display: none; }
   .deck__chan { padding: 6px 10px 6px; }
   .deck__book { padding: 8px 10px 6px; border-left: 0; }
-  .deck__chan .battle--stage .battle__stage { height: 200px; }
   /* The foot steps out: the active chip wears the dot, the door chip the door. */
   .deck__foot { display: none; }
   /* A thumb: 36px pills with a 44px hit area (the battle picker's idiom — rows
@@ -223,6 +250,9 @@
    - with the book on, the ladder REPLACED the channel (the Pulse chip lit over a stage showing only the
      ladder) → the ladder stacks under the channel. */
 @media (max-width: 640px) {
+  /* FULL SIZE on a phone: the tape stage as tall as /live's phone field, its first ten rows. */
+  .deck[data-channel="tape"] .deck__tapestage { min-height: clamp(300px, calc(100svh - 488px), 480px); }
+  .deck__tape tbody tr:nth-child(n + 11) { display: none; }
   /* The book under the stage, not instead of it. */
   .deck[data-book="on"] .deck__chan { display: block; }
   .deck[data-book="on"] .deck__book { border-top: 1px solid var(--line); }
@@ -258,7 +288,6 @@
      both seats) */
   /* The Siege's radius is min(w, h) / 2 − 40 (battle-draw): a 200px field drew a 59px arena. As tall as the
      column is wide (capped), so the arena takes the width. */
-  .deck__chan .battle--stage[data-view="siege"] .battle__stage { height: clamp(240px, 92cqw, 340px); }
   /* The scoreboard: Backers steps out (the field draws the backers), the recruit chips sit side by side and
      wrap only when they must. */
   .deck__chan .battle--stage .battle__table th:nth-child(5), .deck__chan .battle--stage .battle__table td:nth-child(5) { display: none; }
@@ -319,4 +348,16 @@
    (the sheet opens by itself on a first visit). */
 @media (max-width: 374px) {
   .deck__bar .picksheet--deck { order: 0; }
+}
+/* POLISH (MARKETS-MOBILE, 2026-10-13) — THE BAR'S TAIL. PHONE's leftover: on every phone the Share chip (and the
+   ±5% alert when a wallet is in) sat PAST the bar's right edge (x≈699–735 in a bar ending at 358 at 375), after the
+   door chip, reachable only by scrolling the row. Ordering them earlier pushed the channels off the bar (the 320
+   case). Now they are the row's TAIL: sticky at the bar's right edge inside the scroller, so they are in view at
+   every width and the channels scroll UNDER them (a native pinned trailing action). Share is its icon on a phone (the
+   word stays in the DOM); the alert chip sits just left of it. Measured at 375 on the first cut: `right: 10px` put the
+   icon at 302→338 over the picked Pulse chip's last 13px (the bar's content edge is 348); `right: 0` = flush. */
+@media (max-width: 640px) {
+  .deck__bar > .lshare--deck { position: sticky; right: 0; order: 20; z-index: 2; width: 36px; padding: 0; gap: 0; justify-content: center; background: var(--surf-2, var(--surf-1)); box-shadow: -10px 0 10px -6px var(--surf-2, var(--surf-1)); }
+  .deck__bar > .lshare--deck .lshare__word { display: none; }
+  .deck__bar > .armalert--deck { position: sticky; right: 42px; order: 19; z-index: 2; background: var(--surf-2, var(--surf-1)); box-shadow: -10px 0 10px -6px var(--surf-2, var(--surf-1)); }
 }

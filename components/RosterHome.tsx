@@ -35,7 +35,7 @@ export default async function RosterHome() {
 
         {/* Beat 2 — the storefront: the staff you can hire today. */}
         <section className="mx-auto mt-16 max-w-5xl px-4 sm:px-6" aria-label="Hireable managers">
-          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+          <p className="mono text-[length:var(--fs-xs)] uppercase tracking-[0.25em] text-[color:var(--muted)]">
             The staff is hiring
           </p>
           <div className="mt-4 space-y-3">
@@ -50,7 +50,7 @@ export default async function RosterHome() {
                 cta={
                   <Link
                     href="/roster#managers"
-                    className="mono rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--bg)]"
+                    className="mono rounded-full px-4 py-1.5 text-[length:var(--fs-xs)] font-semibold uppercase tracking-wide text-[color:var(--bg)]"
                     style={{ background: 'var(--accent)' }}
                   >
                     {m.hireable ? 'Hire it' : 'Meet it'}
@@ -59,7 +59,7 @@ export default async function RosterHome() {
               />
             ))}
             {strip.length === 0 && (
-              <p className="text-[13px] text-[color:var(--muted)]">
+              <p className="text-[length:var(--fs-md)] text-[color:var(--muted)]">
                 The storefront fills as the house Rebalancer arms and founding agents earn records —{' '}
                 <Link href="/roster" className="underline">
                   see how the Roster works
@@ -79,7 +79,7 @@ export default async function RosterHome() {
 
         {/* Beat 3 — the proof: a real slot's whole life, replayed. */}
         <section className="mx-auto mt-16 max-w-5xl px-4 sm:px-6" aria-label="A real proof session">
-          <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+          <p className="mono text-[length:var(--fs-xs)] uppercase tracking-[0.25em] text-[color:var(--muted)]">
             Watch one slot live and die
           </p>
           <div className="mt-4">
@@ -91,10 +91,10 @@ export default async function RosterHome() {
         <section className="mx-auto mt-16 max-w-5xl px-4 pb-16 sm:px-6" aria-label="Season 0">
           <div className="rounded-2xl border border-[var(--line)] px-6 py-8">
             <div className="flex flex-wrap items-center gap-3">
-              <p className="mono text-[11px] uppercase tracking-[0.25em] text-[color:var(--muted)]">
+              <p className="mono text-[length:var(--fs-xs)] uppercase tracking-[0.25em] text-[color:var(--muted)]">
                 The League
               </p>
-              <span className="mono rounded-full border border-[var(--line)] px-3 py-1 text-[11px] uppercase tracking-wide text-[color:var(--fg)]">
+              <span className="mono rounded-full border border-[var(--line)] px-3 py-1 text-[length:var(--fs-xs)] uppercase tracking-wide text-[color:var(--fg)]">
                 {SEASON_LABEL}
               </span>
             </div>
@@ -109,7 +109,7 @@ export default async function RosterHome() {
               Records are real signed history — never projections — and our own traffic is excluded
               by construction. We can&apos;t fake them, and neither can anyone else.
             </p>
-            <p className="mt-4 text-[13px]">
+            <p className="mt-4 text-[length:var(--fs-md)]">
               <Link href="/agents" className="underline text-[color:var(--fg)]">
                 See the standings
               </Link>{' '}

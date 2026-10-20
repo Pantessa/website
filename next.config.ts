@@ -13,9 +13,10 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: '/developers', destination: '/docs', permanent: true },
-      // Leaderboard was renamed to Benchmarks (adds the first-party tool
-      // benchmarks section). Keep inbound/external links alive.
-      { source: '/leaderboard', destination: '/benchmarks', permanent: true },
+      // /leaderboard used to 308 to /benchmarks (the x402-era MCP leaderboard
+      // renamed). Since 2026-10-15 /leaderboard is a page of its own — the
+      // public money-moved board — and the redirect is gone; /benchmarks is
+      // reachable by its own name.
       // The links studio moved INTO the app (2026-09-03, Nate): the chat
       // surface's LINKS tab IS the link center — mint, funnel, earnings, and
       // the creator page in the place the work already happens. Minting used

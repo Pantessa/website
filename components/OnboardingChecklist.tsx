@@ -80,7 +80,7 @@ export default function OnboardingChecklist() {
     <Card className="mb-6">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-white">Get started</p>
+          <p className="text-sm font-semibold text-[color:var(--fg)]">Get started</p>
           <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
             {completed} of {steps.length} done — from your first link to your first payout.
           </p>
@@ -88,7 +88,7 @@ export default function OnboardingChecklist() {
         <button
           onClick={dismiss}
           aria-label="Dismiss the getting-started checklist"
-          className="flex-shrink-0 -mr-1 -mt-1 p-1 rounded-md text-[color:var(--muted-2)] hover:text-white transition-colors"
+          className="flex-shrink-0 -mr-1 -mt-1 p-1 rounded-md text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
@@ -112,10 +112,10 @@ export default function OnboardingChecklist() {
                 <Circle className="w-4 h-4 text-[color:var(--muted-2)] flex-shrink-0" />
               )}
               <span className="min-w-0">
-                <span className={s.done ? 'text-xs text-[color:var(--muted-2)] line-through' : 'text-xs text-white'}>
+                <span className={s.done ? 'text-xs text-[color:var(--muted-2)] line-through' : 'text-xs text-[color:var(--fg)]'}>
                   {s.label}
                 </span>
-                {isNext && <span className="block text-[11px] text-[color:var(--muted-2)] mt-0.5">{s.hint}</span>}
+                {isNext && <span className="block text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mt-0.5">{s.hint}</span>}
               </span>
               {isNext && (
                 <Link

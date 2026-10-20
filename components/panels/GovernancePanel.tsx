@@ -42,7 +42,7 @@ export default function GovernancePanel({ tile }: { tile: ProposalsTile }) {
               >
                 <Avatar url={p.avatarUrl} label={p.spaceName} size={22} />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-medium text-white" title={p.title}>
+                  <div className="truncate text-xs font-medium text-[color:var(--fg)]" title={p.title}>
                     {p.title}
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-[10px] text-[color:var(--muted-2)]">

@@ -20,6 +20,7 @@ import { DEFAULT_WINDOW, parseFrontWindow, type LiveView } from '@/lib/battle'
 import { shareText, shareUrlFor } from '@/lib/live-share'
 import { parsePickParam } from '@/lib/market-pick'
 import { useMarketPick } from '@/lib/use-market-pick'
+import { flyoverShareParams } from '@/lib/flyover'
 
 export interface ShareLiveProps {
   view: LiveView
@@ -31,7 +32,7 @@ export interface ShareLiveProps {
 
 type ShareState = 'idle' | 'copied' | 'shared' | 'failed'
 
-const NOUN: Record<LiveView, string> = { tape: 'tape', front: 'front', siege: 'siege', map: 'map' }
+const NOUN: Record<LiveView, string> = { tape: 'tape', front: 'front', siege: 'siege', map: 'map', flyover: 'flyover' }
 
 /** The old way, for a browser without the async clipboard (or a denied one). */
 function copyByHand(text: string): boolean {
@@ -74,7 +75,8 @@ export default function ShareLive({ view, seat, markets }: ShareLiveProps) {
     // markets means the hook has not read the URL (yet) — the URL is the pick.
     const fromUrl = seat === 'live' && !markets && pick.source === 'fallback' ? parsePickParam(here.get('t')) : []
     const list = fromUrl.length ? fromUrl : chosen
-    const href = shareUrlFor(view, list, since)
+    // The Flyover's window and lens ride along (lib/flyover; read off the bar like `since`).
+    const href = `${shareUrlFor(view, list, since)}${view === 'flyover' ? flyoverShareParams(here) : ''}`
     setUrl(href)
     const text = list.length ? shareText(view, list, since) : 'Pantessa Live'
     const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches

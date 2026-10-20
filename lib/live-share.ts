@@ -124,6 +124,7 @@ const WINDOW_PHRASE: Record<FrontWindow, string> = {
  *  `ZK · OP · AZTEC on The Front · 1h` · `ZK · OP on the live tape`. */
 export function shareTitle(view: LiveView, markets: readonly string[], since: FrontWindow = DEFAULT_WINDOW): string {
   const names = markets.map(shareName).join(' · ')
+  if (view === 'flyover') return `${names} on ${viewLabel(view)}`
   if (!isBattleView(view)) return `${names} on the live tape`
   return `${names} on ${viewLabel(view)} · ${windowLabel(since)}`
 }
@@ -139,6 +140,9 @@ export function shareText(view: LiveView, pick: readonly string[], since: FrontW
 
 export function shareDescription(view: LiveView, markets: readonly string[], since: FrontWindow = DEFAULT_WINDOW): string {
   const who = listWords(markets)
+  if (view === 'flyover') {
+    return `Fly over ${who} and every market printing right now on ${viewLabel(view)}: buys raise the land, sells sink it, color is the price move, live in your browser. Every plot is a sentence your wallet signs.`
+  }
   if (!isBattleView(view)) {
     return `${who} on the live tape: every fill as it lands, with the sentence that does the same at the end of every row. Free to look; your wallet signs.`
   }
@@ -150,12 +154,14 @@ export function shareDescription(view: LiveView, markets: readonly string[], sin
 /** The card's alt text — what the picture shows, in words (never the live window). */
 export function cardAlt(view: LiveView, markets: readonly string[]): string {
   const who = listWords(markets)
+  if (view === 'flyover') return `Pantessa Live — ${viewLabel(view)}, ${who}: last price, 24h move and open interest from Hyperliquid.`
   if (!isBattleView(view)) return `Pantessa Live — the tape for ${who}: last price, 24h move and open interest from Hyperliquid.`
   return `Pantessa Live — ${viewLabel(view)}: ${who}, ranked by the venue's 24h move, with last price and open interest from Hyperliquid.`
 }
 
 /** The card's eyebrow over the names. */
 export function cardEyebrow(view: LiveView, since: FrontWindow): string {
+  if (view === 'flyover') return 'THE FLYOVER · YOUR MARKETS'
   if (!isBattleView(view)) return 'THE TAPE · YOUR MARKETS'
   return `${viewLabel(view).toUpperCase()} · ${since === 'open' ? 'SINCE OPEN' : `${windowLabel(since).toUpperCase()} WINDOW`}`
 }
@@ -163,6 +169,7 @@ export function cardEyebrow(view: LiveView, since: FrontWindow): string {
 /** The lines that say what the standings are and are not (a battle), or what
  *  the columns are (the tape). */
 export function cardRankNote(view: LiveView, since: FrontWindow): string[] {
+  if (view === 'flyover') return ['LAST · 24H MOVE · OPEN INTEREST', 'THE LAND MOVES LIVE IN YOUR BROWSER']
   if (!isBattleView(view)) return ['LAST · 24H MOVE · OPEN INTEREST', 'EVERY PRINT IS A BUTTON']
   const fight = since === 'open' ? 'THE FIGHT ITSELF' : `THE ${windowLabel(since).toUpperCase()} FIGHT ITSELF`
   return ["STANDINGS BY THE VENUE'S 24H MOVE", `${fight} RUNS LIVE IN YOUR BROWSER`]
@@ -170,7 +177,13 @@ export function cardRankNote(view: LiveView, since: FrontWindow): string[] {
 
 /** The panel's foot. */
 export function cardFoot(view: LiveView): string {
+  if (view === 'flyover') return 'OPEN THE LINK · FLY OVER IT LIVE'
   return isBattleView(view) ? 'OPEN THE LINK · WATCH IT LIVE' : 'THE TAPE STREAMS IN YOUR BROWSER'
+}
+
+/** The line under the names: `on The Front.` · `on The Flyover.` · `on the live tape.` */
+export function cardTagline(view: LiveView): string {
+  return isBattleView(view) || view === 'flyover' ? `on ${viewLabel(view)}.` : 'on the live tape.'
 }
 
 // ── The rows ─────────────────────────────────────────────────────────────────

@@ -21,7 +21,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-[10px] uppercase tracking-wide text-[color:var(--muted-2)] mono">{label}</span>
-      <span className="text-[13px] text-white [overflow-wrap:anywhere]">{children}</span>
+      <span className="text-[length:var(--fs-md)] text-white [overflow-wrap:anywhere]">{children}</span>
     </div>
   )
 }
@@ -46,7 +46,7 @@ export default async function IncidentDetailPage({ params }: Params) {
           </Link>
 
           <h1 className="text-2xl font-semibold text-white mt-2">{incident.title}</h1>
-          <p className="mono text-[12px] text-[color:var(--muted-2)] mt-1">{incident.signature}</p>
+          <p className="mono text-[length:var(--fs-sm)] text-[color:var(--muted-2)] mt-1">{incident.signature}</p>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-5 rounded-xl border border-[var(--line)] bg-black/30 p-4">
             <Field label="Status">{incident.status}</Field>
@@ -69,14 +69,14 @@ export default async function IncidentDetailPage({ params }: Params) {
 
           <div className="mt-4 rounded-xl border border-[var(--line)] bg-black/30 p-4">
             <p className="text-[10px] uppercase tracking-wide text-[color:var(--muted-2)] mono mb-1">Last error</p>
-            <p className="mono text-[12px] text-[#ff6b6b] [overflow-wrap:anywhere]">{incident.lastError ?? '—'}</p>
+            <p className="mono text-[length:var(--fs-sm)] text-[#ff6b6b] [overflow-wrap:anywhere]">{incident.lastError ?? '—'}</p>
           </div>
 
           {/* The failing turn's full trace — what the user asked → how the engine
               routed → the error. This is the link a fix PR cites. */}
           <div className="mt-4 rounded-xl border border-[var(--line)] bg-black/60 overflow-hidden">
             <div className="flex items-center gap-2 px-3 h-10 border-b border-[var(--line)] bg-black/40">
-              <span className="text-[11px] font-medium text-white mono uppercase tracking-wide">Failing turn — routing trace</span>
+              <span className="text-[length:var(--fs-xs)] font-medium text-white mono uppercase tracking-wide">Failing turn — routing trace</span>
             </div>
             <RouteTraceTerminal
               trace={trace}

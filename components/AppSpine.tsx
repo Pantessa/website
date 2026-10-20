@@ -47,7 +47,7 @@
 import { useCallback, useEffect, useState, useRef, type MouseEvent } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { BookOpen, Boxes, CandlestickChart, Ellipsis, Link2, ListChecks, MessageSquare, Settings, Users, Wallet } from 'lucide-react'
+import { BookOpen, Boxes, CandlestickChart, ChartColumn, Ellipsis, Link2, ListChecks, MessageSquare, Settings, Trophy, Users, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isPublicAppPath } from '@/lib/app-entry'
 import { cdpEnabled } from '@/lib/cdp-embedded'
@@ -56,11 +56,12 @@ import { PHONE_MQ } from '@/lib/phone-shell'
 import { scrollAppToTop } from '@/lib/app-scroller'
 import { ARRIVAL_SCREEN, moreLit as moreLitFor, phoneScreenFromSearch, phoneTap, seatForScreen, tabForScreen, type PhoneSeat } from '@/lib/phone-nav'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
-import Sheet from '@/components/mobile/Sheet'
+import Sheet, { SHEET_ROW } from '@/components/mobile/Sheet'
 import { rememberSignInReturn, signedOutJustNow, useSession } from '@/lib/session'
 import { useRunningWork } from '@/lib/use-running-work'
 import { rosterEnabledClient } from '@/lib/roster-client'
 import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
+import { ANALYTICS_HREF, LEADERBOARD_HREF } from '@/lib/progress'
 import { YeetfulMark } from '@/components/Logo'
 import SpineLink from '@/components/SpineLink'
 import SpineGuideDot from '@/components/guide/SpineGuideDot'
@@ -92,13 +93,22 @@ const TABS = [...TABS_ABOVE_WALLET, ...TABS_BELOW_WALLET]
 const PHONE_MORE_TABS: ReadonlySet<RailTab> = new Set<RailTab>(['team'])
 
 const WALLET_TITLE = 'Wallet — balances on every chain, gas, send and receive'
+// THE PUBLIC PROGRESS PAGES (2026-10-15, Nate: "a leaderboard, and analytics
+// tab for the public pages … showing progress and encourage link sharing and
+// money moved by users and the overall system"). Two destination PAGES, public
+// like MARKETS and DOCS, seated under CHATS and above DOCS in the column; on a
+// phone they fold behind MORE (the bar is full at 375px).
+const LEADERBOARD_TITLE = 'Leaderboard — the links, creators and wallets that moved the most money'
+const ANALYTICS_TITLE = 'Analytics — money moved, links shared and new wallets, in the open'
 
-export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'dashboard' | 'markets' | 'wallet' }) {
+export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'dashboard' | 'markets' | 'wallet' | 'leaderboard' | 'analytics' }) {
   const router = useRouter()
   const { railTab, setRailTab, mainView, setMainView, mcpRailOpen, setMcpRailOpen, phoneScreen, setPhoneScreen } = useYeetfulStore()
   const onDashboard = surface === 'dashboard'
   const onMarkets = surface === 'markets'
   const onWallet = surface === 'wallet'
+  const onLeaderboard = surface === 'leaderboard'
+  const onAnalytics = surface === 'analytics'
   // Off the chat, a tab icon is a shortcut INTO chat (landing with that
   // drawer tab open) and the URL mirror stays off — the page owns its URL.
   const offChat = surface !== 'chat'
@@ -453,8 +463,9 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // (the settings page, or the TEAM screen showing over the chat).
   const moreTab = TABS.find((t) => PHONE_MORE_TABS.has(t.tab))
   const moreLit = moreLitFor(surface, phoneScreen)
-  const moreItem =
-    'flex w-full items-center gap-3 rounded-xl px-3 py-2 min-h-[52px] text-left text-[color:var(--muted)] hover:bg-[var(--surf-2)] hover:text-[color:var(--fg)] active:bg-[var(--surf-1)] transition-colors select-none'
+  // The one sheet-row class (components/mobile/Sheet SHEET_ROW, polish R1):
+  // every lane's sheet list wears it, so MORE is the reference.
+  const moreItem = SHEET_ROW
 
   return (
     <>
@@ -543,6 +554,47 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
 
           {TABS_BELOW_WALLET.map(desktopTab)}
 
+          {/* LEADERS + ANALYTICS are public destination PAGES (2026-10-15):
+              the system's progress in the open, seated under the personal
+              work and above DOCS. Plain links — the pages are public, so
+              there is no door to open. Each lights on its own page. */}
+          <Link
+            href={LEADERBOARD_HREF}
+            title={LEADERBOARD_TITLE}
+            aria-label="LEADERS"
+            aria-current={onLeaderboard ? 'page' : undefined}
+            className={cn(
+              'relative w-12 flex flex-col items-center gap-0.5 py-1.5 rounded-lg transition-colors',
+              onLeaderboard
+                ? 'bg-[var(--surf-2)] text-white'
+                : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)]',
+            )}
+          >
+            {onLeaderboard && (
+              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+            )}
+            <Trophy className="w-[18px] h-[18px]" />
+            <span className="mono text-[9px] font-medium tracking-wide">LEADERS</span>
+          </Link>
+          <Link
+            href={ANALYTICS_HREF}
+            title={ANALYTICS_TITLE}
+            aria-label="ANALYTICS"
+            aria-current={onAnalytics ? 'page' : undefined}
+            className={cn(
+              'relative w-12 flex flex-col items-center gap-0.5 py-1.5 rounded-lg transition-colors',
+              onAnalytics
+                ? 'bg-[var(--surf-2)] text-white'
+                : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)]',
+            )}
+          >
+            {onAnalytics && (
+              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+            )}
+            <ChartColumn className="w-[18px] h-[18px]" />
+            <span className="mono text-[9px] font-medium tracking-wide">ANALYTICS</span>
+          </Link>
+
           {/* DOCS is a destination PAGE, seated under CHATS (2026-09-11,
               Nate) — the docs left the brochure nav's reach once the nav
               left the app. */}
@@ -620,6 +672,34 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         </SpineLink>
         {TABS_BELOW_WALLET.map(mobileTab)}
         <Link
+          href={LEADERBOARD_HREF}
+          title={LEADERBOARD_TITLE}
+          aria-label="LEADERS"
+          aria-current={onLeaderboard ? 'page' : undefined}
+          onClick={pageSeatClick('leaderboard')}
+          className={cn(PHONE_SEAT, 'max-sm:hidden', onLeaderboard ? 'text-white' : 'text-[color:var(--muted)]')}
+        >
+          {onLeaderboard && (
+            <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+          )}
+          <Trophy className="w-[18px] h-[18px]" />
+          <span className="mono text-[10px] font-medium tracking-wide">LEADERS</span>
+        </Link>
+        <Link
+          href={ANALYTICS_HREF}
+          title={ANALYTICS_TITLE}
+          aria-label="ANALYTICS"
+          aria-current={onAnalytics ? 'page' : undefined}
+          onClick={pageSeatClick('analytics')}
+          className={cn(PHONE_SEAT, 'max-sm:hidden', onAnalytics ? 'text-white' : 'text-[color:var(--muted)]')}
+        >
+          {onAnalytics && (
+            <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+          )}
+          <ChartColumn className="w-[18px] h-[18px]" />
+          <span className="mono text-[10px] font-medium tracking-wide">ANALYTICS</span>
+        </Link>
+        <Link
           href="/docs"
           title="Docs — how Pantessa builds, guards and signs"
           aria-label="DOCS"
@@ -649,7 +729,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <button
             type="button"
             onClick={() => setMoreOpen((o) => !o)}
-            title="More — docs and settings"
+            title="More — leaderboard, analytics, docs and settings"
             aria-label="More"
             aria-haspopup="dialog"
             aria-expanded={moreOpen}
@@ -684,6 +764,20 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               </span>
             </button>
           )}
+          <Link href={LEADERBOARD_HREF} role="menuitem" aria-current={onLeaderboard ? 'page' : undefined} onClick={() => setMoreOpen(false)} className={moreItem}>
+            <Trophy className="w-[18px] h-[18px] flex-shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-[15px] font-medium text-[color:var(--fg)]">Leaderboard</span>
+              <span className="block text-[12px] truncate">Who moved the money</span>
+            </span>
+          </Link>
+          <Link href={ANALYTICS_HREF} role="menuitem" aria-current={onAnalytics ? 'page' : undefined} onClick={() => setMoreOpen(false)} className={moreItem}>
+            <ChartColumn className="w-[18px] h-[18px] flex-shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-[15px] font-medium text-[color:var(--fg)]">Analytics</span>
+              <span className="block text-[12px] truncate">The whole system, in the open</span>
+            </span>
+          </Link>
           <Link href="/docs" role="menuitem" onClick={() => setMoreOpen(false)} className={moreItem}>
             <BookOpen className="w-[18px] h-[18px] flex-shrink-0" />
             <span className="min-w-0">

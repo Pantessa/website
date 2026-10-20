@@ -27,6 +27,14 @@
 // lead side by itself (remembered per browser); a phone starts on the chips
 // so the chart stays high, and a tap opens it. The server renders the chips
 // only, so every act-strip pin on the HTML holds.
+//
+// ON A PHONE THE TICKET IS A SHEET (squad polish 2026-10-13, MARKETS-MOBILE;
+// THE RULEBOOK §B4, the cockpit's named follow-up): the chips dock above the
+// tab bar as the act bar (markets.css) and a chip's ticket rises from the
+// bottom edge in components/mobile/Sheet — grabber, scrim, Esc, swipe-down
+// and the back gesture close it; the chart never moves. The posture is
+// usePhoneSheet's one matchMedia; a desktop (the landing's strip) keeps the
+// inline ticket. Nothing opens on its own on a phone.
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import Link from 'next/link'
@@ -41,6 +49,8 @@ import { useTradable } from '@/lib/use-tradable'
 import { noVenueNote } from '@/lib/tradability'
 import OrderTicket from '@/components/markets/trade/OrderTicket'
 import { fallbackSide, TICKET_AUTO_OPEN_MIN_PX, TICKET_OPEN_KEY, type TicketSide } from '@/lib/order-ticket'
+import Sheet from '@/components/mobile/Sheet'
+import { usePhoneSheet, PHONE_SHEET_QUERY } from '@/components/markets/shell/usePhoneSheet'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
@@ -92,6 +102,7 @@ export default function ExecStrip({
 }) {
   const held = useHeld()
   const tradable = useTradable()
+  const phone = usePhoneSheet()
   const all = useMemo(() => execAsks(pair, { usd, last: last ?? undefined }), [pair, usd, last])
   // Two gates, one place: nothing to sell (lib/sell-gate), and nothing that
   // can fill it (lib/trade-venue-gate). The venue one SAYS SO — a symbol
@@ -122,8 +133,10 @@ export default function ExecStrip({
       /* no memory */
     }
     // A phone always starts on the chips (the chart stays high; a tap opens
-    // the ticket); the memory only decides the desktop.
+    // the ticket); the memory only decides the desktop. The sheet posture
+    // (≤1023) never opens on its own either (THE RULEBOOK §B4).
     if (window.innerWidth < TICKET_AUTO_OPEN_MIN_PX) open = false
+    if (window.matchMedia?.(PHONE_SHEET_QUERY).matches) open = false
     if (open === null) open = true
     if (open && leadSide) setTicket((t) => t ?? leadSide)
     // Once per mount: the symbol page remounts the strip per symbol.
@@ -158,6 +171,26 @@ export default function ExecStrip({
   // The side the ticket shows: the picked one while it is still offered,
   // else the first side left (a wallet that stopped holding, a shut venue).
   const shown = ticket ? fallbackSide(ticket, sideList) : null
+  const shownLabel = shown ? asks.find((a) => a.side === shown)?.label ?? null : null
+  // ONE ticket element for both seats: inline under the chips (desktop), or
+  // inside the phone's sheet.
+  const ticketEl = shown ? (
+    <OrderTicket
+      key={pair.symbol}
+      symbol={symbol}
+      pair={pair}
+      sides={sideList}
+      side={shown}
+      onSide={(s) => {
+        setTicket(s)
+        rememberOpen(true)
+      }}
+      last={last ?? null}
+      onSend={onBuild ?? onAsk}
+      onClose={close}
+      seat="strip"
+    />
+  ) : null
 
   if (asks.length === 0 && shut.length > 0) {
     return (
@@ -191,28 +224,19 @@ export default function ExecStrip({
             data-kind={a.kind}
             data-tone={a.tone}
             aria-pressed={shown === a.side}
+            data-journey={`Pick ${a.label}`}
+            {...(phone ? { 'data-sheet-open': 'order-ticket' } : {})}
             onClick={pickOnClick(a.side)}
           >
             {a.label}
           </Link>
         ))}
       </div>
-      {shown && (
-        <OrderTicket
-          key={pair.symbol}
-          symbol={symbol}
-          pair={pair}
-          sides={sideList}
-          side={shown}
-          onSide={(s) => {
-            setTicket(s)
-            rememberOpen(true)
-          }}
-          last={last ?? null}
-          onSend={onBuild ?? onAsk}
-          onClose={close}
-          seat="strip"
-        />
+      {shown && !phone && ticketEl}
+      {phone && (
+        <Sheet open={!!shown} onClose={close} title={shownLabel ?? `Trade ${pair.symbol}`} id="order-ticket" className="mkt-ticketsheet">
+          {shown && ticketEl}
+        </Sheet>
       )}
     </div>
   )

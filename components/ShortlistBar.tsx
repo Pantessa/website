@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Star, X } from 'lucide-react'
 import { useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
+import { cleanServerName } from '@/lib/utils'
 
 /** The wallet's saved MCP shortlist, shown as a compact strip on the directory.
  *  Renders nothing until at least one service is pinned. "Chat with these"
@@ -28,11 +29,11 @@ export default function ShortlistBar() {
         {picked.map((s) => (
           <span key={s.id} className="shortlistbar__chip">
             <BrandIcon server={s} size={13} />
-            {s.name}
+            {cleanServerName(s.name)}
             <button
               className="shortlistbar__x"
               onClick={() => toggleShortlist(s.id)}
-              aria-label={`Remove ${s.name} from shortlist`}
+              aria-label={`Remove ${cleanServerName(s.name)} from shortlist`}
               title="Remove from shortlist"
             >
               <X width={12} height={12} strokeWidth={2.5} />

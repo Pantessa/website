@@ -149,12 +149,12 @@ export default function OrgMembersView({
         ) : (
           <h1 className="dash__h1 !mb-0 min-w-0 truncate">{org.name}</h1>
         )}
-        <span className="mono text-[11px] px-2 py-0.5 rounded-md bg-[var(--surf-2)] text-[color:var(--muted)]">
+        <span className="mono text-[length:var(--fs-xs)] px-2 py-0.5 rounded-md bg-[var(--surf-2)] text-[color:var(--muted)]">
           {org.role}
         </span>
         {isAdmin && !renaming && (
           <button
-            className="text-xs text-[color:var(--muted-2)] hover:text-white underline underline-offset-2 min-h-[40px]"
+            className="text-xs text-[color:var(--muted-2)] hover:text-[color:var(--fg)] underline underline-offset-2 min-h-[40px]"
             onClick={() => {
               setNewName(org.name)
               setRenaming(true)
@@ -187,7 +187,7 @@ export default function OrgMembersView({
                 key={m.address}
                 className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 px-2 rounded-lg hover:bg-[var(--surf-1)] min-w-0"
               >
-                <span className="mono text-xs text-white" title={m.address}>
+                <span className="mono text-xs text-[color:var(--fg)]" title={m.address}>
                   {short(m.address)}
                 </span>
                 {me && <span className="text-[10px] text-[color:var(--muted-2)]">you</span>}
@@ -197,7 +197,7 @@ export default function OrgMembersView({
                 <span className="flex items-center gap-2 ml-auto">
                   {isOwner && !me ? (
                     <select
-                      className="mono text-[11px] bg-[var(--surf-2)] text-[color:var(--muted)] rounded-md px-2 py-2 border border-[var(--line)] min-h-[40px]"
+                      className="mono text-[length:var(--fs-xs)] bg-[var(--surf-2)] text-[color:var(--muted)] rounded-md px-2 py-2 border border-[var(--line)] min-h-[40px]"
                       value={m.role}
                       disabled={busy}
                       onChange={(e) => void setRole(m.address, e.target.value)}
@@ -207,7 +207,7 @@ export default function OrgMembersView({
                       <option value="owner">owner (transfer)</option>
                     </select>
                   ) : (
-                    <span className="mono text-[11px] px-2 py-0.5 rounded-md bg-[var(--surf-2)] text-[color:var(--muted)]">
+                    <span className="mono text-[length:var(--fs-xs)] px-2 py-0.5 rounded-md bg-[var(--surf-2)] text-[color:var(--muted)]">
                       {m.role}
                     </span>
                   )}
@@ -223,7 +223,7 @@ export default function OrgMembersView({
                   )}
                   {me && m.role !== 'owner' && (
                     <button
-                      className="flex items-center gap-1.5 text-[11px] text-[color:var(--muted-2)] hover:text-white min-h-[40px] px-2"
+                      className="flex items-center gap-1.5 text-[length:var(--fs-xs)] text-[color:var(--muted-2)] hover:text-[color:var(--fg)] min-h-[40px] px-2"
                       disabled={busy}
                       onClick={() => void remove(m.address)}
                     >
@@ -288,11 +288,11 @@ export default function OrgMembersView({
                 void saveCap()
               }}
             >
-              <span className="text-[11px] text-[color:var(--muted)]">$/day</span>
+              <span className="text-[length:var(--fs-xs)] text-[color:var(--muted)]">$/day</span>
               <input
                 type="text"
                 inputMode="decimal"
-                className="w-24 px-2 py-2 min-h-[40px] rounded-md bg-black/30 border border-[var(--line)] text-white text-xs mono focus:outline-none focus:border-[var(--line-2)]"
+                className="w-24 px-2 py-2 min-h-[40px] rounded-md bg-black/30 border border-[var(--line)] text-[color:var(--fg)] text-xs mono focus:outline-none focus:border-[var(--line-2)]"
                 placeholder="no cap"
                 value={cap}
                 onChange={(e) => setCap(e.target.value)}

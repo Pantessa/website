@@ -33,11 +33,17 @@
  *
  * Personas: `out` = signed out, no wallet. `empty` = a mock EIP-6963 wallet,
  * connected only (every signature refused with 4001), holding nothing.
+ * `signed` (squad polish, 2026-10-13) = the local `.env.local` burner, signed
+ * in: a session cookie minted with the LOCAL SESSION_SECRET for the burner's
+ * address (the same JWT a real SIWE returns — lib/auth signSession) and the
+ * mock wallet announcing that address, so the orphan-session effect keeps
+ * it. The burner is in ADMIN_WALLETS, so the dashboard's admin pages render.
+ * Never point this at production (it reads the LOCAL secret, and it clicks).
  * Widths: 1440 (fine pointer) and 375 (isMobile + touch = coarse pointer, DPR 2).
  *
  *   BASE=http://localhost:3994 PLAYWRIGHT_CORE=/path/to/playwright-core \
  *     npx tsx scripts/pregtm-deadend-crawl.ts [--out dir] [--only /a,/b] \
- *     [--personas out,empty] [--widths 1440,375] [--jobs 8] [--max 30]
+ *     [--personas out,empty,signed] [--widths 1440,375] [--jobs 8] [--max 30] [--first-run]
  *
  * `--report <deadend.json> [--diff old.json] --out dir` re-renders a report without crawling.
  * Writes <out>/deadend.json (every click) and <out>/deadend.md (the DEAD +
@@ -59,12 +65,17 @@ const argv = process.argv.slice(2)
 const opt = (k: string, d = '') => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d }
 const OUT = opt('--out', 'deadend-out')
 const ONLY = opt('--only') ? opt('--only').split(',') : null
-const PERSONAS = opt('--personas', 'out,empty').split(',') as Persona[]
+const PERSONAS = opt('--personas', 'out,empty,signed').split(',') as Persona[]
 const WIDTHS = opt('--widths', '1440,375').split(',').map(Number)
 const JOBS = Number(opt('--jobs', '8'))
 const MAX = Number(opt('--max', '30'))
 const DIFF = opt('--diff')
 const MAX_PER_FAMILY = 2
+/** The first-run pick sheet (lib/arena, #979) opens by itself 1.2s after a
+ *  fresh visitor lands on `/` and `/live`, and every click here starts from a
+ *  fresh browser — so by default the crawl marks it seen and measures the page
+ *  beneath. `--first-run` keeps it (it then covers every control at 375). */
+const FIRST_RUN = argv.includes('--first-run')
 const MAX_CHROME = Number(opt('--max-chrome', '12'))
 const SETTLE_MS = 2500
 const BASELINE_MS = 450
@@ -72,7 +83,7 @@ const BASELINE_MS = 450
 /** Never a real address with history: a fresh, empty, watch-only wallet. */
 const EMPTY_WALLET = '0x9a3a1e6f0c3b7d2e4f5a6b7c8d9e0f1a2b3c4d5e'
 
-type Persona = 'out' | 'empty'
+type Persona = 'out' | 'empty' | 'signed'
 type Outcome = 'NAV' | 'DOOR' | 'SEND' | 'PREFILL' | 'STATE' | 'COPY' | 'SCROLL' | 'FOCUS' | 'ERROR' | 'DEAD' | 'BLOCKED' | 'GONE' | 'ACTIVE'
 
 /** The public set (README mission). House /i slugs come from lib/house-links. */
@@ -82,15 +93,67 @@ function routes(): string[] {
     const src = readFileSync(join(process.cwd(), 'lib/house-links.ts'), 'utf8')
     house = [...src.matchAll(/slug:\s*'([a-z0-9-]+)'/g)].map((m) => `/i/${m[1]}`)
   } catch { /* run from the repo root */ }
+  // Fixtures on the local TEST DB (squad polish): a claimed creator page and
+  // a public chat. Override with FIXTURE_HANDLE / FIXTURE_PUBLIC_CHAT.
+  const handle = process.env.FIXTURE_HANDLE || 'mobilelinks'
+  const pub = process.env.FIXTURE_PUBLIC_CHAT || 'Jg_FOH8aBHAT'
   return [
+    // The app (README "Routes"): every /t tab on a coin, a stock and a perp.
     '/', '/t/AAPL', '/t/ETH', '/t/HYPE', '/t/NOTREAL',
-    '/live', '/live?view=front', '/live?view=siege', '/live?view=map',
+    ...['chart', 'news', 'community', 'technicals', 'trade'].map((t) => `/t/ETH?tab=${t}`),
+    '/t/AAPL?tab=trade', '/t/HYPE?tab=trade',
+    '/live', '/live?view=front', '/live?view=siege', '/live?view=map', '/live?view=flyover',
     '/chat', '/chat?tab=jobs', '/chat?tab=links', '/chat?tab=mcps', '/wallet',
     ...house,
-    '/links', '/story', '/docs', '/docs/first-five-minutes', '/docs/links', '/docs/markets',
-    '/pricing', '/this-route-does-not-exist',
+    `/l/${handle}`, `/p/${pub}`,
+    '/links',
+    '/dashboard', '/dashboard/links', '/dashboard/plan', '/dashboard/customize', '/dashboard/guardian', '/dashboard/admin', '/dashboard/admin/flows', '/dashboard/failures',
+    // The brochure.
+    '/story', '/docs', '/docs/first-five-minutes', '/docs/links', '/docs/markets', '/docs/embed', '/docs/trust', '/docs/transactions', '/docs/privacy', '/docs/terms',
+    '/pricing', '/blog', '/servers', '/rebrand', '/compare', '/activity', '/agents', '/roster', '/mosaic',
+    '/this-route-does-not-exist',
   ]
 }
+
+// ── The signed-in persona (squad polish) ───────────────────────────────────
+// Reads the LOCAL .env.local (SESSION_SECRET + PRIVATE_KEY) — the app's own
+// test burner on the TEST DB. Nothing is printed; the cookie never leaves the
+// local browser context.
+function localEnv(key: string): string | undefined {
+  if (process.env[key]) return process.env[key]
+  try {
+    const line = readFileSync(join(process.cwd(), '.env.local'), 'utf8').split('\n').find((l) => l.startsWith(key + '='))
+    return line ? line.slice(key.length + 1).trim().replace(/^["']|["']$/g, '') : undefined
+  } catch { return undefined }
+}
+let signedCache: { address: string; jwt: string } | null = null
+async function signedIdentity(): Promise<{ address: string; jwt: string }> {
+  if (signedCache) return signedCache
+  const pk = localEnv('PRIVATE_KEY')
+  const secret = localEnv('SESSION_SECRET')
+  if (!pk || !secret) throw new Error('signed persona: PRIVATE_KEY + SESSION_SECRET must be in .env.local (the local test burner)')
+  const { privateKeyToAccount } = await import('viem/accounts')
+  const { SignJWT } = await import('jose')
+  const address = privateKeyToAccount((pk.startsWith('0x') ? pk : `0x${pk}`) as `0x${string}`).address
+  const jwt = await new SignJWT({ address: address.toLowerCase() }).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('2h').sign(new TextEncoder().encode(secret))
+  signedCache = { address, jwt }
+  return signedCache
+}
+async function seedSession(ctx: any) {
+  const { jwt } = await signedIdentity()
+  const u = new URL(BASE)
+  await ctx.addCookies([{ name: 'yf_session', value: jwt, domain: u.hostname, path: '/', httpOnly: true, sameSite: 'Lax', secure: u.protocol === 'https:' }])
+}
+/** Same-origin calls that would CHANGE the signed persona's account. Reads
+ *  that ride POST (splash, brief, quotes, refresh, status) and the internal-
+ *  stamped beacons pass. */
+function WRITE_FENCE(method: string, path: string): boolean {
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return false
+  if (!path.startsWith('/api/')) return false
+  if (method === 'DELETE' || method === 'PATCH' || method === 'PUT') return true
+  return /^\/api\/(keys|embed-keys|grants|guardian|dca|jobs|intent-links|org|orgs|kill|billing|checkout|stripe|hl\/(submit|delegation)|posts|alerts|watchlists|admin|mcp|servers|chats|onramp|wallet\/send|roster|broker|inbox|spend|policy|auth\/logout|links|handles|customize|brand|spot-guard|autopilot)/.test(path)
+}
+const walletFor = async (persona: Persona) => (persona === 'empty' ? EMPTY_WALLET : persona === 'signed' ? (await signedIdentity()).address : '')
 
 const NOISE = /fonts\.gstatic|api\.cdp\.coinbase|cca-lite\.coinbase|web3modal|walletconnect|_vercel\/insights|YOUR_CDP_PROJECT|Cross-Origin-Opener-Policy|Failed to load resource|ERR_ABORTED|ERR_FAILED|Download the React DevTools/i
 
@@ -210,9 +273,11 @@ async function newCtx(browser: any, persona: Persona, width: number) {
     colorScheme: 'dark', permissions: ['clipboard-read', 'clipboard-write'],
   })
   await ctx.addInitScript(PROBE)
+  if (!FIRST_RUN) await ctx.addInitScript(`try { localStorage.setItem('pantessa.markets.picksheet.v1', JSON.stringify({ v: 1, at: Date.now() })) } catch {}`)
   if (persona === 'empty') await ctx.addInitScript(mockWalletScript(EMPTY_WALLET))
+  if (persona === 'signed') { await ctx.addInitScript(mockWalletScript((await signedIdentity()).address)); await seedSession(ctx) }
   const origin = new URL(BASE).origin
-  const state = { sends: [] as string[], external: [] as string[], rsc: 0 }
+  const state = { sends: [] as string[], external: [] as string[], rsc: 0, writes: [] as string[] }
   await ctx.route('**/*', async (r: any) => {
     const req = r.request(); const u = new URL(req.url())
     if (u.origin === origin) {
@@ -224,12 +289,20 @@ async function newCtx(browser: any, persona: Persona, width: number) {
         state.sends.push('ask')
         return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'answer', text: '(qa stub)' }) })
       }
+      // The signed persona's WRITES are fenced (squad polish): a crawl that
+      // clicks every control must never revoke a link, freeze the burner's
+      // agents, delete a key or mint rows on the shared TEST DB. The click
+      // still counts — the control answered by issuing the write (SEND/write).
+      if (persona === 'signed' && WRITE_FENCE(req.method(), u.pathname)) {
+        state.writes.push(`${req.method()} ${u.pathname}`)
+        return r.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Writes are paused for a moment — try again.' }) })
+      }
       if (req.headers()['rsc'] === '1' || u.searchParams.has('_rsc') || (req.isNavigationRequest() && req.resourceType() === 'document')) state.rsc++
       return r.continue({ headers: { ...req.headers(), 'x-yf-internal-run': '1' } })
     }
     // Connected persona: the local CDP project is a placeholder whose config fetch fails slowly and holds
     // up wagmi's restore (measured 6–10s → 3–6s when refused at once). Refuse it at once.
-    if (persona === 'empty' && /cdp\.coinbase|walletconnect|web3modal|reown/.test(u.host + u.pathname)) return r.abort()
+    if ((persona === 'empty' || persona === 'signed') && /cdp\.coinbase|walletconnect|web3modal|reown/.test(u.host + u.pathname)) return r.abort()
     // An external DOCUMENT navigation is a NAV: record it, never follow it.
     if (req.isNavigationRequest() && req.resourceType() === 'document') { state.external.push(u.href); return r.abort() }
     return r.continue()
@@ -268,7 +341,7 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
   wire(page)
   const url = BASE + route
   try {
-    cell.status = await load(page, url, persona === 'empty' ? EMPTY_WALLET : '')
+    cell.status = await load(page, url, await walletFor(persona))
     const landed = new URL(page.url())
     const want = new URL(url)
     if (landed.pathname !== want.pathname) {
@@ -296,9 +369,10 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
         // script re-seeds the mock wallet on load.
         try { await page.evaluate(() => { try { localStorage.clear(); sessionStorage.clear() } catch {} }) } catch {}
         try { await ctx.clearCookies() } catch {}
+        if (persona === 'signed') { try { await seedSession(ctx) } catch {} }
         try { await page.close() } catch {}
         page = await ctx.newPage(); wire(page)
-        try { await load(page, url, persona === 'empty' ? EMPTY_WALLET : '') } catch { /* recorded below as GONE */ }
+        try { await load(page, url, await walletFor(persona)) } catch { /* recorded below as GONE */ }
         cur = (await page.evaluate(ENUM).catch(() => [])) as Ctl[]
         dirty = false
       }
@@ -340,7 +414,7 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
       await sleep(BASELINE_MS)
       const before = await page.evaluate(SNAP)
       const t0 = await page.evaluate('performance.now()')
-      const e0 = errors.length, s0 = state.sends.length, x0 = state.external.length, p0 = popups.length, r0 = state.rsc
+      const e0 = errors.length, s0 = state.sends.length, x0 = state.external.length, p0 = popups.length, r0 = state.rsc, w0 = state.writes.length
       let forced = false
       try {
         try { await h.click({ timeout: 2000, noWaitAfter: true }) } catch (e1: any) {
@@ -359,7 +433,11 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
         }
       } catch (err: any) {
         const m = String(err?.message || err)
-        rec.outcome = 'BLOCKED'; rec.detail = /intercepts pointer|covered/.test(m) ? 'covered by another element' : m.split('\n')[0].slice(0, 120)
+        // Name the interceptor (Playwright says "<div class=…> … intercepts
+        // pointer events"): a covered tab bar is a bug only its owner can fix,
+        // and the owner needs to know WHAT covers it.
+        const by = m.match(/(<[a-z][^>]{0,160}>)[^\n]*?intercepts pointer events/)
+        rec.outcome = 'BLOCKED'; rec.detail = /intercepts pointer|covered/.test(m) ? `covered by another element${by ? ` ${by[1].replace(/\s+/g, ' ').slice(0, 140)}` : ''}` : m.split('\n')[0].slice(0, 120)
         cell.clicks.push(rec); continue
       }
       // Poll until something decisive happens or SETTLE_MS passes.
@@ -370,7 +448,7 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
         // A soft navigation was requested: give a cold route up to 8s to land.
         if (!extended && state.rsc > r0) { extended = true; deadline = Date.now() + 8000 }
         await sleep(200)
-        if (state.sends.length > s0 || state.external.length > x0 || popups.length > p0) break
+        if (state.sends.length > s0 || state.external.length > x0 || popups.length > p0 || state.writes.length > w0) break
         try { after = await page.evaluate(SNAP) } catch { after = { ...before, url: page.url() }; break }
         if (after.url !== before.url || after.doors > before.doors) break
       }
@@ -380,6 +458,7 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
       const subNote = rec.detail.startsWith('substitute') ? rec.detail : ''
       rec.detail = ''
       if (state.sends.length > s0) { rec.outcome = 'SEND'; rec.detail = state.sends.slice(s0).join(',') }
+      else if (state.writes.length > w0) { rec.outcome = 'SEND'; rec.detail = 'write (fenced) ' + state.writes.slice(w0).join(',').slice(0, 100) }
       else if (state.external.length > x0) { rec.outcome = 'NAV'; rec.detail = 'external ' + state.external[state.external.length - 1].slice(0, 100) }
       else if (popups.length > p0 || after.opens > before.opens) { rec.outcome = 'NAV'; rec.detail = 'new tab ' + (popups[popups.length - 1] || '').slice(0, 100) }
       else if (after.url !== before.url) { rec.outcome = 'NAV'; rec.detail = pathOf(before.url) + ' → ' + pathOf(after.url) }

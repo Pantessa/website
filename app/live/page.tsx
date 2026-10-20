@@ -6,6 +6,7 @@ import { readTradability } from '@/lib/tradability-store'
 import { cardAlt, cardUrlFor, parseLiveShare, shareDescription, shareText } from '@/lib/live-share'
 import '@/components/live/live.css'
 import '@/components/live/battle.css'
+import '@/components/live/flyover.css'
 
 // /live — the live tape (2026-10-06): the venue's fills as they land, USD
 // notional per second by taker flow, five tiles, and the sentence that does
@@ -17,8 +18,10 @@ import '@/components/live/battle.css'
 // at the action. The fills come from Dune's real-time feeds through our
 // relay (lib/tape-feed over /api/live/stream — HyperCore, Lighter, Lighter
 // Robinhood perps and the DEX spot trial; the venue's keyless socket is the
-// fallback); mids and candles are the venue's (lib/battle-feed). This page
-// only reads which rows can be acted on.
+// fallback); mids and candles are the venue's (lib/battle-feed). The Flyover
+// (`?view=flyover`, 2026-10-15, lib/flyover) draws every market as terrain
+// with three.js, loaded lazily by that view alone. This page only reads which
+// rows can be acted on.
 
 const TITLE = 'Live feed — every print is a button'
 const DESCRIPTION =

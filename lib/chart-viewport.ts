@@ -24,7 +24,7 @@
 //  Two more rules (2026-10-13, Nate on /t/ETH?tf=1s: "I can't seem to zoom
 //  out"):
 //
-//   · printOpeningView — a PRINT frame (1s: bars built from the relay's
+//   · printOpeningView — a PRINT frame (10s since 2026-10-15; bars built from the relay's
 //     prints) opens at PRINT_BAR_SPACING per bar with the newest bar at the
 //     right, whatever it holds. It used to open on fitContent(): a fit of
 //     the FIRST print — one bar across the whole plot — and the engine keeps

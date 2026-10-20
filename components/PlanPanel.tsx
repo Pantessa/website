@@ -93,12 +93,12 @@ export default function PlanPanel() {
             <CardTitle serif eyebrow="CURRENT PLAN">
               {u.planName}
               {isPaid && (
-                <span className="mono text-[13px] text-[color:var(--muted)] ml-2">
+                <span className="mono text-[length:var(--fs-md)] text-[color:var(--muted)] ml-2">
                   ${u.priceUsd}/mo · {u.status}
                 </span>
               )}
             </CardTitle>
-            <p className="text-[13px] text-[color:var(--muted)] mt-1">
+            <p className="text-[length:var(--fs-md)] text-[color:var(--muted)] mt-1">
               {isPaid
                 ? `${u.allowance.toLocaleString()} house answers each month${u.renewsAt ? ` · renews ${new Date(u.renewsAt).toLocaleDateString()}` : ` · resets in ${daysLeft}d`}`
                 : 'Charts, watchlists, alerts, trades and automations are all free, with no limits.'}
@@ -133,7 +133,7 @@ export default function PlanPanel() {
             <div className="planmeter__fill" style={{ width: `${pct}%` }} />
           </div>
         )}
-        <p className="text-[13px] leading-relaxed text-[color:var(--muted)] mt-3">
+        <p className="text-[length:var(--fs-md)] leading-relaxed text-[color:var(--muted)] mt-3">
           Free answers are spent first, then your plan, then the bank. Anything that builds a transaction — a swap, a
           stock buy, a DCA, a stop — never uses one. Every swap you sign through Uniswap banks answers from its fee;{' '}
           <Link href="/pricing" className="underline underline-offset-2">
@@ -151,11 +151,11 @@ export default function PlanPanel() {
           Answer activity
         </CardTitle>
         {data.ledger.length === 0 ? (
-          <p className="text-[13px] text-[color:var(--muted-2)] mt-2">Nothing yet — your first house answer in chat shows up here.</p>
+          <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)] mt-2">Nothing yet — your first house answer in chat shows up here.</p>
         ) : (
           <ul className="mt-2 flex flex-col">
             {data.ledger.map((e) => (
-              <li key={e.id} className="flex items-baseline justify-between gap-3 py-1.5 border-b border-[color:var(--line)] last:border-0 text-[13px]">
+              <li key={e.id} className="flex items-baseline justify-between gap-3 py-1.5 border-b border-[color:var(--line)] last:border-0 text-[length:var(--fs-md)]">
                 <span className="text-[color:var(--muted)] truncate">{entryLabel(e)}</span>
                 <span className="mono whitespace-nowrap">
                   <span className={e.delta > 0 ? 'text-[color:var(--accent)]' : 'text-[color:var(--muted)]'}>
@@ -218,7 +218,7 @@ function AiKeyCard({ ai, onChange }: { ai: PlanResponse['aiKey']; onChange: () =
         <p className="mono text-[11.5px] tracking-wider text-[color:var(--muted-2)] mt-3">NOT SWITCHED ON FOR THIS DEPLOYMENT YET</p>
       ) : key ? (
         <div className="mt-4 flex flex-col gap-3">
-          <label className="flex flex-col gap-1.5 text-[13px] text-[color:var(--muted)]" htmlFor="ai-key-model">
+          <label className="flex flex-col gap-1.5 text-[length:var(--fs-md)] text-[color:var(--muted)]" htmlFor="ai-key-model">
             Model for written answers
             <select
               id="ai-key-model"
@@ -234,7 +234,7 @@ function AiKeyCard({ ai, onChange }: { ai: PlanResponse['aiKey']; onChange: () =
               ))}
             </select>
           </label>
-          <label className="flex items-start gap-2.5 text-[13px] text-[color:var(--muted)]" htmlFor="ai-key-embeds">
+          <label className="flex items-start gap-2.5 text-[length:var(--fs-md)] text-[color:var(--muted)]" htmlFor="ai-key-embeds">
             <input
               id="ai-key-embeds"
               type="checkbox"
@@ -247,12 +247,12 @@ function AiKeyCard({ ai, onChange }: { ai: PlanResponse['aiKey']; onChange: () =
               Also use this key for visitors of my embedded chats. <span className="text-[color:var(--muted-2)]">Off by default: their answers would bill your key.</span>
             </span>
           </label>
-          {key.lastError && <p className="text-[13px] text-[#ffb86b]">Last problem: {key.lastError}. Answers fall back to your free and banked ones until the key works again.</p>}
+          {key.lastError && <p className="text-[length:var(--fs-md)] text-[#ffb86b]">Last problem: {key.lastError}. Answers fall back to your free and banked ones until the key works again.</p>}
           <div className="flex items-center gap-3 flex-wrap">
             <button className="btn btn--ghost !h-10 !px-4 !text-[13.5px]" disabled={busy} onClick={() => void call('DELETE', undefined, 'Key removed.')}>
               Remove key
             </button>
-            <span className="mono text-[11px] tracking-wider text-[color:var(--muted-2)]">
+            <span className="mono text-[length:var(--fs-xs)] tracking-wider text-[color:var(--muted-2)]">
               {key.lastUsedAt ? `LAST USED ${timeAgo(key.lastUsedAt).toUpperCase()}` : 'NOT USED YET'}
             </span>
           </div>
@@ -276,14 +276,14 @@ function AiKeyCard({ ai, onChange }: { ai: PlanResponse['aiKey']; onChange: () =
             placeholder="sk-ant-…"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            className="h-10 min-w-0 flex-1 basis-64 rounded-lg border border-[color:var(--line)] bg-[color:var(--surf-2)] px-3 mono text-[13px] text-[color:var(--fg)]"
+            className="h-10 min-w-0 flex-1 basis-64 rounded-lg border border-[color:var(--line)] bg-[color:var(--surf-2)] px-3 mono text-[length:var(--fs-md)] text-[color:var(--fg)]"
           />
           <button type="submit" className="btn btn--solid !h-10 !px-4 !text-[13.5px]" disabled={busy || !value.trim()}>
             {busy ? 'Checking…' : 'Check and save'}
           </button>
         </form>
       )}
-      {note && <p className={`text-[13px] mt-3 ${note.tone === 'ok' ? 'text-[color:var(--accent)]' : 'text-[#ffb86b]'}`}>{note.text}</p>}
+      {note && <p className={`text-[length:var(--fs-md)] mt-3 ${note.tone === 'ok' ? 'text-[color:var(--accent)]' : 'text-[#ffb86b]'}`}>{note.text}</p>}
     </Card>
   )
 }

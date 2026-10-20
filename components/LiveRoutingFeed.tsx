@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Terminal, Radio, ExternalLink } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, cleanServerName } from '@/lib/utils'
 import type { RouterTraceEvent } from '@/lib/store'
 import RouteTraceTerminal from '@/components/RouteTraceTerminal'
 
@@ -110,15 +110,15 @@ export default function LiveRoutingFeed() {
     <section className="mt-10 mb-12">
       <div className="flex items-center gap-2 mb-3">
         <Radio className="w-4 h-4" style={{ color: live ? 'var(--accent)' : 'var(--muted)' }} />
-        <h2 className="text-sm font-medium text-white mono uppercase tracking-wide">Live routing</h2>
+        <h2 className="text-sm font-medium text-[color:var(--fg)] mono uppercase tracking-wide">Live routing</h2>
         <span
           className={cn('w-1.5 h-1.5 rounded-full', live && 'animate-pulse')}
           style={{ background: live ? 'var(--accent)' : 'var(--muted-2)' }}
         />
-        <span className="text-[11px] text-[color:var(--muted-2)] mono ml-1">
+        <span className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mono ml-1">
           {live ? 'streaming' : 'connecting…'}
         </span>
-        <span className="ml-auto text-[11px] text-[color:var(--muted-2)] mono">
+        <span className="ml-auto text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mono">
           {settledCalls.length} call{settledCalls.length === 1 ? '' : 's'} · ${totalSpent.toFixed(3)}
         </span>
       </div>
@@ -127,30 +127,30 @@ export default function LiveRoutingFeed() {
         {/* Left: the rolling list of network calls, newest first. */}
         <div className="rounded-xl border border-[var(--line)] bg-black/40 overflow-hidden min-w-0">
           <div className="flex items-center gap-2 px-3 h-10 border-b border-[var(--line)]">
-            <span className="text-[11px] font-medium text-white mono uppercase tracking-wide">Network calls</span>
+            <span className="text-[length:var(--fs-xs)] font-medium text-[color:var(--fg)] mono uppercase tracking-wide">Network calls</span>
           </div>
           <div className="h-[420px] overflow-y-auto divide-y divide-[var(--line)]">
             {calls.length === 0 ? (
-              <p className="px-3 py-6 text-[12px] text-[color:var(--muted-2)] mono">
+              <p className="px-3 py-6 text-[length:var(--fs-sm)] text-[color:var(--muted-2)] mono">
                 Waiting for the next paid call…
               </p>
             ) : (
               calls.map((c) => (
-                <div key={c.key} className="flex items-center gap-2 px-3 py-2 text-[12px] min-w-0">
+                <div key={c.key} className="flex items-center gap-2 px-3 py-2 text-[length:var(--fs-sm)] min-w-0">
                   <span
                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                     style={{ background: c.ok ? 'var(--accent)' : '#ff6b6b' }}
                   />
-                  <span className="text-white truncate">{c.service}</span>
-                  {!c.ok && c.note ? <span className="text-[#ff6b6b] truncate text-[11px]">— {c.note}</span> : null}
-                  <span className="ml-auto flex items-center gap-2 flex-shrink-0 text-[color:var(--muted)] mono text-[11px]">
+                  <span className="text-[color:var(--fg)] truncate">{cleanServerName(c.service)}</span>
+                  {!c.ok && c.note ? <span className="text-[#ff6b6b] truncate text-[length:var(--fs-xs)]">— {c.note}</span> : null}
+                  <span className="ml-auto flex items-center gap-2 flex-shrink-0 text-[color:var(--muted)] mono text-[length:var(--fs-xs)]">
                     {c.priceUsd ? <span>${c.priceUsd}</span> : null}
                     {c.txHash ? (
                       <a
                         href={`https://basescan.org/tx/${c.txHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-0.5 underline decoration-dotted underline-offset-2 hover:text-white"
+                        className="inline-flex items-center gap-0.5 underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)]"
                         title="View on BaseScan"
                       >
                         {c.txHash.slice(0, 8)}… <ExternalLink className="w-3 h-3" />
@@ -168,7 +168,7 @@ export default function LiveRoutingFeed() {
         <div className="rounded-xl border border-[var(--line)] bg-black/60 overflow-hidden flex flex-col min-w-0">
           <div className="flex items-center gap-2 px-3 h-10 border-b border-[var(--line)] bg-black/40">
             <Terminal className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
-            <span className="text-[11px] font-medium text-white mono uppercase tracking-wide">Routing Engine</span>
+            <span className="text-[length:var(--fs-xs)] font-medium text-[color:var(--fg)] mono uppercase tracking-wide">Routing Engine</span>
             {activeTurn?.payer ? (
               <span className="text-[10px] text-[color:var(--muted-2)] mono">· {activeTurn.payer}</span>
             ) : null}

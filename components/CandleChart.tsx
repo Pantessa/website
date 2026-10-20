@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CHART_TFS, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
 
-const POLL_MS: Record<ChartTf, number> = { '1s': 5_000, '1m': 5_000, '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
+const POLL_MS: Record<ChartTf, number> = { '10s': 5_000, '1m': 5_000, '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
 
 const AXIS_W = 56
 const TIME_H = 18
@@ -229,7 +229,7 @@ export default function CandleChart({
 
   if (!resolvable) {
     return (
-      <div className="rounded-xl border border-[var(--line)] px-4 py-6 text-center text-[12px] text-[color:var(--muted-2)]">
+      <div className="rounded-xl border border-[var(--line)] px-4 py-6 text-center text-[length:var(--fs-sm)] text-[color:var(--muted-2)]">
         No live chart for {symbol.toUpperCase()} yet.
       </div>
     )
@@ -276,7 +276,7 @@ export default function CandleChart({
       >
         {candles.length === 0 ? (
           <div className="absolute inset-0 grid place-items-center rounded-xl border border-[var(--line)]">
-            <span className="text-[12px] text-[color:var(--muted-2)]">
+            <span className="text-[length:var(--fs-sm)] text-[color:var(--muted-2)]">
               {data?.error ? 'Chart feed unavailable — retrying.' : 'Loading candles…'}
             </span>
           </div>

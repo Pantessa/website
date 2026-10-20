@@ -23,10 +23,10 @@ import type { PhoneScreen, RailTab } from '@/lib/store'
 import { parseTabParam, tabUrl } from '@/lib/app-tab-url'
 
 /** Every seat the phone bar can carry (MORE holds the folded three). */
-export type PhoneSeat = 'markets' | 'mcps' | 'jobs' | 'links' | 'wallet' | 'team' | 'chats' | 'docs' | 'settings' | 'more'
+export type PhoneSeat = 'markets' | 'mcps' | 'jobs' | 'links' | 'wallet' | 'team' | 'chats' | 'leaderboard' | 'analytics' | 'docs' | 'settings' | 'more'
 
 /** The surfaces that mount the spine. */
-export type PhoneSurface = 'chat' | 'markets' | 'wallet' | 'dashboard'
+export type PhoneSurface = 'chat' | 'markets' | 'wallet' | 'dashboard' | 'leaderboard' | 'analytics'
 
 export type PhoneNavAction =
   /** Show this screen in /chat's main area (already on /chat). */
@@ -43,7 +43,9 @@ export type PhoneNavAction =
 export const SCREEN_TABS: readonly RailTab[] = ['mcps', 'jobs', 'links', 'team', 'chats']
 
 /** Seats the phone bar folds behind MORE below sm. */
-export const MORE_SEATS: readonly PhoneSeat[] = ['team', 'docs', 'settings']
+// LEADERS + ANALYTICS (2026-10-15): public pages, folded behind MORE on a
+// phone — the bar was already full at 375px.
+export const MORE_SEATS: readonly PhoneSeat[] = ['team', 'leaderboard', 'analytics', 'docs', 'settings']
 
 /** The /chat screen a drawer tab means on a phone. The tab ids are the
  *  ?tab= grammar every deep link in the product carries (lib/app-tab-url),
@@ -106,14 +108,19 @@ export function litSeat(surface: PhoneSurface, screen: PhoneScreen): PhoneSeat {
       return 'wallet'
     case 'dashboard':
       return 'settings'
+    case 'leaderboard':
+      return 'leaderboard'
+    case 'analytics':
+      return 'analytics'
   }
 }
 
-/** MORE is lit when the lit seat is folded behind it (TEAM, SETTINGS; DOCS
- *  never lights — /docs has no spine). */
+/** MORE is lit when the lit seat is folded behind it (TEAM, SETTINGS, and
+ *  the two progress pages LEADERS + ANALYTICS; DOCS never lights — /docs has
+ *  no spine). */
 export function moreLit(surface: PhoneSurface, screen: PhoneScreen): boolean {
   const lit = litSeat(surface, screen)
-  return lit === 'team' || lit === 'settings'
+  return lit === 'team' || lit === 'settings' || lit === 'leaderboard' || lit === 'analytics'
 }
 
 const trimSlash = (p: string) => (p.length > 1 ? p.replace(/\/+$/, '') : p)
@@ -149,6 +156,12 @@ export function phoneTap(input: { surface: PhoneSurface; screen: PhoneScreen; se
       return { kind: 'navigate', href: '/wallet', screen: null }
     case 'docs':
       return { kind: 'navigate', href: '/docs', screen: null }
+    case 'leaderboard':
+      if (surface === 'leaderboard') return { kind: 'top' }
+      return { kind: 'navigate', href: '/leaderboard', screen: null }
+    case 'analytics':
+      if (surface === 'analytics') return { kind: 'top' }
+      return { kind: 'navigate', href: '/analytics', screen: null }
     case 'settings':
       if (surface === 'dashboard' && pathname === '/dashboard') return { kind: 'top' }
       return { kind: 'navigate', href: '/dashboard', screen: null }

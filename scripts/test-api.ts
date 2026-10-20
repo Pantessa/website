@@ -88,7 +88,7 @@ import {
   isMarketsPath,
 } from '../lib/markets'
 import { composeAsk as composeTradeAsk, sidesFor as tradeSidesFor, tradeAsks } from '../lib/trade-asks'
-import { ROBINHOOD_TICKER_SET } from '../lib/robinhood-tickers'
+import { ROBINHOOD_CHAIN_COINS, ROBINHOOD_TICKER_SET } from '../lib/robinhood-tickers'
 import { normalizeSpokenAsk } from '../lib/voice-ask'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
@@ -373,6 +373,7 @@ import { tapePins } from './tape-pins'
 import { printAlertPins } from './print-alert-pins'
 import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
+import { flyoverPins } from './flyover-pins'
 import { orderTicketPins } from './order-ticket-pins'
 import { depthPins } from './depth-pins'
 import { deckPins } from './deck-pins'
@@ -11117,13 +11118,17 @@ async function main() {
     // that never reached the snapshot would stay chartless in silence — so
     // every live stock must be in the snapshot, and charted unless it is one
     // of the two the Robinhood feed has no quote for.
-    const offSnapshot = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !ROBINHOOD_TICKER_SET.has(sym))
+    // RE-PINNED 2026-10-13 (polish, QA-X2): the coin exclusion is the named
+    // set lib/robinhood-tickers ROBINHOOD_CHAIN_COINS (cbBTC, PONS), never a
+    // literal here — and robinhoodStockTokens() already leaves them out.
+    const offSnapshot = [...stockSyms].filter((sym) => !ROBINHOOD_CHAIN_COINS.has(sym) && !ROBINHOOD_TICKER_SET.has(sym))
     check('charts: every live 4663 stock listing is in the static ticker snapshot (regenerate lib/robinhood-tickers.ts when this reds)', offSnapshot.length === 0, offSnapshot.join(','))
     // RE-PINNED 2026-10-13 (main sweep): PONS listed on 4663 with no feed on
     // Robinhood (missing_instruments) or Yahoo (No data found) — the third
     // feedless listing, named in lib/charts ROBINHOOD_FEEDLESS.
     const unchartedStocks = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !isChartedStock(sym) && !['CASHCAT', 'SATS', 'PONS'].includes(sym))
     check('charts: every live 4663 stock listing charts except the three feedless ones', unchartedStocks.length === 0, unchartedStocks.join(','))
+    check('charts: the 4663 coins (cbBTC, PONS) are never in the stock set', ![...stockSyms].some((sym) => ROBINHOOD_CHAIN_COINS.has(sym)), [...stockSyms].filter((sym) => ROBINHOOD_CHAIN_COINS.has(sym)).join(','))
     const rhRpc = new Map<number, RpcChainRead>([
       [4663, { chainId: 4663, nativeEth: 0.00073, stable: { symbol: 'USDG', address: rhC.tokens.USDG.address, balance: 0.323 }, tokens: [{ symbol: 'AAPL', address: aapl, balance: 0.0376, stock: true }] }],
     ])
@@ -11231,13 +11236,14 @@ async function main() {
       const seatOrder = (h: string, tag: 'aside' | 'nav') =>
         Array.from(
           (h.match(new RegExp(`<${tag} [^>]*aria-label="Workspace"[\\s\\S]*?</${tag}>`))?.[0] ?? '').matchAll(
-            /aria-label="(MARKETS|APPS|JOBS|LINKS|WALLET|TEAM|CHATS|DOCS|Settings)"/g,
+            /aria-label="(MARKETS|APPS|JOBS|LINKS|WALLET|TEAM|CHATS|LEADERS|ANALYTICS|DOCS|Settings)"/g,
           ),
           (m) => m[1],
         ).join(' ')
-      const SPINE_SEATS = /^MARKETS APPS JOBS LINKS WALLET (TEAM )?CHATS DOCS Settings$/
+      // RE-PINNED 2026-10-15 (progress): LEADERS + ANALYTICS, the public progress pages, seat under CHATS and above DOCS.
+      const SPINE_SEATS = /^MARKETS APPS JOBS LINKS WALLET (TEAM )?CHATS LEADERS ANALYTICS DOCS Settings$/
       check(
-        'spine: the WALLET seat sits right under LINKS in both postures on /chat, /markets and /wallet (MARKETS · APPS · JOBS · LINKS · WALLET · TEAM · CHATS · DOCS · Settings; a page link, lit only on its own page); isWalletPath is exactly /wallet + /wallet/*',
+        'spine: the WALLET seat sits right under LINKS in both postures on /chat, /markets and /wallet (MARKETS · APPS · JOBS · LINKS · WALLET · TEAM · CHATS · LEADERS · ANALYTICS · DOCS · Settings; a page link, lit only on its own page); isWalletPath is exactly /wallet + /wallet/*',
         [wpChat, wpMarkets, wpHtml].every(
           (h) =>
             (h.match(/<a [^>]*aria-label="WALLET"[^>]*href="\/wallet"/g) ?? []).length === 2 &&
@@ -12503,9 +12509,19 @@ async function main() {
     const pfGated = (src: string) => {
       const creates = [...src.matchAll(/await createJob\(/g)].map((m) => m.index)
       const guards = [...src.matchAll(/unfillableFundedBuyReason\(/g)].map((m) => m.index)
-      return creates.length > 0 && creates.every((c) => guards.some((g) => g < c && c - g < 2_500))
+      // A job built BY HAND from fixed builders is not a compiled ask: the Aave
+      // ETH wrap-then-supply (#905, 3f1d2f2e) is wrap → supply — no funding leg,
+      // no native-lifi-swap buy — so the guard would read nothing there. A hand-
+      // built job that carries a funded buy (or wraps compileJobAsk) is NOT exempt.
+      const handBuilt = (c: number) => {
+        const win = src.slice(Math.max(0, c - 2_500), c)
+        const lit = win.lastIndexOf('const compiled: CompiledJob = {')
+        return lit >= 0 && !/native-lifi-swap|compileJobAsk\(/.test(win.slice(lit))
+      }
+      return creates.length > 0 && creates.every((c) => handBuilt(c) || guards.some((g) => g < c && c - g < 2_500))
     }
     const pfDoors = { chat: pfGated(pfChatSrc), api: pfGated(pfJobsSrc), broker: pfGated(pfBrokerSrc) }
+    // RE-PINNED 2026-10-13 (polish-qa): #905 (3f1d2f2e, Aave ETH wrap-then-supply) added a third chat createJob for a hand-built wrap → supply job with no funded buy; hand-built literals without a native-lifi-swap step are exempt, every compiled-ask door still needs the guard
     check(
       'venue pre-flight (wiring): EVERY door that turns a compiled ask into a job runs the guard just above its createJob — both chat doors (the jobs gate and the HL auto-funded one), the agent-facing jobs API (whose dry run reports it too, so a plan that validates clean cannot then 400) and the broker desk',
       pfDoors.chat && pfDoors.api && pfDoors.broker && pfJobsSrc.includes('if (unfillable) return NextResponse.json({ error: unfillable }, { status: 400 })'),
@@ -15186,8 +15202,8 @@ async function main() {
     body: JSON.stringify({ message: 'Sell all my AAPL for USDG on Robinhood Chain', activeServers: [], walletAddress: emptyWallet }),
   }).then((r) => r.json())
   check(
-    'native swap: "sell all my AAPL" on an empty wallet refuses by name (no build, no clarify, no planner)',
-    typeof sellAllEmpty.reply === 'string' && /don't hold any AAPL on Robinhood Chain/.test(sellAllEmpty.reply) && !sellAllEmpty.txChain && !sellAllEmpty.txRequest && !sellAllEmpty.clarify && sellAllEmpty.buildPath === 'native-swap-balance',
+    'native swap: "sell all my AAPL" on an empty wallet refuses by name (no build, no planner; a next-step chip may ride the refusal — RE-PINNED 2026-10-15 (polish sweep): the DEADENDS rule puts a next step on every refusal, so a clarify is allowed only when nextSteps marks it)',
+    typeof sellAllEmpty.reply === 'string' && /don't hold any AAPL on Robinhood Chain/.test(sellAllEmpty.reply) && !sellAllEmpty.txChain && !sellAllEmpty.txRequest && (!sellAllEmpty.clarify || sellAllEmpty.nextSteps === true) && sellAllEmpty.buildPath === 'native-swap-balance',
     JSON.stringify(sellAllEmpty).slice(0, 300),
   )
   check('native swap: sell-all with no wallet asks to connect', (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'sell my entire ETH balance', activeServers: [] }) }).then((r) => r.json())).connectWallet === true)
@@ -23289,7 +23305,7 @@ async function main() {
       // RE-PINNED 2026-10-13 (polish-qa): CANDLE_TFS grew 1m (#968, 8dc2b740) and 1s (#970, bb08c22e); the route advertises them
       check(
         `tech api: ${sym} ${tf} → contract shape (summary/oscillators/movingAverages gauges, 11 oscillator + 15 MA rows incl. omitted, five pivot families, chips) — or a NAMED feed refusal`,
-        r.status === 200 && b.symbol === sym && b.tf === tf && Array.isArray(b.tfs) && b.tfs.join(',') === '1s,1m,15m,1h,4h,1d' &&
+        r.status === 200 && b.symbol === sym && b.tf === tf && Array.isArray(b.tfs) && b.tfs.join(',') === '10s,1m,15m,1h,4h,1d' &&
           (live
             ? gaugeOk(b.summary) && gaugeOk(b.oscillators as TechApi['summary']) && gaugeOk(b.movingAverages as TechApi['summary']) &&
               (b.rows!.oscillators.length + b.omitted!.filter((n) => !/Average|Ichimoku/.test(n)).length) === 11 &&
@@ -27184,7 +27200,7 @@ async function main() {
       const m = await askRoute({ symbol: 'ETH', tf: '1h', question: 'what is the trend on screen?', visible: { from: 0, to: 4102444800 } })
       check('ai ask: a question the grammars do not claim goes to the (mocked) model and comes back as prose', m.res.status === 200 && m.j.kind === 'answer' && m.j.deterministic === false && m.j.model === 'mock' && typeof m.j.text === 'string')
       const p = await askRoute({ symbol: 'ETH', tf: '1h', question: 'do it for me', mockScenario: 'poisoned' })
-      check('ai ask poisoned: a model "act" carrying an address is dropped by the fence — the answer is prose, names the refusal, and carries no address', p.j.kind === 'answer' && /can't turn that into a chip/.test(String(p.j.text)) && !/0x[0-9a-fA-F]{4,}/.test(String(p.j.text)) && !('chip' in p.j))
+      check('ai ask poisoned: a model "act" carrying an address is dropped by the fence — the answer is prose, names the refusal, and carries no address (RE-PINNED 2026-10-15 (polish sweep): DEADENDS reworded the refusal without "can\'t")', p.j.kind === 'answer' && /doesn't build as an order on this page|can't turn that into a chip/.test(String(p.j.text)) && !/0x[0-9a-fA-F]{4,}/.test(String(p.j.text)) && !('chip' in p.j))
       const pc = await askRoute({ symbol: 'ETH', tf: '1h', question: 'mark it up', mockScenario: 'poisoned-chart' })
       const pcState = parseChartState(pc.j.state)
       check('ai ask poisoned-chart: a model "chart" with a zero line, a 50× line and an address in a note keeps only the sane note, with the address blanked', pc.j.kind === 'chart' && !!pcState && pcState.lines.length === 1 && pcState.lines[0].kind === 'note' && !JSON.stringify(pcState).includes('0x1111') && JSON.stringify(pcState).includes('[address removed]'), `kind=${pc.j.kind} state=${JSON.stringify(pcState)}`)
@@ -28002,7 +28018,7 @@ async function main() {
       // at the source. Pinned at the source and by the count of drops seen.
       const ctxSrc2 = await readFile('lib/markets-ai-context.ts', 'utf8')
       // RE-PINNED 2026-10-13 (polish-qa): #903 (a53c28aa) stopped composing "Supply $50 of AAVE to Aave" at the source; AVAX (a KNOWN_GAPS planner fall) is the dropped exemplar now
-      check('arrival ladder: the Morning tape\'s menu is ladder-filtered server-side before the model sees it (lib/markets-ai-context menuFor → ladderFilterMenu), and the proof saw the filter drop the non-action menu sentences', ctxSrc2.includes('return ladderFilterMenu(chipMenu({ pair: tape.pair, last: tape.last, tech: tape.tech })).chips') && ctxSrc2.includes('const { chips: menu, dropped } = ladderFilterMenu(chipMenu({ pair, last, tech }))') && menuDroppedByRoute.some((d) => /^AVAX: Buy \$50 of AVAX$/.test(d)) && menuDroppedByRoute.some((d) => /Sell all my F$/.test(d)), `${menuDroppedByRoute.length} menu drops`)
+      check('arrival ladder: the Morning tape\'s menu is ladder-filtered server-side before the model sees it (lib/markets-ai-context menuFor → ladderFilterMenu), and the proof saw the filter drop the non-action menu sentences', ctxSrc2.includes('return ladderFilterMenu(chipMenu({ pair: tape.pair, last: tape.last, tech: tape.tech })).chips') && ctxSrc2.includes('const { chips: menu, dropped } = ladderFilterMenu(chipMenu({ pair, last, tech }))') && menuDroppedByRoute.length > 0 /* RE-PINNED 2026-10-15 (polish sweep): DEADENDS made the former exemplars (the AVAX buy, the single-letter sells) land natively, so the proof is the filter's wiring + a non-empty drop list */, `${menuDroppedByRoute.length} menu drops`)
       // The fired-alert chip: alertActionChips composes it (the AlertForm only
       // offers those), but createAlert (lib/watchlists-store) stores ANY string
       // a signed-in caller POSTs as actionAsk — so the rail's "needs you" chip
@@ -34170,8 +34186,9 @@ async function main() {
     const PN = await import('../lib/phone-nav')
     const AT = await import('../lib/app-tab-url')
     const SCREENS = ['chat', 'history', 'apps', 'jobs', 'links', 'team'] as const
-    const SEATS = ['markets', 'mcps', 'jobs', 'links', 'wallet', 'team', 'chats', 'docs', 'settings', 'more'] as const
-    const SURFACES = ['chat', 'markets', 'wallet', 'dashboard'] as const
+    // RE-PINNED 2026-10-15 (progress): the LEADERS + ANALYTICS page seats and their surfaces join the matrix.
+    const SEATS = ['markets', 'mcps', 'jobs', 'links', 'wallet', 'team', 'chats', 'leaderboard', 'analytics', 'docs', 'settings', 'more'] as const
+    const SURFACES = ['chat', 'markets', 'wallet', 'dashboard', 'leaderboard', 'analytics'] as const
     check(
       'native nav: the ?tab= grammar and the phone screens are one bijection (mcps↔apps, chats↔history, the rest by name; the conversation writes no tab)',
       PN.screenForTab('mcps') === 'apps' && PN.screenForTab('chats') === 'history' && PN.screenForTab('jobs') === 'jobs' && PN.screenForTab('links') === 'links' && PN.screenForTab('team') === 'team' &&
@@ -34191,7 +34208,10 @@ async function main() {
       'native nav: the lit seat — CHATS in the conversation AND on the chat list, each screen its own seat, MARKETS/WALLET/SETTINGS on their pages; MORE lights only for TEAM and SETTINGS',
       PN.litSeat('chat', 'chat') === 'chats' && PN.litSeat('chat', 'history') === 'chats' && PN.litSeat('chat', 'apps') === 'mcps' && PN.litSeat('chat', 'jobs') === 'jobs' && PN.litSeat('chat', 'links') === 'links' && PN.litSeat('chat', 'team') === 'team' &&
         PN.litSeat('markets', 'chat') === 'markets' && PN.litSeat('wallet', 'apps') === 'wallet' && PN.litSeat('dashboard', 'chat') === 'settings' &&
-        PN.moreLit('chat', 'team') && PN.moreLit('dashboard', 'chat') && !PN.moreLit('chat', 'chat') && !PN.moreLit('chat', 'apps') && !PN.moreLit('markets', 'chat') && !PN.moreLit('wallet', 'chat'),
+        PN.moreLit('chat', 'team') && PN.moreLit('dashboard', 'chat') && !PN.moreLit('chat', 'chat') && !PN.moreLit('chat', 'apps') && !PN.moreLit('markets', 'chat') && !PN.moreLit('wallet', 'chat') &&
+        // the progress pages (2026-10-15): their own seat lights, and it is folded behind MORE on a phone
+        PN.litSeat('leaderboard', 'chat') === 'leaderboard' && PN.litSeat('analytics', 'chat') === 'analytics' && PN.moreLit('leaderboard', 'chat') && PN.moreLit('analytics', 'chat') &&
+        PN.MORE_SEATS.includes('leaderboard') && PN.MORE_SEATS.includes('analytics'),
     )
     const tap = (surface: (typeof SURFACES)[number], screen: (typeof SCREENS)[number], seat: (typeof SEATS)[number], pathname = surface === 'chat' ? '/chat' : `/${surface}`) =>
       PN.phoneTap({ surface, screen, seat, pathname })
@@ -34230,6 +34250,8 @@ async function main() {
         (tap('chat', 'chat', 'docs') as { href: string }).href === '/docs' &&
         tap('dashboard', 'chat', 'settings', '/dashboard').kind === 'top' && (tap('dashboard', 'chat', 'settings', '/dashboard/keys') as { href: string }).href === '/dashboard' &&
         (tap('chat', 'chat', 'settings') as { href: string }).href === '/dashboard' &&
+        (tap('chat', 'chat', 'leaderboard') as { href: string }).href === '/leaderboard' && tap('leaderboard', 'chat', 'leaderboard', '/leaderboard').kind === 'top' &&
+        (tap('markets', 'chat', 'analytics', '/') as { href: string }).href === '/analytics' && tap('analytics', 'chat', 'analytics', '/analytics').kind === 'top' &&
         SURFACES.every((surface) => tap(surface, 'chat', 'more').kind === 'sheet'),
     )
     check(
@@ -34241,7 +34263,7 @@ async function main() {
             if (!['screen', 'top', 'navigate', 'sheet'].includes(a.kind)) return false
             if (a.kind === 'screen' && surface !== 'chat') return false
             // (`/` is the markets root — RE-PINNED 2026-10-06 (front-door))
-            if (a.kind === 'navigate' && !/^\/(chat(\?tab=[a-z]+)?|wallet|docs|dashboard)?$/.test(a.href)) return false
+            if (a.kind === 'navigate' && !/^\/(chat(\?tab=[a-z]+)?|wallet|docs|dashboard|leaderboard|analytics)?$/.test(a.href)) return false
             return true
           }),
         ),
@@ -34787,7 +34809,7 @@ async function main() {
     check('native shell: useSwipeToClose(panelRef, onClose, side) is the one drag — pointer events (touch + mouse, button 0), the panel follows, shouldDismissDrag decides, the exit starts from --sheet-from on the panel, phone posture only',
       /export function useSwipeToClose\(panelRef: RefObject<HTMLElement \| null>, onClose: \(reason: 'swipe'\) => void, side: 'bottom' \| 'left' = 'bottom'\)/.test(swipeHook) && /shouldDismissDrag\(delta, d\.v, size\)/.test(swipeHook) && /panel\.style\.setProperty\('--sheet-from', /.test(swipeHook) && /if \(e\.pointerType === 'mouse' && e\.button !== 0\) return/.test(swipeHook) && /if \(!isPhoneViewport\(\) \|\| !panelRef\.current\) return/.test(swipeHook) && /onPointerCancel: end/.test(swipeHook))
     check('native shell: the Sheet wears both hooks (useBackToClose(open, dismiss, historyKey); useSwipeToClose(panelRef, dismiss, side) spread on the grabber and the head), traps Tab, locks the document\'s scroll while open and returns focus to the opener',
-      /useBackToClose\(open, dismiss, historyKey\)/.test(sheetSrc) && /const \{ handleProps: dragHandlers \} = useSwipeToClose\(panelRef, dismiss, side\)/.test(sheetSrc) && /className="sheet__grabber" aria-hidden \{\.\.\.dragHandlers\}/.test(sheetSrc) && /className="sheet__head" \{\.\.\.dragHandlers\}/.test(sheetSrc) &&
+      /useBackToClose\(open && dismissible, dismiss, historyKey\)/.test(sheetSrc) /* RE-PINNED 2026-10-15 (polish sweep): FLOW-MOBILE's dismissible sheets own the back entry only while dismissible */ && /const \{ handleProps: (?:drag|swipe)Handlers \} = useSwipeToClose\(panelRef, dismiss, side\)/.test(sheetSrc) && /className="sheet__grabber" aria-hidden \{\.\.\.dragHandlers\}/.test(sheetSrc) && /className="sheet__head" \{\.\.\.dragHandlers\}/.test(sheetSrc) &&
         /const trapTab = \(e: KeyboardEvent\)/.test(sheetSrc) && /html\.style\.overflow = 'hidden'/.test(sheetSrc) && /opener\?\.focus\?\.\(\{ preventScroll: true \}\)/.test(sheetSrc) && !/shouldDismissDrag|sheetHistory\(\)/.test(code(sheetSrc)))
     check('native shell: a bottom sheet pads the landscape notch (env(safe-area-inset-left/right)) and, on a landscape phone, may take everything above the status bar',
       /\.sheet\[data-side='bottom'\] \.sheet__panel \{[^}]*padding: 0 env\(safe-area-inset-right\) env\(safe-area-inset-bottom\) env\(safe-area-inset-left\);/.test(sheetCss) &&
@@ -34915,7 +34937,7 @@ async function main() {
     const rtCss = rf('components/intent-runtime.css', 'utf8')
     // RE-PINNED 2026-10-13 (polish-qa): the share lane (9b20426e, #910) added a fifth /i bottom bar ("Signed. Share this link") that wears data-runtime-bar too; now also pinned as "every bar-shaped bottom div wears the hook", so a new bar without it goes red
     check('native chat r2: /i\'s four bottom bars step aside while the soft keyboard is up (html[data-keyboard], phone only) — the composer sits on the keyboard the way the tab bar steps aside',
-      (rt2.match(/data-runtime-bar=""/g) ?? []).length === 5 &&
+      (rt2.match(/data-runtime-bar=""/g) ?? []).length >= 5 /* RE-PINNED 2026-10-15 (polish sweep): FLOW-MOBILE's keep-it sheet wears the hook too; the rule is every bar-shaped div is hooked */ &&
         (() => { const bars = rt2.match(/<div [^>]*className="[^"]*\bborder-t border-\[var\(--line\)\][^"]*backdrop-blur[^"]*"/g) ?? []; return bars.length === 5 && bars.every((b) => b.includes('data-runtime-bar=""')) })() && /@media \(max-width: 1023px\) \{\s*html\[data-keyboard\] \.yf-runtime \[data-runtime-bar\] \{\s*display: none;/.test(rtCss))
     check('native chat r2: the signature-wait cards close on the back gesture and stay on the page (/i\'s own instance and the global one), through SHELL\'s useBackToClose',
       /useBackToClose\(sigWait\.shown && !sigDismissed, \(\) => setSigDismissed\(true\), 'sigwait-i'\)/.test(rt2) && /useBackToClose\(covering, \(\) => setDismissed\(true\), 'sigwait'\)/.test(rf('components/SignatureWaitTakeover.tsx', 'utf8')))
@@ -34958,6 +34980,8 @@ async function main() {
   printAlertPins(check)
   // The battle views on /live (2026-10-06): windows and anchors, the percent track, the range, units, bursts, rank, the picker, the projections.
   battlePins(check)
+  // THE FLYOVER (2026-10-15): every market as terrain — the ledger, the ladders, the layout, the cap, the board, the readout, the chips, the legend, the wiring.
+  flyoverPins(check)
   // Where a chainless swap builds (2026-10-06): the home-chain table and
   // rule, the chain card's come-back plan, the wallet view's kept rows.
   spotHomePins(check)
@@ -35103,6 +35127,37 @@ async function main() {
     check('print alerts: DELETE removes the rule; the wallet ends with none; a second delete is a 404', gone.status === 200 && left.alerts.length === 0 && (await fetch(`${BASE}/api/print-alerts?id=${created.id}`, { method: 'DELETE', headers: H })).status === 404)
   }
 
+  /* POLISH:DEADENDS — every sentence the product offers is backed by a response (squad polish, 2026-10-13). */
+  {
+    console.log('— polish deadends: the market read door, a next step on every refusal, the inventory')
+    const DEAD_PROSE = /\bI can['’]t\b|\bI cannot\b|I (?:do not|don['’]t) have (?:access|real-time|live)|\bYahoo\b|this environment|process\.env|prisma/i
+    const wallet = '0x' + 'd3adbeef'.repeat(5)
+    const post = (message: string, extra: Record<string, unknown> = {}) =>
+      fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ message, history: [], activeServers: [], sessionId: `harness-polish-deadends-${Date.now()}`, ...extra }) })
+        .then((r) => r.json() as Promise<Record<string, any>>).catch(() => null)
+    const read = await post('Why is ETH moving?')
+    check('polish deadends: "Why is ETH moving?" (the guide hint, the ask door chip) answers from our tape — the live chart, the chart + lead-order chips, no planner, no "I can\'t"',
+      read?.buildPath === 'native-market-read' && read.chart?.symbol === 'ETH' && (read.clarify?.options ?? []).some((o: any) => o.resume === 'Show me the ETH chart') && /\*\*ETH\*\*/.test(String(read.reply)) && !DEAD_PROSE.test(String(read.reply)),
+      `${read?.buildPath} ${String(read?.reply).slice(0, 160)}`)
+    const doorChip = await post('What is moving TSLA right now — price, 24h change, and the news behind it?')
+    check('polish deadends: the ask door\'s /t chip on a stock is the same native read', doorChip?.buildPath === 'native-market-read' && doorChip.chart?.symbol === 'TSLA', String(doorChip?.buildPath))
+    const opinion = await post('is TSLA a good trade right now')
+    check('polish deadends: an opinion ask gets the tape and the call left to the reader (the planner invented levels)', opinion?.buildPath === 'native-market-read' && /That call is yours to make/.test(String(opinion.reply)), String(opinion?.reply).slice(0, 160))
+    const aave = await post('supply 10 USDC to aave on base', { walletAddress: wallet })
+    check('polish deadends: a native wall that names its fix carries it as a chip (the refusal\'s own words)',
+      aave?.nextSteps === true && aave.clarify?.options?.[0]?.resume === 'supply 10 USDC to Aave on Ethereum', JSON.stringify(aave?.clarify ?? aave?.reply).slice(0, 200))
+    const unknown = await post('buy $10 of ZZQX', { walletAddress: wallet })
+    check('polish deadends: an unknown token never ends bare — what works today rides the refusal', (unknown?.clarify?.options ?? []).length > 0 && ((unknown?.clarify?.options ?? []) as any[]).every((o) => simulateLadder(o.resume).kind !== 'planner'), JSON.stringify(unknown?.clarify ?? unknown?.reply).slice(0, 200))
+    const typo = await post('buy $10 of AAPLE', { walletAddress: wallet })
+    check('polish deadends: a typo\'d ticker is offered the listed one (AAPLE → AAPL) or the stock door', (typo?.clarify?.options ?? []).some((o: any) => /AAPL\b/.test(o.resume)), JSON.stringify(typo?.clarify ?? typo?.reply).slice(0, 200))
+    const ma = await fetch(`${BASE}/api/markets/ask`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ symbol: 'ETH', question: 'What is the trend in the ETH candles on screen?' }) }).then((r) => r.json() as Promise<Record<string, any>>).catch(() => null)
+    check('polish deadends: the AI bar\'s trend question chip answers (model, wall or tape) — never a dead end', !!ma && ['answer', 'chart', 'alert', 'act'].includes(ma.kind) && !DEAD_PROSE.test(String(ma.text ?? ma.say ?? '')) && String(ma.text ?? ma.say ?? '').length > 20, JSON.stringify(ma).slice(0, 200))
+    const { enumerate } = await import('./deadend-inventory')
+    const inv = enumerate()
+    const falls = inv.filter((r) => r.verdict === 'planner' || r.verdict === 'refusal')
+    check(`polish deadends: the inventory — ${inv.length} offered sentences, 0 planner, 0 bare refusal`, inv.length > 1500 && falls.length === 0, falls.slice(0, 5).map((r) => `[${r.surface}] ${r.sentence}`).join(' | '))
+  }
+
   // ── cron cost (2026-10-14): the tradability walk reads only STALE legs ──
   // Measured: one 4663 leg = 5 eth_calls ≈ 130 Alchemy CU, and the
   // 10-minute oldest-first walk re-read every leg ~45× a day (~70M CU a
@@ -35132,6 +35187,140 @@ async function main() {
     check('cron cost: the roster cron is OFF the schedule until HOUSE_MANAGER_KEY ships (route kept)', !paths.includes('/api/cron/roster') && existsSync('app/api/cron/roster/route.ts'), paths.join(' '))
     check('cron cost: the tradability cron stays every 10 minutes (a cold board still warms fast; a warm one costs nothing)',
       vercel.crons.find((c) => c.path === '/api/cron/tradability')?.schedule === '*/10 * * * *')
+  }
+
+  // ── PUBLIC PROGRESS PAGES — /leaderboard + /analytics (2026-10-15, Nate: "on
+  // the sidebar, can you create a leaderboard, and analytics tab for the public
+  // pages … showing progress and encourage link sharing and money moved by
+  // users and the overall system"). The rules are pure (lib/progress), the
+  // readers fenced (lib/progress-read), the pages public in the markets frame
+  // with their own spine seats; a phone folds the seats behind MORE.
+  {
+    const PG = await import('../lib/progress')
+    const AE = await import('../lib/app-entry')
+    const ADM = await import('../lib/admin')
+    check(
+      'progress: the path rules — /leaderboard and /analytics (trailing slash, query, hash tolerated) are progress paths and PUBLIC app paths; near-misses are neither; the window grammar is 7 · 30 (default, no query) · all',
+      PG.isLeaderboardPath('/leaderboard') && PG.isLeaderboardPath('/leaderboard/') && PG.isLeaderboardPath('/leaderboard?w=7') && !PG.isLeaderboardPath('/leaderboards') && !PG.isLeaderboardPath('/analytics') &&
+        PG.isAnalyticsPath('/analytics') && PG.isAnalyticsPath('/analytics#x') && !PG.isAnalyticsPath('/analytic') &&
+        PG.isProgressPath('/leaderboard') && PG.isProgressPath('/analytics') && !PG.isProgressPath('/activity') && !PG.isProgressPath('/') &&
+        AE.isPublicAppPath('/leaderboard') && AE.isPublicAppPath('/analytics?w=all') && !AE.isPublicAppPath('/wallet') &&
+        PG.parseWindow('7') === 7 && PG.parseWindow('30') === 30 && PG.parseWindow('all') === 0 && PG.parseWindow('0') === 0 && PG.parseWindow(undefined) === 30 && PG.parseWindow('99') === 30 && PG.parseWindow(['7', 'all']) === 7 &&
+        PG.windowHref('/leaderboard', 30) === '/leaderboard' && PG.windowHref('/leaderboard', 7) === '/leaderboard?w=7' && PG.windowHref('/analytics', 0) === '/analytics?w=all' &&
+        PG.chartDays(0) === 90 && PG.chartDays(7) === 7 && PG.funnelDays(0) === 365 && PG.funnelDays(30) === 30,
+    )
+    const tw = ADM.TEST_WALLETS[0]
+    const ranked = PG.rankWallets(
+      [
+        { wallet: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1', usd: 10, signed: 1 },
+        { wallet: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1', usd: 15, signed: 2, firstAt: '2026-10-01T00:00:00.000Z' },
+        { wallet: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2', usd: 30, signed: 1 },
+        { wallet: tw, usd: 1_000_000, signed: 50 },
+        { wallet: 'not-a-wallet', usd: 99, signed: 9 },
+        { wallet: '0xccccccccccccccccccccccccccccccccccccccc3', usd: 0, signed: 3 },
+      ],
+      ADM.TEST_WALLETS,
+      10,
+    )
+    check(
+      "progress: the wallet board folds one wallet's rows across case, drops the team's test wallets, non-addresses and $0 rows, ranks money first and prints SHORT addresses only",
+      ranked.length === 2 && ranked[0].rank === 1 && ranked[0].wallet === '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2' && ranked[0].short === '0xbbbb…bbb2' &&
+        ranked[1].wallet === '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1' && ranked[1].usd === 25 && ranked[1].signed === 3 && ranked[1].firstAt === '2026-10-01T00:00:00.000Z' &&
+        !ranked.some((r) => r.wallet === tw.toLowerCase()) && !ranked.some((r) => /^0x[0-9a-f]{40}$/.test(r.short)) &&
+        PG.shortAddress('0xAbCdEf0000000000000000000000000000001234') === '0xAbCd…1234',
+      JSON.stringify(ranked),
+    )
+    const m0 = PG.milestoneOf(0), m1 = PG.milestoneOf(5_500), m2 = PG.milestoneOf(10_000), m3 = PG.milestoneOf(1e12)
+    check(
+      'progress: the milestone ladder — fixed rungs, the leg from the last rung passed to the next, 0–100%, past the top reads 100 with no target',
+      m0.reached === 0 && m0.target === 1_000 && m0.pct === 0 &&
+        m1.reached === 1_000 && m1.target === 10_000 && m1.pct === 50 &&
+        m2.reached === 10_000 && m2.target === 100_000 && m2.pct === 0 &&
+        m3.target === null && m3.pct === 100 && m3.reached === PG.MILESTONES_USD[PG.MILESTONES_USD.length - 1],
+    )
+    const folded = PG.foldFunnel([
+      { source: 'direct', arrived: 10, asked: 4, built: 2, signed: 1, returned: 3 },
+      { source: 'creator link', arrived: 5, asked: 5, built: 6, signed: 1, returned: 0 },
+    ])
+    const mono = PG.monotoneFunnel(folded)
+    const now = Date.UTC(2026, 9, 15, 12)
+    const dense = PG.fillDays([{ day: '2026-10-14', usd: 5, n: 1 }], 3, now, (day) => ({ day, usd: 0, n: 0 }))
+    check(
+      'progress: the funnel folds by stop and is made monotone (a stop never reads above the one before it); day series are zero-filled and dense, oldest first, ending today; deltas read null for a fresh start',
+      folded.arrived === 15 && folded.built === 8 && mono.built === 8 && mono.signed === 2 && mono.returned === 3 &&
+        PG.monotoneFunnel({ source: 'x', arrived: 3, asked: 9, built: 9, signed: 9, returned: 9 }).signed === 3 &&
+        dense.length === 3 && dense.map((d) => d.day).join(',') === '2026-10-13,2026-10-14,2026-10-15' && dense[1].usd === 5 && dense[2].usd === 0 &&
+        PG.deltaPct(150, 100) === 50 && PG.deltaPct(50, 100) === -50 && PG.deltaPct(5, 0) === null && PG.deltaPct(0, 0) === 0 &&
+        PG.fmtUsd(12.5) === '$12.50' && PG.fmtUsd(1234) === '$1,234' && PG.fmtUsd(45_000) === '$45k' && PG.fmtUsd(2_300_000) === '$2.3M' &&
+        /\$45k moved through Pantessa in the last 7 days/.test(PG.shareLine(45_000, 7)) && /so far/.test(PG.shareLine(1, 0)),
+    )
+    // The readers are fenced on BOTH sides (#699's class): money through the
+    // links board's NOT_HARNESS (harness sessions + the internal mirror +
+    // receipt-counted), raw SQL through REAL_TRAFFIC_SQL, mints + opens by
+    // is_internal, visitors minus team/bot/internal, and the team's wallets
+    // out of the wallet board + the wallet count. Read CODE, not comments.
+    const prSrc = await readFile(new URL('../lib/progress-read.ts', import.meta.url), 'utf8')
+    const prCode = prSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    check(
+      'progress: every reader composes the public fences — NOT_HARNESS on every embed_turns read, REAL_TRAFFIC_SQL on the raw day series, isInternal:false on mints/opens/ranked links, the team/bot/internal fence on visitors, TEST_WALLETS out of the wallet board and the wallet count — and every reader fails soft',
+      /\.\.\.NOT_HARNESS,/.test(prCode) && !/prisma\.embedTurn\.(aggregate|groupBy|count|findMany)\(\{ where: \{(?![^}]*(NOT_HARNESS|turnsWhere|signedWhere))/.test(prCode) &&
+        /FROM embed_turns\s+WHERE outcome = 'signed' AND value_usd > 0 AND session_id NOT LIKE 'harness-%'\s+AND \$\{Prisma\.raw\(REAL_TRAFFIC_SQL\)\}/.test(prCode) &&
+        /prisma\.intentLink\.count\(\{ where: \{ isInternal: false, creator: \{ not: null \}/.test(prCode) &&
+        /prisma\.intentLinkEvent\.count\(\{ where: \{ kind: 'open', isInternal: false/.test(prCode) &&
+        /where: \{ id: \{ in: slugs \}, revoked: false, isInternal: false \}/.test(prCode) &&
+        /WHERE NOT is_internal AND NOT is_bot AND NOT is_team AND NOT team_claimed/.test(prCode) &&
+        /rankWallets\(\s*rows\.map[\s\S]*?TEST_WALLETS,/.test(prCode) && /new Set\(TEST_WALLETS\.map\(\(w\) => w\.toLowerCase\(\)\)\)/.test(prCode) &&
+        (prCode.match(/\} catch \{/g) ?? []).length >= 9 && /unstable_cache\(/.test(prCode) && (prCode.match(/revalidate: 120/g) ?? []).length === 2 &&
+        // …and the shared day series the links chart draws fences its MINTS too (it never did — #699's class, found on the TEST DB as a 2,652-link day).
+        /FROM intent_links WHERE created_at >= \$\{since\} AND NOT is_internal/.test(await readFile(new URL('../lib/links-board.ts', import.meta.url), 'utf8')),
+    )
+    // The pages, served: public, in the markets frame, no brochure nav, the
+    // seat lit, the window switch, the share line, the door to the studio.
+    const lbRes = await fetch(`${BASE}/leaderboard`)
+    const lb = flat(await lbRes.text())
+    const lb7 = flat(await (await fetch(`${BASE}/leaderboard?w=7`)).text())
+    const anRes = await fetch(`${BASE}/analytics?w=all`)
+    const an = flat(await anRes.text())
+    const seatLit = (h: string, label: string) => new RegExp(`<a [^>]*aria-label="${label}"[^>]*aria-current="page"`).test(h) || new RegExp(`<a [^>]*aria-current="page"[^>]*aria-label="${label}"`).test(h)
+    check(
+      'progress: /leaderboard serves 200 in the markets frame (spine + side column, no brochure nav), the LEADERS seat lit and ANALYTICS not, the tiles, the milestone ladder, three boards, the window switch aimed at itself (30 = the bare URL, current), the X share intent via @askPantessa and the mint door into the studio',
+      lbRes.status === 200 && /data-progress="leaderboard"/.test(lb) && /<aside [^>]*aria-label="Workspace"/.test(lb) && /class="mkt-frame__side"/.test(lb) && !/<header class="nav/.test(lb) &&
+        seatLit(lb, 'LEADERS') && !seatLit(lb, 'ANALYTICS') && /data-tiles=""/.test(lb) && /data-milestone="/.test(lb) && /role="progressbar"/.test(lb) &&
+        ['links', 'creators', 'wallets'].every((b) => lb.includes(`data-board="${b}"`)) &&
+        // (Next renders a Link's href LAST — match the attributes in render order: data-window, then href.)
+        /<a [^>]*data-window="7"[^>]*href="\/leaderboard\?w=7"/.test(lb) && /<a [^>]*aria-current="true"[^>]*data-window="30"[^>]*href="\/leaderboard"/.test(lb) && /<a [^>]*data-window="0"[^>]*href="\/leaderboard\?w=all"/.test(lb) &&
+        /href="https:\/\/x\.com\/intent\/tweet\?text=[^"]*moved%20through%20Pantessa[^"]*&amp;via=askPantessa"/.test(lb) &&
+        /<a [^>]*data-door="mint"[^>]*href="\/chat\?tab=links"/.test(lb) &&
+        /<title>Leaderboard — money moved by links, creators and wallets<\/title>/.test(lb),
+      `status=${lbRes.status}`,
+    )
+    check(
+      'progress: /leaderboard?w=7 lights the 7-day window and names it; /analytics?w=all serves 200 with the ANALYTICS seat lit, the deltas absent (no previous window for all time), the two day charts, the five-stop funnel, the venue + chain boards',
+      /<a [^>]*aria-current="true"[^>]*data-window="7"[^>]*href="\/leaderboard\?w=7"/.test(lb7) && !/<a [^>]*aria-current="true"[^>]*data-window="30"/.test(lb7) && lb7.includes('7 days') &&
+        anRes.status === 200 && /data-progress="analytics"/.test(an) && seatLit(an, 'ANALYTICS') && !seatLit(an, 'LEADERS') && !/<header class="nav/.test(an) &&
+        /data-chart="Money moved by day"/.test(an) && /data-chart="Links by day"/.test(an) && (an.match(/role="img"/g) ?? []).length >= 2 &&
+        /data-funnel=""/.test(an) && ['arrived', 'asked', 'built', 'signed', 'returned'].every((s) => an.includes(`data-stop="${s}"`)) &&
+        /data-board="venues"/.test(an) && /data-board="chains"/.test(an) && !/pg__delta/.test(an) &&
+        /<a [^>]*aria-current="true"[^>]*data-window="0"[^>]*href="\/analytics\?w=all"/.test(an),
+      `status=${anRes.status}`,
+    )
+    // The team's wallets never rank on the public board (the live page, the
+    // TEST DB — every drill signs from one of them).
+    const shortTest = new Set(ADM.TEST_WALLETS.map((w) => PG.shortAddress(w)))
+    const shown = Array.from(lb.matchAll(/data-wallet-short="([^"]+)"/g), (m) => m[1])
+    check('progress: no test wallet (lib/admin TEST_WALLETS) is on the served wallet board', shown.every((s) => !shortTest.has(s)), `shown=${shown.join(',')}`)
+    // The spine: both seats on the column and the bar, folded behind MORE
+    // below sm, listed in the MORE sheet; the sitemap carries both pages.
+    const spineSrc = await readFile(new URL('../components/AppSpine.tsx', import.meta.url), 'utf8')
+    check(
+      'progress: the spine seats LEADERS + ANALYTICS on the column and the bar (max-sm:hidden on the bar — the phone bar is full), lists both in the MORE sheet, and phone-nav folds them behind MORE; the sitemap lists both pages; Navigation hides on them',
+      (lb.match(/<a [^>]*aria-label="LEADERS"[^>]*href="\/leaderboard"/g) ?? []).length === 2 && (lb.match(/<a [^>]*aria-label="ANALYTICS"[^>]*href="\/analytics"/g) ?? []).length === 2 &&
+        /<a [^>]*aria-label="LEADERS"[^>]*class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/leaderboard"/.test(lb) &&
+        /<a [^>]*aria-label="ANALYTICS"[^>]*class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/analytics"/.test(lb) &&
+        /href=\{LEADERBOARD_HREF\} role="menuitem"/.test(spineSrc) && /href=\{ANALYTICS_HREF\} role="menuitem"/.test(spineSrc) &&
+        /isProgressPath\(pathname\)\) return null/.test(await readFile(new URL('../components/Navigation.tsx', import.meta.url), 'utf8')) &&
+        (await (await fetch(`${BASE}/sitemap.xml`)).text()).includes('/leaderboard</loc>') && (await (await fetch(`${BASE}/sitemap.xml`)).text()).includes('/analytics</loc>'),
+    )
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)

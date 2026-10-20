@@ -47,7 +47,7 @@ export default function StandingSummaryCard() {
     <Card className="mb-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-white">Standing intents</p>
+          <p className="text-sm font-semibold text-[color:var(--fg)]">Standing intents</p>
           <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
             Working between your visits — every buy and close still signs from your wallet or your
             delegated guardian key.
@@ -58,7 +58,7 @@ export default function StandingSummaryCard() {
             <Link
               key={i.label}
               href={i.href}
-              className="inline-flex items-center gap-1.5 text-xs text-[color:var(--muted)] hover:text-white transition-colors"
+              className="inline-flex items-center gap-1.5 text-xs text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
               title={i.cta}
             >
               <i.icon className="w-3.5 h-3.5 text-[color:var(--accent)]" /> {i.label}

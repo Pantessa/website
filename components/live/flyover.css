@@ -1,0 +1,209 @@
+/* THE FLYOVER on /live (2026-10-15) — every market as land. Rides the
+   markets frame (.mkt-frame) and its look tokens; site tokens only, so light
+   mode comes free for everything CSS draws. The three.js world reads its inks
+   through the tokens probe (Flyover.tsx readTokens), never these variables. */
+
+.flyover {
+  --fly-up: var(--mk-up, var(--accent));
+  --fly-down: var(--mk-down, var(--sell));
+  --fly-glass: rgb(12 13 14 / 0.9);
+  --fly-glass-line: rgb(255 255 255 / 0.12);
+  --fly-stage-h: clamp(480px, calc(100dvh - 210px), 860px);
+  container-type: inline-size;
+  container-name: flyover;
+}
+html[data-theme="light"] .flyover {
+  --fly-glass: rgb(255 255 255 / 0.94);
+  --fly-glass-line: rgb(16 21 18 / 0.12);
+}
+.flyover .up { color: var(--fly-up); }
+.flyover .down { color: var(--fly-down); }
+.flyover__fontprobe { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+/* ── Bar ───────────────────────────────────────────────────────────────── */
+.flyover__bar { justify-content: space-between; }
+.flyover__title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.flyover__h { font-family: var(--mk-font-display); font-weight: 600; font-size: 20px; letter-spacing: -0.01em; color: var(--fg); white-space: nowrap; }
+.flyover__sub { font-size: 10.5px; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flyover[data-status="live"] .flyover__pulse { animation: fly-pulse 1.6s ease-in-out infinite; }
+@keyframes fly-pulse { 0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--fly-up) 22%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--fly-up) 8%, transparent); } }
+.flyover__controls { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.flyover__btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surf-1); color: var(--fg); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.flyover__btn:hover:not(:disabled) { border-color: var(--muted-2); }
+.flyover__btn:disabled { opacity: 0.5; cursor: default; }
+.flyover__btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+/* ── The strip: window · lens · venues · fly to · hold · tour · fit ──────── */
+.flyover__strip { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 0 0; }
+.flyover__seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surf-1); }
+.flyover__seg button { height: 30px; padding: 0 11px; border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.flyover__seg button + button { border-left: 1px solid var(--line); }
+.flyover__seg button.is-on { color: var(--fg); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.flyover__venues { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.flyover__venue { height: 30px; padding: 0 9px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted-2); font-size: 11px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.flyover__venue.is-on { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.flyover__fly { display: inline-flex; align-items: center; gap: 6px; }
+.flyover__fly input { height: 30px; width: 196px; padding: 0 12px; border: 1px dashed var(--line); border-radius: 999px; background: transparent; color: var(--fg); font-size: 12px; }
+.flyover__fly input:focus { outline: none; border-color: var(--accent); border-style: solid; }
+.flyover__fly input::placeholder { color: var(--muted-2); }
+.flyover__flybtn { height: 30px; padding: 0 13px; border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; }
+.flyover__flybtn:disabled { opacity: 0.45; cursor: default; }
+.flyover__note { flex: 1 0 100%; font-size: 10.5px; color: var(--fly-down); }
+
+/* ── The theater: the stage and its HUD ────────────────────────────────── */
+.flyover__theater { position: relative; margin-top: 12px; }
+.flyover__stage { position: relative; height: var(--fly-stage-h); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--bg); outline: none; touch-action: none; }
+.flyover__stage:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.flyover__canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+.flyover__canvas:active { cursor: grabbing; }
+.flyover__status { position: absolute; top: 12px; left: 12px; display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 360px); padding: 6px 11px; border: 1px solid var(--fly-glass-line); border-radius: 999px; background: var(--fly-glass); color: var(--fg); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.flyover__statusdot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--muted-2); }
+.flyover__status[data-live] .flyover__statusdot { background: var(--fly-up); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fly-up) 25%, transparent); }
+.flyover__held { padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); font-size: 10px; }
+.flyover__empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); font-size: 12px; pointer-events: none; }
+.flyover__hint { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); padding: 7px 14px; border: 1px solid var(--fly-glass-line); border-radius: 999px; background: var(--fly-glass); color: var(--fg); font-size: 11px; white-space: nowrap; pointer-events: none; animation: fly-hint 6s ease forwards; }
+@keyframes fly-hint { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+
+.flyover__hud { position: absolute; inset: 0; pointer-events: none; }
+.flyover__hud > * { pointer-events: auto; }
+.flyover__card, .flyover__board, .flyover__sky { border: 1px solid var(--fly-glass-line); border-radius: 12px; background: var(--fly-glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: var(--fg); }
+.flyover__card { width: 330px; padding: 11px 12px 12px; font-size: 12px; }
+.flyover__card--hover { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 4; width: 300px; box-shadow: 0 12px 30px rgb(0 0 0 / 0.25); }
+.flyover__side { position: absolute; top: 12px; right: 12px; bottom: 12px; width: 312px; display: flex; flex-direction: column; gap: 10px; pointer-events: none; z-index: 2; }
+.flyover__side > * { pointer-events: auto; }
+.flyover__card--pinned { width: auto; flex: 0 1 auto; min-height: 0; overflow: auto; }
+.flyover__cardh { display: flex; align-items: baseline; gap: 8px; }
+.flyover__cardn { font-family: var(--mk-font-display); font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.flyover__cardv { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.flyover__x { margin-left: auto; display: inline-grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.flyover__x:hover { color: var(--fg); border-color: var(--muted-2); }
+.flyover__lines { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 11px; line-height: 1.4; color: var(--fg); }
+.flyover__lines li:nth-child(n + 4) { color: var(--muted); }
+.flyover__cardfoot { margin: 9px 0 0; font-size: 10.5px; color: var(--muted-2); }
+.flyover__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.flyover__chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border: 1px solid transparent; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; cursor: pointer; font-family: var(--mk-font-ui); transition: transform .12s ease, filter .12s ease; }
+.flyover__chip:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.flyover__chip--buy { background: color-mix(in srgb, var(--fly-up) 18%, var(--surf-1)); border-color: color-mix(in srgb, var(--fly-up) 55%, transparent); color: var(--fly-up); }
+.flyover__chip--sell { background: color-mix(in srgb, var(--fly-down) 16%, var(--surf-1)); border-color: color-mix(in srgb, var(--fly-down) 55%, transparent); color: var(--fly-down); }
+.flyover__chipusd { font-family: var(--mk-font-mono); font-size: 10px; opacity: 0.8; }
+.flyover__cardlinks { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+.flyover__link { border: 0; padding: 0; background: transparent; color: var(--accent); font-size: 11.5px; font-weight: 500; text-decoration: none; cursor: pointer; }
+.flyover__link:hover { text-decoration: underline; }
+
+.flyover__board { flex: 0 0 auto; padding: 9px 9px 7px; display: grid; gap: 6px; }
+.flyover__col ol, .flyover__sky ol { margin: 0; padding: 0; list-style: none; }
+.flyover__colh { margin: 0 0 4px 4px; font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.flyover__col--up .flyover__colh { color: var(--fly-up); }
+.flyover__col--down .flyover__colh { color: var(--fly-down); }
+.flyover__row { display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; gap: 8px; width: 100%; padding: 3px 6px; border: 0; border-radius: 7px; background: transparent; color: var(--fg); font-size: 12px; text-align: left; cursor: pointer; }
+.flyover__row:hover, .flyover__row:focus-visible, .flyover__row.is-on { background: color-mix(in srgb, var(--fg) 8%, transparent); outline: none; }
+.flyover__rown { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; font-weight: 600; white-space: nowrap; }
+.flyover__rowc { font-size: 9px; font-weight: 400; letter-spacing: 0.04em; color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; }
+.flyover__rowv { font-weight: 600; font-size: 12px; font-variant-numeric: tabular-nums; }
+.flyover__rows { font-size: 10px; color: var(--muted-2); font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
+.flyover__dim { padding: 4px 6px; font-size: 10.5px; color: var(--muted-2); }
+
+.flyover__sky { position: absolute; left: 12px; bottom: 12px; width: min(540px, calc(100% - 360px)); max-height: 142px; overflow: auto; padding: 8px 10px 7px; z-index: 2; }
+.flyover__skyrow { display: flex; align-items: center; gap: 8px; padding: 3px 0 3px 8px; border-left: 2px solid var(--line); }
+.flyover__skyrow + .flyover__skyrow { margin-top: 3px; }
+.flyover__skyrow--buy { border-left-color: var(--fly-up); }
+.flyover__skyrow--sell { border-left-color: var(--fly-down); }
+.flyover__skyt { flex: 1 1 auto; min-width: 0; border: 0; padding: 0; background: transparent; color: var(--fg); font-size: 11px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.flyover__skyt:hover { text-decoration: underline; }
+.flyover__sky .flyover__chip { height: 22px; padding: 0 8px; font-size: 10.5px; }
+
+/* ── The legend ───────────────────────────────────────────────────────── */
+.flyover__legend { display: grid; grid-template-columns: auto 1fr; gap: 10px 18px; align-items: start; margin: 12px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surf-1); }
+.flyover__legend ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 10.5px; line-height: 1.5; color: var(--muted); }
+.flyover__legend li:first-child { color: var(--fg); }
+.flyover__legend li:last-child { color: var(--fg); }
+.flyover__ramp { display: grid; grid-template-columns: auto 120px auto; align-items: center; gap: 6px; padding-top: 2px; font-size: 9.5px; color: var(--muted); }
+.flyover__rampbar { height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--fly-down), color-mix(in oklch, var(--surf-1) 80%, var(--fg)) 50%, var(--fly-up)); }
+
+/* ── The rail ─────────────────────────────────────────────────────────── */
+.flyover__rail { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; padding-bottom: 12px; }
+.flyover__rh { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 12px 14px 6px; }
+.flyover__rk { font-size: 13px; font-weight: 600; color: var(--fg); }
+.flyover__rv { font-size: 9.5px; letter-spacing: 0.08em; color: var(--muted-2); }
+.flyover__note2 { margin: 0 14px 8px; font-size: 10.5px; line-height: 1.45; color: var(--muted-2); }
+.flyover__conts { margin: 0 8px 6px; padding: 0; list-style: none; display: grid; gap: 2px; }
+.flyover__cont { display: grid; gap: 2px; width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--fg); text-align: left; cursor: pointer; }
+.flyover__cont:hover:not(:disabled) { background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.flyover__cont:disabled { cursor: default; }
+.flyover__contn { font-size: 12.5px; font-weight: 600; }
+.flyover__contb { font-size: 9.5px; color: var(--muted-2); }
+.flyover__contv { font-size: 10.5px; color: var(--muted); }
+
+/* ── Fullscreen (the browser's, or the fallback where an element cannot go fullscreen: iPhone) ── */
+.flyover:fullscreen, .flyover--full { background: var(--bg); padding: 0 20px 12px; overflow: auto; --fly-stage-h: calc(100dvh - 128px); }
+.flyover--full:not(:fullscreen) { position: fixed; inset: 0; z-index: 70; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flyover[data-status="live"] .flyover__pulse { animation: none; }
+  .flyover__hint { animation: none; }
+}
+
+/* ── Narrow: the HUD folds under the stage ─────────────────────────────── */
+@container flyover (max-width: 760px) {
+  /* (A container query styles descendants only: the height is set on the stage.) */
+  .flyover__theater { --fly-stage-h: clamp(320px, 56svh, 520px); }
+  .flyover:fullscreen .flyover__theater, .flyover--full .flyover__theater { --fly-stage-h: calc(100dvh - 200px); }
+  .flyover__sub { display: none; }
+  .flyover__status { max-width: calc(100% - 24px); }
+  .flyover__hud { position: static; display: grid; gap: 10px; margin-top: 10px; pointer-events: auto; }
+  .flyover__card--hover { display: none; }
+  .flyover__side { position: static; width: auto; display: grid; gap: 10px; pointer-events: auto; }
+  .flyover__card--pinned { order: -1; overflow: visible; }
+  .flyover__board { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .flyover__sky { position: static; width: auto; max-height: none; }
+  .flyover__legend { grid-template-columns: 1fr; }
+  .flyover__fly { flex: 1 1 100%; }
+  .flyover__fly input { flex: 1 1 auto; width: auto; min-width: 0; }
+  /* The venues: one row that scrolls, never three that push the land down. */
+  .flyover__venues { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
+  .flyover__venues::-webkit-scrollbar { display: none; }
+  .flyover__venue { flex: 0 0 auto; }
+  /* The title and the four flight buttons share a row; the views' strip goes under them. */
+  .flyover__bar > .live__views { order: 3; }
+  .flyover__bar > .flyover__controls { margin-left: auto; }
+}
+@container flyover (max-width: 420px) {
+  /* Two columns still: each row the name over its continent, and the lens's figure. */
+  .flyover__board { gap: 6px; padding: 8px 6px 6px; }
+  .flyover__row { grid-template-columns: 1fr auto; gap: 4px; padding: 3px 4px; }
+  .flyover__rown { flex-direction: column; align-items: flex-start; gap: 0; }
+  .flyover__rowc { font-size: 8.5px; }
+  .flyover__rows { display: none; }
+  .flyover__rowv { font-size: 11px; }
+  .flyover__h { font-size: 17px; }
+  .flyover__btn > span { display: none; }
+  .flyover__btn { width: 34px; padding: 0; justify-content: center; }
+  .flyover__skyrow { flex-wrap: wrap; }
+  .flyover__skyt { white-space: normal; }
+}
+
+/* A coarse pointer: every control is a 44px target. */
+@media (hover: none) {
+  .flyover__btn, .flyover__seg button, .flyover__venue, .flyover__fly input, .flyover__flybtn { height: 44px; }
+  .flyover__btn { min-width: 44px; }
+  .flyover__seg button { min-width: 44px; }
+  .flyover__chip { min-height: 44px; }
+  .flyover__x { width: 44px; height: 44px; }
+  .flyover__row, .flyover__cont { min-height: 44px; }
+  .flyover__link { min-height: 44px; display: inline-flex; align-items: center; }
+  .flyover__skyt { min-height: 44px; }
+}
+
+/* A phone: the markets frame dissolves its bar (display: contents, markets.css);
+   the Flyover keeps its own as a plain wrapping row so the title and the four
+   flight buttons share a line and the views' strip sits under them. */
+@media (max-width: 640px), (max-width: 1023px) and (max-height: 500px) {
+  .mkt-frame__bar.flyover__bar { display: flex; position: static; flex-wrap: wrap; gap: 8px 10px; margin: 0; padding: 10px 0 0; border-bottom: 0; background: none; }
+}
+
+/* The fifth view: on a phone the views' strip scrolls rather than pushing the page wide. */
+@media (max-width: 640px) {
+  .live__views { max-width: 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .live__views::-webkit-scrollbar { display: none; }
+  .live__views > * { flex: 0 0 auto; }
+}

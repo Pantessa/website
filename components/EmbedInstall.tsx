@@ -54,10 +54,10 @@ export default function EmbedInstall({
     >
       {!compact && (
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-[var(--line)]">
-          <span className="mono text-[11px] tracking-wider text-[color:var(--muted-2)]">
+          <span className="mono text-[length:var(--fs-xs)] tracking-wider text-[color:var(--muted-2)]">
             THE INSTALL — FIVE LINES, ANY SITE
           </span>
-          <span className="mono text-[11px] text-[color:var(--muted-2)] whitespace-nowrap">
+          <span className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] whitespace-nowrap">
             npm i pantessa
           </span>
         </div>
@@ -83,7 +83,7 @@ export default function EmbedInstall({
           className={cn(
             'flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors',
             'bg-emerald-500/10 border border-solid border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/15',
-            compact ? 'flex-1 px-2.5 py-1.5 text-[11px] max-lg:min-h-11' : 'px-3.5 py-2 text-[12.5px] max-lg:min-h-11'
+            compact ? 'flex-1 px-2.5 py-1.5 text-[length:var(--fs-xs)] max-lg:min-h-11' : 'px-3.5 py-2 text-[12.5px] max-lg:min-h-11'
           )}
         >
           {copied === 'prompt' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -92,8 +92,8 @@ export default function EmbedInstall({
         <button
           onClick={() => copy('snippet')}
           className={cn(
-            'flex items-center gap-1.5 rounded-lg border border-solid border-[var(--line)] bg-[var(--surf-2)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors',
-            compact ? 'px-2.5 py-1.5 text-[11px] max-lg:min-h-11' : 'px-3.5 py-2 text-[12.5px] max-lg:min-h-11'
+            'flex items-center gap-1.5 rounded-lg border border-solid border-[var(--line)] bg-[var(--surf-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] transition-colors',
+            compact ? 'px-2.5 py-1.5 text-[length:var(--fs-xs)] max-lg:min-h-11' : 'px-3.5 py-2 text-[12.5px] max-lg:min-h-11'
           )}
         >
           {copied === 'snippet' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -102,7 +102,7 @@ export default function EmbedInstall({
       </div>
 
       {!compact && (
-        <p className="px-4 pb-3.5 -mt-0.5 text-[12px] leading-snug text-[color:var(--muted-2)]">
+        <p className="px-4 pb-3.5 -mt-0.5 text-[length:var(--fs-sm)] leading-snug text-[color:var(--muted-2)]">
           The Claude prompt is the whole integration — paste it into Claude Code in your app&rsquo;s
           repo and it installs the SDK, mounts the chat, patches your CSP, and verifies.{' '}
           {embedKey ? (

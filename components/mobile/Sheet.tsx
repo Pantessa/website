@@ -14,6 +14,14 @@
 // props, never rename or remove one): open · onClose · title · ariaLabel ·
 // side · size · footer · children · className · id. SHELL round 1 added the
 // dismiss REASON to onClose (`() => void` consumers stay valid).
+// Squad polish R1 (FLOW-MOBILE, 2026-10-13) ADDED, all optional: `size:
+// 'half'` (a detent — half the viewport, the body scrolls), `actions` (a
+// control beside the close button), `description` (one muted line under the
+// title, the dialog's aria-describedby), `journey` (data-journey on the
+// panel, rule C), `dismissible` (false = the owner closes it: a signing step
+// mid-flight; no scrim tap, Escape, swipe, back or ✕) and `SHEET_ROW`, the
+// one class for a 52px menu row (icon · words · chevron) so every lane's
+// sheet lists look like the spine's MORE sheet.
 //
 // At lg and up a bottom sheet renders as a centered dialog, so a modal can
 // adopt it on every breakpoint without a second component.
@@ -57,8 +65,19 @@ export type SheetProps = {
    *  (the chat list from a conversation) and dismisses the same ways. */
   side?: 'bottom' | 'left'
   /** 'auto' (default) fits its content up to the top safe area. 'full' takes
-   *  the whole screen below the safe area. */
-  size?: 'auto' | 'full'
+   *  the whole screen below the safe area. 'half' is a detent: half the
+   *  viewport, the body scrolls (the order ticket, a long picker). */
+  size?: 'auto' | 'full' | 'half'
+  /** A control rendered in the head beside the close button (a "Done", a
+   *  "Clear", a segmented switch). Needs a `title`. */
+  actions?: React.ReactNode
+  /** One muted line under the title; the dialog's accessible description. */
+  description?: React.ReactNode
+  /** `data-journey` on the panel (rule C: every control names its verb). */
+  journey?: string
+  /** Default true. False: nothing dismisses it but the owner flipping
+   *  `open` — no scrim tap, Escape, swipe, back gesture; the ✕ is hidden. */
+  dismissible?: boolean
   /** Pinned under the scrolling body, above the home indicator. */
   footer?: React.ReactNode
   children: React.ReactNode
@@ -77,6 +96,13 @@ function reducedMotion(): boolean {
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
+/** ONE menu row for a sheet's list (icon · words · chevron, 52px, the
+ *  spine's MORE rows): `<button className={SHEET_ROW}>`. Children: an icon,
+ *  then a `<span className="min-w-0">` holding `.sheet__rowtitle` +
+ *  `.sheet__rowsub`. Every lane's sheet lists wear it (rule B4). */
+export const SHEET_ROW =
+  'sheet__row flex w-full items-center gap-3 rounded-xl px-3 py-2 min-h-[52px] text-left text-[color:var(--muted)] hover:bg-[var(--surf-2)] hover:text-[color:var(--fg)] active:bg-[var(--surf-1)] transition-colors select-none'
+
 export default function Sheet({
   open,
   onClose,
@@ -88,11 +114,16 @@ export default function Sheet({
   children,
   className,
   id,
+  actions,
+  description,
+  journey,
+  dismissible = true,
 }: SheetProps) {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   const panelRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
+  const descId = `${titleId}-desc`
   const historyKey = `sheet:${id ?? titleId}`
   // Consumers pass inline lambdas: read the latest through a ref so the
   // open effect below runs once per opening, not once per render (a re-run
@@ -116,16 +147,23 @@ export default function Sheet({
     return () => window.clearTimeout(t)
   }, [phase])
 
-  const dismiss = (reason: SheetCloseReason) => closeRef.current(reason)
+  // A non-dismissible sheet ignores every gesture; only the owner closes it.
+  const dismiss = (reason: SheetCloseReason) => {
+    if (!dismissible) return
+    closeRef.current(reason)
+  }
   const dismissRef = useRef(dismiss)
   dismissRef.current = dismiss
 
   // ── The back gesture (phone only): one history entry through lib/sheet-
   // history, so a handoff between two sheets shares one entry and back
   // closes the top one. Released on the effect's cleanup when `open` flips.
-  useBackToClose(open, dismiss, historyKey)
+  // A non-dismissible sheet owns no entry (back would pop an entry and
+  // leave the sheet up).
+  useBackToClose(open && dismissible, dismiss, historyKey)
   // ── Swipe to dismiss on the grabber and the head; the panel follows.
-  const { handleProps: dragHandlers } = useSwipeToClose(panelRef, dismiss, side)
+  const { handleProps: swipeHandlers } = useSwipeToClose(panelRef, dismiss, side)
+  const dragHandlers = dismissible ? swipeHandlers : {}
 
   // ── Open-time wiring: focus in, Escape, the tab trap, the scroll lock;
   // focus out on close.
@@ -184,7 +222,7 @@ export default function Sheet({
   if (!mounted || phase === 'closed') return null
 
   return createPortal(
-    <div className="sheet" data-sheet={id} data-side={side} data-size={size} data-phase={phase}>
+    <div className="sheet" data-sheet={id} data-side={side} data-size={size} data-phase={phase} data-dismissible={dismissible ? undefined : 'false'}>
       <div className="sheet__scrim" aria-hidden onClick={() => dismiss('scrim')} />
       <div
         ref={panelRef}
@@ -192,18 +230,30 @@ export default function Sheet({
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         aria-label={title ? undefined : ariaLabel}
+        aria-describedby={description ? descId : undefined}
         tabIndex={-1}
+        data-journey={journey}
         className={cn('sheet__panel', className)}
       >
         {side === 'bottom' && <div className="sheet__grabber" aria-hidden {...dragHandlers} />}
         {title ? (
           <div className="sheet__head" {...dragHandlers}>
-            <h2 id={titleId} className="sheet__title">
-              {title}
-            </h2>
-            <button type="button" onClick={() => dismiss('button')} aria-label="Close" className="sheet__close">
-              <X width={18} height={18} />
-            </button>
+            <div className="sheet__titles">
+              <h2 id={titleId} className="sheet__title">
+                {title}
+              </h2>
+              {description ? (
+                <p id={descId} className="sheet__desc">
+                  {description}
+                </p>
+              ) : null}
+            </div>
+            {actions ? <div className="sheet__actions">{actions}</div> : null}
+            {dismissible ? (
+              <button type="button" onClick={() => dismiss('button')} aria-label="Close" data-journey="Close sheet" className="sheet__close">
+                <X width={18} height={18} />
+              </button>
+            ) : null}
           </div>
         ) : null}
         <div className="sheet__body">{children}</div>

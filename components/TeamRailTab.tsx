@@ -285,7 +285,7 @@ export default function TeamRailTab({
             {/* Visuals' mark treatment (feat/hire-visuals) in the compact
                 rail geometry — pangolin tile for house, identicon otherwise. */}
             <ManagerMark house={m.house} handle={m.id.startsWith('founding-') ? m.id.slice(9) : null} size={22} />
-            <span className="text-xs font-medium text-white flex-1 truncate">{m.name}</span>
+            <span className="text-xs font-medium text-[color:var(--fg)] flex-1 truncate">{m.name}</span>
             {m.house && (
               <span className="mono text-[8px] uppercase tracking-wider px-1 py-0.5 rounded bg-black/30 border border-[var(--line)] text-[color:var(--accent)]">house</span>
             )}
@@ -298,7 +298,7 @@ export default function TeamRailTab({
             {m.recordUrl && (
               <>
                 {' · '}
-                <a href={m.recordUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="underline hover:text-white">
+                <a href={m.recordUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="underline hover:text-[color:var(--fg)]">
                   record
                 </a>
               </>
@@ -345,7 +345,7 @@ export default function TeamRailTab({
           rows={2}
           maxLength={300}
           placeholder={'A mandate is one sentence — e.g. "buy $25 of ETH weekly"'}
-          className="w-full resize-none rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-2.5 py-2 text-xs text-white placeholder:text-[color:var(--muted-2)] focus:outline-none focus:border-[var(--line-2)]"
+          className="w-full resize-none rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-2.5 py-2 text-xs text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)] focus:outline-none focus:border-[var(--line-2)]"
         />
         {preview && (
           <p className={cn('text-[10px] leading-relaxed px-0.5', 'problem' in preview ? 'text-amber-400' : 'text-[color:var(--done)]')}>
@@ -355,7 +355,7 @@ export default function TeamRailTab({
         <button
           onClick={post}
           disabled={posting || !preview || 'problem' in (preview ?? {})}
-          className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--line-2)] px-2 py-2 text-[11px] font-medium text-[color:var(--muted)] hover:text-white hover:border-[var(--muted-2)] hover:bg-white/[0.03] transition-colors disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--line-2)] px-2 py-2 text-[length:var(--fs-xs)] font-medium text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--muted-2)] hover:bg-white/[0.03] transition-colors disabled:opacity-50"
         >
           {posting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />}
           Post a mandate slot · ${ROSTER_DEFAULT_CAP_USD} cap
@@ -386,7 +386,7 @@ export default function TeamRailTab({
             </span>
             <span className={cn('mono text-[10px] flex-1 text-right', STATUS_TONES[slot.status])}>{slot.status}</span>
           </div>
-          <p className="text-xs text-white leading-snug">{slot.mandateText}</p>
+          <p className="text-xs text-[color:var(--fg)] leading-snug">{slot.mandateText}</p>
           <p className="mono text-[10px] text-[color:var(--muted-2)]">
             {slot.agentKeyHash ? `agent ${slot.agentKeyHash.slice(0, 8)}…` : 'unhired'} · ${slot.capUsd} cap
           </p>
@@ -399,18 +399,18 @@ export default function TeamRailTab({
                   value={hireHash[slot.id] ?? ''}
                   onChange={(e) => setHireHash((h) => ({ ...h, [slot.id]: e.target.value }))}
                   placeholder="agent handle (16 hex, see /agents)"
-                  className="flex-1 min-w-0 rounded-lg border border-[var(--line)] bg-black/30 px-2 py-1 text-[10px] mono text-white placeholder:text-[color:var(--muted-2)] focus:outline-none"
+                  className="flex-1 min-w-0 rounded-lg border border-[var(--line)] bg-black/30 px-2 py-1 text-[10px] mono text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)] focus:outline-none"
                 />
               )}
               {selectedManager && (
                 <span className="flex-1 min-w-0 truncate text-[10px] text-[color:var(--muted)]">
-                  Hiring <span className="text-white">{selectedManager.name}</span>
+                  Hiring <span className="text-[color:var(--fg)]">{selectedManager.name}</span>
                 </span>
               )}
               <button
                 onClick={() => hire(slot)}
                 disabled={busy === slot.id || (!selectedManager && !/^[0-9a-f]{16}$/i.test((hireHash[slot.id] ?? '').trim()))}
-                className="rounded-lg bg-[var(--surf-2)] border border-[var(--line-2)] px-2.5 py-1 text-[10px] font-semibold text-white hover:border-[var(--accent)] transition-colors disabled:opacity-50"
+                className="rounded-lg bg-[var(--surf-2)] border border-[var(--line-2)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--fg)] hover:border-[var(--accent)] transition-colors disabled:opacity-50"
               >
                 {busy === slot.id ? 'Signing…' : selectedManager ? `Hire ${selectedManager.house ? 'Rebalancer' : 'agent'}` : 'Hire'}
               </button>

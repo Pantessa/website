@@ -3,6 +3,7 @@
 import SpineLink from '@/components/SpineLink'
 import { useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
+import { cleanServerName } from '@/lib/utils'
 
 export default function ActiveServerBar() {
   const { activeServerIds, servers, clearActiveServers } = useYeetfulStore()
@@ -22,7 +23,7 @@ export default function ActiveServerBar() {
             <span className="activebar__chipglyph">
               <BrandIcon server={s} size={12} />
             </span>
-            {s.name}
+            {cleanServerName(s.name)}
           </span>
         ))}
       </div>

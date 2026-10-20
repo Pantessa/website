@@ -62,7 +62,7 @@ export default function SignVoteButton({ vote }: { vote: VoteRequest }) {
 
   if (status === 'done') {
     return (
-      <div className="mt-2.5 pt-2 border-t border-[var(--line)] flex items-center gap-2 text-[12px]">
+      <div className="mt-2.5 pt-2 border-t border-[var(--line)] flex items-center gap-2 text-[length:var(--fs-sm)]">
         <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
         <span className="text-emerald-400 font-medium">Vote cast</span>
         <span className="text-[color:var(--muted)] truncate">— {vote.summary}</span>
@@ -82,7 +82,7 @@ export default function SignVoteButton({ vote }: { vote: VoteRequest }) {
 
   return (
     <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1.5">
-      <div className="text-[12px] text-[color:var(--muted)]">
+      <div className="text-[length:var(--fs-sm)] text-[color:var(--muted)]">
         <span className="text-[color:var(--fg)] font-medium">{vote.proposal.title}</span>
         {' · '}
         {vote.proposal.space}
@@ -97,7 +97,7 @@ export default function SignVoteButton({ vote }: { vote: VoteRequest }) {
         <button
           onClick={() => void cast()}
           disabled={status === 'signing' || status === 'relaying'}
-          className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-1.5 text-[length:var(--fs-sm)] font-medium px-3 py-1.5 max-lg:min-h-10 rounded-full border border-[var(--line-2)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[color:var(--fg)] disabled:opacity-50 transition-colors"
           title="Sign this Snapshot vote with your wallet and submit it"
         >
           {status === 'signing' || status === 'relaying' ? (
@@ -107,7 +107,7 @@ export default function SignVoteButton({ vote }: { vote: VoteRequest }) {
           )}
           {status === 'signing' ? 'Confirm in your wallet…' : status === 'relaying' ? 'Submitting…' : 'Sign & cast vote'}
         </button>
-        {error && <span className="text-[12px] text-red-400">{error}</span>}
+        {error && <span className="text-[length:var(--fs-sm)] text-red-400">{error}</span>}
       </div>
     </div>
   )

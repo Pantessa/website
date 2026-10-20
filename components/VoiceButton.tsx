@@ -184,10 +184,10 @@ export default function VoiceButton({
       className={cn(
         'relative flex-shrink-0 w-11 h-11 md:w-9 md:h-9 rounded-full flex items-center justify-center transition-all duration-200',
         listening
-          ? 'voice-live bg-[color:var(--accent)] text-black shadow-[0_0_18px_rgba(52,227,160,0.35)]'
+          ? 'voice-live bg-[color:var(--accent)] text-[color:var(--bg)] shadow-[0_0_18px_rgba(52,227,160,0.35)]'
           : denied
             ? 'text-[color:var(--muted-2)]'
-            : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)]',
+            : 'text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:bg-[var(--surf-2)]',
         disabled && !listening && 'opacity-40 cursor-not-allowed',
         className,
       )}

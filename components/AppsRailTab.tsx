@@ -83,8 +83,8 @@ export default function AppsRailTab({
         'group w-full flex items-center gap-2.5 px-2.5 py-2 min-h-[44px] md:min-h-0 rounded-xl cursor-pointer transition-all text-left',
         flat && 'min-h-[48px] md:min-h-[48px] active:bg-[var(--surf-1)]',
         isActive
-          ? 'bg-[var(--surf-2)] text-white'
-          : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-1)]',
+          ? 'bg-[var(--surf-2)] text-[color:var(--fg)]'
+          : 'text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:bg-[var(--surf-1)]',
       )}
     >
       {/* In-set rows tint the mark with the accent (the vendored marks render
@@ -99,7 +99,7 @@ export default function AppsRailTab({
         <BrandIcon server={server} size={22} />
       </span>
       <span className="flex-1 min-w-0">
-        <span className={cn('block font-medium truncate', flat ? 'text-[13px]' : 'text-xs')}>{cleanServerName(server.name)}</span>
+        <span className={cn('block font-medium truncate', flat ? 'text-[length:var(--fs-md)]' : 'text-xs')}>{cleanServerName(server.name)}</span>
         {server.gated !== false && (
           <span className="block text-[10px] mono text-[color:var(--muted-2)]">
             {`$${server.priceUsd}/call`}
@@ -115,7 +115,7 @@ export default function AppsRailTab({
         aria-label={`About ${server.name} — tools, pricing, reputation`}
         title={`About ${server.name}`}
         className={cn(
-          'flex-shrink-0 grid place-items-center rounded-md text-[color:var(--muted-2)] hover:text-white hover:bg-white/5 transition-all',
+          'flex-shrink-0 grid place-items-center rounded-md text-[color:var(--muted-2)] hover:text-[color:var(--fg)] hover:bg-white/5 transition-all',
           flat ? 'w-11 h-11 opacity-70' : 'w-6 h-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
         )}
       >
@@ -154,9 +154,9 @@ export default function AppsRailTab({
             aria-selected={freeView}
             onClick={() => setFreeView(true)}
             className={cn(
-              'flex-1 rounded-[10px] px-2 py-1.5 text-[11px] font-medium transition-colors',
-              flat && 'min-h-[44px] text-[13px]',
-              freeView ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
+              'flex-1 rounded-[10px] px-2 py-1.5 text-[length:var(--fs-xs)] font-medium transition-colors',
+              flat && 'min-h-[44px] text-[length:var(--fs-md)]',
+              freeView ? 'bg-[var(--surf-2)] text-[color:var(--fg)]' : 'text-[color:var(--muted)] hover:text-[color:var(--fg)]',
             )}
           >
             Free
@@ -166,9 +166,9 @@ export default function AppsRailTab({
             aria-selected={!freeView}
             onClick={() => setFreeView(false)}
             className={cn(
-              'flex-1 rounded-[10px] px-2 py-1.5 text-[11px] font-medium transition-colors',
-              flat && 'min-h-[44px] text-[13px]',
-              !freeView ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
+              'flex-1 rounded-[10px] px-2 py-1.5 text-[length:var(--fs-xs)] font-medium transition-colors',
+              flat && 'min-h-[44px] text-[length:var(--fs-md)]',
+              !freeView ? 'bg-[var(--surf-2)] text-[color:var(--fg)]' : 'text-[color:var(--muted)] hover:text-[color:var(--fg)]',
             )}
           >
             Paid
@@ -194,7 +194,7 @@ export default function AppsRailTab({
           <McpRow key={s.id} server={s} isActive={false} />
         ))}
         {listed.length === 0 && (
-          <p className="px-2 py-4 text-[11px] text-[color:var(--muted-2)]">
+          <p className="px-2 py-4 text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
             {freeView ? 'All free MCPs are in your set.' : 'No paid MCPs loaded.'}
           </p>
         )}
@@ -205,8 +205,8 @@ export default function AppsRailTab({
           onClick={() => setAddOpen(true)}
           data-sheet-open="addmcp"
           className={cn(
-            'mt-1.5 w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--line-2)] px-2 py-2 text-[11px] font-medium text-[color:var(--muted)] hover:text-white hover:border-[var(--muted-2)] hover:bg-white/[0.03] transition-colors',
-            flat && 'min-h-[44px] text-[13px]',
+            'mt-1.5 w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--line-2)] px-2 py-2 text-[length:var(--fs-xs)] font-medium text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--muted-2)] hover:bg-white/[0.03] transition-colors',
+            flat && 'min-h-[44px] text-[length:var(--fs-md)]',
           )}
         >
           <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
@@ -214,7 +214,7 @@ export default function AppsRailTab({
         </button>
       </div>
 
-      <p className={cn('px-3 pb-3 text-[10px] leading-relaxed text-[color:var(--muted-2)] border-t border-[var(--line)] pt-2', flat && 'text-[12px]')}>
+      <p className={cn('px-3 pb-3 text-[10px] leading-relaxed text-[color:var(--muted-2)] border-t border-[var(--line)] pt-2', flat && 'text-[length:var(--fs-sm)]')}>
         {flat ? 'Tap an MCP to add or remove it from your set.' : 'Click an MCP to add or remove it from your set.'}
       </p>
 

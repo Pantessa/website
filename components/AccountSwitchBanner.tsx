@@ -52,7 +52,7 @@ export default function AccountSwitchBanner() {
             Switched to{' '}
             <span className="font-mono font-medium">{shortAddr(walletAddress)}</span>
           </p>
-          <p className="text-[11px] leading-snug text-[color:var(--muted)]">
+          <p className="text-[length:var(--fs-xs)] leading-snug text-[color:var(--muted)]">
             {error ?? 'Sign in with this account to keep using it.'}
           </p>
         </div>
@@ -60,7 +60,7 @@ export default function AccountSwitchBanner() {
           onClick={() => void signIn()}
           disabled={signingIn}
           type="button"
-          className="flex-shrink-0 flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-3.5 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
+          className="flex-shrink-0 flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-3.5 py-1.5 text-xs font-semibold text-[color:var(--bg)] transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {signingIn ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2.5} />

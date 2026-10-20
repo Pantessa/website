@@ -18,7 +18,7 @@ export default function AddServerPage() {
 
   return (
     <main className="mx-auto w-full max-w-2xl px-6 py-20">
-      <p className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">Bring your own</p>
+      <p className="mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]">Bring your own</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Add your MCP</h1>
       <p className="mt-3 text-sm leading-relaxed text-[color:var(--muted)]">
         Paste your MCP&apos;s base URL and its tools are discovered automatically. Star the tools a new
@@ -48,7 +48,7 @@ export default function AddServerPage() {
         </Link>
       </div>
 
-      <p className="mt-8 text-[11px] leading-relaxed text-[color:var(--muted-2)]">
+      <p className="mt-8 text-[length:var(--fs-xs)] leading-relaxed text-[color:var(--muted-2)]">
         Adding the same MCP base again refreshes its tools instead of creating a duplicate. Free MCP
         calls are rate-limited per IP; paid ones settle per call over x402.
       </p>

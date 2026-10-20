@@ -19,7 +19,7 @@ export default function RouteReport({ meta }: { meta: unknown }) {
   const totalSaved = cacheSaved + savedVsPriciest
 
   return (
-    <div className="mt-2 text-[11px] text-[color:var(--muted-2)] mono [overflow-wrap:anywhere]">
+    <div className="mt-2 text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mono [overflow-wrap:anywhere]">
       <span style={{ color: 'var(--accent)' }}>⚙ Route</span>
       {considered != null ? ` · considered ${considered}` : ''}
       {picked.length ? ` · picked ${picked.join(', ')}` : ' · no live data needed'}

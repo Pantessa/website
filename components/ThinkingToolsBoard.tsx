@@ -13,6 +13,7 @@ import {
   EMPTY_TOOLS_STATS,
   type ToolsStats,
 } from '@/lib/thinking-tools'
+import { cleanServerName } from '@/lib/utils'
 
 /**
  * /tools — the thinking tools, visualized. Three panels off one public stats
@@ -74,8 +75,8 @@ function KpiStrip({ stats, live }: { stats: ToolsStats; live: boolean }) {
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 min-w-0">
       {kpis.map((k) => (
         <div key={k.label} className="rounded-xl border border-[var(--line)] bg-black/40 px-4 py-3 min-w-0">
-          <p className="text-xl text-white mono">{k.value}</p>
-          <p className="text-[11px] text-[color:var(--muted-2)] mono uppercase tracking-wide flex items-center gap-1.5">
+          <p className="text-xl text-[color:var(--fg)] mono">{k.value}</p>
+          <p className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mono uppercase tracking-wide flex items-center gap-1.5">
             {k.label}
             {k.label === 'turns routed' && (
               <span
@@ -105,9 +106,9 @@ function SectionHead({
     <div className="mb-4">
       <div className="flex items-center gap-2">
         <span style={{ color: 'var(--accent)' }}>{icon}</span>
-        <h2 className="text-sm font-medium text-white mono uppercase tracking-wide">{title}</h2>
+        <h2 className="text-sm font-medium text-[color:var(--fg)] mono uppercase tracking-wide">{title}</h2>
       </div>
-      <p className="text-[13px] text-[color:var(--muted)] mt-1 max-w-xl">{sub}</p>
+      <p className="text-[length:var(--fs-md)] text-[color:var(--muted)] mt-1 max-w-xl">{sub}</p>
     </div>
   )
 }
@@ -131,15 +132,15 @@ function Toolbox({ stats }: { stats: ToolsStats }) {
               key={t.id}
               className="rounded-xl border border-[var(--line)] bg-black/40 p-4 flex flex-col gap-2 min-w-0"
             >
-              <p className="mono text-[12px] text-white [overflow-wrap:anywhere]">
+              <p className="mono text-[length:var(--fs-sm)] text-[color:var(--fg)] [overflow-wrap:anywhere]">
                 <span style={{ color: 'var(--accent)' }}>⚙</span> {t.name}
               </p>
-              <p className="text-[12px] text-[color:var(--muted)] leading-relaxed flex-1">{t.decides}</p>
-              <p className="mono text-[11px] text-[color:var(--muted-2)] [overflow-wrap:anywhere]">
+              <p className="text-[length:var(--fs-sm)] text-[color:var(--muted)] leading-relaxed flex-1">{t.decides}</p>
+              <p className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)] [overflow-wrap:anywhere]">
                 {t.signature}
               </p>
               {s ? (
-                <p className="mono text-[11px] [overflow-wrap:anywhere]" style={{ color: 'var(--accent)' }}>
+                <p className="mono text-[length:var(--fs-xs)] [overflow-wrap:anywhere]" style={{ color: 'var(--accent)' }}>
                   {s.stat}
                   {s.example ? <span className="text-[color:var(--muted)]"> · {s.example}</span> : null}
                 </p>
@@ -172,7 +173,7 @@ function buildToolStats(stats: ToolsStats): Map<string, ToolLiveStat> {
   const lastServerPick = stats.selects.find((s) => !/endpoint|planner/i.test(s.reason ?? ''))
   m.set('server-picker', {
     stat: `${serverSelects} picks in the live window`,
-    example: lastServerPick ? `last: ${lastServerPick.service}` : undefined,
+    example: lastServerPick ? `last: ${cleanServerName(lastServerPick.service)}` : undefined,
   })
   m.set('endpoint-picker', {
     stat: `${endpointSelects} planner picks · ${stats.endpoints.withParams} auto-callable endpoints on the menu`,
@@ -215,7 +216,7 @@ function DecisionAnatomy({ stats }: { stats: ToolsStats }) {
       <div className="rounded-xl border border-[var(--line)] bg-black/60 overflow-hidden">
         <div className="flex items-center gap-2 px-3 h-10 border-b border-[var(--line)] bg-black/40">
           <Terminal className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
-          <span className="text-[11px] font-medium text-white mono uppercase tracking-wide">
+          <span className="text-[length:var(--fs-xs)] font-medium text-[color:var(--fg)] mono uppercase tracking-wide">
             latest turn
           </span>
           {turn ? (
@@ -226,7 +227,7 @@ function DecisionAnatomy({ stats }: { stats: ToolsStats }) {
         </div>
         <div className="px-3 py-3 overflow-x-auto">
           {!turn || turn.lines.length === 0 ? (
-            <p className="mono text-[11px] text-[color:var(--muted-2)]">
+            <p className="mono text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
               <span style={{ color: 'var(--accent)' }}>$</span> idle — route a message in chat and its anatomy
               lands here.
             </p>
@@ -249,7 +250,7 @@ function DecisionAnatomy({ stats }: { stats: ToolsStats }) {
                         <span className="text-[color:var(--muted-2)]">·</span>
                       )}
                     </span>
-                    <div className="mono text-[11px] leading-relaxed min-w-0">
+                    <div className="mono text-[length:var(--fs-xs)] leading-relaxed min-w-0">
                       <TraceLine event={ev as RouterTraceEvent} />
                     </div>
                   </div>
@@ -286,7 +287,7 @@ function ProgressStrip({ stats }: { stats: ToolsStats }) {
 function ProgressCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-[var(--line)] bg-black/40 p-4 min-w-0">
-      <p className="text-[11px] font-medium text-white mono uppercase tracking-wide mb-3">{title}</p>
+      <p className="text-[length:var(--fs-xs)] font-medium text-[color:var(--fg)] mono uppercase tracking-wide mb-3">{title}</p>
       {children}
     </div>
   )
@@ -305,8 +306,8 @@ function EvalCard() {
   return (
     <ProgressCard title="Eval scoreboard">
       <div className="flex items-baseline gap-2">
-        <span className="text-2xl text-white mono">{last.recallAtShortlist}%</span>
-        <span className="text-[11px] text-[color:var(--muted)] mono">recall@shortlist</span>
+        <span className="text-2xl text-[color:var(--fg)] mono">{last.recallAtShortlist}%</span>
+        <span className="text-[length:var(--fs-xs)] text-[color:var(--muted)] mono">recall@shortlist</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto mt-2" role="img" aria-label="Routing eval history">
         <path d={path} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinecap="round" />
@@ -340,13 +341,13 @@ function SettleRateCard({ stats }: { stats: ToolsStats }) {
   return (
     <ProgressCard title="Settle rate → menu rank">
       {rows.length === 0 ? (
-        <p className="text-[11px] text-[color:var(--muted-2)] mono">Not enough receipts yet.</p>
+        <p className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)] mono">Not enough receipts yet.</p>
       ) : (
         <div className="space-y-2">
           {rows.map((r) => (
             <div key={r.name} className="min-w-0">
-              <div className="flex justify-between text-[11px] mono">
-                <span className="text-white truncate">{r.name}</span>
+              <div className="flex justify-between text-[length:var(--fs-xs)] mono">
+                <span className="text-[color:var(--fg)] truncate">{cleanServerName(r.name)}</span>
                 <span className="text-[color:var(--muted)] flex-shrink-0 ml-2">
                   {Math.round(r.rate * 100)}% · {r.total}
                 </span>
@@ -382,7 +383,7 @@ function IncidentCard({ stats }: { stats: ToolsStats }) {
         {steps.map((s, i) => (
           <div key={s.label} className="flex items-center gap-2">
             <div className="text-center">
-              <p className="text-xl text-white">{s.value}</p>
+              <p className="text-xl text-[color:var(--fg)]">{s.value}</p>
               <p className="text-[10px] text-[color:var(--muted-2)] uppercase tracking-wide">{s.label}</p>
             </div>
             {i < steps.length - 1 && <span className="text-[color:var(--muted-2)]">→</span>}
@@ -408,9 +409,9 @@ function DataGrowthCard({ stats }: { stats: ToolsStats }) {
     <ProgressCard title="The map keeps growing">
       <div className="space-y-1.5">
         {rows.map((r) => (
-          <div key={r.label} className="flex justify-between items-baseline text-[11px] mono min-w-0">
+          <div key={r.label} className="flex justify-between items-baseline text-[length:var(--fs-xs)] mono min-w-0">
             <span className="text-[color:var(--muted)] truncate">{r.label}</span>
-            <span className="text-white flex-shrink-0 ml-2">{r.value.toLocaleString()}</span>
+            <span className="text-[color:var(--fg)] flex-shrink-0 ml-2">{r.value.toLocaleString()}</span>
           </div>
         ))}
       </div>
