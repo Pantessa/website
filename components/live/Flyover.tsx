@@ -20,7 +20,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Crosshair, Maximize2, Minimize2, Pause, Play, Plane, X } from 'lucide-react'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
 import { readTokens } from '@/components/markets/chart/chart-tokens'
@@ -36,7 +36,7 @@ import { readArmyContexts } from '@/lib/battle-feed'
 import { LIVE_VIEWS, type ArmyContext } from '@/lib/battle'
 import { pulseStreamWanted, pulseVisibilityStep, type PulseVisibility } from '@/lib/pulse'
 import { DEFAULT_LIVE_VENUES, DUNE_VENUES, type DuneVenueId } from '@/lib/dune'
-import { FALLBACK_MARKETS, FOLLOW_USD, dexAskTicker, followAsk, pickTapeMarkets, tapeMarket, type FollowAsk, type TapeFill, type TapeSource } from '@/lib/tape'
+import { FALLBACK_MARKETS, FOLLOW_USD, dexAskTicker, followAsk, pickTapeMarkets, type FollowAsk, type TapeFill, type TapeSource } from '@/lib/tape'
 import { hlTapeFeed, openDuneTape, readTapeUniverse, type FeedHandlers, type FeedStatus } from '@/lib/tape-feed'
 import {
   CONTINENTS,
@@ -69,6 +69,7 @@ import {
   parseFlyoverWindow,
   parseLens,
   plotAsks,
+  plotChartHref,
   plotKey,
   plotName,
   plotSize,
@@ -100,6 +101,10 @@ const BACKFILL_SLICE = 1_500
 const DROPS_PER_BATCH = 120
 /** Venue toggles, in the bar's words. */
 const VENUE_SHORT: Record<DuneVenueId, string> = { hypercore: 'HyperCore', lighter: 'Lighter', 'lighter-robinhood': 'Lighter RH', 'dex-base': 'Base', 'dex-ethereum': 'Ethereum', 'dex-arbitrum': 'Arbitrum' }
+
+/** How long a click waits before opening a plot's page: one double-click's
+ *  length, so a double-click still flies there instead. */
+const OPEN_DELAY_MS = 240
 
 interface PlotInfo {
   key: string
@@ -715,6 +720,20 @@ export default function Flyover({ tradable, tabs, seat = 'page', onReport, onBoo
     pointerRef.current.down = { x: e.clientX, y: e.clientY, t: performance.now() }
     setHint(false)
   }, [])
+  // A click on a plot we chart opens its asset page; a plot we don't chart
+  // pins its readout. The open waits one double-click's length so a
+  // double-click still flies there; cmd/ctrl-click opens a new tab.
+  const router = useRouter()
+  const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cancelOpen = useCallback(() => {
+    if (openTimerRef.current) clearTimeout(openTimerRef.current)
+    openTimerRef.current = null
+  }, [])
+  useEffect(() => cancelOpen, [cancelOpen])
+  const hrefFor = useCallback((key: string | null) => {
+    const p = key ? infoRef.current.get(key) : null
+    return p ? plotChartHref(p.market, p.venue) : null
+  }, [])
   const onPointerUp = useCallback(
     (e: React.PointerEvent) => {
       const d = pointerRef.current.down
@@ -722,16 +741,33 @@ export default function Flyover({ tradable, tabs, seat = 'page', onReport, onBoo
       if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || performance.now() - d.t > 600) return
       const key = sceneRef.current?.pick(e.clientX, e.clientY) ?? null
       pinKey(key)
+      cancelOpen()
+      const href = hrefFor(key)
+      if (!href || e.button !== 0) return
+      if (e.metaKey || e.ctrlKey) {
+        window.open(href, '_blank', 'noopener')
+        return
+      }
+      openTimerRef.current = setTimeout(() => {
+        openTimerRef.current = null
+        router.push(href)
+      }, OPEN_DELAY_MS)
     },
-    [pinKey],
+    [pinKey, cancelOpen, hrefFor, router],
   )
   const onDoubleClick = useCallback(
     (e: React.MouseEvent) => {
+      cancelOpen()
       const key = sceneRef.current?.pick(e.clientX, e.clientY) ?? null
       if (key) flyTo(key)
     },
-    [flyTo],
+    [flyTo, cancelOpen],
   )
+  // Warm the page a hovered plot would open, so the click lands fast.
+  const hoverHref = hrefFor(hover)
+  useEffect(() => {
+    if (hoverHref) router.prefetch(hoverHref)
+  }, [hoverHref, router])
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       const sc = sceneRef.current
@@ -871,8 +907,7 @@ export default function Flyover({ tradable, tabs, seat = 'page', onReport, onBoo
   const card = (p: PlotInfo, mode: 'hover' | 'pinned') => {
     const lines = readoutLines({ market: p.market, continent: p.continent }, p.sums, w, now, { dayVolumeUsd: p.day, sessionUsd: p.session })
     const chips = mode === 'pinned' ? chipsFor(p.key) : []
-    const chartMarket = p.venue === 'dex' ? dexAskTicker(p.market) : p.market
-    const href = tapeMarket(chartMarket).href
+    const href = plotChartHref(p.market, p.venue)
     const inPick = pick.markets.some((m) => m.toLowerCase() === p.market.toLowerCase())
     return (
       <>
@@ -891,7 +926,7 @@ export default function Flyover({ tradable, tabs, seat = 'page', onReport, onBoo
           ))}
         </ul>
         {mode === 'hover' ? (
-          <p className="flyover__cardfoot mono">click to pin · double-click to fly there</p>
+          <p className="flyover__cardfoot mono">{href ? 'click to open the chart' : 'click to pin'} · double-click to fly there</p>
         ) : (
           <>
             {chips.length > 0 ? (
@@ -1043,6 +1078,7 @@ export default function Flyover({ tradable, tabs, seat = 'page', onReport, onBoo
         <section className="flyover__theater" aria-label="The Flyover: every market as land">
           <div
             className="flyover__stage"
+            data-plot-link={hoverHref ? '' : undefined}
             ref={stageRef}
             tabIndex={0}
             onPointerMove={onPointerMove}
@@ -1052,7 +1088,7 @@ export default function Flyover({ tradable, tabs, seat = 'page', onReport, onBoo
             onDoubleClick={onDoubleClick}
             onKeyDown={onKeyDown}
             onWheel={() => setHint(false)}
-            aria-label="The world. Drag to orbit, scroll to zoom, click a plot to read it. Keys: WASD or arrows to fly, Q and E to descend and climb, F to fit, T to tour, Esc to unpin."
+            aria-label="The world. Drag to orbit, scroll to zoom, click a plot to open its chart. Keys: WASD or arrows to fly, Q and E to descend and climb, F to fit, T to tour, Esc to unpin."
           >
             <canvas ref={canvasRef} className="flyover__canvas" role="img" aria-label={`${viewDef.label}: ${viewDef.blurb}`} />
             <div className="flyover__status mono" data-live={live || undefined}>
@@ -1078,7 +1114,7 @@ export default function Flyover({ tradable, tabs, seat = 'page', onReport, onBoo
             )}
             {hint && (
               <div className="flyover__hint mono" role="note">
-                drag to orbit · scroll to zoom · click a plot · F fits · T tours
+                drag to orbit · scroll to zoom · click a plot to open it · F fits · T tours
               </div>
             )}
           </div>

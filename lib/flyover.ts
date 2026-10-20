@@ -38,7 +38,7 @@
 // middle dots are kept out of these lines on purpose.
 
 import { DUNE_VENUES, type DuneVenueId } from '@/lib/dune'
-import { DEFAULT_THRESHOLDS, FLOW_CLASSES, flowClassOf, followAsk, tapeMarket, type FlowClass, type FollowAsk, type TapeFill, type TapeSide, type TapeSource, type TapeVenue } from '@/lib/tape'
+import { DEFAULT_THRESHOLDS, FLOW_CLASSES, dexAskTicker, flowClassOf, followAsk, tapeMarket, type FlowClass, type FollowAsk, type TapeFill, type TapeSide, type TapeSource, type TapeVenue } from '@/lib/tape'
 
 // ── Windows and lenses (the URL) ─────────────────────────────────────────────
 
@@ -164,6 +164,13 @@ export function parsePlotKey(key: string): { continent: ContinentId; market: str
  *  continent already). */
 export function plotName(market: string): string {
   return tapeMarket(market).ticker
+}
+
+/** The asset page a plot opens on a click: the symbol page for a market we
+ *  chart (a DEX print reads under its ask ticker, WETH is ETH), null for one
+ *  we don't (gold, FX, an unlisted xyz market) — those keep the readout. */
+export function plotChartHref(market: string, venue: TapeVenue | undefined): string | null {
+  return tapeMarket(venue === 'dex' ? dexAskTicker(market) : market).href
 }
 
 // ── The ledger: per-second buckets per plot ──────────────────────────────────
