@@ -31,10 +31,11 @@ import ShareLive from '@/components/live/ShareLive'
 import ArmAlert from '@/components/live/ArmAlert'
 import PickSheet from '@/components/live/PickSheet'
 import PickReads from '@/components/live/PickReads'
-import { useMarketPick } from '@/lib/use-market-pick'
+import { applyPickLink, useMarketPick } from '@/lib/use-market-pick'
 import { useTradable } from '@/lib/use-tradable'
 import { PULSE_WHY_BY_SOURCE } from '@/lib/pulse'
-import { DECK_BOOK_KEY, DECK_CHANNELS, DECK_DEFAULT_CHANNEL, deckBookMarket, deckChannel, deckHref, deckSourceLine, deckSwitchWords, isDeckBattle, parseDeckBook, serializeDeckBook, type DeckChannel, type StageReport } from '@/lib/deck'
+import { DECK_BOOK_KEY, DECK_CHANNELS, DECK_DEFAULT_CHANNEL, deckBookMarket, deckChannel, deckHref, deckSearch, deckSourceLine, deckSwitchWords, deckWritesPick, isDeckBattle, parseDeckBook, parseDeckView, serializeDeckBook, type DeckChannel, type StageReport } from '@/lib/deck'
+import { PICK_PARAM, pickParam } from '@/lib/market-pick'
 import type { TapeFill } from '@/lib/tape'
 import '@/components/live/battle.css'
 import '@/components/live/flyover.css'
@@ -70,6 +71,27 @@ export default function Deck() {
       setBook(parseDeckBook(window.localStorage.getItem(DECK_BOOK_KEY)))
     } catch {}
   }, [])
+  // THE ADDRESS (2026-10-20 — Nate: "set urls to each of the view settings so
+  // people can share tokens selected, time frame and view"). Read after mount
+  // (`/` is ISR: the server frame is always the pulse), then mirrored with
+  // replaceState in /live's own words (lib/deck deckSearch): `?view=` the
+  // channel, `?t=` the pick, the stage's own keys beside them. Nothing is
+  // written before the read, so a link's settings survive the first paint.
+  const [urlRead, setUrlRead] = useState(false)
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    const linked = parseDeckView(q.get('view'))
+    if (linked !== DECK_DEFAULT_CHANNEL) setCh(linked)
+    applyPickLink(q.get(PICK_PARAM))
+    setUrlRead(true)
+  }, [])
+  useEffect(() => {
+    if (!urlRead || !marketPick.ready || window.location.pathname !== '/') return
+    const here = window.location.search
+    const write = deckWritesPick(ch, marketPick.source, new URLSearchParams(here).has(PICK_PARAM))
+    const next = '/' + deckSearch(here, ch, marketPick.markets, write)
+    if (next !== '/' + here) window.history.replaceState(window.history.state, '', next)
+  }, [urlRead, ch, marketPick.ready, marketPick.source, marketPick.markets])
   const toggleBook = useCallback(() => {
     setBook((b) => {
       const next = !b
@@ -101,6 +123,33 @@ export default function Deck() {
     e.preventDefault()
     if (id !== ch) switchTo(id)
   }
+
+  // A navigation onto `/` from `/` (the logo, back/forward) keeps this
+  // component mounted, so the deck follows the address it lands on. The
+  // deck's own writes always agree with the channel, so only a real arrival
+  // moves it. The Navigation API where the browser has one; popstate always.
+  const chRef = useRef(ch)
+  chRef.current = ch
+  const pickRef = useRef(marketPick.markets)
+  pickRef.current = marketPick.markets
+  useEffect(() => {
+    if (!urlRead) return
+    const follow = () => {
+      if (window.location.pathname !== '/') return
+      const q = new URLSearchParams(window.location.search)
+      const linked = parseDeckView(q.get('view'))
+      if (linked !== chRef.current) switchTo(linked)
+      const t = q.get(PICK_PARAM)
+      if (t && t !== pickParam(pickRef.current)) applyPickLink(t)
+    }
+    const nav = (window as unknown as { navigation?: EventTarget }).navigation
+    window.addEventListener('popstate', follow)
+    nav?.addEventListener('currententrychange', follow)
+    return () => {
+      window.removeEventListener('popstate', follow)
+      nav?.removeEventListener('currententrychange', follow)
+    }
+  }, [urlRead, switchTo])
 
   const def = deckChannel(ch)
   const live = report.status === 'live'
@@ -162,8 +211,8 @@ export default function Deck() {
         <div className="deck__chan" role="tabpanel" aria-label={def.label}>
           {ch === 'pulse' && <PulseSlot seat="stage" onReport={setReport} onFills={onFills} onBookMarket={setHot} onPick={setPick} />}
           {ch === 'tape' && <TapeStage onReport={setReport} onFills={onFills} onBookMarket={setHot} />}
-          {isDeckBattle(ch) && <Battle key={ch} view={ch} tradable={tradable} seat="stage" onReport={setReport} onFills={onFills} onLeader={setHot} />}
-          {ch === 'flyover' && <Flyover tradable={tradable} seat="stage" onReport={setReport} onBookMarket={setHot} />}
+          {isDeckBattle(ch) && <Battle key={ch} view={ch} tradable={tradable} seat="stage" url onReport={setReport} onFills={onFills} onLeader={setHot} />}
+          {ch === 'flyover' && <Flyover tradable={tradable} seat="stage" url onReport={setReport} onBookMarket={setHot} />}
         </div>
         {book && <BookLadder market={bookMarket} fillsRef={fillsRef} source={report.source} />}
       </div>

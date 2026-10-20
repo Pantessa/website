@@ -35,8 +35,12 @@ import {
   parseDeckBook,
   parseDeckChannel,
   serializeDeckBook,
+  deckBattleSearch,
+  deckSearch,
+  deckWritesPick,
+  parseDeckView,
 } from '../lib/deck'
-import { LIVE_VIEWS } from '../lib/battle'
+import { DEFAULT_WINDOW, LIVE_VIEWS } from '../lib/battle'
 import { PRINT_FADE_MS, bookFromLevels } from '../lib/depth'
 import type { TapeFill } from '../lib/tape'
 
@@ -105,6 +109,45 @@ export function deckPins(check: Check): void {
       parseDeckChannel('flyover') === 'flyover' &&
       deckHref('flyover') === '/live?view=flyover',
   )
+  // ── The address (2026-10-20) ─────────────────────────────────────────
+  check(
+    "deck urls: `/?view=` names the channel in /live's words (no view = the pulse; tape/front/siege/flyover; map and junk = the pulse)",
+    parseDeckView(null) === 'pulse' && parseDeckView('pulse') === 'pulse' && parseDeckView('tape') === 'tape' && parseDeckView('front') === 'front' && parseDeckView('siege') === 'siege' && parseDeckView('flyover') === 'flyover' && parseDeckView('map') === 'pulse' && parseDeckView('nope') === 'pulse',
+  )
+  check(
+    'deck urls: deckSearch sets the view (drops it on the pulse), writes the pick only when asked, drops another channel\'s keys, keeps its own and anything else, and keeps commas + colons literal',
+    deckSearch('', 'front', ['UNI', 'ETH', 'NEAR'], true) === '?view=front&t=UNI,ETH,NEAR' &&
+      deckSearch('?view=front&t=UNI&since=15m', 'siege', ['UNI'], true) === '?view=siege&t=UNI&since=15m' &&
+      deckSearch('?view=front&t=UNI&since=15m&pick=oi', 'flyover', ['UNI'], true) === '?view=flyover&t=UNI' &&
+      deckSearch('?view=flyover&w=1m&lens=move', 'pulse', ['ETH'], false) === '' &&
+      deckSearch('?view=flyover&w=1m&lens=move', 'flyover', ['xyz:NVDA'], true) === '?view=flyover&w=1m&lens=move&t=xyz:NVDA' &&
+      deckSearch('?utm_source=x', 'tape', [], true) === '?utm_source=x&view=tape' &&
+      deckSearch('?t=ETH', 'pulse', [], true) === '',
+  )
+  check(
+    'deck urls: a bare `/` on the pulse stays bare — the pick is written off the pulse, when set by hand or by a link, or when `?t=` is already there',
+    !deckWritesPick('pulse', 'watchlist', false) && !deckWritesPick('pulse', 'held', false) && !deckWritesPick('pulse', 'venue', false) && !deckWritesPick('pulse', 'fallback', false) &&
+      deckWritesPick('pulse', 'hand', false) && deckWritesPick('pulse', 'url', false) && deckWritesPick('pulse', 'venue', true) &&
+      deckWritesPick('front', 'fallback', false) && deckWritesPick('flyover', 'held', false),
+  )
+  check(
+    'deck urls: a battle stage writes `since` off the default and `pick` off the gainers, keeping every other key',
+    deckBattleSearch('?view=front&t=UNI', '15m', 'gainers') === '?view=front&t=UNI&since=15m' &&
+      deckBattleSearch('?view=front&t=UNI&since=15m&pick=oi', DEFAULT_WINDOW, 'gainers') === '?view=front&t=UNI' &&
+      deckBattleSearch('?view=siege', '4h', 'oi') === '?view=siege&since=4h&pick=oi',
+  )
+  const deckSrc = readFileSync('components/home/Deck.tsx', 'utf8')
+  check(
+    'deck urls: the deck reads the address after mount (the ISR frame is the pulse), lands `?t=` through the store\'s one link reader, writes nothing before that read and only on `/`, and hands its battle + flyover stages `url`',
+    /const linked = parseDeckView\(q\.get\('view'\)\)/.test(deckSrc) &&
+      /applyPickLink\(q\.get\(PICK_PARAM\)\)/.test(deckSrc) &&
+      /if \(!urlRead \|\| !marketPick\.ready \|\| window\.location\.pathname !== '\/'\) return/.test(deckSrc) &&
+      /deckSearch\(here, ch, marketPick\.markets, write\)/.test(deckSrc) &&
+      /window\.history\.replaceState\(window\.history\.state, '', next\)/.test(deckSrc) &&
+      /export function applyPickLink\(/.test(readFileSync('lib/use-market-pick.ts', 'utf8')) &&
+      /applyPickLink\(q\.get\(PICK_PARAM\)\)/.test(readFileSync('lib/use-market-pick.ts', 'utf8')),
+  )
+
   check(
     "deck: a channel's door is a real /live link — the pulse and tape doors carry the pulse's pick as /live's ?m= (lib/pulse pulseLiveHref), the battle doors are the views' own URLs",
     deckHref('pulse') === '/live' && deckHref('tape', 'xyz:SNDK') === '/live?m=xyz%3ASNDK' && deckHref('pulse', 'ETH') === '/live?m=ETH' && deckHref('front') === '/live?view=front' && deckHref('siege', 'ETH') === '/live?view=siege',
@@ -237,15 +280,15 @@ export function deckPins(check: Check): void {
   const tape = readFileSync('components/home/TapeStage.tsx', 'utf8')
   const flyover = readFileSync('components/live/Flyover.tsx', 'utf8')
   check(
-    "deck: every channel but the pulse plays at /live's own size (Nate 2026-10-15: \"same size as we do on the live page\") — the battle fields carry battle.css's page-seat heights, the tape stage holds as tall as The Front's field with twenty rows (ten on a phone), The Flyover rides its own stage height in a stage seat (no rail, no URL mirror, loaded only when picked); the pulse keeps the band's height (the SSR frame)",
+    "deck: every channel but the pulse plays at /live's own size (Nate 2026-10-15: \"same size as we do on the live page\") — the battle fields carry battle.css's page-seat heights, the tape stage holds as tall as The Front's field with twenty rows (ten on a phone), The Flyover rides its own stage height in a stage seat (no rail, its window + lens mirrored into `/` only because the deck passes `url` — RE-PINNED 2026-10-20 (deck urls) — loaded only when picked); the pulse keeps the band's height (the SSR frame)",
     !isDeckFullSize('pulse') && isDeckFullSize('tape') && isDeckFullSize('front') && isDeckFullSize('siege') && isDeckFullSize('flyover') &&
       cssRules.includes('.deck__chan .battle--stage .battle__stage { height: clamp(420px, calc(100dvh - 400px), 760px); }') &&
       cssRules.includes('.deck__chan .battle--stage[data-view="siege"] .battle__stage { height: clamp(460px, calc(100dvh - 400px), 820px); }') &&
       cssRules.includes('.deck[data-channel="tape"] .deck__tapestage { display: flex; flex-direction: column; min-height: clamp(420px, calc(100dvh - 400px), 760px); }') &&
       !/\.battle__stage \{ height: (200|240)px/.test(cssRules) &&
       /const Flyover = dynamic\(\(\) => import\('@\/components\/live\/Flyover'\), \{ ssr: false/.test(deck) &&
-      /<Flyover tradable=\{tradable\} seat="stage" onReport=\{setReport\} onBookMarket=\{setHot\} \/>/.test(deck) &&
-      /if \(typeof window === 'undefined' \|\| !onPage\) return/.test(flyover) &&
+      /<Flyover tradable=\{tradable\} seat="stage" url onReport=\{setReport\} onBookMarket=\{setHot\} \/>/.test(deck) /* RE-PINNED 2026-10-20 (deck urls) */ &&
+      /if \(typeof window === 'undefined' \|\| !\(onPage \|\| url\)\) return/.test(flyover) &&
       /\{onPage && \(\s*<MarketsSide label="Continents">/.test(flyover),
   )
   const home = readFileSync('components/home/HomeSurface.tsx', 'utf8')
@@ -287,7 +330,7 @@ export function deckPins(check: Check): void {
     'deck: the stage mounts the band in its stage seat (the band draws its own head and foot only in its band seat), the tape stage, and the battle views keyed by view in their stage seat; the ladder only while the switch is on; HomeSurface seats the deck right after the sent-home notice',
     /<PulseSlot seat="stage" onReport=\{setReport\} onFills=\{onFills\} onBookMarket=\{setHot\} onPick=\{setPick\} \/>/.test(deck) &&
       /<TapeStage onReport=\{setReport\} onFills=\{onFills\} onBookMarket=\{setHot\} \/>/.test(deck) &&
-      /<Battle key=\{ch\} view=\{ch\} tradable=\{tradable\} seat="stage" onReport=\{setReport\} onFills=\{onFills\} onLeader=\{setHot\} \/>/.test(deck) &&
+      /<Battle key=\{ch\} view=\{ch\} tradable=\{tradable\} seat="stage" url onReport=\{setReport\} onFills=\{onFills\} onLeader=\{setHot\} \/>/.test(deck) /* RE-PINNED 2026-10-20 (deck urls) */ &&
       /\{book && <BookLadder market=\{bookMarket\} fillsRef=\{fillsRef\} source=\{report\.source\} \/>\}/.test(deck) &&
       /<SentHomeNotice \/>\s*<Deck \/>/.test(home) &&
       (pulse.match(/\{seat === 'band' && \(/g) ?? []).length === 2 &&
@@ -295,11 +338,13 @@ export function deckPins(check: Check): void {
       /export default function PulseSlot\(\{ seat = 'band', onReport, onFills, onBookMarket, onPick \}: PulseSlotProps = \{\}\)/.test(pulse),
   )
   check(
-    "deck: the battle's stage seat rewrites no URL (`/?t=` is nobody's) and reads none, keeps the hand-set memory shared with /live, mounts no war-log rail and no page title, and reports its feed, its buffer and the leader as they change",
+    // RE-PINNED 2026-10-20 (deck urls): Nate asked for `/` to carry the view, the pick and the window — the
+    // stage seat now writes ONLY its own keys (since/pick) through deckBattleSearch when the deck hands it `url`.
+    "deck: the battle's stage seat writes only its own keys into `/` (since + pick mode, when the deck passes `url`), never /live's whole URL, keeps the hand-set memory shared with /live, mounts no war-log rail and no page title, and reports its feed, its buffer and the leader as they change",
     /if \(!onPage \|\| typeof window === 'undefined'( \|\| !pick\.ready)?\) return/.test(battle) /* RE-PINNED 2026-10-13 (gtm3h): nothing written before the pick paints */ &&
       /* RE-PINNED 2026-10-13 (gtm3h): the armies are the one pick's first five; the store's stage seat reads and writes no URL */
       /const pick = useMarketPick\(\{ seat \}\)/.test(battle) && /armiesOf\(pick\.markets\)/.test(battle) && /const onPage = \(opts\.seat \?\? 'stage'\) === 'page'/.test(readFileSync('lib/use-market-pick.ts', 'utf8')) &&
-      /onPage \? initialWindow\(\) : parseFrontWindow\(null\)/.test(battle) &&
+      /readsUrl \? initialWindow\(\) : parseFrontWindow\(null\)/.test(battle) && /const readsUrl = onPage \|\| url/.test(battle) && /if \(onPage \|\| !url \|\| typeof window === 'undefined'\) return\s*const next = window\.location\.pathname \+ deckBattleSearch\(/.test(battle) &&
       /\{onPage && \(\s*<MarketsSide label="War log">/.test(battle) &&
       /className="battle battle--stage"/.test(battle) &&
       /\{onPage \? \(\s*<>\s*<h1 className="sr-only">\{viewDef\.label\}<\/h1>/.test(battle) &&

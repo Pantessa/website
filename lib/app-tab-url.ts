@@ -71,5 +71,9 @@ export function syncTabParam(tab: RailTab | null, opts: TabUrlOptions = {}): voi
   const { pathname, search } = window.location
   const next = tabUrl(tab, pathname, search, opts)
   if (next === `${pathname}${search}`) return
+  // Same params, different spelling (a literal `,` or `:` another surface
+  // wrote — the home deck's `?t=UNI,ETH`): nothing to catch up, leave it.
+  const same = new URLSearchParams(search).toString()
+  if (next === (same ? `${pathname}?${same}` : pathname)) return
   window.history.replaceState(null, '', next)
 }

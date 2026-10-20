@@ -143,9 +143,11 @@ export interface FlyoverProps {
   onReport?: (r: { status: FeedStatus; detail?: string; source: TapeSource; markets: number; hidden: boolean }) => void
   /** The deck's ladder follows the land's top HyperCore riser (pinned first). */
   onBookMarket?: (market: string | null) => void
+  /** The home deck's stage keeps the window and the lens in `/`'s address (2026-10-20). */
+  url?: boolean
 }
 
-export default function Flyover({ tradable, tabs, seat = 'page', onReport, onBookMarket }: FlyoverProps) {
+export default function Flyover({ tradable, tabs, seat = 'page', onReport, onBookMarket, url = false }: FlyoverProps) {
   const onPage = seat === 'page'
   const params = useSearchParams()
   const [w, setW] = useState<FlyoverWindow>(() => parseFlyoverWindow(params?.get('w')))
@@ -204,10 +206,10 @@ export default function Flyover({ tradable, tabs, seat = 'page', onReport, onBoo
 
   // ── The URL: ?w= and ?lens= off their defaults, everything else kept ───
   useEffect(() => {
-    if (typeof window === 'undefined' || !onPage) return
+    if (typeof window === 'undefined' || !(onPage || url)) return
     const next = window.location.pathname + flyoverSearch(window.location.search, w, lens)
     if (next !== window.location.pathname + window.location.search) window.history.replaceState(window.history.state, '', next)
-  }, [w, lens, onPage])
+  }, [w, lens, onPage, url])
 
   // ── Visibility: a hidden tab closes the stream after 15 s ──────────────
   useEffect(() => {

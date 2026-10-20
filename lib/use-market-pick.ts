@@ -246,6 +246,18 @@ export function pickSnapshot(): { markets: string[]; source: PickSource; lens: s
   return { markets: s.markets, source: s.source, lens: lensFor(s.lensRaw, s.markets), ready: s.ready }
 }
 
+/** A link's `?t=` lands on the store as a choice (it wins over the memory,
+ *  never written as one). /live's page seat reads it on mount; the home deck
+ *  reads `/`'s (2026-10-20). Returns whether the link named any market. */
+export function applyPickLink(raw: string | null | undefined): boolean {
+  const t = parsePickParam(raw)
+  if (!t.length) return false
+  const s = usePickStore.getState()
+  const spelled = s.universe.length ? t.map((m) => resolveMarket(m, s.universe) ?? m) : t
+  if (replacesPick(s.ready ? { markets: s.markets, source: s.source } : null, { markets: spelled, source: 'url' })) s.show(spelled, 'url')
+  return true
+}
+
 export function useMarketPick(opts: { seat?: PickSeat } = {}): MarketPickState {
   const onPage = (opts.seat ?? 'stage') === 'page'
   const markets = usePickStore((s) => s.markets)
@@ -262,12 +274,7 @@ export function useMarketPick(opts: { seat?: PickSeat } = {}): MarketPickState {
   useEffect(() => {
     if (!onPage) return
     const q = new URLSearchParams(window.location.search)
-    const t = parsePickParam(q.get(PICK_PARAM))
-    if (t.length) {
-      const s = usePickStore.getState()
-      const spelled = s.universe.length ? t.map((m) => resolveMarket(m, s.universe) ?? m) : t
-      if (replacesPick(s.ready ? { markets: s.markets, source: s.source } : null, { markets: spelled, source: 'url' })) s.show(spelled, 'url')
-    }
+    applyPickLink(q.get(PICK_PARAM))
     const m = q.get('m')
     const lens = m ? normalizeMarket(m) : null
     if (lens) usePickStore.getState().setLensRaw(lens)
