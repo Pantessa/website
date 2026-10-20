@@ -222,7 +222,7 @@ import { buildSignableArtifact } from '@/lib/transaction-layer'
 import { guardPlannerArtifact } from '@/lib/planner-artifact-guard'
 import { resolveActiveServers } from '@/lib/active-servers'
 import { followAskApps } from '@/lib/ask-apps'
-import { noteAddedApps, noteLinkSlug, turnScope, withTurnScope } from '@/lib/turn-scope'
+import { noteAddedApps, noteLinkSlug, noteRescue, turnScope, withTurnScope } from '@/lib/turn-scope'
 import { resolveCreatorPayout } from '@/lib/creator-split'
 import { creatorStamp } from '@/lib/swap-exec'
 import { portfolioFromToolResult, type PortfolioDisplay } from '@/lib/portfolio-display'
@@ -592,7 +592,25 @@ async function fenceConnectAsk(res: Response, raw: string): Promise<Response> {
   }
 }
 
-async function handleChatTurn(req: NextRequest) {
+/** The reply of a turn the intent net re-entered with its one reading opens
+ *  with what was read, and carries the reading (`rescue`) for the harness,
+ *  the failures queue and the trace. A streamed turn (no JSON) passes as is. */
+async function prefixRescuedReply(res: Response, label: string, rescue: { from: string; as: string; venue: string }): Promise<Response> {
+  try {
+    if (!res.headers.get('content-type')?.includes('application/json')) return res
+    const data = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
+    if (!data) return res
+    const line = `🧭 I read that as **${label}**.`
+    const reply = typeof data.reply === 'string' && data.reply.trim() ? `${line}\n\n${data.reply}` : line
+    const headers = new Headers(res.headers)
+    headers.delete('content-length')
+    return NextResponse.json({ ...data, reply, rescue }, { status: res.status, headers })
+  } catch {
+    return res
+  }
+}
+
+async function handleChatTurn(req: NextRequest): Promise<Response> {
   try {
     const body = await req.json()
     // Our own harness/drill turn (lib/internal-run.ts): every job this turn
@@ -757,7 +775,9 @@ async function handleChatTurn(req: NextRequest) {
     // BEFORE any expensive path runs; the wall is a polite reply whose
     // escape hatch is signing in (rule 6 intact — an invitation, never an
     // auto-fired SIWE). Signed sessions and embed-key turns pass untouched.
-    if (!embedBill && !sessionAddress) {
+    // A turn the intent net re-entered with its one reading was metered on
+    // the way in (the scope marks it — never the body); one ask, one bump.
+    if (!embedBill && !sessionAddress && !turnScope()?.rescue) {
       const limited = await bumpAndCheckUnsignedTurn(clientIpFrom(req.headers), walletAddress)
       if (limited) {
         return NextResponse.json({
@@ -2535,8 +2555,29 @@ async function handleChatTurn(req: NextRequest) {
     if (moneyShaped(message)) {
       const rescue = rescueIntent(message, buildsNatively)
       if (rescue) {
-        nativeTrace({ type: 'status', label: `intent net claimed the turn: no grammar read the ask (${rescue.read}) — offering ${rescue.chips.length} buildable reading${rescue.chips.length === 1 ? '' : 's'}: ${rescue.chips.map((c) => `“${c.resume}”`).join(' · ').slice(0, 300)}` })
         const one = rescue.chips.length === 1
+        // ONE verified reading needs no chip (2026-10-20, Nate on /chat:
+        // "SHORT UNI with $25 worth" answered "🧭 I read that as **Short $25
+        // of UNI on Hyperliquid**. Tap it and I'll build it" — and nothing to
+        // tap: lib/clarify dropped a one-option clarify as "not a question",
+        // so the sentence pointed at a button that never rendered). The
+        // reading IS the ask in the grammar's own spelling and the signature
+        // stays the gate, so the turn re-enters the ladder with it right
+        // here — the venue's own funding plan, doors and refusals answer as
+        // if the user had typed it — and the reply opens with what was read.
+        // The scope marks the re-entry (server-side only): the inner pass
+        // never re-enters and never re-meters. Should the reading somehow
+        // miss the ladder again, the inner pass offers it as the one chip
+        // it always was — which renders now. Two or more readings are a
+        // real question and stay chips.
+        if (one && !turnScope()?.rescue) {
+          const chip = rescue.chips[0]
+          nativeTrace({ type: 'status', label: `intent net: one reading (${rescue.read}) — building “${chip.resume}” in this turn, nothing to tap` })
+          noteRescue({ from: message, as: chip.resume, venue: chip.venue })
+          const inner = await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: JSON.stringify({ ...body, message: chip.resume }) }))
+          return await prefixRescuedReply(inner, chip.label, { from: message, as: chip.resume, venue: chip.venue })
+        }
+        nativeTrace({ type: 'status', label: `intent net claimed the turn: no grammar read the ask (${rescue.read}) — offering ${rescue.chips.length} buildable reading${rescue.chips.length === 1 ? '' : 's'}: ${rescue.chips.map((c) => `“${c.resume}”`).join(' · ').slice(0, 300)}` })
         return NextResponse.json({
           reply: one
             ? `🧭 I read that as **${rescue.chips[0].label}**. Tap it and I'll build it — if the wallet is short on that chain, I'll plan the move from what you hold.`
