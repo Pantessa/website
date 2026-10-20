@@ -370,6 +370,7 @@ import { actionGateLivePins, actionGatePins } from './action-gate-pins'
 import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
+import { printAlertPins } from './print-alert-pins'
 import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
 import { flyoverPins } from './flyover-pins'
@@ -34975,6 +34976,8 @@ async function main() {
   battlefieldPins(check)
   // The live tape (2026-10-06): the venue row parse, flow classes, buckets, tiles, follow asks, triggers, the page's door.
   tapePins(check)
+  // The /live trigger rules armed on the server (2026-10-13): the body reader, the evaluation over consumed fills, the cursor policy, the notification, the wiring.
+  printAlertPins(check)
   // The battle views on /live (2026-10-06): windows and anchors, the percent track, the range, units, bursts, rank, the picker, the projections.
   battlePins(check)
   // THE FLYOVER (2026-10-15): every market as terrain — the ledger, the ladders, the layout, the cap, the board, the readout, the chips, the legend, the wiring.
@@ -35061,6 +35064,67 @@ async function main() {
         /text\/event-stream/.test(ctype) && hello && fills >= 3 && tagged === fills && effectful > 0 && [...venuesSeen].every((v) => v === 'hyperliquid' || v === 'lighter'),
         `fills=${fills} tagged=${tagged} effect=${effectful} venues=${[...venuesSeen].join(',')} hello=${hello} ctype=${ctype}`)
     }
+  }
+
+  // ── PRINT ALERTS over HTTP (2026-10-13): the owner door, the cron's auth,
+  // a fixture fill firing an internal rule through the bell's own path, the
+  // dedupe on a second pass, the live pull path on a non-internal call.
+  console.log('— print alerts (server)')
+  {
+    const J = { 'content-type': 'application/json' }
+    check('print cron: no/wrong CRON_SECRET → 401 (fail closed, the guardian doctrine)', (await fetch(`${BASE}/api/cron/prints`)).status === 401 && (await fetch(`${BASE}/api/cron/prints`, { headers: { authorization: 'Bearer nope' } })).status === 401)
+    check('print alerts: GET and POST without a session → 401 (owner-only, rule 6)', (await fetch(`${BASE}/api/print-alerts`)).status === 401 && (await fetch(`${BASE}/api/print-alerts`, { method: 'POST', headers: J, body: JSON.stringify({ rule: 'big-print' }) })).status === 401)
+    const paOwner = privateKeyToAccount(generatePrivateKey())
+    const paMallory = privateKeyToAccount(generatePrivateKey())
+    const H = { ...J, cookie: await signIn(paOwner) }
+    const HM = { ...J, cookie: await signIn(paMallory) }
+    const badRule = await fetch(`${BASE}/api/print-alerts`, { method: 'POST', headers: H, body: JSON.stringify({ rule: 'sideways' }) })
+    const badBar = await fetch(`${BASE}/api/print-alerts`, { method: 'POST', headers: H, body: JSON.stringify({ rule: 'big-print', bigPrintUsd: 12345 }) })
+    const badMarket = await fetch(`${BASE}/api/print-alerts`, { method: 'POST', headers: H, body: JSON.stringify({ rule: 'big-print', market: 'HY PE' }) })
+    check('print alerts: a bad rule, an off-list bar and a malformed market refuse by name (400)', badRule.status === 400 && badBar.status === 400 && badMarket.status === 400 && /bigPrintUsd must be one of/.test(((await badBar.json()) as { error: string }).error))
+    const createdRes = await fetch(`${BASE}/api/print-alerts`, { method: 'POST', headers: H, body: JSON.stringify({ rule: 'big-print', market: 'HYPE', venues: ['hypercore'], bigPrintUsd: 10000 }) })
+    const created = ((await createdRes.json()) as { alert: { id: string; rule: string; market: string | null; venues: string[]; thresholds: { bigPrintUsd: number }; status: string; firedCount: number } }).alert
+    check('print alerts: POST arms a rule — 201, big-print ≥ $10K on HYPE over hypercore, active, never fired', createdRes.status === 201 && created?.rule === 'big-print' && created.market === 'HYPE' && created.venues.join() === 'hypercore' && created.thresholds.bigPrintUsd === 10000 && created.status === 'active' && created.firedCount === 0, `${createdRes.status} ${JSON.stringify(created)}`)
+    const listed = (await (await fetch(`${BASE}/api/print-alerts`, { headers: H })).json()) as { alerts: { id: string }[]; feeds: unknown[] }
+    check('print alerts: GET lists the owner\'s rules and the feeds\' status; another wallet sees none of them (404 on pause)', listed.alerts.some((a) => a.id === created.id) && Array.isArray(listed.feeds) && (await fetch(`${BASE}/api/print-alerts`, { method: 'PATCH', headers: HM, body: JSON.stringify({ id: created.id, op: 'pause' }) })).status === 404)
+    const paCronSecret = process.env.CRON_SECRET ?? (() => {
+      try {
+        return readdirSync('.').includes('.env.local') ? readFileSync('.env.local', 'utf8').match(/^CRON_SECRET=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null : null
+      } catch {
+        return null
+      }
+    })()
+    if (paCronSecret) {
+      const stamp = Date.now()
+      const fills = [
+        { id: `fx:${stamp}:1`, market: 'HYPE', side: 'buy', size: 1000, price: 42.1, at: stamp - 5_000, taker: '0xabc' },
+        { id: `fx:${stamp}:2`, market: 'HYPE', side: 'sell', size: 10, price: 42, at: stamp - 4_000 },
+        { id: `fx:${stamp}:3`, market: 'BTC', side: 'buy', size: 1, price: 112000, at: stamp - 3_000 },
+      ]
+      const cronH = { ...J, authorization: `Bearer ${paCronSecret}` }
+      const sweep = (await (await fetch(`${BASE}/api/cron/prints`, { method: 'POST', headers: cronH, body: JSON.stringify({ fixture: { fills } }) })).json()) as { fixture: number; venues: unknown[]; fired: { alertId: string; market: string; title: string; actionAsk: string | null; price: number }[]; evaluated: number }
+      const mine = sweep.fired?.find((f) => f.alertId === created.id)
+      check('print cron: a fixture fill fires the INTERNAL rule — the $42.1K HYPE print and not the BTC one (market scope), no feed opened for it (the fixture serves it), the title names the rule and the market, the price is the fill\'s', sweep.fixture === 3 && !!mine && mine.market === 'HYPE' && mine.title === 'Big print on HYPE' && mine.price === 42.1 && !sweep.fired.some((f) => f.alertId === created.id && f.market === 'BTC'), JSON.stringify({ fixture: sweep.fixture, fired: sweep.fired?.filter((f) => f.alertId === created.id), venues: sweep.venues }))
+      const notes = (await (await fetch(`${BASE}/api/alerts/notifications`, { headers: H })).json()) as { notifications: { alertId: string; symbol: string; title: string; body: string; actionAsk: string | null; price: number }[] }
+      const note = notes.notifications.find((n) => n.alertId === created.id)
+      check('print alerts: the firing is ONE row on the bell\'s own path (/api/alerts/notifications) — symbol HYPE, the past-tense measured sentence naming the venue and Dune\'s feed, the Hyperliquid long chip only when the venue gate passes it (else none), never sent for you',
+        !!note && note.symbol === 'HYPE' && note.title === 'Big print on HYPE' && /^\$42\.10K bought on HYPE in one fill at 42\.1\. Hyperliquid, through Dune's feed\./.test(note.body) && (note.actionAsk === 'Long $25 of HYPE on Hyperliquid' || note.actionAsk === null) && note.price === 42.1 && notes.notifications.filter((n) => n.alertId === created.id).length === 1, JSON.stringify(note))
+      const sweep2 = (await (await fetch(`${BASE}/api/cron/prints`, { method: 'POST', headers: cronH, body: JSON.stringify({ fixture: { fills } }) })).json()) as { fired: { alertId: string }[] }
+      const after = (await (await fetch(`${BASE}/api/print-alerts`, { headers: H })).json()) as { alerts: { id: string; firedCount: number; lastFiredAt: string | null }[] }
+      check('print cron: the same fills on a second pass fire nothing (the rule remembers the event); the row counts one firing', !sweep2.fired?.some((f) => f.alertId === created.id) && after.alerts.find((a) => a.id === created.id)?.firedCount === 1 && !!after.alerts.find((a) => a.id === created.id)?.lastFiredAt)
+      // A call that is NOT an internal run: the fixture is ignored and the rule is judged on the LIVE feed (a 3s pull, the cursor then stored).
+      const liveSweep = (await (await fetch(`${BASE}/api/cron/prints?budgetMs=3000`, { method: 'POST', headers: { ...cronH, 'x-yf-internal-run': '0' }, body: JSON.stringify({ fixture: { fills } }) })).json()) as { fixture: number; venues: { venue: string; outcome: string; frames: number; leased: boolean }[]; error?: string }
+      const hc = liveSweep.venues?.find((v) => v.venue === 'hypercore')
+      check('print cron: a fixture from a call that is NOT an internal run is ignored — the rule is judged on the live feed instead (hypercore opened, an outcome named: tip · budget · idle · rejected · unconfigured · leased-elsewhere), never on the caller\'s fills', liveSweep.fixture === 0 && !!hc && ['tip', 'budget', 'idle', 'rejected', 'unconfigured', 'leased-elsewhere', 'closed', 'error', 'fell-behind'].includes(hc.outcome), JSON.stringify(liveSweep.venues ?? liveSweep.error))
+      const paused = ((await (await fetch(`${BASE}/api/print-alerts`, { method: 'PATCH', headers: H, body: JSON.stringify({ id: created.id, op: 'pause' }) })).json()) as { alert: { status: string } }).alert
+      check('print alerts: PATCH pause ⇄ resume; pausing a paused rule is a 409', paused.status === 'paused' && (await fetch(`${BASE}/api/print-alerts`, { method: 'PATCH', headers: H, body: JSON.stringify({ id: created.id, op: 'pause' }) })).status === 409 && ((await (await fetch(`${BASE}/api/print-alerts`, { method: 'PATCH', headers: H, body: JSON.stringify({ id: created.id, op: 'resume' }) })).json()) as { alert: { status: string } }).alert.status === 'active')
+      await fetch(`${BASE}/api/alerts/notifications`, { method: 'PATCH', headers: H, body: JSON.stringify({ all: true }) })
+    } else {
+      console.log('  ⚪ print cron: CRON_SECRET not in env/.env.local — fixture + live sweep checks skipped')
+    }
+    const gone = await fetch(`${BASE}/api/print-alerts?id=${created.id}`, { method: 'DELETE', headers: H })
+    const left = (await (await fetch(`${BASE}/api/print-alerts`, { headers: H })).json()) as { alerts: unknown[] }
+    check('print alerts: DELETE removes the rule; the wallet ends with none; a second delete is a 404', gone.status === 200 && left.alerts.length === 0 && (await fetch(`${BASE}/api/print-alerts?id=${created.id}`, { method: 'DELETE', headers: H })).status === 404)
   }
 
   /* POLISH:DEADENDS — every sentence the product offers is backed by a response (squad polish, 2026-10-13). */
