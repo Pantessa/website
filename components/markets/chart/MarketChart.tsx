@@ -43,7 +43,7 @@ import {
 } from 'lightweight-charts'
 import { ChartCandlestick, ChevronsRight, Layers2, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, RotateCcw, Rows3, Ruler, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, Trash2, TrendingUp, Undo2 } from 'lucide-react'
 import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, isPrintTf, tfsForSource, type Candle, type ChartTf } from '@/lib/charts'
-import { PRINT_KEEP_MS, applyPrint, barsFromPrints, chartLiveFeed, printOf, seedThenPrints, tailIsLive, tailWords, type Print } from '@/lib/chart-live'
+import { PRINT_KEEP_MS, applyPrint, barsFromPrints, chartLiveFeed, livePriceStats, printOf, seedThenPrints, tailIsLive, tailWords, type Print } from '@/lib/chart-live'
 import { syncTfParam } from '@/lib/markets'
 import type { TapeFill } from '@/lib/tape'
 import { openDuneTape, type FeedStatus } from '@/lib/tape-feed'
@@ -82,6 +82,10 @@ import { useTradable } from '@/lib/use-tradable'
 
 const POLL_MS: Record<ChartTf, number> = { '10s': 30_000, '1m': 5_000, '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
 const POOL_POLL_MS = 30_000
+/** The header re-states a live print at most this often (ms). */
+const LIVE_EMIT_MS = 250
+/** A print this fresh outranks the poll's close in the header (ms). */
+const LIVE_PRINT_FRESH_MS = 60_000
 /** Bars the chart holds for one symbol + frame: the live window (180), its
  *  warm-up (200), and the older pages a zoom-out pulls in. Past it the chart
  *  stops paging, and a zoom-out stops where every drawn bar fits the plot. */
@@ -405,6 +409,40 @@ export default function MarketChart({
   const barsRef = useRef<Candle[]>([])
   const onStatsRef = useRef(onStats)
   onStatsRef.current = onStats
+  // THE HEADER FOLLOWS THE PRINTS (2026-10-20): the last stats the poll
+  // emitted, the newest print since, and one trailing timer so a 40-print
+  // second re-states the header at most four times (lib/chart-live
+  // livePriceStats re-bases the 24h change on the same day-ago price).
+  const emittedStatsRef = useRef<ChartStats | null>(null)
+  const livePrintRef = useRef<{ price: number; at: number } | null>(null)
+  const liveEmitRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const emitPollStats = useCallback((s: ChartStats) => {
+    // A print newer than the poll's own window is the truer last: keep it,
+    // take the poll's change, label and feed. A print older than that is
+    // the venue's to override (the feed may have gone quiet).
+    const lp = livePrintRef.current
+    const next = lp && lp.at > Date.now() - LIVE_PRINT_FRESH_MS && s.last != null ? livePriceStats(s, lp.price) : s
+    emittedStatsRef.current = next
+    onStatsRef.current?.(next)
+  }, [])
+  const emitLivePrice = useCallback((price: number) => {
+    if (!(price > 0)) return
+    livePrintRef.current = { price, at: Date.now() }
+    if (liveEmitRef.current) return
+    liveEmitRef.current = setTimeout(() => {
+      liveEmitRef.current = null
+      const prev = emittedStatsRef.current
+      const lp = livePrintRef.current
+      if (!prev || !lp) return
+      const next = livePriceStats(prev, lp.price)
+      if (next === prev) return
+      emittedStatsRef.current = next
+      onStatsRef.current?.(next)
+    }, LIVE_EMIT_MS)
+  }, [])
+  useEffect(() => () => {
+    if (liveEmitRef.current) clearTimeout(liveEmitRef.current)
+  }, [])
   const linesRef = useRef(lines)
   linesRef.current = lines
   const undoRef = useRef(undoStacks)
@@ -652,7 +690,7 @@ export default function MarketChart({
         // The bars are the prints'; the venue only names the price and the day's move.
         if (d.candles.length > 0) {
           setStale(false)
-          onStatsRef.current?.({ last: d.last ?? d.candles[d.candles.length - 1].c, changePct24h: d.changePct24h ?? null, label: d.label, source: d.source, feed: 'dune prints' })
+          emitPollStats({ last: d.last ?? d.candles[d.candles.length - 1].c, changePct24h: d.changePct24h ?? null, label: d.label, source: d.source, feed: 'dune prints' })
         }
         return
       }
@@ -671,7 +709,7 @@ export default function MarketChart({
           return m.bars
         })
         void loadWarmup()
-        onStatsRef.current?.({
+        emitPollStats({
           last: d.last ?? d.candles[d.candles.length - 1].c,
           changePct24h: d.changePct24h ?? null,
           label: d.label,
@@ -685,7 +723,7 @@ export default function MarketChart({
     } catch {
       if (keyRef.current === key) setStale(true)
     }
-  }, [symbol, tf, loadWarmup])
+  }, [symbol, tf, loadWarmup, emitPollStats])
 
   // A stock's tape has no minute bar: a 1m frame asked by a URL or a memory falls to 15m.
   useEffect(() => {
@@ -1020,6 +1058,7 @@ export default function MarketChart({
     if (!isPrintTf(tf) || !pair) return
     const handedOff = printsRef.current.length > 0
     const bars = barsFromPrints(seedThenPrints(venuePrintsRef.current, printsRef.current.map(printOf), Date.now()), FRAME_SEC[tf])
+    if (bars.length) emitLivePrice(bars[bars.length - 1].c)
     setHistory(bars)
     setData({ symbol: pair.symbol, label: pair.label, source: pair.source, feed: handedOff ? 'dune prints' : `${pair.source} trades`, tf, candles: bars.slice(-PRINT_WINDOW) })
   }
@@ -1102,6 +1141,7 @@ export default function MarketChart({
           last = f.price
         }
         if (last === null) return
+        emitLivePrice(last)
         if (!printLineRef.current) printLineRef.current = cs.createPriceLine({ price: last, color: alpha(tokens.accent, 0.9), lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'print' })
         else printLineRef.current.applyOptions({ price: last })
       },

@@ -53,7 +53,8 @@ import {
   type DunePerpTrade,
 } from '../lib/dune'
 import { simulateLadder } from './ask-ladder'
-import { LIVE_TAIL_TFS, PRINT_KEEP_MS, applyPrint, barsFromPrints, bucketOf, chartLiveFeed, printOf, seedThenPrints, tailIsLive, tailWords } from '../lib/chart-live'
+import { LIVE_TAIL_TFS, PRINT_KEEP_MS, applyPrint, barsFromPrints, bucketOf, chartLiveFeed, livePriceStats, printOf, seedThenPrints, tailIsLive, tailWords } from '../lib/chart-live'
+import { fmtLivePrice, isLiveTabTitle, liveTabTitle } from '../lib/markets-quotes'
 import { printFromCoinbase, printFromHl, trimPrints } from '../lib/venue-trades'
 import { PRINT_BAR_SPACING, engineRightOffset, fitMarginBars, printOpeningView } from '../lib/chart-viewport'
 import { LIVE_BACKFILL_MS } from '../lib/dune'
@@ -409,6 +410,29 @@ export function tapePins(check: Check): void {
         /engineRightOffset\(view, drawnRef\.current\)/.test(chart) && /Math\.abs\(held - want\) < 1/.test(chart) &&
         PRINT_KEEP_MS === 30 * 60_000 && LIVE_BACKFILL_MS === 5 * 60_000 && !chart.includes('__mkChart')
     })())
+  // ── The header follows the prints (lib/chart-live livePriceStats; lib/markets-quotes fmtLivePrice, liveTabTitle) ──
+  const polled = { last: 7.14, changePct24h: -0.47, label: 'UNI', source: 'coinbase', feed: 'dune prints' }
+  const ticked = livePriceStats(polled, 7.16)
+  const base = 7.14 / (1 - 0.0047)
+  check('header: a print re-states the header — the last is the print, the 24h change is re-based on the day-ago price the poll\'s change implied, label/source/feed stay the poll\'s',
+    ticked !== polled && ticked.last === 7.16 && Math.abs((ticked.changePct24h ?? 0) - (7.16 / base - 1) * 100) < 1e-9 && ticked.label === 'UNI' && ticked.feed === 'dune prints', JSON.stringify(ticked))
+  check('header: the same price, a zero, a negative or a NaN print returns the SAME stats object (no emit); a poll with no change keeps null; a poll with no last takes the print as is',
+    livePriceStats(polled, 7.14) === polled && livePriceStats(polled, 0) === polled && livePriceStats(polled, -1) === polled && livePriceStats(polled, NaN) === polled &&
+      livePriceStats({ last: 7.14, changePct24h: null }, 7.2).changePct24h === null && livePriceStats({ last: null, changePct24h: 1.5 }, 7.2).last === 7.2 && livePriceStats({ last: null, changePct24h: 1.5 }, 7.2).changePct24h === 1.5)
+  check('header: one decimal ladder for the live number — four places from $1 (7.1329, the way Coinbase titles its tab), two with separators from $100, none from $10,000, five under a dollar, three significant under a cent',
+    fmtLivePrice(7.1329) === '7.1329' && fmtLivePrice(7.14) === '7.1400' && fmtLivePrice(2365.123) === '2,365.12' && fmtLivePrice(108234.6) === '108,235' && fmtLivePrice(0.0421) === '0.04210' && fmtLivePrice(0.0042) === '0.00420' && fmtLivePrice(null) === '—' && fmtLivePrice(NaN) === '—')
+  check('header: the tab\'s title leads with the price in the header\'s own decimals — `$7.1329 · UNI · Pantessa`; no price → null (the SEO title stays)',
+    liveTabTitle('UNI', 7.1329) === '$7.1329 · UNI · Pantessa' && liveTabTitle('ETH', 2365.123) === '$2,365.12 · ETH · Pantessa' && liveTabTitle('UNI', null) === null && liveTabTitle('UNI', 0) === null &&
+      isLiveTabTitle('$7.1329 · UNI · Pantessa') && !isLiveTabTitle('UNI live chart — trade Uniswap from the chart | Pantessa Markets') && !isLiveTabTitle(null))
+  check('header: the strip and the tab share the formatter and the chart re-states the header from every print path (the live tail, the print frame\'s rebuild), throttled, with the poll keeping a fresh print over its own close',
+    (() => {
+      const sp = readFileSync('components/markets/shell/SymbolPage.tsx', 'utf8')
+      const mc = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
+      return sp.includes('${fmtLivePrice(stats.last)}') && sp.includes('liveTabTitle(sym, liveLast)') && sp.includes('document.title = title') && !sp.includes('fmtPrice(stats.last)') &&
+        sp.includes('mo.observe(document.head') && sp.includes("statsFor?.sym === sym ? statsFor.stats : null") &&
+        (mc.match(/emitLivePrice\(/g) ?? []).length === 2 && (mc.match(/emitPollStats\(\{/g) ?? []).length === 2 && !mc.includes('onStatsRef.current?.({') && mc.includes('LIVE_EMIT_MS = 250') && mc.includes('livePriceStats(s, lp.price)')
+    })())
+
 }
 
 if (process.argv[1]?.endsWith('tape-pins.ts')) {

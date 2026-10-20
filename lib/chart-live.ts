@@ -134,6 +134,26 @@ export function seedThenPrints(venue: readonly Print[], dune: readonly Print[], 
   return [...venue.filter((p) => p.at >= floor && p.at < handoff), ...live]
 }
 
+/**
+ * THE HEADER FOLLOWS THE PRINTS (2026-10-20, Nate: "it did a downtick from
+ * $7.14 to $7.13, can we update the overall price when the price triggers a
+ * change?"). The strip's number used to move only on the venue poll (30s on
+ * the 10s frame) while the chart's tail and its `print` line moved on every
+ * execution. A print now re-states the header: the last is the print, the
+ * 24h change is re-based on the same day-ago price the poll's change implied
+ * (base = last / (1 + change)), the label and feed stay the poll's. An
+ * unchanged price returns the SAME object, so a caller can skip the emit.
+ */
+export function livePriceStats<S extends { last: number | null; changePct24h: number | null }>(prev: S, price: number): S {
+  if (!(price > 0) || !Number.isFinite(price) || prev.last === price) return prev
+  let changePct24h = prev.changePct24h
+  if (prev.last != null && prev.last > 0 && changePct24h != null && Number.isFinite(changePct24h) && changePct24h > -100) {
+    const base = prev.last / (1 + changePct24h / 100)
+    changePct24h = base > 0 ? (price / base - 1) * 100 : changePct24h
+  }
+  return { ...prev, last: price, changePct24h }
+}
+
 /** How much of a print frame the BROWSER keeps while you watch: half an
  *  hour of prints (≤ 180 ten-second bars, under the chart's 2,200 cap), so
  *  a tab left open can zoom out past the relay's backfill — which is what a

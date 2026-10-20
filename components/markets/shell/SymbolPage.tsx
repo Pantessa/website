@@ -33,7 +33,6 @@ import { ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import ChartMount, { type ChartStats } from '@/components/markets/chart/ChartMount'
 import type { ChartState } from '@/lib/chart-state'
-import { fmtPrice } from '@/components/CandleChart'
 import { CHART_FEED_LABELS, chartPairFor, type ChartFeed, type ChartTf } from '@/lib/charts'
 import {
   DEFAULT_MARKET_TAB,
@@ -50,7 +49,7 @@ import {
   venueLabel,
   type MarketTab,
 } from '@/lib/markets'
-import { fmtQuotePrice } from '@/lib/markets-quotes'
+import { fmtLivePrice, fmtQuotePrice, isLiveTabTitle, liveTabTitle } from '@/lib/markets-quotes'
 import { useDayStats } from '@/components/markets/shell/useDayStats'
 import HeldPill from '@/components/markets/shell/HeldPill'
 import CompareControl from '@/components/markets/shell/CompareControl'
@@ -117,7 +116,12 @@ export default function SymbolPage({
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
   const sym = pair?.symbol ?? symbol
   const name = symbolName(sym)
-  const [stats, setStats] = useState<ChartStats | null>(null)
+  // The chart's header numbers, keyed to the symbol they were read for: a
+  // new symbol starts with none, so the strip and the tab never wear the
+  // last symbol's price while its chart fetches (2026-10-20).
+  const [statsFor, setStatsFor] = useState<{ sym: string; stats: ChartStats } | null>(null)
+  const stats = statsFor?.sym === sym ? statsFor.stats : null
+  const setStats = useCallback((s: ChartStats) => setStatsFor({ sym, stats: s }), [sym])
   // The header's "loading … candles" never ended when the feed failed (pre-gtm
   // POLISH r3): after 12s with no stats it says the feed didn't answer.
   const [statsLate, setStatsLate] = useState(false)
@@ -127,6 +131,32 @@ export default function SymbolPage({
     const t = setTimeout(() => setStatsLate(true), 12_000)
     return () => clearTimeout(t)
   }, [sym, stats])
+  // THE PRICE IN THE TAB (2026-10-20, Nate: "add the price into the title
+  // bar like Coinbase does"): once the chart has a last, the tab reads
+  // `$7.1329 · UNI · Pantessa` and follows every print the header shows
+  // (same formatter, same decimals). The server's SEO title stays what
+  // crawlers and the first paint get; leaving the page hands the title back.
+  const liveLast = stats?.last ?? null
+  // The page's own (SEO) title, whatever React's metadata last wrote: on a
+  // soft navigation that write can land AFTER the first live price, so the
+  // head is watched and a live title re-asserted over it (React writes its
+  // title only when the route's metadata changes — no loop).
+  const baseTitleRef = useRef<string | null>(null)
+  useEffect(() => {
+    const title = liveTabTitle(sym, liveLast)
+    if (!title) return
+    const assert = () => {
+      if (!isLiveTabTitle(document.title)) baseTitleRef.current = document.title
+      if (document.title !== title) document.title = title
+    }
+    assert()
+    const mo = new MutationObserver(assert)
+    mo.observe(document.head, { childList: true, characterData: true, subtree: true })
+    return () => mo.disconnect()
+  }, [sym, liveLast])
+  useEffect(() => () => {
+    if (isLiveTabTitle(document.title) && baseTitleRef.current) document.title = baseTitleRef.current
+  }, [])
   const [expanded, setExpanded] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
 
@@ -435,7 +465,7 @@ export default function SymbolPage({
             <div className="sym__quote">
               {pair && stats?.last != null ? (
                 <>
-                  <span className="sym__last mono">${fmtPrice(stats.last)}</span>
+                  <span className="sym__last mono">${fmtLivePrice(stats.last)}</span>
                   <span className={`sym__chg mono mkt-chg ${chgClass}`}>{chgLabel}</span>
                   <span className="sym__feed mono">{feedLabel}</span>
                 </>
