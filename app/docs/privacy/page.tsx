@@ -8,7 +8,7 @@ const UPDATED = 'September 18, 2026'
 
 // See the note in app/docs/terms/page.tsx — these are the counsel-owned values.
 const LEGAL_ENTITY = 'Yeetful, Inc.'
-const CONTACT = 'privacy@yeetful.com'
+const CONTACT = 'privacy@pantessa.com'
 
 export const metadata: Metadata = {
   title: PAGE.seoTitle,

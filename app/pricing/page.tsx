@@ -140,7 +140,7 @@ export default function PricingPage() {
 
           <p className="pricing__enterprise">
             Embedding Pantessa for your community, or need white-label, team seats or an SLA?{' '}
-            <a href="mailto:hello@yeetful.com?subject=Pantessa%20for%20teams">Talk to us</a>. Team terms are arranged by hand.
+            <a href="mailto:hello@pantessa.com?subject=Pantessa%20for%20teams">Talk to us</a>. Team terms are arranged by hand.
           </p>
         </section>
 

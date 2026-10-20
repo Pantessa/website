@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       // `detail` is for whoever reads the network tab; `error` is what the
       // pricing page prints under the button, so it names no env var.
       {
-        error: 'Checkout is not open yet. The free plan works today: every chart, watchlist and trade. Write to hello@yeetful.com and we will set you up by hand.',
+        error: 'Checkout is not open yet. The free plan works today: every chart, watchlist and trade. Write to hello@pantessa.com and we will set you up by hand.',
         detail: 'STRIPE_SECRET_KEY is not configured on this deployment.',
       },
       { status: 503 },
@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
     // The Stripe reason stays diagnosable (`detail` + the log line above)
     // without being the sentence a buyer reads under the button.
     return NextResponse.json(
-      { error: 'Checkout did not open. You were not charged. Try again in a minute, or write to hello@yeetful.com.', detail: msg },
+      { error: 'Checkout did not open. You were not charged. Try again in a minute, or write to hello@pantessa.com.', detail: msg },
       { status: 500 },
     )
   }

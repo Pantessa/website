@@ -12,7 +12,7 @@ const UPDATED = 'September 3, 2026'
 // operational decisions, not facts about the software, so they live here as
 // one-line edits rather than buried in prose.
 const LEGAL_ENTITY = 'Yeetful, Inc.'
-const CONTACT = 'legal@yeetful.com'
+const CONTACT = 'legal@pantessa.com'
 const GOVERNING_LAW = '[governing jurisdiction — TO BE COMPLETED]'
 const VENUE = '[venue — TO BE COMPLETED]'
 
