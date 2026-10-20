@@ -62,6 +62,7 @@
     "pins:deadends": "tsx scripts/deadends-pins.ts",
     "inventory:deadends": "tsx scripts/deadend-inventory.ts",
     "pins:depth": "tsx scripts/depth-pins.ts",
+    "pins:chart-tape": "tsx scripts/chart-tape-pins.ts",
     "pins:deck": "tsx scripts/deck-pins.ts",
     "pins:pick": "tsx scripts/pick-pins.ts",
     "pins:card": "tsx scripts/card-pins.ts",

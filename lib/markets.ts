@@ -642,9 +642,10 @@ export function fmtCountdown(mins: number): string {
 // ── Battlefield (2026-10-06): `?view=battlefield&board=spot|perps` ──────────
 
 /** The chart's views: the candles (what every chart opens on), the Depth
- *  chart (2026-10-13, `?view=depth`), and the Battlefield (`?view=battlefield`,
+ *  chart (2026-10-13, `?view=depth`), the Tape (2026-10-20, `?view=tape`:
+ *  this instrument's prints as rows, a button on each), and the Battlefield (`?view=battlefield`,
  *  kept for its deep links — its switch button went when Depth arrived). */
-export type ChartView = 'candles' | 'field' | 'depth'
+export type ChartView = 'candles' | 'field' | 'depth' | 'tape'
 export type BoardMode = 'perps' | 'spot' | 'heat'
 
 /** `?view=battlefield` opens the chart on the Battlefield, `?view=depth` on
@@ -652,7 +653,7 @@ export type BoardMode = 'perps' | 'spot' | 'heat'
  *  never remembered). Pure — pinned. */
 export function parseViewParam(search: string): ChartView {
   const v = new URLSearchParams(search).get('view')
-  return v === 'battlefield' ? 'field' : v === 'depth' ? 'depth' : 'candles'
+  return v === 'battlefield' ? 'field' : v === 'depth' ? 'depth' : v === 'tape' ? 'tape' : 'candles'
 }
 
 /** `?board=perps|spot|heat` picks the Battlefield's board; anything else is none named. */
@@ -668,6 +669,7 @@ export function viewUrl(view: ChartView, board: BoardMode | null, pathname: stri
   const params = new URLSearchParams(search)
   if (view === 'field') params.set('view', 'battlefield')
   else if (view === 'depth') params.set('view', 'depth')
+  else if (view === 'tape') params.set('view', 'tape')
   else params.delete('view')
   if (view === 'field' && board) params.set('board', board)
   else params.delete('board')
