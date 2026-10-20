@@ -1590,6 +1590,8 @@ async function handleChatTurn(req: NextRequest) {
         ...(spotTurn.spotGuardArm ? { spotGuardArm: spotTurn.spotGuardArm } : {}),
         ...(spotTurn.signInGate ? { signInGate: spotTurn.signInGate } : {}),
         ...(spotTurn.clarify ? { clarify: spotTurn.clarify } : {}),
+        // The connect door (standing rule 6): a wallet-less ask re-runs on connect.
+        ...(spotTurn.connectWallet ? { connectWallet: true, connectAsk: spotTurn.connectAsk, connectLabel: spotTurn.connectLabel } : {}),
         buildPath: spotTurn.buildPath,
       })
     }
@@ -1801,7 +1803,7 @@ async function handleChatTurn(req: NextRequest) {
         const what = hlIntent.kind === 'deposit' ? `deposit ${hlIntent.amountUsdc} USDC` : `${hlIntent.kind} ${hlIntent.coin}`
         nativeTrace({ type: 'status', label: `native hl layer claimed the turn: ${what} on Hyperliquid — planner bypassed` })
         try {
-          const turn = await buildHlExecTurn(hlIntent, walletAddress, nativeTrace)
+          const turn = await buildHlExecTurn(hlIntent, walletAddress, nativeTrace, message)
           return NextResponse.json(turn)
         } catch (e) {
           nativeTrace({ type: 'error', label: `native hl layer: ${(e as Error).message}` })
