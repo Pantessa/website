@@ -24,6 +24,12 @@ export interface TurnScope {
    *  swap builders read it to pay the link's creator inside the swap
    *  (lib/creator-split) without threading a slug through every call. */
   linkSlug?: string
+  /** The intent net's ONE reading of this ask, set right before the route
+   *  re-enters the turn with it (app/api/chat/route.ts, the net site). Lives
+   *  in the scope and never in the body: a body field could be forged by a
+   *  client to skip the unsigned-turn meter the inner pass leaves alone. The
+   *  inner pass reads it to never re-enter and never re-meter. */
+  rescue?: { from: string; as: string; venue: string }
 }
 
 const als = new AsyncLocalStorage<TurnScope>()
@@ -43,6 +49,12 @@ export function turnScope(): TurnScope | undefined {
 export function noteLinkSlug(slug: string): void {
   const s = als.getStore()
   if (s) s.linkSlug = slug
+}
+
+/** Record the intent net's one reading before the turn re-enters with it. */
+export function noteRescue(rescue: { from: string; as: string; venue: string }): void {
+  const s = als.getStore()
+  if (s) s.rescue = rescue
 }
 
 /** Record the apps the belt turned on for this turn (idempotent by id). */

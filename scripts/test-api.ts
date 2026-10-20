@@ -29966,13 +29966,57 @@ async function main() {
     check('intent net (route): the net sits after every native gate and before the planner', netAt > swapAt && swapAt > 0 && netAt < plannerAt, `${swapAt} < ${netAt} < ${plannerAt}`)
     check('intent net (route): both answer prompts carry the native-builders rule (never "can\'t execute", never another site)', (routeSrc.match(/NATIVE_BUILDERS_RULE/g) ?? []).length >= 3 && /NEVER tell the user to go to another app/.test(routeSrc))
 
-    // Live: the exact failed ask, with the default-fleet HL app, claims natively.
-    const liveTurn = await fetch(`${BASE}/api/chat`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1' },
-      body: JSON.stringify({ message: 'stake 0.05 ETH', activeServers: [], history: [] }),
-    }).then((r) => r.json()).catch(() => null) as { buildPath?: string; clarify?: { options?: { resume?: string }[] } } | null
-    check('intent net (live): "stake 0.05 ETH" answers the Lido chip from the net, not planner prose', liveTurn?.buildPath === 'native-intent-net' && liveTurn?.clarify?.options?.[0]?.resume === 'Stake 0.05 ETH on Lido', JSON.stringify(liveTurn)?.slice(0, 200))
+    // ONE reading builds in the SAME turn (2026-10-20, Nate on /chat: "SHORT UNI with $25 worth"
+    // answered "🧭 I read that as **Short $25 of UNI on Hyperliquid**. Tap it and I'll build it" —
+    // over a chip the client never rendered, because lib/clarify dropped a one-option clarify as
+    // "not a question"). Now: a lone option is a button; the net's single reading re-enters the
+    // turn at the net site (marked in the turn SCOPE, never the body — a body field could skip
+    // the unsigned-turn meter), the reply opens with what was read and carries `rescue`, and
+    // the venue's own layer answers (a build, its funding plan, or its door). Two or more
+    // readings are still chips.
+    type RescuedTurn = { reply?: string; buildPath?: string; rescue?: { from?: string; as?: string; venue?: string }; connectWallet?: boolean; connectAsk?: string; clarify?: { options?: { resume?: string }[] } }
+    check(
+      'clarify: ONE option is a button, not a dropped question (the net\'s single reading on a re-entered turn, build-failure\'s "Try again", the belt\'s one next step)',
+      clarifyOf({ question: 'Build this?', options: [{ label: 'Short $25 of UNI on Hyperliquid', resume: 'short $25 of UNI on hyperliquid' }] })?.options.length === 1 &&
+        clarifyOf({ question: 'Build this?', options: [] }) === null,
+    )
+    const reentryAt = routeSrc.indexOf("handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: JSON.stringify({ ...body, message: chip.resume }) }))")
+    check(
+      'intent net (route): ONE reading re-enters the turn at the net site, the mark lives in the turn scope (noteRescue, never a body field), and the inner pass neither re-enters nor re-meters',
+      reentryAt > netAt && netAt > 0 && /if \(one && !turnScope\(\)\?\.rescue\) \{/.test(routeSrc) && /noteRescue\(\{ from: message, as: chip\.resume, venue: chip\.venue \}\)/.test(routeSrc) &&
+        /if \(!embedBill && !sessionAddress && !turnScope\(\)\?\.rescue\) \{/.test(routeSrc) && !/rescuedFrom/.test(routeSrc),
+      `${netAt} < ${reentryAt}`,
+    )
+    const rescuedTurn = async (message: string): Promise<RescuedTurn | null> =>
+      fetch(`${BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message, activeServers: [], history: [] }),
+      }).then((r) => r.json()).catch(() => null)
+    const uniTurn = await rescuedTurn('SHORT UNI with $25 worth')
+    check(
+      'intent net (live): "SHORT UNI with $25 worth" builds its one reading in the same turn — the reply opens with the read, carries `rescue`, lands on the Hyperliquid layer (never buildPath native-intent-net) and is actionable',
+      !!uniTurn && typeof uniTurn.reply === 'string' && uniTurn.reply.startsWith('🧭 I read that as **Short $25 of UNI on Hyperliquid**.') && uniTurn.rescue?.as === 'short $25 of UNI on hyperliquid' && uniTurn.rescue?.from === 'SHORT UNI with $25 worth' &&
+        uniTurn.buildPath !== 'native-intent-net' && classifyTurn(uniTurn as Record<string, unknown>).kind === null,
+      JSON.stringify(uniTurn)?.slice(0, 240),
+    )
+    // Live: the exact failed ask, with the default-fleet HL app, claims natively. RE-PINNED
+    // 2026-10-20 (rescue builds): it used to stop at a one-chip clarify the client dropped; now
+    // it re-enters as the Lido sentence and meets Lido's own connect door with the ask held.
+    const liveTurn = await rescuedTurn('stake 0.05 ETH')
+    check(
+      'intent net (live): "stake 0.05 ETH" re-enters as the Lido sentence in the same turn — the read line, `rescue`, and Lido\'s own connect door holding the canonical ask (never a chip to tap, never planner prose)',
+      !!liveTurn && typeof liveTurn.reply === 'string' && liveTurn.reply.startsWith('🧭 I read that as **Stake 0.05 ETH on Lido**.') && liveTurn.rescue?.as === 'Stake 0.05 ETH on Lido' && liveTurn.buildPath !== 'native-intent-net' &&
+        liveTurn.connectWallet === true && liveTurn.connectAsk === 'Stake 0.05 ETH on Lido',
+      JSON.stringify(liveTurn)?.slice(0, 240),
+    )
+    // Two readings are a real question: the chips stay, and the turn never re-enters.
+    const twoTurn = await rescuedTurn('perp HYPE')
+    check(
+      'intent net (live): "perp HYPE" (a side-less perp word) still asks — two readings as chips, no rescue, no re-entry',
+      !!twoTurn && twoTurn.buildPath === 'native-intent-net' && !twoTurn.rescue && (twoTurn.clarify?.options?.length ?? 0) === 2 && twoTurn.clarify?.options?.every((o) => /^(?:long|short) HYPE on hyperliquid$/.test(o.resume ?? '')) === true,
+      JSON.stringify(twoTurn)?.slice(0, 240),
+    )
   }
 
   // ── NEAR Intents as the FALLBACK venue for a Robinhood value leg ──────────

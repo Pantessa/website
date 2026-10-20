@@ -16,10 +16,13 @@
  *   • a candidate is kept only if the REAL ladder parses it to an action
  *     (`verify`, injected — the route passes scripts/ask-ladder), so a chip
  *     can't be a second dead end;
- *   • the user taps the reading they meant; the tap re-enters the ladder as
- *     an ordinary ask, where the layer's own funding plan (bridge legs, gas
- *     legs, card door) takes over. The net finds the door; funding is the
- *     layer's job.
+ *   • ONE reading re-enters the ladder by itself, in the same turn (the
+ *     route's net site, 2026-10-20 — a lone chip used to be dropped by the
+ *     client as "not a question", so "tap it" pointed at nothing); two or
+ *     more are chips, and the user taps the reading they meant. Either way
+ *     the sentence re-enters as an ordinary ask, where the layer's own
+ *     funding plan (bridge legs, gas legs, card door) takes over. The net
+ *     finds the door; funding is the layer's job.
  *
  * PURE: no I/O, no env. The harness pins it without a server.
  */
