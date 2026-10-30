@@ -10,8 +10,6 @@ export interface ChatReceipt {
   txHash?: string
   ok: boolean
   note?: string
-  /** Set on no-approval (NOT_ALLOWED) blocks → link to /servers/<slug>#approve. */
-  slug?: string
 }
 
 /** Narrow an unknown Message.meta to its receipts array (defensive: meta is user-era JSON). */
@@ -70,18 +68,7 @@ export default function MessageReceipts({ meta }: { meta: unknown }) {
               {r.txHash.slice(0, 10)}…
             </a>
           )}
-          {!r.ok &&
-            (r.slug ? (
-              <a
-                href={`/servers/${r.slug}#approve`}
-                className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/15 hover:text-amber-300 transition-colors"
-                title={`Approve ${r.name} for your expense account`}
-              >
-                not approved — approve →
-              </a>
-            ) : (
-              r.note && <span className="truncate">{r.note}</span>
-            ))}
+          {!r.ok && r.note && <span className="truncate">{r.note}</span>}
         </div>
       ))}
     </div>

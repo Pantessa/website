@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
 
 /**
  * Dashboard aggregates for the signed-in wallet — or, with `?org=<id>`
- * (member+), for the org's shared expense account. Derived from the spend
+ * (member+), for the org's shared account. Derived from the spend
  * ledger of ALL the scope's grants (current + past): KPIs, a 30-day daily
  * spend series, per-agent totals, and the recent activity feed. Org scope
  * adds an `org` block — the org level of the two-level budget.
@@ -41,13 +41,14 @@ export async function GET(req: NextRequest) {
   }
   const scopeOwner = orgId ? orgScopeKey(orgId) : addr
 
-  // Mint the expense account on first visit — from here on, every chat
-  // payment is enforced against the (default-empty) allowlist AND ledgered.
+  // Mint the grant on first visit — from here on, every chat payment is
+  // ledgered under it (receipts below). Nothing is enforced against it but
+  // the kill switch: the spend policy was retired 2026-10-30.
   await ensureGrant(scopeOwner, orgId ?? undefined)
 
   const grants = await prisma.spendGrant.findMany({
     where: { ownerAddress: scopeOwner },
-    select: { id: true, label: true, perCallUsd: true, perDayUsd: true, allow: true, status: true, paused: true, spendPolicyEnabled: true, expiresAt: true, createdAt: true, spendPermissionId: true, spendPermissionNetwork: true },
+    select: { id: true, label: true, status: true, paused: true, expiresAt: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   })
   const grantIds = grants.map((g) => g.id)
@@ -123,19 +124,10 @@ export async function GET(req: NextRequest) {
       ? {
           id: active.id,
           label: active.label,
-          perCallUsd: active.perCallUsd,
-          perDayUsd: active.perDayUsd,
-          allowCount: active.allow.length,
           expiresAt: active.expiresAt,
           paused: active.paused,
-          spendPolicyEnabled: active.spendPolicyEnabled,
-          // On-chain backing (Coinbase Spend Permission) — drives the
-          // "Backed on-chain" badge. Null until a permission is created.
-          backedOnChain: !!active.spendPermissionId,
-          spendPermissionNetwork: active.spendPermissionNetwork,
           spentTodayUsd: today,
           spentTotalUsd: totalActive,
-          remainingTodayUsd: Math.max(0, active.perDayUsd - today),
         }
       : null,
     kpis: {

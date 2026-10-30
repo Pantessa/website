@@ -501,7 +501,7 @@ export function replyShape(body: Record<string, unknown> | null, moneyAsk: boole
   if (body.door && typeof body.door === 'object') return { kind: 'reply-offer', title: 'Got asked to add an app first' }
   if (typeof body.awaiting === 'string' && body.awaiting) return { kind: 'reply-offer', title: 'Got a follow-up question' }
   if (body.rateGate) return { kind: 'reply-wall', title: 'Hit the unsigned-turn rate limit' }
-  if (body.blocked) return { kind: 'reply-wall', title: 'Blocked by spend policy' }
+  if (body.blocked) return { kind: 'reply-wall', title: 'Blocked by the account kill switch' }
   if (typeof body.error === 'string' && body.error) return { kind: 'reply-wall', title: `Got an error: ${clip(body.error, 120)}` }
   if (body.quiet === true) return { kind: 'reply-answer', title: `Told nothing needs doing${via}` }
   if (body.nfts || body.nftMarket || body.portfolio || body.chart) return { kind: 'reply-answer', title: `Got a read of their wallet or the market${via}` }

@@ -157,10 +157,10 @@ export const DOCS_PAGES: DocsPage[] = [
   },
   {
     slug: 'spend-policy',
-    title: 'Spend policy & caps',
-    seoTitle: 'Spend policy — open by default, capped by default',
+    title: 'Spend policy (retired) & the kill switch',
+    seoTitle: 'Spend policy — retired; your signature is the consent',
     description:
-      'How your expense account protects you without walling you in: $200 caps on agent-initiated spend, an open allowlist you curate down, sales never gated, and a kill switch that outranks everything.',
+      'No allowlist, no caps, no agent approvals: nothing you ask for is policy-gated any more. Anything that moves your money is signed by you, every paid call is receipted, and the kill switch still refuses everything.',
     ready: true,
     door: 'user',
   },

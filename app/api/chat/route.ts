@@ -363,9 +363,6 @@ interface Receipt {
   txHash?: string
   ok: boolean
   note?: string
-  /** Set only on NOT_ALLOWED (no-approval) blocks → the UI deep-links to
-   *  /servers/<slug>#approve so the user can approve in one click. */
-  slug?: string
 }
 
 /** A planned paid call — round-tripped to the browser so the wallet can sign it. */
@@ -3389,7 +3386,7 @@ const AAVE_POLICY_HOST = 'aave-mcp.yeetful.com'
 const MORPHO_POLICY_HOST = 'morpho-mcp.yeetful.com'
 
 /**
- * The spend-policy gate at the point of signing, shared by every Aave AND
+ * The kill-switch gate at the point of signing, shared by every Aave AND
  * Morpho op — builds the guardrails report (guardrails.valueUsd = the
  * money-moved headline metric), ledgers a policy denial, and returns the
  * refusal response when the policy blocks.
@@ -3772,7 +3769,7 @@ async function buildAaveSupplyTurn(
   }
   trace({ type: 'status', label: `guard verified every step — ${guard.steps.length === 2 ? 'approve → supply' : 'supply'} card built, awaiting signature` })
 
-  // 4) The spend-policy gate at the point of signing, and the money-moved
+  // 4) The kill-switch gate at the point of signing, and the money-moved
   //    value (guardrails.valueUsd — the headline-metric contract).
   const valueUsd = picked.priceUsd !== null ? Number(params.amount) * picked.priceUsd : null
   const { guardrails, blocked } = await aavePolicyGate(
@@ -6055,9 +6052,9 @@ async function planWalletPayments(
 ) {
   const plan: PlannedCall[] = []
 
-  // Policy gate at PLAN time: never ask the wallet to sign a payment the
-  // grant forbids. (Until now wallet mode relied purely on the human signing
-  // each payment — the dashboard toggles only gated burner mode. Denials are
+  // Kill-switch gate at PLAN time: never ask the wallet to sign a payment
+  // under a frozen or revoked account. (The spend policy — allowlist, caps —
+  // was retired 2026-10-30; this is the only refusal left. Denials are
   // ledgered so the audit trail shows them.)
   const owner = await getSessionAddress()
   const grant = owner ? await getActiveGrant(owner) : null
@@ -6079,7 +6076,7 @@ async function planWalletPayments(
   for (const ds of dataServers) {
     const dsViolation = await planGate(ds.name, hostOf(ds.endpoint!), Number(ds.priceUsd ?? '0.01'))
     if (dsViolation) {
-      notes.push(`${ds.name} was blocked by your spend policy (${dsViolation}) — manage it on the Dashboard.`)
+      notes.push(`${ds.name} was refused by your account's kill switch (${dsViolation}) — resume the account on the Dashboard.`)
       continue
     }
     const url = new URL(ds.endpoint!)
@@ -6107,7 +6104,7 @@ async function planWalletPayments(
   for (const ds of mcpDataServers) {
     const dsViolation = await planGate(ds.name, hostOf(ds.endpoint!), Number(ds.priceUsd ?? '0.01'))
     if (dsViolation) {
-      notes.push(`${ds.name} was blocked by your spend policy (${dsViolation}) — manage it on the Dashboard.`)
+      notes.push(`${ds.name} was refused by your account's kill switch (${dsViolation}) — resume the account on the Dashboard.`)
       continue
     }
     const reqd = mcpDataRequest(ds)
@@ -6160,7 +6157,7 @@ async function planWalletPayments(
         const { request } = built
         const smartViolation = await planGate(ep.serverName, hostOf(request.url), Number(ep.priceUsd))
         if (smartViolation) {
-          notes.push(`${ep.serverName} was blocked by your spend policy (${smartViolation}) — manage it on the Dashboard.`)
+          notes.push(`${ep.serverName} was refused by your account's kill switch (${smartViolation}) — resume the account on the Dashboard.`)
           continue
         }
         const challenge = await getChallenge(request.url, {
@@ -6202,7 +6199,7 @@ async function planWalletPayments(
   )
   if (infViolation) {
     return NextResponse.json({
-      reply: `🚫 Your spend policy blocked the inference call (${cleanServerName(inference.name)}: ${infViolation}). Adjust it on your **Dashboard** and try again.`,
+      reply: `🚫 Your account's kill switch blocked the inference call (${cleanServerName(inference.name)}: ${infViolation}). Resume the account on your **Dashboard** and try again.`,
       blocked: true,
       notes,
     })
@@ -6484,9 +6481,10 @@ async function runWithBurner(
   // synthesis — ANY MCP's "insufficient funds" can end in chips, not a wall.
   const balanceFailures: { name: string; note: string }[] = []
 
-  // Load the signed-in owner's active spend grant. When one exists, every
-  // burner payment is gated by it (expiry → allowlist → per-call → per-day) and
-  // ledgered; when absent, behavior is unchanged (no enforcement, no ledger).
+  // Load the signed-in owner's active grant. When one exists, every burner
+  // payment is ledgered under it (the dashboard's receipts) and refused only
+  // by its kill switch — the spend policy (allowlist, caps) was retired
+  // 2026-10-30. When absent, nothing is ledgered.
   const owner = await getSessionAddress()
   const grant = owner ? await getActiveGrant(owner) : null
   const policy: GrantPolicy | null = grant ? toPolicy(grant) : null
@@ -6502,7 +6500,7 @@ async function runWithBurner(
       const violation = grantViolation(policy, host, price, spentToday, spentTotal)
       if (violation) {
         await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: 0, ok: false, note: violation })
-        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? ds.slug : undefined })
+        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}` })
         blocked.push(`${ds.name} (${violation})`)
         continue
       }
@@ -6536,7 +6534,7 @@ async function runWithBurner(
       const violation = grantViolation(policy, host, price, spentToday, spentTotal)
       if (violation) {
         await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ds.name, amountUsd: 0, ok: false, note: violation })
-        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? ds.slug : undefined })
+        receipts.push({ name: ds.name, endpoint: host, priceUsd: ds.priceUsd ?? '0.01', ok: false, note: `blocked: ${violation}` })
         blocked.push(`${ds.name} (${violation})`)
         continue
       }
@@ -6620,7 +6618,7 @@ async function runWithBurner(
             const violation = grantViolation(policy, host, price, spentToday, spentTotal)
             if (violation) {
               await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: ep.serverName, amountUsd: 0, ok: false, note: violation })
-              receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? ep.serverSlug : undefined })
+              receipts.push({ name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: `blocked: ${violation}` })
               trace({ type: 'receipt', receipt: { name: ep.serverName, endpoint: host, priceUsd: ep.priceUsd, ok: false, note: `blocked: ${violation}` } })
               blocked.push(`${ep.serverName} (${violation})`)
               continue
@@ -6710,14 +6708,14 @@ async function runWithBurner(
     }
   }
 
-  // Inference is the call that actually answers — if the grant blocks it, stop.
+  // Inference is the call that actually answers — if the kill switch refuses it, stop.
   if (policy && grant) {
     const violation = grantViolation(policy, infHost, infPrice, spentToday, spentTotal)
     if (violation) {
       await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: 0, ok: false, note: violation })
       const also = blocked.length ? ` Also blocked: ${blocked.join(', ')}.` : ''
       return NextResponse.json({
-        reply: `🚫 Your spend grant blocked the inference call (${cleanServerName(inference.name)}: ${violation}).${also} Approve the agent on your **Dashboard** (or raise the caps) and try again.`,
+        reply: `🚫 Your account's kill switch blocked the inference call (${cleanServerName(inference.name)}: ${violation}).${also} Resume the account on your **Dashboard** and try again.`,
         receipts,
         blocked: true,
       })
@@ -6749,11 +6747,11 @@ async function runWithBurner(
     spentToday += settled
   }
 
+  // No "— spend grant …: $x/$y today" footer any more: the expense account
+  // was retired 2026-10-30 (the receipts carry each cost, the dashboard the
+  // total). A kill-switch refusal elsewhere in the turn is still named.
   let reply = text + infoFooter(listedOnly.filter((s) => !smartServed.has(s.slug)), notes)
-  if (grant && policy) {
-    reply += `\n\n— spend grant “${grant.label}”: $${spentToday.toFixed(2)}/$${policy.perDayUsd} today`
-    if (blocked.length) reply += ` · blocked ${blocked.join(', ')}`
-  }
+  if (blocked.length) reply += `\n\n— refused by your account's kill switch: ${blocked.join(', ')}`
   // buildPath 'manual': the vote artifact came from a DIRECTLY-called
   // working-set tool (prepare_vote in the mcpDataServers loop) — no planning.
   return NextResponse.json({
@@ -6938,7 +6936,7 @@ export function streamAutoRouter(
           // Optional paid summary (item 1): the free Snapshot reads gather the
           // facts; Pantessa Claude phrases them conversationally. This is a REAL
           // burner-paid inference call — shown as select → pay → receipt in the
-          // terminal — gated by the spend policy. Free template if unavailable.
+          // terminal — gated by the kill switch. Free template if unavailable.
           const govReceipts: Receipt[] = []
           const synthesize = async (prompt: string): Promise<string | null> => {
             if (!hasAgentWallet()) return null
@@ -6951,7 +6949,7 @@ export function streamAutoRouter(
             const grant = owner ? await getActiveGrant(owner) : null
             if (grant) {
               const v = grantViolation(toPolicy(grant), infHost, infPrice, await spentTodayUsd(grant.id), await spentTotalUsd(grant.id))
-              if (v) { send({ type: 'note', level: 'warn', label: `Skipped the conversational summary — spend policy (${v}).` }); return null }
+              if (v) { send({ type: 'note', level: 'warn', label: `Skipped the conversational summary — account kill switch (${v}).` }); return null }
             }
             send({ type: 'select', service: inference.name, endpoint: inference.endpoint, priceUsd: inference.priceUsd ?? undefined, reason: 'Phrase the Snapshot data conversationally' } satisfies TraceStep)
             send({ type: 'pay', service: inference.name, host: infHost, priceUsd: String(infPrice) })
@@ -7020,9 +7018,10 @@ export function streamAutoRouter(
           return finish()
         }
 
-        // Spend grant (burner): when the owner has an active grant, every
-        // payment is gated + ledgered; absent → no enforcement, no ledger. The
-        // owner is the Bearer key's scope (/api/route) or the SIWE session (chat).
+        // Grant (burner): when the owner has an active grant, every payment is
+        // ledgered under it and refused only by its kill switch (the spend
+        // policy was retired 2026-10-30); absent → no ledger. The owner is the
+        // Bearer key's scope (/api/route) or the SIWE session (chat).
         const owner = ownerOverride ?? (await getSessionAddress())
         const grant = owner ? await getActiveGrant(owner) : null
         const policy: GrantPolicy | null = grant ? toPolicy(grant) : null
@@ -7046,15 +7045,15 @@ export function streamAutoRouter(
           })
 
         // The routing call AND the answer both hit the inference host — if the
-        // grant forbids it, stop before spending a cent.
+        // account is frozen, stop before spending a cent.
         if (policy && grant) {
           const violation = grantViolation(policy, infHost, infPrice, spentToday, spentTotal)
           if (violation) {
             await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: infHost, serviceName: inference.name, amountUsd: 0, ok: false, note: violation })
-            send({ type: 'status', label: `Blocked by your spend policy (${violation}).` } satisfies TraceStep)
+            send({ type: 'status', label: `Refused by your account's kill switch (${violation}).` } satisfies TraceStep)
             send({
               type: 'reply',
-              content: `🚫 Your spend policy blocked ${inference.name} (${violation}). Approve it (or raise the caps) on your **Dashboard** and try again.`,
+              content: `🚫 Your account's kill switch blocked the inference call (${cleanServerName(inference.name)}: ${violation}). Resume the account on your **Dashboard** and try again.`,
               receipts,
               payer: 'the house wallet',
               blocked: true,
@@ -7113,7 +7112,7 @@ export function streamAutoRouter(
             const violation = grantViolation(policy, host, price, spentToday, spentTotal)
             if (violation) {
               await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host, serviceName: pick.serverName, amountUsd: 0, ok: false, note: violation })
-              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? pick.serverSlug : undefined }
+              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: `blocked: ${violation}` }
               receipts.push(r)
               send({ type: 'receipt', receipt: r })
               return { error: `blocked: ${violation}` }
@@ -7213,7 +7212,7 @@ export function streamAutoRouter(
             const host = hostOf(pick.request.url)
             const violation = await planGate(pick.serverName, host, Number(pick.priceUsd))
             if (violation) {
-              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: `blocked: ${violation}`, slug: violation === 'NOT_ALLOWED' ? pick.serverSlug : undefined }
+              const r: Receipt = { name: pick.serverName, endpoint: host, priceUsd: pick.priceUsd, ok: false, note: `blocked: ${violation}` }
               receipts.push(r)
               send({ type: 'receipt', receipt: r })
               continue

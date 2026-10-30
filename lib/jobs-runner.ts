@@ -57,9 +57,10 @@ export function jobsEnv(): string {
   return process.env.VERCEL_ENV ?? 'dev'
 }
 
-/** A guard refusal whose cause is the wallet's own spend policy — carries the
- *  structured block so the failed step can offer the exact fix (allow the
- *  venue host / raise the right cap) instead of a dead-end string. */
+/** A guard refusal whose cause is the account's kill switch (frozen /
+ *  revoked — the spend policy itself was retired 2026-10-30) — carries the
+ *  structured block so the failed step can name it instead of a dead-end
+ *  string. */
 export class PolicyRefusedError extends Error {
   constructor(message: string, public policyBlock: PolicyBlock) {
     super(message)
@@ -70,7 +71,7 @@ export class PolicyRefusedError extends Error {
 const policyBlockOf = (guardrails: unknown): PolicyBlock | undefined =>
   (guardrails as { policyBlock?: PolicyBlock } | null | undefined)?.policyBlock
 
-/** Throw the refusal, structured when the spend policy caused it. */
+/** Throw the refusal, structured when the kill switch caused it. */
 function throwRefusal(reasons: string, guardrails: unknown): never {
   const pb = policyBlockOf(guardrails)
   if (pb) throw new PolicyRefusedError(reasons, pb)

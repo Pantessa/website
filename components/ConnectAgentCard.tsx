@@ -26,7 +26,7 @@ export function agentSnippet(grantId: string, ledgerUrl: string): string {
 const pay = yeetful({
   wallet, // a viem WalletClient (small funded burner)
   grant: {
-    id: '${grantId}', // your expense account
+    id: '${grantId}', // your grant — the ledger your receipts sync to
     allow: ['tripadvisor.x402.paysponge.com'], // hosts this agent may pay
     perCallUsd: 0.05,
     perDayUsd: 5,
@@ -90,7 +90,7 @@ export default function ConnectAgentCard({
           code snippet below is a papercut. */}
       <div className="mt-3 flex items-center gap-x-2 gap-y-1 flex-wrap">
         <span className="text-[length:var(--fs-xs)] text-[color:var(--muted-2)]">
-          Your expense account · <code className="mono">YEETFUL_GRANT_ID</code>
+          Your grant id · <code className="mono">YEETFUL_GRANT_ID</code>
         </span>
         <button
           onClick={copyId}

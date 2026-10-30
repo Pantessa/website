@@ -374,6 +374,10 @@ model SpendGrant {
   label        String  @default("Agent expense account")
 
   /// Exact hostnames this grant may pay (e.g. "tripadvisor.x402.paysponge.com").
+  /// RETIRED AS A GATE 2026-10-30 — with the caps and expiry below, no path
+  /// Pantessa runs consults it any more (lib/spend-grant refuses only on the
+  /// kill switch). Kept for the open-core SDK's in-process policy and for
+  /// historical rows.
   allow String[]
 
   /// Hosts the owner allowed DIRECTLY (e.g. a native venue's policy host from
@@ -397,12 +401,10 @@ model SpendGrant {
   /// too. Toggled SIWE-only (owner / org admin).
   paused    Boolean  @default(false) @map("paused")
 
-  /// Master power switch for the spend policy. Default OFF so a new user's
-  /// first run is unrestricted (the policy is otherwise a big trial blocker).
-  /// When false, checkGrant() short-circuits — no allowlist, no caps, any host.
-  /// Independent of `paused` and of the per-agent approval rows (flipping this
-  /// never mutates agent_approvals, so a curated allowlist survives a toggle).
-  /// Existing grants are backfilled to true to preserve current behavior.
+  /// Master power switch for the spend policy — RETIRED 2026-10-30: the
+  /// website's gate ignores it (nothing is capped or allowlisted any more,
+  /// whatever this says). Still writable through PATCH /api/grants/:id and
+  /// reported by /api/agent/policy for the open-core SDK's own policy.
   spendPolicyEnabled Boolean @default(false) @map("spend_policy_enabled")
 
   /// EIP-712 signature of the grant terms. Null while grants are SIWE-session

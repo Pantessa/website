@@ -5,22 +5,17 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
 export interface Stats {
+  /** The scope's active grant — the ledger home for its receipts and the
+   *  kill switch. The caps, allowlist, policy switch and on-chain backing
+   *  left with the expense account (retired 2026-10-30). */
   grant: {
     id: string
     label: string
-    perCallUsd: number
-    perDayUsd: number
-    allowCount: number
     expiresAt: string
+    /** Kill switch — a frozen account refuses every payment and build. */
     paused: boolean
-    /** Master power switch — when false the spend policy is off (unrestricted). */
-    spendPolicyEnabled: boolean
-    /** True when a Coinbase Spend Permission caps this account on-chain. */
-    backedOnChain: boolean
-    spendPermissionNetwork: string | null
     spentTodayUsd: number
     spentTotalUsd: number
-    remainingTodayUsd: number
   } | null
   kpis: {
     spentTotalUsd: number

@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       note: `blocked: ${violation} (cow submit)`,
     })
     return NextResponse.json(
-      { error: `Refused by your spend policy at submission: ${violation}.` },
+      { error: `Refused by your account's kill switch at submission: ${violation}.` },
       { status: 403 },
     )
   }

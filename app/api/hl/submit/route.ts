@@ -237,7 +237,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Refused at submit: ${bad.join(' ')}` }, { status: 403 })
   }
 
-  // 3 — spend policy + kill switch, at the point of submission.
+  // 3 — the kill switch, at the point of submission (the spend policy was
+  //     retired 2026-10-30; policyCheck refuses only frozen / revoked now).
   const grant = await getActiveGrant(from.toLowerCase())
   if (grant?.paused) {
     await recordLedger({ grantId: grant.id, host: HL_EXEC_POLICY_HOST, amountUsd: 0, ok: false, note: 'blocked: ACCOUNT_FROZEN (hl submit)', orgId: grant.orgId ?? undefined })
@@ -248,7 +249,7 @@ export async function POST(req: NextRequest) {
     const { violation } = policyCheck(guard.valueUsd, toPolicy(grant), spent, HL_EXEC_POLICY_HOST)
     if (violation) {
       await recordLedger({ grantId: grant.id, host: HL_EXEC_POLICY_HOST, amountUsd: 0, ok: false, note: `blocked: ${violation} (hl submit)`, orgId: grant.orgId ?? undefined })
-      return NextResponse.json({ error: `Blocked by your spend policy: ${violation}.` }, { status: 403 })
+      return NextResponse.json({ error: `Refused by your account's kill switch: ${violation}.` }, { status: 403 })
     }
   }
 

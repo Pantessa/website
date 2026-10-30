@@ -3,8 +3,8 @@
 **The transaction layer is the product, and the guardrails are the moat.** An
 agent — ours or anyone's — never writes calldata. Every artifact a user is
 asked to sign was built deterministically by Yeetful's own venue layer,
-re-verified byte-by-byte against what the user asked for, and gated by their
-spend policy. When any of that fails, Yeetful refuses. A refusal is a
+re-verified byte-by-byte against what the user asked for, and refused outright
+while their account's kill switch is on. When any of that fails, Yeetful refuses. A refusal is a
 first-class outcome: it names the reason, it's ledgered, and nothing signable
 leaves the server.
 
@@ -106,28 +106,29 @@ client-suppliable; every rebuild re-runs the full guard set plus an
 **Tested:** `validUntil` propagation, 1-step chains with refresh recipes,
 refresh param validation, junk-`validUntil` rejection.
 
-### 4. Spend policy is direction-aware — and the kill switch always wins
+### 4. The spend policy is retired — only the kill switch refuses
 
-- **Outflows** run the full gate: allowlist, per-call cap, daily/lifetime
-  budgets, expiry, kill switches (`policyCheck`, `lib/tx-guardrails.ts`).
-- **Inflows are never spend-gated.** A $1,800 sale is not a $200 "spend" —
-  only kill switches survive direction (`policyCheckInflow`, PR #469).
-- **Your own signature is the consent.** Caps govern what agents may spend
-  *without you*; a build you sign per-action is exempt from the caps
-  (`selfSigned`, PR #474) — but **never** from the allowlist, expiry, or the
-  kill switches. Frozen/revoked refuses everything, both directions, and is
-  checked *before* the caps so the exemption can never mask it
-  (`lib/spend-grant.ts` ordering).
-- Autonomous paths (house-paid x402 calls, the HL Guardian's delegated key,
-  planner tool spends) never set `selfSigned` — they get the raw gate
-  (`app/api/chat/route.ts`, `lib/hl-guardian.ts`).
-- Every builder loads the live grant server-side; as of 2026-07-20 that
-  includes the LiFi funding bridge (`lib/lifi-bridge.ts`), which previously
-  had no kill-switch check.
+- **Retired 2026-10-30.** The expense account's allowlist, per-call cap,
+  daily/lifetime budgets, expiry and master switch no longer gate anything
+  Yeetful runs (`checkGrant`, `lib/spend-grant.ts`; `policyCheck`,
+  `lib/tx-guardrails.ts`). A $3 send walled behind "approve the agent on
+  your dashboard" was friction, not protection: nothing that moves a user's
+  money leaves the server unsigned, and the signature is the consent.
+- **The kill switch always wins.** A frozen (`paused`) or revoked grant
+  refuses everything — both directions, self-signed or autonomous, on every
+  build path and every submit relay. It is the only refusal the gate returns
+  (`ACCOUNT_FROZEN`, `REVOKED`), plus `POLICY_ERROR` when the gate itself
+  cannot run (fail-closed, unchanged).
+- **Inflows were never spend-gated** and still aren't (`policyCheckInflow`).
+- Every builder still loads the live grant server-side — for the kill switch
+  and the ledger — and every refusal is still ledgered.
+- The open-core SDK (`guard-sdk/`) keeps its own in-process grant for agents
+  paying from their own wallet. That is the operator's configuration, not a
+  Yeetful gate; `GET /api/agent/policy` still serves it.
 
-**Tested:** inflow gate (proceeds pass, frozen/revoked refuse), self-signed
-exemption boundaries (caps yes; allowlist/frozen/revoked/`POLICY_ERROR` no),
-frozen-over-caps precedence, wildcard-allowlist semantics.
+**Tested:** the retired allowlist/caps/expiry never refuse; frozen/revoked
+refuse on every path (self-signed included); `POLICY_ERROR` fail-closed;
+inflow gate; the structured `policyBlock` on a kill-switch refusal.
 
 ### 5. Submit relays re-gate on the server — the client can't skip the checks
 
