@@ -139,6 +139,13 @@ button.bf__chip:hover { border-color: var(--line-2, var(--fg)); }
   .bf__heat { inset: 76px 8px 60px; --hc: 11px; justify-content: flex-start; }
 }
 
+/* Under the candles: the year of positioning (left) and Dune's executions for
+   the symbol (right, components/markets/chart/ExecutionsStrip.tsx) share a row at
+   desktop width; a phone stacks them. */
+.poshet-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; margin-top: 6px; }
+@media (max-width: 900px) { .poshet-row { grid-template-columns: minmax(0, 1fr); } }
+.poshet-row > .poshet { min-width: 0; }
+
 /* The strip under the candles: a year of positioning. */
 .poshet { position: relative; display: grid; gap: 6px; }
 .poshet__head { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 4px 2px; text-align: left; }

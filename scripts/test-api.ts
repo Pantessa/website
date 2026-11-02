@@ -372,6 +372,7 @@ import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
 import { venueManifestLivePins, venueManifestPins } from './venue-manifest-pins'
+import { execStripLivePins, execStripPins } from './exec-strip-pins'
 import { printAlertPins } from './print-alert-pins'
 import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
@@ -35133,6 +35134,9 @@ async function main() {
   // The venue manifest (2026-11-02): pinned contracts, selectors, guards and bounds per venue, read from the builders' own constants; the served route + page agree.
   venueManifestPins(check)
   await venueManifestLivePins(check, BASE)
+  // The executions strip (2026-11-02): Dune's live fills for the symbol on screen, beside positioning, off the chart's one relay stream; the served page carries it for a covered and an uncovered market.
+  execStripPins(check)
+  await execStripLivePins(check, BASE)
   // The /live trigger rules armed on the server (2026-10-13): the body reader, the evaluation over consumed fills, the cursor policy, the notification, the wiring.
   printAlertPins(check)
   // The battle views on /live (2026-10-06): windows and anchors, the percent track, the range, units, bursts, rank, the picker, the projections.

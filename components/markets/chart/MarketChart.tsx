@@ -70,6 +70,7 @@ import ChartLegend from './ChartLegend'
 import { awayFromLive, chartKey, markPlusHintSeen, plusHintSeen, tidyPrice, zoomedFrom } from '@/lib/chart-legend'
 import FrontBoard from './FrontBoard'
 import PositionHeat from './PositionHeat'
+import ExecutionsStrip from './ExecutionsStrip'
 import TheWall, { marginBarsFor, type WallStatus } from './TheWall'
 import { parseBoardParam, parseViewParam, syncViewParam, type BoardMode, type ChartView } from '@/lib/markets'
 import { hasPerpCold } from '@/lib/symbol-venues'
@@ -966,6 +967,9 @@ export default function MarketChart({
   // The Depth chart and the Tape take the prints off the chart's one relay stream.
   const depthPrintRef = useRef<((fills: readonly TapeFill[]) => void) | null>(null)
   const tapePrintRef = useRef<((fills: readonly TapeFill[]) => void) | null>(null)
+  // The executions strip beside positioning (2026-11-02) takes the same prints.
+  const stripPrintRef = useRef<((fills: readonly TapeFill[]) => void) | null>(null)
+  const stripOn = battlefield && !altOn
   const switchView = useCallback((next: ChartView) => {
     if (next !== 'candles') {
       setTool('none')
@@ -1096,7 +1100,7 @@ export default function MarketChart({
   useEffect(() => {
     // The Depth view and the Tape want the prints on every frame (they land
     // on the book / as rows, not on a bar); the candles only on a live frame.
-    if (!liveFeed || !(tailIsLive(tf, liveFeed) || depthOn || tapeOn)) {
+    if (!liveFeed || !(tailIsLive(tf, liveFeed) || depthOn || tapeOn || stripOn)) {
       setTailStatus('idle')
       return
     }
@@ -1107,6 +1111,8 @@ export default function MarketChart({
     const handle = openDuneTape(liveFeed.markets, {
       onStatus: (s) => setTailStatus(s),
       onBackfill: (fills) => {
+        // The strip opens on what the relay already held (newest first, capped).
+        stripPrintRef.current?.(fills)
         if (!print) return
         // One backfill per venue: merge them (each used to REPLACE the last,
         // so only the final venue's minutes survived), never a print twice.
@@ -1118,6 +1124,7 @@ export default function MarketChart({
       onFills: (batch) => {
         depthPrintRef.current?.(batch)
         tapePrintRef.current?.(batch)
+        stripPrintRef.current?.(batch)
         if (!tailLive) return
         if (print) {
           const floor = Date.now() - PRINT_KEEP_MS
@@ -1149,7 +1156,7 @@ export default function MarketChart({
         if (!printLineRef.current) printLineRef.current = cs.createPriceLine({ price: last, color: alpha(tokens.accent, 0.9), lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'print' })
         else printLineRef.current.applyOptions({ price: last })
       },
-    }, { venues: liveFeed.venues, filter: true, backfill: print })
+    }, { venues: liveFeed.venues, filter: true, backfill: print || stripOn })
     return () => {
       handle.close()
       const cs = candleRef.current
@@ -1163,7 +1170,7 @@ export default function MarketChart({
       printLineRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveFeed, tf, tokens, symbol, depthOn, tapeOn])
+  }, [liveFeed, tf, tokens, symbol, depthOn, tapeOn, stripOn])
 
   // Compare: a second symbol's candles at the chart's frame, drawn as a line
   // on the LEFT scale in percentage mode (indexed to the first bar on screen).
@@ -1887,7 +1894,13 @@ export default function MarketChart({
         </p>
       )}
       {/* A year of positioning under the candles (the symbol page; coins and perps). */}
-      {battlefield && !altOn && <PositionHeat symbol={pair.symbol} pair={pair} mark={last} />}
+      {battlefield && !altOn && (
+        <div className="poshet-row">
+          <PositionHeat symbol={pair.symbol} pair={pair} mark={last} />
+          {/* Dune's executions for this symbol, off the chart's one relay stream (2026-11-02). */}
+          <ExecutionsStrip symbol={pair.symbol} pair={pair} feed={liveFeed} printSink={stripPrintRef} printStatus={liveFeed ? tailStatus : null} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} />
+        </div>
+      )}
 
       {/* Your fills — the glyphs on the bars; the receipt words + explorer link live here. */}
       {fills && fills.length > 0 && pair && (

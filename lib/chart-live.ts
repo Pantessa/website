@@ -50,6 +50,10 @@ const DEX_PRINTS: Readonly<Record<string, readonly string[]>> = {
 
 const DEX_VENUES: DuneVenueId[] = ['dex-ethereum', 'dex-base', 'dex-arbitrum']
 
+/** The chart symbols Dune's spot trial prints (the keys above, in order) — so a
+ *  surface can SAY what is covered when the symbol on screen is not. */
+export const DEX_PRINT_SYMBOLS: readonly string[] = Object.keys(DEX_PRINTS)
+
 export function chartLiveFeed(pair: Pick<ChartPair, 'symbol' | 'source' | 'pair'> | null): ChartLiveFeed | null {
   if (!pair) return null
   if (pair.source === 'hyperliquid') return { venues: ['hypercore'], markets: [pair.pair], label: 'Hyperliquid prints' }
