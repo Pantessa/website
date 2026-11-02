@@ -127,6 +127,14 @@ export default async function AgentRecordPage({ params }: Params) {
           <Stat label="Intents" value={String(rec.intents)} sub="brokered" />
           <Stat label="Handoffs" value={String(rec.handoffs)} sub="sign links minted" />
         </div>
+        {rec.bornFrom.dune > 0 ? (
+          // PROVENANCE (lib/broker-origin): the agent said what it read before it
+          // asked. Its own claim, counted here — lettered, never verified.
+          <p className="mt-3 mono text-[11px] text-[color:var(--muted-2)]" data-born-from="dune">
+            {rec.bornFrom.dune} of these intents {rec.bornFrom.dune === 1 ? 'was' : 'were'} born from a Dune read — the agent named the query it read before it asked.
+            {rec.signedBornFrom.dune > 0 ? ` ${rec.signedBornFrom.dune} of those ${rec.signedBornFrom.dune === 1 ? 'was' : 'were'} signed.` : ''}
+          </p>
+        ) : null}
 
         {rec.signedTurns === 0 ? (
           <p className="mt-6 text-[length:var(--fs-md)] text-[color:var(--muted)]">

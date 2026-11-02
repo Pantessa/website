@@ -37,7 +37,7 @@ export async function readDeskRows(since: Date): Promise<DeskRead> {
       where: { createdAt: { gte: since } },
       orderBy: { createdAt: 'desc' },
       take: DESK_ROW_CAP + 1,
-      select: { id: true, ask: true, wallet: true, agent: true, agentKeyHash: true, isInternal: true, state: true, plan: true, linkSlug: true, jobId: true, createdAt: true, updatedAt: true },
+      select: { id: true, ask: true, wallet: true, agent: true, agentKeyHash: true, isInternal: true, state: true, plan: true, origin: true, linkSlug: true, jobId: true, createdAt: true, updatedAt: true },
     }),
     [] as DeskIntentRaw[],
   )

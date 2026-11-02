@@ -238,6 +238,7 @@ function DeskRow({ row, open, onToggle }: { row: DeskLogRow; open: boolean; onTo
           </span>
         </div>
         <p className="mt-1.5 text-[13px] text-white break-words pl-6">{row.ask}</p>
+        {row.provenance && <p className="mt-1 text-[11px] mono text-[color:var(--muted-2)] pl-6" data-provenance="">{row.provenance}</p>}
         <p className="mt-1 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] mono text-[color:var(--muted-2)] pl-6">
           {row.wallet && <span title={row.wallet}>{short(row.wallet)}</span>}
           {row.legs.total > 0 && (

@@ -52,6 +52,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createMcpHandler } from 'mcp-handler'
 import { z } from 'zod'
 import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent, tileIntent, sendToInbox } from '@/lib/broker-exec'
+import { ORIGIN_FEEDS, ORIGIN_TEXT_MAX } from '@/lib/broker-origin'
 import { deskNext, deskDone, chooseWithHistory, assertCloseAllowed } from '@/lib/desk-drive'
 import { clientIpFrom, bumpAndCheckBrokerCall } from '@/lib/turn-limits'
 import { pricingBlock } from '@/lib/broker-pricing'
@@ -98,7 +99,28 @@ const CAPABILITIES = [
   'Cross-chain moves (NEAR Intents), Robinhood Chain bridging, Aave, Lido staking, NFT transfers + Seaport listings, Snapshot votes',
   'SIGN IT YOURSELF: if YOUR wallet holds the money and the key, broker_execute compiles the ask into a sequenced job and broker_next / broker_done drive it leg by leg — the desk builds and guards each leg, you sign it with your own key, and it answers with the next one. Round-trip across every settlement boundary, batched within one.',
   'FIND WORK: GET /api/roster/feed lists open mandate slots humans posted (kind, mandate sentence, cap — never their wallet). broker_open with slot_token courts a listing; getting HIRED (their signature) makes your future opens auto-address to their inbox.',
+  'SAY WHERE IT WAS BORN: broker_open and broker_send take origin { feed: dune | hyperliquid | other, ref, market, surface } — the query or feed row you read before asking. Stored on the intent, echoed by broker_status, shown on the sign link ("Born from Dune · query 5551234") and counted on your track record. It is your claim: it never routes, prices or authorizes anything.',
 ]
+
+/** PROVENANCE (lib/broker-origin): the shape broker_open / broker_send accept. Max
+ *  lengths refuse HERE; the pure cleaner behind the door strips the rest. */
+const ORIGIN_SCHEMA = z
+  .object({
+    feed: z.enum(ORIGIN_FEEDS).describe('Who you read: dune, hyperliquid, or other (name it in surface).'),
+    ref: z
+      .string()
+      .max(ORIGIN_TEXT_MAX)
+      .optional()
+      .describe('What you read: a Dune query id, an execution id or a dashboard URL, a feed row. Never a hash, calldata or a signature — those are refused.'),
+    market: z.string().max(ORIGIN_TEXT_MAX).optional().describe('The market the read was about, e.g. "USDC/WETH on Base".'),
+    surface: z.string().max(ORIGIN_TEXT_MAX).optional().describe('Where you saw it: a client, a page, a dashboard name.'),
+  })
+  .optional()
+  .describe(
+    'PROVENANCE — where this intent was born: the Dune query (or feed row) you read before asking. Stored on the intent, echoed by every ' +
+      'desk answer and by broker_status, shown on the sign link as "Born from Dune · query 5551234" and counted on your track record. ' +
+      'It is your claim: printable text only, each field at most 120 characters. It never routes, prices or authorizes anything.',
+  )
 
 /** The leg shapes broker_next serves, one line each — an agent should be able
  *  to write its signer from the capability call alone. */
@@ -201,10 +223,11 @@ const handler = createMcpHandler(
                 'wallet (the feed never carries addresses) and the open proceeds through every normal gate. ' +
                 'Pass ONE target: slot_token or wallet, not both.',
             ),
+          origin: ORIGIN_SCHEMA,
         },
       },
-      async ({ ask, wallet, agent, agent_key, callback_url, slot_token }, extra) =>
-        guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key, callbackUrl: callback_url, slotToken: slot_token }, callOpts(extra))),
+      async ({ ask, wallet, agent, agent_key, callback_url, slot_token, origin }, extra) =>
+        guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key, callbackUrl: callback_url, slotToken: slot_token, origin }, callOpts(extra))),
     )
 
     server.registerTool(
@@ -369,10 +392,11 @@ const handler = createMcpHandler(
           sender_label: z.string().max(60).optional().describe('Who it is from — shown in the recipient’s inbox (e.g. your agent or app name).'),
           agent: z.string().max(40).optional().describe('Your agent name, the byline on the link.'),
           agent_key: z.string().min(6).max(80).optional().describe('Your desk identity — attributes this send to your track record.'),
+          origin: ORIGIN_SCHEMA,
         },
       },
-      async ({ ask, recipient, sender_label, agent, agent_key }, extra) =>
-        guarded(() => sendToInbox({ ask, recipient, senderLabel: sender_label, agent, agentKey: agent_key }, callOpts(extra))),
+      async ({ ask, recipient, sender_label, agent, agent_key, origin }, extra) =>
+        guarded(() => sendToInbox({ ask, recipient, senderLabel: sender_label, agent, agentKey: agent_key, origin }, callOpts(extra))),
     )
 
     server.registerTool(
@@ -409,7 +433,7 @@ const handler = createMcpHandler(
         title: 'Did my human sign?',
         description:
           'The feedback loop: server-truth funnel for the sign link (opened → connected → built → signed → settled, with signed USD from ' +
-          'guardrail-priced turns). Poll after handoff; states only move forward.',
+          'guardrail-priced turns). Poll after handoff; states only move forward. Echoes the intent\u2019s origin (provenance) when one was given at open.',
         inputSchema: { intent_id: z.string().min(4).max(24) },
       },
       async ({ intent_id }) => guarded(() => intentStatus(intent_id)),

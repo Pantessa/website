@@ -178,6 +178,7 @@ import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
 import { chainIdOfTurn, CHAT_EXPECTATION_SLUG, COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedReceiptClass, expectedTurnClass, extractTxHash } from '../lib/link-receipt-verify'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
+import { cleanOrigin, cleanOriginText, originLine, readOrigin, ORIGIN_TEXT_MAX } from '../lib/broker-origin'
 import { brandFromRow, isDeniedBrandHost, isDeniedBrandName, THIRD_PARTY_BRAND_HOSTS } from '../lib/brand-denylist'
 import { fenceToolOutput, hasFencedToolOutput, toolOutputNonce, toolOutputRule } from '../lib/tool-output-fence'
 import { guardWarnLines } from '../lib/content-origin'
@@ -5356,6 +5357,44 @@ async function main() {
         cleanAgentKey('a') === null && // too short
         cleanAgentKey('desk-key-123') === 'desk-key-123' &&
         cleanAgentKey('bad key!!') === 'badkey'
+      )
+    })(),
+  )
+  // PROVENANCE (2026-11-02): the origin door is pure and bounded — the words a
+  // partner's query becomes on the sign link are pinned here, never guessed.
+  check(
+    'broker origin: the door cleans and bounds (control/format chars out, whitespace collapsed, cut at 120), refuses tx material and an unknown feed by name, and words the line',
+    (() => {
+      const long = 'x'.repeat(ORIGIN_TEXT_MAX + 40)
+      const o = cleanOrigin({ feed: 'dune', ref: ' 5551234\u0007 ', market: 'USDC/WETH\n\n  on Base', surface: long })
+      let hexRefused = false
+      try {
+        cleanOrigin({ feed: 'dune', ref: '0x' + 'ab'.repeat(40) })
+      } catch (e) {
+        hexRefused = /transaction material/.test(String(e))
+      }
+      let feedRefused = false
+      try {
+        cleanOrigin({ feed: 'binance' })
+      } catch (e) {
+        feedRefused = /origin\.feed/.test(String(e))
+      }
+      return (
+        !!o &&
+        o.ref === '5551234' &&
+        o.market === 'USDC/WETH on Base' &&
+        o.surface?.length === ORIGIN_TEXT_MAX &&
+        originLine(o) === 'Born from Dune · query 5551234 · USDC/WETH on Base' &&
+        hexRefused &&
+        feedRefused &&
+        cleanOrigin(undefined) === null &&
+        cleanOrigin('') === null &&
+        readOrigin('garbage') === null &&
+        readOrigin({ feed: 'dune', ref: '0x' + 'ab'.repeat(40) }) === null &&
+        originLine({ feed: 'other', surface: 'the chart' }) === 'Born from the chart' &&
+        originLine({ feed: 'hyperliquid', ref: 'HYPE', market: 'HYPE perp' }) === 'Born from Hyperliquid · HYPE · HYPE perp' &&
+        originLine({ feed: 'dune', ref: '01JG2A3B4C5D6E7F8G9H0J1K2M' }) === 'Born from Dune · execution 01JG2A3B4C5D6E7F8G9H0J1K2M' &&
+        cleanOriginText('\u200b  a  b \u0000') === 'a b'
       )
     })(),
   )
@@ -32561,6 +32600,38 @@ async function main() {
       else {
         const dIntent = String(dOpen.payload?.intentId ?? '')
         check('desk fixture: the desk opened an internal intent for the harness agent', !dOpen.isError && /^[A-Za-z0-9_-]{6,}$/.test(dIntent), dOpen.text.slice(0, 160))
+        // PROVENANCE (2026-11-02): an intent remembers where it was born. Human lane,
+        // internal-marked: open with origin → handoff + status echo it → the sign link
+        // says it; the door refuses tx material by name and an over-long field (zod).
+        {
+          check('desk origin: an open without origin carries none (unchanged)', !('origin' in (dOpen.payload ?? {})))
+          const dOrg = { feed: 'dune', ref: '5551234', market: 'USDC/WETH on Base', surface: 'harness' }
+          const dOpenO = await dCall('broker_open', { ask: 'Swap $5 of USDC to ETH on Base', agent: 'UI harness agent', origin: { ...dOrg, market: `  ${dOrg.market}\u0007  ` } })
+          const dIntO = String(dOpenO.payload?.intentId ?? '')
+          check('desk origin: broker_open stores the claimed origin — printable, trimmed — and echoes it', !dOpenO.isError && JSON.stringify(dOpenO.payload?.origin) === JSON.stringify(dOrg), dOpenO.text.slice(0, 200))
+          const dHandO = await dCall('broker_handoff', { intent_id: dIntO })
+          const dStatO = await dCall('broker_status', { intent_id: dIntO })
+          check('desk origin: handoff and status echo the same origin', !dHandO.isError && !dStatO.isError && JSON.stringify(dHandO.payload?.origin) === JSON.stringify(dOrg) && JSON.stringify(dStatO.payload?.origin) === JSON.stringify(dOrg), `${dHandO.text.slice(0, 120)} | ${dStatO.text.slice(0, 120)}`)
+          const dSlugO = String(dHandO.payload?.url ?? '').split('/i/')[1] ?? ''
+          const dPageO = dSlugO ? flat(await (await fetch(`${BASE}/i/${dSlugO}`)).text()) : ''
+          check('desk origin: the sign link says where it was born, lettered ("Born from Dune · query 5551234 · USDC/WETH on Base")', /data-provenance=""[^>]*>Born from Dune · query 5551234 · USDC\/WETH on Base</.test(dPageO), dSlugO || 'no slug')
+          // The sign side (stretch): a signed beacon through the desk-minted link inherits
+          // the feed SERVER-side (embed_turns.origin_feed) — the joint number's second half.
+          const dBeacon = await fetch(`${BASE}/api/embed/telemetry`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ firstParty: true, sessionId: `fixture-origin-${Date.now()}`, page: `${BASE}/i/${dSlugO}`, outcome: 'signed', artifact: 'tx', valueUsd: 1, intentLinkSlug: dSlugO, walletAddress: dAcct.address, internalRun: true }),
+          }).then((r) => r.status)
+          const dStamped = dSlugO ? await prisma.embedTurn.findFirst({ where: { intentLinkSlug: dSlugO, outcome: 'signed' }, orderBy: { createdAt: 'desc' }, select: { originFeed: true, isInternal: true } }) : null
+          check('desk origin (sign side): a signed beacon through the desk-minted link is stamped origin_feed=dune from the bound intent, server-side', dBeacon === 200 && dStamped?.originFeed === 'dune' && dStamped.isInternal === true, JSON.stringify({ dBeacon, dStamped }))
+          const dBadO = await dCall('broker_open', { ask: 'Swap $5 of USDC to ETH on Base', origin: { feed: 'dune', ref: '0x' + 'ab'.repeat(40) } })
+          check('desk origin: a ref carrying tx material is refused by name', dBadO.isError && /origin\.ref/.test(dBadO.text) && /transaction material/.test(dBadO.text), dBadO.text.slice(0, 160))
+          const dLongO = await dCall('broker_open', { ask: 'Swap $5 of USDC to ETH on Base', origin: { feed: 'other', surface: 'x'.repeat(ORIGIN_TEXT_MAX + 1) } })
+          check('desk origin: an over-long field is refused at the MCP door (zod max 120)', dLongO.isError, dLongO.text.slice(0, 120))
+          const dFeedO = await dCall('broker_open', { ask: 'Swap $5 of USDC to ETH on Base', origin: { feed: 'binance', ref: '1' } })
+          check('desk origin: an unknown feed is refused', dFeedO.isError, dFeedO.text.slice(0, 120))
+          await dCall('broker_close', { intent_id: dIntO })
+        }
         const dIssuedAt = new Date().toISOString() // round 2 (DRIVE): the consent names the instant it was signed
         const consent = ['Pantessa agent desk — execute consent', `Intent: ${dIntent}`, `Wallet: ${dAcct.address.toLowerCase()}`, `Issued at: ${dIssuedAt}`, "Signing lets the desk compile this intent into a job owned by this wallet. It moves nothing by itself; every leg still needs this wallet's own signature."].join('\n')
         const dExec = await dCall('broker_execute', { intent_id: dIntent, wallet_signature: await dAcct.signMessage({ message: consent }), issued_at: dIssuedAt, agent_key: 'ui-harness-desk-key' })
