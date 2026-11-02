@@ -30,13 +30,29 @@ import type { TapeEffect, TapeFill, TapeSide, TapeVenue } from '@/lib/tape'
 
 // ── The key ──────────────────────────────────────────────────────────────────
 
-/** The feed credential. `DUNE_API_KEY` (the older Analytics key) is NOT a
- *  feed key — probed 2026-10-13: the perp endpoint refuses it (close 1006)
- *  exactly as it refuses no key — so the feed never falls back to it. */
+/** The feed credential. Dune hands out two kinds of key and the feed takes
+ *  exactly one: `DUNE_BETA_API_KEY` (the real-time feeds; not public). The
+ *  query key (`DUNE_WRITE_KEY`, below) and the retired `DUNE_API_KEY` are
+ *  Analytics/MCP keys — probed 2026-10-13: the perp endpoint refuses them
+ *  (close 1006) exactly as it refuses no key — so the feed never falls back
+ *  to either. */
 export const DUNE_FEED_KEY_ENV = 'DUNE_BETA_API_KEY'
 
 export function duneFeedKey(env: Record<string, string | undefined> = process.env): string | null {
   const k = env[DUNE_FEED_KEY_ENV]?.trim()
+  return k ? k : null
+}
+
+/** The query credential (2026-11-02): `DUNE_WRITE_KEY` opens the Analytics
+ *  API and Dune's MCP server (`https://api.dune.com/mcp/v1`, header
+ *  `x-dune-api-key`) — saved queries, executions, results, charts. It
+ *  replaces `DUNE_API_KEY`, whose account went view-only when Dune ended free
+ *  query execution (2026-09-10): nothing reads the old name any more and
+ *  there is no fallback to it. Not a feed key (see above). */
+export const DUNE_QUERY_KEY_ENV = 'DUNE_WRITE_KEY'
+
+export function duneQueryKey(env: Record<string, string | undefined> = process.env): string | null {
+  const k = env[DUNE_QUERY_KEY_ENV]?.trim()
   return k ? k : null
 }
 
