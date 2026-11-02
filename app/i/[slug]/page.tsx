@@ -8,6 +8,7 @@ import LinkRetired from '@/components/LinkRetired'
 import { outboundHoldCopy, outboundToThirdParty } from '@/lib/content-origin'
 import { COUNTED_TURN_WHERE } from '@/lib/value-origin'
 import { notifyEligible } from '@/lib/broker-webhook'
+import { originLine, readOrigin } from '@/lib/broker-origin'
 import { MANDATE_KIND_LABELS, type MandateKind } from '@/lib/roster-client'
 import IntentRuntime from '@/components/IntentRuntime'
 import { getSessionAddress } from '@/lib/auth'
@@ -83,13 +84,17 @@ async function getNotify(link: { id: string; senderLabel: string | null; agent: 
   try {
     const intent = await prisma.brokerIntent.findFirst({
       where: { linkSlug: link.id },
-      select: { callbackUrl: true, agent: true, isInternal: true },
+      select: { callbackUrl: true, agent: true, isInternal: true, origin: true },
     })
     const label = link.senderLabel ?? intent?.agent ?? link.agent
     if (!intent && !link.senderLabel) return null
+    // PROVENANCE (lib/broker-origin): the agent's own claim of what it read
+    // before it asked — worded for the page, never a link, never a factor.
+    const origin = readOrigin(intent?.origin)
+    const provenance = origin ? originLine(origin) : null
     // Stamped intents never notify (R2) — the push claim rides the same
     // rule as the webhook itself (lib/broker-webhook notifyEligible).
-    return { label: label ?? 'The agent that sent this', push: notifyEligible(intent) }
+    return { label: label ?? 'The agent that sent this', push: notifyEligible(intent), provenance }
   } catch {
     return null
   }
@@ -179,6 +184,7 @@ export default async function IntentLinkPage({ params }: Params) {
       restricted={link.allowWallets.length > 0}
       brand={brand}
       notify={notify}
+      provenance={notify?.provenance ?? null}
       roster={roster}
       recipient={link.recipient ?? null}
       ownLink={ownLink}

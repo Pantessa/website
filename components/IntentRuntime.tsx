@@ -96,6 +96,7 @@ export default function IntentRuntime({
   restricted = false,
   brand = null,
   notify = null,
+  provenance = null,
   roster = null,
   recipient = null,
   ownLink = false,
@@ -126,6 +127,10 @@ export default function IntentRuntime({
    *  this, and whether they're webhook-notified (push) or watching the
    *  status feed. Label + mode only; never a URL. */
   notify?: { label: string; push: boolean } | null
+  /** PROVENANCE (lib/broker-origin): where the agent said this intent was
+   *  born, already worded ("Born from Dune · query 5551234"). Its own claim:
+   *  shown, never a link, never a factor in the build. */
+  provenance?: string | null
   /** THE ROSTER (R2): a proposal from a HIRED agent wears its mandate —
    *  kind label + the canonical (grammar-constrained, DB-stored) mandate
    *  sentence + the cap the wallet's hire consent named. */
@@ -734,6 +739,13 @@ export default function IntentRuntime({
             <div className="mt-6 max-sm:order-3" data-link-share="splash">
               <ShareActions post={intentLinkPost({ slug, ask })} variant="pill" label="Send this link to someone" surface="i-splash" />
             </div>
+          )}
+          {provenance && (
+            // PROVENANCE: the agent's claim of what it read before it asked —
+            // one lettered line (no partner mark exists on file).
+            <p className="mono text-[11px] text-[color:var(--muted-2)] mt-6 max-w-md max-sm:order-4" data-provenance="">
+              {provenance}
+            </p>
           )}
           {hasCreator && (
             // The disclosure badge (C3): the counter-position to undisclosed

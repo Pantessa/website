@@ -33,6 +33,7 @@ import { outboundToThirdParty } from '@/lib/content-origin'
 import { deniedBrandNameReason, isDeniedBrandName } from '@/lib/brand-denylist'
 import { validateCallbackUrl, mintCallbackSecret, deliverWebhook, notifyEligible } from '@/lib/broker-webhook'
 import { agentHandleFor } from '@/lib/agent-record'
+import { cleanOrigin, readOrigin, type BrokerOrigin } from '@/lib/broker-origin'
 import { sendIntent } from '@/lib/inbox'
 import { bindProposalAtOpen, recheckSlotAtBuild, type RosterBadge } from '@/lib/roster-propose'
 import { logRosterRefusalDirect } from '@/lib/roster-observe'
@@ -56,6 +57,9 @@ export interface OpenResult {
   /** Present when the intent is bound to an agent identity — the agent's
    *  public, shareable track record (money moved, signs, first/last seen). */
   recordUrl?: string
+  /** PROVENANCE (lib/broker-origin): where the agent said the intent was born —
+   *  client-claimed, echoed for display and counting only. */
+  origin?: BrokerOrigin
   /** THE ROSTER (R2): present when the presented agent_key hashed to a
    *  HIRED mandate slot — the proposal already auto-addressed to the
    *  employer wallet's inbox as a signable card wearing this badge. */
@@ -91,6 +95,13 @@ const CONTRACT =
   'Sentences in, sentences and sign links out. The desk never returns calldata, typed data, or deposit addresses; ' +
   'the guarded deterministic builders rebuild every action from scratch on the sign side, and the human wallet is the only signer.'
 
+/** The stored origin as a response field (nothing when the row has none or
+ *  it no longer reads as one — provenance never throws on the way out). */
+function originField(raw: unknown): { origin?: BrokerOrigin } {
+  const origin = readOrigin(raw)
+  return origin ? { origin } : {}
+}
+
 /** Open a brokered intent: parse, quote, scan funding when a wallet rides
  *  along, persist, and return the negotiation. */
 export async function openIntent(opts: {
@@ -100,12 +111,17 @@ export async function openIntent(opts: {
   agentKey?: unknown
   callbackUrl?: unknown
   slotToken?: unknown
+  /** PROVENANCE (lib/broker-origin): client-claimed; stored, echoed, counted — never acted on. */
+  origin?: unknown
 }, call?: DeskCallOpts): Promise<OpenResult> {
   assertDeskOpen()
   let wallet = cleanWallet(opts.wallet)
   const agent = cleanAgentName(opts.agent)
   const agentKey = cleanAgentKey(opts.agentKey)
   assertMarksAllowed({ agent }, agentKey)
+  // Provenance is read at the door (a bad shape or tx material is refused by
+  // name) and then only ever stored and echoed.
+  const origin = cleanOrigin(opts.origin)
 
   // WAVE-2 discovery (security T-D1/T-D6): slot_token targets a LISTED open
   // mandate slot from /api/roster/feed. The token resolves server-side to
@@ -200,6 +216,7 @@ export async function openIntent(opts: {
         callbackSecret,
         state: 'handed_off',
         plan: { ...plan, roster: { slotId: binding.slot.id } } as object,
+        ...(origin ? { origin: origin as object } : {}),
         linkSlug: sent.slug,
         rosterSlotId: binding.slot.id,
         isInternal: call?.internal === true,
@@ -212,6 +229,7 @@ export async function openIntent(opts: {
       contract: CONTRACT,
       roster: { slotId: binding.slot.id, badge: binding.badge, url: sent.url, inboxUrl: sent.inboxUrl, recipient: sent.recipient },
       ...(discovery ? { discovery } : {}),
+      ...(origin ? { origin } : {}),
       next: [
         `This desk identity is HIRED for the "${binding.badge.label}" mandate on ${sent.recipient} — the proposal is already in their inbox as a signable card (cap $${binding.badge.capUsd} per proposal).`,
         'Poll broker_status to learn when they sign. Only their own signature moves anything.',
@@ -244,6 +262,7 @@ export async function openIntent(opts: {
       callbackSecret,
       state: 'open',
       plan: plan as object,
+      ...(origin ? { origin: origin as object } : {}),
       isInternal: call?.internal === true,
     },
   })
@@ -254,6 +273,7 @@ export async function openIntent(opts: {
     plan,
     contract: CONTRACT,
     ...(discovery ? { discovery } : {}),
+    ...(origin ? { origin } : {}),
     next: [
       ...(discovery
         ? [
@@ -314,6 +334,7 @@ export async function chooseOption(intentId: string, optionId: string): Promise<
     state: 'open',
     plan,
     contract: CONTRACT,
+    ...originField(row.origin),
     next: ['broker_handoff when the working ask is what your human should sign.'],
   }
   assertNoTxMaterial(out)
@@ -325,6 +346,8 @@ export interface HandoffResult {
   state: BrokerState
   url: string
   ask: string
+  /** PROVENANCE: the origin the intent was opened with, if any. */
+  origin?: BrokerOrigin
   say: string
 }
 
@@ -342,6 +365,7 @@ export async function handoffIntent(intentId: string, call?: DeskCallOpts): Prom
       state: row.state as BrokerState,
       url: `${SITE}/i/${row.linkSlug}`,
       ask: row.ask,
+      ...originField(row.origin),
       say: 'Sign link already minted — hand it to your human, then poll broker_status.',
     }
     assertNoTxMaterial(out)
@@ -373,6 +397,7 @@ export async function handoffIntent(intentId: string, call?: DeskCallOpts): Prom
     state: 'handed_off',
     url: `${SITE}/i/${slug}`,
     ask: row.ask,
+    ...originField(row.origin),
     say:
       'Give this link to your human. They connect their own wallet, Pantessa rebuilds and guard-checks the ask, ' +
       'and only their signature moves anything. Poll broker_status to learn when they sign.',
@@ -478,6 +503,8 @@ export interface StatusResult {
   signedUsd: number
   /** Present on the agent-signed path: per-leg progress from the runner. */
   job?: { id: string; status: string; currentStep: number; legs: { seq: number; kind: string; status: string; title: string }[] }
+  /** PROVENANCE: the origin the intent was opened with, if any — echoed, never acted on. */
+  origin?: BrokerOrigin
   say: string
 }
 
@@ -565,6 +592,7 @@ export async function intentStatus(intentId: string): Promise<StatusResult> {
     funnel,
     signedUsd: Math.round(signedUsd * 100) / 100,
     ...(jobInfo ? { job: jobInfo } : {}),
+    ...originField(row.origin),
     say,
   }
   assertNoTxMaterial(out)
@@ -715,6 +743,8 @@ export interface SendResult {
   recipient: string
   handle?: string
   ask: string
+  /** PROVENANCE: the origin the send was opened with, if any. */
+  origin?: BrokerOrigin
   say: string
 }
 
@@ -729,6 +759,8 @@ export async function sendToInbox(opts: {
   senderLabel?: unknown
   agent?: unknown
   agentKey?: unknown
+  /** PROVENANCE (lib/broker-origin): client-claimed; stored, echoed, counted — never acted on. */
+  origin?: unknown
 }, call?: DeskCallOpts): Promise<SendResult> {
   assertDeskOpen()
   const agent = cleanAgentName(opts.agent)
@@ -738,6 +770,7 @@ export async function sendToInbox(opts: {
   assertSenderIdentity(agentKey)
   const senderLabel = cleanSenderLabel(opts.senderLabel) ?? agent ?? undefined
   assertMarksAllowed({ agent, senderLabel }, agentKey)
+  const origin = cleanOrigin(opts.origin)
 
   const sent = await sendIntent(SITE, {
     ask: typeof opts.ask === 'string' ? opts.ask : '',
@@ -757,6 +790,7 @@ export async function sendToInbox(opts: {
       agentKeyHash: agentKey ? agentHandleFor(agentKey) : null,
       state: 'handed_off',
       plan: { ask: sent.ask, addressed: true } as object,
+      ...(origin ? { origin: origin as object } : {}),
       linkSlug: sent.slug,
       isInternal: call?.internal === true,
     },
@@ -770,6 +804,7 @@ export async function sendToInbox(opts: {
     recipient: sent.recipient,
     ...(sent.handle ? { handle: sent.handle } : {}),
     ask: sent.ask,
+    ...(origin ? { origin } : {}),
     say:
       `Delivered to ${sent.handle ? `@${sent.handle}` : sent.recipient}'s inbox. ` +
       'They open it, Pantessa rebuilds and guard-checks the ask, and only their own signature moves anything. ' +

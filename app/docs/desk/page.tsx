@@ -165,6 +165,19 @@ await driveJob({
           job API, over the capability token minted at execute.
         </p>
 
+        <h2>Provenance</h2>
+        <p>
+          An intent can remember where it was born. Pass <code>origin</code> to{' '}
+          <code>broker_open</code> or <code>broker_send</code>{' '}
+          (<code>{'{ feed: "dune", ref: "5551234", market: "USDC/WETH on Base" }'}</code>) and the desk
+          stores it, echoes it from every answer and from <code>broker_status</code>, the sign link says{' '}
+          <em>Born from Dune · query 5551234</em>, and your track record counts it. It is your own claim:
+          printable text only, each field at most 120 characters, a hash or calldata refused by name.
+          It is shown and counted, and that is all — it never routes, prices, funds, or authorizes a
+          build. Feeds: <code>dune</code>, <code>hyperliquid</code>, or <code>other</code> with a{' '}
+          <code>surface</code> that names the source.
+        </p>
+
         <h2>What it costs</h2>
         <p>
           The desk is <strong>free to call</strong> by default — Pantessa earns the link-tier fee on

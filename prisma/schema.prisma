@@ -871,6 +871,7 @@ model EmbedTurn {
   buildPath      String?  @map("build_path") // which layer built the artifact: native-* | planner | manual (lib/build-path.ts)
   originKind     String?  @map("origin_kind") // chat | embed | job-step | dca-run (lib/value-origin.ts) — attended vs standing; null = legacy row, classified at read time
   intentLinkSlug String?  @map("intent_link_slug") // /i/<slug> attribution — creator fee-split accrues on fee-bearing signed turns
+  originFeed     String?  @map("origin_feed") // PROVENANCE (2026-11-02): the feed the BOUND desk intent said it was born from (dune | hyperliquid | other), copied SERVER-side from broker_intents.origin through intent_link_slug at the write site — the "born from Dune, signed" count joins on server truth, never a second client claim; null = none / legacy
   walletAddress  String?  @map("wallet_address") // the SIGNING wallet (lowercased, self-reported like the rest of the beacon) — lifetime referral earnings key off it; null = legacy row
   feeBps         Int?     @map("fee_bps") // the fee tier the ARTIFACT actually carried (C2b: 20 organic / 50 link) — earnings read this over the per-path default; null = legacy row at the path rate
   isInternal     Boolean  @default(false) @map("is_internal") // our own drill/harness traffic — stamped at the write site (x-yf-internal-run header / internalRun body / harness- sessionId); origin patterns can't catch prod-pointed runs, so every scoreboard read excludes this too (lib/value-origin.ts)
@@ -1467,6 +1468,11 @@ model BrokerIntent {
   callbackSecret String?  @map("callback_secret") // per-intent HMAC secret returned to the agent once at open
   state          String   @default("open")
   plan           Json
+  /// PROVENANCE (2026-11-02): where the agent says the intent was born —
+  /// `{ feed: 'dune'|'hyperliquid'|'other', ref?, market?, surface? }`, every
+  /// string printable and ≤120 chars (lib/broker-origin). CLIENT-CLAIMED: it
+  /// is displayed and counted only — never routes, prices or authorizes a build.
+  origin         Json?
   linkSlug       String?  @map("link_slug") // bound /i/<slug> after handoff
   jobId          String?  @map("job_id") // bound job after broker_execute (agent-signed path)
   /// THE ROSTER (R2): set when the presented agent_key hashed to a hired

@@ -21,6 +21,7 @@
 import { createHash } from 'node:crypto'
 import prisma from '@/lib/db'
 import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
+import { ORIGIN_FEEDS, readOrigin, type OriginFeed } from '@/lib/broker-origin'
 
 /** The public handle for an agent identity: the first 16 hex of its SHA-256.
  *  Stable, shareable, and it never reveals the raw key. */
@@ -38,6 +39,13 @@ export interface AgentRecord {
   moneyMovedUsd: number
   firstSeen: Date
   lastSeen: Date
+  /** PROVENANCE: how many of the intents said what they were born from, per
+   *  feed (lib/broker-origin). The agent's own claim, counted — never verified. */
+  bornFrom: Record<OriginFeed, number>
+  /** PROVENANCE, signed: real signed turns through this agent's links whose bound
+   *  intent said a feed — the sign-side half of the joint number (embed_turns.origin_feed,
+   *  stamped server-side; REAL traffic only). */
+  signedBornFrom: Record<OriginFeed, number>
 }
 
 /** Build the public record for a handle, or null if no agent matches. Reads
@@ -49,7 +57,7 @@ export async function getAgentRecord(handle: string): Promise<AgentRecord | null
   // never headline a public record — a handle with only internal intents 404s.
   const intents = await prisma.brokerIntent.findMany({
     where: { agentKeyHash: handle, isInternal: false },
-    select: { agent: true, linkSlug: true, createdAt: true, updatedAt: true },
+    select: { agent: true, linkSlug: true, origin: true, createdAt: true, updatedAt: true },
     orderBy: { createdAt: 'asc' },
   })
   if (intents.length === 0) return null
@@ -61,6 +69,7 @@ export async function getAgentRecord(handle: string): Promise<AgentRecord | null
   // Real signed money attributed to this agent's links — is_internal excluded.
   let signedTurns = 0
   let moneyMovedUsd = 0
+  const signedBornFrom = Object.fromEntries(ORIGIN_FEEDS.map((f) => [f, 0])) as Record<OriginFeed, number>
   if (slugs.length) {
     const agg = await prisma.embedTurn.aggregate({
       where: { intentLinkSlug: { in: slugs }, outcome: 'signed', ...REAL_TRAFFIC_WHERE },
@@ -69,6 +78,20 @@ export async function getAgentRecord(handle: string): Promise<AgentRecord | null
     })
     signedTurns = agg._count._all
     moneyMovedUsd = Math.round((agg._sum.valueUsd ?? 0) * 100) / 100
+    const byFeed = await prisma.embedTurn.groupBy({
+      by: ['originFeed'],
+      where: { intentLinkSlug: { in: slugs }, outcome: 'signed', originFeed: { not: null }, ...REAL_TRAFFIC_WHERE },
+      _count: { _all: true },
+    })
+    for (const g of byFeed) {
+      if (g.originFeed && (ORIGIN_FEEDS as readonly string[]).includes(g.originFeed)) signedBornFrom[g.originFeed as OriginFeed] += g._count._all
+    }
+  }
+
+  const bornFrom = Object.fromEntries(ORIGIN_FEEDS.map((f) => [f, 0])) as Record<OriginFeed, number>
+  for (const i of intents) {
+    const o = readOrigin(i.origin)
+    if (o) bornFrom[o.feed] += 1
   }
 
   return {
@@ -80,5 +103,7 @@ export async function getAgentRecord(handle: string): Promise<AgentRecord | null
     moneyMovedUsd,
     firstSeen: intents[0].createdAt,
     lastSeen: intents.reduce((a, i) => (i.updatedAt > a ? i.updatedAt : a), intents[0].updatedAt),
+    bornFrom,
+    signedBornFrom,
   }
 }

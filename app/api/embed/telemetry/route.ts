@@ -10,6 +10,7 @@ import { jobStepMoneyAlreadyBooked } from '@/lib/job-step-money'
 import { grantEarnedAnswers } from '@/lib/earned-answers'
 import { sanitizeFillSymbols } from '@/lib/fill-symbols'
 import { isIndexSymbol } from '@/lib/viz/flow'
+import { readOrigin, type OriginFeed } from '@/lib/broker-origin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -116,6 +117,11 @@ export async function POST(req: NextRequest) {
     typeof body.intentLinkSlug === 'string' && INTENT_SLUG_RE.test(body.intentLinkSlug)
       ? body.intentLinkSlug
       : undefined
+  // PROVENANCE (lib/broker-origin): a turn through a desk-minted link inherits
+  // the feed the intent said it was born from — copied SERVER-side from the
+  // bound broker intent, so "born from Dune, signed" is a join on the intent
+  // row, never a second client claim. Best-effort: a miss stamps nothing.
+  const originFeed = intentLinkSlug ? await bornFromFeedForLink(intentLinkSlug) : undefined
   // The SIGNING wallet — address-shaped only, lowercased. Self-reported like
   // the rest of the beacon; it keys lifetime referral earnings, the same
   // trust level as the valueUsd/outcome it rides beside.
@@ -162,6 +168,7 @@ export async function POST(req: NextRequest) {
         // /i/<slug> attribution — slug-shaped only; creator fee-split
         // earnings compute read-time from fee-bearing signed rows.
         intentLinkSlug,
+        originFeed,
         walletAddress,
         feeBps,
         isInternal: internalRun,
@@ -256,4 +263,15 @@ export async function POST(req: NextRequest) {
   // `internal` echoes the stamp so drills (and the harness) can assert their
   // rows can never read as growth.
   return NextResponse.json({ ok: true, ...(internalRun ? { internal: true } : {}), ...(verification ? { verification } : {}), ...(earned ? { earnedAnswers: earned } : {}) })
+}
+
+/** The feed the desk intent bound to this sign link said it was born from (lib/broker-origin),
+ *  or undefined when the link was not desk-minted, said nothing, or the read failed. */
+async function bornFromFeedForLink(slug: string): Promise<OriginFeed | undefined> {
+  try {
+    const intent = await prisma.brokerIntent.findFirst({ where: { linkSlug: slug }, select: { origin: true } })
+    return readOrigin(intent?.origin)?.feed
+  } catch {
+    return undefined
+  }
 }

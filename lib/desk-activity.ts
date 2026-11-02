@@ -34,6 +34,7 @@ import { jobStepBuildPath, jobStepChainId } from '@/lib/job-step-telemetry'
 import { venueOfBuildPath } from '@/lib/build-path'
 import { dailySeries, dayKey, deltaPct, splitOfRow, sumSplit, windowRows, type GrowthDayPoint, type GrowthTurnRow } from '@/lib/admin-growth'
 import { isCountedTurn, isInternalTurn } from '@/lib/value-origin'
+import { originLine, readOrigin } from '@/lib/broker-origin'
 
 /* ── raw rows (what the loader hands the fold; Dates or ISO strings both fine) ───────── */
 
@@ -46,6 +47,8 @@ export interface DeskIntentRaw {
   isInternal: boolean
   state: string
   plan: unknown
+  /** PROVENANCE (lib/broker-origin): the agent's claimed origin, raw from the row; absent on older reads. */
+  origin?: unknown
   linkSlug: string | null
   jobId: string | null
   createdAt: Date | string
@@ -196,6 +199,8 @@ export interface DeskLogRow {
   agentName: string | null
   ask: string
   wallet: string | null
+  /** PROVENANCE: the agent's claimed origin, worded (lib/broker-origin originLine); null = none said. */
+  provenance: string | null
   /** The raw broker_intents.state. */
   status: string
   stage: DeskStage
@@ -498,6 +503,10 @@ export function foldDeskIntent(input: DeskFoldInput): DeskLogRow {
 
   return {
     intentId: intent.id,
+    provenance: (() => {
+      const o = readOrigin(intent.origin)
+      return o ? originLine(o) : null
+    })(),
     agentHandle: clampText(intent.agentKeyHash, 64),
     agentName: clampText(intent.agent, DESK_TEXT_CAPS.agent),
     ask: clampText(intent.ask, DESK_TEXT_CAPS.ask) ?? '',
