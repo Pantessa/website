@@ -90,6 +90,30 @@ function clientFor(chainId: 8453 | 84532): PublicClient {
   return createPublicClient({ chain, transport: fallback(transports) }) as PublicClient
 }
 
+export interface HookState {
+  /** The signer the hook actually checks — the truth, whatever env says. */
+  policySigner: Address
+  paused: boolean
+}
+let hookStateCache: { key: string; at: number; value: HookState | null } | null = null
+
+/** Read the hook's live `policySigner()` + `paused()` (cached 60s, 2.5s
+ *  budget). Null when the chain can't be read — the page falls back to env
+ *  and says so, never guesses. */
+export async function readHookState(pool: Pick<PolicyPoolEnv, 'chainId' | 'hook'>): Promise<HookState | null> {
+  const key = `${pool.chainId}:${pool.hook}`
+  if (hookStateCache && hookStateCache.key === key && Date.now() - hookStateCache.at < 60_000) return hookStateCache.value
+  const client = clientFor(pool.chainId as 8453 | 84532)
+  const read = Promise.all([
+    client.readContract({ address: pool.hook, abi: POLICY_POOL_HOOK_ABI, functionName: 'policySigner' }),
+    client.readContract({ address: pool.hook, abi: POLICY_POOL_HOOK_ABI, functionName: 'paused' }),
+  ]).then(([policySigner, paused]) => ({ policySigner: (policySigner as Address).toLowerCase() as Address, paused: Boolean(paused) }))
+  const value = await Promise.race([read, new Promise<null>((r) => setTimeout(() => r(null), 2_500))]).catch(() => null)
+  // A failed read is retried after 10s, a good one held 60s.
+  hookStateCache = { key, at: value ? Date.now() : Date.now() - 50_000, value }
+  return value
+}
+
 /** One DeskFill log → the fill row's fields (pure). `amount0/1` are the
  *  swapper's BalanceDelta: negative = paid in, positive = received. */
 export function fillFieldsFor(

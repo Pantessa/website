@@ -160,7 +160,7 @@ export async function listPolicyPoolEvents({
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       take: 200,
     })
-    return { events: rows.map(toRow), nextCursor: null }
+    return { events: rows.map(toRow).sort(walkOrder), nextCursor: null }
   }
   const rows = await prisma.policyPoolEvent.findMany({
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -169,7 +169,15 @@ export async function listPolicyPoolEvents({
   })
   const more = rows.length > take
   const page = more ? rows.slice(0, take) : rows
-  return { events: page.map(toRow), nextCursor: more ? page[page.length - 1].id : null }
+  return { events: page.map(toRow).sort((x, y) => walkOrder(y, x)), nextCursor: more ? page[page.length - 1].id : null }
+}
+
+const KIND_RANK = new Map<string, number>(POLICY_POOL_EVENT_KINDS.map((k, i) => [k, i]))
+/** Oldest first; rows stamped the same instant (an indexed `mined` + `fill`
+ *  share their block's timestamp) fall in the order an intent walks them. */
+export function walkOrder(a: Pick<PolicyPoolEventRow, 'createdAt' | 'kind'>, b: Pick<PolicyPoolEventRow, 'createdAt' | 'kind'>): number {
+  const t = Date.parse(a.createdAt) - Date.parse(b.createdAt)
+  return t !== 0 ? t : (KIND_RANK.get(a.kind) ?? 99) - (KIND_RANK.get(b.kind) ?? 99)
 }
 
 // ── Stats ────────────────────────────────────────────────────────────────

@@ -64,13 +64,15 @@ function Tip({ active, payload, label, money }: TipProps & { label: (t: string) 
 }
 
 const intTick = (v: number) => (Number.isInteger(v) ? String(v) : '')
+/** Dollar ticks that stay distinct at demo sizes ($0.50 · $1.00 · $1.50), compact from $1K. */
+const usdTick = (v: number) => (v >= 1000 ? `$${Math.round(v / 1000)}K` : v >= 10 ? `$${Math.round(v)}` : v === 0 ? '$0' : `$${v.toFixed(2)}`)
 
 export function FillsVsRefusals({ hourly }: { hourly: PolicyPoolBucket[] }) {
   return (
     <ResponsiveContainer width="100%" height={200}>
       <BarChart data={hourly} margin={{ top: 8, right: 4, bottom: 0, left: -18 }} barCategoryGap="28%">
         <CartesianGrid vertical={false} stroke="var(--line)" />
-        <XAxis dataKey="t" tickFormatter={hourLabel} tick={AXIS} axisLine={false} tickLine={false} interval={3} minTickGap={8} />
+        <XAxis dataKey="t" tickFormatter={hourLabel} tick={AXIS} axisLine={false} tickLine={false} interval="preserveEnd" minTickGap={18} />
         <YAxis allowDecimals={false} tickFormatter={intTick} tick={AXIS} axisLine={false} tickLine={false} width={40} />
         <Tooltip cursor={{ fill: 'color-mix(in srgb, var(--fg) 6%, transparent)' }} content={<Tip label={(t) => `${dayLabel(t)} · ${hourLabel(t)}`} />} />
         <Bar
@@ -107,8 +109,8 @@ export function VolumeByDay({ daily }: { daily: PolicyPoolBucket[] }) {
     <ResponsiveContainer width="100%" height={200}>
       <BarChart data={daily} margin={{ top: 8, right: 4, bottom: 0, left: -6 }} barCategoryGap="28%">
         <CartesianGrid vertical={false} stroke="var(--line)" />
-        <XAxis dataKey="t" tickFormatter={dayLabel} tick={AXIS} axisLine={false} tickLine={false} interval={2} minTickGap={8} />
-        <YAxis tickFormatter={(v: number) => (v >= 1000 ? `$${Math.round(v / 1000)}K` : `$${Math.round(v)}`)} tick={AXIS} axisLine={false} tickLine={false} width={48} />
+        <XAxis dataKey="t" tickFormatter={dayLabel} tick={AXIS} axisLine={false} tickLine={false} interval="preserveEnd" minTickGap={18} />
+        <YAxis tickFormatter={usdTick} tick={AXIS} axisLine={false} tickLine={false} width={52} />
         <Tooltip cursor={{ fill: 'color-mix(in srgb, var(--fg) 6%, transparent)' }} content={<Tip label={dayLabel} money />} />
         <Bar
           dataKey="volumeUsd"

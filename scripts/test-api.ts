@@ -35554,6 +35554,17 @@ async function main() {
         env.currency1 === '0x036cbd53842c5426634e7929541ec2318f3dcf7e' && /^0x[0-9a-f]{64}$/.test(env.poolId) &&
         fields.amountIn === '25000000' && fields.amountOut === '10400000000000000' && fields.usd === 25,
     )
+    const real = PPI.fillFieldsFor(
+      // The first attested fill on Base Sepolia (tx 0xcc6bdc22…, block 53526397): 0.0003 ETH in, 0.614189 USDC out.
+      { intentId: ('0x' + '95'.repeat(32)) as `0x${string}`, swapper: '0x5eaabd731d2bc0490c2d47e41858e9b0629455a0', poolId: ('0x' + '83'.repeat(32)) as `0x${string}`, zeroForOne: true, amount0: BigInt(-300000000000000), amount1: BigInt(614189), origin: 'demo:sepolia-first-fill' },
+      { chainId: 84532, currency0: '0x0000000000000000000000000000000000000000', currency1: '0x036cbd53842c5426634e7929541ec2318f3dcf7e' },
+    )
+    const tie = [{ createdAt: '2026-11-02T13:45:48.000Z', kind: 'fill' as const }, { createdAt: '2026-11-02T13:45:48.000Z', kind: 'mined' as const }, { createdAt: '2026-11-02T13:45:40.000Z', kind: 'signed' as const }].sort(PPL.walkOrder)
+    check(
+      'policy-pool: the real Sepolia DeskFill (zeroForOne, ETH paid) reads 0.0003 ETH in / 614189 USDC atoms out / $0.61 with ETH as currencyIn; rows sharing a block time order signed → mined → fill',
+      real.amountIn === '300000000000000' && real.amountOut === '614189' && real.usd === 0.61 && real.meta.currencyIn === '0x0000000000000000000000000000000000000000' &&
+        tie.map((r) => r.kind).join(',') === 'signed,mined,fill',
+    )
     const pageRes = await fetch(`${BASE}/policy-pool`)
     const page = await pageRes.text()
     const evRes = await fetch(`${BASE}/api/policy-pool/events?limit=5`)
