@@ -1,12 +1,12 @@
 {
-  "$comment": "PolicyPoolHook deployments. Written by the HOOK lane; the TypeScript side reads POLICY_POOL_* env (lib/policy-pool/config.ts), this file is the record. Base mainnet (8453): NOT deployed — rule 4, needs Nate's explicit yes.",
+  "$comment": "PolicyPoolHook deployments. Written by the HOOK lane; the TypeScript side reads POLICY_POOL_* env (lib/policy-pool/config.ts), this file is the record. Base mainnet (8453): NOT deployed \u2014 rule 4, needs Nate's explicit yes.",
   "84532": {
     "chain": "base-sepolia",
     "hook": "0x75d43357ef9ADe0F4EB53B219383C0CC2CcdC8C0",
     "salt": "0x000000000000000000000000000000000000000000000000000000000000247a",
     "owner": "0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0",
-    "policySigner": "0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0",
-    "policySignerNote": "= the deployer (the product's agent burner, PRIVATE_KEY in website/.env.local) for the demo; rotate with setPolicySigner(POLICY_SIGNER_ADDRESS) once the SIGNER lane's key exists",
+    "policySigner": "0xC1e953C24250FcFc2A332c641A2aD30e8bC740a0",
+    "policySignerNote": "the desk signer (POLICY_SIGNER_ADDRESS, key = POLICY_SIGNER_PRIVATE_KEY, never in the repo). Rotated from the deployer burner on 2026-11-02; the burner is owner only.",
     "deployBlock": 53526176,
     "deployTx": "0x8df4e7d0f8f8b94c1401ceb0680987f41a9575962c6ae6bded2e52ad7f1baaee",
     "deployedAt": "2026-11-02",
@@ -33,7 +33,7 @@
       "range": "full (minUsableTick..maxUsableTick at tickSpacing 10)",
       "maxEthWei": "2500000000000000",
       "maxUsdcAtoms": "6000000",
-      "note": "about $12 of depth in total — demo trades must stay around $1; fund the owner and re-run the seed for a $25 scene"
+      "note": "about $12 of depth in total \u2014 demo trades must stay around $1; fund the owner and re-run the seed for a $25 scene"
     },
     "firstAttestedFill": {
       "tx": "0xcc6bdc22bbe75933c175769df8b3a600e6c84cb3ace3e7a58c88e67e1583f7d9",
@@ -45,6 +45,29 @@
       "swapper": "0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0"
     },
     "plainWalletRefusal": "AttestedSwap.s.sol PLAIN=true reverted in simulation with WrappedError(hook, beforeSwap 0x575e24b4, NotAttested 0x99efb890, HookCallFailed 0xa9e35b2f); nothing broadcast",
-    "verification": "Sourcify job 31ccc31e-9ad4-4369-9db9-7c91fd7783eb (see HOOK.md for the outcome)"
+    "verification": "Sourcify job 31ccc31e-9ad4-4369-9db9-7c91fd7783eb (see HOOK.md for the outcome)",
+    "policySignerHistory": [
+      {
+        "signer": "0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0",
+        "from": "deploy (block 53526176)",
+        "to": "block 53529706",
+        "note": "the deployer burner, demo bootstrap"
+      },
+      {
+        "signer": "0xC1e953C24250FcFc2A332c641A2aD30e8bC740a0",
+        "from": "block 53529706",
+        "tx": "0xeb40b18c7872fb95bed55a7bca546cdba1d64c0547e88644c5ba6a215b010e2d",
+        "note": "setPolicySigner from the owner; PolicySignerSet emitted"
+      }
+    ],
+    "firstFillByDeskSigner": {
+      "tx": "0x1b83f31ccaa2864c2f6a558c072d1014843960811d9df28c04e6f929d8f8b57d",
+      "block": 53529747,
+      "intent": "demo-sepolia-0002",
+      "origin": "desk:signer-rotated",
+      "amount0": "-200000000000000",
+      "amount1": "481197",
+      "swapper": "0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0"
+    }
   }
 }
