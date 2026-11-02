@@ -57,7 +57,7 @@ import {
 import { crossChainFloorBlock, floorBlockFromError, floorRefusalTurn } from '@/lib/venue-floor'
 import { privateLaneClosedTurn, privateLaneOpen, privateRefundCheck, refundDisclosureLine } from '@/lib/private-lane'
 import { CROSS_CHAIN_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
-import { INTENT_SLUG_RE } from '@/lib/intent-links'
+import { INTENT_SLUG_RE, mintSlug } from '@/lib/intent-links'
 import prismaDb from '@/lib/db'
 import { prettyChainWord } from '@/lib/chain-lexicon'
 import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlCanonicalAsk, hlOpenCollateralShortfall, hlUnsizedChips, nearestHlCoins, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
@@ -157,7 +157,10 @@ import { chainListSentence, nftGalleryChains, readNftGallery } from '@/lib/nft-g
 import { marketReplyCopy, readNftOffers, readNftWorth } from '@/lib/nft-market'
 import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec'
 import { buildUniswapSwap, NoV3PoolError, v3ApprovalSteps } from '@/lib/uniswap-venue'
-import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
+import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError, buildPolicyPoolSwap, isPolicyPoolRefusal } from '@/lib/uniswap-v4'
+import { namesPolicyPool, policyPoolRouteFor, type PolicyPoolRoute } from '@/lib/policy-pool/venue'
+import { POLICY_POOL_BUILD_PATH, POLICY_POOL_REFRESH_KIND, POLICY_POOL_VENUE, policyPoolChainName, policyPoolConfig } from '@/lib/policy-pool/config'
+import { readOrigin as readDeskOrigin } from '@/lib/broker-origin'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
 import { fundChipFor, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
@@ -2483,7 +2486,14 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
         // An inferred home chain pinned nothing either: the money may still
         // be somewhere else, and the retarget says so in its own line.
         const allowRetarget = !namedNative && !pickerChain && (buildChain.id === targetChain.id || !!inferredSpot) && swapIntent.mode !== 'limit'
-        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps, contentOrigin, { allowRetarget, chainNote: inferredSpot?.line })
+        // THE POLICY POOL (squad 2026-11-02): "… through the policy pool" names
+        // the one hooked v4 pool the desk attests swaps into. The intent id
+        // and origin come from the desk intent bound to this link when there
+        // is one (`dune:<queryId>` provenance), else a fresh per-turn id.
+        const policyPool = namesPolicyPool(message) ? await policyPoolRouteForTurn(message, turnLinkSlug) : null
+        if (policyPool) nativeTrace({ type: 'status', label: `policy pool named in the ask — routing to the attested build (intent ${policyPool.intentId}, origin ${policyPool.origin}); the venue cascade is bypassed` })
+        const swapOpts = withPolicyPoolRoute(policyPool, { allowRetarget, chainNote: inferredSpot?.line })
+        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps, contentOrigin, swapOpts)
       }
       // crossChain + a usable cross-chain agent → build it NATIVELY (deterministic
       // build_swap + guardrails + Sign button), never via the planner/house
@@ -4745,6 +4755,10 @@ function isExactRobinhoodStock(symbol: string): boolean {
  *  false: reruns, follow-ups and named chains never wander. */
 type SwapTurnOpts = {
   allowRetarget?: boolean
+  /** THE POLICY POOL (squad 2026-11-02): the ask named it, so the build goes
+   *  through the one hooked pool with the desk's attestation — never the
+   *  venue cascade. Carries the desk intent id + origin the attestation binds. */
+  policyPool?: PolicyPoolRoute
   /** The chain was INFERRED from the token's home (lib/spot-chain-infer):
    *  a built artifact opens with this line so the visitor sees where and
    *  why before signing. Dropped when the spend retarget re-aimed the build
@@ -5091,6 +5105,17 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
     }
     trace({ type: 'status', label: 'native swap layer: ask under-specified — asking for the amount and pair' })
     return NextResponse.json({ reply: `🔄 ${intent.problem ?? 'Say the amount and pair — e.g. “swap 100 USDC for WETH” or “swap $5 of ETH for USDG”.'}` })
+  }
+
+  // THE POLICY POOL: the pool is one venue on one chain. Before any balance
+  // is read on the turn's chain, say plainly when the pool isn't there —
+  // not deployed, deployed elsewhere, or asked as a limit order.
+  if (opts.policyPool) {
+    const pre = policyPoolPreflight(chainId, intent.mode)
+    if (pre) {
+      trace({ type: 'note', level: 'warn', label: `policy pool: ${pre.slice(0, 160)}` })
+      return NextResponse.json({ reply: `🔄 ${pre}`, buildPath: POLICY_POOL_BUILD_PATH })
+    }
   }
 
   // A sell==buy "swap" is never a build. On Robinhood Chain a USDG target is
@@ -5709,6 +5734,13 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
   // ── Uniswap venue: on-chain SwapRouter02 transaction (market swaps only —
   //    resting limit orders are an order-book feature, so those stay on CoW
   //    with a note). Uniswap-pure build; cross-app guardrails inside.
+  // ── THE POLICY POOL: one hooked v4 pool, the desk's attestation in the
+  //    swap's hookData, the guard recovering the signer. Named in the ask;
+  //    never reached by the cascade.
+  if (opts.policyPool && (intent.mode ?? 'swap') === 'swap') {
+    return await preparePolicyPoolTurn(intent, walletAddress, chainId, ctx, trace, feeBps, opts.policyPool)
+  }
+
   if (venue === 'uniswap' && (intent.mode ?? 'swap') === 'swap') {
     trace({ type: 'select', service: 'Uniswap (native venue)', endpoint: `quote → SwapRouter02 tx build on ${chain.name}`, priceUsd: 0, reason: 'native swap layer — Pantessa builds the tx deterministically, guardrails before anything is offered' })
     try {
@@ -5882,6 +5914,142 @@ function tapeHoldReply(err: TapeUnavailableError, trace: (event: unknown) => voi
     buildPath: err.permanent ? 'native-swap-off-tape' : 'native-swap-hold',
     ...(err.permanent ? { blocked: true } : {}),
   })
+}
+
+/** The swap turn's options with the policy pool route on them: the pool is
+ *  one venue on one chain, so the spend retarget never moves its build. */
+function withPolicyPoolRoute(route: PolicyPoolRoute | null, opts: SwapTurnOpts): SwapTurnOpts {
+  return route ? { ...opts, allowRetarget: false, policyPool: route } : opts
+}
+
+/** The desk intent bound to this turn's link (if any) → the policy pool route. */
+async function policyPoolRouteForTurn(message: string, linkSlug: string | undefined): Promise<PolicyPoolRoute | null> {
+  const row = linkSlug
+    ? await prismaDb.brokerIntent.findFirst({ where: { linkSlug }, select: { id: true, origin: true, plan: true } }).catch(() => null)
+    : null
+  return policyPoolRouteFor({
+    message,
+    intent: row ? { id: row.id, origin: readDeskOrigin(row.origin), plan: row.plan } : null,
+    fallbackId: `chat-${mintSlug(10)}`,
+  })
+}
+
+/** Why a policy-pool ask can't build on this turn's chain — or null when it can. */
+function policyPoolPreflight(chainId: number, mode: SwapIntent['mode']): string | null {
+  if ((mode ?? 'swap') !== 'swap') return 'The policy pool takes market swaps only — a resting limit order lives on the CoW order book, outside the pool. Nothing was built.'
+  let cfg: ReturnType<typeof policyPoolConfig>
+  try {
+    cfg = policyPoolConfig()
+  } catch (err) {
+    return `The policy pool is half-configured: ${err instanceof Error ? err.message : String(err)} Nothing was built.`
+  }
+  if (!cfg) return 'The policy pool is not deployed yet — nothing was built. The plain swap venues are still here: say the same ask without "through the policy pool".'
+  if (cfg.chainId !== chainId) return `The policy pool runs on ${cfg.chainName}, not ${policyPoolChainName(chainId)} — nothing was built.`
+  return null
+}
+
+/**
+ * THE POLICY POOL turn (squad 2026-11-02). Same trust shape as the v4 turn —
+ * deterministic build, the calldata guard inside the builder (block-level
+ * check withholds the artifact), one self-advancing SendTxChain, the swap
+ * step re-quoted through /api/tx/refresh — plus the desk policy BEFORE the
+ * build (a typed refusal, no artifact) and the desk's signed attestation in
+ * the swap's hookData, which the guard decodes and verifies against the
+ * pinned policy signer. The refresh recipe carries the intent id and origin
+ * so a re-quote re-attests the SAME intent (single use on-chain).
+ */
+async function preparePolicyPoolTurn(
+  intent: SwapIntent,
+  walletAddress: string,
+  chainId: number,
+  ctx: WorkingContext | undefined,
+  trace: (event: unknown) => void,
+  feeBps: number | undefined,
+  route: PolicyPoolRoute,
+) {
+  const chainName = policyPoolChainName(chainId)
+  trace({ type: 'select', service: 'The policy pool (native venue)', endpoint: `desk policy → attestation → V4 Quoter → Universal Router build on ${chainName}`, priceUsd: 0, reason: 'the ask named the policy pool — the desk attests this one intent and the hook refuses every other swap into the pool' })
+  try {
+    const built = await buildPolicyPoolSwap({
+      sellToken: intent.sellToken!,
+      buyToken: intent.buyToken!,
+      amountHuman: intent.sellAmountHuman!,
+      from: walletAddress,
+      chainId,
+      feeBps,
+      creator: await resolveCreatorPayout({ wallet: walletAddress, linkSlug: turnScope()?.linkSlug }),
+      intentId: route.intentId,
+      origin: route.origin,
+      swapper: walletAddress as `0x${string}`,
+    })
+    if (isPolicyPoolRefusal(built)) {
+      trace({ type: 'note', level: 'warn', label: `policy pool REFUSED (${built.kind}): ${built.reason.slice(0, 200)}` })
+      return NextResponse.json({
+        reply: `${built.kind === 'policy' ? '🚫' : '🔄'} ${built.reason}`,
+        ...(built.kind === 'policy' ? { blocked: true } : {}),
+        buildPath: built.buildPath,
+        policyPool: { refused: built.kind, ...(built.capUsd !== undefined ? { capUsd: built.capUsd } : {}), intentId: route.intentId, origin: route.origin },
+      })
+    }
+    if (built.blocked) {
+      const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
+      trace({ type: 'note', level: 'warn', label: `guardrails REFUSED the policy pool swap: ${(reasons || 'a safety check failed.').slice(0, 200)}` })
+      return NextResponse.json({
+        reply: `🚫 Swap built but refused by your guardrails: ${reasons || 'a safety check failed.'}`,
+        guardrails: built.guardrails,
+        blocked: true,
+        buildPath: built.buildPath,
+      })
+    }
+    const warns = built.guardrails.checks.filter((c) => !c.ok && c.level === 'warn').map((c) => `⚠️ ${c.note}`)
+    const sell = intent.sellToken!.toUpperCase()
+    const buy = intent.buyToken!.toUpperCase()
+    trace({
+      type: 'status',
+      label:
+        built.steps.length === 1
+          ? `guardrails passed — policy pool swap tx built (${intent.sellAmountHuman} ${sell} → ${buy} on ${chainName}, attested for ${route.intentId}), awaiting signature`
+          : `guardrails passed — ${built.steps.length}-step policy pool card built (${intent.sellAmountHuman} ${sell} → ${buy}, Permit2 approvals + attested swap), awaiting signature`,
+    })
+    return NextResponse.json({
+      reply:
+        built.steps.length === 1
+          ? `🔏 ${built.summary}${warns.length ? `\n${warns.join('\n')}` : ''}`
+          : `🔏 ${built.summary}\n🔗 ${built.steps.length} steps in the card below — v4 pulls funds through Permit2, so the approvals come first and the attested swap appears automatically once they confirm (re-quoted and re-attested fresh). Nothing to retype.${warns.length ? `\n${warns.join('\n')}` : ''}`,
+      txChain: {
+        summary: built.summary,
+        steps: built.steps,
+        refresh: {
+          kind: POLICY_POOL_REFRESH_KIND,
+          stepIndex: built.steps.length - 1,
+          params: {
+            sellToken: intent.sellToken!,
+            buyToken: intent.buyToken!,
+            amountHuman: intent.sellAmountHuman!,
+            chainId: String(chainId),
+            venue: POLICY_POOL_VENUE,
+            intentId: route.intentId,
+            origin: route.origin,
+            ...(feeBps !== undefined ? { feeBps: String(feeBps) } : {}),
+            ...(turnScope()?.linkSlug ? { linkSlug: turnScope()!.linkSlug! } : {}),
+            ...creatorStamp(built.creatorPaid),
+          },
+        },
+      },
+      buildPath: built.buildPath,
+      guardrails: built.guardrails,
+      policyPool: { intentId: route.intentId, origin: route.origin, poolId: built.poolId, hook: built.hook, expiry: built.attestation.expiry },
+      workingContext: swapWorkingContext(intent, 'uniswap', ctx, chainId),
+    })
+  } catch (err) {
+    if (err instanceof NoV4PoolError || err instanceof GatedV4PoolError) {
+      trace({ type: 'note', level: 'warn', label: `policy pool: ${err.message.slice(0, 200)}` })
+      return NextResponse.json({ reply: `🔄 ${err.message}`, buildPath: POLICY_POOL_BUILD_PATH })
+    }
+    const msg = err instanceof Error ? err.message : 'quote failed'
+    trace({ type: 'note', level: 'warn', label: `policy pool build failed: ${msg.slice(0, 200)}` })
+    return NextResponse.json(buildFailedTurn('policy pool swap', err, swapAskSentence(intent, FUNDING_CHAIN_WORD[chainId]) ?? '', '🔄 '))
+  }
 }
 
 /**

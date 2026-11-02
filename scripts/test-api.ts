@@ -373,6 +373,7 @@ import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
 import { venueManifestLivePins, venueManifestPins } from './venue-manifest-pins'
 import { execStripLivePins, execStripPins } from './exec-strip-pins'
+import { policyPoolBuilderPins } from './policy-pool-builder-pins'
 import { printAlertPins } from './print-alert-pins'
 import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
@@ -35137,6 +35138,8 @@ async function main() {
   // The executions strip (2026-11-02): Dune's live fills for the symbol on screen, beside positioning, off the chart's one relay stream; the served page carries it for a covered and an uncovered market.
   execStripPins(check)
   await execStripLivePins(check, BASE)
+  // THE POLICY POOL — the builder (2026-11-02): the v4 pin table, the config, the venue words, the hookData-bearing encoding, the guard over a signed attestation, the hook's revert names, the dispatch sites.
+  await policyPoolBuilderPins(check)
   // The /live trigger rules armed on the server (2026-10-13): the body reader, the evaluation over consumed fills, the cursor policy, the notification, the wiring.
   printAlertPins(check)
   // The battle views on /live (2026-10-06): windows and anchors, the percent track, the range, units, bursts, rank, the picker, the projections.

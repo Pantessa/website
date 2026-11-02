@@ -11,7 +11,11 @@
 // ─────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from 'next/server'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
-import { buildUniswapV4Swap, GatedV4PoolError } from '@/lib/uniswap-v4'
+import { buildUniswapV4Swap, GatedV4PoolError, buildPolicyPoolSwap, isPolicyPoolRefusal } from '@/lib/uniswap-v4'
+import { POLICY_POOL_REFRESH_KIND, policyPoolClient, policyPoolConfig } from '@/lib/policy-pool/config'
+import { policyPoolOriginFor } from '@/lib/policy-pool/venue'
+import { readOrigin as readDeskOrigin } from '@/lib/broker-origin'
+import prisma from '@/lib/db'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { buildLifiBridgeLeg, isLifiFundedChain, type FundingLeg } from '@/lib/lifi-bridge'
 import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
@@ -71,7 +75,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid JSON' }, { status: 400 })
   }
 
-  if (body.kind !== 'uniswap-swap' && body.kind !== 'uniswap-v4-swap' && body.kind !== 'lifi-swap' && body.kind !== 'lifi-bridge') {
+  if (body.kind !== 'uniswap-swap' && body.kind !== 'uniswap-v4-swap' && body.kind !== 'lifi-swap' && body.kind !== 'lifi-bridge' && body.kind !== POLICY_POOL_REFRESH_KIND) {
     return NextResponse.json({ error: `unknown refresh kind "${String(body.kind)}"` }, { status: 400 })
   }
   const from = typeof body.from === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.from) ? body.from : null
@@ -152,6 +156,59 @@ export async function POST(req: NextRequest) {
   const chainId = sanitizeChainId(Number(body.chainId)) ?? DEFAULT_CHAIN_ID
   if (!from || !sellToken || !buyToken || !amountHuman) {
     return NextResponse.json({ error: 'missing/invalid from, sellToken, buyToken or amountHuman' }, { status: 400 })
+  }
+
+  if (body.kind === POLICY_POOL_REFRESH_KIND) {
+    // THE POLICY POOL (squad 2026-11-02): re-quote AND re-attest the SAME
+    // desk intent (the hook burns the id once, so a re-quote before the fill
+    // is one more signature over it). The attestation's origin is emitted
+    // on-chain as provenance, so it is NEVER taken from the recipe body: a
+    // link-born turn re-derives id + origin from the desk intent bound to
+    // the link (the same join the chat route made); a bare chat turn may
+    // only carry its own `chat-<id>` with the `desk:` origin that id implies.
+    // The pool's chain may be one the registry doesn't carry (the testnet
+    // rehearsal), so the recipe's chain id is read raw and the builder's own
+    // pin decides; the dry run uses the pool's client.
+    let intentId = ''
+    let origin = ''
+    const desk = linkSlug ? await prisma.brokerIntent.findFirst({ where: { linkSlug }, select: { id: true, origin: true } }).catch(() => null) : null
+    if (desk) {
+      intentId = desk.id
+      origin = policyPoolOriginFor(desk.id, readDeskOrigin(desk.origin))
+    } else if (typeof body.intentId === 'string' && /^chat-[A-Za-z0-9_-]{4,64}$/.test(body.intentId)) {
+      intentId = body.intentId
+      origin = `desk:${intentId}`
+    }
+    if (!intentId) return NextResponse.json({ error: 'a policy pool refresh needs the desk intent its link was minted for, or its own chat-<id>' }, { status: 400 })
+    if (typeof body.origin === 'string' && body.origin !== origin) {
+      console.warn('[tx/refresh] policy pool recipe origin ignored — re-derived server-side', JSON.stringify({ claimed: body.origin.slice(0, 80), derived: origin }))
+    }
+    const poolChainId = /^\d{1,10}$/.test(String(body.chainId)) ? Number(body.chainId) : chainId
+    try {
+      const built = await buildPolicyPoolSwap({ sellToken, buyToken, amountHuman, from, chainId: poolChainId, feeBps, creator: await resolveCreatorPayout({ wallet: from, linkSlug }), intentId, origin, swapper: from as `0x${string}` })
+      if (isPolicyPoolRefusal(built)) {
+        return NextResponse.json({ blocked: true, blockKind: built.kind === 'policy' ? 'policy' : 'execution', reasons: built.reason })
+      }
+      if (built.blocked) {
+        const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
+        return NextResponse.json({ blocked: true, blockKind: 'policy', reasons: reasons || 'a safety check failed', guardrails: built.guardrails })
+      }
+      if (built.steps.length > 1) return NextResponse.json({ pending: true, note: 'allowance not visible on-chain yet' })
+      const cfg = policyPoolConfig()
+      const client = cfg ? policyPoolClient(cfg.chainId) : null
+      if (client) {
+        const verdict = await dryRunTx(client, { from, ...built.steps[0].tx }, { chainName: cfg!.chainName, gasSymbol: 'ETH' })
+        if (verdict.kind === 'revert' && isAllowanceLag(verdict.reason)) return NextResponse.json({ pending: true, note: 'allowance not visible to the chain node yet' })
+        if (verdict.kind === 'revert' || verdict.kind === 'no-gas') {
+          console.warn('[tx/refresh] withheld', JSON.stringify({ kind: body.kind, chainId: poolChainId, verdict: verdict.kind, raw: verdict.raw.slice(0, 200) }))
+          return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: verdict.kind === 'no-gas' ? `${verdict.reason} — send a little ETH there, then reopen this step` : `the rebuilt swap would revert on-chain (${verdict.reason.slice(0, 200)})` })
+        }
+      }
+      return NextResponse.json({ tx: built.steps[0].tx, summary: built.summary, guardrails: built.guardrails, validUntil: built.steps[0].validUntil ?? null })
+    } catch (err) {
+      if (err instanceof GatedV4PoolError) return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: err.message })
+      return NextResponse.json({ error: err instanceof Error ? err.message.slice(0, 300) : 'rebuild failed' }, { status: 502 })
+    }
   }
 
   try {
