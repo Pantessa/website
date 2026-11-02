@@ -11,7 +11,7 @@ Dune reads · Pantessa builds · the client's custody signs · the receipt lands
 
 Contract of record: `/Users/nate/pantessa/squad-policy-pool-2026-11-02/README.md` "The hook". Executable spec shared with
 the TypeScript side: `lib/policy-pool/spec.ts` (EIP-712 domain/types, hookData encoding, event/error ABI).
-`test/vectors/attestation.json` proves both sides hash and sign the same bytes.
+`test/vectors/attestation.json` (five vectors: bound, bearer, unicode origin, max size, empty origin) proves both sides hash and sign the same bytes.
 
 ## Layout
 ```
@@ -21,7 +21,7 @@ src/base/BaseHook.sol                  vendored verbatim from v4-periphery's las
 test/PolicyPoolHook.t.sol              31 local tests on a fresh PoolManager (fills, every refusal, replay, pause, liquidity gate, admin, vector)
 test/PolicyPoolHook.fork.t.sol         10 Base MAINNET fork tests through the REAL PoolManager / PositionManager / Universal Router
 test/utils/OwnerLiquidityRouter.sol    a test router exposing IMsgSender.msgSender() like the PositionManager
-test/vectors/attestation.json          the TS↔Solidity vector (SIGNER lane overwrites; make-placeholder-vector.ts wrote this one)
+test/vectors/attestation.json          5 TS↔Solidity vectors written by the SIGNER lane (scripts/policy-pool-attestation-vectors.ts)
 script/Deploy.s.sol                    mine salt → CREATE2 deploy → initialize pool → (optional) seed via PositionManager
 script/AttestedSwap.s.sol              one attested swap (or a plain refused one) through the Universal Router
 script/env.sh · script/README.md       keys from website/.env.local without printing; exact commands + measured gas
@@ -41,7 +41,7 @@ source script/env.sh && forge test --match-path test/PolicyPoolHook.fork.t.sol -
 forge test                                                       # both
 ```
 Regenerate the ABI after a change: `forge inspect src/PolicyPoolHook.sol:PolicyPoolHook abi --json > abi/PolicyPoolHook.json`.
-Placeholder vector (website root): `npx tsx contracts/policy-pool/test/vectors/make-placeholder-vector.ts`.
+Regenerate the vectors (website root, SIGNER lane's script): `npx tsx scripts/policy-pool-attestation-vectors.ts`.
 
 ## The hook, in checks (beforeSwap, in this order)
 `Paused` → decode `abi.encode(Attestation, bytes sig)` or `NotAttested` → `WrongPool` → `WrongSide` → exact-in only

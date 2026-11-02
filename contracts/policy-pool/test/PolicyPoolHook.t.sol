@@ -466,39 +466,93 @@ contract PolicyPoolHookTest is Test, Deployers, IUnlockCallback {
 
     // ───────────────────────────────────────── cross-implementation vector ──
 
-    /// @dev test/vectors/attestation.json is written by the TypeScript side (lib/policy-pool/spec.ts); the
-    ///      hook's bytecode is etched at the vector's address on the vector's chain id and must reproduce the
-    ///      struct hash, domain separator, digest and signer, and decode the vector's hookData.
-    function test_vector_matchesTypeScript() public {
+    /// @dev test/vectors/attestation.json is written by the SIGNER lane from lib/policy-pool/spec.ts
+    ///      (scripts/policy-pool-attestation-vectors.ts). For every vector the hook's bytecode is etched at the
+    ///      vector's verifyingContract on the vector's chain id and must reproduce the pool id from the pool key, the
+    ///      struct hash, the domain separator, the digest and the signer, and decode the vector's hookData.
+    function test_vectors_matchTypeScript() public {
         string memory json = vm.readFile(string.concat(vm.projectRoot(), "/test/vectors/attestation.json"));
-        uint256 chainId = vm.parseJsonUint(json, ".chainId");
-        address vHook = vm.parseJsonAddress(json, ".hook");
-        address vSigner = vm.parseJsonAddress(json, ".signer");
-        PolicyPoolHook.Attestation memory att = PolicyPoolHook.Attestation({
-            intentId: vm.parseJsonBytes32(json, ".attestation.intentId"),
-            poolId: vm.parseJsonBytes32(json, ".attestation.poolId"),
-            swapper: vm.parseJsonAddress(json, ".attestation.swapper"),
-            zeroForOne: vm.parseJsonBool(json, ".attestation.zeroForOne"),
-            maxAmountIn: vm.parseJsonUint(json, ".attestation.maxAmountIn"),
-            expiry: vm.parseJsonUint(json, ".attestation.expiry"),
-            origin: vm.parseJsonString(json, ".attestation.origin")
-        });
-        bytes memory sig = vm.parseJsonBytes(json, ".signature");
-        bytes memory hookData = vm.parseJsonBytes(json, ".hookData");
+        assertEq(hook.ATTESTATION_TYPEHASH(), vm.parseJsonBytes32(json, ".typeHash"), "typeHash");
+        assertEq(hook.ATTESTATION_TYPEHASH(), keccak256(bytes(vm.parseJsonString(json, ".typeString"))), "typeString");
+        uint256 n;
+        for (uint256 i; vm.keyExistsJson(json, string.concat(".vectors[", vm.toString(i), "]")); i++) {
+            _checkVector(json, string.concat(".vectors[", vm.toString(i), "]"));
+            n++;
+        }
+        assertGe(n, 1, "no vectors");
+        emit log_named_uint("vectors checked", n);
+    }
 
-        vm.chainId(chainId);
+    function _checkVector(string memory json, string memory v) internal {
+        string memory name = vm.parseJsonString(json, string.concat(v, ".name"));
+        vm.chainId(vm.parseJsonUint(json, string.concat(v, ".domain.chainId")));
+        address vHook = vm.parseJsonAddress(json, string.concat(v, ".domain.verifyingContract"));
         vm.etch(vHook, address(hook).code);
-        PolicyPoolHook v = PolicyPoolHook(vHook);
+        PolicyPoolHook h = PolicyPoolHook(vHook);
 
-        assertEq(v.ATTESTATION_TYPEHASH(), vm.parseJsonBytes32(json, ".typeHash"), "typeHash");
-        assertEq(v.hashAttestation(att), vm.parseJsonBytes32(json, ".structHash"), "structHash");
-        assertEq(v.domainSeparator(), vm.parseJsonBytes32(json, ".domainSeparator"), "domainSeparator");
-        assertEq(v.attestationDigest(att), vm.parseJsonBytes32(json, ".digest"), "digest");
-        assertEq(v.recoverAttestationSigner(att, sig), vSigner, "signer");
+        PoolKey memory vKey = PoolKey({
+            currency0: Currency.wrap(vm.parseJsonAddress(json, string.concat(v, ".poolKey.currency0"))),
+            currency1: Currency.wrap(vm.parseJsonAddress(json, string.concat(v, ".poolKey.currency1"))),
+            fee: uint24(vm.parseJsonUint(json, string.concat(v, ".poolKey.fee"))),
+            tickSpacing: int24(vm.parseJsonInt(json, string.concat(v, ".poolKey.tickSpacing"))),
+            hooks: IHooks(vm.parseJsonAddress(json, string.concat(v, ".poolKey.hooks")))
+        });
+        PolicyPoolHook.Attestation memory att = PolicyPoolHook.Attestation({
+            intentId: vm.parseJsonBytes32(json, string.concat(v, ".attestation.intentId")),
+            poolId: vm.parseJsonBytes32(json, string.concat(v, ".attestation.poolId")),
+            swapper: vm.parseJsonAddress(json, string.concat(v, ".attestation.swapper")),
+            zeroForOne: vm.parseJsonBool(json, string.concat(v, ".attestation.zeroForOne")),
+            maxAmountIn: vm.parseJsonUint(json, string.concat(v, ".attestation.maxAmountIn")),
+            expiry: vm.parseJsonUint(json, string.concat(v, ".attestation.expiry")),
+            origin: vm.parseJsonString(json, string.concat(v, ".attestation.origin"))
+        });
+        bytes memory sig = vm.parseJsonBytes(json, string.concat(v, ".signature"));
+        bytes memory hookData = vm.parseJsonBytes(json, string.concat(v, ".hookData"));
 
-        (PolicyPoolHook.Attestation memory dAtt, bytes memory dSig) = v.decodeHookData(hookData);
-        assertEq(keccak256(abi.encode(dAtt)), keccak256(abi.encode(att)), "hookData attestation");
-        assertEq(keccak256(dSig), keccak256(sig), "hookData signature");
-        assertEq(keccak256(hookData), keccak256(abi.encode(att, sig)), "hookData = abi.encode(att, sig)");
+        assertEq(PoolId.unwrap(vKey.toId()), att.poolId, string.concat(name, ": poolId from poolKey"));
+        assertEq(
+            att.intentId,
+            keccak256(bytes(vm.parseJsonString(json, string.concat(v, ".deskIntentId")))),
+            string.concat(name, ": intentId")
+        );
+        assertEq(
+            keccak256(bytes(att.origin)),
+            keccak256(vm.parseJsonBytes(json, string.concat(v, ".originUtf8Hex"))),
+            string.concat(name, ": origin utf-8 bytes")
+        );
+        assertEq(
+            keccak256(bytes(att.origin)),
+            vm.parseJsonBytes32(json, string.concat(v, ".originHash")),
+            string.concat(name, ": originHash")
+        );
+        assertEq(
+            h.hashAttestation(att),
+            vm.parseJsonBytes32(json, string.concat(v, ".structHash")),
+            string.concat(name, ": structHash")
+        );
+        assertEq(
+            h.domainSeparator(),
+            vm.parseJsonBytes32(json, string.concat(v, ".domainSeparator")),
+            string.concat(name, ": domainSeparator")
+        );
+        assertEq(
+            h.attestationDigest(att),
+            vm.parseJsonBytes32(json, string.concat(v, ".digest")),
+            string.concat(name, ": digest")
+        );
+        assertEq(
+            h.recoverAttestationSigner(att, sig),
+            vm.parseJsonAddress(json, string.concat(v, ".signer")),
+            string.concat(name, ": signer")
+        );
+
+        (PolicyPoolHook.Attestation memory dAtt, bytes memory dSig) = h.decodeHookData(hookData);
+        assertEq(keccak256(abi.encode(dAtt)), keccak256(abi.encode(att)), string.concat(name, ": hookData attestation"));
+        assertEq(keccak256(dSig), keccak256(sig), string.concat(name, ": hookData signature"));
+        assertEq(
+            keccak256(hookData),
+            keccak256(abi.encode(att, sig)),
+            string.concat(name, ": hookData = abi.encode(att, sig)")
+        );
     }
 }
