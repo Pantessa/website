@@ -83,6 +83,7 @@
     "drive:ask-chart": "tsx scripts/drive-ask-chart.ts",
     "drive:native": "tsx scripts/drive-native.ts",
     "drive:prints": "tsx scripts/drive-print-alerts.ts",
+    "drive:guest-chat": "node scripts/guest-chat-drive.mjs",
     "pins:markets-mobile": "tsx scripts/markets-mobile-pins.ts"
   },
   "dependencies": {

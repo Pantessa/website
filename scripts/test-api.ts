@@ -23988,6 +23988,55 @@ async function main() {
         `bare=${bare.join(',')}`,
       )
     }
+    // A GUEST'S SEND ON /chat ANSWERS AND NEVER NAVIGATES AWAY (2026-10-20).
+    // The bare /chat is public to look at (#978) and its banner promises "Ask
+    // anything — no wallet needed" (lib/guest-trial). A guest's thread is a
+    // LOCAL chat (lib/chat-ids), and the first send used to write
+    // /chat/<localId> into the address bar — an open thread's address, which
+    // the spine's gate reads as the signed-in app's and bounces a signed-out
+    // visitor home from (AppSpine, #757): the turn was counted, the answer
+    // never seen (headless Chrome: `replaceState /chat/9n62ouekae`, then
+    // `replaceState /`). Now only a DB thread has an address of its own
+    // (lib/chat-ids chatHrefFor); a local thread lives on the bare /chat, the
+    // rail re-selects it there, New Chat clears it by hand, and the KEEP
+    // moment gives the adopted thread its address. The browser proof is
+    // scripts/guest-chat-drive.mjs (`npm run drive:guest-chat`, needs Chrome).
+    {
+      const ci = await import('../lib/chat-ids')
+      const ae = await import('../lib/app-entry')
+      const dbId = `c${'k'.repeat(24)}`
+      check(
+        'chat address: only a DB thread has one — chatHrefFor(cuid) = /chat/<id>; a local id (lib/store localId: short base36) and any other string stay on the bare /chat',
+        ci.chatHrefFor(dbId) === `/chat/${dbId}` && ci.isDbChatId(dbId) &&
+          ['9n62ouekae', 'abc', '', 'c', 'cshort'].every((id) => ci.chatHrefFor(id) === '/chat' && !ci.isDbChatId(id)),
+      )
+      check(
+        "chat address: a local thread's address is a public app page (the spine leaves a signed-out visitor there) and a DB thread's is not",
+        ae.isPublicAppPath(ci.chatHrefFor('9n62ouekae')) && !ae.isPublicAppPath(ci.chatHrefFor(dbId)),
+      )
+      const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const src = async (p: string) => strip(await readFile(new URL(`../${p}`, import.meta.url), 'utf8'))
+      const [chatS, storeS, railS, wsS] = await Promise.all(['components/ChatInterface.tsx', 'lib/store.ts', 'components/ChatsRailTab.tsx', 'components/ChatWorkspace.tsx'].map(src))
+      check(
+        "guest send: the first send writes the thread's address only for a DB id (isDbChatId gates the one replaceState, through chatHrefFor) — a guest's local thread keeps /chat, and nothing else in the chat writes /chat/<id>",
+        /if \(!embedded && !simple && isDbChatId\(chatId\)\) window\.history\.replaceState\(null, '', chatHrefFor\(chatId\)\)/.test(chatS) &&
+          !/replaceState\(null, '', `\/chat\/\$\{/.test(chatS),
+      )
+      check(
+        'guest send: the KEEP moment (adoptLocalChat) gives the adopted thread its address from the bare /chat as well as from an older /chat/<localId> tab',
+        /window\.location\.pathname === chatHrefFor\(chat\.id\) \|\| window\.location\.pathname === `\/chat\/\$\{chat\.id\}`\)\) \{\s*window\.history\.replaceState\(null, '', `\/chat\/\$\{created\.id\}\$\{window\.location\.search\}`\)/.test(storeS),
+      )
+      check(
+        'guest send: the CHATS rail opens a row at chatHrefFor (a local thread is selected first, since /chat is its only address) and New Chat clears the current thread by hand before the push',
+        /const openChat = \(id: string\) => \{\s*if \(!isDbChatId\(id\)\) setCurrentChatId\(id\)\s*go\(chatHrefFor\(id\)\)\s*\}/.test(railS) &&
+          /const newChat = \(\) => \{\s*setCurrentChatId\(null\)\s*go\('\/chat'\)\s*\}/.test(railS) &&
+          /onClick=\{newChat\}/.test(railS) && /onClick=\{\(\) => openChat\(chat\.id\)\}/.test(railS) && !/go\(`\/chat\/\$\{chat\.id\}`\)/.test(railS),
+      )
+      check(
+        "guest send: the bare /chat keeps a local current thread (it drops only a DB id or an id the store no longer holds), so a guest's thread survives the rail, the nav and the sign-in that keeps it",
+        /if \(!chatId\) \{\s*const \{ currentChatId: cur, chats \} = useYeetfulStore\.getState\(\)\s*if \(!cur \|\| isDbChatId\(cur\) \|\| !chats\.some\(\(c\) => c\.id === cur\)\) setCurrentChatId\(null\)\s*return\s*\}/.test(wsS),
+      )
+    }
     // PUBLIC MARKETS, CONNECT TO ACT (2026-09-14, Nate: "I don't think the
     // user should have to connect wallet to view the charts and market, but
     // only on an action item 'buy $10 of APPLE'"). /markets and /t/<symbol>

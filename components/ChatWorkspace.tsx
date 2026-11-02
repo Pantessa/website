@@ -15,6 +15,7 @@ import { PHONE_MQ } from '@/lib/phone-shell'
 import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK, DEFAULT_CHAT_FLEET_SLUGS } from '@/lib/free-fleet'
 import { resolveAppIds } from '@/lib/ask-apps'
+import { isDbChatId } from '@/lib/chat-ids'
 
 // Free fleet leads the static fallback so the MCP rail's default (free) view
 // is never empty when /api/servers is down.
@@ -86,7 +87,15 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   // messages never load and the splash hold spins the loader forever.
   useEffect(() => {
     if (!chatId) {
-      setCurrentChatId(null)
+      // The bare /chat is a NEW chat for a signed-in visitor (a DB thread's
+      // id is dropped here), but a LOCAL thread has no other address: it
+      // lives on this page (lib/chat-ids chatHrefFor), so the one on screen
+      // stays — the rail's New Chat starts a fresh one by hand, the rail's
+      // row re-selects it from anywhere, and the sign-in that KEEPS it
+      // (lib/store adoptLocalChat, re-running this effect through
+      // authedAddress) finds it still current instead of a blank page.
+      const { currentChatId: cur, chats } = useYeetfulStore.getState()
+      if (!cur || isDbChatId(cur) || !chats.some((c) => c.id === cur)) setCurrentChatId(null)
       return
     }
     setCurrentChatId(chatId)

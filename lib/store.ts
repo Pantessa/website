@@ -7,7 +7,7 @@ import { persist } from 'zustand/middleware'
 // Type-only the other way (free-fleet imports `type McpServer` from here), so
 // this runtime import is not circular.
 import { DEFAULT_CHAT_FLEET_SLUGS } from '@/lib/free-fleet'
-import { isDbChatId } from '@/lib/chat-ids'
+import { chatHrefFor, isDbChatId } from '@/lib/chat-ids'
 import { isTerminal, type SettlementOutcome } from '@/lib/xchain-settlement'
 
 export interface McpServer {
@@ -856,11 +856,13 @@ export const useYeetfulStore = create<YeetfulStore>()(
             currentChatId: s.currentChatId === chat.id ? created.id : s.currentChatId,
             adoptedChatIds: { ...s.adoptedChatIds, [chat.id]: created.id },
           }))
-          // The address bar still says /chat/<localId> — a dead id once the
-          // thread is DB-backed, so a reload landed on an empty new chat
+          // The address bar names the thread once it is DB-backed. A local
+          // thread lived on the bare /chat (lib/chat-ids chatHrefFor; an
+          // older tab may still say /chat/<localId>) — a dead address once
+          // the thread has a row, so a reload landed on an empty new chat
           // instead of the thread the visitor just signed in to KEEP (squad
           // gtm 2026-09-08, driven live: adopted + listed, URL stale).
-          if (typeof window !== 'undefined' && window.location.pathname === `/chat/${chat.id}`) {
+          if (typeof window !== 'undefined' && (window.location.pathname === chatHrefFor(chat.id) || window.location.pathname === `/chat/${chat.id}`)) {
             window.history.replaceState(null, '', `/chat/${created.id}${window.location.search}`)
           }
           return created.id
