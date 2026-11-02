@@ -2492,7 +2492,8 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
         // is one (`dune:<queryId>` provenance), else a fresh per-turn id.
         const policyPool = namesPolicyPool(message) ? await policyPoolRouteForTurn(message, turnLinkSlug) : null
         if (policyPool) nativeTrace({ type: 'status', label: `policy pool named in the ask — routing to the attested build (intent ${policyPool.intentId}, origin ${policyPool.origin}); the venue cascade is bypassed` })
-        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps, contentOrigin, { allowRetarget: allowRetarget && !policyPool, chainNote: inferredSpot?.line, ...(policyPool ? { policyPool } : {}) })
+        const swapOpts = withPolicyPoolRoute(policyPool, { allowRetarget, chainNote: inferredSpot?.line })
+        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps, contentOrigin, swapOpts)
       }
       // crossChain + a usable cross-chain agent → build it NATIVELY (deterministic
       // build_swap + guardrails + Sign button), never via the planner/house
@@ -5913,6 +5914,12 @@ function tapeHoldReply(err: TapeUnavailableError, trace: (event: unknown) => voi
     buildPath: err.permanent ? 'native-swap-off-tape' : 'native-swap-hold',
     ...(err.permanent ? { blocked: true } : {}),
   })
+}
+
+/** The swap turn's options with the policy pool route on them: the pool is
+ *  one venue on one chain, so the spend retarget never moves its build. */
+function withPolicyPoolRoute(route: PolicyPoolRoute | null, opts: SwapTurnOpts): SwapTurnOpts {
+  return route ? { ...opts, allowRetarget: false, policyPool: route } : opts
 }
 
 /** The desk intent bound to this turn's link (if any) → the policy pool route. */
