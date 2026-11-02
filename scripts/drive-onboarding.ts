@@ -131,6 +131,9 @@ const ROWS: Row[] = [
   // 3 — the flagship house ask (HL perp + stop), the prod ask_failures row.
   { id: 'hype/usdt', ask: '2x long $20 of HYPE with a 5% stop', wallet: 'usdtOnlyArb', why: 'prod ask_failure: planner answer while the wallet held thousands' },
   { id: 'hype/rich', ask: 'Buy $20 worth of HYPE and open a 2x long position on Hyperliquid perpetuals', wallet: 'richEverywhere', why: 'the verbatim prod ask_failure phrasing' },
+  // 2026-10-20 (Nate, /chat): the net's ONE reading was offered as a chip the client never rendered
+  // (lib/clarify dropped one-option clarifies). A single reading builds in the same turn now.
+  { id: 'uni/short-worth', ask: 'SHORT UNI with $25 worth', wallet: 'richEverywhere', why: 'no grammar reads it; the net has one reading — it must build, never "tap it" over nothing' },
   { id: 'hype/empty', ask: '2x long $20 of HYPE with a 5% stop', wallet: 'empty', why: 'empty wallet HL open = the card door (#795)' },
 
   // 4 — lending.

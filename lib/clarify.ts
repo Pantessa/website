@@ -77,7 +77,12 @@ function fundActionOf(raw: unknown): ClarifyFundAction | undefined {
 
 export interface ClarifyRequest {
   question: string
-  /** 2–4 options, planner's best guess first. */
+  /** 1–4 options, best guess first. A PLANNER asks with 2–4 (the prompt
+   *  rule below); a native layer may offer ONE — a confirm button, the
+   *  next step after a build failure ("Try again"), the intent net's single
+   *  reading on a re-entered turn. Until 2026-10-20 a one-option clarify was
+   *  dropped here as "not a question", so every reply that said "tap it"
+   *  over a single option pointed at a button that never rendered. */
   options: ClarifyOption[]
 }
 
@@ -107,7 +112,7 @@ export function clarifyOf(raw: unknown): ClarifyRequest | null {
     }
     if (options.length >= MAX_OPTIONS) break
   }
-  if (options.length < 2) return null // one option is not a question
+  if (options.length < 1) return null // nothing to tap is not a clarify; ONE option is a button
   return { question: d.question.trim().slice(0, MAX_CHARS * 2), options }
 }
 
