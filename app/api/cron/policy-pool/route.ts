@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { indexPolicyPool, readPolicyPoolEnv } from '@/lib/policy-pool/indexer'
+import { policyPoolConfig } from '@/lib/policy-pool/config'
+import { indexPolicyPool } from '@/lib/policy-pool/indexer'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -18,9 +19,10 @@ function authorized(req: NextRequest): boolean {
 
 async function handle(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
-  const pool = readPolicyPoolEnv()
-  if (!pool) return NextResponse.json({ skipped: 'not deployed' })
   try {
+    // policyPoolConfig throws by name on a half-configured pool — reported, never read as "off".
+    const pool = policyPoolConfig()
+    if (!pool) return NextResponse.json({ skipped: 'not deployed' })
     return NextResponse.json(await indexPolicyPool(pool))
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message?.split('\n')[0] ?? 'index failed' }, { status: 500 })

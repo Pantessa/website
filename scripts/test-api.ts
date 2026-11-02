@@ -35546,15 +35546,22 @@ async function main() {
       hb.length === 24 && hb[23].t === '2026-11-02T12:00:00.000Z' && hb[23].fills === 2 && hb[23].volumeUsd === 25 && hb[22].refusals === 2 && hb[22].fills === 0 &&
         hb.reduce((a, b) => a + b.fills + b.refusals, 0) === 4,
     )
-    const env = PPI.readPolicyPoolEnv({ POLICY_POOL_CHAIN_ID: '84532', POLICY_POOL_HOOK: '0x00000000000000000000000000000000000000c0', POLICY_POOL_DEPLOY_BLOCK: '123' })
+    const CFG = await import('../lib/policy-pool/config')
+    const cfgEnv = {
+      POLICY_POOL_CHAIN_ID: '84532', POLICY_POOL_HOOK: '0x75d43357ef9ADe0F4EB53B219383C0CC2CcdC8C0', POLICY_POOL_DEPLOY_BLOCK: '53526176',
+      POLICY_POOL_CURRENCY0: '0x0000000000000000000000000000000000000000', POLICY_POOL_CURRENCY1: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+      POLICY_POOL_FEE: '500', POLICY_POOL_TICK_SPACING: '10', POLICY_SIGNER_ADDRESS: '0xC1e953C24250FcFc2A332c641A2aD30e8bC740a0',
+    }
+    const cfg = CFG.policyPoolConfig(cfgEnv)
+    const ip = cfg ? PPI.indexedPoolOf(cfg) : null
     const fields = PPI.fillFieldsFor(
       { intentId: ('0x' + '11'.repeat(32)) as `0x${string}`, swapper: '0x0000000000000000000000000000000000000001', poolId: ('0x' + '22'.repeat(32)) as `0x${string}`, zeroForOne: false, amount0: BigInt('10400000000000000'), amount1: BigInt(-25_000_000), origin: 'dune:9055910' },
-      { chainId: 84532, currency0: '0x0000000000000000000000000000000000000000', currency1: '0x036cbd53842c5426634e7929541ec2318f3dcf7e' },
+      ip ?? { chainId: 84532, currency0: '0x0000000000000000000000000000000000000000', currency1: '0x036cbd53842c5426634e7929541ec2318f3dcf7e' },
     )
     check(
-      'policy-pool: the env reader is null with no hook (not deployed), defaults the Sepolia USDC + fee 500 / spacing 10 with one; a DeskFill pays in the negative leg and prices the USDC leg 1:1',
-      PPI.readPolicyPoolEnv({}) === null && PPI.readPolicyPoolEnv({ POLICY_POOL_HOOK: 'nope' }) === null && !!env && env.deployBlock === 123 && env.fee === 500 && env.tickSpacing === 10 &&
-        env.currency1 === '0x036cbd53842c5426634e7929541ec2318f3dcf7e' && /^0x[0-9a-f]{64}$/.test(env.poolId) &&
+      'policy-pool: the indexer reads the pool through policyPoolConfig (null with no hook = not deployed) — the deployed Sepolia pool indexes from block 53526176 with lowercased currencies and its pinned pool id; a DeskFill pays in the negative leg and prices the USDC leg 1:1',
+      CFG.policyPoolConfig({}) === null && !!ip && ip.deployBlock === 53526176 && ip.currency1 === '0x036cbd53842c5426634e7929541ec2318f3dcf7e' && ip.hook === '0x75d43357ef9ade0f4eb53b219383c0cc2ccdc8c0' &&
+        cfg?.poolId === '0x838bdae6a1597b8ef2062faa3f96f0af0fb461a5ce45b7ac81521cd830ffd39f' &&
         fields.amountIn === '25000000' && fields.amountOut === '10400000000000000' && fields.usd === 25,
     )
     const real = PPI.fillFieldsFor(
@@ -35562,7 +35569,8 @@ async function main() {
       { intentId: ('0x' + '95'.repeat(32)) as `0x${string}`, swapper: '0x5eaabd731d2bc0490c2d47e41858e9b0629455a0', poolId: ('0x' + '83'.repeat(32)) as `0x${string}`, zeroForOne: true, amount0: BigInt(-300000000000000), amount1: BigInt(614189), origin: 'demo:sepolia-first-fill' },
       { chainId: 84532, currency0: '0x0000000000000000000000000000000000000000', currency1: '0x036cbd53842c5426634e7929541ec2318f3dcf7e' },
     )
-    const tie = [{ createdAt: '2026-11-02T13:45:48.000Z', kind: 'fill' as const }, { createdAt: '2026-11-02T13:45:48.000Z', kind: 'mined' as const }, { createdAt: '2026-11-02T13:45:40.000Z', kind: 'signed' as const }].sort(PPL.walkOrder)
+    // The desk's `mined` carries wall-clock ms (:48.4), the chain's `fill` its block's whole second (:48).
+    const tie = [{ createdAt: '2026-11-02T13:45:48.000Z', kind: 'fill' as const }, { createdAt: '2026-11-02T13:45:48.400Z', kind: 'mined' as const }, { createdAt: '2026-11-02T13:45:40.000Z', kind: 'signed' as const }].sort(PPL.walkOrder)
     check(
       'policy-pool: the real Sepolia DeskFill (zeroForOne, ETH paid) reads 0.0003 ETH in / 614189 USDC atoms out / $0.61 with ETH as currencyIn; rows sharing a block time order signed → mined → fill',
       real.amountIn === '300000000000000' && real.amountOut === '614189' && real.usd === 0.61 && real.meta.currencyIn === '0x0000000000000000000000000000000000000000' &&
