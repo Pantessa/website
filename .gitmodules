@@ -1,0 +1,6 @@
+[submodule "contracts/policy-pool/lib/forge-std"]
+	path = contracts/policy-pool/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "contracts/policy-pool/lib/v4-periphery"]
+	path = contracts/policy-pool/lib/v4-periphery
+	url = https://github.com/Uniswap/v4-periphery
