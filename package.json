@@ -53,6 +53,7 @@
     "probe:creator-split": "tsx scripts/probe-creator-split.ts",
     "probe:listings": "tsx scripts/action-gate-pins.ts --live",
     "pins:tape": "tsx scripts/tape-pins.ts",
+    "pins:venues": "tsx scripts/venue-manifest-pins.ts",
     "pins:prints": "tsx scripts/print-alert-pins.ts",
     "pins:battle": "tsx scripts/battle-pins.ts",
     "pins:flyover": "tsx scripts/flyover-pins.ts",

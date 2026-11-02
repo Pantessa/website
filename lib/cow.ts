@@ -387,12 +387,15 @@ export const COW_ORDER_TYPES = {
   ],
 } as const
 
+/** The GPv2 signing domain (name + version). One source: the builder below and
+ *  the venue manifest (lib/venue-manifest.ts) both read it. */
+export const COW_EIP712_DOMAIN = { name: 'Gnosis Protocol', version: 'v2' } as const
+
 /** Build the EIP-712 typed-data payload the user signs for a CoW order. */
 export function buildCowOrderTypedData(quote: CowQuoteResult) {
   return {
     domain: {
-      name: 'Gnosis Protocol',
-      version: 'v2',
+      ...COW_EIP712_DOMAIN,
       chainId: quote.chainId,
       verifyingContract: GPV2_SETTLEMENT,
     },

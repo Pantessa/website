@@ -51,6 +51,12 @@ export const UNI_SWAP_ROUTER_02 = '0x2626664c2603336E57B271c5C0b26F421741e481' a
 // the same tier scan for exactly one token.
 export const FEE_TIERS = [100, 500, 3000, 10000] as const
 
+/** The builder's default slippage bound (bps) and multicall deadline (seconds) —
+ *  exported so the venue manifest (lib/venue-manifest.ts) reports the numbers
+ *  the builder actually stamps, never a retyped copy. */
+export const UNI_DEFAULT_SLIPPAGE_BPS = 50
+export const UNI_DEADLINE_SEC = 600
+
 /** The ledger/policy host Uniswap swaps are attributed to. */
 export const UNISWAP_POLICY_HOST = 'uniswap.yeetful.com'
 
@@ -509,8 +515,8 @@ export interface UniswapBuilt {
  * — identical to what gates CoW orders.
  */
 export async function buildUniswapSwap(params: UniswapSwapParams): Promise<UniswapBuilt> {
-  const slippageBps = params.slippageBps ?? 50
-  const deadlineSec = params.deadlineSec ?? 600
+  const slippageBps = params.slippageBps ?? UNI_DEFAULT_SLIPPAGE_BPS
+  const deadlineSec = params.deadlineSec ?? UNI_DEADLINE_SEC
   const chainId = params.chainId ?? 8453
   const chain = chainById(chainId)
   if (!chain) throw new Error(`Chain ${chainId} isn't one of Pantessa's supported chains.`)

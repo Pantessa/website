@@ -36,10 +36,11 @@ export const RH_L1_INBOX = '0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D' as const
 export const ARB_SYS = '0x0000000000000000000000000000000000000064' as const
 export const RH_BRIDGE_UI = 'https://portal.arbitrum.io/bridge?destinationChain=robinhood-chain'
 
-const INBOX_ABI = [
+/** Exported for the venue manifest (selectors derived, never retyped). */
+export const INBOX_ABI = [
   { name: 'depositEth', type: 'function', stateMutability: 'payable', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
 ] as const
-const ARB_SYS_ABI = [
+export const ARB_SYS_ABI = [
   { name: 'withdrawEth', type: 'function', stateMutability: 'payable', inputs: [{ name: 'destination', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] },
 ] as const
 

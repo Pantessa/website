@@ -6788,3 +6788,30 @@
 :root[data-theme='light'] .edemo__live { color: color-mix(in oklch, var(--accent) 78%, var(--fg)); }
 :root[data-theme='light'] .pulse__chip--buy { color: color-mix(in oklch, var(--pulse-up) 78%, var(--fg)); }
 :root[data-theme='light'] .pulse__chip--sell { color: color-mix(in oklch, var(--pulse-down) 82%, var(--fg)); }
+
+/* ── /docs/venues — the venue manifest (2026-11-02) ──────────────────────────
+   Cards per venue inside the docs prose; a print sheet so a compliance desk
+   can PDF the page (rail, footer and chrome drop; cards never split). */
+.venues__card { margin-top: 28px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); max-width: 96ch; }
+.docs__prose .venues__card > h2 { margin-top: 0; }
+.venues__pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.venues__pill { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+.venues__pill--tx { border-color: var(--accent, var(--fg)); color: var(--fg); }
+.venues__pill--warn { border-style: dashed; color: var(--fg); }
+.venues__addr, .venues__src { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; overflow-wrap: anywhere; }
+.venues__src { color: var(--muted-2); }
+.venues__shape { font-size: 11.5px; color: var(--muted-2); margin-left: 6px; }
+.venues__note, .venues__custody { font-size: 13.5px; }
+.venues__toc { font-size: 13.5px; line-height: 1.9; }
+.venues__foot { margin-top: 36px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.8; color: var(--muted-2); max-width: 96ch; overflow-wrap: anywhere; }
+@media print {
+  .docs { display: block; padding: 0; min-height: 0; }
+  .docs__rail, .docs__crumbs, .footer, .venues__toc { display: none !important; }
+  .docs__main { padding: 0; }
+  .docs__prose > *, .venues__card, .venues__foot, .docs__prose table { max-width: none; }
+  .docs__prose table { display: table; width: 100%; font-size: 11px; }
+  .docs__prose th, .docs__prose td { padding: 4px 6px; }
+  .venues__card { break-inside: avoid; page-break-inside: avoid; border-color: #999; background: none; }
+  .docs__prose a { text-decoration: none; color: inherit; }
+  .venues__addr a::after { content: none; }
+}

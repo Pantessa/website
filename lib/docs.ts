@@ -109,6 +109,15 @@ export const DOCS_PAGES: DocsPage[] = [
     door: 'user',
   },
   {
+    slug: 'venues',
+    title: 'The venue manifest',
+    seoTitle: 'The venue manifest — pinned contracts, selectors, guards',
+    description:
+      'Every contract and selector a Pantessa build may emit, per venue and chain, with the guard that fences it and its bounds — from the builder constants, as JSON.',
+    ready: true,
+    door: 'user',
+  },
+  {
     slug: 'transactions',
     title: 'Native venues & guards',
     seoTitle: 'The transaction layer — venues, builders, and guards',

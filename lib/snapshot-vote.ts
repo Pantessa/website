@@ -64,12 +64,16 @@ function encodeChoice(choice: VoteChoice): { type: string; value: number | numbe
  * the timestamp is stamped at build time (Snapshot rejects stale votes — build
  * right before signing). Proven against the live sequencer.
  */
+/** The off-chain Snapshot signing domain — no chainId, no verifyingContract. One
+ *  source for the builder below and the venue manifest. */
+export const SNAPSHOT_VOTE_DOMAIN = { name: 'snapshot', version: '0.1.4' } as const
+
 export function buildVoteTypedData(opts: {
   from: string; space: string; proposalId: string; choice: VoteChoice; reason?: string
 }): VoteTypedData {
   const choice = encodeChoice(opts.choice)
   return {
-    domain: { name: 'snapshot', version: '0.1.4' },
+    domain: { ...SNAPSHOT_VOTE_DOMAIN },
     types: {
       Vote: [
         { name: 'from', type: 'address' },

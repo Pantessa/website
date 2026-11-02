@@ -370,6 +370,7 @@ import { actionGateLivePins, actionGatePins } from './action-gate-pins'
 import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
+import { venueManifestLivePins, venueManifestPins } from './venue-manifest-pins'
 import { printAlertPins } from './print-alert-pins'
 import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
@@ -2154,6 +2155,7 @@ async function main() {
     const PROSE_PATHS = [
       '/', '/pricing', '/links', '/links/embed', '/rebrand', '/mosaic',
       '/docs', '/docs/desk', '/docs/embed', '/docs/links', '/docs/jobs', '/docs/trust',
+      '/docs/venues',
       '/docs/first-five-minutes', '/docs/host-buttons', '/docs/embedded-wallet',
       '/docs/creator-earnings', '/docs/spend-policy', '/docs/transactions',
       '/docs/privacy', '/docs/terms', '/docs/dca', '/docs/guardian', '/docs/snapshot',
@@ -35058,6 +35060,9 @@ async function main() {
   battlefieldPins(check)
   // The live tape (2026-10-06): the venue row parse, flow classes, buckets, tiles, follow asks, triggers, the page's door.
   tapePins(check)
+  // The venue manifest (2026-11-02): pinned contracts, selectors, guards and bounds per venue, read from the builders' own constants; the served route + page agree.
+  venueManifestPins(check)
+  await venueManifestLivePins(check, BASE)
   // The /live trigger rules armed on the server (2026-10-13): the body reader, the evaluation over consumed fills, the cursor policy, the notification, the wiring.
   printAlertPins(check)
   // The battle views on /live (2026-10-06): windows and anchors, the percent track, the range, units, bursts, rank, the picker, the projections.

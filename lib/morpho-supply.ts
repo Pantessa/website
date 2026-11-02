@@ -97,6 +97,9 @@ const QUESTION_START_RE = /^\s*(?:should|why|what|when|how|is|are|does|do|can\s+
 /** 1 = Ethereum, 8453 = Base (the service default). */
 export type MorphoChainId = 1 | 8453
 export const MORPHO_DEFAULT_CHAIN_ID: MorphoChainId = 8453
+/** Every chain the Morpho layer builds on (the MorphoChainId union, as a list the
+ *  venue manifest can walk). */
+export const MORPHO_CHAIN_IDS = [1, 8453] as const satisfies readonly MorphoChainId[]
 
 /** Resolve the chain slot: named Base/Ethereum → its id; a named OTHER chain
  *  → its word (route site refuses by name); nothing named → Base default. */
