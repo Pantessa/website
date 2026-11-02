@@ -165,7 +165,8 @@ export function sameAppHref(a: string, b: string): boolean {
 export function isPublicAppPath(href: string): boolean {
   const path = href.split(/[?#]/)[0]
   // …and the public progress pages (/leaderboard, /analytics — 2026-10-15).
-  return isMarketsPath(path) || isProgressPath(path) || path === '/chat' || path === '/chat/'
+  // …and the policy pool's public ledger (/policy-pool — squad policy-pool, 2026-11-02).
+  return isMarketsPath(path) || isProgressPath(path) || path === '/chat' || path === '/chat/' || path === '/policy-pool' || path === '/policy-pool/'
 }
 
 export type SessionStatus = 'loading' | 'authed' | 'guest'

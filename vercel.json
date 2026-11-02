@@ -29,6 +29,10 @@
     {
       "path": "/api/cron/prints",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/policy-pool",
+      "schedule": "*/2 * * * *"
     }
   ],
   "functions": {
