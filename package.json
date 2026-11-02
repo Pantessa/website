@@ -57,6 +57,7 @@
     "pins:exec": "tsx scripts/exec-strip-pins.ts",
     "pins:policy-pool": "tsx scripts/policy-pool-builder-pins.ts",
     "demo:policy-pool": "tsx scripts/policy-pool-demo.ts",
+    "drive:policy-pool-try": "node scripts/policy-pool-try-drive.mjs",
     "pins:prints": "tsx scripts/print-alert-pins.ts",
     "pins:battle": "tsx scripts/battle-pins.ts",
     "pins:flyover": "tsx scripts/flyover-pins.ts",

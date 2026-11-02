@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Footer from '@/components/Footer'
 import PolicyPoolLive, { type LedgerPayload } from '@/components/policy-pool/PolicyPoolLive'
+import TryIt, { type TryPool } from '@/components/policy-pool/TryIt'
 import { elide, explorerFor } from '@/components/policy-pool/format'
 import { emptyPolicyPoolStats, listPolicyPoolEvents, policyPoolStats } from '@/lib/policy-pool/ledger'
 import { policyPoolConfig, type PolicyPoolConfig } from '@/lib/policy-pool/config'
@@ -112,6 +113,9 @@ export default async function PolicyPoolPage() {
     console.warn(`[policy-pool page] ${misconfigured}`)
   }
   const [initial, hook] = await Promise.all([initialPayload(), pool ? readHookState(pool) : Promise.resolve(null)])
+  const tryPool: TryPool | null = pool
+    ? { chainId: pool.chainId, chainName: pool.chainName, hook: pool.hook, usdc: pool.poolKey.currency1, maxUsd: pool.maxUsd, explorer: explorerFor(pool.chainId) + '/tx/', mainnet: pool.mainnet }
+    : null
   return (
     <>
       <main className="x-main x-main--fluid pg pp" data-policy-pool={pool ? 'deployed' : 'not-deployed'}>
@@ -122,7 +126,10 @@ export default async function PolicyPoolPage() {
           <Facts pool={pool} hook={hook} misconfigured={misconfigured} />
         </header>
 
-        <PolicyPoolLive initial={initial} deployed={!!pool} />
+        {/* The Try-it strip rides inside the live body, under the tiles and
+            above the charts + ledger (TRYIT lane): three buttons against the
+            viewer's wallet; the pool facts it needs come from the server. */}
+        <PolicyPoolLive initial={initial} deployed={!!pool} slot={<TryIt pool={tryPool} misconfigured={!!misconfigured} />} />
 
         <section className="pg__sec pp-sec" aria-labelledby="pp-how">
           <div className="pg__sec-head">

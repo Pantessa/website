@@ -126,7 +126,9 @@ export function spotHomePins(check: Check): void {
     /const knownCoin = spotHomeChainId\(swapIntent\.buyToken\) !== null/.test(route) && /const pairing = !exactStock && !knownCoin && !resolveToken\(swapIntent\.buyToken, targetChain\.id\) \? pairStockToken/.test(route))
   check('spot home (route): an inferred chain pinned nothing — the spend retarget still follows the money — and the inferred line rides to the swap turn',
     /const allowRetarget = !namedNative && !pickerChain && \(buildChain\.id === targetChain\.id \|\| !!inferredSpot\) && swapIntent\.mode !== 'limit'/.test(route) &&
-      /\{ allowRetarget, chainNote: inferredSpot\?\.line \}\)/.test(route))
+      // RE-PINNED 2026-11-02 (TRYIT): the policy pool's own chain line wins the
+      // note only when the pool moved the turn; the inferred line still rides.
+      /\{ allowRetarget, chainNote: policyPoolChainLine \?\? inferredSpot\?\.line \}\)/.test(route))
   check('spot home (route): the 🏠 line opens a BUILT reply only, and never over a spend retarget\'s own 🧭 line',
     /if \(opts\.chainNote && built && !body\.spendRetarget && typeof body\.reply === 'string'\) \{\s*body\.reply = `🏠 \$\{opts\.chainNote\}\\n\\n\$\{body\.reply\}`/.test(route) &&
       /const built = !!\(body\.txChain \|\| body\.order \|\| body\.txRequest\)/.test(route))

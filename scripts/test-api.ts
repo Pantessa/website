@@ -11693,9 +11693,10 @@ async function main() {
       // asked, empty calldata, value === the atoms asked — and the guard
       // report says so. Nothing is signed.
       const envFs = await import('node:fs')
+      const tryFs = await import('node:fs')
       const pkRaw = (() => {
         try {
-          return envFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+          return tryFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
         } catch {
           return null
         }
@@ -35601,6 +35602,98 @@ async function main() {
         `bad=${bad.status} cron=${cron.status} ${JSON.stringify(cronJ).slice(0, 80)}`,
       )
     } else console.log('  ⚪ policy-pool: CRON_SECRET not in harness env — authorized door checks skipped')
+  }
+
+  // ── THE POLICY POOL "Try it" strip + Base Sepolia behind the gate (TRYIT lane, 2026-11-02) ──
+  // The page's three buttons, the door's chain rule (never 8453, either side),
+  // the over-cap refusal through the real desk policy, the pure helpers, the
+  // gated chain lookups (APP_CHAINS untouched), and the chat sentence that
+  // builds on the pool's chain from a Base picker.
+  {
+    const TRY = await import('../lib/policy-pool/try')
+    const CH = await import('../lib/chains')
+    check(
+      'policy-pool try: the chain verdict refuses Base mainnet on EITHER side and a mismatched expectation, and passes the pool\'s own chain',
+      TRY.tryChainVerdict({ cfgChainId: 8453 }) === TRY.TRY_MAINNET_REFUSAL && TRY.tryChainVerdict({ cfgChainId: 84532, bodyChainId: 8453 }) === TRY.TRY_MAINNET_REFUSAL &&
+        /Reload the page/.test(TRY.tryChainVerdict({ cfgChainId: 84532, bodyChainId: 1 }) ?? '') && TRY.tryChainVerdict({ cfgChainId: 84532, bodyChainId: 84532 }) === null && TRY.tryChainVerdict({ cfgChainId: 84532 }) === null,
+    )
+    const W = '0x' + 'ab'.repeat(20)
+    const pr = TRY.parseTryRequest({ action: 'attested', wallet: W, usd: 1, chainId: 84532 })
+    const prRep = TRY.parseTryRequest({ action: 'report', wallet: W, txHash: '0x' + 'cd'.repeat(32), intentId: 'chat-try-abc123def4' })
+    check(
+      'policy-pool try: the request parser accepts the three actions with an address + a positive usd / a 32-byte tx, lowercases the hash, keeps only this door\'s intent ids, and refuses a bad wallet / action / usd / chain',
+      pr.ok && pr.req.action === 'attested' && pr.req.usd === 1 && prRep.ok && prRep.req.action === 'report' && prRep.req.txHash === '0x' + 'cd'.repeat(32) && prRep.req.intentId === 'chat-try-abc123def4' &&
+        (() => { const x = TRY.parseTryRequest({ action: 'report', wallet: W, txHash: '0x' + 'cd'.repeat(32), intentId: 'evil' }); return x.ok && x.req.action === 'report' && x.req.intentId === null })() &&
+        !TRY.parseTryRequest({ action: 'attested', wallet: 'nope', usd: 1 }).ok && !TRY.parseTryRequest({ action: 'nope', wallet: W }).ok && !TRY.parseTryRequest({ action: 'attested', wallet: W, usd: -1 }).ok &&
+        !TRY.parseTryRequest({ action: 'plain', wallet: W, chainId: 'x' }).ok,
+    )
+    const lim = new TRY.TryLimiter(2, 1000)
+    check('policy-pool try: the limiter allows N hits per key per window and lets the window slide', lim.allow('k', 0) && lim.allow('k', 10) && !lim.allow('k', 20) && lim.allow('other', 20) && lim.allow('k', 1011))
+    check(
+      'policy-pool try: each ask sentence maps back to its action; the attested + over-cap asks are the chat\'s own "through the policy pool" grammar; the walk names the ledger kinds',
+      (['plain', 'attested', 'overcap'] as const).every((a) => TRY.tryActionForAsk(TRY.TRY_ASKS[a]) === a) && TRY.tryActionForAsk('Buy $1 of ETH') === null &&
+        /through the policy pool$/.test(TRY.TRY_ASKS.attested) && /through the policy pool$/.test(TRY.TRY_ASKS.overcap) && TRY.TRY_EXPECTED_KINDS.attested.join(',') === 'guard_allowed,attested,signed,mined,fill' &&
+        TRY.TRY_EXPECTED_KINDS.plain[0] === 'onchain_revert' && TRY.TRY_EXPECTED_KINDS.overcap[0] === 'guard_refused' && TRY.revertReasonFor('NotAttested') === 'NotAttested()',
+    )
+    // The gate: APP_CHAINS never carries the testnet; the lookups answer for
+    // 84532 only when the pool env points at it.
+    const gateOn = { POLICY_POOL_HOOK: '0x75d43357ef9ADe0F4EB53B219383C0CC2CcdC8C0', POLICY_POOL_CHAIN_ID: '84532' }
+    check(
+      'chains gate: Base Sepolia is NOT in APP_CHAINS (the picker / splash / markets / funding lists are byte-identical); chainByIdFor(84532) answers ONLY with POLICY_POOL_HOOK + POLICY_POOL_CHAIN_ID=84532 — not with no env, not with the hook on 8453, never for 8453 itself',
+      !CH.APP_CHAINS.some((c) => c.id === 84532) && CH.gatedChainIdFor({}) === null && CH.gatedChainIdFor({ POLICY_POOL_CHAIN_ID: '84532' }) === null && CH.gatedChainIdFor({ ...gateOn, POLICY_POOL_CHAIN_ID: '8453' }) === null &&
+        CH.gatedChainIdFor(gateOn) === 84532 && CH.chainByIdFor(84532, {}) === null && CH.chainByIdFor(84532, gateOn)?.key === 'base-sepolia' && CH.chainByIdFor(8453, {})?.key === 'base' &&
+        CH.baseSepoliaAppChain.id === 84532 && CH.baseSepoliaAppChain.viem.id === 84532 && CH.baseSepoliaAppChain.uniswap === null && CH.baseSepoliaAppChain.cow === false &&
+        CH.baseSepoliaAppChain.tokens.USDC.address.toLowerCase() === '0x036cbd53842c5426634e7929541ec2318f3dcf7e' && CH.baseSepoliaAppChain.uniswapV4?.universalRouter === CH.UNISWAP_V4_PINS[84532].universalRouter &&
+        CH.baseSepoliaAppChain.explorerTx === 'https://sepolia.basescan.org/tx/' && CH.baseSepoliaAppChain.words.test('buy $1 of eth on base sepolia') && !CH.baseSepoliaAppChain.words.test('buy $1 of eth on base'),
+    )
+    // The served page + the door.
+    const tryPage = await (await fetch(`${BASE}/policy-pool`)).text()
+    check(
+      'policy-pool try: /policy-pool renders the Try-it strip with its three buttons (plain / attested / overcap) under the tiles',
+      /<h2[^>]*id="pp-try"[^>]*>Try it<\/h2>/.test(tryPage) && ['plain', 'attested', 'overcap'].every((a) => tryPage.includes(`data-try-button="${a}"`)) && tryPage.indexOf('data-tiles=""') < tryPage.indexOf('data-try-button="plain"') && tryPage.indexOf('data-try-button="overcap"') < tryPage.indexOf('aria-label="Policy pool ledger"'),
+    )
+    const tryPost = (body: unknown) => fetch(`${BASE}/api/policy-pool/try`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const mainnet = await tryPost({ action: 'attested', wallet: W, usd: 1, chainId: 8453 })
+    const mainnetJ = (await mainnet.json()) as { ok?: boolean; refused?: string; reason?: string }
+    const badAction = await tryPost({ action: 'nope', wallet: W })
+    const badBody = await fetch(`${BASE}/api/policy-pool/try`, { method: 'POST', body: 'not json' })
+    check('policy-pool try: the door refuses chain 8453 by name (403, before any env read), a bad action (400) and a non-JSON body (400)', mainnet.status === 403 && mainnetJ.ok === false && mainnetJ.refused === 'mainnet' && mainnetJ.reason === TRY.TRY_MAINNET_REFUSAL && badAction.status === 400 && badBody.status === 400, `mainnet=${mainnet.status} ${JSON.stringify(mainnetJ).slice(0, 120)} action=${badAction.status} body=${badBody.status}`)
+    const over = await tryPost({ action: 'attested', wallet: W, usd: 5000 })
+    const overJ = (await over.json()) as { ok?: boolean; refused?: string; reason?: string; capUsd?: number; state?: string; intentId?: string }
+    if (over.status === 409) {
+      console.log(`  ⚪ policy-pool try: the pool env is not on this server (${overJ.state}) — the over-cap refusal + the chat sentence are skipped`)
+    } else {
+      check(
+        'policy-pool try: "Ask for $5,000" through the door is refused by the desk policy with its cap sentence — ok:false, refused:policy, capUsd, a chat-try- intent id, nothing built',
+        over.status === 200 && overJ.ok === false && overJ.refused === 'policy' && /per-order cap/.test(overJ.reason ?? '') && typeof overJ.capUsd === 'number' && overJ.capUsd > 0 && TRY.TRY_ATTESTED_ID_RE.test(overJ.intentId ?? ''),
+        `${over.status} ${JSON.stringify(overJ).slice(0, 200)}`,
+      )
+      // The chat sentence from a Base picker builds on the pool's chain and says so.
+      const tryFs = await import('node:fs')
+      const pkRaw = (() => {
+        try {
+          return tryFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+        } catch {
+          return null
+        }
+      })()
+      if (pkRaw) {
+        const burner = privateKeyToAccount((pkRaw.startsWith('0x') ? pkRaw : `0x${pkRaw}`) as `0x${string}`)
+        const chat = (await (
+          await fetch(`${BASE}/api/chat`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ message: 'Buy $1 of ETH through the policy pool', walletAddress: burner.address, selectedChainId: 8453, activeServers: [], history: [] }),
+          })
+        ).json()) as { reply?: string; buildPath?: string; txChain?: { steps?: { tx?: { chainId?: number } }[] }; policyPool?: { intentId?: string }; spotChain?: { chainId?: number } }
+        const steps = chat.txChain?.steps ?? []
+        check(
+          'policy-pool try (chat): "Buy $1 of ETH through the policy pool" with the picker on Base builds on the pool\'s chain — the 🏠 line names Base Sepolia, every step\'s tx.chainId is 84532, buildPath native-swap-policy-pool, a chat- intent',
+          /🏠 The policy pool lives on Base Sepolia/.test(chat.reply ?? '') && chat.buildPath === 'native-swap-policy-pool' && steps.length >= 1 && steps.every((st) => st.tx?.chainId === 84532) && /^chat-/.test(chat.policyPool?.intentId ?? '') && chat.spotChain?.chainId === 84532,
+          `${(chat.reply ?? '').slice(0, 200)} path=${chat.buildPath} steps=${steps.map((st) => st.tx?.chainId).join(',')}`,
+        )
+      } else console.log('  ⚪ policy-pool try (chat): no PRIVATE_KEY in .env.local — the chat sentence is skipped')
+    }
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)

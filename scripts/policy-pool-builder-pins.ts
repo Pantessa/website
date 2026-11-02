@@ -11,7 +11,7 @@
 import { readFileSync } from 'node:fs'
 import { encodeErrorResult, encodeFunctionData, erc20Abi, getAddress, type Address, type Hex } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
-import { APP_CHAINS, BASE_SEPOLIA_CHAIN_ID, BASE_SEPOLIA_USDC, UNISWAP_V4_PINS, chainById, uniswapV4PinsFor } from '../lib/chains'
+import { APP_CHAINS, BASE_SEPOLIA_CHAIN_ID, BASE_SEPOLIA_USDC, UNISWAP_V4_PINS, chainById, chainByIdFor, uniswapV4PinsFor } from '../lib/chains'
 import { NATIVE_CURRENCY, POLICY_POOL_BUILD_PATH, POLICY_POOL_REFRESH_KIND, POLICY_POOL_VENUE, policyPoolChainName, policyPoolConfig } from '../lib/policy-pool/config'
 import {
   POLICY_POOL_INTENT_ID_RE,
@@ -80,8 +80,10 @@ export async function policyPoolBuilderPins(check: Check): Promise<void> {
     UNISWAP_V4_PINS[8453].poolManager.toLowerCase() === '0x498581ff718922c3f8e6a244956af099b2652b2b' && UNISWAP_V4_PINS[8453].universalRouter.toLowerCase() === '0x6ff5693b99212da76ad316178a184ab56d299b43' && UNISWAP_V4_PINS[8453].quoter.toLowerCase() === '0xe1a6c5803e3c44368b171bd680c7d32dfc92ca47')
   check('policy pool pins: Base Sepolia (84532) Quoter is the deployments page\'s 0x4a65…1cba (the squad README\'s 0x4A6b…d6a1 has no code), UR 0x492e…4104',
     UNISWAP_V4_PINS[84532].quoter.toLowerCase() === '0x4a6513c898fe1b2d0e78d3b0e0a4a151589b1cba' && UNISWAP_V4_PINS[84532].universalRouter.toLowerCase() === '0x492e6456d9528771018deb9e87ef7750ef184104')
-  check('policy pool pins: the swap CASCADE is untouched — Base\'s AppChain still has uniswapV4: null, the v4 fallback stays Robinhood-only, Sepolia is NOT an AppChain',
-    chainById(8453)?.uniswapV4 === null && APP_CHAINS.every((c) => c.id === 4663 || c.uniswapV4 === null) && chainById(BASE_SEPOLIA_CHAIN_ID) === null && uniswapV4PinsFor(4663) === null && uniswapV4PinsFor(84532) === UNISWAP_V4_PINS[84532])
+  // RE-PINNED 2026-11-02 (TRYIT): Base Sepolia answers chainById ONLY behind
+  // the pool gate (lib/chains gatedChainIdFor) and is never in APP_CHAINS.
+  check('policy pool pins: the swap CASCADE is untouched — Base\'s AppChain still has uniswapV4: null, the v4 fallback stays Robinhood-only, Sepolia is NOT in APP_CHAINS (lookups answer for it only behind the pool gate)',
+    chainById(8453)?.uniswapV4 === null && APP_CHAINS.every((c) => c.id === 4663 || c.uniswapV4 === null) && !APP_CHAINS.some((c) => c.id === BASE_SEPOLIA_CHAIN_ID) && chainByIdFor(BASE_SEPOLIA_CHAIN_ID, {}) === null && uniswapV4PinsFor(4663) === null && uniswapV4PinsFor(84532) === UNISWAP_V4_PINS[84532])
 
   // ── Config ────────────────────────────────────────────────────────────────
   check('policy pool config: null while POLICY_POOL_HOOK is unset (feature off)', policyPoolConfig({}) === null && policyPoolConfig({ POLICY_POOL_CHAIN_ID: '84532' }) === null)
@@ -212,8 +214,11 @@ export async function policyPoolBuilderPins(check: Check): Promise<void> {
   const exec = readFileSync('lib/broker-exec.ts', 'utf8')
   const telemetry = readFileSync('app/api/embed/telemetry/route.ts', 'utf8')
   const swapExec = readFileSync('lib/swap-exec.ts', 'utf8')
-  check('policy pool dispatch: the chat route routes a named ask to preparePolicyPoolTurn BEFORE the Uniswap/CoW venue pick, pre-flights the pool\'s chain before any balance read, and the recipe carries intentId + origin',
-    chat.includes('namesPolicyPool(message) ? await policyPoolRouteForTurn(message, turnLinkSlug)') && chat.includes('withPolicyPoolRoute(policyPool, { allowRetarget, chainNote: inferredSpot?.line })') && chat.includes('{ ...opts, allowRetarget: false, policyPool: route }') && chat.includes('if (opts.policyPool && (intent.mode ?? \'swap\') === \'swap\') {\n    return await preparePolicyPoolTurn(') &&
+  // RE-PINNED 2026-11-02 (TRYIT): the dispatch site also moves the turn onto the
+  // pool's first-class chain (policyPoolChainSwitch) and its line rides as the
+  // chainNote; the preflight stays as the honest refusal for an unknown chain.
+  check('policy pool dispatch: the chat route routes a named ask to preparePolicyPoolTurn BEFORE the Uniswap/CoW venue pick, moves the turn onto the pool\'s chain when that chain is first-class, pre-flights the pool\'s chain before any balance read, and the recipe carries intentId + origin',
+    chat.includes('namesPolicyPool(message) ? await policyPoolRouteForTurn(message, turnLinkSlug)') && chat.includes('withPolicyPoolRoute(policyPool, { allowRetarget, chainNote: policyPoolChainLine ?? inferredSpot?.line })') && chat.includes('const moved = policyPoolChainSwitch(buildChain.id)') && chat.includes('{ ...opts, allowRetarget: false, policyPool: route }') && chat.includes('if (opts.policyPool && (intent.mode ?? \'swap\') === \'swap\') {\n    return await preparePolicyPoolTurn(') &&
       chat.includes('policyPoolPreflight(chainId, intent.mode)') && chat.includes('kind: POLICY_POOL_REFRESH_KIND') && chat.includes('intentId: route.intentId,\n            origin: route.origin,') && chat.indexOf('return await preparePolicyPoolTurn(') < chat.indexOf("if (venue === 'uniswap' && (intent.mode ?? 'swap') === 'swap') {"))
   check(`policy pool dispatch: /api/tx/refresh accepts kind "${POLICY_POOL_REFRESH_KIND}" and re-attests through buildPolicyPoolSwap with the intent id + origin re-derived SERVER-side (the link's desk intent, else only the turn's own chat-<id> → desk: origin) — never the recipe body's origin`,
     refresh.includes("body.kind !== POLICY_POOL_REFRESH_KIND") && refresh.includes("prisma.brokerIntent.findFirst({ where: { linkSlug }, select: { id: true, origin: true } })") && refresh.includes('origin = policyPoolOriginFor(desk.id, readDeskOrigin(desk.origin))') &&
