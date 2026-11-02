@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { defineChain, createPublicClient, fallback, http, type Chain, type PublicClient } from 'viem'
-import { base, mainnet, arbitrum, optimism } from 'viem/chains'
+import { base, baseSepolia, mainnet, arbitrum, optimism } from 'viem/chains'
 
 // Robinhood Chain (Arbitrum Orbit L2, mainnet 2026-07-01) — not in viem's
 // bundled chains yet. lib/wagmi.ts imports this (the definition moved here
@@ -454,15 +454,112 @@ export function uniswapV4PinsFor(chainId: number): UniswapV4Pins | null {
   return UNISWAP_V4_PINS[chainId] ?? null
 }
 
+// ── Base Sepolia, FIRST-CLASS BEHIND A GATE (policy-pool squad, TRYIT lane,
+// 2026-11-02) ─────────────────────────────────────────────────────────────
+// The policy pool rehearses on Base Sepolia, and Nate wants to drive it from
+// the product (the /policy-pool "Try it" strip, the chat sentence "Buy $1 of
+// ETH through the policy pool"), which needs the chat route's swap turn to
+// know the chain: chainById / publicClientFor / primaryStable / sanitizeChainId
+// all answer for 84532. BUT a testnet must never reach the picker, the
+// splash scoping, the markets, the funding maps or the wallet panel, so the
+// entry is NOT in APP_CHAINS (every listing iterates that array, unchanged)
+// — it is registered ONLY in the by-id / by-key LOOKUPS, and only while the
+// pool env points at it (`POLICY_POOL_HOOK` set + `POLICY_POOL_CHAIN_ID` =
+// 84532 — the same gate lib/policy-pool/config reads). Server-only: the
+// browser bundle carries no POLICY_POOL_* and the window guard below makes
+// the client registry today's, byte for byte; client fallbacks for 84532
+// (SendTxChain / SendTxButton TX_EXPLORER, lib/wallet-chains WALLET_CHAINS,
+// components/policy-pool/format explorerFor) already exist. An env-less
+// deploy sees no change anywhere.
+//
+// Provenance (eth_getCode via Alchemy base-sepolia, 2026-11-02): WETH9
+// 0x4200…0006 2,041 bytes; USDC 1,798 bytes (BASE_SEPOLIA_USDC above); the
+// v4 pins are UNISWAP_V4_PINS[84532] (BUILDER, verified + live-quoted).
+// `uniswap: null` on purpose — no v3 pin was live-quoted here, and the v3
+// builder refuses by name ("Uniswap isn't wired on Base Sepolia yet");
+// the ONLY venue on this chain is the policy pool, reached by naming it.
+export const baseSepoliaAppChain: AppChain = {
+  id: BASE_SEPOLIA_CHAIN_ID,
+  key: 'base-sepolia',
+  name: 'Base Sepolia',
+  short: 'Sepolia',
+  color: '#0052ff',
+  viem: baseSepolia,
+  alchemyNet: 'base-sepolia',
+  // Alchemy's base-sepolia JSON-RPC leads on the server (the same endpoint
+  // lib/policy-pool/config's client uses); viem's default sepolia.base.org
+  // is the fallback.
+  alchemyRpc: true,
+  nativeSymbol: 'ETH',
+  // "base sepolia" / "base-sepolia" — checked BEFORE Base's bare `base` word
+  // in chainNamedIn, so the testnet's name never reads as mainnet.
+  words: /\bbase[\s-]+sepolia\b/i,
+  uniswap: null,
+  uniswapV4: {
+    quoter: UNISWAP_V4_PINS[84532].quoter,
+    universalRouter: UNISWAP_V4_PINS[84532].universalRouter,
+    permit2: UNISWAP_V4_PINS[84532].permit2,
+  },
+  cow: false,
+  wrappedNative: '0x4200000000000000000000000000000000000006',
+  stables: {
+    '0x036cbd53842c5426634e7929541ec2318f3dcf7e': 6, // USDC (Circle testnet issuance)
+  },
+  tokens: {
+    USDC: { address: BASE_SEPOLIA_USDC, decimals: 6 },
+    WETH: { address: '0x4200000000000000000000000000000000000006', decimals: 18 },
+    ETH: { address: '0x4200000000000000000000000000000000000006', decimals: 18 },
+  },
+  explorerTx: 'https://sepolia.basescan.org/tx/',
+}
+
+/** The chains that may join the lookups behind the policy-pool gate (never APP_CHAINS). */
+const GATED_CHAINS: ReadonlyMap<number, AppChain> = new Map([[BASE_SEPOLIA_CHAIN_ID, baseSepoliaAppChain]])
+
+export type ChainEnvLike = Record<string, string | undefined>
+
+/**
+ * The gated chain the policy pool env points at, or null: POLICY_POOL_HOOK
+ * set AND POLICY_POOL_CHAIN_ID a gated testnet id. Null in the browser
+ * always (the registry the client renders is today's). Pure in `env` so the
+ * harness pins both states.
+ */
+export function gatedChainIdFor(env: ChainEnvLike = process.env): number | null {
+  if (typeof window !== 'undefined') return null
+  if (!env.POLICY_POOL_HOOK?.trim()) return null
+  const raw = env.POLICY_POOL_CHAIN_ID?.trim()
+  if (!raw || !/^\d{1,10}$/.test(raw)) return null
+  const id = Number(raw)
+  return GATED_CHAINS.has(id) ? id : null
+}
+
+/** The gated entry for `id` when the gate is open for exactly that id. */
+function gatedChain(id: number, env: ChainEnvLike = process.env): AppChain | null {
+  return gatedChainIdFor(env) === id ? (GATED_CHAINS.get(id) ?? null) : null
+}
+
+/** chainById with an explicit env — the harness's view of the gate. */
+export function chainByIdFor(id: number | null | undefined, env: ChainEnvLike): AppChain | null {
+  if (id == null) return null
+  return BY_ID.get(id) ?? gatedChain(id, env)
+}
+
 const BY_ID = new Map(APP_CHAINS.map((c) => [c.id, c]))
 const BY_KEY = new Map(APP_CHAINS.map((c) => [c.key, c]))
 
 export function chainById(id: number | null | undefined): AppChain | null {
-  return (id != null && BY_ID.get(id)) || null
+  if (id == null) return null
+  return BY_ID.get(id) ?? gatedChain(id)
 }
 
 export function chainByKey(key: string | null | undefined): AppChain | null {
-  return (key && BY_KEY.get(key.toLowerCase())) || null
+  if (!key) return null
+  const k = key.toLowerCase()
+  const hit = BY_KEY.get(k)
+  if (hit) return hit
+  const gatedId = gatedChainIdFor()
+  const g = gatedId !== null ? GATED_CHAINS.get(gatedId) : undefined
+  return g && g.key === k ? g : null
 }
 
 /** The chain's primary $1 unit-of-account (USDC on Base, USDG on Robinhood)
@@ -470,7 +567,7 @@ export function chainByKey(key: string | null | undefined): AppChain | null {
  *  dollar-denominated swap asks ("$1 worth of ETH") and as the default spend
  *  token for "buy $5 of AAPL". */
 export function primaryStable(chainId: number): { symbol: string; address: `0x${string}`; decimals: number } | null {
-  const chain = BY_ID.get(chainId)
+  const chain = chainById(chainId)
   if (!chain) return null
   for (const [symbol, t] of Object.entries(chain.tokens)) {
     if (chain.stables[t.address.toLowerCase()] !== undefined) return { symbol, ...t }
@@ -487,7 +584,7 @@ export function primaryStable(chainId: number): { symbol: string; address: `0x${
  * route's venue pick and the DCA autopilot guard all read this one rule.
  */
 export function buysNativeEth(buyToken: string, chainId: number): boolean {
-  const chain = BY_ID.get(chainId)
+  const chain = chainById(chainId)
   if (!chain || chain.nativeSymbol !== 'ETH') return false
   if (buyToken.trim().toUpperCase() !== 'ETH') return false
   return chain.tokens.ETH?.address.toLowerCase() === chain.wrappedNative.toLowerCase()
@@ -509,13 +606,17 @@ export function explorerTokenUrl(chain: string | number, address: string | null 
 
 /** The chain a message names ("on arbitrum", "on robinhood") — null if none. */
 export function chainNamedIn(message: string): AppChain | null {
+  // The gated testnet first: its words ("base sepolia") contain mainnet's.
+  const gatedId = gatedChainIdFor()
+  const g = gatedId !== null ? GATED_CHAINS.get(gatedId) : undefined
+  if (g && g.words.test(message)) return g
   for (const c of APP_CHAINS) if (c.words.test(message)) return c
   return null
 }
 
 /** Validate an untrusted picker value from the client (chat/splash POST bodies). */
 export function sanitizeChainId(v: unknown): number | null {
-  return typeof v === 'number' && BY_ID.has(v) ? v : null
+  return typeof v === 'number' && (BY_ID.has(v) || gatedChain(v) !== null) ? v : null
 }
 
 // Per-chain viem clients for quotes + allowance/balance reads, lazily created
@@ -544,7 +645,7 @@ export function serverRpcEndpoints(chain: Pick<AppChain, 'alchemyNet' | 'alchemy
 }
 
 export function publicClientFor(chainId: number): PublicClient | null {
-  const chain = BY_ID.get(chainId)
+  const chain = chainById(chainId)
   if (!chain) return null
   let client = clients.get(chainId)
   if (!client) {

@@ -2491,8 +2491,22 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
         // and origin come from the desk intent bound to this link when there
         // is one (`dune:<queryId>` provenance), else a fresh per-turn id.
         const policyPool = namesPolicyPool(message) ? await policyPoolRouteForTurn(message, turnLinkSlug) : null
-        if (policyPool) nativeTrace({ type: 'status', label: `policy pool named in the ask — routing to the attested build (intent ${policyPool.intentId}, origin ${policyPool.origin}); the venue cascade is bypassed` })
-        const swapOpts = withPolicyPoolRoute(policyPool, { allowRetarget, chainNote: inferredSpot?.line })
+        let policyPoolChainLine: string | undefined
+        if (policyPool) {
+          nativeTrace({ type: 'status', label: `policy pool named in the ask — routing to the attested build (intent ${policyPool.intentId}, origin ${policyPool.origin}); the venue cascade is bypassed` })
+          // The pool lives on ONE chain. When that chain is first-class here
+          // (the gated Base Sepolia, lib/chains gatedChainIdFor) and the turn
+          // was aimed elsewhere (the picker on Base), the turn builds on the
+          // pool's chain and says so in one line — the wallet switches at the
+          // signature. policyPoolPreflight still refuses an unknown chain.
+          const moved = policyPoolChainSwitch(buildChain.id)
+          if (moved) {
+            nativeTrace({ type: 'status', label: `policy pool: the pool lives on ${moved.chain.name} — this turn builds there, not on ${buildChain.name} (${namedNative ? 'named' : pickerChain ? 'picked' : 'default'})` })
+            buildChain = moved.chain
+            policyPoolChainLine = moved.line
+          }
+        }
+        const swapOpts = withPolicyPoolRoute(policyPool, { allowRetarget, chainNote: policyPoolChainLine ?? inferredSpot?.line })
         return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps, contentOrigin, swapOpts)
       }
       // crossChain + a usable cross-chain agent → build it NATIVELY (deterministic
@@ -5932,6 +5946,23 @@ async function policyPoolRouteForTurn(message: string, linkSlug: string | undefi
     intent: row ? { id: row.id, origin: readDeskOrigin(row.origin), plan: row.plan } : null,
     fallbackId: `chat-${mintSlug(10)}`,
   })
+}
+
+/** The pool's chain when it is first-class AND differs from the turn's: the
+ *  turn moves there (TRYIT lane, 2026-11-02). Null = stay (same chain, no
+ *  pool, a half-configured pool, or a pool chain the registry doesn't carry
+ *  — the preflight below then says so honestly). */
+function policyPoolChainSwitch(chainId: number): { chain: NonNullable<ReturnType<typeof chainById>>; line: string } | null {
+  let cfg: ReturnType<typeof policyPoolConfig>
+  try {
+    cfg = policyPoolConfig()
+  } catch {
+    return null
+  }
+  if (!cfg || cfg.chainId === chainId) return null
+  const chain = chainById(cfg.chainId)
+  if (!chain) return null
+  return { chain, line: `The policy pool lives on ${cfg.chainName} — this turn builds there, not on ${policyPoolChainName(chainId)}; your wallet switches when you sign.` }
 }
 
 /** Why a policy-pool ask can't build on this turn's chain — or null when it can. */

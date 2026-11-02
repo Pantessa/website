@@ -6,8 +6,9 @@
 // here invents a row: an empty ledger says so.
 
 import dynamic from 'next/dynamic'
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { PolicyPoolEventRow, PolicyPoolStats } from '@/lib/policy-pool/ledger'
+import { PP_OPEN_INTENT_EVENT } from '@/components/policy-pool/TryIt'
 import {
   KIND_META,
   clockTime,
@@ -43,7 +44,7 @@ function useNow(stepMs = 1000) {
   return now
 }
 
-export default function PolicyPoolLive({ initial, deployed }: { initial: LedgerPayload; deployed: boolean }) {
+export default function PolicyPoolLive({ initial, deployed, slot }: { initial: LedgerPayload; deployed: boolean; slot?: ReactNode }) {
   const [data, setData] = useState(initial)
   const [updatedAt, setUpdatedAt] = useState(() => Date.parse(initial.stats.generatedAt))
   const [stale, setStale] = useState(false)
@@ -52,6 +53,10 @@ export default function PolicyPoolLive({ initial, deployed }: { initial: LedgerP
   const [olderCursor, setOlderCursor] = useState<string | null>(initial.nextCursor)
   const now = useNow()
 
+  // The Try-it strip asks for an intent's newest row to open (its event
+  // carries the desk id): refetch now, then open + scroll when the row is here.
+  const [wantIntent, setWantIntent] = useState<string | null>(null)
+  const refetchRef = useRef<() => void>(() => {})
   useEffect(() => {
     let alive = true
     const tick = async () => {
@@ -69,12 +74,31 @@ export default function PolicyPoolLive({ initial, deployed }: { initial: LedgerP
         if (alive) setStale(true)
       }
     }
+    refetchRef.current = () => void tick()
     const t = setInterval(tick, POLL_MS)
     return () => {
       alive = false
       clearInterval(t)
     }
   }, [])
+  useEffect(() => {
+    const onOpen = (ev: Event) => {
+      const id = (ev as CustomEvent<{ intentId?: string }>).detail?.intentId
+      if (!id) return
+      setWantIntent(id)
+      refetchRef.current()
+    }
+    window.addEventListener(PP_OPEN_INTENT_EVENT, onOpen)
+    return () => window.removeEventListener(PP_OPEN_INTENT_EVENT, onOpen)
+  }, [])
+  useEffect(() => {
+    if (!wantIntent) return
+    const row = data.events.find((e) => e.intentId === wantIntent)
+    if (!row) return
+    setOpen(row.id)
+    setWantIntent(null)
+    window.setTimeout(() => document.querySelector(`[data-row-id="${row.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+  }, [wantIntent, data.events])
 
   const loadOlder = useCallback(async () => {
     if (!olderCursor) return
@@ -111,6 +135,8 @@ export default function PolicyPoolLive({ initial, deployed }: { initial: LedgerP
         <Tile k="Intents" v={fmtCount(s.distinctIntents)} note="distinct desk intents" />
         <Tile k="Last fill" v={s.lastFillAt ? relTime(s.lastFillAt, now) : '—'} note={s.lastFillAt ? clockTime(s.lastFillAt) : 'none yet'} />
       </div>
+
+      {slot}
 
       <div className="pg__grid pg__grid--2">
         <section className="pg__sec" aria-labelledby="pp-c1">
@@ -252,6 +278,7 @@ function LedgerRow({ e, now, open, onToggle }: { e: PolicyPoolEventRow; now: num
       tabIndex={0}
       aria-expanded={open}
       data-kind={e.kind}
+      data-row-id={e.id}
       onClick={onToggle}
       onKeyDown={(ev) => {
         if (ev.key === 'Enter' || ev.key === ' ') {
