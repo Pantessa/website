@@ -61,8 +61,10 @@ The TypeScript decoder must unwrap that to name the refusal (the fork test's `_a
 ## Deployed
 **Base Sepolia (84532)**: hook `0x75d43357ef9ADe0F4EB53B219383C0CC2CcdC8C0`, pool id
 `0x838bdae6a1597b8ef2062faa3f96f0af0fb461a5ce45b7ac81521cd830ffd39f` (ETH/USDC `0x036C…cF7e`, 500/10), deploy block
-53526176, ~$12 of full-range depth, one attested fill already on chain
-(`0xcc6bdc22…f7d9`, 0.0003 ETH → 0.614189 USDC, origin `demo:sepolia-first-fill`). Everything in `deployments.json`.
+53526176, ~$12 of full-range depth. Policy signer = the desk signer `0xC1e953C24250FcFc2A332c641A2aD30e8bC740a0`
+(rotated from the deployer burner in `0xeb40b18c…0e2d`, block 53529706). Two attested fills on chain: `0xcc6bdc22…f7d9`
+(burner-signed bootstrap, origin `demo:sepolia-first-fill`) and `0x1b83f31c…b57d` (desk-signer-signed, 0.0002 ETH →
+0.481197 USDC, origin `desk:signer-rotated`). Everything in `deployments.json`.
 **Base mainnet: not deployed** (rule 4).
 
 ## Threat notes
@@ -72,8 +74,8 @@ The TypeScript decoder must unwrap that to name the refusal (the fork test's `_a
   party that will sign the swap. Prefer a bound attestation whenever the swapper is an EOA.
 - **The policy signer key is the same class of secret as the kill switch.** Whoever holds it can authorise any swap into
   the pool up to any size, on either side, to any origin string Dune will believe. Keep it out of the browser, out of the
-  repo, rotate with `setPolicySigner`, and pause with `setPaused` on compromise. On Sepolia the demo signer IS the
-  deployer burner on purpose; a mainnet deployment gets its own key (`POLICY_SIGNER_ADDRESS`), never the burner.
+  repo, rotate with `setPolicySigner`, and pause with `setPaused` on compromise. On Sepolia the signer was the deployer burner
+  for the first hour and is now the desk key (`POLICY_SIGNER_ADDRESS`); a mainnet deployment gets its own key, never the burner.
 - **The attestation is not a price.** It bounds the input, not the output; slippage is the swapper's `amountOutMinimum`
   on the router. The guard in front of the signature keeps doing that job.
 - **`tx.origin` binding is weaker than `msg.sender` binding** and is deliberate: swaps reach the pool through routers,
