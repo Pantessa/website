@@ -309,16 +309,20 @@ Open questions:
 
 ### The funded house burner (`PRIVATE_KEY`)
 
-Chat turns can spend real house USDC. Since #467 the spend policy is
-**open by default** (agents on, `['*']` allowlist, $200/$200 caps) — a
-deliberate product decision that makes the caps the primary control rather
-than a backstop.
+Chat turns can spend real house USDC. The per-grant spend policy (allowlist +
+$200/$200 caps) was **retired 2026-10-30** — nothing a signed-in user asks
+for is capped or approval-gated any more. (New users had already been
+uncapped since the master switch defaulted OFF; this made that universal.)
+What bounds house spend now: the per-key daily budget on `/api/route`
+(Bearer agents), the guest-lane rate gate, the kill switch, and the ledger
+(every call receipted). Read the open questions below in that light.
 
 Open questions:
 - Can an unauthenticated or rate-limited-out visitor cause house spend at all?
   Trace every path from an anonymous turn to `spendCredits` / a burner send.
-- Are the daily/per-call caps enforced server-side on *every* path, including
-  the x402 auto-pay lane (≤$0.05 exact-priced endpoints)?
+- With the per-grant caps retired, what bounds a signed-in user's house spend
+  per day on the x402 auto-pay lane (≤$0.05 exact-priced endpoints) and the
+  inference engine? Today only `/api/route` carries a per-key daily budget.
 - `policyCheckInflow` (#469) made sales exempt from spend gating. Can an
   attacker shape an *outflow* to look like an inflow?
 

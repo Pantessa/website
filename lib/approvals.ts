@@ -1,5 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────
-//  Agent approvals — the dashboard's per-agent on/off switches.
+//  Agent approvals — per-agent on/off rows that derive a grant's allowlist.
+//
+//  RETIRED AS A GATE (2026-10-30): nothing Pantessa runs consults the
+//  allowlist any more — chat, the venue builders and the submit relays
+//  refuse only on the kill switch (lib/spend-grant). The dashboard's
+//  Approvals page and the service-page toggle are gone. What's left here
+//  serves the open-core SDK, which reads the derived list from
+//  GET /api/agent/policy for agents paying from their own wallet, plus
+//  ensureGrant — the ledger home every receipt needs. The history below
+//  explains the shape of the rows.
 //
 //  Semantics (flipped 2026-07-17, Nate-directed): agents default to ON —
 //  everything is enabled out of the gate and the $200 caps are the

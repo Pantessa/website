@@ -97,7 +97,9 @@ export async function agentSpentTodayByKey(apiKeyIds: string[]): Promise<Record<
   return out
 }
 
-/** Narrow a SpendGrant row to the fields the policy checks need. */
+/** Narrow a SpendGrant row to the fields the gate carries. Only `status`
+ *  and `paused` are enforced (the spend policy was retired 2026-10-30);
+ *  the row's spendPolicyEnabled flag is not carried at all. */
 export function toPolicy(grant: {
   id: string
   allow: string[]
@@ -107,7 +109,6 @@ export function toPolicy(grant: {
   expiresAt: Date
   status: string
   paused?: boolean
-  spendPolicyEnabled?: boolean
 }): GrantPolicy {
   return {
     id: grant.id,
@@ -118,6 +119,5 @@ export function toPolicy(grant: {
     expiresAt: grant.expiresAt,
     status: grant.status,
     paused: grant.paused ?? false,
-    spendPolicyEnabled: grant.spendPolicyEnabled ?? false,
   }
 }

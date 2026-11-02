@@ -811,44 +811,42 @@ async function main() {
   })
   check('re-sign after voiding works', reput.status === 200 && freshTd.message.perDayUsdMicros === '3000000')
 
-  // ── Optional spend policy: the master on/off switch ─────────────────────────
-  console.log('— optional spend policy')
-  // Pure-logic: the gate short-circuits when the policy is off. A call that
-  // violates BOTH the allowlist and the per-call cap is allowed when off, and
-  // blocked when on — proving "off = unrestricted, any host, no caps".
-  const offPolicy: GrantPolicy = {
+  // ── The spend policy is retired (2026-10-30) ───────────────────────────────
+  console.log('— spend policy retired: nothing but the kill switch refuses')
+  // Pure-logic: a row that still carries a curated allowlist, tiny caps and
+  // an expiry in the past (every pre-retirement grant can) refuses NOTHING —
+  // not an off-allowlist host, not an over-cap call, not the expiry. Only the
+  // kill switches (frozen / revoked) survive, and a broken row still fails
+  // closed (pinned in the guardrail audit below).
+  const legacyPolicy: GrantPolicy = {
     id: 'test', allow: ['only.allowed.test'], perCallUsd: 0.01, perDayUsd: 0.01,
-    totalUsd: null, expiresAt: new Date(Date.now() + 86_400_000), status: 'active',
-    spendPolicyEnabled: false,
+    totalUsd: 0.01, expiresAt: new Date(Date.now() - 86_400_000), status: 'active',
   }
   check(
-    'policy OFF → off-allowlist + over-cap call is allowed (unrestricted)',
-    grantViolation(offPolicy, 'not.allowed.test', 9.99, 0) === null,
+    'retired policy: off-allowlist + over every cap + expired → still allowed',
+    grantViolation(legacyPolicy, 'not.allowed.test', 9.99, 9.99, 9.99) === null,
   )
   check(
-    'policy ON → the same call is blocked',
-    grantViolation({ ...offPolicy, spendPolicyEnabled: true }, 'not.allowed.test', 9.99, 0) === 'NOT_ALLOWED',
+    "retired policy: the wildcard allowlist ['*'] changes nothing (allowed either way)",
+    grantViolation({ ...legacyPolicy, allow: ['*'] }, 'brand.new.mcp.test', 9.99, 0) === null,
   )
-  // The open-by-default wildcard: ['*'] allows any host — the caps stay the
-  // real gate (same call over the per-call cap is still refused).
-  check(
-    "wildcard allowlist ['*'] admits any host (caps still bite)",
-    grantViolation({ ...offPolicy, spendPolicyEnabled: true, allow: ['*'], perCallUsd: 200, perDayUsd: 200 }, 'brand.new.mcp.test', 9.99, 0) === null &&
-      grantViolation({ ...offPolicy, spendPolicyEnabled: true, allow: ['*'] }, 'brand.new.mcp.test', 9.99, 0) === 'OVER_PER_CALL',
-  )
-  // INFLOWS (sale proceeds — NFT listings): the account pays nothing, so the
-  // caps and allowlist never apply; only the kill switches survive direction.
-  // A $1,831 sale under a $200 cap must PASS; a frozen account refuses it.
-  const inPolicy: GrantPolicy = { ...offPolicy, spendPolicyEnabled: true, allow: ['only.allowed.test'], perCallUsd: 200, perDayUsd: 200 }
+  check('kill switch: a frozen account refuses everything', grantViolation({ ...legacyPolicy, paused: true }, 'only.allowed.test', 0.001, 0) === 'ACCOUNT_FROZEN')
+  check('kill switch: a revoked account refuses everything', grantViolation({ ...legacyPolicy, status: 'revoked' }, 'only.allowed.test', 0.001, 0) === 'REVOKED')
+  check('kill switch: revoked outranks frozen (checked first)', grantViolation({ ...legacyPolicy, status: 'revoked', paused: true }, 'x.y', 1, 0) === 'REVOKED')
+  // INFLOWS (sale proceeds — NFT listings): unchanged — never gated by
+  // direction; only the kill switches apply.
+  const inPolicy: GrantPolicy = { ...legacyPolicy, allow: ['only.allowed.test'], perCallUsd: 200, perDayUsd: 200 }
   check(
     'inflow gate: sale over every cap + off-allowlist host still passes',
     policyCheckInflow(1831.77, inPolicy).violation === null && policyCheckInflow(1831.77, inPolicy).check.ok,
   )
-  check('inflow gate: unpriceable proceeds pass (no VALUE_UNKNOWN wall)', policyCheckInflow(null, inPolicy).violation === null)
+  check('inflow gate: unpriceable proceeds pass', policyCheckInflow(null, inPolicy).violation === null)
   check('inflow gate: frozen account refuses everything', policyCheckInflow(10, { ...inPolicy, paused: true }).violation === 'ACCOUNT_FROZEN')
   check('inflow gate: revoked account refuses everything', policyCheckInflow(10, { ...inPolicy, status: 'revoked' }).violation === 'REVOKED')
-  // API plumbing: PATCH the flag; it persists and does NOT void the signature
-  // (it's just a power switch, not a change to the signed terms).
+  // API plumbing: the row's spendPolicyEnabled flag is still writable (the
+  // open-core SDK reads it through /api/agent/policy for its own in-process
+  // policy) and still does NOT void the signature — but nothing Pantessa
+  // runs reads it any more.
   const polOn = await (
     await fetch(`${BASE}/api/grants/${grant.id}`, {
       method: 'PATCH', headers: CJ, body: JSON.stringify({ spendPolicyEnabled: true }),
@@ -863,7 +861,7 @@ async function main() {
       method: 'PATCH', headers: BJ, body: JSON.stringify({ spendPolicyEnabled: false }),
     })
   ).json()
-  check('owner can switch the policy back off (Bearer)', polOff.spendPolicyEnabled === false)
+  check('owner can switch the flag back off (Bearer)', polOff.spendPolicyEnabled === false)
 
   // ── Direct host allows (the blocked-swap fix-it) ───────────────────────────
   console.log('— direct host allow (allowAdd)')
@@ -5127,14 +5125,12 @@ async function main() {
   const orgKeyAfter = await fetch(`${BASE}/api/grants`, { headers: OB })
   check('org delete cascades its keys (org Bearer → 401)', delSpendOrg.status === 200 && orgKeyAfter.status === 401)
 
-  // ── Wallet-mode plan gate (policy enforced BEFORE signature requests) ─────
+  // ── Wallet-mode plan gate: only the kill switch refuses (policy retired) ──
   console.log('— wallet plan gate')
-  // The harness grant's policy was toggled OFF above, so the enforcement tests
-  // below opt it back IN first — otherwise the gate short-circuits and nothing
-  // is blocked (that bypass is covered above).
-  await fetch(`${BASE}/api/grants/${grant.id}`, {
-    method: 'PATCH', headers: CJ, body: JSON.stringify({ spendPolicyEnabled: true }),
-  })
+  // Pre-retirement this proved two off-allowlist hosts were refused before a
+  // single network probe. Since 2026-10-30 there is no allowlist: the same
+  // two unknown hosts PASS the gate and reach the 402 probe (the hosts don't
+  // resolve, so the probe fails — honestly, not as a policy wall).
   const fakeInference = {
     slug: 'fake-inf',
     name: 'Fake Inference',
@@ -5154,9 +5150,9 @@ async function main() {
     queryParam: 'q',
     priceUsd: '0.01',
   }
-  // Neither host is in the grant's allowlist: the plan must be refused without
-  // a single network probe (the gate runs before getChallenge).
-  const gated = await fetch(`${BASE}/api/chat`, {
+  // Neither host is on the grant's (now meaningless) allowlist: the plan must
+  // NOT be refused for policy — no blocked reply, no NOT_ALLOWED note.
+  const ungatedPlan = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
     headers: CJ,
     body: JSON.stringify({
@@ -5165,24 +5161,24 @@ async function main() {
       activeServers: [fakeInference, fakeData],
     }),
   })
-  const gatedBody = await gated.json()
+  const ungatedPlanBody = (await ungatedPlan.json().catch(() => ({}))) as { blocked?: boolean; reply?: string; notes?: unknown }
   check(
-    'wallet plan: disallowed inference blocked, never asked to sign',
-    gated.status === 200 && gatedBody.blocked === true && /NOT_ALLOWED/.test(gatedBody.reply ?? ''),
+    'wallet plan: unknown hosts are not policy-blocked any more (no allowlist) — the ask reaches the probe',
+    ungatedPlan.status === 200 && ungatedPlanBody.blocked !== true && !/NOT_ALLOWED/.test(ungatedPlanBody.reply ?? ''),
+    `${ungatedPlan.status} ${JSON.stringify(ungatedPlanBody).slice(0, 120)}`,
   )
   check(
-    'wallet plan: disallowed data service blocked with a policy note',
-    Array.isArray(gatedBody.notes) && gatedBody.notes.some((n: string) => n.includes('Fake Data') && n.includes('NOT_ALLOWED')),
+    'wallet plan: no NOT_ALLOWED note either',
+    !(Array.isArray(ungatedPlanBody.notes) && ungatedPlanBody.notes.some((n) => typeof n === 'string' && n.includes('NOT_ALLOWED'))),
   )
   const detail2 = await (await fetch(`${BASE}/api/grants/${grant.id}`, { headers: C })).json()
   check(
-    'wallet plan: denials ledgered ($0, audit trail)',
-    detail2.ledger.some((e: { host: string }) => e.host === 'evil-inf.example.test') &&
-      detail2.ledger.some((e: { host: string }) => e.host === 'evil-data.example.test'),
+    'wallet plan: no policy denial is ledgered (nothing was refused)',
+    !detail2.ledger.some((e: { host: string; ok: boolean; note?: string | null }) => e.host === 'evil-inf.example.test' && !e.ok && /NOT_ALLOWED/.test(e.note ?? '')),
   )
-  // Positive control: an ALLOWED host passes the gate and reaches the 402
-  // probe. The host doesn't resolve, so the probe's fetch throws → 502 —
-  // which is exactly the proof that the gate let it through.
+  // Positive control: a lone unknown inference host reaches the 402 probe.
+  // The host doesn't resolve, so the probe's fetch throws — which is exactly
+  // the proof that the gate let it through.
   const ungated = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
     headers: CJ,
@@ -5222,8 +5218,9 @@ async function main() {
   )
 
   // ── Auto-Router streaming (B2): SSE framing + a trace step + a final reply.
-  //    NO spend: the owner's grant allowlist excludes the inference host, so the
-  //    engine refuses before paying (the same gate the wallet-plan test uses).
+  //    NO spend: the harness runs without a house wallet / live engine, so the
+  //    engine refuses before paying (the retired allowlist used to be a second
+  //    net here — it isn't any more; a funded harness WOULD pay).
   console.log('— auto-router stream')
   const arRes = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
@@ -14738,33 +14735,18 @@ async function main() {
   )
   const gPolicy: GrantPolicy = {
     id: 'g-guard', allow: ['api.cow.fi'], perCallUsd: 50, perDayUsd: 100,
-    expiresAt: new Date(Date.now() + 86400_000), status: 'active', spendPolicyEnabled: true,
+    expiresAt: new Date(Date.now() + 86400_000), status: 'active',
   }
-  check('guardrails: policy over per-call cap BLOCKS', policyCheck(100.25, gPolicy, 0, 'api.cow.fi').violation === 'OVER_PER_CALL')
-  check('guardrails: policy within caps passes', policyCheck(10, gPolicy, 0, 'api.cow.fi').check.ok && policyCheck(10, gPolicy, 0, 'api.cow.fi').violation === null)
-  check('guardrails: unpriceable order under an ON policy BLOCKS', policyCheck(null, gPolicy, 0, 'api.cow.fi').violation === 'VALUE_UNKNOWN')
-  check('guardrails: unpriceable order with policy OFF passes', policyCheck(null, { ...gPolicy, spendPolicyEnabled: false }, 0, 'api.cow.fi').violation === null)
+  // The spend policy is retired (2026-10-30): caps, allowlist and
+  // priceability never refuse; the kill switches do, self-signed or not.
+  check('guardrails: over the (retired) per-call cap passes', policyCheck(100.25, gPolicy, 0, 'api.cow.fi').violation === null && policyCheck(100.25, gPolicy, 0, 'api.cow.fi').check.ok)
+  check('guardrails: within the old caps passes too', policyCheck(10, gPolicy, 0, 'api.cow.fi').check.ok && policyCheck(10, gPolicy, 0, 'api.cow.fi').violation === null)
+  check('guardrails: an unpriceable order passes (no VALUE_UNKNOWN wall)', policyCheck(null, gPolicy, 0, 'api.cow.fi').violation === null && policyCheck(null, gPolicy, 0, 'api.cow.fi').check.ok)
   check('guardrails: no grant at all → warn only, not gated', policyCheck(50, null, 0, 'api.cow.fi').check.ok)
-  // Self-signed exemption: the owner's wallet signature IS the consent, so
-  // the caps (which govern un-supervised agent spend) never refuse a build
-  // the owner signs per-action — the first-timer "demo a $250 swap" wall.
   const selfOpts = { selfSigned: true } as const
   check(
-    'guardrails: self-signed build over per-call cap PASSES (signature is the consent)',
-    policyCheck(100.25, gPolicy, 0, 'api.cow.fi', 0, selfOpts).violation === null &&
-      policyCheck(100.25, gPolicy, 0, 'api.cow.fi', 0, selfOpts).check.ok,
-  )
-  check(
-    'guardrails: self-signed build over the daily budget PASSES',
-    policyCheck(10, gPolicy, 95, 'api.cow.fi', 0, selfOpts).violation === null,
-  )
-  check(
-    'guardrails: self-signed unpriceable build passes as a warn, not VALUE_UNKNOWN',
-    policyCheck(null, gPolicy, 0, 'api.cow.fi', 0, selfOpts).violation === null,
-  )
-  check(
-    'guardrails: self-signed still refuses an off-allowlist host',
-    policyCheck(10, gPolicy, 0, 'evil.example.test', 0, selfOpts).violation === 'NOT_ALLOWED',
+    'guardrails: an off-allowlist host passes, self-signed or not (no allowlist any more)',
+    policyCheck(10, gPolicy, 0, 'evil.example.test', 0, selfOpts).violation === null && policyCheck(10, gPolicy, 0, 'evil.example.test').violation === null,
   )
   check(
     'guardrails: self-signed still honors the kill switch (frozen)',
@@ -14774,25 +14756,23 @@ async function main() {
     'guardrails: self-signed still honors revocation',
     policyCheck(10, { ...gPolicy, status: 'revoked' }, 0, 'api.cow.fi', 0, selfOpts).violation === 'REVOKED',
   )
-  // The core is venue-neutral: the same gate refuses a host outside the
-  // allowlist — what Uniswap's adapter (A10) plugs into unchanged.
-  check('guardrails: core policyCheck gates by HOST (venue-neutral)', policyCheck(10, gPolicy, 0, 'uniswap.yeetful.com').violation === 'NOT_ALLOWED')
-  // A refusal must be actionable: NOT_ALLOWED names the host it refused, and
-  // buildReport carries the structured policyBlock the fix-it UI reads.
+  // A refusal must be actionable: the note names the kill switch, and
+  // buildReport carries the structured policyBlock the refusal card reads.
   check(
-    'guardrails: NOT_ALLOWED note names the refused host',
-    /uniswap\.yeetful\.com isn't on your allowlist/.test(policyCheck(10, gPolicy, 0, 'uniswap.yeetful.com').check.note),
+    'guardrails: a frozen refusal names the kill switch and the way back',
+    /kill switch/.test(policyCheck(10, { ...gPolicy, paused: true }, 0, 'uniswap.yeetful.com').check.note) &&
+      /resume it on the dashboard/.test(policyCheck(10, { ...gPolicy, paused: true }, 0, 'uniswap.yeetful.com').check.note),
   )
   const pbReport = buildReport(
     10,
-    [policyCheck(10, gPolicy, 0, 'uniswap.yeetful.com').check],
-    { violation: 'NOT_ALLOWED', valueUsd: 10, host: 'uniswap.yeetful.com' },
+    [policyCheck(10, { ...gPolicy, paused: true }, 0, 'uniswap.yeetful.com').check],
+    { violation: 'ACCOUNT_FROZEN', valueUsd: 10, host: 'uniswap.yeetful.com' },
   )
   check(
     'guardrails: buildReport attaches the structured policyBlock',
-    !pbReport.ok && pbReport.policyBlock?.violation === 'NOT_ALLOWED' && pbReport.policyBlock.host === 'uniswap.yeetful.com',
+    !pbReport.ok && pbReport.policyBlock?.violation === 'ACCOUNT_FROZEN' && pbReport.policyBlock.host === 'uniswap.yeetful.com',
   )
-  check('guardrails: no policyBlock key when the policy passed', !('policyBlock' in buildReport(10, [policyCheck(10, gPolicy, 0, 'api.cow.fi').check])))
+  check('guardrails: no policyBlock key when the gate passed', !('policyBlock' in buildReport(10, [policyCheck(10, gPolicy, 0, 'api.cow.fi').check])))
   const slipped = applySlippage(cowFixture, 100) // 1%
   check(
     'guardrails: applySlippage lowers the signed min-buy by bps',
@@ -14804,21 +14784,27 @@ async function main() {
 
   // ── 2026-07-20 guardrail audit — fail-closed invariants ────────────────────
   console.log('— guardrail audit (fail-closed invariants)')
-  // The gate itself breaking must REFUSE, never authorize. A policy row whose
-  // expiresAt deserialized as a string used to crash checkGrant → grantViolation
-  // swallowed the TypeError and returned null = authorized-by-crash.
-  const brokenPolicy = { ...gPolicy, expiresAt: 'not-a-date' as unknown as Date }
+  // The gate itself breaking must REFUSE, never authorize. A policy row that
+  // crashes mid-check (here: a field the gate reads throws) used to have its
+  // error swallowed by grantViolation → null = authorized-by-crash. (The old
+  // fixture — a string expiresAt — no longer crashes anything: expiry is not
+  // read since the policy was retired.)
+  const brokenPolicy = {
+    ...gPolicy,
+    get paused(): boolean {
+      throw new Error('row unreadable')
+    },
+  } as GrantPolicy
   check('audit: a broken policy row refuses (POLICY_ERROR), never authorizes', grantViolation(brokenPolicy, 'api.cow.fi', 1, 0) === 'POLICY_ERROR')
   check(
     'audit: self-signed does NOT bypass POLICY_ERROR (only caps are exempt)',
     policyCheck(10, brokenPolicy, 0, 'api.cow.fi', 0, selfOpts).violation === 'POLICY_ERROR' &&
       !policyCheck(10, brokenPolicy, 0, 'api.cow.fi', 0, selfOpts).check.ok,
   )
-  // Kill-switch precedence: frozen is checked BEFORE the caps, so a frozen
-  // account combined with an over-cap value can never surface as the
-  // (self-signed-exempt) OVER_PER_CALL code.
+  // Kill-switch precedence: a frozen account refuses whatever the value, and
+  // whatever the (retired) caps would have said.
   check(
-    'audit: frozen + over-cap self-signed → ACCOUNT_FROZEN wins (no cap-code masking)',
+    'audit: frozen + over-cap self-signed → ACCOUNT_FROZEN (the only code left)',
     policyCheck(500, { ...gPolicy, paused: true }, 0, 'api.cow.fi', 0, selfOpts).violation === 'ACCOUNT_FROZEN',
   )
   // Venue-neutral core checks: recipient + validity window.
@@ -17214,19 +17200,19 @@ async function main() {
     // ── Policy truth (§B3 / §E6) ───────────────────────────────────────────
     console.log('— policy truth (§E6)')
     {
-      const capPolicy: GrantPolicy = { id: 'g-e6', allow: ['*'], perCallUsd: 50, perDayUsd: 100, expiresAt: new Date(Date.now() + 86400_000), status: 'active', spendPolicyEnabled: true }
+      const capPolicy: GrantPolicy = { id: 'g-e6', allow: ['*'], perCallUsd: 50, perDayUsd: 100, expiresAt: new Date(Date.now() + 86400_000), status: 'active' }
       const over = policyCheck(120, capPolicy, 0, 'uniswap.yeetful.com', 0, { selfSigned: true })
       const within = policyCheck(10, capPolicy, 0, 'uniswap.yeetful.com', 0, { selfSigned: true })
       check(
-        'policy truth: a self-signed action over the cap is offered (the signature is the consent) but the check is a VISIBLE warn naming the cap — never a silent green',
-        over.violation === null && over.check.ok && over.check.level === 'warn' && /over your agent per-action cap \(\$50\)/.test(over.check.note) && /you sign it yourself/.test(over.check.note) &&
-          within.check.ok && within.check.level === 'block' && !/over your agent/.test(within.check.note),
+        'policy truth: with the policy retired, an action over the old cap and one within it get the SAME pass — a block-level ok that says no spend policy gates it and names the signature as the consent (never a cap warning, never a silent block)',
+        over.violation === null && over.check.ok && over.check.level === 'block' && /No spend policy gates this/.test(over.check.note) && /your signature is the consent/.test(over.check.note) && /\$120\.00/.test(over.check.note) &&
+          within.violation === null && within.check.ok && within.check.level === 'block' && !/over your agent/.test(within.check.note),
         JSON.stringify(over.check),
       )
-      const lines = guardWarnLines({ checks: [over.check, { id: 'recipient', level: 'warn', ok: true, note: '1 USDC LEAVES your wallet to 0xabc — transfers are irreversible.' }, { id: 'policy', level: 'warn', ok: true, note: 'No spend policy on this wallet — not gated.' }, { id: 'x', level: 'block', ok: true, note: 'pinned' }] })
+      const lines = guardWarnLines({ checks: [{ id: 'recipient', level: 'warn', ok: true, note: '1 USDC LEAVES your wallet to 0xabc — transfers are irreversible.' }, { id: 'policy', level: 'warn', ok: true, note: 'No spend policy on this wallet — not gated.' }, { id: 'x', level: 'block', ok: true, note: 'pinned' }] })
       check(
-        'policy truth: the card prints every warn-level guardrail note (cap pass + the full-address recipient line) and stays quiet on the two not-gated boilerplates',
-        lines.length === 2 && lines.some((l) => /over your agent/.test(l)) && lines.some((l) => /LEAVES your wallet/.test(l)),
+        'policy truth: the card prints every warn-level guardrail note (the full-address recipient line) and stays quiet on the not-gated boilerplate',
+        lines.length === 1 && lines.some((l) => /LEAVES your wallet/.test(l)),
         JSON.stringify(lines),
       )
       check(
@@ -20008,9 +19994,9 @@ async function main() {
     const q = await quote.json()
     const steps = q?.txChain?.steps
     // Two honest outcomes: the artifact builds (chat-identical txChain), or
-    // the wallet's own spend policy refuses it (the harness owner picks up a
-    // restrictive policy in earlier sections — the refusal PROVES the panel
-    // route runs the same policy gate as chat).
+    // the wallet's kill switch refuses it (a frozen harness account — the
+    // refusal PROVES the panel route runs the same gate as chat; the spend
+    // policy that used to be the likelier refusal is retired).
     const builtOk =
       q?.ok === true &&
       Array.isArray(steps) &&
@@ -20020,11 +20006,11 @@ async function main() {
       q.txChain.refresh?.kind === 'uniswap-swap' &&
       q.txChain.refresh?.params?.chainId === '8453' &&
       typeof q.minReceived === 'string'
-    const policyBlocked = q?.blocked === true && q?.blockKind === 'policy' && !!q?.guardrails && /spend policy|NOT_ALLOWED/i.test(String(q?.reasons ?? ''))
+    const policyBlocked = q?.blocked === true && q?.blockKind === 'policy' && !!q?.guardrails && /kill switch|ACCOUNT_FROZEN/i.test(String(q?.reasons ?? ''))
     check(
-      'panel swap: USDC→ETH builds the chat-identical txChain OR the spend policy refuses (same gate as chat)',
+      'panel swap: USDC→ETH builds the chat-identical txChain OR the kill switch refuses (same gate as chat)',
       builtOk || policyBlocked,
-      !(builtOk || policyBlocked) ? JSON.stringify(q).slice(0, 160) : policyBlocked ? 'policy refused — gate live' : '',
+      !(builtOk || policyBlocked) ? JSON.stringify(q).slice(0, 160) : policyBlocked ? 'kill switch refused — gate live' : '',
     )
   }
 

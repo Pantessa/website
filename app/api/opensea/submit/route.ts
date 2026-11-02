@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
       ok: false,
       note: `blocked: ${violation} (opensea listing submit)`,
     })
-    return NextResponse.json({ error: `Refused by your spend policy at submission: ${violation}.` }, { status: 403 })
+    return NextResponse.json({ error: `Refused by your account's kill switch at submission: ${violation}.` }, { status: 403 })
   }
 
   // ── Relay to OpenSea ──────────────────────────────────────────────────────

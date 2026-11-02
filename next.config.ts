@@ -28,6 +28,11 @@ const nextConfig: NextConfig = {
       // nothing until the wallet gate settles, so a server redirect() in that
       // slot never reaches the browser — verified, it 200s.
       { source: '/dashboard/links', destination: '/chat?tab=links', permanent: false },
+      // The Approvals page went with the expense account (retired 2026-10-30):
+      // every "approve the agent on your dashboard" link still out there — old
+      // chats, emails, the Claude Code prompt — lands on the Overview instead
+      // of a 404.
+      { source: '/dashboard/approvals', destination: '/dashboard', permanent: false },
       // THE FRONT DOOR (squad front-door, 2026-10-06): the markets splash lives
       // at `/` now; every /markets link already in the world lands there.
       { source: '/markets', destination: '/', permanent: true },

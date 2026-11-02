@@ -61,9 +61,8 @@ Do the following, asking me to confirm anything ambiguous:
       wallet, sign in, and mint an API key. Remind me the yf_ secret is
       shown only once. Wait for me to paste nothing — I'll put it in .env
       myself — then continue when I say done.
-   b. Tell me to copy PANTESSA_GRANT_ID from the "Your expense account"
-      chip on that same page into .env, and to flip ON the agents I trust
-      at https://www.pantessa.com/dashboard/approvals. Continue when I say done.
+   b. Tell me to copy PANTESSA_GRANT_ID from the "Your grant id" chip on
+      that same page into .env. Continue when I say done.
 
 5. Verify without spending: run the agent against one free (non-402)
    allowlisted endpoint, confirm a $0 "settled" receipt logs and a ledger

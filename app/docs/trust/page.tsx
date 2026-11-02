@@ -95,20 +95,19 @@ export default function TrustDocsPage() {
           stakes and votes carry no Pantessa fee.
         </p>
 
-        <h2>Caps protect the autonomous part</h2>
+        <h2>Nothing is capped or approval-gated</h2>
         <p>
-          Your account&apos;s <Link href="/docs/spend-policy">spend policy</Link> draws one line:
-          anything an agent initiates without you in the loop is capped at $200 per action and
-          $200 per day by default, while anything <strong>you sign yourself</strong> is consented
-          by that signature and is not walled by the caps. Money you <em>receive</em> — sale
-          proceeds, filled listings — is never gated at all. You can curate the allowlist down
-          from the dashboard whenever you want.
+          There is no <Link href="/docs/spend-policy">spend policy</Link> to configure: no allowlist
+          to curate, no per-action or daily cap, no agent to approve first. Anything that moves
+          your money is signed by <strong>you</strong>, and that signature is the consent; every
+          paid call Pantessa makes on your behalf is metered and receipted on your dashboard.
+          Money you <em>receive</em> — sale proceeds, filled listings — is never gated at all.
         </p>
 
         <h2>The kill switch outranks everything</h2>
         <p>
           Freeze your account from the <SpineLink href="/dashboard">dashboard</SpineLink> and every payment
-          and build is refused — agent-initiated or not, inflow or outflow, policy on or off.
+          and build is refused — agent-initiated or not, inflow or outflow.
           Pause a single agent to stop just that key. Both are reversible; nothing is deleted.
         </p>
 

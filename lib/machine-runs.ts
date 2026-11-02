@@ -318,7 +318,7 @@ export const MACHINE_RUNS: MachineRun[] = [
         lines: [
           '✓ router + selector pinned for this chain',
           '✓ min-out re-derived from a live quote',
-          '✓ spend policy re-checked at fire time, not at setup',
+          '✓ kill switch re-checked at fire time, not at setup',
           '✓ pause / resume / cancel from chat or the rail',
         ],
       },

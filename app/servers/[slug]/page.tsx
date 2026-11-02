@@ -7,7 +7,6 @@ import { ArrowLeft, ExternalLink, TrendingUp } from 'lucide-react'
 import prisma from '@/lib/db'
 import BrandIcon from '@/components/BrandIcon'
 import Footer from '@/components/Footer'
-import ServerApproveToggle from '@/components/ServerApproveToggle'
 import Description from '@/components/Description'
 import ReputationPanel from '@/components/ReputationPanel'
 import RoutabilityPanel from '@/components/RoutabilityPanel'
@@ -324,7 +323,6 @@ export default async function ServiceDetailPage({ params }: Params) {
     <div className="svc__split2">
       <div className="svc__main">
         {header}
-        <ServerApproveToggle serverId={server.id} serverName={server.name} />
         <Description text={server.description} />
         <RoutabilityPanel slug={server.slug} initial={server.routability as unknown as RoutabilityReport | null} />
       </div>

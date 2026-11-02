@@ -13,8 +13,8 @@ export default function DashboardServersPage() {
     <>
       <h1 className="dash__h1">Servers</h1>
       <p className="dash__sub">
-        Browse x402 agents, add them to your runner, then start a chat — they pay per call from your
-        expense account.
+        Browse x402 agents, add them to your runner, then start a chat — every paid call lands as a
+        receipt on your Overview.
       </p>
 
       <ServerDirectory />

@@ -6,8 +6,8 @@
 //     site. Attribution-only identifiers that live in host page source and
 //     bill embed usage to this account. No read/spend authority by design.
 //   · Secret API keys (`yf_`) — Bearer credentials for headless agents on
-//     the grants API: their x402 payments run under your spend policy and
-//     every receipt syncs to your ledger. Secret shows once (server stores
+//     the grants API: every x402 receipt they make syncs to your ledger.
+//     Secret shows once (server stores
 //     only its hash). Never in a browser.
 // Embed keys belong to a wallet, so the embed section hides in org scope.
 
@@ -57,8 +57,8 @@ export default function DashboardKeysPage() {
         Two kinds of keys, two different jobs. <strong className="text-white font-medium">Embed
         keys</strong> (<code>yfe_…</code>) put the Pantessa agent on your website — publishable, safe
         to ship in page source. <strong className="text-white font-medium">Secret API keys</strong>{' '}
-        (<code>yf_…</code>) are for headless agents — they track your agents&apos; x402 payment
-        usage and put it under your spend policy. Never expose a secret key in a browser.
+        (<code>yf_…</code>) are for headless agents — they sync your agents&apos; x402 receipts
+        to your ledger. Never expose a secret key in a browser.
         {activeOrgId ? ' API keys minted here are the org’s shared credentials (admin only).' : ''}
       </p>
 

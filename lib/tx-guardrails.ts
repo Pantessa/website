@@ -5,7 +5,8 @@
 //  runs the SAME checks before an artifact is offered for signature:
 //    · recipient must be the requesting wallet
 //    · validity window must be sane
-//    · the wallet's spend policy gates at the point of signing
+//    · the account's kill switch gates at the point of signing (the spend
+//      policy — allowlist, caps, master switch — was retired 2026-10-30)
 //  A venue adapter (lib/cow-guardrails today, Uniswap's with A10) supplies
 //  what's venue-specific: fee semantics, on-chain reads, USD valuation, and
 //  the policy HOST its spend is attributed to.
@@ -20,10 +21,10 @@ export interface GuardrailCheck {
   note: string
 }
 
-/** Structured spend-policy refusal — enough for a UI to offer the exact fix
- *  (allow the host / raise the right cap) instead of a dead-end message. */
+/** Structured kill-switch refusal — enough for a UI to name the cause and
+ *  point at the dashboard instead of a dead-end message. */
 export interface PolicyBlock {
-  violation: GrantViolation | 'VALUE_UNKNOWN'
+  violation: GrantViolation
   valueUsd: number | null
   /** The venue's policy host the spend was attributed to. */
   host: string
@@ -35,7 +36,7 @@ export interface GuardrailReport {
   /** USD value of the action (venue-supplied heuristic); null = unpriceable. */
   valueUsd: number | null
   checks: GuardrailCheck[]
-  /** Present when the failed check is the spend policy — drives fix-it UI. */
+  /** Present when the failed check is the kill switch — drives the refusal card. */
   policyBlock?: PolicyBlock
 }
 
@@ -73,16 +74,15 @@ export function validityCheck(validToSec: number, nowSec = Math.floor(Date.now()
 }
 
 /**
- * The spend-policy gate at the point of signing — the SAME gate chat payments
- * go through (lib/spend-grant), pointed at the action's USD value and the
- * venue's policy host. Block-level: an unpriceable action under an enabled
- * policy is refused (caps are never bypassed because we couldn't price it).
+ * The account gate at the point of signing — the SAME gate chat payments go
+ * through (lib/spend-grant), pointed at the venue's policy host for the
+ * ledger. Since the spend policy was retired (2026-10-30) the only refusal
+ * it can return is the kill switch: a frozen or revoked account, or a gate
+ * that could not run. Caps, allowlist and priceability never refuse —
+ * `valueUsd` rides along for the money-moved metric and the card's note.
  *
- * `selfSigned`: the artifact is signed by the OWNER's wallet, per action —
- * that signature is the consent, so the caps (which govern what agents may
- * spend without the owner in the loop) don't refuse it, and neither does an
- * unpriceable leg. Kill switches, expiry, and the allowlist still apply.
- * Autonomous paths (house-paid x402, the delegated HL key) never set this.
+ * `opts.selfSigned` is accepted for call-site compatibility: the cap
+ * exemption it used to grant has nothing left to exempt.
  */
 export function policyCheck(
   valueUsd: number | null,
@@ -91,55 +91,21 @@ export function policyCheck(
   host: string,
   spentTotalUsd = 0,
   opts?: { selfSigned?: boolean },
-): { check: GuardrailCheck; violation: GrantViolation | 'VALUE_UNKNOWN' | null } {
-  const selfSigned = opts?.selfSigned === true
+): { check: GuardrailCheck; violation: GrantViolation | null } {
+  void opts
   if (!policy) {
     return { check: { id: 'policy', level: 'warn', ok: true, note: 'No spend policy on this wallet — not gated.' }, violation: null }
   }
-  if (valueUsd === null) {
-    if (!policy.spendPolicyEnabled) {
-      return { check: { id: 'policy', level: 'warn', ok: true, note: 'Spend policy is off; value unpriced.' }, violation: null }
-    }
-    if (selfSigned) {
-      return {
-        check: { id: 'policy', level: 'warn', ok: true, note: 'No priceable leg — you sign this yourself, so no cap is being bypassed.' },
-        violation: null,
-      }
-    }
-    return {
-      check: {
-        id: 'policy',
-        level: 'block',
-        ok: false,
-        note: 'Spend policy is ON but this action has no priceable leg — refusing rather than bypassing your caps.',
-      },
-      violation: 'VALUE_UNKNOWN',
-    }
-  }
-  const violation = grantViolation(policy, host, valueUsd, spentTodayUsd, spentTotalUsd)
-  if (selfSigned && (violation === 'OVER_PER_CALL' || violation === 'BUDGET_EXCEEDED')) {
-    // §E6 policy truth: the exemption is real (the owner's signature is the
-    // consent) but it must be SEEN — a warn-level check the card renders,
-    // naming the cap it passed, never a silent green.
-    const which = violation === 'OVER_PER_CALL' ? `per-action cap ($${policy.perCallUsd})` : `daily budget ($${policy.perDayUsd})`
-    return {
-      check: {
-        id: 'policy',
-        level: 'warn',
-        ok: true,
-        note: `⚠️ This $${valueUsd.toFixed(2)} action is over your agent ${which}. It is offered anyway because you sign it yourself — your signature is the consent — but the cap did not hold it back.`,
-      },
-      violation: null,
-    }
-  }
+  const violation = grantViolation(policy, host, valueUsd ?? 0, spentTodayUsd, spentTotalUsd)
+  const usd = valueUsd != null ? ` ($${valueUsd.toFixed(2)})` : ''
   return {
     check: {
       id: 'policy',
       level: 'block',
       ok: !violation,
       note: violation
-        ? `Blocked by your spend policy: ${policyBlockNote(violation, host)} ($${valueUsd.toFixed(2)}).`
-        : `Within your spend policy ($${valueUsd.toFixed(2)}).`,
+        ? `Refused by your account's kill switch: ${policyBlockNote(violation, host)}${usd}.`
+        : `No spend policy gates this — your signature is the consent${usd}.`,
     },
     violation,
   }
@@ -174,25 +140,17 @@ export function policyCheckInflow(
 }
 
 /** The violation code in words a user can act on (the code alone read as a
- *  dead end — "NOT_ALLOWED ($5.00)" told Nate nothing about WHAT to change). */
-export function policyBlockNote(violation: GrantViolation | 'VALUE_UNKNOWN', host: string): string {
+ *  dead end — "ACCOUNT_FROZEN ($5.00)" tells nobody what to do next). */
+export function policyBlockNote(violation: GrantViolation, host: string): string {
   switch (violation) {
-    case 'NOT_ALLOWED':
-      return `${host} isn't on your allowlist`
-    case 'OVER_PER_CALL':
-      return 'over your per-action cap'
-    case 'BUDGET_EXCEEDED':
-      return 'over your budget cap'
     case 'ACCOUNT_FROZEN':
-      return 'your account is frozen'
-    case 'EXPIRED':
-      return 'your expense account expired'
+      return 'your account is frozen — resume it on the dashboard'
     case 'REVOKED':
-      return 'your expense account was revoked'
+      return 'your account was revoked'
     case 'POLICY_ERROR':
-      return 'your spend policy could not be evaluated — refusing rather than guessing'
+      return 'your account could not be checked — refusing rather than guessing'
     default:
-      return violation
+      return `${violation} (${host})`
   }
 }
 

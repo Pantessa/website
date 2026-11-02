@@ -68,7 +68,7 @@ export default function DashboardOrgPage() {
       <>
         <h1 className="dash__h1">Organization</h1>
         <p className="dash__sub">
-          You&apos;re in your personal scope. An organization is a shared expense account — members,
+          You&apos;re in your personal scope. An organization is a shared account — members,
           shared agent keys, and one budget roof. Adding a wallet address is the invite; it takes
           effect the next time that wallet signs in.
         </p>

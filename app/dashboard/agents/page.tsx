@@ -19,8 +19,7 @@ export default function DashboardAgentsPage() {
         The two sides of your account: <strong className="text-white font-medium">Payers</strong> are apps
         connected through the <span className="mono">yeetful</span> SDK that spend{activeOrgId ? " the org's " : ' your '}
         funds; <strong className="text-white font-medium">Payees</strong> are the MCP servers you operate and
-        collect on. Budgets are set here; where money may go is governed by{' '}
-        <Link href="/dashboard/approvals" className="underline underline-offset-2 decoration-dotted">approvals</Link>.
+        collect on. Per-key budgets and the pause switch are set here.
       </p>
 
       {/* Two-sided ledger: payers (spenders) | payees (claimed servers).

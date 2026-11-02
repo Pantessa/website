@@ -314,7 +314,7 @@ export default function OrgMembersView({
           <CardTitle>Danger zone</CardTitle>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-[color:var(--muted-2)] max-w-[48ch] leading-relaxed">
-              Deleting the organization removes its members, org keys, and org expense account
+              Deleting the organization removes its members, org keys, and org account
               (including its ledger). Transfer ownership first if someone else should keep it.
             </p>
             <button

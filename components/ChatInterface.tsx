@@ -1980,10 +1980,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             owns them below (the old chip row was the mobile header's
             horizontal-overflow bug: nine flex-shrink-0 items vs 375px). */}
         <div className="flex-1 min-w-0 flex items-center">
-          {/* Auto Router + the spending-policy master switch are DISABLED for
-              now — the toggles are hidden and the features behave as if they
-              never existed (Auto Router forced off in the store; policy never
-              read here). The wiring is kept for a later revival. */}
+          {/* Auto Router is DISABLED for now — the toggle is hidden and the
+              feature behaves as if it never existed (forced off in the store);
+              the wiring is kept for a later revival. The spending-policy switch
+              that used to sit beside it is gone for good (retired 2026-10-30). */}
           {autoRouter ? (
             <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap pl-1">
               Sharp routing — Pantessa picks the best MCP for each message
