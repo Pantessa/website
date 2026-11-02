@@ -11,6 +11,9 @@ import { grantEarnedAnswers } from '@/lib/earned-answers'
 import { sanitizeFillSymbols } from '@/lib/fill-symbols'
 import { isIndexSymbol } from '@/lib/viz/flow'
 import { readOrigin, type OriginFeed } from '@/lib/broker-origin'
+import { planNamesPolicyPool, policyPoolOriginFor } from '@/lib/policy-pool/venue'
+import { policyPoolConfig } from '@/lib/policy-pool/config'
+import { recordPolicyPoolEvent } from '@/lib/policy-pool/ledger'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -121,7 +124,8 @@ export async function POST(req: NextRequest) {
   // the feed the intent said it was born from — copied SERVER-side from the
   // bound broker intent, so "born from Dune, signed" is a join on the intent
   // row, never a second client claim. Best-effort: a miss stamps nothing.
-  const originFeed = intentLinkSlug ? await bornFromFeedForLink(intentLinkSlug) : undefined
+  const deskIntent = intentLinkSlug ? await deskIntentForLink(intentLinkSlug) : null
+  const originFeed = deskIntent?.feed
   // The SIGNING wallet — address-shaped only, lowercased. Self-reported like
   // the rest of the beacon; it keys lifetime referral earnings, the same
   // trust level as the valueUsd/outcome it rides beside.
@@ -260,18 +264,52 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // THE POLICY POOL (squad 2026-11-02): a desk intent opened for the pool
+  // learns its signature and its receipt HERE, where every other receipt
+  // does — `signed` on the beacon, `mined` once the receipt verified
+  // on-chain. The same txHash the money row carries; no new infrastructure.
+  if (outcome === 'signed' && deskIntent && planNamesPolicyPool(deskIntent.plan)) {
+    const txHash = extractTxHash(str(body.txUrl, 300)) ?? undefined
+    const chainId = chainIdOfTurn({ chain: str(body.chain, 40), txUrl: str(body.txUrl, 300) }, body.chainId) ?? policyPoolConfigChainId()
+    if (chainId) {
+      const base = {
+        intentId: deskIntent.id,
+        origin: policyPoolOriginFor(deskIntent.id, deskIntent.origin),
+        ...(walletAddress ? { swapper: walletAddress } : {}),
+        chainId,
+        ...(txHash ? { txHash } : {}),
+        ...(usd(body.valueUsd) ? { usd: usd(body.valueUsd) as number } : {}),
+        meta: { turnId: row.id, internal: internalRun, verification: verification ?? null },
+      }
+      await recordPolicyPoolEvent({ kind: 'signed', ...base })
+      if (verification === 'verified') await recordPolicyPoolEvent({ kind: 'mined', ...base })
+    }
+  }
+
   // `internal` echoes the stamp so drills (and the harness) can assert their
   // rows can never read as growth.
   return NextResponse.json({ ok: true, ...(internalRun ? { internal: true } : {}), ...(verification ? { verification } : {}), ...(earned ? { earnedAnswers: earned } : {}) })
 }
 
-/** The feed the desk intent bound to this sign link said it was born from (lib/broker-origin),
- *  or undefined when the link was not desk-minted, said nothing, or the read failed. */
-async function bornFromFeedForLink(slug: string): Promise<OriginFeed | undefined> {
+/** The desk intent bound to this sign link — its feed (lib/broker-origin: the
+ *  "born from" half of the joint number), id, origin and plan — or null when
+ *  the link was not desk-minted or the read failed. */
+async function deskIntentForLink(slug: string): Promise<{ id: string; feed: OriginFeed | undefined; origin: ReturnType<typeof readOrigin>; plan: unknown } | null> {
   try {
-    const intent = await prisma.brokerIntent.findFirst({ where: { linkSlug: slug }, select: { origin: true } })
-    return readOrigin(intent?.origin)?.feed
+    const intent = await prisma.brokerIntent.findFirst({ where: { linkSlug: slug }, select: { id: true, origin: true, plan: true } })
+    if (!intent) return null
+    const origin = readOrigin(intent.origin)
+    return { id: intent.id, feed: origin?.feed, origin, plan: intent.plan }
   } catch {
-    return undefined
+    return null
+  }
+}
+
+/** The configured policy pool's chain, or null — never throws (a half-configured env must not break a beacon). */
+function policyPoolConfigChainId(): number | null {
+  try {
+    return policyPoolConfig()?.chainId ?? null
+  } catch {
+    return null
   }
 }

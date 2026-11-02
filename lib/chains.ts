@@ -392,6 +392,68 @@ export function nativeSymbolFor(chainId: number): 'ETH' | 'USDC' {
 
 export const DEFAULT_CHAIN_ID = 8453
 
+// ── Uniswap v4 pins OUTSIDE the fallback cascade ──────────────────────────
+// `AppChain.uniswapV4` above is read by the swap cascade (lib/swap-exec, the
+// chat route): pinning it on a chain makes every no-v3-pool pair there fall
+// through to a no-hook v4 scan. Base keeps `uniswapV4: null` there on purpose
+// — v3 fills everything we route on Base today, and the harness pins the
+// fallback to Robinhood alone. THE POLICY POOL (lib/uniswap-v4
+// buildPolicyPoolSwap, lib/policy-pool/config) addresses ONE hooked pool by
+// its key and never scans, so its router/quoter pins live HERE, keyed by
+// chain id, and nothing else reads them. Base Sepolia (84532) is a TESTNET
+// and is deliberately NOT an AppChain: it must never reach the picker, the
+// splash scoping, wagmi or the funding maps.
+//
+// Provenance: Uniswap's deployments page (developers.uniswap.org/contracts/
+// v4/deployments, read 2026-11-02); EVERY address below was verified with
+// eth_getCode through Alchemy's JSON-RPC the same day (PoolManager 24,009
+// bytes on both chains, Universal Router 19,499 / 19,540, V4 Quoter 6,118 /
+// 5,820, StateView 3,531, PositionManager 23,877, Permit2 9,152) and both
+// Quoters answered a live quoteExactInputSingle on the chain's ETH/USDC
+// 500/10 no-hook pool (Base: 25 USDC → 0.010975 ETH; Sepolia: 25 USDC →
+// 0.006565 ETH). The squad README's Sepolia Quoter (0x4A6b…d6a1) has NO code
+// on 84532 — the deployments page's 0x4a65…1cba is the one pinned. Its Base
+// Quoter (0x0d5e…048d, 5,820 bytes) is a live earlier deployment that quotes
+// identically; the page's current 0xE1A6…CA47 is pinned.
+export interface UniswapV4Pins {
+  poolManager: `0x${string}`
+  universalRouter: `0x${string}`
+  quoter: `0x${string}`
+  stateView: `0x${string}`
+  positionManager: `0x${string}`
+  permit2: `0x${string}`
+}
+
+export const UNISWAP_V4_PINS: Readonly<Record<number, UniswapV4Pins>> = {
+  8453: {
+    poolManager: '0x498581ff718922c3f8e6a244956af099b2652b2b',
+    universalRouter: '0x6ff5693b99212da76ad316178a184ab56d299b43',
+    quoter: '0xE1A6C5803e3c44368b171BD680c7D32dfc92CA47',
+    stateView: '0xa3c0c9b65bad0b08107aa264b0f3db444b867a71',
+    positionManager: '0x7c5f5a4bbd8fd63184577525326123b519429bdc',
+    permit2: '0x000000000022d473030f116ddee9f6b43ac78ba3',
+  },
+  84532: {
+    poolManager: '0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408',
+    universalRouter: '0x492E6456D9528771018DeB9E87ef7750EF184104',
+    quoter: '0x4a6513c898fe1b2d0e78d3b0e0a4a151589b1cba',
+    stateView: '0x571291b572ed32ce6751a2cb2486ebee8defb9b4',
+    positionManager: '0x4b2c77d209d3405f41a037ec6c77f7f5b8e2ca80',
+    permit2: '0x000000000022d473030f116ddee9f6b43ac78ba3',
+  },
+}
+
+/** Base Sepolia (84532) — the policy pool's rehearsal chain. Exported for the
+ *  policy-pool client factory and the demo runner ONLY; not an AppChain. */
+export const BASE_SEPOLIA_CHAIN_ID = 84532
+/** USDC on Base Sepolia (Circle's testnet issuance; bytecode verified 2026-11-02, 1,798 bytes). */
+export const BASE_SEPOLIA_USDC: `0x${string}` = '0x036CbD53842c5426634e7929541eC2318f3dCF7e'
+
+/** The policy pool's v4 pins for a chain, or null when none are pinned. */
+export function uniswapV4PinsFor(chainId: number): UniswapV4Pins | null {
+  return UNISWAP_V4_PINS[chainId] ?? null
+}
+
 const BY_ID = new Map(APP_CHAINS.map((c) => [c.id, c]))
 const BY_KEY = new Map(APP_CHAINS.map((c) => [c.key, c]))
 

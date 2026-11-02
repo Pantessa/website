@@ -34,6 +34,9 @@ import { deniedBrandNameReason, isDeniedBrandName } from '@/lib/brand-denylist'
 import { validateCallbackUrl, mintCallbackSecret, deliverWebhook, notifyEligible } from '@/lib/broker-webhook'
 import { agentHandleFor } from '@/lib/agent-record'
 import { cleanOrigin, readOrigin, type BrokerOrigin } from '@/lib/broker-origin'
+import { planNamesPolicyPool, policyPoolOriginFor, withPolicyPoolWords } from '@/lib/policy-pool/venue'
+import { POLICY_POOL_VENUE, policyPoolConfig } from '@/lib/policy-pool/config'
+import { recordPolicyPoolEvent } from '@/lib/policy-pool/ledger'
 import { sendIntent } from '@/lib/inbox'
 import { bindProposalAtOpen, recheckSlotAtBuild, type RosterBadge } from '@/lib/roster-propose'
 import { logRosterRefusalDirect } from '@/lib/roster-observe'
@@ -113,6 +116,10 @@ export async function openIntent(opts: {
   slotToken?: unknown
   /** PROVENANCE (lib/broker-origin): client-claimed; stored, echoed, counted — never acted on. */
   origin?: unknown
+  /** THE POLICY POOL (squad 2026-11-02): `'policy-pool'` routes the swap through
+   *  the desk's attested v4 pool — the ask gains the venue words (so the sign
+   *  link's chat turn routes there too) and the plan carries `venue`. */
+  venue?: unknown
 }, call?: DeskCallOpts): Promise<OpenResult> {
   assertDeskOpen()
   let wallet = cleanWallet(opts.wallet)
@@ -122,6 +129,15 @@ export async function openIntent(opts: {
   // Provenance is read at the door (a bad shape or tx material is refused by
   // name) and then only ever stored and echoed.
   const origin = cleanOrigin(opts.origin)
+  if (opts.venue !== undefined && opts.venue !== null && opts.venue !== POLICY_POOL_VENUE) {
+    throw new Error(`venue must be "${POLICY_POOL_VENUE}" or omitted.`)
+  }
+  const policyPool = opts.venue === POLICY_POOL_VENUE
+  if (policyPool) {
+    const cfg = policyPoolConfig()
+    if (!cfg) throw new Error('The policy pool is not deployed on this desk yet (POLICY_POOL_HOOK is unset) — open the intent without venue, or wait for the deploy.')
+    opts = { ...opts, ask: withPolicyPoolWords(opts.ask) }
+  }
 
   // WAVE-2 discovery (security T-D1/T-D6): slot_token targets a LISTED open
   // mandate slot from /api/roster/feed. The token resolves server-side to
@@ -215,7 +231,7 @@ export async function openIntent(opts: {
         callbackUrl,
         callbackSecret,
         state: 'handed_off',
-        plan: { ...plan, roster: { slotId: binding.slot.id } } as object,
+        plan: { ...plan, roster: { slotId: binding.slot.id }, ...(policyPool ? { venue: POLICY_POOL_VENUE } : {}) } as object,
         ...(origin ? { origin: origin as object } : {}),
         linkSlug: sent.slug,
         rosterSlotId: binding.slot.id,
@@ -261,7 +277,7 @@ export async function openIntent(opts: {
       callbackUrl,
       callbackSecret,
       state: 'open',
-      plan: plan as object,
+      plan: (policyPool ? { ...plan, venue: POLICY_POOL_VENUE } : plan) as object,
       ...(origin ? { origin: origin as object } : {}),
       isInternal: call?.internal === true,
     },
@@ -391,6 +407,20 @@ export async function handoffIntent(intentId: string, call?: DeskCallOpts): Prom
     where: { id: row.id },
     data: { state: 'handed_off', linkSlug: slug },
   })
+  // THE POLICY POOL: the sign link is the hand-off the ledger watches for.
+  if (planNamesPolicyPool(row.plan)) {
+    const cfg = policyPoolConfig()
+    if (cfg) {
+      await recordPolicyPoolEvent({
+        kind: 'handed_off',
+        intentId: row.id,
+        origin: policyPoolOriginFor(row.id, readOrigin(row.origin)),
+        ...(row.wallet ? { swapper: row.wallet } : {}),
+        chainId: cfg.chainId,
+        meta: { linkSlug: slug, internal: call?.internal === true },
+      })
+    }
+  }
 
   const out: HandoffResult = {
     intentId: row.id,

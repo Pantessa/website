@@ -224,10 +224,18 @@ const handler = createMcpHandler(
                 'Pass ONE target: slot_token or wallet, not both.',
             ),
           origin: ORIGIN_SCHEMA,
+          venue: z
+            .enum(['policy-pool'])
+            .optional()
+            .describe(
+              'THE POLICY POOL: route this swap through the desk\u2019s attested Uniswap v4 pool. The desk policy (per-order cap, the pinned pool) ' +
+                'decides before anything is built; the policy signer attests this one intent; the hook refuses every other swap into the pool and emits ' +
+                'DeskFill with your origin. The ask is rewritten to say "through the policy pool" so the sign link routes the same way.',
+            ),
         },
       },
-      async ({ ask, wallet, agent, agent_key, callback_url, slot_token, origin }, extra) =>
-        guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key, callbackUrl: callback_url, slotToken: slot_token, origin }, callOpts(extra))),
+      async ({ ask, wallet, agent, agent_key, callback_url, slot_token, origin, venue }, extra) =>
+        guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key, callbackUrl: callback_url, slotToken: slot_token, origin, venue }, callOpts(extra))),
     )
 
     server.registerTool(
