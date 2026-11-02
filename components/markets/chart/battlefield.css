@@ -159,6 +159,19 @@ button.bf__chip:hover { border-color: var(--line-2, var(--fg)); }
 .poshet__chev.is-open { transform: rotate(180deg); }
 .poshet__body { position: relative; }
 .poshet .bf__heat { position: static; inset: auto; --hc: 11px; justify-content: flex-start; }
+/* The strip shares its row with the executions table, and a year at 11px cells
+   is ~790px wide — wider than a half column on most screens. Left to itself the
+   heat's intrinsic width sized the strip's grid track, so the year ran under the
+   table (seen 2026-11-02). Contain the heat's inline size so the column, not
+   the year, sets the strip's width, and size the cells to the column: the year
+   is 53 weeks at --hc plus 52 gaps of 3px, the day labels, and the scroll
+   padding (194px), so a cell is what is left over, 11px at most, 7px at least,
+   below which the year scrolls sideways as before. */
+.poshet .bf__heat { container-type: inline-size; --hc: clamp(7px, calc((100cqw - 194px) / 53), 11px); }
+/* The head fits its column the same way (its labels never wrap), and the colour
+   key goes where the column is too tight to hold it beside the headline. */
+.poshet__head { container-type: inline-size; }
+@container (max-width: 650px) { .poshet__key { display: none; } }
 .poshet .bf__tip { position: absolute; }
 @media (max-width: 640px) {
   .poshet__key, .poshet__k { display: none; }
