@@ -148,7 +148,9 @@ export function HeatGrid({ cells, source, onHover }: { cells: HeatCell[]; source
         <div className="bf__heat-scroll">
           <div className="bf__heat-months mono" style={{ gridTemplateColumns: `repeat(${weeks.length}, var(--hc))` }}>
             {months.map((m) => (
-              <span key={`${m.col}-${m.label}`} style={{ gridColumnStart: m.col + 1 }}>
+              // A label spans three weeks from the month's first; one that begins in the
+              // year's last weeks ends at the grid's edge instead, so it never runs past it.
+              <span key={`${m.col}-${m.label}`} style={m.col + 3 > weeks.length ? { gridColumn: `${Math.max(1, weeks.length - 2)} / ${weeks.length + 1}`, justifySelf: 'end' } : { gridColumnStart: m.col + 1 }}>
                 {m.label}
               </span>
             ))}
