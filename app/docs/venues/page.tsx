@@ -264,7 +264,7 @@ export default function VenuesDocsPage() {
             standing harness asserts the literal is in that file. A pin that lives only in the free MCP repo is named, not copied.
           </li>
           <li>
-            <strong>Selectors are derived</strong> from the builders&apos; own ABIs with viem, or imported from the guard that pins them (Aave, Morpho) —
+            <strong>Selectors are derived</strong>{' '}from the builders&apos; own ABIs with viem, or imported from the guard that pins them (Aave, Morpho) —
             a build for one operation can never smuggle another operation&apos;s calldata past its guard.
           </li>
           <li>
