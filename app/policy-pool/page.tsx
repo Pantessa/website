@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
 import Footer from '@/components/Footer'
 import PolicyPoolLive, { type LedgerPayload } from '@/components/policy-pool/PolicyPoolLive'
-import { chainName, elide, explorerFor } from '@/components/policy-pool/format'
+import { elide, explorerFor } from '@/components/policy-pool/format'
 import { emptyPolicyPoolStats, listPolicyPoolEvents, policyPoolStats } from '@/lib/policy-pool/ledger'
-import { readPolicyPoolEnv, type PolicyPoolEnv } from '@/lib/policy-pool/indexer'
+import { policyPoolConfig, type PolicyPoolConfig } from '@/lib/policy-pool/config'
+import { readHookState, type HookState } from '@/lib/policy-pool/indexer'
 import { ATTESTATION_TYPE_STRING } from '@/lib/policy-pool/spec'
 import { SITE_CARD } from '@/lib/og-defaults'
 import '@/components/markets/look.css'
@@ -49,13 +50,13 @@ async function initialPayload(): Promise<LedgerPayload> {
   }
 }
 
-function Facts({ pool }: { pool: PolicyPoolEnv | null }) {
+function Facts({ pool, hook, misconfigured }: { pool: PolicyPoolConfig | null; hook: HookState | null; misconfigured: string | null }) {
   if (!pool) {
     return (
       <ul className="pp-facts" aria-label="Pool facts">
         <li className="pp-fact pp-fact--off" data-fact="status">
           <span className="pp-fact__k">Status</span>
-          <span className="pp-fact__v">not deployed yet</span>
+          <span className="pp-fact__v">{misconfigured ? 'configuration incomplete' : 'not deployed yet'}</span>
         </li>
         <li className="pp-fact" data-fact="chain">
           <span className="pp-fact__k">Chain</span>
@@ -70,12 +71,18 @@ function Facts({ pool }: { pool: PolicyPoolEnv | null }) {
   }
   const ex = explorerFor(pool.chainId)
   const facts: { k: string; v: string; href?: string; title?: string }[] = [
-    { k: 'Chain', v: chainName(pool.chainId) },
+    { k: 'Chain', v: pool.chainName },
     { k: 'Hook', v: elide(pool.hook), href: `${ex}/address/${pool.hook}`, title: pool.hook },
     { k: 'Pool id', v: elide(pool.poolId, 8, 4), title: pool.poolId },
-    pool.signer ? { k: 'Policy signer', v: elide(pool.signer), href: `${ex}/address/${pool.signer}`, title: pool.signer } : { k: 'Policy signer', v: 'unset' },
+    // The signer the hook checks on-chain; env only when the chain can't be read.
+    hook
+      ? { k: 'Policy signer', v: elide(hook.policySigner), href: `${ex}/address/${hook.policySigner}`, title: `${hook.policySigner} (read from the hook)` }
+      : pool.signer
+        ? { k: 'Policy signer', v: elide(pool.signer), href: `${ex}/address/${pool.signer}`, title: `${pool.signer} (from env; the hook could not be read)` }
+        : { k: 'Policy signer', v: 'unset' },
+    ...(hook?.paused ? [{ k: 'Status', v: 'paused by the owner' }] : []),
     { k: 'Cap', v: `$${pool.maxUsd.toLocaleString('en-US')} per order` },
-    { k: 'Deploy block', v: pool.deployBlock.toLocaleString('en-US'), href: pool.deployBlock ? `${ex}/block/${pool.deployBlock}` : undefined },
+    { k: 'Deploy block', v: pool.deployBlock !== null ? pool.deployBlock.toLocaleString('en-US') : 'unset', href: pool.deployBlock ? `${ex}/block/${pool.deployBlock}` : undefined },
   ]
   return (
     <ul className="pp-facts" aria-label="Pool facts">
@@ -94,8 +101,17 @@ function Facts({ pool }: { pool: PolicyPoolEnv | null }) {
 }
 
 export default async function PolicyPoolPage() {
-  const pool = readPolicyPoolEnv()
-  const initial = await initialPayload()
+  // A half-configured pool throws by name (lib/policy-pool/config): the page
+  // renders the not-deployed layout and says the config is incomplete.
+  let pool: PolicyPoolConfig | null = null
+  let misconfigured: string | null = null
+  try {
+    pool = policyPoolConfig()
+  } catch (e) {
+    misconfigured = (e as Error).message
+    console.warn(`[policy-pool page] ${misconfigured}`)
+  }
+  const [initial, hook] = await Promise.all([initialPayload(), pool ? readHookState(pool) : Promise.resolve(null)])
   return (
     <>
       <main className="x-main x-main--fluid pg pp" data-policy-pool={pool ? 'deployed' : 'not-deployed'}>
@@ -103,7 +119,7 @@ export default async function PolicyPoolPage() {
           <div className="pg__eyebrow">The desk, on-chain</div>
           <h1 className="pg__title pp-title">The policy pool</h1>
           <p className="pg__sub">Every swap in this pool carries a signed desk attestation; the hook refuses the rest.</p>
-          <Facts pool={pool} />
+          <Facts pool={pool} hook={hook} misconfigured={misconfigured} />
         </header>
 
         <PolicyPoolLive initial={initial} deployed={!!pool} />

@@ -118,6 +118,14 @@ export async function recordPolicyPoolEvent(e: PolicyPoolEventInput): Promise<vo
       console.warn(`[policy-pool ledger] refused row: ${n.error}`)
       return
     }
+    // One `fill` per on-chain log: the indexer's row (it carries logIndex) is
+    // the truth. A recorder fill for a tx the indexer already wrote is a
+    // duplicate — skipped, so fills and volume are never counted twice. (The
+    // other order is handled in the indexer: it upgrades the recorder's row.)
+    if (n.data.kind === 'fill' && n.data.txHash) {
+      const indexed = await prisma.policyPoolEvent.findFirst({ where: { kind: 'fill', txHash: n.data.txHash, logIndex: { not: null } }, select: { id: true } })
+      if (indexed) return
+    }
     await prisma.policyPoolEvent.create({ data: n.data })
     statsCache = null
   } catch (err) {
@@ -160,7 +168,7 @@ export async function listPolicyPoolEvents({
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       take: 200,
     })
-    return { events: rows.map(toRow), nextCursor: null }
+    return { events: rows.map(toRow).sort(walkOrder), nextCursor: null }
   }
   const rows = await prisma.policyPoolEvent.findMany({
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -169,7 +177,17 @@ export async function listPolicyPoolEvents({
   })
   const more = rows.length > take
   const page = more ? rows.slice(0, take) : rows
-  return { events: page.map(toRow), nextCursor: more ? page[page.length - 1].id : null }
+  return { events: page.map(toRow).sort((x, y) => walkOrder(y, x)), nextCursor: more ? page[page.length - 1].id : null }
+}
+
+const KIND_RANK = new Map<string, number>(POLICY_POOL_EVENT_KINDS.map((k, i) => [k, i]))
+/** Oldest first; rows stamped within the same second fall in the order an
+ *  intent walks them. Second resolution because an indexed row carries its
+ *  block's whole-second timestamp while a desk row carries wall-clock ms
+ *  (a desk `mined` at :43.4 must still sort before the chain's `fill` at :43). */
+export function walkOrder(a: Pick<PolicyPoolEventRow, 'createdAt' | 'kind'>, b: Pick<PolicyPoolEventRow, 'createdAt' | 'kind'>): number {
+  const t = Math.floor(Date.parse(a.createdAt) / 1000) - Math.floor(Date.parse(b.createdAt) / 1000)
+  return t !== 0 ? t : (KIND_RANK.get(a.kind) ?? 99) - (KIND_RANK.get(b.kind) ?? 99)
 }
 
 // ── Stats ────────────────────────────────────────────────────────────────
