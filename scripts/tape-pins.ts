@@ -51,6 +51,8 @@ import {
   venueWords,
   type DuneDexTrade,
   type DunePerpTrade,
+  DUNE_QUERY_KEY_ENV,
+  duneQueryKey,
 } from '../lib/dune'
 import { simulateLadder } from './ask-ladder'
 import { LIVE_TAIL_TFS, PRINT_KEEP_MS, applyPrint, barsFromPrints, bucketOf, chartLiveFeed, livePriceStats, printOf, seedThenPrints, tailIsLive, tailWords } from '../lib/chart-live'
@@ -138,8 +140,9 @@ export function tapePins(check: Check): void {
       parseVenueList('lighter,hypercore,nope').join(',') === 'hypercore,lighter' && parseVenueList('').join(',') === DEFAULT_LIVE_VENUES.join(',') && parseVenueList('zzz', PERP_VENUES).join(',') === PERP_VENUES.join(',') &&
       parseMarketList('BTC,xyz:NVDA,BTC, bad market ,x'.repeat(1)).join(',') === 'BTC,xyz:NVDA,x' && parseMarketList(null).length === 0 &&
       resumeUrl('wss://x/1', '123') === 'wss://x/1?resume_after=123' && resumeUrl('wss://x/1', null) === 'wss://x/1' && resumeUrl('wss://x/1', '12a') === 'wss://x/1' && venueWords(DEFAULT_LIVE_VENUES) === 'every venue' && venueWords(['hypercore', 'dex-base']) === '1 perp venue + 1 spot chain')
-  check('dune: the feed reads DUNE_BETA_API_KEY and ONLY that — the older DUNE_API_KEY is the Analytics key, which the feed refuses (probed 2026-10-13, close 1006 like no key), so it is never a fallback',
-    DUNE_FEED_KEY_ENV === 'DUNE_BETA_API_KEY' && duneFeedKey({ DUNE_BETA_API_KEY: ' k1 ' }) === 'k1' && duneFeedKey({ DUNE_API_KEY: 'old' }) === null && duneFeedKey({}) === null && duneFeedKey({ DUNE_BETA_API_KEY: '' }) === null)
+  check('dune: the feed reads DUNE_BETA_API_KEY and ONLY that — the query key DUNE_WRITE_KEY (Analytics API + MCP, 2026-11-02) and the retired DUNE_API_KEY are refused by the feed (probed 2026-10-13, close 1006 like no key), so neither is ever a fallback; the query key is read by its own name only',
+    DUNE_FEED_KEY_ENV === 'DUNE_BETA_API_KEY' && duneFeedKey({ DUNE_BETA_API_KEY: ' k1 ' }) === 'k1' && duneFeedKey({ DUNE_API_KEY: 'old' }) === null && duneFeedKey({ DUNE_WRITE_KEY: 'q' }) === null && duneFeedKey({}) === null && duneFeedKey({ DUNE_BETA_API_KEY: '' }) === null &&
+      DUNE_QUERY_KEY_ENV === 'DUNE_WRITE_KEY' && duneQueryKey({ DUNE_WRITE_KEY: ' q1 ' }) === 'q1' && duneQueryKey({ DUNE_API_KEY: 'old' }) === null && duneQueryKey({ DUNE_BETA_API_KEY: 'feed' }) === null && duneQueryKey({}) === null)
   check('dune: the relay says bye before the function\'s own limit (a browser reopens cleanly instead of reading a dropped socket as a quiet market)',
     LIVE_STREAM_HOLD_MS < LIVE_STREAM_MAX_DURATION_S * 1000 - 5_000 && LIVE_STREAM_HOLD_MS >= 60_000)
   check('tape: a venue tag beside the market reads hl · lighter · lighter·rh · the chain of a spot swap; a spot symbol maps to the ticker the ask grammar buys (WETH → ETH, cbBTC → BTC)',
