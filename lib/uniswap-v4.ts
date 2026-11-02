@@ -37,7 +37,7 @@
 import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeFunctionData, erc20Abi } from 'viem'
 import { buysNativeEth, chainById, publicClientFor } from '@/lib/chains'
 import { resolveToken, tokenDecimals, tokenLabel, humanToAtoms, formatAtoms } from '@/lib/cow'
-import { UNISWAP_POLICY_HOST } from '@/lib/uniswap-venue'
+import { UNISWAP_POLICY_HOST, UNI_DEADLINE_SEC, UNI_DEFAULT_SLIPPAGE_BPS } from '@/lib/uniswap-venue'
 import {
   buildReport,
   policyCheck,
@@ -102,7 +102,8 @@ const UR_COMMANDS_FEE_CREATOR = `0x${[UR_COMMAND_V4_SWAP, UR_COMMAND_PAY_PORTION
 const UINT128_MAX = (BigInt(1) << BigInt(128)) - BigInt(1)
 const UINT160_MAX = (BigInt(1) << BigInt(160)) - BigInt(1)
 
-const UNIVERSAL_ROUTER_ABI = [
+/** Exported for the venue manifest: selectors are derived from these ABIs, never retyped. */
+export const UNIVERSAL_ROUTER_ABI = [
   {
     name: 'execute',
     type: 'function',
@@ -116,7 +117,7 @@ const UNIVERSAL_ROUTER_ABI = [
   },
 ] as const
 
-const V4_QUOTER_ABI = [
+export const V4_QUOTER_ABI = [
   {
     name: 'quoteExactInputSingle',
     type: 'function',
@@ -150,7 +151,7 @@ const V4_QUOTER_ABI = [
   },
 ] as const
 
-const PERMIT2_ABI = [
+export const PERMIT2_ABI = [
   {
     name: 'approve',
     type: 'function',
@@ -712,8 +713,8 @@ export interface UniswapV4Built {
  * route refuses the turn and the artifact is withheld, same as v3.
  */
 export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<UniswapV4Built> {
-  const slippageBps = params.slippageBps ?? 50
-  const deadlineSec = params.deadlineSec ?? 600
+  const slippageBps = params.slippageBps ?? UNI_DEFAULT_SLIPPAGE_BPS
+  const deadlineSec = params.deadlineSec ?? UNI_DEADLINE_SEC
   const chain = chainById(params.chainId)
   if (!chain) throw new Error(`Chain ${params.chainId} isn't one of Pantessa's supported chains.`)
   const v4 = chain.uniswapV4

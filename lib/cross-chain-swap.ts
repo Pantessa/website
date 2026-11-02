@@ -250,7 +250,8 @@ function parseCrossChainCore(rawMessage: string): CrossChainSwapParams | { probl
 
 // EVM chain ids for the origin chains the MCP can BUILD on — used only to
 // sanity-check the built tx's chainId (the MCP already refuses non-EVM origins).
-const ORIGIN_CHAIN_IDS: Record<string, number> = {
+/** Exported for the venue manifest: the origin chains a cross-chain build may name. */
+export const ORIGIN_CHAIN_IDS: Record<string, number> = {
   base: 8453,
   arbitrum: 42161,
   arb: 42161,

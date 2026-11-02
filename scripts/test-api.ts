@@ -370,6 +370,7 @@ import { actionGateLivePins, actionGatePins } from './action-gate-pins'
 import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
+import { venueManifestLivePins, venueManifestPins } from './venue-manifest-pins'
 import { printAlertPins } from './print-alert-pins'
 import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
@@ -2154,6 +2155,7 @@ async function main() {
     const PROSE_PATHS = [
       '/', '/pricing', '/links', '/links/embed', '/rebrand', '/mosaic',
       '/docs', '/docs/desk', '/docs/embed', '/docs/links', '/docs/jobs', '/docs/trust',
+      '/docs/venues',
       '/docs/first-five-minutes', '/docs/host-buttons', '/docs/embedded-wallet',
       '/docs/creator-earnings', '/docs/spend-policy', '/docs/transactions',
       '/docs/privacy', '/docs/terms', '/docs/dca', '/docs/guardian', '/docs/snapshot',
@@ -19635,7 +19637,6 @@ async function main() {
       'components/GuardianPanel.tsx': 'dashboard arm surface, not a stranger sign path (queued)',
       'components/ArmDcaButton.tsx': 'spend-permission arm (autopilot DCA) — queued',
       'components/ArmSpotGuardButton.tsx': 'spend-permission arm (spot guardian) — queued',
-      'components/SignGrantButton.tsx': 'dashboard grant signature — queued',
       'components/SignNftListingButton.tsx': 'Seaport listing (opensea-listing artifact exists) — queued',
       'components/ChatInterface.tsx': 'x402 payment sigs (EIP-3009) — not a native artifact; queued',
       'components/SignVoteButton.tsx': 'Snapshot vote — no money moves (queued)',
@@ -32681,7 +32682,7 @@ async function main() {
       }
       return out
     }
-    const SIGN_SURFACES = ['SendTxButton', 'SendTxChain', 'JobCard', 'JobDetailOverlay', 'SignOrderButton', 'SignHlActionButton', 'SignNftListingButton', 'ClarifyChips', 'ArmSpotGuardButton', 'ArmDcaButton', 'SignGrantButton', 'SignVoteButton', 'VoteChoiceButtons', 'GuardianPanel', 'WalletPanel', 'TeamRailTab', 'IntentRuntime', 'JobsRailTab', 'markets/watchlist/FundWallet', 'FundAccountCard']
+    const SIGN_SURFACES = ['SendTxButton', 'SendTxChain', 'JobCard', 'JobDetailOverlay', 'SignOrderButton', 'SignHlActionButton', 'SignNftListingButton', 'ClarifyChips', 'ArmSpotGuardButton', 'ArmDcaButton', 'SignVoteButton', 'VoteChoiceButtons', 'GuardianPanel', 'WalletPanel', 'TeamRailTab', 'IntentRuntime', 'JobsRailTab', 'markets/watchlist/FundWallet', 'FundAccountCard']
     const effectOffenders: string[] = []
     for (const name of SIGN_SURFACES) {
       const src = fs.readFileSync(`components/${name}.tsx`, 'utf8')
@@ -32722,9 +32723,9 @@ async function main() {
     check('mobile sign: SignatureWaitTakeover — the sign-in ending calls walletAppRequestSettled (not clearWalletAppOpen), and an open SDK link renders "Open {app}" via openWalletApp() in place of the disabled waiting button', /if \(!signingIn\) \{[^}]*walletAppRequestSettled\(\)/.test(takeoverSrc) && !/clearWalletAppOpen/.test(takeoverSrc) && /openApp=\{last \? \{ app: last\.app, onOpen: \(\) => openWalletApp\(\) \} : null\}/.test(takeoverSrc) && /signingIn && openApp \?/.test(takeoverSrc) && /data-sign-open-app=\{openApp\.app\}/.test(takeoverSrc))
     const openAppSrc = fs.readFileSync('components/SignatureWaitOpenApp.tsx', 'utf8')
     check('mobile sign: SignatureWaitOpenApp renders nothing without a link, and its tap is openWalletApp()', /if \(!waiting \|\| !last\) return null/.test(openAppSrc) && /onClick=\{\(\) => openWalletApp\(\)\}/.test(openAppSrc) && /data-sign-open-app=\{last\.app\}/.test(openAppSrc))
-    const armRearms = ['ArmSpotGuardButton', 'ArmDcaButton', 'SignGrantButton'].filter((n) => { const src = fs.readFileSync(`components/${n}.tsx`, 'utf8'); return !(/if \(connectedChain\?\.id !== (offer\.)?typedData\.domain\.chainId\) \{/.test(src) && /if \(oneMethodPerTap\(platform\)\) \{/.test(src) && /Network switched — tap to sign\./.test(src) && /data-arm-rearmed="switch"/.test(src)) })
+    const armRearms = ['ArmSpotGuardButton', 'ArmDcaButton'].filter((n) => { const src = fs.readFileSync(`components/${n}.tsx`, 'utf8'); return !(/if \(connectedChain\?\.id !== (offer\.)?typedData\.domain\.chainId\) \{/.test(src) && /if \(oneMethodPerTap\(platform\)\) \{/.test(src) && /Network switched — tap to sign\./.test(src) && /data-arm-rearmed="switch"/.test(src)) })
     check('mobile sign: Arm Spot Guardian / Arm DCA / Sign grant switch chains only when they differ, and on a phone the switch is its own tap (re-armed by its words)', armRearms.length === 0, armRearms.join(','))
-    const openAppMounts = ['SendTxButton', 'SignHlActionButton', 'SignOrderButton', 'SignNftListingButton', 'ArmSpotGuardButton', 'ArmDcaButton', 'SignGrantButton'].filter((n) => !/<SignatureWaitOpenApp waiting=\{/.test(fs.readFileSync(`components/${n}.tsx`, 'utf8')))
+    const openAppMounts = ['SendTxButton', 'SignHlActionButton', 'SignOrderButton', 'SignNftListingButton', 'ArmSpotGuardButton', 'ArmDcaButton'].filter((n) => !/<SignatureWaitOpenApp waiting=\{/.test(fs.readFileSync(`components/${n}.tsx`, 'utf8')))
     check('mobile sign: every sign surface (7) mounts SignatureWaitOpenApp on its waiting state (SendTxChain + JobCard inherit through SendTxButton)', openAppMounts.length === 0, openAppMounts.join(','))
     const rtSrc = fs.readFileSync('lib/sign-round-trip.ts', 'utf8')
     check('mobile sign: lib/sign-round-trip is pure (no react, no window, no wagmi)', !/from 'react'|from 'wagmi'|window\.|document\./.test(rtSrc))
@@ -35058,6 +35059,9 @@ async function main() {
   battlefieldPins(check)
   // The live tape (2026-10-06): the venue row parse, flow classes, buckets, tiles, follow asks, triggers, the page's door.
   tapePins(check)
+  // The venue manifest (2026-11-02): pinned contracts, selectors, guards and bounds per venue, read from the builders' own constants; the served route + page agree.
+  venueManifestPins(check)
+  await venueManifestLivePins(check, BASE)
   // The /live trigger rules armed on the server (2026-10-13): the body reader, the evaluation over consumed fills, the cursor policy, the notification, the wiring.
   printAlertPins(check)
   // The battle views on /live (2026-10-06): windows and anchors, the percent track, the range, units, bursts, rank, the picker, the projections.
