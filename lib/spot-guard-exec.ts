@@ -111,6 +111,14 @@ export interface SpotGuardTurn {
    *  a chip kind that opens a URL does not exist and is not worth inventing
    *  for one refusal. */
   clarify?: { question: string; options: { label: string; resume: string }[] }
+  /** The connect door (CLAUDE.md standing rule 6 — connect to act): a
+   *  wallet-less ask answers with these so the runtime opens the unified
+   *  connect door and re-runs `connectAsk` the moment an address lands
+   *  (lib/wallet-reconnect shouldRerunConnectAsk). `connectAsk` is the ask
+   *  as typed; `connectLabel` names the button. */
+  connectWallet?: true
+  connectAsk?: string
+  connectLabel?: string
   buildPath: string
 }
 
@@ -177,7 +185,10 @@ export async function runSpotGuardTurn(
 ): Promise<SpotGuardTurn | null> {
   const manage = parseSpotGuardManage(message)
   if (manage) {
-    if (!wallet) return { reply: '🛡️ Connect your wallet first — spot protections belong to an address.', buildPath: 'native-spot-guard' }
+    if (!wallet) {
+      // The door, not a wall (standing rule 6): the ask re-runs on connect.
+      return { reply: '🛡️ Connect your wallet first — spot protections belong to an address.', connectWallet: true, connectAsk: message, connectLabel: `Connect wallet to ${manage.op} it`, buildPath: 'native-spot-guard' }
+    }
     if (!walletProven) {
       const { mutationGate } = await import('@/lib/chat-mutation-gate')
       trace({ type: 'note', level: 'warn', label: `spot guardian: ${manage.op} asked but the session does not own the wallet — answering the sign-in gate, nothing changed` })
@@ -191,7 +202,8 @@ export async function runSpotGuardTurn(
   trace({ type: 'status', label: `spot guardian claimed the turn: protect ${ask.amountHuman ?? 'all'} ${ask.token} (${ask.triggerMode} ${ask.triggerValue}) — planner bypassed` })
 
   if (!wallet) {
-    return { reply: '🛡️ Connect your wallet to arm spot protection — the permission is signed by, and scoped to, your address.', buildPath: 'native-spot-guard' }
+    // The door, not a wall (standing rule 6): the ask re-runs on connect.
+    return { reply: '🛡️ Connect your wallet to arm spot protection — the permission is signed by, and scoped to, your address.', connectWallet: true, connectAsk: message, connectLabel: 'Connect wallet to arm it', buildPath: 'native-spot-guard' }
   }
   if (!isCdpConfigured() || spendNetwork() !== 'base') {
     // Was: "…the autopilot rails, which aren't provisioned in this

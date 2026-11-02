@@ -1037,6 +1037,21 @@ export interface HlExecTurn {
   txRequest?: Record<string, unknown>
   guardrails?: GuardrailReport
   buildPath?: 'native-hl-exec' | 'native-hl-deposit'
+  /** The connect door (CLAUDE.md standing rule 6 — connect to act): a
+   *  wallet-less ask answers with these so the runtime opens the unified
+   *  connect door and re-runs `connectAsk` the moment an address lands
+   *  (lib/wallet-reconnect shouldRerunConnectAsk). `connectAsk` is the ask
+   *  as typed; `connectLabel` names the button. */
+  connectWallet?: true
+  connectAsk?: string
+  connectLabel?: string
+}
+
+/** The sentence the connect door re-runs when the layer was handed an intent
+ *  without the words that produced it (a caller other than the chat route):
+ *  the canonical ask, which round-trips parseHlIntent. */
+function hlConnectAsk(intent: HlIntent): string {
+  return intent.kind === 'deposit' ? `deposit ${intent.amountUsdc} USDC to Hyperliquid` : hlCanonicalAsk(intent)
 }
 
 /**
@@ -1049,9 +1064,21 @@ export async function buildHlExecTurn(
   intent: HlIntent,
   walletAddress: string | undefined,
   trace: (event: unknown) => void,
+  /** The ask as typed — what the connect door re-runs once a wallet lands.
+   *  Absent (the jobs runner, which always carries a wallet), the canonical
+   *  sentence stands in. */
+  originalMessage?: string,
 ): Promise<HlExecTurn> {
   if (!walletAddress) {
-    return { reply: '📈 Connect your wallet first — Hyperliquid orders are signed by YOUR wallet (it is your HL account).' }
+    // The door, not a wall (standing rule 6): the runtime opens the unified
+    // connect door and re-sends the ask when an address lands.
+    return {
+      reply: '📈 Connect your wallet first — Hyperliquid orders are signed by YOUR wallet (it is your HL account).',
+      connectWallet: true,
+      connectAsk: originalMessage?.trim() || hlConnectAsk(intent),
+      connectLabel: intent.kind === 'deposit' ? 'Connect wallet to build the deposit' : 'Connect wallet to build the order',
+      buildPath: intent.kind === 'deposit' ? 'native-hl-deposit' : 'native-hl-exec',
+    }
   }
   if (intent.kind === 'open-unsized') {
     // The route answers these with size chips before ever building; a caller

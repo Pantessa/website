@@ -192,6 +192,14 @@ export interface DcaTurn {
   dcaScheduleId?: string
   /** The autopilot arm offer (one signTypedData card) — lib/dca-auto-exec. */
   dcaArm?: import('@/lib/dca-auto-exec').DcaArmOffer
+  /** The connect door (CLAUDE.md standing rule 6 — connect to act): a
+   *  wallet-less ask answers with these so the runtime opens the unified
+   *  connect door and re-runs `connectAsk` the moment an address lands
+   *  (lib/wallet-reconnect shouldRerunConnectAsk). `connectAsk` is the ask
+   *  as typed; `connectLabel` names the button. */
+  connectWallet?: true
+  connectAsk?: string
+  connectLabel?: string
 }
 
 const nextPeriodWord: Record<DcaCadence, string> = { day: 'tomorrow', week: 'next week', month: 'next month' }
@@ -227,7 +235,10 @@ export async function runDcaTurn(
   const run = parseDcaRun(message)
   if (run) {
     trace({ type: 'status', label: `dca layer claimed the turn: run schedule ${run.scheduleId.slice(0, 8)} — planner bypassed` })
-    if (!wallet) return { reply: '📆 Connect your wallet first — a recurring buy signs from YOUR wallet.' }
+    if (!wallet) {
+      // The door, not a wall (standing rule 6): the ask re-runs on connect.
+      return { reply: '📆 Connect your wallet first — a recurring buy signs from YOUR wallet.', connectWallet: true, connectAsk: message, connectLabel: 'Connect wallet to run this buy', buildPath: 'native-dca' }
+    }
     const s = await prisma.dcaSchedule.findUnique({ where: { id: run.scheduleId } })
     if (!s || s.wallet !== wallet.toLowerCase() || s.originEnv !== jobsEnv()) {
       return { reply: "📆 I can't find that recurring buy on this wallet — say “list my dcas” to see what's active." }
@@ -256,7 +267,10 @@ export async function runDcaTurn(
   }
   if (create) {
     trace({ type: 'status', label: `dca layer claimed the turn: $${create.buyUsd} of ${create.buyToken} ${cadenceLabel(create.cadence)} — planner bypassed` })
-    if (!wallet) return { reply: `📆 That's a recurring buy — connect your wallet first and I'll set up $${create.buyUsd} of ${create.buyToken} ${cadenceLabel(create.cadence)}, one signature per buy.` }
+    if (!wallet) {
+      // The door, not a wall (standing rule 6): the ask re-runs on connect.
+      return { reply: `📆 That's a recurring buy — connect your wallet first and I'll set up $${create.buyUsd} of ${create.buyToken} ${cadenceLabel(create.cadence)}, one signature per buy.`, connectWallet: true, connectAsk: message, connectLabel: 'Connect wallet to set it up', buildPath: 'native-dca' }
+    }
     // ── Non-EVM homes ── "DCA $10 into SOL weekly" (the chart overlay's own
     // chip) would resolve SOL on Base's permissionless list — a bridged copy
     // or a squat — and schedule STANDING buys of it. Refuse by name before
@@ -375,7 +389,10 @@ export async function runDcaTurn(
   const manage = parseDcaManage(message)
   if (!manage) return null
   trace({ type: 'status', label: `dca layer claimed the turn: ${manage.op}${manage.token ? ` ${manage.token}` : ''} — planner bypassed` })
-  if (!wallet) return { reply: '📆 Connect your wallet first — recurring buys belong to a wallet.' }
+  if (!wallet) {
+    // The door, not a wall (standing rule 6): the ask re-runs on connect.
+    return { reply: '📆 Connect your wallet first — recurring buys belong to a wallet.', connectWallet: true, connectAsk: message, connectLabel: manage.op === 'list' ? 'Connect wallet to see them' : `Connect wallet to ${manage.op} it`, buildPath: 'native-dca' }
+  }
   // Listing stays a connect-to-act read; pause / resume / cancel change a
   // standing plan with no signature → the session must own the wallet.
   if (manage.op !== 'list' && !walletProven) {
