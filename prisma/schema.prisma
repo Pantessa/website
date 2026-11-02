@@ -1901,3 +1901,61 @@ model SymbolTradability {
   @@index([checkedAt])
   @@map("symbol_tradability")
 }
+
+/// THE POLICY POOL's ledger (squad policy-pool, 2026-11-02): one row per step
+/// an intent walks through the desk's policy pool — the off-chain guard's
+/// verdict, the attestation the policy signer issued, the hand-off, the
+/// wallet's signature, the mined tx, the hook's `DeskFill` log, an on-chain
+/// revert, and the row Dune later saw. `/policy-pool` reads it as the
+/// public ledger; BUILDER writes the off-chain kinds through
+/// lib/policy-pool/ledger `recordPolicyPoolEvent` (never throws — a ledger
+/// outage never blocks a build) and the indexer cron
+/// (/api/cron/policy-pool) writes `fill` (+ `mined`) from the chain.
+///
+/// On-chain rows carry `logIndex`, so (txHash, logIndex) is unique and a
+/// re-index is idempotent; off-chain rows leave `logIndex` null, and
+/// Postgres never counts two NULLs as a collision. `kind` is one of
+/// lib/policy-pool/spec POLICY_POOL_EVENT_KINDS. `origin` is the verbatim
+/// provenance string (`dune:9055910`, `desk:<id>`, `demo:<label>`) — a
+/// display claim, never an authorization.
+model PolicyPoolEvent {
+  id          String   @id @default(cuid())
+  kind        String
+  chainId     Int      @map("chain_id")
+  /// The desk intent id (BrokerIntent.id / job id / demo id), or the on-chain
+  /// bytes32 intentId when only the chain knows it (an indexed fill whose
+  /// desk id never reached the ledger).
+  intentId    String?  @map("intent_id")
+  origin      String?
+  swapper     String?
+  /// Atoms as decimal strings — a uint256 never fits a JS number.
+  amountIn    String?  @map("amount_in")
+  amountOut   String?  @map("amount_out")
+  /// Dollars when the row can be priced honestly (the USDC leg at 1:1);
+  /// null otherwise, never a guess.
+  usd         Float?
+  txHash      String?  @map("tx_hash")
+  blockNumber Int?     @map("block_number")
+  logIndex    Int?     @map("log_index")
+  /// The refusal or revert in the guard's / the hook's own words.
+  reason      String?
+  meta        Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([txHash, logIndex])
+  @@index([kind, createdAt])
+  @@index([intentId])
+  @@index([txHash])
+  @@map("policy_pool_events")
+}
+
+/// Where the policy-pool indexer left each chain: the last block whose
+/// `DeskFill` logs were read and written (persisted only after the window's
+/// rows landed, so a crash re-reads, never skips).
+model PolicyPoolCursor {
+  chainId   Int      @id @map("chain_id")
+  lastBlock Int      @map("last_block")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("policy_pool_cursors")
+}

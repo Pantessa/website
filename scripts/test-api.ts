@@ -35515,6 +35515,72 @@ async function main() {
     )
   }
 
+  // ── THE POLICY POOL ledger (squad policy-pool, LEDGER lane, 2026-11-02) ──
+  // The public page + its JSON, the two protected doors, and the pure rules
+  // (row normalization, gap-free buckets, the env reader's "not deployed").
+  {
+    const PPL = await import('../lib/policy-pool/ledger')
+    const PPI = await import('../lib/policy-pool/indexer')
+    const ok = PPL.normalizePolicyPoolEvent({ kind: 'fill', chainId: 84532, txHash: '0x' + 'ab'.repeat(32), amountIn: '25000000', usd: 25, swapper: '0xABCDEF0000000000000000000000000000000001' })
+    check(
+      'policy-pool: a row normalizes (lowercased swapper + tx, atoms kept as strings); an unknown kind, a zero chain, a short tx hash and non-integer atoms are refused with a reason',
+      ok.ok && ok.data.swapper === '0xabcdef0000000000000000000000000000000001' && ok.data.amountIn === '25000000' &&
+        !PPL.normalizePolicyPoolEvent({ kind: 'nope', chainId: 1 }).ok && !PPL.normalizePolicyPoolEvent({ kind: 'fill', chainId: 0 }).ok &&
+        !PPL.normalizePolicyPoolEvent({ kind: 'fill', chainId: 8453, txHash: '0x12' }).ok && PPL.normalizePolicyPoolEvent({ kind: 'fill', chainId: 8453, amountIn: '1.5' }).ok &&
+        (PPL.normalizePolicyPoolEvent({ kind: 'fill', chainId: 8453, amountIn: '1.5' }) as { ok: true; data: { amountIn: string | null } }).data.amountIn === null,
+    )
+    const now = Date.parse('2026-11-02T12:34:00Z')
+    const hb = PPL.fillBuckets(PPL.emptyBuckets(now, 3_600_000, 24), 3_600_000, [
+      { kind: 'fill', usd: 25, createdAt: new Date('2026-11-02T12:01:00Z') },
+      { kind: 'fill', usd: null, createdAt: new Date('2026-11-02T12:59:00Z') },
+      { kind: 'guard_refused', usd: 5000, createdAt: new Date('2026-11-02T11:10:00Z') },
+      { kind: 'onchain_revert', usd: null, createdAt: '2026-11-02T11:20:00Z' },
+      { kind: 'attested', usd: 25, createdAt: new Date('2026-11-02T12:02:00Z') },
+      { kind: 'fill', usd: 99, createdAt: new Date('2026-10-30T12:00:00Z') },
+    ])
+    check(
+      'policy-pool: hourly buckets are 24, gap-free, ending at the current hour; fills carry their USD, refusals = guard + on-chain, other kinds and out-of-window rows count nowhere',
+      hb.length === 24 && hb[23].t === '2026-11-02T12:00:00.000Z' && hb[23].fills === 2 && hb[23].volumeUsd === 25 && hb[22].refusals === 2 && hb[22].fills === 0 &&
+        hb.reduce((a, b) => a + b.fills + b.refusals, 0) === 4,
+    )
+    const env = PPI.readPolicyPoolEnv({ POLICY_POOL_CHAIN_ID: '84532', POLICY_POOL_HOOK: '0x00000000000000000000000000000000000000c0', POLICY_POOL_DEPLOY_BLOCK: '123' })
+    const fields = PPI.fillFieldsFor(
+      { intentId: ('0x' + '11'.repeat(32)) as `0x${string}`, swapper: '0x0000000000000000000000000000000000000001', poolId: ('0x' + '22'.repeat(32)) as `0x${string}`, zeroForOne: false, amount0: BigInt('10400000000000000'), amount1: BigInt(-25_000_000), origin: 'dune:9055910' },
+      { chainId: 84532, currency0: '0x0000000000000000000000000000000000000000', currency1: '0x036cbd53842c5426634e7929541ec2318f3dcf7e' },
+    )
+    check(
+      'policy-pool: the env reader is null with no hook (not deployed), defaults the Sepolia USDC + fee 500 / spacing 10 with one; a DeskFill pays in the negative leg and prices the USDC leg 1:1',
+      PPI.readPolicyPoolEnv({}) === null && PPI.readPolicyPoolEnv({ POLICY_POOL_HOOK: 'nope' }) === null && !!env && env.deployBlock === 123 && env.fee === 500 && env.tickSpacing === 10 &&
+        env.currency1 === '0x036cbd53842c5426634e7929541ec2318f3dcf7e' && /^0x[0-9a-f]{64}$/.test(env.poolId) &&
+        fields.amountIn === '25000000' && fields.amountOut === '10400000000000000' && fields.usd === 25,
+    )
+    const pageRes = await fetch(`${BASE}/policy-pool`)
+    const page = await pageRes.text()
+    const evRes = await fetch(`${BASE}/api/policy-pool/events?limit=5`)
+    const ev = (await evRes.json().catch(() => null)) as { ok?: boolean; events?: unknown[]; stats?: { hourly?: unknown[]; daily?: unknown[]; funnel?: unknown[] } } | null
+    check(
+      'policy-pool: /policy-pool serves 200 with the header, the pool facts, the ledger and the attestation type string; /api/policy-pool/events answers JSON with rows + 24 hourly / 14 daily buckets + the 7-step funnel',
+      pageRes.status === 200 && /<h1[^>]*>The policy pool<\/h1>/.test(page) && /data-policy-pool="(deployed|not-deployed)"/.test(page) && page.includes('aria-label="Pool facts"') &&
+        page.includes('aria-label="Policy pool ledger"') && page.includes('bytes32 intentId,') &&
+        evRes.status === 200 && ev?.ok === true && Array.isArray(ev.events) && ev.stats?.hourly?.length === 24 && ev.stats?.daily?.length === 14 && ev.stats?.funnel?.length === 7,
+      `page=${pageRes.status} events=${evRes.status}`,
+    )
+    const recNo = await fetch(`${BASE}/api/policy-pool/record`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'fill', chainId: 84532 }) })
+    const cronNo = await fetch(`${BASE}/api/cron/policy-pool`)
+    check('policy-pool: the record door and the indexer cron refuse a caller without the CRON_SECRET bearer (401)', recNo.status === 401 && cronNo.status === 401, `record=${recNo.status} cron=${cronNo.status}`)
+    if (process.env.CRON_SECRET) {
+      const auth = { authorization: `Bearer ${process.env.CRON_SECRET}`, 'content-type': 'application/json' }
+      const bad = await fetch(`${BASE}/api/policy-pool/record`, { method: 'POST', headers: auth, body: JSON.stringify({ kind: 'not-a-kind', chainId: 84532 }) })
+      const cron = await fetch(`${BASE}/api/cron/policy-pool`, { headers: auth })
+      const cronJ = (await cron.json().catch(() => ({}))) as { skipped?: string; chainId?: number }
+      check(
+        'policy-pool: with the secret, a malformed row is a 400 naming the reason (never a silent write); the cron either skips "not deployed" or reports an index pass',
+        bad.status === 400 && cron.status === 200 && (cronJ.skipped === 'not deployed' || typeof cronJ.chainId === 'number'),
+        `bad=${bad.status} cron=${cron.status} ${JSON.stringify(cronJ).slice(0, 80)}`,
+      )
+    } else console.log('  ⚪ policy-pool: CRON_SECRET not in harness env — authorized door checks skipped')
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

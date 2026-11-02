@@ -1,0 +1,126 @@
+/* /policy-pool (squad policy-pool, 2026-11-02). Rides the progress pages'
+   pg-* look (tiles, charts, funnel, boards) and the markets tokens (--mk-*);
+   everything new is pp-*. Kind tones: go = the green family, stop = the red
+   family, dune = blue. Text stays in text tokens; the tone rides a dot. */
+
+.pp { padding-top: 28px; padding-bottom: 40px; --pp-go: var(--mk-up); --pp-stop: var(--mk-down); --pp-dune: var(--mk-series-1); }
+.pp-head { padding: 6px 0 12px; }
+.pp-title { font-size: clamp(30px, 3.4vw, 44px); }
+.pp-mono { font-family: var(--mk-font-mono); font-variant-numeric: tabular-nums; }
+.pp-sec { margin-top: 22px; }
+
+/* Pool facts — chips. */
+.pp-facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+.pp-fact { display: inline-flex; align-items: baseline; gap: 8px; border: 1px solid var(--line); background: var(--surf-1); border-radius: 999px; padding: 7px 12px; min-height: 34px; max-width: 100%; }
+.pp-fact__k { font-family: var(--mk-font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
+.pp-fact__v { font-size: 12.5px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.pp-fact__v { text-decoration: none; }
+a.pp-fact__v:hover { text-decoration: underline; text-underline-offset: 2px; }
+.pp-fact--off { border-color: color-mix(in srgb, var(--mk-series-4) 45%, var(--line)); }
+.pp-fact--off .pp-fact__v::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--mk-series-4); margin-right: 7px; vertical-align: 1px; }
+
+/* The live dot. */
+.pp-live { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mk-font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg); margin: 14px 0 8px; }
+.pp-live__ago { color: var(--muted-2); text-transform: none; letter-spacing: 0; }
+.pp-live__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pp-go); box-shadow: 0 0 0 0 color-mix(in srgb, var(--pp-go) 60%, transparent); animation: pp-pulse 2s ease-out infinite; }
+.pp-live[data-live='stale'] .pp-live__dot { background: var(--mk-series-4); animation: none; }
+@keyframes pp-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pp-go) 55%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .pp-live__dot { animation: none; } }
+
+.pp-tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+
+/* Charts. */
+.pp-chart__skel { border-radius: 10px; background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.pp-chart__none { font-size: 11.5px; color: var(--muted-2); margin: 2px 0 4px; }
+.pp-tip { background: var(--surf-2, var(--mk-surface-2)); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 12px; color: var(--fg); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); min-width: 130px; }
+.pp-tip__k { font-family: var(--mk-font-mono); font-size: 10.5px; color: var(--muted-2); margin-bottom: 4px; }
+.pp-tip__row { display: flex; align-items: center; gap: 7px; }
+.pp-tip__row i { width: 8px; height: 8px; border-radius: 2px; }
+.pp-tip__row span { color: var(--muted); flex: 1; }
+.pp-tip__row b { font-family: var(--mk-font-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+.pp-table-view { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+.pp-table-view summary { cursor: pointer; min-height: 32px; display: inline-flex; align-items: center; }
+.pp-table-wrap { border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); overflow-x: auto; margin-top: 6px; }
+
+/* Funnel. */
+.pp-funnel { list-style: none; margin: 0; }
+.pp-stop { grid-template-columns: 110px minmax(0, 1fr) 56px; }
+
+/* Kind badge. */
+.pp-kind { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--fg); padding: 3px 9px 3px 7px; border-radius: 999px; white-space: nowrap; background: color-mix(in srgb, var(--pp-go) 13%, transparent); }
+.pp-kind i { width: 7px; height: 7px; border-radius: 50%; background: var(--pp-go); flex: none; }
+.pp-kind[data-tone='stop'] { background: color-mix(in srgb, var(--pp-stop) 14%, transparent); }
+.pp-kind[data-tone='stop'] i { background: var(--pp-stop); }
+.pp-kind[data-tone='dune'] { background: color-mix(in srgb, var(--pp-dune) 14%, transparent); }
+.pp-kind[data-tone='dune'] i { background: var(--pp-dune); }
+
+/* The ledger: a grid on desktop, cards below 1100px. */
+.pp-lrow {
+  display: grid;
+  grid-template-columns: 150px 104px minmax(110px, 1.1fr) 104px minmax(90px, 1fr) minmax(90px, 1fr) 78px 104px minmax(110px, 1.3fr) 64px;
+  gap: 10px; align-items: center; padding: 9px 14px; box-shadow: 0 1px 0 var(--line); font-size: 12.5px; color: var(--fg); min-height: 46px;
+}
+.pp-lrow > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-lrow--head { min-height: 36px; font-family: var(--mk-font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+.pp-lrow:not(.pp-lrow--head) { cursor: pointer; transition: background .12s ease; }
+.pp-lrow:not(.pp-lrow--head):hover, .pp-lrow[aria-expanded='true'] { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.pp-lrow:not(.pp-lrow--head):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pp-lrow a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.pp-lrow a:hover { text-decoration-color: currentColor; }
+.pp-num { text-align: right; }
+.pp-when { color: var(--muted); text-align: right; }
+.pp-reason { color: var(--muted); }
+.pp-origin { font-family: var(--mk-font-mono); font-size: 12px; }
+.pp-origin--dune { display: inline-flex; align-items: center; gap: 6px; text-decoration: none !important; }
+.pp-dune { font-family: var(--mk-font-sans, inherit); font-size: 10px; font-weight: 700; letter-spacing: 0.02em; padding: 1px 6px; border-radius: 4px; color: var(--fg); background: color-mix(in srgb, var(--pp-dune) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pp-dune) 40%, transparent); }
+.pp-more { margin-top: 10px; }
+
+/* Timeline (an intent's walk). */
+.pp-timeline { padding: 12px 16px 14px 28px; background: color-mix(in srgb, var(--fg) 3%, transparent); box-shadow: 0 1px 0 var(--line); }
+.pp-timeline__head { font-size: 12px; color: var(--muted); margin-bottom: 10px; word-break: break-all; }
+.pp-timeline__head b { color: var(--fg); font-weight: 500; }
+.pp-steps { list-style: none; margin: 0; padding: 0; position: relative; }
+.pp-step { position: relative; display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; padding-bottom: 12px; }
+.pp-step:not(:last-child)::before { content: ''; position: absolute; left: 7px; top: 14px; bottom: -2px; width: 2px; background: var(--line); }
+.pp-step__dot { width: 12px; height: 12px; border-radius: 50%; margin: 4px 0 0 1px; background: var(--pp-go); box-shadow: 0 0 0 2px var(--surf-1); position: relative; z-index: 1; }
+.pp-step[data-tone='stop'] .pp-step__dot { background: var(--pp-stop); }
+.pp-step[data-tone='dune'] .pp-step__dot { background: var(--pp-dune); }
+.pp-step[data-current='true'] .pp-step__dot { box-shadow: 0 0 0 2px var(--surf-1), 0 0 0 4px var(--accent); }
+.pp-step__top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.pp-step__t { font-size: 11.5px; color: var(--muted); }
+.pp-step__gap { font-size: 11px; color: var(--muted-2); }
+.pp-step__sub { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.pp-step__sub a { color: var(--fg); }
+.pp-step__reason { color: var(--fg); }
+
+/* How it works. */
+.pp-scenes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.pp-scene { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); padding: 12px 14px; }
+.pp-scene__n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-family: var(--mk-font-mono); font-size: 11px; color: var(--fg); box-shadow: inset 0 0 0 1px var(--line); }
+.pp-scene__t { font-size: 13px; font-weight: 600; color: var(--fg); }
+.pp-scene__b { font-size: 12.5px; line-height: 1.45; color: var(--muted); margin-top: 3px; }
+.pp-code { margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); padding: 12px 14px; min-width: 0; }
+.pp-code__k { font-family: var(--mk-font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 8px; }
+.pp-code pre { margin: 0; overflow-x: auto; font-family: var(--mk-font-mono); font-size: 12.5px; line-height: 1.55; color: var(--fg); }
+.pg__honest code { font-family: var(--mk-font-mono); font-size: 11px; }
+
+@media (max-width: 1099px) {
+  .pp-lrow--head { display: none; }
+  .pp-lrow:not(.pp-lrow--head) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; padding: 12px 14px; }
+  .pp-lrow > span { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .pp-lrow > span::before { content: attr(data-label); font-family: var(--mk-font-mono); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); flex: none; }
+  .pp-lrow > span[data-empty] { display: none; }
+  .pp-lrow > span[data-label='Kind'] { order: -2; }
+  .pp-lrow > span[data-label='When'] { order: -1; justify-content: flex-end; }
+  .pp-lrow > span[data-label='Kind']::before, .pp-lrow > span[data-label='When']::before { content: none; }
+  .pp-lrow > span[data-label='Reason'] { grid-column: 1 / -1; white-space: normal; }
+  .pp-num, .pp-when { text-align: right; }
+}
+@media (max-width: 639px) {
+  .pp { padding-top: 18px; }
+  .pp-lrow:not(.pp-lrow--head) { grid-template-columns: minmax(0, 1fr) auto; }
+  .pp-lrow > span:not([data-label='Kind']):not([data-label='When']) { grid-column: 1 / -1; }
+  .pp-stop { grid-template-columns: 92px minmax(0, 1fr) 44px; }
+  .pp-timeline { padding-left: 16px; }
+  .pp-fact { min-height: 40px; }
+}
