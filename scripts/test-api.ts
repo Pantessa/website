@@ -36068,6 +36068,25 @@ async function main() {
     await perpsPins(check, { base: BASE })
   }
 
+  // ── five-million/console — THE DESK CONSOLE (squad five-million, CONSOLE lane, 2026-11-03) ──
+  // /dashboard/desk + /dashboard/desk/[id]: the vocabulary the server hands the
+  // console is lib/tenant/spec's; the browser's policy shape check names the
+  // same field as validatePolicyDoc over a corpus; the approvals queue read off
+  // the blotter; source pins (server pages, no node:crypto in the browser, the
+  // contract's routes, 44px, the secret never stored, the Desk rail seat). Live:
+  // the served pages for a signed-in owner, then a drive through the routes the
+  // console calls (a fresh owner's console-drive-* tenant, the burner as the
+  // second admin; with DATABASE_URL an over-threshold intent the queue finds and
+  // the burner approves). The fixture tenant is left paused, keys revoked,
+  // is_internal. scripts/console-pins.ts; `npm run pins:console`.
+  console.log('— console (five-million): the desk console')
+  {
+    const C = await import('./console-pins')
+    C.consolePurePins(check)
+    await C.consoleRailPins(check)
+    await C.consoleLivePins(check, BASE, { signIn: (a) => signIn(a), log: (l) => console.log(l) }).catch((e: unknown) => check('console live: the drive ran to the end', false, e instanceof Error ? e.message : String(e)))
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
