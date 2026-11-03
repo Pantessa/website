@@ -514,6 +514,8 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
               {sinceEl}
               {holdEl}
             </div>
+            {/* The stage hides the pick head, so the sheet's trigger rides this bar instead of a row of its own. */}
+            <PickSheet pick={pick} seat="battle" />
           </div>
         )}
 
@@ -530,7 +532,7 @@ export default function Battle({ view, tradable, tabs, seat = 'page', onReport, 
             <span className="battle__count mono">
               {armies.length} of {MAX_ARMIES} armies{sourceWord ? ` · ${sourceWord}` : ''}{sliceNote ? ` · ${sliceNote}` : ''} · click to add or drop
             </span>
-            <PickSheet pick={pick} seat="battle" />{/* seat: ARENA (GTM squad 2026-10-13) */}
+            {onPage && <PickSheet pick={pick} seat="battle" />}{/* seat: ARENA (GTM squad 2026-10-13); the stage seats it in its bar */}
             <ArmAlert seat="strip" market="" markets={pick.markets} />{/* seat: ALERTS "Watch these" — one consent over the pick (GTM squad 2026-10-13) */}
           </div>
           <div className="battle__chips">
