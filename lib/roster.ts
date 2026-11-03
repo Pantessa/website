@@ -22,7 +22,7 @@ import { parseMosaicAsk, mosaicAskString } from '@/lib/mosaic'
 import { parseDcaCreate, parseCadence, cadenceLabel } from '@/lib/dca'
 import { parseSpotGuardArm } from '@/lib/spot-guard'
 import { parseAaveSupply } from '@/lib/aave-supply'
-import { parseLidoStake } from '@/lib/lido-stake'
+import { lidoStakeSizeLabel, parseLidoStake } from '@/lib/lido-stake'
 import { MANDATE_KIND_LABELS, type MandateKind, type SlotStatus } from '@/lib/roster-client'
 
 // Types/labels/sanitizers shared with the client live in lib/roster-client
@@ -199,10 +199,10 @@ export function parseMandate(raw: string): ParsedMandate | { problem: string } {
   const lido = parseLidoStake(text)
   if (lido) {
     if ('problem' in lido) return { problem: `Yield mandate: ${lido.problem}` }
-    const canonical = `stake ${lido.amount === 'max' ? 'all my' : lido.amount} ETH on lido${lido.receive === 'wstETH' ? ' for wstETH' : ''}`
+    const canonical = `stake ${lidoStakeSizeLabel(lido)} on lido${lido.receive === 'wstETH' ? ' for wstETH' : ''}`
     const rt = parseLidoStake(canonical)
-    const rtOk = rt != null && !('problem' in rt) && rt.amount === lido.amount && rt.receive === lido.receive
-    return sealed('yield', canonical, `Stake ${lido.amount === 'max' ? 'all movable' : lido.amount} ETH with Lido for ${lido.receive}.`, rtOk)
+    const rtOk = rt != null && !('problem' in rt) && rt.amount === lido.amount && rt.amountUsd === lido.amountUsd && rt.receive === lido.receive
+    return sealed('yield', canonical, `Stake ${lido.amount === 'max' ? 'all movable ETH' : lidoStakeSizeLabel(lido)} with Lido for ${lido.receive}.`, rtOk)
   }
   const aave = parseAaveSupply(text)
   if (aave) {

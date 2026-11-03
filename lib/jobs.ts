@@ -38,7 +38,7 @@ import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
 import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 
 import { hlPerpUniverseCached } from '@/lib/hl-universe'
-import { parseLidoStake } from '@/lib/lido-stake'
+import { lidoStakeSizeLabel, parseLidoStake } from '@/lib/lido-stake'
 import { parseSpotGuardArm } from '@/lib/spot-guard'
 import { primaryStable, chainById } from '@/lib/chains'
 import { ETH_MOVE_MIN_USD, fundingAltUsdcFor, fundingOriginWords, GAS_LEG_USD, MIN_VALUE_LEG_USD } from '@/lib/lifi-bridge'
@@ -830,7 +830,7 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       const title =
         lido.amount === 'max'
           ? `Stake the ETH on Lido${lido.receive === 'wstETH' ? ' (wstETH)' : ''}`
-          : `Stake ${lido.amount} ETH on Lido${lido.receive === 'wstETH' ? ' (wstETH)' : ''}`
+          : `Stake ${lidoStakeSizeLabel(lido)} on Lido${lido.receive === 'wstETH' ? ' (wstETH)' : ''}`
       return { steps: [{ kind: 'sign', builder: 'native-lido', title, params: lido as unknown as Record<string, unknown> }], title }
     },
   },
