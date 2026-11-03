@@ -108,10 +108,12 @@ async function tenantOf(extra: unknown, tool: string) {
 /** The desk's own contract version. Bumped whenever the tool set or the
  *  trust model changes; `registry/desk.server.json` carries the same number,
  *  and the harness pins the two in sync. 0.2.0 = the agent-signed leg loop
- *  (broker_next / broker_done). 0.3.0 = a venue-aware funding verdict on
+ *  (broker_next / broker_done). 0.4.0 = tenant desks (a `dk_` key, a default-deny
+ *  policy judged at open/handoff/execute/next and the relays, approvals, the
+ *  blotter — squad five-million 2026-11-03). 0.3.0 = a venue-aware funding verdict on
  *  Hyperliquid opens, the chosen option kept on the plan, and broker_close
  *  gated on the identity that opened the intent. */
-export const DESK_VERSION = '0.3.0'
+export const DESK_VERSION = '0.4.0'
 
 const CAPABILITIES = [
   'Buy tokenized stocks (AAPL, TSLA, NVDA…) on Robinhood Chain — with automatic cross-chain funding when the money sits on Base/Ethereum/Arbitrum',

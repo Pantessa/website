@@ -179,7 +179,7 @@ await driveJob({
         </p>
 
         <h2 id="governed-desk">Run a governed desk</h2>
-        <div className="docs__callout" data-governed-desk-status="shipping">
+        <div className="docs__callout" data-governed-desk-status="shipped">
           <p>
             <strong>Shipping in this release.</strong> The routes below are the contract the tenant layer is built to (squad five-million, 2026-11-03); the
             page for the firm buying it is <Link href="/desk">/desk</Link>.
@@ -256,6 +256,13 @@ broker_open { ask: "Buy $25 of ETH on Base" }`}</pre>
           <code>broker_next</code> refuses to offer a leg until the count is met. <code>broker_handoff</code>, <code>broker_execute</code> and <code>broker_next</code> all
           re-gate; the three relays (<code>/api/tx/refresh</code>, <code>/api/hl/submit</code>, <code>/api/cow/submit</code>) re-judge a leg whose job belongs to a tenant
           from the server’s own record, never a client claim, and refuse <code>403</code> <code>{'{ error, reason }'}</code>.
+        </p>
+        <p>
+          <strong>Who may sign.</strong> A wallet an admin registered in the tenant’s <code>signers</code> executes with no EOA consent signature: the desk key
+          plus the registered address is the consent, which is how a Safe or a custody wallet that cannot <code>personal_sign</code> owns a job. A wallet the
+          tenant never named still signs the five-line consent. On the human lane (<code>broker_handoff</code>), a CoW order or a Hyperliquid action carries no link
+          slug, so the relays join it to the tenant only through a wallet the tenant named (the intent’s <code>wallet</code> or a registered signer); a stranger’s
+          wallet signing a tenant’s link is judged at handoff, not again at the relay. Register your signers.
         </p>
         <h3>6. The blotter, the verify, the statement</h3>
         <p>

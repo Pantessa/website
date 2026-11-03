@@ -90,7 +90,7 @@ const SIGNING_LANES = [
     t: 'Safe',
     status: 'in drill',
     tone: 'drill',
-    b: 'Propose to the Safe transaction service with an owner signature, poll until your signers execute, return the hash. Transaction legs first; CoW orders through a Safe (presign) come in the next version, and a Safe cannot yet own a desk job of its own (the desk proves a job’s wallet with an EOA signature until it accepts EIP-1271). Named, not hidden.',
+    b: 'Propose to the Safe transaction service with an owner signature, poll until your signers execute, return the hash. Transaction legs first; CoW orders through a Safe (presign) come in the next version, and a Safe owns a desk job only through its tenant: register its address as a signer and the desk key is the consent, no EOA signature asked (a Safe outside a tenant still waits on EIP-1271). Named, not hidden.',
   },
 ] as const
 
