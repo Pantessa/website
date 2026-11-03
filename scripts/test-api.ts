@@ -522,7 +522,10 @@ import { JOB_TOKEN_V1_SUNSET, jobTokenLooksValid, signJobToken, verifyJobToken }
 import {
   guardLidoStakeBuild,
   isLidoGuidedAsk,
+  lidoStakeResume,
+  LIDO_MIN_STAKE_ETH,
   parseLidoStake,
+  smallStakeChipEth,
   suggestedStakeEth,
   LIDO_STETH_MAINNET,
   LIDO_WSTETH_MAINNET,
@@ -10673,6 +10676,56 @@ async function main() {
             lidoOpts.filter((o) => /stake/i.test(o.resume)).every((o) => { const p = parseLidoStake(o.resume); return !!p && !('problem' in p) })),
         JSON.stringify(lidoSmall).slice(0, 300),
       )
+
+      // The 2026-11-03 incident replayed read-only against the wallet that
+      // signed it (/p/qgMUrlBngEKP; tx 0x57e07082…b53af1c staked 0.5304 ETH
+      // for a $3 ask). Whatever the wallet holds today, a $3 ask prices to a
+      // sub-0.003-ETH size at any ETH price above ~$1,000: the honest answer
+      // offers the economical minimum as a CHIP, or (cheap ETH) builds the
+      // priced size; a dead price probe asks for an ETH amount. None of those
+      // may carry a stake anywhere near the balance — no chip, no tx, no job.
+      const CEIL_ETH = 0.02 // $3 at $150/ETH — far above any priced $3 size
+      const lidoDollar = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'I want to stake $3 worth of ETH in Lido', activeServers: [...rows(['uniswap', 'yeetful-tool-wallet', 'near-intents-mcp-yeetful']), ...lidoRow], walletAddress: '0x66268791b55e1f5fa585d990326519f101407257', history: [] }),
+      }).then((r) => r.json() as Promise<Record<string, unknown> & { clarify?: { options?: { resume: string; label: string }[] }; txRequest?: { value?: string } }>)
+      const dollarOpts = lidoDollar.clarify?.options ?? []
+      const dollarStakeChips = dollarOpts.filter((o) => /stake/i.test(o.resume)).map((o) => ({ resume: o.resume, parsed: parseLidoStake(o.resume) }))
+      const dollarTxEth = lidoDollar.txRequest?.value ? Number(BigInt(lidoDollar.txRequest.value)) / 1e18 : null
+      const dollarReply = String(lidoDollar.reply ?? '')
+      check(
+        'incident replay (2026-11-03): "I want to stake $3 worth of ETH in Lido" from the wallet that signed 0.5304 ETH never proposes or builds above the dollar size — no guided balance proposal, every stake chip ≤ the ceiling and round-tripping, no job',
+        lidoRow.length === 0 ||
+          (lidoDollar.buildPath === 'native-lido' &&
+            /^🌊|^🔏|^🌉/.test(dollarReply) &&
+            !/You hold \*\*/.test(dollarReply) && !/0\.53\d*\s*ETH/.test(JSON.stringify(lidoDollar)) &&
+            !lidoDollar.jobId &&
+            (dollarTxEth === null || dollarTxEth <= CEIL_ETH) &&
+            dollarStakeChips.every((c) => !!c.parsed && !('problem' in c.parsed) && (c.parsed.amount === 'max' ? /^🌉/.test(dollarReply) : c.parsed.amountUsd !== undefined ? c.parsed.amountUsd <= 3 : Number(c.parsed.amount) <= CEIL_ETH)) &&
+            (/\$3/.test(dollarReply) || /couldn't price ETH/i.test(dollarReply))),
+        JSON.stringify(lidoDollar).slice(0, 400),
+      )
+      // The amountless intent from a wallet with real mainnet ETH (the EF
+      // wallet, thousands of ETH — read-only, nothing signed): the guided
+      // moment may still propose everything-but-gas, but a modest stake sits
+      // beside it (the full balance is never the only tap) and every chip
+      // round-trips. Fail-soft when the Lido MCP's position read is down.
+      const lidoGuidedBig = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'I want to stake on Lido', activeServers: [...rows(['uniswap', 'yeetful-tool-wallet']), ...lidoRow], walletAddress: '0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae', history: [] }),
+      }).then((r) => r.json() as Promise<Record<string, unknown> & { clarify?: { options?: { resume: string; label: string }[] } }>)
+      const guidedOpts = (lidoGuidedBig.clarify?.options ?? []).filter((o) => /stake/i.test(o.resume))
+      const guidedParsed = guidedOpts.map((o) => parseLidoStake(o.resume))
+      check(
+        'lido guided (post-incident): an amountless intent from a funded mainnet wallet offers a 0.01 ETH stake beside the full one, asks "How much?", and every chip round-trips',
+        lidoRow.length === 0 || /Couldn't read your balances/.test(String(lidoGuidedBig.reply)) ||
+          (lidoGuidedBig.buildPath === 'native-lido' && /^🌊/.test(String(lidoGuidedBig.reply)) &&
+            guidedOpts.length >= 3 &&
+            guidedParsed.every((p) => !!p && !('problem' in p) && p.amount !== undefined && p.amount !== 'max') &&
+            guidedParsed.some((p) => !!p && !('problem' in p) && p.amount === '0.01') &&
+            /How much\?/.test(String(lidoGuidedBig.reply))),
+        JSON.stringify(lidoGuidedBig).slice(0, 400),
+      )
     }
 
     // ── Stranger phrasings (squad 2026-08-18, Ideation's ask inventory) ──
@@ -17853,6 +17906,75 @@ async function main() {
         !isLidoGuidedAsk('Stake 0.05 ETH on Lido') &&
         !isLidoGuidedAsk('stake all my eth on lido') &&
         !isLidoGuidedAsk('what is lido?'),
+    )
+
+    // The 2026-11-03 incident (/p/qgMUrlBngEKP, tx 0x57e07082…b53af1c): "I
+    // want to stake $3 worth of ETH in Lido" matched no amount form, "want
+    // to" made it GUIDED, and the guided moment proposed the whole balance
+    // minus gas — 0.5304 ETH (~$1.1K) signed for a $3 ask. The dollar slot
+    // is a Lido ask now, and ANY amount ends the guided claim.
+    const INCIDENT_ASK = 'I want to stake $3 worth of ETH in Lido'
+    const incident = parseLidoStake(INCIDENT_ASK)
+    const dollarForms: [string, number, 'stETH' | 'wstETH'][] = [
+      ['stake $3 of eth on lido', 3, 'stETH'],
+      ['stake three dollars of eth on lido', 3, 'stETH'],
+      ['help me stake $5 worth of ETH with Lido', 5, 'stETH'],
+      ['I want to stake $3 worth of eth on lido as wstETH', 3, 'wstETH'],
+      ['stake $20 eth on lido', 20, 'stETH'],
+      ['I want to stake ETH worth $3 on Lido', 3, 'stETH'],
+      ['stake $12 orth of eth on lido', 12, 'stETH'],
+    ]
+    const dollarRead = dollarForms.map(([m, usd, receive]) => {
+      const p = parseLidoStake(m)
+      return !isLidoGuidedAsk(m) && !!p && !('problem' in p) && p.amountUsd === usd && p.amount === undefined && p.receive === receive
+    })
+    check(
+      'lido parse (incident 2026-11-03): "I want to stake $3 worth of ETH in Lido" is a $3 ask — never guided, never the balance; every dollar form reads the same slot',
+      !isLidoGuidedAsk(INCIDENT_ASK) && !!incident && !('problem' in incident) && incident.amountUsd === 3 && incident.amount === undefined && incident.receive === 'stETH' &&
+        dollarRead.every(Boolean),
+      JSON.stringify({ incident, dollarRead }),
+    )
+    check(
+      'lido guided: a message that names ANY amount — dollars or ETH, readable or not — is never the guided moment; an amountless intent still is',
+      !isLidoGuidedAsk('I want to stake 0.1 eth in lido') &&
+        !isLidoGuidedAsk('help me stake $5 worth of ETH with Lido') &&
+        !isLidoGuidedAsk('I want to stake some ETH, about $3, on Lido') &&
+        !isLidoGuidedAsk('how do i stake 2 ETH on lido?') &&
+        isLidoGuidedAsk('I want to stake on Lido') &&
+        isLidoGuidedAsk('help me stake on lido'),
+    )
+    const wantEth = parseLidoStake('I want to stake 0.1 eth in lido')
+    const aboutUsd = parseLidoStake('I want to stake some ETH, about $3, on Lido')
+    check(
+      'lido parse: a wrapped ETH amount builds ("I want to stake 0.1 eth in lido"); an amount the grammar cannot place is a named problem that offers the dollar form, not a guess',
+      !!wantEth && !('problem' in wantEth) && wantEth.amount === '0.1' &&
+        !!aboutUsd && 'problem' in aboutUsd && /\$20 of ETH/.test(aboutUsd.problem),
+      JSON.stringify({ wantEth, aboutUsd }),
+    )
+    const usdResume = lidoStakeResume({ amountUsd: 3, receive: 'stETH' })
+    const usdResumeWst = lidoStakeResume({ amountUsd: 3, receive: 'wstETH' })
+    const minResume = lidoStakeResume({ amount: String(LIDO_MIN_STAKE_ETH), receive: 'stETH' })
+    const rt = (r: string) => parseLidoStake(r)
+    check(
+      'lido chips: every resume the dollar path offers round-trips parseLidoStake — the dollar resume, its wstETH form, the economical-minimum chip, the guided small chip',
+      usdResume === 'Stake $3 of ETH on Lido' && (() => { const p = rt(usdResume); return !!p && !('problem' in p) && p.amountUsd === 3 && p.receive === 'stETH' })() &&
+        (() => { const p = rt(usdResumeWst); return !!p && !('problem' in p) && p.amountUsd === 3 && p.receive === 'wstETH' })() &&
+        minResume === 'Stake 0.003 ETH on Lido' && (() => { const p = rt(minResume); return !!p && !('problem' in p) && p.amount === '0.003' })() &&
+        (() => { const p = rt('Stake 0.01 ETH on Lido as wstETH'); return !!p && !('problem' in p) && p.amount === '0.01' && p.receive === 'wstETH' })() &&
+        LIDO_MIN_STAKE_ETH === 0.003,
+      JSON.stringify({ usdResume, usdResumeWst, minResume }),
+    )
+    check(
+      'lido guided chip: a balance big enough gets a 0.01 ETH chip beside the full stake; a small balance gets the full stake alone (the two would be the same tap)',
+      smallStakeChipEth('0.5304') === '0.01' && smallStakeChipEth('0.02') === '0.01' && smallStakeChipEth('0.015') === null && smallStakeChipEth(null) === null && smallStakeChipEth('abc') === null,
+    )
+    const dollarJob = compileJobAsk('Swap 5 USDC from Base to ETH on Ethereum, then stake $3 of ETH on Lido')
+    check(
+      'lido job step: a dollar-sized stake compiles with amountUsd on the step (the runner prices it to ETH, never from the balance)',
+      !!dollarJob && !('problem' in dollarJob) && dollarJob.steps.length === 3 &&
+        dollarJob.steps[2].builder === 'native-lido' && (dollarJob.steps[2].params as { amountUsd?: number; amount?: string }).amountUsd === 3 &&
+        (dollarJob.steps[2].params as { amount?: string }).amount === undefined && /\$3 of ETH/.test(dollarJob.steps[2].title ?? ''),
+      JSON.stringify(dollarJob).slice(0, 300),
     )
 
     // The guided moment's compound proposal must COMPILE — the chip is a job.
