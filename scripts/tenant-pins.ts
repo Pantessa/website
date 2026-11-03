@@ -28,6 +28,7 @@ import { evaluateTenantPolicy, validatePolicyDoc, withinHours, SAMPLE_POLICY, TE
 import { ordersOfPlan, orderOfLeg, orderOfPlan, venueOfBuildPath, swapCandidates } from '../lib/tenant/order'
 import { judge, serverHlNetwork } from '../lib/tenant/gate'
 import { consentFreeSigner, policySigningWallets } from '../lib/broker-tenant'
+import { registerSigner, type SignerRegistrationDeps } from '../lib/tenant/signers'
 import { deskKeyPresented, generateDeskKey, hashDeskKey, liveSignerNonces, mintSignerChallenge, signerChallengeText, signerNonceOk } from '../lib/tenant/store'
 import { DESK_KEY_RE, type TenantOrder, type TenantPolicyDoc } from '../lib/tenant/spec'
 
@@ -62,7 +63,7 @@ const RICH: TenantPolicyDoc = {
   ],
 }
 
-export function tenantPurePins(check: Check): void {
+export async function tenantPurePins(check: Check): Promise<void> {
   const ev = (o: Partial<TenantOrder>, doc: TenantPolicyDoc | null = RICH, ctx: Parameters<typeof evaluateTenantPolicy>[1] = ACTIVE) => evaluateTenantPolicy(doc, ctx, order(o))
   const reason = (v: ReturnType<typeof evaluateTenantPolicy>) => (v.allowed ? (v.needsApproval ? `allowed+approval(${v.approvers})` : 'allowed') : v.reason)
 
@@ -183,6 +184,9 @@ export function tenantPurePins(check: Check): void {
   check('tenant signers (B1): a POST with no nonce (the console\'s shape) is matched against the challenges still live — the minted one among them, none once expired', liveSignerNonces({ id: 'tid' }, A, 1_800_000_000_000 + 60_000).includes(ch.nonce) && !liveSignerNonces({ id: 'tid' }, A, Date.parse(ch.expiresAt) + 1).includes(ch.nonce) && liveSignerNonces({ id: 'tid' }, A, 1_800_000_000_000).length <= 3)
   check('tenant signers (B1): a nonce verifies only for its tenant + address + window', signerNonceOk({ id: 'tid' }, A, ch.nonce, 1_800_000_000_000).ok && !signerNonceOk({ id: 'other' }, A, ch.nonce, 1_800_000_000_000).ok && !signerNonceOk({ id: 'tid' }, Bw, ch.nonce, 1_800_000_000_000).ok && !signerNonceOk({ id: 'tid' }, A, ch.nonce, 1_800_000_000_000 + 16 * 60_000).ok && !signerNonceOk({ id: 'tid' }, A, 'nope', 1_800_000_000_000).ok)
 
+  // ── registration FAILS CLOSED: no burn row, no signer (QA round 3, point 2) ─
+  await signerFailClosedPins(check)
+
   // ── source pins: the four doors ────────────────────────────────────────
   const code = (f: string) => readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
   const route = code('app/api/broker/[transport]/route.ts')
@@ -196,7 +200,7 @@ export function tenantPurePins(check: Check): void {
   const exec = code('lib/broker-exec.ts')
   check('tenant desk (source): execute takes the signer consent ONLY for a PROVEN signer the policy also names, with no signature given; everyone else still proves the wallet; an auto step always needs the wallet\'s own consent', /const signerConsent = !!tenantRow && consentFreeSigner\(tenantRow, row\.wallet\)/.test(exec) && /if \(consent === 'personal_sign'\) await assertWalletProof\(/.test(exec) && /consent, wallet: row\.wallet/.test(exec) && /consent === 'tenant-signer' && compiled\.steps\.some\(\(st\) => st\.kind === 'auto'\)/.test(exec))
   const patchSrc = code('app/api/tenants/[id]/route.ts')
-  check('tenant signers (source, B1): PATCH refuses to ADD a signer (only removal); POST …/signers verifies personal_sign or EIP-1271 before adding, and burns the nonce on a tenant_updated row', /const added = list\.filter\(\(w\) => !current\.has\(w\)\)[\s\S]{0,120}if \(added\.length\)/.test(patchSrc) && (() => { const sg = code('app/api/tenants/[id]/signers/route.ts'); return /recoverMessageAddress\(\{ message, signature \}\)/.test(sg) && /client\.verifyMessage\(\{ address/.test(sg) && sg.indexOf('if (!proof)') < sg.indexOf('prisma.tenant.update') && /'tenant_updated', \{ by: gate\.addr, changes: \{ signers/.test(sg) && /payload: \{ path: \['nonce'\], equals: nonce \}/.test(sg) })())
+  check('tenant signers (source, B1): PATCH refuses to ADD a signer (only removal); POST …/signers runs registerSigner — personal_sign or EIP-1271 verified, the nonce BURNED before the signer is added', /const added = list\.filter\(\(w\) => !current\.has\(w\)\)[\s\S]{0,120}if \(added\.length\)/.test(patchSrc) && /registerSigner\(\{ tenant: gate\.tenant/.test(code('app/api/tenants/[id]/signers/route.ts')) && (() => { const sg = code('lib/tenant/signers.ts'); return /recoverMessageAddress\(\{ message, signature: input\.signature \}\)/.test(sg) && /client\.verifyMessage\(\{ address/.test(sg) && sg.indexOf('if (!proof)') < sg.indexOf('deps\n    .burn(') && sg.indexOf('if (!burned)') < sg.indexOf('deps.addSigner(') && /burn: recordBlotterOnce/.test(sg) && /status: 503/.test(sg) })())
   check('tenant desk (source): execute re-gates the COMPILED job before createJob, and createJob stamps the tenant + key in the SAME insert (no post-create update)', /regateIntent\(tenantRow, row, 'execute', compiled\)[\s\S]*await createJob\(row\.wallet, compiled, 'broker', \{ internal: call\?\.internal === true, \.\.\.\(tenantRow \? \{ tenantId: tenantRow\.tenantId, deskKeyId: tenantRow\.keyId \} : \{\}\) \}\)/.test(exec) && !/bindJobToTenant/.test(exec))
   const runner = code('lib/jobs-runner.ts')
   const create = runner.slice(runner.indexOf('export async function createJob('), runner.indexOf('export async function getJobWithSteps('))
@@ -221,6 +225,34 @@ export function tenantPurePins(check: Check): void {
   check('tenant relay (source, B2): hl/submit and cow/submit NEVER join by wallet — no link-lane join, no link booking; only the server-built job step (joinTenantLeg) joins', [hl, cow].every((src) => !/joinTenantLink\b|bookLinkSigned|linkGate\(/.test(src) && /joinTenantLeg\(from/.test(src)) && !/export async function joinTenantLink\(/.test(code('lib/tenant/gate.ts')))
   check('tenant relay (source): tx/refresh joins a link leg by the recipe\'s own linkSlug before any rebuild', (() => { const j = rf.indexOf('joinTenantLinkBySlug(linkSlug'); return j > 0 && j < rf.indexOf('buildUniswapSwap(') })())
   check('tenant relay (source): /api/tx/refresh re-gates a tenant step BEFORE any rebuild, and refuses with the card\'s withhold shape', rfGate > 0 && rfGate < rf.indexOf('buildLifiBridgeLeg(') && rfGate < rf.indexOf('buildUniswapSwap(') && /blocked: true, blockKind: 'policy'/.test(rf.slice(rfGate, rfGate + 700)))
+}
+
+async function signerFailClosedPins(check: Check): Promise<void> {
+  const acct = privateKeyToAccount(generatePrivateKey())
+  const address = acct.address.toLowerCase()
+  const tenant = { id: 'tid-fc', slug: 'acme', signers: ['0x' + 'c'.repeat(40)] }
+  const ch = mintSignerChallenge(tenant, address)
+  const signature = await acct.signMessage({ message: ch.message })
+  const run = async (burn: SignerRegistrationDeps['burn'], isBurned: SignerRegistrationDeps['isBurned'] = async () => false) => {
+    const added: string[][] = []
+    let burns = 0
+    const r = await registerSigner({ tenant, by: '0x' + 'd'.repeat(40), address, signature, chainId: null }, { isBurned, burn: async (once, e) => { burns++; return burn(once, e) }, addSigner: async (_t, signers) => { added.push(signers) } })
+    return { r, added, burns }
+  }
+  const failed = await run(async () => null)
+  check('tenant signers (fail closed): the burn write FAILS (recordBlotterOnce → null) → 503 in words, reason BLOTTER_UNAVAILABLE, and the signer is NOT added', !failed.r.ok && failed.r.status === 503 && failed.r.reason === 'BLOTTER_UNAVAILABLE' && /nothing was registered/.test(failed.r.error) && failed.added.length === 0 && failed.burns === 1, JSON.stringify(failed.r).slice(0, 200))
+  const threw = await run(async () => { throw new Error('blotter down') })
+  check('tenant signers (fail closed): the burn write THROWS → 503, the signer is NOT added', !threw.r.ok && threw.r.status === 503 && threw.added.length === 0)
+  const dup = await run(async () => ({ written: false, seq: 7 }))
+  check('tenant signers (fail closed): the burn finds the nonce already on the chain (written:false, under the lock) → 409, the signer is NOT added', !dup.r.ok && dup.r.status === 409 && dup.added.length === 0)
+  const seen = await run(async () => ({ written: true, seq: 8 }), async () => true)
+  check('tenant signers (fail closed): a nonce already burned (fast path) → 409 before any burn or add', !seen.r.ok && seen.r.status === 409 && seen.burns === 0 && seen.added.length === 0)
+  let burnedOnce = ''
+  const good = await run(async (once) => { burnedOnce = once; return { written: true, seq: 9, hash: 'h' } })
+  check('tenant signers (fail closed): a burn that LANDS (keyed signer-nonce:<nonce>) → 200, the signer added after it', good.r.ok && good.r.status === 200 && good.r.proof === 'personal_sign' && good.added.length === 1 && good.added[0].includes(address) && burnedOnce === `signer-nonce:${ch.nonce}`, JSON.stringify(good.r).slice(0, 160))
+  const imp = privateKeyToAccount(generatePrivateKey())
+  const forged = await registerSigner({ tenant, by: '0x' + 'd'.repeat(40), address, signature: await imp.signMessage({ message: ch.message }), chainId: null }, { isBurned: async () => false, burn: async () => ({ written: true, seq: 1 }), addSigner: async () => { throw new Error('must not add') } })
+  check('tenant signers (fail closed): a signature by anyone else → 403 before any burn', !forged.ok && forged.status === 403)
 }
 
 function ctxOf(policy: TenantPolicyDoc) {
@@ -714,7 +746,7 @@ if (isMain) {
   }
   ;(async () => {
     console.log('— tenant (pure)')
-    tenantPurePins(check)
+    await tenantPurePins(check)
     const i = process.argv.indexOf('--live')
     if (i > 0) {
       const base = process.argv[i + 1] ?? process.env.BASE ?? 'http://localhost:4401'

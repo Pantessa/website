@@ -36010,7 +36010,7 @@ async function main() {
   console.log('— tenant (five-million)')
   {
     const { tenantPurePins, tenantLivePins } = await import('./tenant-pins')
-    tenantPurePins(check)
+    await tenantPurePins(check)
     await tenantLivePins(BASE, check, { log: (l) => console.log(l) }).catch((e: unknown) => check('tenant live: the drive ran to the end', false, e instanceof Error ? e.message : String(e)))
   }
 
