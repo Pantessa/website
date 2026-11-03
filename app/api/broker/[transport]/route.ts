@@ -100,7 +100,7 @@ async function guarded<T>(run: () => Promise<T>) {
  * `yf_` key, is the retail desk exactly as before.
  */
 async function tenantOf(extra: unknown, tool: string) {
-  const ctx = usableCaller(await deskCaller(extra), tool)
+  const ctx = await usableCaller(await deskCaller(extra), tool)
   assertTenantTool(ctx, tool)
   return ctx
 }

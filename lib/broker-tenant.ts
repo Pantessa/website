@@ -73,9 +73,13 @@ function refusal(reason: DeskRefusal | string, detail: string, ctx: Pick<Resolve
 /** The door every tool walks through first: a dk_ key that does not resolve
  *  refuses (never falls back to retail); a paused key / tenant refuses every
  *  tool but status + close. Returns the tenant context, or null for retail. */
-export function usableCaller(caller: DeskCaller, tool: string): ResolvedTenant | null {
+export async function usableCaller(caller: DeskCaller, tool: string): Promise<ResolvedTenant | null> {
   if (caller.kind === 'retail') return null
-  if (caller.kind === 'refused') throw refusal(caller.reason, caller.detail, null)
+  if (caller.kind === 'refused') {
+    // A revoked key still names its tenant: the attempt is the firm's record.
+    if (caller.tenantId) await blot({ tenantId: caller.tenantId, deskId: caller.deskId, keyId: caller.keyId }, 'policy_verdict', { stage: 'door', tool, allowed: false, reason: caller.reason, detail: caller.detail })
+    throw refusal(caller.reason, caller.detail, null)
+  }
   const ctx = caller.ctx
   if (ctx.pausedBy && !PAUSE_EXEMPT_TOOLS.has(tool)) {
     const reason = ctx.pausedBy === 'key' ? 'KEY_PAUSED' : 'TENANT_PAUSED'
@@ -83,6 +87,7 @@ export function usableCaller(caller: DeskCaller, tool: string): ResolvedTenant |
       ctx.pausedBy === 'key'
         ? `desk key ${ctx.keyId} is paused by a tenant admin — ${tool} refuses until it is resumed. broker_status and broker_close still answer.`
         : `the ${ctx.tenantSlug} desk is paused by its admins — ${tool} refuses until it is resumed. broker_status and broker_close still answer.`
+    await blot(ctx, 'policy_verdict', { stage: 'door', tool, allowed: false, reason, detail, policyVersion: ctx.policyVersion })
     throw refusal(reason, detail, ctx)
   }
   return ctx

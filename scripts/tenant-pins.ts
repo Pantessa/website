@@ -175,7 +175,10 @@ export function tenantPurePins(check: Check): void {
   check('tenant desk (source): EVERY registered desk tool resolves the caller through tenantOf (a dk_ key is never ignored by a tool)', tools.length >= 10 && tools.every((t) => gated.includes(t)), `tools=${tools.join(',')} gated=${gated.join(',')}`)
   check('tenant desk (source): every tool taking an intent_id checks the intent belongs to the caller (assertIntentCaller) before acting', (route.match(/assertIntentCaller\(intent_id, tenant\)/g) ?? []).length >= 7)
   check('tenant desk (source): broker_next and broker_done gate the SERVED leg (gateServedLeg) for a tenant', (route.match(/gateServedLeg\(tenant, await desk(Next|Done)\(/g) ?? []).length === 2)
+  const bt = code('lib/broker-tenant.ts')
+  check('tenant desk (source): a door refusal (paused key/tenant, revoked key) is a blotter row too — the firm sees the attempt', /blot\(ctx, 'policy_verdict', \{ stage: 'door'/.test(bt) && /caller\.tenantId\) await blot\(/.test(bt))
   const exec = code('lib/broker-exec.ts')
+  check('tenant desk (source): execute takes the registered-signer consent ONLY for a tenant caller with no signature given; everyone else still proves the wallet', /const signerConsent = !!tenantRow && tenantRow\.signers\.includes\(row\.wallet\.toLowerCase\(\)\)/.test(exec) && /if \(consent === 'personal_sign'\) await assertWalletProof\(/.test(exec) && /consent, wallet: row\.wallet/.test(exec))
   check('tenant desk (source): execute re-gates the COMPILED job before createJob and binds the job to the tenant right after it', /regateIntent\(tenantRow, row, 'execute', compiled\)[\s\S]*await createJob\([\s\S]*bindJobToTenant\(job\.id, tenantRow\)/.test(exec))
   const hl = code('app/api/hl/submit/route.ts')
   const hlGate = hl.indexOf('joinTenantLeg(from')
@@ -282,7 +285,7 @@ export async function tenantLivePins(base: string, check: Check, opts: LiveOpts 
   // ── 1. the tenant, the policy (maker-checker), the key ────────────────
   const anon = await api('POST', '/api/tenants', { slug: 'nope-anon', name: 'x' }, J)
   check('tenant live: POST /api/tenants without a SIWE session → 401', anon.status === 401)
-  const slug = `drive-${Math.random().toString(36).slice(2, 10)}`
+  let slug = `drive-${Math.random().toString(36).slice(2, 10)}`
   let created = await api('POST', '/api/tenants', { slug, name: 'Drive Desk (tenant pins)' })
   let tenantId: string | undefined = created.json?.tenant?.id
   if (created.status === 403 && opts.burner) {
@@ -291,6 +294,7 @@ export async function tenantLivePins(base: string, check: Check, opts: LiveOpts 
     const reuse = (list.json?.tenants ?? []).find((t: { slug: string }) => t.slug.startsWith('drive-'))
     check('tenant live: a second tenant over the owner\'s plan cap → 403 naming the entitlement', created.json?.entitlement === 'tenants', JSON.stringify(created.json).slice(0, 160))
     tenantId = reuse?.id
+    if (reuse?.slug) slug = reuse.slug
     log(`  · plan cap reached — reusing ${reuse?.slug ?? 'none'}`)
     if (tenantId) {
       const t = await api('GET', `/api/tenants/${tenantId}`)

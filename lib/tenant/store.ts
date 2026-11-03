@@ -62,7 +62,7 @@ export type ResolvedTenant = TenantContext & { pausedBy: 'key' | 'tenant' | null
 export type DeskCaller =
   | { kind: 'retail' }
   | { kind: 'tenant'; ctx: ResolvedTenant }
-  | { kind: 'refused'; reason: 'KEY_UNKNOWN' | 'KEY_REVOKED'; detail: string }
+  | { kind: 'refused'; reason: 'KEY_UNKNOWN' | 'KEY_REVOKED'; detail: string; tenantId?: string; keyId?: string; deskId?: string }
 
 /** The desk's caller, from the request headers the MCP transport hands every
  *  tool callback (or a NextRequest's). Touches the key's lastUsedAt. */
@@ -78,7 +78,7 @@ export async function resolveDeskCaller(headers: HeaderLike): Promise<DeskCaller
     return { kind: 'refused', reason: 'KEY_UNKNOWN', detail: 'this desk key is not one any tenant minted. A tenant desk never falls back to the retail desk — ask a tenant admin for a key.' }
   }
   if (key.revokedAt) {
-    return { kind: 'refused', reason: 'KEY_REVOKED', detail: `this desk key (${key.prefix}…) was revoked by a tenant admin and will never work again — ask for a new one.` }
+    return { kind: 'refused', reason: 'KEY_REVOKED', detail: `this desk key (${key.prefix}…) was revoked by a tenant admin and will never work again — ask for a new one.`, tenantId: key.tenantId, keyId: key.id, deskId: key.deskId }
   }
   recordKeyUse(key.id)
   const active = await activePolicy(key.tenantId)
