@@ -61,7 +61,7 @@ const JSON_LD = JSON.stringify({
   provider: { '@type': 'Organization', name: 'Pantessa', url: SITE },
   url: CANONICAL,
   description: DESCRIPTION,
-  offers: { '@type': 'Offer', name: 'Desk platform fee', price: String(DESK_PLATFORM_FEE_USD), priceCurrency: 'USD', description: 'Per desk, per month, plus tiered execution on receipt-verified notional.' },
+  offers: { '@type': 'Offer', name: 'Desk platform fee', price: String(DESK_PLATFORM_FEE_USD), priceCurrency: 'USD', description: 'Per desk, per month, plus tiered execution on settled notional.' },
 })
 
 /** The four signing lanes with the status each one has EARNED. The Safe word
@@ -191,7 +191,7 @@ export default function DeskPage() {
               </h2>
               <p className="dk__sub">
                 An order no rule admits is refused, by name. Per venue: the chains, the tokens, the operations, the sides, a size cap, an impact cap, a leverage cap. Per
-                desk: a per-order cap, a per-day cap, <strong>approvals over a threshold</strong>, trading hours. A pre-trade hook your systems answer. Two admins to change
+                desk: a per-order cap, a per-day cap, <strong>approvals over a threshold</strong>, trading hours. A pre-trade hook your systems will answer (the policy carries the URL today; the call before every build lands in the next release). Two admins to change
                 any of it (maker-checker), and a desk key can never widen the policy it was minted under.
               </p>
             </div>
@@ -417,7 +417,7 @@ export default function DeskPage() {
               <h2 className="dk__h2" id="dk-pricing">
                 A platform fee, and basis points on what the chain proved.
               </h2>
-              <p className="dk__sub">Invoiced monthly from the blotter. Nothing is billed on a leg the chain did not verify.</p>
+              <p className="dk__sub">Invoiced monthly from the blotter. Billed on settled notional only: a leg the chain proved, or a fill the venue itself reports (Hyperliquid, CoW). A signature that never settled is not billed.</p>
             </div>
             <div className="dk__price" data-pricing>
               <div className="dk__panel">
@@ -442,7 +442,7 @@ export default function DeskPage() {
                 </ul>
                 <p className="dk__example" data-pricing-example>
                   A {usdShort(PRICING_EXAMPLE_NOTIONAL_USD)} month: <strong>{usd0(exampleTotal)}</strong> — {usd0(DESK_PLATFORM_FEE_USD)} platform, {usd0(exampleExec)} execution,
-                  marginal tiers on receipt-verified notional.
+                  marginal tiers on settled notional (chain-verified, or venue-reported for Hyperliquid and CoW).
                 </p>
                 <p className="dk__fine">
                   Fees already collected inside a transaction on those rows are credited against the statement. Design partners run <strong>{FREE_DAYS} days free</strong>.
@@ -518,8 +518,8 @@ export default function DeskPage() {
                   GitHub, and your pen-test is welcome.
                 </li>
                 <li>
-                  <strong>Your pre-trade hook is your screen.</strong> We run no counterparty screening of our own. The policy’s <code>hooks.preTrade</code> URL is asked
-                  before a build and anything but a 200 refuses it.
+                  <strong>Your pre-trade hook is your screen.</strong> We run no counterparty screening of our own. The policy carries your <code>hooks.preTrade</code> URL today;
+                  the call before every build lands in the next release, and until then your screening runs where it runs now.
                 </li>
                 <li>
                   <strong>Crypto venues only.</strong> CoW, Uniswap, Aave, Lido, Morpho, NEAR Intents, LiFi, Hyperliquid. Tokenized equities stay a retail surface until an

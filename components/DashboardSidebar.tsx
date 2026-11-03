@@ -6,7 +6,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, Activity, Building2, LineChart, MessageSquare, BookOpen, AlertTriangle, CreditCard, Globe, Palette, ScrollText, ShieldAlert, ShieldCheck, Users, Landmark, Inbox } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, Activity, Building2, LineChart, MessageSquare, BookOpen, AlertTriangle, CreditCard, Globe, Palette, ScrollText, ShieldAlert, ShieldCheck, Users, Landmark, Inbox, Briefcase } from 'lucide-react'
 import { isAdminAddress } from '@/lib/admin'
 
 // Links-first order (Nate, 2026-07-22): App rides right under Overview,
@@ -32,6 +32,9 @@ export const DASH_SECTIONS = [
   { href: '/dashboard/agents', label: 'Agents', icon: Bot, exact: false },
   { href: '/dashboard/keys', label: 'API Keys', icon: KeyRound, exact: false },
   { href: '/dashboard/plan', label: 'Usage', icon: CreditCard, exact: false },
+  // The governed desk's console (squad five-million, 2026-11-03): tenants, the
+  // policy, desk keys, approvals, the blotter, the statement.
+  { href: '/dashboard/desk', label: 'Desk', icon: Briefcase, exact: false },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity, exact: false },
   { href: '/dashboard/org', label: 'Organization', icon: Building2, exact: false },
   { href: '/docs', label: 'Docs', icon: BookOpen, exact: false },
