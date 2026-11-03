@@ -32,8 +32,11 @@ import {
   guardLidoStakeBuild,
   isLidoGuidedAsk,
   lidoAgentOf,
+  lidoStakeSizeLabel,
   LIDO_GAS_BUFFER_ETH,
+  LIDO_MIN_STAKE_ETH,
   parseLidoStake,
+  smallStakeChipEth,
   suggestedStakeEth,
   type LidoBuiltStake,
   type LidoPositionPayload,
@@ -1711,7 +1714,7 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
         nativeTrace({ type: 'status', label: `lido layer: ask under-specified — ${lidoAsk.problem.slice(0, 120)}` })
         return NextResponse.json({ reply: `🌊 ${lidoAsk.problem}` })
       }
-      nativeTrace({ type: 'status', label: `lido layer claimed the turn: stake ${lidoAsk.amount} ETH → ${lidoAsk.receive} — planner bypassed` })
+      nativeTrace({ type: 'status', label: `lido layer claimed the turn: stake ${lidoStakeSizeLabel(lidoAsk)} → ${lidoAsk.receive} — planner bypassed` })
       return await buildLidoStakeTurn(lidoAgent.agent, lidoAsk, walletAddress, message, nativeTrace)
     }
     if ((lidoAsk || isLidoGuidedAsk(message)) && !(lidoAgent.agent && lidoAgent.usable)) {
@@ -3210,16 +3213,25 @@ async function guideLidoStakeTurn(
   const already = Number(pos.totalStaked?.stEth) > 0 ? ` You already have ${pos.totalStaked?.stEth} stETH earning${pos.currentAprPct != null ? ` ~${pos.currentAprPct}% APR` : ''}.` : ''
 
   if (stakeable) {
-    trace({ type: 'status', label: `lido guided: ${ethBal} ETH on mainnet → proposing "Stake ${stakeable} ETH on Lido"` })
+    // The message named NO amount (any amount ends the guided claim — see
+    // isLidoGuidedAsk), so the balance-minus-gas stake is a proposal, not a
+    // default: a modest first stake leads when the balance is big enough
+    // for the two to differ, and the reply says how to size it yourself.
+    // Live 2026-11-03: the only tap was "everything but gas" and a $3 ask
+    // signed 0.5304 ETH.
+    const small = smallStakeChipEth(stakeable)
+    trace({ type: 'status', label: `lido guided: ${ethBal} ETH on mainnet → proposing "Stake ${stakeable} ETH on Lido"${small ? ` beside "Stake ${small} ETH on Lido"` : ''} — the message named no amount` })
     return NextResponse.json({
       reply:
-        `🌊 You hold **${ethBal} ETH** on Ethereum — enough to stake **${stakeable}** and keep a gas buffer.${already} ` +
-        `Staking mints stETH 1:1 and starts earning via daily rebases; exiting later goes through the withdrawal queue or a DEX swap. One transaction, your wallet signs it.`,
+        `🌊 You hold **${ethBal} ETH** on Ethereum — you could stake up to **${stakeable}** and keep a gas buffer.${already} ` +
+        `Staking mints stETH 1:1 and starts earning via daily rebases; exiting later goes through the withdrawal queue or a DEX swap. One transaction, your wallet signs it. ` +
+        `How much? Pick a size below, or say one — “stake 0.05 ETH on Lido” or “stake $20 of ETH on Lido”.`,
       clarify: {
-        question: 'Ready?',
+        question: 'How much?',
         options: [
-          { label: `Stake ${stakeable} ETH on Lido`, resume: `Stake ${stakeable} ETH on Lido` },
-          { label: 'Receive wstETH instead', resume: `Stake ${stakeable} ETH on Lido as wstETH` },
+          ...(small ? [{ label: `Stake ${small} ETH on Lido`, resume: `Stake ${small} ETH on Lido` }] : []),
+          { label: small ? `Stake all ${stakeable} ETH on Lido (keeps gas)` : `Stake ${stakeable} ETH on Lido`, resume: `Stake ${stakeable} ETH on Lido` },
+          { label: 'Receive wstETH instead', resume: `Stake ${small ?? stakeable} ETH on Lido as wstETH` },
         ],
       },
       buildPath: 'native-lido',
@@ -3241,10 +3253,6 @@ async function guideLidoStakeTurn(
     buildPath: 'native-lido',
   })
 }
-
-/** The smallest stake `suggestedStakeEth` will size — below it, mainnet gas
- *  makes the stake uneconomical, so funding plans target at least this. */
-const LIDO_MIN_STAKE_ETH = 0.003
 
 /**
  * The funding-plan turn for an unstakeable Lido ask: size the shortfall
@@ -3359,6 +3367,59 @@ async function buildLidoStakeTurn(
     })
   }
 
+  const wst = params.receive === 'wstETH' ? ' as wstETH' : ''
+
+  // ── A dollar ask is priced to ETH FIRST, never from the balance ──────────
+  // Live 2026-11-03 (/p/qgMUrlBngEKP): "I want to stake $3 worth of ETH in
+  // Lido" slipped into the guided moment and the full balance (0.5304 ETH,
+  // ~$1.1K) was proposed and signed. The dollar figure now resolves through
+  // the same probe the swap layer sizes "$N worth of" with; a size under the
+  // economical floor is answered honestly with the floor as a CHIP (the
+  // user's tap, never a silent round-up), and a failed price asks for an
+  // ETH amount — nothing here falls through to the balance.
+  let amountEth = params.amount
+  if (amountEth === undefined && params.amountUsd !== undefined) {
+    const probe = await usdPerToken(1, 'ETH').catch(() => null)
+    const priced = probe ? usdToTokenAmount(params.amountUsd, probe.usd, 6) : null
+    if (!probe || !priced) {
+      trace({ type: 'note', level: 'warn', label: `lido layer: couldn't price ETH on mainnet to size a $${params.amountUsd} stake — asking for an ETH amount (never the balance)` })
+      return NextResponse.json({
+        reply: `🌊 I couldn't price ETH just now, so I can't size a $${params.amountUsd} stake. Say the amount in ETH instead — e.g. “Stake 0.01 ETH on Lido”.`,
+        clarify: {
+          question: 'Size it in ETH?',
+          options: [
+            { label: 'Stake 0.01 ETH on Lido', resume: `Stake 0.01 ETH on Lido${wst}` },
+            { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
+          ],
+        },
+        buildPath: 'native-lido',
+      })
+    }
+    trace({ type: 'status', label: `lido layer: $${params.amountUsd} of ETH ≈ ${priced} ETH at $${probe.usd.toFixed(2)}/ETH (priced via ${probe.via})` })
+    if (Number(priced) < LIDO_MIN_STAKE_ETH) {
+      const minEth = String(LIDO_MIN_STAKE_ETH)
+      const minUsd = (LIDO_MIN_STAKE_ETH * probe.usd).toFixed(2)
+      trace({ type: 'status', label: `lido layer: ${priced} ETH is under the economical floor (${minEth} ETH ≈ $${minUsd}) — offering the floor as a chip, not staking more than asked` })
+      return NextResponse.json({
+        reply:
+          `🌊 $${params.amountUsd} is about **${priced} ETH** at today's price — under the smallest stake worth making here, ~${minEth} ETH (about $${minUsd}), once Ethereum gas is counted. ` +
+          `I won't stake more than you asked without saying so: tap the minimum if that works, or name a bigger size.`,
+        clarify: {
+          question: `Stake ${minEth} ETH (~$${minUsd}) instead?`,
+          options: [
+            { label: `Stake ${minEth} ETH on Lido`, resume: `Stake ${minEth} ETH on Lido${wst}` },
+            { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
+          ],
+        },
+        buildPath: 'native-lido',
+      })
+    }
+    amountEth = priced
+  }
+  if (amountEth === undefined) {
+    return NextResponse.json({ reply: '🌊 Tell me how much — e.g. “stake 0.5 ETH on Lido” or “stake $20 of ETH on Lido”.', buildPath: 'native-lido' })
+  }
+
   // ── Universal funding plan: a shortfall is an offer, never a wall ────────
   // Read the live mainnet balance BEFORE building. An ask the wallet can't
   // cover (or a 'max' with nothing stakeable) scans ETH + USDC on the other
@@ -3369,7 +3430,6 @@ async function buildLidoStakeTurn(
   const balWei = mainnetClient ? await mainnetClient.getBalance({ address: walletAddress as `0x${string}` }).catch(() => null) : null
   const balEth = balWei === null ? null : Number(balWei) / 1e18
 
-  let amountEth = params.amount
   if (amountEth === 'max') {
     const resolved = balEth !== null ? suggestedStakeEth(String(balEth)) : null
     if (!resolved) {

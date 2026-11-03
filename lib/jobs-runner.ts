@@ -34,11 +34,13 @@ import {
   guardLidoStakeBuild,
   suggestedStakeEth,
   LIDO_MCP,
+  LIDO_MIN_STAKE_ETH,
   type LidoBuiltStake,
   type LidoPositionPayload,
   type LidoStakeParams,
 } from '@/lib/lido-stake'
 import { publicClientFor, primaryStable } from '@/lib/chains'
+import { usdPerToken, usdToTokenAmount } from '@/lib/usd-probe'
 import { erc20Abi, formatEther } from 'viem'
 import { buildAaveRepayArtifact, buildAaveSupplyArtifact, buildWethWrapArtifact } from '@/lib/aave-exec'
 import { buildMorphoLendArtifact, buildMorphoRepayArtifact } from '@/lib/morpho-exec'
@@ -465,6 +467,19 @@ export async function buildSignArtifact(
     // compound-job form ("…then stake the ETH on lido") where the amount
     // only exists after the bridge settles.
     let amountEth = p.amount
+    if (amountEth === undefined && p.amountUsd !== undefined) {
+      // A dollar-sized step ("stake $3 of ETH on lido") prices to ETH here,
+      // never from the balance (the 2026-11-03 incident class). Under the
+      // economical floor the step refuses by name — it never rounds up.
+      const probe = await usdPerToken(1, 'ETH').catch(() => null)
+      const priced = probe ? usdToTokenAmount(p.amountUsd, probe.usd, 6) : null
+      if (!priced) throw new Error(`Couldn't price ETH to size a $${p.amountUsd} stake — give the amount in ETH.`)
+      if (Number(priced) < LIDO_MIN_STAKE_ETH) {
+        throw new Error(`$${p.amountUsd} is ~${priced} ETH, under Lido's economical minimum here of ${LIDO_MIN_STAKE_ETH} ETH (~$${(LIDO_MIN_STAKE_ETH * probe!.usd).toFixed(2)}) — not staking more than asked.`)
+      }
+      amountEth = priced
+    }
+    if (amountEth === undefined) throw new Error('The stake step carries no amount.')
     if (amountEth === 'max') {
       const client = publicClientFor(1)
       if (!client) throw new Error('No Ethereum mainnet RPC configured — cannot resolve the stake amount.')
