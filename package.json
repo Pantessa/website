@@ -54,6 +54,7 @@
     "probe:listings": "tsx scripts/action-gate-pins.ts --live",
     "pins:tape": "tsx scripts/tape-pins.ts",
     "pins:venues": "tsx scripts/venue-manifest-pins.ts",
+    "pins:plans": "tsx scripts/plans-pins.ts",
     "pins:exec": "tsx scripts/exec-strip-pins.ts",
     "pins:policy-pool": "tsx scripts/policy-pool-builder-pins.ts",
     "pins:blotter": "tsx scripts/blotter-pins.ts",

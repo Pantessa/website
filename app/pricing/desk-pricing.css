@@ -1,0 +1,39 @@
+/* /pricing · THE DESK (squad five-million, 2026-11-03). Rides the pricing
+   card system in app/x402-design.css (.pricing__card, __price, __feats,
+   __toggle); only the four-up grid, the section head and the Enterprise
+   terms are new. Tokens only — no opacity modifiers on CSS-var colours. */
+
+.deskprice { margin-top: 64px; scroll-margin-top: 96px; }
+.deskprice__head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.deskprice__headtext { max-width: 760px; min-width: 0; }
+.deskprice .deskprice__h2 { margin-top: 10px; }
+.deskprice__sub { margin-top: 12px; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+.deskprice__bar { margin-top: 22px; display: flex; justify-content: flex-start; }
+
+.deskprice__grid { margin-top: 16px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: stretch; }
+.pricing__card.deskprice__card { padding: 24px 20px; }
+.deskprice__price { flex-wrap: wrap; row-gap: 6px; }
+.deskprice__card .pricing__amount { font-size: 40px; }
+
+.deskprice__terms { margin-top: 14px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surf-2); }
+.deskprice__termshead { font-size: var(--fs-xs); letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 6px; }
+.deskprice__tiers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--fg); }
+.deskprice__partner { margin-top: 8px; font-size: var(--fs-sm); line-height: 1.45; color: var(--accent); }
+
+.deskprice__card .pricing__feats { margin-top: 16px; }
+.deskprice__inherits { margin-top: 16px; font-size: var(--fs-md); color: var(--fg); font-weight: 500; }
+.deskprice__inherits + .pricing__feats { margin-top: 10px; }
+.deskprice__soon { color: var(--muted-2); }
+.deskprice__card .pricing__feats li.deskprice__soon::before { content: '◌'; color: var(--muted-2); }
+.deskprice__soontag { margin-left: 8px; font-size: var(--fs-xs); letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); padding: 1px 6px; border-radius: var(--r-pill); border: 1px solid var(--line); white-space: nowrap; }
+
+.deskprice__fine { max-width: 860px; }
+.deskprice__fine a { color: var(--accent); }
+
+@media (max-width: 1199px) {
+  .deskprice__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 880px; }
+}
+@media (max-width: 639px) {
+  .deskprice { margin-top: 48px; }
+  .deskprice__grid { grid-template-columns: 1fr; max-width: 460px; }
+}
