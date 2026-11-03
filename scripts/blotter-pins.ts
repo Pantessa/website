@@ -239,7 +239,7 @@ export function blotterPurePins(check: Check): void {
 
   // The statement math.
   const created = new Date(Date.UTC(2026, 0, 10)) // free window ends 2026-04-10
-  const m = (ym: string, legs: StatementLeg[], feeBps: number | null = null, c = created) => statementMath({ ym, tenantCreatedAt: c, feeBps, legs })
+  const m = (ym: string, legs: StatementLeg[], feeBps: number | null = null, c = created, planId = 'enterprise') => statementMath({ ym, tenantCreatedAt: c, feeBps, legs, planId })
   const t5 = m('2026-06', [leg(5_000_000, 0, 'verified')])
   const t50 = m('2026-06', [leg(50_000_000, 0, 'verified')])
   const t150 = m('2026-06', [leg(150_000_000, 0, 'verified')])
@@ -259,6 +259,21 @@ export function blotterPurePins(check: Check): void {
     'statement free window: created 2026-01-10 → Jan–Mar platform waived in full; April charged for 21 of 30 days ($2,800, waived to the 10th); May in full; a month before the tenant existed is $0',
     jan.platform.dueUsd === 0 && mar.platform.dueUsd === 0 && apr.platform.dueUsd === 2800 && apr.platform.waivedUsd === 1200 && may.platform.dueUsd === 4000 && dec.platform.dueUsd === 0 && /did not exist/.test(dec.platform.note) && /Waived/.test(jan.platform.note),
     `apr=${apr.platform.dueUsd} note=${apr.platform.note}`,
+  )
+  // The platform fee is ENTERPRISE only (coordinator, 2026-11-03): Agent / Desk / free tenants pay by the month.
+  const desk25 = m('2026-06', [leg(25_000_000, 0, 'verified')], null, created, 'desk')
+  const agentJan = m('2026-01', [leg(1_000_000, 0, 'verified')], null, created, 'agent')
+  const free = m('2026-06', [], null, created, 'free')
+  check(
+    'statement platform: a Desk / Agent / free tenant pays NO platform fee — applies:false, $0 list and due, a $0 "included in your plan" line; a $25M Desk month = the $17,500 execution fee alone',
+    !desk25.platform.applies && desk25.platform.planId === 'desk' && desk25.platform.listUsd === 0 && desk25.platform.dueUsd === 0 && desk25.platform.waivedUsd === 0 && desk25.amountDueUsd === 17_500 &&
+      desk25.lines[0].id === 'platform' && desk25.lines[0].amountUsd === 0 && /included in your plan/.test(desk25.lines[0].description) && /enterprise desks only/.test(desk25.platform.note) &&
+      !agentJan.platform.applies && agentJan.platform.dueUsd === 0 && agentJan.amountDueUsd === 1000 && free.platform.dueUsd === 0 && free.amountDueUsd === 0,
+    `${desk25.amountDueUsd} ${desk25.lines[0].description}`,
+  )
+  check(
+    'statement platform: enterprise is the one plan that carries it — applies:true, $4,000 list, the 90-day proration intact',
+    t25.platform.applies && t25.platform.planId === 'enterprise' && t25.platform.listUsd === DESK_PLATFORM_FEE_USD && apr.platform.applies && apr.platform.dueUsd === 2800,
   )
   const flat = m('2026-06', [leg(5_000_000, 0, 'verified')], 3)
   check('statement flat bps: tenant.feeBps = 3 on $5M → $1,500 flat, no tiers', flat.execution.mode === 'flat' && flat.execution.bps === 3 && flat.execution.feeUsd === 1500 && flat.execution.tiers === null)
@@ -333,6 +348,10 @@ export function blotterPurePins(check: Check): void {
   check(
     'statement wiring: the Stripe invoice is a DRAFT — auto_advance false, never finalized, never sent, never paid',
     /auto_advance: false/.test(stmtSrc) && !/finalizeInvoice|sendInvoice|\.pay\(|\.finalize\(/.test(stmtSrc),
+  )
+  check(
+    "statement wiring: the platform fee keys off the owner's EFFECTIVE plan (getEffectivePlan → statementMath planId), charged only for PLATFORM_FEE_PLAN = 'enterprise'",
+    /export const PLATFORM_FEE_PLAN = 'enterprise'/.test(stmtSrc) && /const applies = planId === PLATFORM_FEE_PLAN/.test(stmtSrc) && /const effective = await getEffectivePlan\(tenant\.ownerAddress\)\n  const numbers = statementMath\(\{[^\n]*planId: String\(effective\.plan\.id\)/.test(stmtSrc),
   )
 }
 
@@ -479,10 +498,10 @@ export async function blotterDbPins(check: Check): Promise<void> {
     // The statement: cut once, idempotent, a draft invoice with three lines.
     const st = await mk('stmt', new Date(Date.UTC(2026, 0, 10)))
     const sig = async (valueUsd: number, feeUsd: number, n: number) => (await B.recordBlotterOnce(`job:${tag}s:${n}:signed`, { tenantId: st.id, kind: 'signed', jobId: `${tag}s`, valueUsd, feeUsd, feeBps: 20, payload: { source: 'job-step', seq: n } }))!.seq
-    const s1 = await sig(30, 0.06, 1)
-    const s2 = await sig(40, 0.08, 2)
-    await sig(10, 0.02, 3)
-    const s4 = await sig(100, 0.2, 4)
+    const s1 = await sig(30_000, 6, 1)
+    const s2 = await sig(40_000, 8, 2)
+    await sig(10_000, 2, 3)
+    const s4 = await sig(100_000, 20, 4)
     await B.recordBlotterOnce(`job:${tag}s:1:settled`, { tenantId: st.id, kind: 'settled', verification: 'verified', payload: { source: 'job-step', signedSeq: s1 } })
     await B.recordBlotterOnce(`job:${tag}s:2:settled`, { tenantId: st.id, kind: 'settled', verification: 'attested', payload: { source: 'job-step', signedSeq: s2 } })
     await B.recordBlotterOnce(`job:${tag}s:4:settled`, { tenantId: st.id, kind: 'settled', verification: 'mismatch', payload: { source: 'job-step', signedSeq: s4 } })
@@ -499,8 +518,8 @@ export async function blotterDbPins(check: Check): Promise<void> {
       const items = fake.calls.filter((c) => c.kind === 'item')
       const inv = fake.calls.find((c) => c.kind === 'invoice')
       check(
-        'statement db: a closed month cuts — notional $80 (verified $30 + attested $40 + signed-only $10; the $100 mismatch excluded), platform $4,000, execution $0.08 fully credited by $0.16 in calldata, $4,000 due',
-        !!cut && cut.final && !cut.existing && cut.notionalUsd === 80 && cut.calldataCreditUsd === 0.16 && cut.platform.dueUsd === 4000 && cut.execution.feeUsd === 0.08 && cut.creditAppliedUsd === 0.08 && cut.executionDueUsd === 0 && cut.amountDueUsd === 4000 && cut.legs.mismatch.usd === 100,
+        'statement db: a closed month cuts — notional $80,000 (verified $30K + attested $40K + signed-only $10K; the $100K mismatch excluded), the free-plan owner pays no platform fee, execution $80 − $16 calldata credit = $64 due',
+        !!cut && cut.final && !cut.existing && cut.notionalUsd === 80_000 && cut.calldataCreditUsd === 16 && !cut.platform.applies && cut.platform.dueUsd === 0 && cut.execution.feeUsd === 80 && cut.creditAppliedUsd === 16 && cut.executionDueUsd === 64 && cut.amountDueUsd === 64 && cut.legs.mismatch.usd === 100_000,
         JSON.stringify({ n: cut?.notionalUsd, due: cut?.amountDueUsd, exec: cut?.execution.feeUsd, credit: cut?.calldataCreditUsd }),
       )
       check(
@@ -508,8 +527,8 @@ export async function blotterDbPins(check: Check): Promise<void> {
         !!again && again.existing && again.seq === cut?.seq && again.hash === cut?.hash && again.amountDueUsd === cut?.amountDueUsd && fake.calls.length === 4 && (await prisma.blotterRow.count({ where: { tenantId: st.id, kind: 'statement' } })) === 1,
       )
       check(
-        'statement db: the draft invoice — the owner\'s Stripe customer, auto_advance false, send_invoice, items-only; three items (platform · execution · credit) in cents summing to the amount due; idempotency keys per tenant-month',
-        inv?.params.customer === `cus_${tag}` && inv?.params.auto_advance === false && inv?.params.collection_method === 'send_invoice' && inv?.params.pending_invoice_items_behavior === 'exclude' && items.length === 3 && items.reduce((a, c) => a + Number(c.params.amount), 0) === 400_000 && items.every((c) => c.params.invoice === 'in_fake_1' && c.params.currency === 'usd') && String(inv?.key).startsWith(`pantessa-statement:${st.id}:${ym}`) && cut?.invoice?.id === 'in_fake_1',
+        'statement db: the draft invoice — the owner\'s Stripe customer, auto_advance false, send_invoice, items-only; three items ($0 platform "included in your plan" · $80 execution · −$16 credit) in cents summing to the $64 due; idempotency keys per tenant-month',
+        inv?.params.customer === `cus_${tag}` && inv?.params.auto_advance === false && inv?.params.collection_method === 'send_invoice' && inv?.params.pending_invoice_items_behavior === 'exclude' && items.length === 3 && items.map((c) => Number(c.params.amount)).join() === '0,8000,-1600' && /included in your plan/.test(String(items[0].params.description)) && items.every((c) => c.params.invoice === 'in_fake_1' && c.params.currency === 'usd') && String(inv?.key).startsWith(`pantessa-statement:${st.id}:${ym}`) && cut?.invoice?.id === 'in_fake_1',
         JSON.stringify(items.map((c) => c.params.amount)),
       )
       const vst = await B.verifyChain(st.id)
@@ -523,7 +542,7 @@ export async function blotterDbPins(check: Check): Promise<void> {
         const cust = await real.customers.create({ email: `blotter-pins+${tag}@example.com`, description: 'blotter pins fixture (deleted after the run)', metadata: { fixture: tag } })
         try {
           // February: inside the free window, so the platform line is a $0 line — the real API must take it.
-          const n = S.statementMath({ ym: '2026-02', tenantCreatedAt: new Date(Date.UTC(2026, 0, 10)), feeBps: null, legs: [leg(2_000_000, 400, 'verified')] })
+          const n = S.statementMath({ ym: '2026-02', tenantCreatedAt: new Date(Date.UTC(2026, 0, 10)), feeBps: null, legs: [leg(2_000_000, 400, 'verified')], planId: 'enterprise' })
           const drafted = await S.draftStatementInvoice(real as unknown as StripeLike, cust.id, { id: st.id, slug: st.slug }, n)
           const fetched = await real.invoices.retrieve(drafted.id)
           const lines = await real.invoices.listLineItems(drafted.id, { limit: 10 })

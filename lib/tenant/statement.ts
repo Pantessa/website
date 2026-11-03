@@ -9,7 +9,10 @@
 //                 `mismatch` (the chain refuted it) never counts; a leg with NO
 //                 settlement yet counts on its signature, on its own line — the
 //                 statement says which basis each dollar stands on.
-//   platform      DESK_PLATFORM_FEE_USD, waived for the part of the month inside
+//   platform      DESK_PLATFORM_FEE_USD for an ENTERPRISE tenant only (the owner's
+//                 effective plan, lib/billing getEffectivePlan): Agent / Desk tenants
+//                 already pay by the month, so their line is a $0 "included in your
+//                 plan". For enterprise, waived for the part of the month inside
 //                 DESIGN_PARTNER_FREE_DAYS of the tenant's creation (prorated by
 //                 time: a window that ends on the 15th waives half the month).
 //   execution     `tenant.feeBps` flat on the notional when set, else
@@ -41,8 +44,12 @@ import { getStripe } from '@/lib/stripe'
 
 export { verifyChain } from '@/lib/tenant/blotter'
 
-/** Off-chain legs (no receipt exists) bill on the signer's attested report. */
+/** Off-chain legs (no receipt exists) bill on the venue's attestation — the
+ *  attestation IS the fill (coordinator, 2026-11-03). */
 export const STATEMENT_COUNTS_ATTESTED = true
+/** The only plan whose statement carries DESK_PLATFORM_FEE_USD (coordinator,
+ *  2026-11-03): Agent / Desk tenants already pay by the month. */
+export const PLATFORM_FEE_PLAN = 'enterprise'
 export const YM_RE = /^(\d{4})-(0[1-9]|1[0-2])$/
 const DAY_MS = 86_400_000
 
@@ -132,7 +139,8 @@ export interface StatementNumbers {
   basis: 'none' | 'verified' | 'verified+attested' | 'verified+signed' | 'verified+attested+signed' | 'attested' | 'signed' | 'attested+signed'
   basisNote: string
   notionalUsd: number
-  platform: { listUsd: number; waivedUsd: number; dueUsd: number; freeUntil: string; note: string }
+  /** `applies` false = the owner's plan already covers the desk (not enterprise): $0, said so. */
+  platform: { applies: boolean; planId: string; listUsd: number; waivedUsd: number; dueUsd: number; freeUntil: string; note: string }
   execution: { mode: 'flat' | 'tiered'; bps: number | null; tiers: { uptoUsd: number | null; bps: number; spanUsd: number; feeUsd: number }[] | null; feeUsd: number }
   calldataCreditUsd: number
   creditAppliedUsd: number
@@ -150,7 +158,7 @@ const monthWords = (ym: string) => {
 }
 
 /** The statement's numbers from the month's legs. Pure. */
-export function statementMath(input: { ym: string; tenantCreatedAt: Date; feeBps: number | null; legs: StatementLeg[] }): StatementNumbers {
+export function statementMath(input: { ym: string; tenantCreatedAt: Date; feeBps: number | null; legs: StatementLeg[]; planId: string }): StatementNumbers {
   const range = monthRange(input.ym)
   if (!range) throw new Error(`bad month ${input.ym}`)
   const b = (): StatementBucket => ({ count: 0, usd: 0 })
@@ -187,14 +195,19 @@ export function statementMath(input: { ym: string; tenantCreatedAt: Date; feeBps
   ].filter(Boolean)
   const basisNote = noteBits.length ? `${noteBits.join('; ')}.` : 'No signed legs this month.'
 
-  // Platform: waived for the part of the month inside the free window.
+  // Platform: enterprise only; waived for the part of the month inside the free window.
+  const planId = String(input.planId || 'free')
+  const applies = planId === PLATFORM_FEE_PLAN
+  const listUsd = applies ? DESK_PLATFORM_FEE_USD : 0
   const freeUntil = new Date(input.tenantCreatedAt.getTime() + DESIGN_PARTNER_FREE_DAYS * DAY_MS)
   const monthMs = range.to.getTime() - range.from.getTime()
   const existed = range.to > input.tenantCreatedAt
   const chargedFrom = Math.max(range.from.getTime(), freeUntil.getTime())
   const fraction = existed ? Math.max(0, range.to.getTime() - chargedFrom) / monthMs : 0
-  const platformDue = round2(DESK_PLATFORM_FEE_USD * fraction)
-  const platformNote = !existed
+  const platformDue = round2(listUsd * fraction)
+  const platformNote = !applies
+    ? `Included in your plan (${planId}): the ${fmtUsd(DESK_PLATFORM_FEE_USD)} desk platform fee applies to enterprise desks only.`
+    : !existed
     ? 'The tenant did not exist yet this month.'
     : fraction === 0
       ? `Waived: the design-partner window (${DESIGN_PARTNER_FREE_DAYS} days from ${input.tenantCreatedAt.toISOString().slice(0, 10)}) covers the whole month.`
@@ -233,7 +246,7 @@ export function statementMath(input: { ym: string; tenantCreatedAt: Date; feeBps
     basis,
     basisNote,
     notionalUsd: notional,
-    platform: { listUsd: DESK_PLATFORM_FEE_USD, waivedUsd: round2(DESK_PLATFORM_FEE_USD - platformDue), dueUsd: platformDue, freeUntil: freeUntil.toISOString(), note: platformNote },
+    platform: { applies, planId, listUsd, waivedUsd: round2(listUsd - platformDue), dueUsd: platformDue, freeUntil: freeUntil.toISOString(), note: platformNote },
     execution: { mode: flat ? 'flat' : 'tiered', bps: flat ? (input.feeBps as number) : null, tiers, feeUsd: executionFee },
     calldataCreditUsd: calldataCredit,
     creditAppliedUsd: applied,
@@ -241,7 +254,13 @@ export function statementMath(input: { ym: string; tenantCreatedAt: Date; feeBps
     executionDueUsd: executionDue,
     amountDueUsd: amountDue,
     lines: [
-      { id: 'platform', description: `Desk platform fee, ${month}${platformDue < DESK_PLATFORM_FEE_USD ? ` (${fmtUsd(round2(DESK_PLATFORM_FEE_USD - platformDue))} waived, design-partner window)` : ''}`, amountUsd: platformDue },
+      {
+        id: 'platform',
+        description: !applies
+          ? `Desk platform fee, ${month}: included in your plan`
+          : `Desk platform fee, ${month}${platformDue < listUsd ? ` (${fmtUsd(round2(listUsd - platformDue))} waived, design-partner window)` : ''}`,
+        amountUsd: platformDue,
+      },
       { id: 'execution', description: `Execution, ${execWords} on ${fmtUsd(notional)} notional, ${month}`, amountUsd: executionFee },
       { id: 'credit', description: `Credit: fees already collected in calldata on those trades, ${month}`, amountUsd: applied ? -applied : 0 },
     ],
@@ -408,7 +427,8 @@ export async function monthlyStatement(tenantId: string, ym: string, opts: State
     prisma.blotterRow.findMany({ where: { tenantId, kind: 'signed', createdAt: { gte: range.from, lt: range.to } }, orderBy: { seq: 'asc' }, select: SELECT_ROW }),
     prisma.blotterRow.findMany({ where: { tenantId, kind: 'settled', createdAt: { gte: range.from } }, orderBy: { seq: 'asc' }, select: SELECT_ROW }),
   ])
-  const numbers = statementMath({ ym, tenantCreatedAt: tenant.createdAt, feeBps: tenant.feeBps, legs: statementLegs(signed, settled) })
+  const effective = await getEffectivePlan(tenant.ownerAddress)
+  const numbers = statementMath({ ym, tenantCreatedAt: tenant.createdAt, feeBps: tenant.feeBps, legs: statementLegs(signed, settled), planId: String(effective.plan.id) })
   const open = (invoiceNote: string): StatementResult => ({ ...numbers, tenant: who, closed, final: false, existing: false, seq: null, hash: null, invoice: null, invoiceNote })
   if (!closed) return open('The month is still open: these are live numbers; the statement is cut once the month ends.')
   if (opts.cut === false) return open('Preview: nothing was cut and no invoice was drafted.')
@@ -417,7 +437,7 @@ export async function monthlyStatement(tenantId: string, ym: string, opts: State
   let invoice: StatementInvoice | null = null
   let invoiceNote: string
   const stripe = opts.stripe !== undefined ? opts.stripe : (getStripe() as unknown as StripeLike | null)
-  const customer = (await getEffectivePlan(tenant.ownerAddress)).row?.stripeCustomerId ?? null
+  const customer = effective.row?.stripeCustomerId ?? null
   if (!stripe) invoiceNote = 'No invoice drafted: Stripe is not configured here.'
   else if (!customer) invoiceNote = "No invoice drafted: the tenant owner has no Stripe customer yet."
   else if (numbers.amountDueUsd <= 0) invoiceNote = 'No invoice drafted: nothing is due.'
