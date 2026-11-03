@@ -100,8 +100,11 @@ export default function StatementSection({ detail }: { detail: TenantDetailJson 
             </div>
           </div>
           <dl className="dcx-kv mt-3">
-            <dt>notional</dt>
-            <dd>{fmtUsd(s.statement.notionalUsd)} across {s.statement.legs.total} signed leg{s.statement.legs.total === 1 ? '' : 's'}{s.statement.legs.unpriced ? ` (${s.statement.legs.unpriced} unpriced)` : ''}</dd>
+            <dt>billed notional</dt>
+            <dd>
+              {fmtUsd(s.statement.notionalUsd)} settled · {s.statement.legs.total} signed leg{s.statement.legs.total === 1 ? '' : 's'} this month
+              {s.statement.legs.unpriced ? ` (${s.statement.legs.unpriced} unpriced)` : ''}
+            </dd>
             <dt>basis</dt>
             <dd>{s.statement.basisNote}</dd>
             <dt>platform</dt>
