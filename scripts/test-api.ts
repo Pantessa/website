@@ -36021,6 +36021,8 @@ async function main() {
     const DP = await import('./desk-page-pins')
     DP.deskPagePins(check)
     await DP.deskPageLivePins(check, BASE, { legalServer: false })
+  }
+
   // ── PLANS (squad five-million, 2026-11-03): the desk plans on sale ────────
   // Agent $49 / Desk $499 + the entitlements they buy (lib/tenant/entitlements),
   // the /pricing desk section, checkout (test-mode Stripe only — a live key
