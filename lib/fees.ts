@@ -165,7 +165,29 @@ export function feeBpsOfArtifact(source: unknown): number | undefined {
     const match = appData.match(/"partnerFee":\{"bps":(\d{1,3})/)
     if (match) return Number(match[1])
   }
+  // A Hyperliquid perp order (the chat response's `orderRequest`, or a job
+  // step's `{ orderRequest }`): the rate the SIGNED action actually bears
+  // (squad five-million, PERPS 2026-11-03). The builder field with OUR
+  // treasury → f/10 bps; absent — the Q2 self-heal builds fee-free while the
+  // treasury sits under the venue's $100 builder floor — or a foreign
+  // recipient → 0, a FACT the row keeps (never the env rate). Presence and
+  // recipient only, never key order: jsonb re-sorts the action on its way
+  // through the database (canonicalizeHlAction is the hash boundary's job).
+  const hlBps = hlBuilderFeeBpsOfAction((m as { orderRequest?: { hl?: { action?: unknown } } } | null | undefined)?.orderRequest?.hl?.action)
+  if (hlBps !== undefined) return hlBps
   return undefined
+}
+
+/** The bps a signed HL order action carries for US: `builder.b` = the
+ *  treasury at `f` tenths of a bp → floor(f/10); no builder field, or
+ *  somebody else's → 0; not an order action at all → undefined. */
+export function hlBuilderFeeBpsOfAction(action: unknown): number | undefined {
+  const a = action as { type?: unknown; orders?: unknown; builder?: { b?: unknown; f?: unknown } | null } | null | undefined
+  if (!a || typeof a !== 'object' || a.type !== 'order' || !Array.isArray(a.orders)) return undefined
+  const b = a.builder
+  if (!b || typeof b !== 'object' || typeof b.b !== 'string' || typeof b.f !== 'number') return 0
+  if (b.b.toLowerCase() !== TREASURY_ADDRESS.toLowerCase() || !(b.f > 0)) return 0
+  return Math.floor(b.f / 10)
 }
 
 /** Effective NET bps for ONE turn row (C2b): the STAMPED tier when the row
@@ -175,6 +197,12 @@ export function feeBpsOfArtifact(source: unknown): number | undefined {
  *  on FEE_BEARING_BUILD_PATHS — a stray stamp on a fee-free path earns $0. */
 export function netFeeBpsForTurn(buildPath: string | null | undefined, feeBps: number | null | undefined): number {
   if (buildPath === 'native-cross-chain') return netFeeBpsFor(buildPath)
+  // An HL perp row carries the rate its signed action actually bore
+  // (feeBpsOfArtifact): a stamped 0 is a fact — the order rode WITHOUT the
+  // builder field, the venue collected nothing — and earns nothing (squad
+  // five-million, PERPS). Only a row with no stamp at all (before 2026-11-03)
+  // falls to the env rate.
+  if (buildPath === 'native-hl-exec' && typeof feeBps === 'number') return Math.max(0, feeBps)
   if (typeof feeBps === 'number' && feeBps > 0) return feeBps
   return netFeeBpsFor(buildPath)
 }

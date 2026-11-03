@@ -21,6 +21,8 @@ import { shareText, shareUrlFor } from '@/lib/live-share'
 import { parsePickParam } from '@/lib/market-pick'
 import { useMarketPick } from '@/lib/use-market-pick'
 import { flyoverShareParams } from '@/lib/flyover'
+import { useShareVia } from '@/components/ShareActions'
+import { withVia } from '@/lib/share-posts'
 
 export interface ShareLiveProps {
   view: LiveView
@@ -55,6 +57,10 @@ function copyByHand(text: string): boolean {
 export default function ShareLive({ view, seat, markets }: ShareLiveProps) {
   const pick = useMarketPick({ seat: seat === 'live' ? 'page' : 'stage' })
   const chosen = markets ?? pick.markets
+  // The sharer's id rides the link (squad five-million, PERPS): a trader who
+  // arrives on it and signs is this wallet's referral for life
+  // (lib/share-referral). Null with no wallet — the link is then plain.
+  const via = useShareVia()
   const [state, setState] = useState<ShareState>('idle')
   const [url, setUrl] = useState<string | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -77,7 +83,7 @@ export default function ShareLive({ view, seat, markets }: ShareLiveProps) {
     const fromUrl = seat === 'live' && !markets && pick.source === 'fallback' ? parsePickParam(here.get('t')) : []
     const list = fromUrl.length ? fromUrl : chosen
     // The Flyover's window and lens ride along (lib/flyover; read off the bar like `since`).
-    const href = `${shareUrlFor(view, list, since)}${view === 'flyover' ? flyoverShareParams(here) : ''}`
+    const href = withVia(`${shareUrlFor(view, list, since)}${view === 'flyover' ? flyoverShareParams(here) : ''}`, via)
     setUrl(href)
     const text = list.length ? shareText(view, list, since) : 'Pantessa Live'
     const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
@@ -98,7 +104,7 @@ export default function ShareLive({ view, seat, markets }: ShareLiveProps) {
     } catch {
       settle(copyByHand(href) ? 'copied' : 'failed')
     }
-  }, [chosen, markets, pick.source, seat, settle, view])
+  }, [chosen, markets, pick.source, seat, settle, via, view])
 
   const word = state === 'copied' ? 'Copied' : state === 'shared' ? 'Shared' : state === 'failed' ? 'Copy failed' : 'Share'
   const label = `Share this ${NOUN[view]}: copy a link that carries your markets`

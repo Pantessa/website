@@ -13,20 +13,37 @@ import { usePathname, useSearchParams } from 'next/navigation'
 const VIA_RE = /^[a-z0-9]{4,16}$/
 const MAX_AGE = 60 * 60 * 24 * 30 // 30 days — first touch wins server-side anyway
 
+/** Cookie a via id for this browser — first touch wins: an existing cookie
+ *  is never overwritten, so a later click on someone else's link can't
+ *  steal an earlier referral. Returns true when it wrote. */
+export function seedVia(via: string | null | undefined, pathname: string): boolean {
+  if (!via || !VIA_RE.test(via)) return false
+  if (document.cookie.split('; ').some((c) => c.startsWith('yf_via='))) return false
+  const secure = window.location.protocol === 'https:' ? '; Secure' : ''
+  document.cookie = `yf_via=${via}; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`
+  document.cookie = `yf_via_landing=${encodeURIComponent(pathname).slice(0, 80)}; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`
+  return true
+}
+
 export default function ViaTracker() {
   const params = useSearchParams()
   const pathname = usePathname()
   const via = params.get('via')
 
   useEffect(() => {
-    if (!via || !VIA_RE.test(via)) return
-    // First touch wins: an existing cookie is never overwritten, so a later
-    // click on someone else's link can't steal an earlier referral.
-    if (document.cookie.split('; ').some((c) => c.startsWith('yf_via='))) return
-    const secure = window.location.protocol === 'https:' ? '; Secure' : ''
-    document.cookie = `yf_via=${via}; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`
-    document.cookie = `yf_via_landing=${encodeURIComponent(pathname).slice(0, 80)}; Path=/; Max-Age=${MAX_AGE}; SameSite=Lax${secure}`
+    seedVia(via, pathname)
   }, [via, pathname])
 
+  return null
+}
+
+/** A page that IS a referral door (the creator page, /l/<handle> — squad
+ *  five-million, PERPS): it cookies its creator's via for every visitor, as
+ *  if they had arrived on `?via=`. Same first-touch rule; no UI. */
+export function ViaSeed({ via }: { via: string }) {
+  const pathname = usePathname()
+  useEffect(() => {
+    seedVia(via, pathname)
+  }, [via, pathname])
   return null
 }

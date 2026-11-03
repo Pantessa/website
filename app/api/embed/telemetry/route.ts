@@ -15,6 +15,7 @@ import { planNamesPolicyPool, policyPoolOriginFor } from '@/lib/policy-pool/venu
 import { policyPoolConfig } from '@/lib/policy-pool/config'
 import { recordPolicyPoolEvent } from '@/lib/policy-pool/ledger'
 import { recordTenantTurn } from '@/lib/tenant/blotter'
+import { claimReferralFromViaCookie } from '@/lib/share-referral'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -223,6 +224,17 @@ export async function POST(req: NextRequest) {
     } catch {
       /* fail-soft */
     }
+  }
+  // The share that pays (squad five-million, PERPS 2026-11-03): a connect-only
+  // signer who came in on `?via=` (a chart / live / deck share, or the creator
+  // page's ViaSeed) never passed the SIWE door, so the `yf_via` cookie
+  // ViaTracker set on landing is read HERE — the same evidence class as
+  // wallet_arrivals.via (the SIWE door reads this very cookie into that row)
+  // and nothing more: never a body field (a beacon's `via` is ignored). Same
+  // fences as the link referral above — a COUNTED sign only, a link's creator
+  // wins the turn, never internal, never self, write-once (lib/share-referral).
+  if (outcome === 'signed' && counted && !intentLinkSlug && walletAddress && !internalRun && req.cookies.get('yf_via')?.value) {
+    await Promise.race([claimReferralFromViaCookie({ wallet: walletAddress, via: req.cookies.get('yf_via')?.value, landing: req.cookies.get('yf_via_landing')?.value ?? null, internal: false }), new Promise((r) => setTimeout(r, 2000))]).catch(() => null)
   }
   // Every trade you sign refills your chat (pricing v2): a VERIFIED receipt
   // banks answers from the fee it paid — to the embed HOST for a keyed embed

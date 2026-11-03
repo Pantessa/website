@@ -36035,6 +36035,22 @@ async function main() {
     await plansMod.plansLivePins(check, BASE, (a) => signIn(a))
   }
 
+
+  // ── five-million/perps — THE TRADER'S LOOP (squad five-million, 2026-11-03) ──
+  // Alerts to Telegram with the chip link (lib/telegram, the one notification
+  // path, the bell's line), the referral carried on every share and claimed
+  // from the server's own arrival record (lib/share-referral, the SIWE door,
+  // ShareLive, the creator page), the HL creator-earnings rate; fixtures on
+  // the TEST DB are deleted after. The Telegram routes' webhook round-trip
+  // runs only when the server under test carries TELEGRAM_BOT_TOKEN +
+  // TELEGRAM_BOT_NAME and this process TELEGRAM_WEBHOOK_SECRET (named skips
+  // otherwise). scripts/perps-pins.ts is the one source; `npm run pins:perps`.
+  console.log('— perps (five-million): telegram alerts, the share referral, the HL rate')
+  {
+    const { perpsPins } = await import('./perps-pins')
+    await perpsPins(check, { base: BASE })
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
