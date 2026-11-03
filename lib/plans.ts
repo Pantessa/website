@@ -24,7 +24,11 @@
 //
 // THE DESK PLANS (squad five-million, 2026-11-03). Agent ($49) and Desk
 // ($499) price the governed desk — tenants, scoped desk keys, the policy
-// gate, the blotter — not answers, so their `credits` are 0. What each one
+// gate, the blotter — and INCLUDE Plus's monthly answer pool (their
+// `credits` are read from the Plus entry, never retyped), so a Plus
+// subscriber loses nothing by upgrading and a desk operator can still ask
+// the chart. Enterprise carries the same pool, so "Everything in Desk"
+// stays true on the page. What each one
 // buys lives in lib/tenant/entitlements.ts (entitlementsFor); the lines a page
 // prints are DESK_PLAN_FEATURES below, written from that table so a page can
 // never promise a cap the gate does not hold. Enterprise is hand-sold: a
@@ -33,9 +37,10 @@
 // ids for the desk plans come ONLY from env (STRIPE_PRODUCT_AGENT /
 // STRIPE_PRODUCT_DESK): the new entity's Stripe account mints new ids.
 //
-// One wallet holds one plan (subscriptions.owner_address is unique), so a
-// Plus subscriber who buys Desk gives up Plus's allowance — checkout refuses
-// a second paid plan instead of double-billing (app/api/billing/checkout).
+// One wallet holds one plan (subscriptions.owner_address is unique), so
+// checkout refuses a second paid plan instead of double-billing
+// (app/api/billing/checkout); the desk plans carry Plus's pool, so moving up
+// from Plus gives nothing away.
 //
 // Pure config: /pricing, the dashboard and the billing APIs all read this.
 // Client components import it, so it imports nothing that needs Node.
@@ -169,6 +174,17 @@ export function countWords(n: number, one: string, many: string): string {
   return `${cap} ${n === 1 ? one : many}`
 }
 
+/** The one line that says a desk plan carries Plus's answers. */
+export function includedAnswersLine(credits: number): string {
+  return `Plus’s answers included: ${credits.toLocaleString('en-US')} house answers a month`
+}
+
+/** The house answers a desk tier carries each month: Plus's pool on every
+ *  paid desk tier, none in the sandbox (it keeps the free daily taste). */
+export function deskTierAnswers(id: DeskPlanId): number {
+  return id === 'free' ? 0 : PLUS_PLAN.credits
+}
+
 export function deskFeatureLines(id: DeskPlanId): DeskFeatureLine[] {
   const e = entitlementsFor(id)
   const lines: DeskFeatureLine[] = []
@@ -187,6 +203,8 @@ export function deskFeatureLines(id: DeskPlanId): DeskFeatureLine[] {
   if (e.blotterExport) lines.push({ text: 'Export the blotter as CSV' })
   if (e.approvals) lines.push({ text: 'Maker-checker: a second admin approves policy changes and large orders' })
   if (e.statement) lines.push({ text: 'A monthly statement' })
+  const answers = deskTierAnswers(id)
+  if (answers > 0) lines.push({ text: includedAnswersLine(answers) })
   if (e.hooks) lines.push({ text: 'Pre- and post-trade hooks', soon: true })
   return lines
 }
@@ -194,6 +212,30 @@ export function deskFeatureLines(id: DeskPlanId): DeskFeatureLine[] {
 /** A desk plan's Plan.highlights: the same lines, `soon` ones marked. */
 function deskHighlights(id: DeskPlanId): string[] {
   return deskFeatureLines(id).map((f) => (f.soon ? `${f.text} (coming)` : f.text))
+}
+
+/** Plus — the house-answers plan. A const of its own so the desk plans can
+ *  carry its allowance by reference (PLUS_PLAN.credits), never by a retyped
+ *  number. */
+const PLUS_PLAN: Plan = {
+  id: 'plus',
+  name: 'Plus',
+  tagline: 'For people who ask more than they trade',
+  priceUsd: 9,
+  yearlyUsd: 79,
+  // 600, not 300: the first measured week (inference_calls, 2026-09-18) put
+  // a house answer at $0.0003–0.0014, far under the $0.03 estimate the
+  // fuses are sized on. The maxed-plan rule is held at 1.5¢ an answer — ten
+  // times the measured cost — so a maxed month still never exceeds its price.
+  credits: 600,
+  popular: true,
+  highlights: [
+    'Everything in Free',
+    '600 house answers a month, on top of the daily free ones',
+    'Market briefs and "explain this" without the hourly limit',
+    'Earned and bought answers still stack, and never expire',
+    'Early access to new agents',
+  ],
 }
 
 export const PLANS: Plan[] = [
@@ -212,26 +254,7 @@ export const PLANS: Plan[] = [
       'Bring your own API key: unlimited answers, free',
     ],
   },
-  {
-    id: 'plus',
-    name: 'Plus',
-    tagline: 'For people who ask more than they trade',
-    priceUsd: 9,
-    yearlyUsd: 79,
-    // 600, not 300: the first measured week (inference_calls, 2026-09-18) put
-    // a house answer at $0.0003–0.0014, far under the $0.03 estimate the
-    // fuses are sized on. The maxed-plan rule is held at 1.5¢ an answer — ten
-    // times the measured cost — so a maxed month still never exceeds its price.
-    credits: 600,
-    popular: true,
-    highlights: [
-      'Everything in Free',
-      '600 house answers a month, on top of the daily free ones',
-      'Market briefs and "explain this" without the hourly limit',
-      'Earned and bought answers still stack, and never expire',
-      'Early access to new agents',
-    ],
-  },
+  PLUS_PLAN,
   {
     id: 'growth',
     name: 'Growth',
@@ -261,7 +284,8 @@ export const PLANS: Plan[] = [
     tagline: 'For one agent trading a real wallet',
     priceUsd: 49,
     yearlyUsd: 490,
-    credits: 0,
+    // Plus's monthly pool, included (read from Plus, never retyped).
+    credits: PLUS_PLAN.credits,
     family: 'desk',
     highlights: deskHighlights('agent'),
   },
@@ -271,7 +295,7 @@ export const PLANS: Plan[] = [
     tagline: 'For a desk: several books and a second pair of eyes',
     priceUsd: 499,
     yearlyUsd: 4990,
-    credits: 0,
+    credits: PLUS_PLAN.credits,
     family: 'desk',
     highlights: deskHighlights('desk'),
   },
@@ -280,7 +304,7 @@ export const PLANS: Plan[] = [
     name: 'Enterprise',
     tagline: 'For a firm: your custody, your terms, one statement a month',
     priceUsd: 0,
-    credits: 0,
+    credits: PLUS_PLAN.credits,
     family: 'desk',
     handSold: true,
     highlights: deskHighlights('enterprise'),

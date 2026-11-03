@@ -7,17 +7,18 @@
 // management through the Stripe Billing Portal, the key through
 // /api/billing/ai-key (session only; the key is never sent back).
 //
-// The desk plans (Agent, Desk, hand-sold Enterprise — 2026-11-03) carry no
-// answer allowance: they price the desk. For them the plan card says what
-// the plan buys, the answers card stops counting "0 of 0", and THE DESK card
-// lists the tenant entitlements (GET /api/billing/plan `desk`, read from
-// lib/tenant/entitlements) with the way to /desk.
+// The desk plans (Agent, Desk, hand-sold Enterprise — 2026-11-03) price the
+// desk and carry Plus's monthly answer pool. For them the plan card says what
+// the plan buys, THE DESK card lists the tenant entitlements (GET
+// /api/billing/plan `desk`, read from lib/tenant/entitlements) plus the one
+// "Plus's answers included" line, with the way to /desk. Any plan with no
+// allowance never prints "0 of 0" answers.
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Card, CardTitle, Kpi, SkeletonCard, timeAgo } from '@/lib/dashboard-ui'
 import type { PlanUsage } from '@/lib/billing'
-import type { Plan } from '@/lib/plans'
+import { includedAnswersLine, type Plan } from '@/lib/plans'
 import type { InferenceKeyMeta } from '@/lib/byok'
 
 interface LedgerEntry {
@@ -125,7 +126,7 @@ export default function PlanPanel() {
   const daysLeft = Math.max(0, Math.ceil((new Date(u.periodEnd).getTime() - Date.now()) / 86_400_000))
   const isPaid = u.priceUsd > 0
   const onOwnKey = !!data.aiKey.key
-  // A desk plan (Agent, Desk, Enterprise) prices the desk, not answers.
+  // A desk plan (Agent, Desk, Enterprise) prices the desk (and carries Plus's pool).
   const deskPlan = data.desk?.family === 'desk'
   const hasAllowance = u.allowance > 0
   const renewLine = u.renewsAt ? ` · renews ${new Date(u.renewsAt).toLocaleDateString()}` : ''
@@ -167,7 +168,7 @@ export default function PlanPanel() {
         </div>
       </Card>
 
-      {(deskPlan || pendingDesk) && data.desk && <DeskCard desk={data.desk} planName={u.planName} on={deskPlan} pending={pendingDesk} />}
+      {(deskPlan || pendingDesk) && data.desk && <DeskCard desk={data.desk} planName={u.planName} allowance={u.allowance} on={deskPlan} pending={pendingDesk} />}
 
       {/* where your answers come from */}
       <Card>
@@ -232,7 +233,7 @@ export default function PlanPanel() {
 
 /** THE DESK — what a desk plan lets a tenant do. Read-only: tenants and keys
  *  are made on /desk and through the desk API. */
-function DeskCard({ desk, planName, on, pending }: { desk: DeskBlock; planName: string; on: boolean; pending: string | null }) {
+function DeskCard({ desk, planName, allowance, on, pending }: { desk: DeskBlock; planName: string; allowance: number; on: boolean; pending: string | null }) {
   const e = desk.entitlements
   const cap = (n: number | null) => (n === null ? 'Unlimited' : n.toLocaleString())
   const soon = desk.features.filter((f) => f.soon)
@@ -257,6 +258,7 @@ function DeskCard({ desk, planName, on, pending }: { desk: DeskBlock; planName: 
             <Kpi label="maker-checker" value={e.approvals ? 'On' : '—'} small />
             <Kpi label="statement" value={e.statement ? 'Monthly' : '—'} small />
           </div>
+          {allowance > 0 && <p className="text-[length:var(--fs-md)] text-[color:var(--muted)] mt-3">{`${includedAnswersLine(allowance)}.`}</p>}
           {soon.length > 0 && (
             <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)] mt-3">
               Included, not built yet: {soon.map((f) => f.text.toLowerCase()).join(', ')}.

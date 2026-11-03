@@ -3,7 +3,7 @@
 // PURE (plansPins): the entitlements table (lib/tenant/entitlements) cell by
 // cell, unknown plans fall to free, the helpers (planAllows · capAllows ·
 // cheapestPlanAllowing · cheapestPlanForCap · entitlementsJson), lib/plans'
-// Agent + Desk on sale with 0 credits and NO hard-coded Stripe product id
+// Agent + Desk on sale carrying Plus's answer pool and NO hard-coded Stripe product id
 // (env only), Enterprise valid but hand-sold, Growth/Scale still retired, the
 // answers grid untouched (Free, Plus), DESK_PLAN_FEATURES written from the
 // entitlements, and the source rules (client-safe imports, nothing retyped on
@@ -38,6 +38,8 @@ import {
   countWords,
   deskFeatureLines,
   deskPlanSummary,
+  deskTierAnswers,
+  includedAnswersLine,
   isCheckoutPlan,
   isPlanId,
   planChargeUsd,
@@ -135,14 +137,15 @@ export function plansPins(check: Check): void {
   const desk = PLAN_BY_ID.desk
   const ent = PLAN_BY_ID.enterprise
   check(
-    'plans: Agent $49/mo · $490/yr and Desk $499/mo · $4,990/yr are ON SALE (not legacy, not hand-sold), family desk, credits 0 (they price the desk, not answers)',
-    agent.priceUsd === 49 && agent.yearlyUsd === 490 && desk.priceUsd === 499 && desk.yearlyUsd === 4990 &&
-      [agent, desk].every((p) => !p.legacy && !p.handSold && p.credits === 0 && planFamily(p) === 'desk' && planCreditsFor(p, new Date(0)) === 0) &&
+    // RE-PINNED 2026-11-03 (five-million, coordinator): the desk plans INCLUDE Plus's pool (was credits 0).
+    'plans: Agent $49/mo · $490/yr and Desk $499/mo · $4,990/yr are ON SALE (not legacy, not hand-sold), family desk, and carry Plus\'s monthly answer pool (credits === PLAN_BY_ID.plus.credits; a maxed month stays under the price at 1.5¢ an answer)',
+    agent.priceUsd === 49 && agent.yearlyUsd === 490 && desk.priceUsd === 499 && desk.yearlyUsd === 4990 && PLAN_BY_ID.plus.credits > 0 &&
+      [agent, desk].every((p) => !p.legacy && !p.handSold && p.credits === PLAN_BY_ID.plus.credits && planFamily(p) === 'desk' && planCreditsFor(p, new Date(0)) === PLAN_BY_ID.plus.credits && p.credits * 0.015 <= p.priceUsd) &&
       planChargeUsd(agent, 'month') === 49 && planChargeUsd(agent, 'year') === 490 && planChargeUsd(desk, 'year') === 4990,
   )
   check(
-    'plans: Enterprise is a valid plan id (a subscription row may carry it) but hand-sold — never in PAID_PLANS, DESK_PLANS or the answers grid, credits 0',
-    isPlanId('enterprise') && ent.handSold === true && ent.credits === 0 && planFamily(ent) === 'desk' &&
+    'plans: Enterprise is a valid plan id (a subscription row may carry it) but hand-sold — never in PAID_PLANS, DESK_PLANS or the answers grid; it carries Plus\'s pool too, so "Everything in Desk" is true',
+    isPlanId('enterprise') && ent.handSold === true && ent.credits === PLAN_BY_ID.plus.credits && planFamily(ent) === 'desk' &&
       !PAID_PLANS.includes(ent) && !DESK_PLANS.includes(ent) && !LISTED_PLANS.includes(ent),
   )
   const savedEnv = { agent: process.env.STRIPE_PRODUCT_AGENT, desk: process.env.STRIPE_PRODUCT_DESK }
@@ -157,6 +160,10 @@ export function plansPins(check: Check): void {
   if (savedEnv.desk === undefined) delete process.env.STRIPE_PRODUCT_DESK
   else process.env.STRIPE_PRODUCT_DESK = savedEnv.desk
   const plansSrc = code(src('lib/plans.ts'))
+  check(
+    'plans: Plus\'s allowance is typed ONCE — `credits: 600` appears only on Plus; Agent, Desk and Enterprise read `credits: PLUS_PLAN.credits`',
+    (plansSrc.match(/credits: 600\b/g) ?? []).length === 1 && (plansSrc.match(/credits: PLUS_PLAN\.credits/g) ?? []).length === 3 && PLAN_BY_ID.plus.credits === 600,
+  )
   check(
     'plans: NO hard-coded Stripe product id on the desk plans — stripeProductId absent, env unset → undefined (Stripe makes the product inline), STRIPE_PRODUCT_AGENT / _DESK win when set; the only prod_ literals left are the two retired plans',
     [agent, desk, ent].every((p) => p.stripeProductId === undefined) && unset.every((v) => v === undefined) &&
@@ -203,11 +210,17 @@ export function plansPins(check: Check): void {
   check(
     'plans: each tier\'s card lines = what it ADDS over the tier below ("Everything in Agent, plus:") — Agent adds mainnet + three keys + CSV; Desk adds five tenants + 50 keys + maker-checker + the statement + hooks; Enterprise adds the unlimited caps; nothing a tier includes is lost (adds ∪ the tier below = its features)',
     t('free').inherits === null && t('free').adds.length === t('free').features.length && t('agent').inherits === 'Sandbox' && t('desk').inherits === 'Agent' && t('enterprise').inherits === 'Desk' &&
-      t('agent').adds.map((f) => f.text).join('|') === 'One tenant on mainnet|Three desk keys|Export the blotter as CSV' &&
+      t('agent').adds.map((f) => f.text).join('|') === `One tenant on mainnet|Three desk keys|Export the blotter as CSV|${includedAnswersLine(PLAN_BY_ID.plus.credits)}` &&
       t('enterprise').adds.map((f) => f.text).join('|') === 'Unlimited tenants on mainnet|Unlimited desk keys' &&
       t('desk').adds.some((f) => /Maker-checker/.test(f.text)) && t('desk').adds.some((f) => f.soon) &&
       tiers.every((x, i) => i === 0 || x.features.every((f) => x.adds.some((a) => a.text === f.text) || tiers[i - 1].features.some((b) => b.text === f.text))),
     JSON.stringify(tiers.map((x) => x.adds.map((f) => f.text))),
+  )
+  check(
+    'plans: the answers line says it in one short line — "Plus’s answers included: 600 house answers a month", read from Plus — on every tier whose plan carries the pool (Agent, Desk, Enterprise) and never in the sandbox',
+    deskTierAnswers('free') === 0 && (['agent', 'desk', 'enterprise'] as const).every((id) => deskTierAnswers(id) === PLAN_BY_ID[id].credits && texts(id).includes(includedAnswersLine(PLAN_BY_ID.plus.credits))) &&
+      !texts('free').some((x) => /answers/i.test(x)) && includedAnswersLine(PLAN_BY_ID.plus.credits) === `Plus’s answers included: ${PLAN_BY_ID.plus.credits.toLocaleString('en-US')} house answers a month` &&
+      includedAnswersLine(PLAN_BY_ID.plus.credits).length <= 60,
   )
   check(
     'plans: hooks (wave 2, not built) are marked soon wherever a plan includes them — a page must say "coming", the Plan highlights say "(coming)"',
@@ -215,9 +228,9 @@ export function plansPins(check: Check): void {
       desk.highlights.some((h) => /hooks \(coming\)$/.test(h)) && !agent.highlights.some((h) => /hooks/.test(h)),
   )
   check(
-    'plans: the desk plans\' Plan.highlights are the same lines /pricing prints; the inline Stripe description names the desk and never "house answers"',
+    'plans: the desk plans\' Plan.highlights are the same lines /pricing prints; the inline Stripe description names the desk (never "0 house answers") and leaves out what is not built',
     agent.highlights.join('|') === deskFeatureLines('agent').map((f) => f.text).join('|') && deskPlanSummary('agent').includes('Three desk keys') &&
-      !/answers/i.test(deskPlanSummary('agent')) && !/answers/i.test(deskPlanSummary('desk')) && !/hooks/.test(deskPlanSummary('desk')),
+      !/\b0 house answers/i.test(deskPlanSummary('agent')) && !/\b0 house answers/i.test(deskPlanSummary('desk')) && !/hooks/.test(deskPlanSummary('desk')),
   )
 
   // ── source rules ─────────────────────────────────────────────────────────
@@ -260,7 +273,8 @@ export function plansPins(check: Check): void {
   check(
     '/dashboard/plan: a 0-credit plan never prints "0 house answers" — the allowance line, the meter and the "left this month" tile need hasAllowance; a desk plan says what it buys and shows THE DESK card linking /desk',
     panel.includes('const hasAllowance = u.allowance > 0') && /isPaid && hasAllowance\s*\?/.test(panel) && panel.includes('{hasAllowance && (') &&
-      panel.includes('Pays for the desk') && panel.includes('<DeskCard') && panel.includes('href="/desk"') && !/isPaid\s*\?\s*`\$\{u\.allowance/.test(panel),
+      panel.includes('Pays for the desk') && panel.includes('<DeskCard') && panel.includes('href="/desk"') && !/isPaid\s*\?\s*`\$\{u\.allowance/.test(panel) &&
+      panel.includes('includedAnswersLine(allowance)') && panel.includes('allowance > 0 &&'),
   )
   // Pricing constants the page prints, recomputed here from the spec.
   check(
@@ -397,8 +411,8 @@ export async function plansLivePins(check: Check, base: string, signIn?: (a: Pri
   }
   const fresh = await planRead(session)
   check(
-    'plans live: /api/billing/plan for a fresh wallet — answers grid free,plus (unchanged), deskPlans agent,desk at 0 credits, desk block = the free tier (1 tenant, 1 key, sandbox)',
-    fresh.plans?.map((p) => p.id).join() === 'free,plus' && fresh.deskPlans?.map((p) => p.id).join() === 'agent,desk' && fresh.deskPlans?.every((p) => p.credits === 0) === true &&
+    'plans live: /api/billing/plan for a fresh wallet — answers grid free,plus (unchanged), deskPlans agent,desk carrying Plus\'s pool, desk block = the free tier (1 tenant, 1 key, sandbox)',
+    fresh.plans?.map((p) => p.id).join() === 'free,plus' && fresh.deskPlans?.map((p) => p.id).join() === 'agent,desk' && fresh.deskPlans?.every((p) => p.credits === PLAN_BY_ID.plus.credits) === true &&
       fresh.desk?.family === 'answers' && fresh.desk?.plan === 'free' && fresh.desk?.entitlements?.tenants === 1 && fresh.desk?.entitlements?.keysPerTenant === 1 && fresh.desk?.entitlements?.mainnet === false,
     JSON.stringify(fresh.desk ?? {}).slice(0, 200),
   )
@@ -432,8 +446,8 @@ export async function plansLivePins(check: Check, base: string, signIn?: (a: Pri
   })
   const after = await planRead(session)
   check(
-    'plans live: a Stripe-signed checkout.session.completed for plan agent activates it — the effective plan is Agent, 0 answers a month, the desk block carries Agent\'s entitlements (1 tenant, 3 keys, mainnet, CSV export, no approvals)',
-    done === 200 && after.usage?.plan === 'agent' && after.usage?.allowance === 0 && after.desk?.family === 'desk' && after.desk?.plan === 'agent' &&
+    'plans live: a Stripe-signed checkout.session.completed for plan agent activates it — the effective plan is Agent with Plus\'s monthly pool as its allowance, the desk block carries Agent\'s entitlements (1 tenant, 3 keys, mainnet, CSV export, no approvals)',
+    done === 200 && after.usage?.plan === 'agent' && after.usage?.allowance === PLAN_BY_ID.plus.credits && after.desk?.family === 'desk' && after.desk?.plan === 'agent' &&
       after.desk?.entitlements?.tenants === 1 && after.desk?.entitlements?.keysPerTenant === 3 && after.desk?.entitlements?.mainnet === true &&
       after.desk?.entitlements?.blotterExport === true && after.desk?.entitlements?.approvals === false,
     `${done} ${JSON.stringify({ usage: after.usage?.plan, desk: after.desk }).slice(0, 220)}`,

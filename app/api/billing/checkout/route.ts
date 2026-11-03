@@ -113,7 +113,8 @@ export async function POST(req: NextRequest) {
         : {
             product_data: {
               name: `Pantessa ${plan.name}`,
-              // A desk plan prices the desk, not answers (credits 0).
+              // A desk plan is described by what the desk buys (it also
+              // carries Plus's answer pool — lib/plans DESK_PLAN_FEATURES).
               description: desk
                 ? `The desk — ${deskPlanSummary(plan.id as 'agent' | 'desk')}`
                 : `${plan.credits.toLocaleString('en-US')} house answers a month — ${plan.tagline}`,
