@@ -231,9 +231,15 @@ export async function POST(req: NextRequest) {
   // ViaTracker set on landing is read HERE — the same evidence class as
   // wallet_arrivals.via (the SIWE door reads this very cookie into that row)
   // and nothing more: never a body field (a beacon's `via` is ignored). Same
-  // fences as the link referral above — a COUNTED sign only, a link's creator
-  // wins the turn, never internal, never self, write-once (lib/share-referral).
-  if (outcome === 'signed' && counted && !intentLinkSlug && walletAddress && !internalRun && req.cookies.get('yf_via')?.value) {
+  // fences as the link referral above — a link's creator wins the turn, never
+  // internal, never self, write-once (lib/share-referral) — and ONE stricter:
+  // only a `verified` receipt (QA F1): the chain proved the SENDER is this
+  // wallet. An `attested` sign (hl-order, job-step — no EVM receipt to read)
+  // proves nobody, so a curl beacon naming any whale plus a cookie would bind
+  // that whale for life and stamp an arrival that poisons their later real
+  // sign-in. The link referral above still claims on `attested` — the same
+  // forged-attested class, on main since S-2 (PERPS.md § For Nate).
+  if (outcome === 'signed' && verification === 'verified' && !intentLinkSlug && walletAddress && !internalRun && req.cookies.get('yf_via')?.value) {
     await Promise.race([claimReferralFromViaCookie({ wallet: walletAddress, via: req.cookies.get('yf_via')?.value, landing: req.cookies.get('yf_via_landing')?.value ?? null, internal: false }), new Promise((r) => setTimeout(r, 2000))]).catch(() => null)
   }
   // Every trade you sign refills your chat (pricing v2): a VERIFIED receipt

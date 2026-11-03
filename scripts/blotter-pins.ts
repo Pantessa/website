@@ -283,8 +283,8 @@ export function blotterPurePins(check: Check): void {
   check('statement credit: $2M → $2,000 fee − $400 calldata = $1,600 execution due; amount due = platform + that', part.executionDueUsd === 1600 && part.amountDueUsd === 5600)
   const mix = m('2026-06', [leg(100, 0.2, 'verified', 1), leg(50, 0.1, 'attested', 2), leg(30, 0.06, null, 3), leg(1000, 2, 'mismatch', 4), leg(null, null, 'verified', 5), leg(7, 0.01, 'unverified', 6)])
   check(
-    'statement basis: verified + attested (off-chain legs) + signed-only count; a refuted (mismatch) leg never counts nor credits; an unpriced leg adds $0 and is named; an `unverified` settlement reads as signed-only',
-    mix.notionalUsd === 187 && mix.legs.verified.usd === 100 && mix.legs.attested.usd === 50 && mix.legs.signedOnly.usd === 37 && mix.legs.signedOnly.count === 2 && mix.legs.mismatch.usd === 1000 && mix.legs.unpriced === 1 && mix.calldataCreditUsd === 0.37 && mix.basis === 'verified+attested+signed' && /refuted/.test(mix.basisNote) && /signed with no settlement/.test(mix.basisNote),
+    'statement basis: verified + attested (off-chain legs) count; a signed-only leg is REPORTED and never billed until it settles (QA F7); a refuted (mismatch) leg never counts nor credits; an unpriced leg adds $0 and is named; an `unverified` settlement reads as signed-only',
+    mix.notionalUsd === 150 && mix.legs.verified.usd === 100 && mix.legs.attested.usd === 50 && mix.legs.signedOnly.usd === 37 && mix.legs.signedOnly.count === 2 && mix.legs.mismatch.usd === 1000 && mix.legs.unpriced === 1 && mix.calldataCreditUsd === 0.3 && mix.basis === 'verified+attested' && /refuted/.test(mix.basisNote) && /NOT counted until it settles/.test(mix.basisNote),
     `${mix.notionalUsd} ${mix.calldataCreditUsd} ${mix.basis}`,
   )
   check('statement basis: an all-verified month says so', m('2026-06', [leg(10, 0, 'verified')]).basis === 'verified' && m('2026-06', []).basis === 'none')
@@ -518,8 +518,8 @@ export async function blotterDbPins(check: Check): Promise<void> {
       const items = fake.calls.filter((c) => c.kind === 'item')
       const inv = fake.calls.find((c) => c.kind === 'invoice')
       check(
-        'statement db: a closed month cuts — notional $80,000 (verified $30K + attested $40K + signed-only $10K; the $100K mismatch excluded), the free-plan owner pays no platform fee, execution $80 − $16 calldata credit = $64 due',
-        !!cut && cut.final && !cut.existing && cut.notionalUsd === 80_000 && cut.calldataCreditUsd === 16 && !cut.platform.applies && cut.platform.dueUsd === 0 && cut.execution.feeUsd === 80 && cut.creditAppliedUsd === 16 && cut.executionDueUsd === 64 && cut.amountDueUsd === 64 && cut.legs.mismatch.usd === 100_000,
+        'statement db: a closed month cuts — notional $70,000 (verified $30K + attested $40K; the signed-only $10K is reported, not billed; the $100K mismatch excluded), the free-plan owner pays no platform fee, execution $70 − $14 calldata credit = $56 due',
+        !!cut && cut.final && !cut.existing && cut.notionalUsd === 70_000 && cut.calldataCreditUsd === 14 && !cut.platform.applies && cut.platform.dueUsd === 0 && cut.execution.feeUsd === 70 && cut.creditAppliedUsd === 14 && cut.executionDueUsd === 56 && cut.amountDueUsd === 56 && cut.legs.mismatch.usd === 100_000 && cut.legs.signedOnly.usd === 10_000,
         JSON.stringify({ n: cut?.notionalUsd, due: cut?.amountDueUsd, exec: cut?.execution.feeUsd, credit: cut?.calldataCreditUsd }),
       )
       check(
@@ -527,8 +527,8 @@ export async function blotterDbPins(check: Check): Promise<void> {
         !!again && again.existing && again.seq === cut?.seq && again.hash === cut?.hash && again.amountDueUsd === cut?.amountDueUsd && fake.calls.length === 4 && (await prisma.blotterRow.count({ where: { tenantId: st.id, kind: 'statement' } })) === 1,
       )
       check(
-        'statement db: the draft invoice — the owner\'s Stripe customer, auto_advance false, send_invoice, items-only; three items ($0 platform "included in your plan" · $80 execution · −$16 credit) in cents summing to the $64 due; idempotency keys per tenant-month',
-        inv?.params.customer === `cus_${tag}` && inv?.params.auto_advance === false && inv?.params.collection_method === 'send_invoice' && inv?.params.pending_invoice_items_behavior === 'exclude' && items.length === 3 && items.map((c) => Number(c.params.amount)).join() === '0,8000,-1600' && /included in your plan/.test(String(items[0].params.description)) && items.every((c) => c.params.invoice === 'in_fake_1' && c.params.currency === 'usd') && String(inv?.key).startsWith(`pantessa-statement:${st.id}:${ym}`) && cut?.invoice?.id === 'in_fake_1',
+        'statement db: the draft invoice — the owner\'s Stripe customer, auto_advance false, send_invoice, items-only; three items ($0 platform "included in your plan" · $70 execution · −$14 credit) in cents summing to the $56 due; idempotency keys per tenant-month',
+        inv?.params.customer === `cus_${tag}` && inv?.params.auto_advance === false && inv?.params.collection_method === 'send_invoice' && inv?.params.pending_invoice_items_behavior === 'exclude' && items.length === 3 && items.map((c) => Number(c.params.amount)).join() === '0,7000,-1400' && /included in your plan/.test(String(items[0].params.description)) && items.every((c) => c.params.invoice === 'in_fake_1' && c.params.currency === 'usd') && String(inv?.key).startsWith(`pantessa-statement:${st.id}:${ym}`) && cut?.invoice?.id === 'in_fake_1',
         JSON.stringify(items.map((c) => c.params.amount)),
       )
       const vst = await B.verifyChain(st.id)

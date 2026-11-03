@@ -269,7 +269,7 @@ broker_open { ask: "Buy $25 of ETH on Base" }`}</pre>
           <code>GET /api/tenants/:id/blotter?from&to&kind&format=json|csv</code> exports the rows (CSV needs the plan’s export entitlement). Every row
           hashes the one before it; <code>GET …/blotter/verify</code> replays the chain and answers <code>{'{ ok, rows, brokenAt? }'}</code>.{' '}
           <code>GET …/statement?ym=YYYY-MM</code> cuts the month: the platform fee (waived inside the design-partner window), the tiered execution fee on
-          receipt-verified notional (or the tenant’s flat bps), less the fees already collected inside transactions on those rows. One statement row per month per
+          settled notional — chain-verified, or venue-reported for Hyperliquid and CoW; a signature that never settled is not billed — (or the tenant’s flat bps), less the fees already collected inside transactions on those rows. One statement row per month per
           tenant; when Stripe is configured and the owner has a customer, a draft invoice carries the same three lines.
         </p>
         <h3>7. What it costs</h3>

@@ -44,14 +44,19 @@ export function isViaReferralSlug(slug: string | null | undefined): boolean {
 }
 
 /** Pure: an index of candidate wallets by their via id. Lowercases, drops
- *  anything not address-shaped, first wallet wins a (never-seen) collision. */
-export function viaIndex(wallets: Iterable<string>): Map<string, string> {
-  const index = new Map<string, string>()
+ *  anything not address-shaped. A via two DIFFERENT wallets hash to maps to
+ *  `null` — nobody (QA F2, 2026-11-03): the id is 40 bits, so a keypair
+ *  ground to a popular sharer's via (minutes on a GPU) that signs in once
+ *  would otherwise take that sharer's referrals depending on row order.
+ *  `idOf` is the seam the pin injects a colliding hasher through. */
+export function viaIndex(wallets: Iterable<string>, idOf: (wallet: string) => string = viaIdOf): Map<string, string | null> {
+  const index = new Map<string, string | null>()
   for (const raw of wallets) {
     if (typeof raw !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(raw)) continue
     const wallet = raw.toLowerCase()
-    const via = viaIdOf(wallet)
+    const via = idOf(wallet)
     if (!index.has(via)) index.set(via, wallet)
+    else if (index.get(via) !== wallet) index.set(via, null)
   }
   return index
 }
@@ -79,11 +84,13 @@ export async function candidateReferrerWallets(): Promise<string[]> {
   return rows.map((r) => r.w).filter((w): w is string => typeof w === 'string')
 }
 
-let cache: { at: number; index: Map<string, string> } | null = null
+let cache: { at: number; index: Map<string, string | null> } | null = null
 let lastMissRebuildAt = 0
-let building: Promise<Map<string, string>> | null = null
+let building: Promise<Map<string, string | null>> | null = null
+/** Collisions already logged this process (one line each, never a flood). */
+const collisionLogged = new Set<string>()
 
-async function buildIndex(): Promise<Map<string, string>> {
+async function buildIndex(): Promise<Map<string, string | null>> {
   if (building) return building
   building = (async () => {
     try {
@@ -103,18 +110,30 @@ export function resetViaIndex(): void {
   lastMissRebuildAt = 0
 }
 
-/** The wallet behind a via id, or null when no first-party record names it. */
+/** A via two wallets share resolves to NOBODY (F2) — logged once per process. */
+function resolveEntry(index: Map<string, string | null>, via: string): string | null | undefined {
+  if (!index.has(via)) return undefined
+  const hit = index.get(via)
+  if (hit === null && !collisionLogged.has(via)) {
+    collisionLogged.add(via)
+    console.warn(`[share-referral] via ${via} maps to two or more wallets — it resolves to nobody until the share_vias table (wave 2)`)
+  }
+  return hit
+}
+
+/** The wallet behind a via id; null when no first-party record names it,
+ *  and null when two or more do (a collision is nobody's, F2). */
 export async function creatorForVia(viaRaw: string): Promise<string | null> {
   const via = (viaRaw ?? '').trim()
   if (!VIA_RE.test(via)) return null
   const fresh = cache && Date.now() - cache.at < VIA_INDEX_TTL_MS ? cache.index : await buildIndex()
-  const hit = fresh.get(via)
-  if (hit) return hit
+  const known = resolveEntry(fresh, via)
+  if (known !== undefined) return known
   // A miss on a fresh index: the sharer may have appeared since the build
   // (a handle claimed a minute ago). One rebuild a minute, then give up.
   if (Date.now() - lastMissRebuildAt < VIA_INDEX_MISS_REBUILD_MS) return null
   lastMissRebuildAt = Date.now()
-  return (await buildIndex()).get(via) ?? null
+  return resolveEntry(await buildIndex(), via) ?? null
 }
 
 export type ShareReferralOutcome = 'claimed' | 'exists' | 'self' | 'unresolved' | 'internal' | 'bad-via'
@@ -146,14 +165,18 @@ export async function claimShareReferral(input: { wallet: string; via: string; i
   }
 }
 
-/** The sign site's call (app/api/embed/telemetry, a COUNTED first-party sign
- *  with no link): a connect-only signer never passed the SIWE door, so the
- *  `yf_via` cookie ViaTracker / ViaSeed set on landing is read HERE — the
- *  same evidence class as `wallet_arrivals.via` (the SIWE door reads the
- *  very same cookie into that row) and nothing more: never a body field.
- *  Stamps the arrival first (insert-only, first writer wins, as the door
- *  does), then claims under the same fences. `landing` is validated like
- *  the door's. */
+/** The sign site's call (app/api/embed/telemetry) — ONLY for a turn whose
+ *  receipt is `verified` on-chain, i.e. the SENDER of a success receipt is
+ *  the beacon's wallet (QA F1, 2026-11-03: an `attested` sign for a non-EVM
+ *  artifact proves no signer, so a curl beacon could bind any wallet to any
+ *  cookie, and the arrival stamp would poison that wallet's later real
+ *  sign-in). With the sender proven, the `yf_via` cookie ViaTracker /
+ *  ViaSeed set on landing is the same evidence class as
+ *  `wallet_arrivals.via` (the SIWE door reads the very same cookie into
+ *  that row) and nothing more: never a body field. Stamps the arrival
+ *  (insert-only, first writer wins, as the door does), then claims under
+ *  the same fences. `landing` is validated like the door's. The caller
+ *  owns the `verified` gate; this function never sees a beacon. */
 export async function claimReferralFromViaCookie(input: { wallet: string; via: string | null | undefined; landing?: string | null; internal: boolean }): Promise<ShareReferralResult | null> {
   const wallet = input.wallet.toLowerCase()
   if (input.internal) return { outcome: 'internal', creator: null }
