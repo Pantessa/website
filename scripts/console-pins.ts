@@ -24,9 +24,12 @@
 // policy_* + key_minted rows, verify ok, CSV refused naming blotterExport,
 // the statement is a preview, key + tenant pause/resume, the owner adds the
 // burner as an admin, the burner reads the tenant and is refused editing
-// admins; with DATABASE_URL (the TEST DB) the sandbox is flipped off as a
-// fixture so "Buy $400 of ETH on Base" waits for one approval, the console's
-// queue finds it, the burner approves it. Cleanup: the burner leaves the
+// admins; a custody signer is registered by proof of control (challenge →
+// its own personal_sign → POST …/signers) and removed; with DATABASE_URL (the
+// TEST DB) an active 'agent' subscription for the owner is the fixture (the
+// sandbox follows the owner's plan, QA F5) so the console leaves the sandbox,
+// exports the CSV, and "Buy $400 of ETH on Base" waits for one approval that
+// the console's queue finds and the burner approves; the row is restored. Cleanup: the burner leaves the
 // admins, the key is revoked, the tenant paused, sandbox back on, and
 // is_internal confirmed true (the route has no delete; the rows stay,
 // fenced as internal).
@@ -451,11 +454,29 @@ export async function consoleLivePins(check: Check, base: string, opts: ConsoleL
   // ── 8. approvals: an intent over the threshold, found by the queue ────
   let prisma: (typeof import('../lib/db'))['default'] | null = null
   let intentId: string | null = null
+  let restoreSub: () => Promise<void> = async () => {}
   if (process.env.DATABASE_URL) {
     prisma = (await import('../lib/db')).default
     const host = (() => { try { return new URL(process.env.DATABASE_URL!).host } catch { return '?' } })()
-    log(`  · FIXTURE: tenant ${slug} sandbox → false directly in the DB (${host}) — the free plan has no mainnet, and the sample policy is Base`)
-    await prisma.tenant.update({ where: { id: tenantId }, data: { sandbox: false } })
+    // QA F5 (TENANT round 3): the sandbox follows the OWNER's effective plan at
+    // every resolve, so a flipped column no longer leaves it. FIXTURE (the one
+    // scripts/tenant-pins.ts uses): an active 'agent' subscription row for the
+    // drive's owner on the TEST DB — the Agent plan includes mainnet — then the
+    // console's own "Leave the sandbox" PATCH; the row is deleted (or the prior
+    // one restored) at the end of this section, whatever happens.
+    const ownerLower = owner.address.toLowerCase()
+    const priorSub = await prisma.subscription.findUnique({ where: { ownerAddress: ownerLower } })
+    await prisma.subscription.upsert({ where: { ownerAddress: ownerLower }, create: { ownerAddress: ownerLower, plan: 'agent', status: 'active' }, update: { plan: 'agent', status: 'active' } })
+    log(`  · FIXTURE: an active 'agent' subscription for ${ownerLower} on the TEST DB (${host}) — the Agent plan includes mainnet; restored at the end`)
+    restoreSub = async () => {
+      if (priorSub) await prisma!.subscription.update({ where: { ownerAddress: ownerLower }, data: { plan: priorSub.plan, status: priorSub.status } }).catch(() => {})
+      else await prisma!.subscription.delete({ where: { ownerAddress: ownerLower } }).catch(() => {})
+    }
+    try {
+    const offSandbox = await api('PATCH', T, { sandbox: false })
+    check('console drive (Agent plan): Leave the sandbox → 200, the plan line reads mainnet + CSV export', offSandbox.status === 200 && offSandbox.json?.tenant?.sandbox === false && (await api('GET', T)).json?.entitlements?.blotterExport === true, JSON.stringify(offSandbox.json).slice(0, 160))
+    const csvOk = await api('GET', `${T}/blotter${blotterQuery({ format: 'csv' })}`)
+    check('console drive (Agent plan): Export CSV → 200 text/csv with the route\'s file name, prev_hash + hash columns', csvOk.status === 200 && /text\/csv/.test(csvOk.headers.get('content-type') ?? '') && fileNameOf(csvOk.headers.get('content-disposition'), 'x.csv') === `blotter-${slug}.csv` && /prev_hash/.test(csvOk.text.split('\n')[0] ?? '') && /\bhash\b/.test(csvOk.text.split('\n')[0] ?? ''), (csvOk.text.split('\n')[0] ?? '').slice(0, 160))
     const desk = deskClient(base, secret)
     const big = await desk('broker_open', { ask: 'Buy $400 of ETH on Base', agent: 'console-pins' })
     intentId = big.payload?.intentId ?? null
@@ -470,8 +491,11 @@ export async function consoleLivePins(check: Check, base: string, opts: ConsoleL
     const again = await api('POST', `${T}/intents/${intentId}/approve`, undefined, burnerCookie)
     check('console approvals (live): pressing again → 409 (DISTINCT admins) — the console shows "you approved it" instead of the button', again.status === 409 && approvalQueue((await api('GET', `${T}/blotter${blotterQuery({ kind: 'intent,policy_verdict,approval', from, limit: 1000 })}`, undefined, burnerCookie)).json?.rows ?? [], second.address).find((x) => x.intentId === intentId)?.state === 'approved')
     await desk('broker_close', { intent_id: intentId }).catch(() => null)
+    } finally {
+      await restoreSub()
+    }
   } else {
-    log('  ⚪ console approvals (live): no DATABASE_URL in the environment — the sandbox fixture, the over-threshold intent and the approval are skipped')
+    log('  ⚪ console approvals (live): no DATABASE_URL in the environment — the plan fixture, the over-threshold intent and the approval are skipped')
   }
   const ver2 = await api('GET', `${T}/blotter/verify`)
   check('console drive: after the whole drive the chain still verifies', ver2.status === 200 && ver2.json?.ok === true && ver2.json?.rows >= 10, JSON.stringify(ver2.json).slice(0, 160))
