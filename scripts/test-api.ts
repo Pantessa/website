@@ -1112,13 +1112,17 @@ async function main() {
   // connection, a wallet is free to mint); Plus is the one plan on sale;
   // Growth/Scale are retired from sale but their ids must stay valid so a
   // subscription row carrying one can never strand.
+  // RE-PINNED 2026-11-03 (five-million): the desk plans Agent + Desk went on
+  // sale beside Plus (PAID_PLANS = every plan checkout sells); the answers
+  // grid LISTED_PLANS is still Free + Plus. The desk plans' own pins are the
+  // `plans (desk plans)` block at the end (scripts/plans-pins.ts).
   check(
-    'plans: Free (0) + Plus ($9 / $79 / 600) on sale; Growth + Scale retired but still valid ids',
+    'plans: Free (0) + Plus ($9 / $79 / 600) on sale in the answers grid; checkout sells plus + the desk plans (agent, desk); Growth + Scale retired but still valid ids',
     PLAN_BY_ID.free.credits === 0 && PLAN_BY_ID.free.priceUsd === 0 &&
       PLAN_BY_ID.plus.priceUsd === 9 && PLAN_BY_ID.plus.yearlyUsd === 79 && PLAN_BY_ID.plus.credits === 600 &&
       PLAN_BY_ID.growth.legacy === true && PLAN_BY_ID.scale.legacy === true &&
       LISTED_PLANS.map((p) => p.id).join() === 'free,plus' &&
-      PAID_PLANS.map((p) => p.id).join() === 'plus' &&
+      PAID_PLANS.map((p) => p.id).join() === 'plus,agent,desk' &&
       planChargeUsd(PLAN_BY_ID.plus, 'month') === 9 && planChargeUsd(PLAN_BY_ID.plus, 'year') === 79,
   )
   // The maxed-plan rule (PRICING.md): an allowance may never cost more than
@@ -2021,7 +2025,11 @@ async function main() {
       pricingHtml.includes('Bring your own API key') &&
       pricingHtml.includes('1,000 answers') &&
       />Plus</.test(pricingHtml) &&
-      !/>Growth<|>Scale<|YEET credit|\$99|\$499/.test(pricingHtml),
+      // RE-PINNED 2026-11-03 (five-million): $499 is the DESK plan's price now
+      // (it was retired Scale's). The retired names stay banned; a $499 may
+      // appear only inside the desk section (#desk), never in the answers grid.
+      !/>Growth<|>Scale<|YEET credit|\$99/.test(pricingHtml) &&
+      (pricingHtml.indexOf('$499') === -1 || (pricingHtml.indexOf('id="desk"') > -1 && pricingHtml.indexOf('$499') > pricingHtml.indexOf('id="desk"'))),
   )
   // The refill ladder is COMPUTED from the live rates, so the page can never
   // promise a number the grant does not pay.
@@ -35987,6 +35995,18 @@ async function main() {
         )
       } else console.log('  ⚪ policy-pool try (chat): no PRIVATE_KEY in .env.local — the chat sentence is skipped')
     }
+  }
+
+  // ── PLANS (squad five-million, 2026-11-03): the desk plans on sale ────────
+  // Agent $49 / Desk $499 + the entitlements they buy (lib/tenant/entitlements),
+  // the /pricing desk section, checkout (test-mode Stripe only — a live key
+  // skips every session-creating call), a locally signed webhook activating
+  // agent, the one-plan 409. scripts/plans-pins.ts; `npm run pins:plans`.
+  console.log('— plans (desk plans)')
+  {
+    const plansMod = await import('./plans-pins')
+    plansMod.plansPins(check)
+    await plansMod.plansLivePins(check, BASE, (a) => signIn(a))
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)

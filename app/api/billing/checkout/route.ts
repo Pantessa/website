@@ -3,15 +3,24 @@ import type Stripe from 'stripe'
 import { getSessionAddress } from '@/lib/auth'
 import prisma from '@/lib/db'
 import { getStripe, billingOrigin } from '@/lib/stripe'
-import { ANSWER_PACK, PLAN_BY_ID, isBillingInterval, isPlanId, planChargeUsd, stripeProductFor } from '@/lib/plans'
+import { getEffectivePlan } from '@/lib/billing'
+import { ANSWER_PACK, PAID_PLANS, PLAN_BY_ID, deskPlanSummary, isBillingInterval, isCheckoutPlan, planChargeUsd, planFamily, stripeProductFor } from '@/lib/plans'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// Start a Stripe Checkout session. Two things are for sale (pricing v2):
+// Start a Stripe Checkout session. For sale (pricing v2 + the desk plans,
+// 2026-11-03):
 //   { plan: 'plus', interval?: 'month' | 'year' }  → the Plus subscription
+//   { plan: 'agent' | 'desk', interval? }          → a desk plan (lib/plans
+//                                                    DESK_PLANS; what it buys
+//                                                    is lib/tenant/entitlements)
 //   { pack: true }                                  → one pack of banked answers
-// Retired plans (growth | scale) are refused — nothing sells them any more.
+// Retired plans (growth | scale) and the hand-sold Enterprise are refused —
+// nothing sells them here. ONE WALLET, ONE PLAN: subscriptions are keyed by
+// owner, so a second paid subscription would bill twice while the row could
+// only remember one of them. A wallet already on a paid plan is sent to
+// Manage billing (or hello@) instead of a second checkout.
 // SIWE session only (a
 // Bearer key must not be able to start charging its owner's card). The price
 // is authored inline from lib/plans.ts (`price_data`) — the single source, so
@@ -68,11 +77,29 @@ export async function POST(req: NextRequest) {
     })
   } else {
     const planId = body.plan
-    if (!isPlanId(planId) || PLAN_BY_ID[planId].priceUsd === 0 || PLAN_BY_ID[planId].legacy) {
-      return NextResponse.json({ error: 'plan must be a plan on sale (plus), or pass { pack: true }.' }, { status: 400 })
+    if (!isCheckoutPlan(planId)) {
+      const onSale = PAID_PLANS.map((p) => p.id).join(', ')
+      return NextResponse.json({ error: `plan must be a plan on sale (${onSale}), or pass { pack: true }.` }, { status: 400 })
     }
     const plan = PLAN_BY_ID[planId]
+    const desk = planFamily(plan) === 'desk'
     const interval = isBillingInterval(body.interval) ? body.interval : 'month'
+    // One wallet, one plan (see the header). getEffectivePlan is the same
+    // read the gates use, so "already on a plan" means what it means there.
+    const current = (await getEffectivePlan(owner)).plan
+    if (current.id !== 'free') {
+      const same = current.id === plan.id
+      return NextResponse.json(
+        {
+          error: same
+            ? `This wallet is already on ${plan.name}. Manage it from your plan page.`
+            : `This wallet already pays for ${current.name}. One wallet holds one plan: cancel ${current.name} from Manage billing on your plan page first, or write to hello@pantessa.com and we will switch it by hand.`,
+          current: current.id,
+          manage: '/dashboard/plan',
+        },
+        { status: 409 },
+      )
+    }
     // Attach the code-authored price to the plan's live Stripe Product when
     // one exists; otherwise Stripe creates the product inline, so billing
     // works before the product is wired.
@@ -86,7 +113,10 @@ export async function POST(req: NextRequest) {
         : {
             product_data: {
               name: `Pantessa ${plan.name}`,
-              description: `${plan.credits.toLocaleString('en-US')} house answers a month — ${plan.tagline}`,
+              // A desk plan prices the desk, not answers (credits 0).
+              description: desk
+                ? `The desk — ${deskPlanSummary(plan.id as 'agent' | 'desk')}`
+                : `${plan.credits.toLocaleString('en-US')} house answers a month — ${plan.tagline}`,
             },
           }),
     }
@@ -95,9 +125,9 @@ export async function POST(req: NextRequest) {
       ...(customerId ? { customer: customerId } : {}),
       client_reference_id: owner,
       line_items: [{ quantity: 1, price_data: priceData }],
-      metadata: { ownerAddress: owner, plan: plan.id },
-      subscription_data: { metadata: { ownerAddress: owner, plan: plan.id } },
-      success_url: `${origin}/dashboard/plan?upgraded=1`,
+      metadata: { ownerAddress: owner, plan: plan.id, family: planFamily(plan) },
+      subscription_data: { metadata: { ownerAddress: owner, plan: plan.id, family: planFamily(plan) } },
+      success_url: desk ? `${origin}/dashboard/plan?desk=${plan.id}` : `${origin}/dashboard/plan?upgraded=1`,
       cancel_url: `${origin}/pricing`,
     })
   }
