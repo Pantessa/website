@@ -244,7 +244,7 @@ import { parseRobinhoodEthMove, parseRobinhoodFunding, parseSameChainSwapSegment
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
 import { buildFundsDetail, classifyTurn, FAILURE_PROBE_TOKENS, moneyShaped } from '../lib/ask-failure'
 import { guardSyncDrift } from './guard-sync-check'
-import { canonicalChainWord, normalizeChainWords, normalizeDollarWords } from '../lib/chain-lexicon'
+import { canonicalChainWord, canonicalFiatWords, clearFiatRates, fiatClause, fiatInAsk, normalizeChainWords, normalizeDollarWords, normalizeWorth, publishFiatRates } from '../lib/chain-lexicon'
 import {
   clampFundUsd,
   classifyStripeOnrampFailure,
@@ -284,7 +284,7 @@ import {
   STRIPE_UNSUPPORTABLE_CUSTOMER,
   STRIPE_WALLET_KEY,
 } from '../lib/onramp'
-import { parseEcbUsdRate } from '../lib/ecb-fx'
+import { parseEcbCube, parseEcbUsdRate, usdPerGbpFrom } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf, NEVER_MIND_RESUME_RE } from '../lib/funding-path'
 import { fundSegment as destinationFundSegment, LIFI_DESTINATIONS, LIFI_DESTINATION_CHAINS } from '../lib/lifi-destinations'
@@ -8975,6 +8975,136 @@ async function main() {
       const twoDollars = parseSwapIntent('Convert two dollars of ETH to USDC on Base')
       check('dollar words: the links r2 A/B phrasing is a NATIVE $2 swap (never the planner)', twoDollars.isSwap && !twoDollars.problem && twoDollars.sellAmountUsd === '2' && twoDollars.sellToken === 'ETH' && twoDollars.buyToken === 'USDC')
       check('dollar words: "long ten dollars of HYPE on hyperliquid" reaches the HL grammar', parseHlIntent('long ten dollars of HYPE on hyperliquid')?.kind === 'open')
+      // ── Euros and pounds ride the SAME slot (2026-11-03, Nate: "money
+      // conversion should work for euros too, across Uniswap, Hyperliquid and
+      // the rest"). lib/chain-lexicon canonicalizes every spelling to "€N" /
+      // "£N" and rewrites it to the dollar form ONLY at a rate published into
+      // the process (lib/ecb-fx publishes after each fetch; the route warms
+      // it before its first parse). Cold = unread, never a face-value dollar.
+      {
+        clearFiatRates()
+        const EURO_FORMS: [string, string][] = [
+          ['swap €20 of ETH for USDC on base', 'swap €20 of ETH for USDC on base'],
+          ['swap € 3 of eth', 'swap €3 of eth'],
+          ['3 euros of eth', '€3 of eth'],
+          ['three euros of eth', '€3 of eth'],
+          ['3 eur of eth', '€3 of eth'],
+          ['EUR 3 of eth', '€3 of eth'],
+          ['twenty-five euros worth of eth', '€25 worth of eth'],
+          ['a hundred euros of eth', '€100 of eth'],
+          ['€€20 of eth', '€20 of eth'],
+          ['£10 of ETH', '£10 of ETH'],
+          ['ten pounds of eth', '£10 of eth'],
+          ['GBP 10 of eth', '£10 of eth'],
+          ['5 quid of eth', '£5 of eth'],
+          ['swap 5 EURC for USDC', 'swap 5 EURC for USDC'],
+          ['swap 5 USDC for USDG', 'swap 5 USDC for USDG'],
+        ]
+        check(
+          'euros: with NO rate published every euro/pound spelling canonicalizes to €N / £N and stays there (EURC/USDC untouched)',
+          EURO_FORMS.every(([inp, out]) => normalizeDollarWords(inp) === out && canonicalFiatWords(inp) === out),
+          EURO_FORMS.filter(([inp, out]) => normalizeDollarWords(inp) !== out).map(([inp]) => `${inp} → ${normalizeDollarWords(inp)}`).join(' | '),
+        )
+        const coldSwap = parseSwapIntent('swap €20 of ETH for USDC on base')
+        const coldHl = parseHlIntent('long €20 of HYPE on hyperliquid')
+        const coldAave = parseAaveSupply('supply €25 of USDC to aave')
+        const coldMorpho = parseMorphoLend('lend €25 of USDC on morpho')
+        const coldLido = parseLidoStake('stake €20 of eth on lido')
+        const coldLidoWords = parseLidoStake('stake twenty euros of eth on lido')
+        check(
+          'euros: a euro figure is NEVER read as the same number of dollars — cold, every grammar falls out honestly (swap "say the amount", HL unsized, Aave/Morpho/Lido "how much")',
+          coldSwap.sellAmountUsd === undefined && !!coldSwap.problem &&
+            coldHl?.kind !== 'open' && (coldHl as { notionalUsd?: number } | null)?.notionalUsd === undefined &&
+            (coldAave === null || 'problem' in coldAave || coldAave.amount !== '25') &&
+            (coldMorpho === null || 'problem' in coldMorpho || coldMorpho.amount !== '25') &&
+            (coldLido === null || 'problem' in coldLido) && (coldLidoWords === null || 'problem' in coldLidoWords) &&
+            fiatInAsk('stake €20 of eth on lido')?.usd === null && fiatClause(fiatInAsk('stake €20 of eth on lido')) === null &&
+            simulateLadder('swap €20 of ETH for USDC on base').kind !== 'action' && simulateLadder('stake €20 of eth on lido').kind !== 'action',
+          JSON.stringify({ coldSwap, coldHl, coldAave, coldMorpho, coldLido }).slice(0, 300),
+        )
+        // The ECB cube carries GBP as EUR-per-GBP; USD-per-GBP is the cross.
+        const CUBE = `<gesmes:Envelope><Cube><Cube time='2026-11-03'><Cube currency='USD' rate='1.1622'/><Cube currency='JPY' rate='171.28'/><Cube currency='GBP' rate='0.87'/></Cube></Cube></gesmes:Envelope>`
+        check(
+          'euros: the ECB cube parses USD and GBP (EUR per unit) and the pound cross is USD-per-EUR ÷ GBP-per-EUR; a missing cube is null, never a guess',
+          parseEcbCube(CUBE, 'USD') === 1.1622 && parseEcbCube(CUBE, 'GBP') === 0.87 && parseEcbUsdRate(CUBE) === 1.1622 &&
+            usdPerGbpFrom(1.1622, 0.87) === 1.3359 && usdPerGbpFrom(1.1622, null) === null && parseEcbCube(`<Cube currency='USD' rate='1.1622'/>`, 'GBP') === null,
+        )
+        publishFiatRates({ EUR: { rate: 1.1622, via: 'ecb' }, GBP: { rate: 1.3359, via: 'ecb' } })
+        const WARM: [string, string][] = [
+          ['swap €20 of ETH for USDC on base', 'swap $23.24 of ETH for USDC on base'],
+          ['swap € 3 of eth', 'swap $3.49 of eth'],
+          ['3 euros of eth', '$3.49 of eth'],
+          ['three euros of eth', '$3.49 of eth'],
+          ['3 eur of eth', '$3.49 of eth'],
+          ['EUR 3 of eth', '$3.49 of eth'],
+          ['swap 20 euros orth of eth', 'swap $23.24 worth of eth'],
+          ['£10 of ETH', '$13.36 of ETH'],
+          ['ten pounds of eth', '$13.36 of eth'],
+          ['swap 5 EURC for USDC', 'swap 5 EURC for USDC'],
+          ['two dollars of ETH', '$2 of ETH'],
+        ]
+        check(
+          'euros: at a published rate every spelling becomes the canonical dollar form to the cent ("€20" → "$23.24" at 1.1622), through normalizeWorth too; dollars and EURC untouched',
+          WARM.every(([inp, out]) => normalizeWorth(inp) === out),
+          WARM.filter(([inp, out]) => normalizeWorth(inp) !== out).map(([inp]) => `${inp} → ${normalizeWorth(inp)}`).join(' | '),
+        )
+        const EURO_ASKS: [string, string][] = [
+          ['swap €20 of ETH for USDC on base', 'swap'],
+          ['long €20 of HYPE on hyperliquid', 'hyperliquid'],
+          ['supply €25 of USDC to aave', 'aave-supply'],
+          ['lend €25 of USDC on morpho', 'morpho-lend'],
+          ['stake €20 of eth on lido', 'lido'],
+          ['stake twenty euros of eth on lido', 'lido'],
+          ['long €20 of HYPE on hyperliquid, then protect my HYPE long with a 5% stop', 'jobs'],
+        ]
+        check(
+          'euros: each euro ask parses on its OWN gate as an action (swap · hyperliquid · aave · morpho · lido ×2 · jobs)',
+          EURO_ASKS.every(([ask, gate]) => simulateLadder(ask).gate === gate && simulateLadder(ask).kind === 'action'),
+          EURO_ASKS.map(([ask]) => `${ask} → ${simulateLadder(ask).gate}/${simulateLadder(ask).kind}`).join(' | '),
+        )
+        const warmSwap = parseSwapIntent('swap €20 of ETH for USDC on base')
+        const warmHl = parseHlIntent('long €20 of HYPE on hyperliquid')
+        const warmAave = parseAaveSupply('supply €25 of USDC to aave')
+        const warmMorpho = parseMorphoLend('lend €25 of USDC on morpho')
+        const warmLido = parseLidoStake('stake €20 of eth on lido')
+        const warmLidoWords = parseLidoStake('stake twenty euros of eth on lido')
+        const warmJob = compileJobAskFull('long €20 of HYPE on hyperliquid, then protect my HYPE long with a 5% stop')
+        check(
+          'euros: every parser carries the CONVERTED dollar figure (swap 23.24 · HL 23.24 · Aave 29.05 USDC · Morpho 29.05 USDC · Lido 23.24 ×2 · the job step title)',
+          warmSwap.sellAmountUsd === '23.24' && warmSwap.sellToken === 'ETH' && warmSwap.buyToken === 'USDC' &&
+            warmHl?.kind === 'open' && warmHl.notionalUsd === 23.24 && warmHl.coin === 'HYPE' &&
+            !!warmAave && !('problem' in warmAave) && warmAave.amount === '29.05' && warmAave.token === 'USDC' &&
+            !!warmMorpho && !('problem' in warmMorpho) && warmMorpho.amount === '29.05' && warmMorpho.token === 'USDC' &&
+            !!warmLido && !('problem' in warmLido) && warmLido.amountUsd === 23.24 &&
+            !!warmLidoWords && !('problem' in warmLidoWords) && warmLidoWords.amountUsd === 23.24 &&
+            !!warmJob && 'steps' in warmJob && warmJob.steps[0]?.title === 'Long $23.24 of HYPE on Hyperliquid',
+          JSON.stringify({ warmSwap, warmHl, warmAave, warmMorpho, warmLido, job: warmJob && 'steps' in warmJob ? warmJob.steps.map((st) => st.title) : warmJob }).slice(0, 400),
+        )
+        const hlChip = warmHl?.kind === 'open' ? hlCanonicalAsk(warmHl) : ''
+        const lidoChip = warmLido && !('problem' in warmLido) ? lidoStakeResume(warmLido) : ''
+        const reHl = parseHlIntent(hlChip)
+        const reLido = parseLidoStake(lidoChip)
+        check(
+          'euros: chips round-trip in DOLLARS ("long $23.24 of HYPE on hyperliquid", "Stake $23.24 of ETH on Lido") — the converted figure, never the euro, so a tap re-parses with no rate needed',
+          hlChip === 'long $23.24 of HYPE on hyperliquid' && reHl?.kind === 'open' && reHl.notionalUsd === 23.24 &&
+            lidoChip === 'Stake $23.24 of ETH on Lido' && !!reLido && !('problem' in reLido) && reLido.amountUsd === 23.24 &&
+            parseSwapIntent('Swap $23.24 of ETH for USDC on Base').sellAmountUsd === '23.24',
+          `${hlChip} | ${lidoChip}`,
+        )
+        const inAsk = fiatInAsk('stake twenty euros of eth on lido')
+        publishFiatRates({ EUR: { rate: 1.08, via: 'fallback' } })
+        const fb = fiatInAsk('swap €20 of eth for usdc')
+        check(
+          'euros: fiatInAsk reads the figure the grammars read and fiatClause names the rate — the ECB rate by name, a fallback as a fallback; a dollar ask has no clause',
+          inAsk?.currency === 'EUR' && inAsk.amount === 20 && inAsk.usd === '23.24' && inAsk.rate === 1.1622 && inAsk.via === 'ecb' &&
+            fiatClause(inAsk) === '€20 ≈ $23.24 at the ECB rate (1.1622 USD per EUR)' &&
+            fb?.usd === '21.6' && fiatClause(fb) === '€20 ≈ $21.6 at a fallback rate (1.08 USD per EUR — the ECB feed was unreachable)' &&
+            normalizeWorth('swap €20 of eth for usdc') === 'swap $21.6 of eth for usdc' &&
+            fiatInAsk('swap $20 of ETH for USDC') === null && fiatInAsk('swap 5 EURC for USDC') === null,
+          JSON.stringify({ inAsk, fb }),
+        )
+        clearFiatRates()
+      }
       // SECURITY r2: the Aave supply tail.
       const behalf = parseAaveSupply('supply 5 USDC to aave for nate.eth')
       check('aave supply: a supply naming ANOTHER wallet refuses by name (never half-parses and builds for the signer)', !!behalf && 'problem' in behalf && /can't supply on behalf of nate\.eth/.test(behalf.problem) && !!parseAaveSupply('supply 5 USDC to aave for me') && !('problem' in parseAaveSupply('supply 5 USDC to aave for me')!) && !!parseAaveSupply('supply 5 USDC into aave for the best rate'))
@@ -10726,6 +10856,46 @@ async function main() {
             /How much\?/.test(String(lidoGuidedBig.reply))),
         JSON.stringify(lidoGuidedBig).slice(0, 400),
       )
+      // ── Euro asks, live, one per converted layer (2026-11-03) ── the server
+      // warms lib/ecb-fx before its first parse, so each turn opens with the
+      // 💱 clause naming the rate, carries `fiat`, and nowhere reads the euro
+      // figure as that many dollars. Whatever the wallet can afford (a build,
+      // a funding plan, a wall) the layer answers under ITS buildPath. The
+      // rate is the live ECB's (or the stated fallback), so the dollar
+      // figure is asserted by shape, never by value.
+      {
+        type FiatTurn = Record<string, unknown> & { fiat?: { currency: string; amount: number; usd: string | null; rate: number | null; via: string | null } }
+        const euroTurn = (message: string, slugs: string[], walletAddress: string) =>
+          fetch(`${BASE}/api/chat`, {
+            method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+            body: JSON.stringify({ message, activeServers: [...rows(['uniswap', 'yeetful-tool-wallet', 'near-intents-mcp-yeetful']), ...rows(slugs)], walletAddress, history: [] }),
+          }).then((r) => r.json() as Promise<FiatTurn>)
+        const EF = '0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae'
+        const euroLive: [layer: string, message: string, slugs: string[], wallet: string, path: RegExp, euro: number][] = [
+          ['uniswap', 'swap €20 of ETH for USDC on ethereum', [], EF, /^native-swap/, 20],
+          ['hyperliquid', 'long €20 of HYPE on hyperliquid', ['hyperliquid-free'], EF, /^native-hl/, 20],
+          ['aave', 'supply €25 of USDC to aave', ['aave-free'], EF, /^native-aave/, 25],
+          ['morpho', 'lend €25 of USDC on morpho on ethereum', ['morpho-free'], EF, /^native-morpho/, 25],
+          ['lido', 'stake €20 of eth on lido', ['lido-free'], EF, /^native-lido/, 20],
+        ]
+        for (const [layer, message, slugs, wallet, path, euro] of euroLive) {
+          if (slugs.length && rows(slugs).length === 0) continue
+          const t = await euroTurn(message, slugs, wallet)
+          const reply = String(t.reply ?? '')
+          const usd = t.fiat?.usd ?? null
+          const faceValue = new RegExp(`\\$${euro}(?![\\d.])`)
+          check(
+            `euros (live, ${layer}): "${message}" opens with the 💱 clause naming the rate, carries fiat{EUR ${euro} → usd}, answers under the layer's buildPath, and never prints $${euro} at face value`,
+            t.fiat?.currency === 'EUR' && t.fiat.amount === euro && typeof usd === 'string' && usd !== String(euro) && Number(usd) > 0 &&
+              (t.fiat.via === 'ecb' || t.fiat.via === 'fallback') &&
+              new RegExp(`^💱 €${euro} ≈ \\$${usd.replace('.', '\\.')} at (?:the ECB rate|a fallback rate) \\(${t.fiat.rate} USD per EUR`).test(reply) &&
+              // The layer's own path, or the funding offer it hands a short wallet to.
+              typeof t.buildPath === 'string' && (path.test(t.buildPath) || /^native-(?:funding|lifi-fund)-offer$/.test(t.buildPath)) &&
+              !faceValue.test(reply.replace(/^💱[^\n]*/, '')),
+            JSON.stringify(t).slice(0, 400),
+          )
+        }
+      }
     }
 
     // ── Stranger phrasings (squad 2026-08-18, Ideation's ask inventory) ──
