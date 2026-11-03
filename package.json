@@ -96,6 +96,7 @@
     "pins:markets-mobile": "tsx scripts/markets-mobile-pins.ts",
     "pins:desk-page": "tsx scripts/desk-page-pins.ts",
     "pins:perps": "tsx scripts/perps-pins.ts",
+    "pins:console": "tsx scripts/console-pins.ts",
     "drill:hl-first-order": "tsx scripts/hl-first-order-drill.ts"
   },
   "dependencies": {
