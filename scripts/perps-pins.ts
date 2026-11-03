@@ -153,6 +153,22 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
     F.NET_FEE_BPS_BY_BUILD_PATH['native-hl-exec'] === F.HL_BUILDER_FEE_TENTH_BPS / 10 && F.FEE_BEARING_BUILD_PATHS.has('native-hl-exec') && Math.abs(F.creatorEarningsUsd(100_000, F.netFeeBpsFor('native-hl-exec')) - 100_000 * (F.HL_BUILDER_FEE_TENTH_BPS / 10 / 10_000) * F.CREATOR_FEE_SPLIT) < 1e-9,
   )
 
+  // ── pure: the rate the SIGNED HL action bore (Fix A, the honesty gap) ────
+  const treasury = F.TREASURY_ADDRESS
+  const hlWith = { orderRequest: { protocol: 'hyperliquid', hl: { action: { type: 'order', orders: [{ a: 4 }], grouping: 'na', builder: { b: treasury.toLowerCase(), f: F.HL_BUILDER_FEE_TENTH_BPS } } } } }
+  const hlReordered = { orderRequest: { hl: { action: { grouping: 'na', builder: { f: F.HL_BUILDER_FEE_TENTH_BPS, b: treasury.toUpperCase().replace('0X', '0x') }, orders: [{ a: 4 }], type: 'order' } } } }
+  const hlWithout = { orderRequest: { protocol: 'hyperliquid', hl: { action: { type: 'order', orders: [{ a: 4 }], grouping: 'na' } } } }
+  const hlForeign = { orderRequest: { hl: { action: { type: 'order', orders: [{ a: 4 }], grouping: 'na', builder: { b: '0x000000000000000000000000000000000000dead', f: 100 } } } } }
+  const hlLeverage = { orderRequest: { hl: { action: { type: 'updateLeverage', asset: 4 } } } }
+  check(
+    'fees (HL): feeBpsOfArtifact reads the builder field off the signed order action — present with OUR treasury → f/10 bps, whatever the key order; absent (the self-heal under the builder floor) → 0; a foreign recipient → 0; a non-order action or a non-HL artifact → undefined',
+    F.feeBpsOfArtifact(hlWith) === Math.floor(F.HL_BUILDER_FEE_TENTH_BPS / 10) && F.feeBpsOfArtifact(hlReordered) === Math.floor(F.HL_BUILDER_FEE_TENTH_BPS / 10) && F.feeBpsOfArtifact(hlWithout) === 0 && F.feeBpsOfArtifact(hlForeign) === 0 && F.feeBpsOfArtifact(hlLeverage) === undefined && F.feeBpsOfArtifact({ reply: 'x' }) === undefined && F.hlBuilderFeeBpsOfAction({ type: 'order', orders: [], builder: { b: treasury, f: 55 } }) === 5,
+  )
+  check(
+    'fees (HL): netFeeBpsForTurn honours a stamped 0 on native-hl-exec as fee-free ($0 creator earnings) and a stamped 10 as 10; a row with no stamp (legacy) keeps the env rate; a spot row with a 0 stamp still falls to its path rate; cross-chain keeps the path rule',
+    F.netFeeBpsForTurn('native-hl-exec', 0) === 0 && F.creatorEarningsUsd(1000, F.netFeeBpsForTurn('native-hl-exec', 0)) === 0 && F.netFeeBpsForTurn('native-hl-exec', 10) === 10 && F.netFeeBpsForTurn('native-hl-exec', null) === F.netFeeBpsFor('native-hl-exec') && F.netFeeBpsForTurn('native-hl-exec', undefined) === F.netFeeBpsFor('native-hl-exec') && F.netFeeBpsForTurn('native-swap-uniswap', 0) === F.SWAP_FEE_BPS && F.netFeeBpsForTurn('native-swap-uniswap', 50) === 50 && F.netFeeBpsForTurn('native-cross-chain', 50) === F.CROSS_CHAIN_NET_FEE_BPS,
+  )
+
   // ── sources ───────────────────────────────────────────────────────────────
   const exec = src('lib/alerts-exec.ts')
   check(
@@ -188,6 +204,13 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
     'source: the SIWE door claims the share referral from the server\'s OWN arrival record (claimReferralFromArrival after the wallet_arrivals stamp), never from a body field, skips internal runs, and echoes only that a claim happened — no address',
     verify.indexOf('claimReferralFromArrival({ wallet: parsed.address.toLowerCase(), internal: isInternalRun(req.headers) })') > verify.indexOf('prisma.walletArrival.createMany') && !/body\.(via|referrer|creator|ref)\b/.test(verify) && /referral = 'share'/.test(verify) && !/creator/.test(verify.slice(verify.indexOf('return NextResponse.json({ address'))),
   )
+  const telemetry = src('app/api/embed/telemetry/route.ts')
+  check(
+    'source (Fix B): the sign site claims a connect-only signer from the SERVER-readable yf_via cookie — beside the link referral, on a COUNTED sign with NO link, never internal, never a body field (no body.via is read anywhere), through claimReferralFromViaCookie',
+    /if \(outcome === 'signed' && counted && !intentLinkSlug && walletAddress && !internalRun && req\.cookies\.get\('yf_via'\)\?\.value\)/.test(telemetry) && /claimReferralFromViaCookie\(\{ wallet: walletAddress, via: req\.cookies\.get\('yf_via'\)\?\.value/.test(telemetry) && !/body\.(via|referrer|creator)\b/.test(telemetry) && telemetry.indexOf('claimReferralFromViaCookie(') > telemetry.indexOf("if (outcome === 'signed' && counted && intentLinkSlug && walletAddress && !internalRun)") && /same evidence class as/.test(telemetry),
+  )
+  const fees = src('lib/fees.ts')
+  check('source (Fix A): lib/fees stamps an HL row with the rate its signed action bore (presence + recipient, never key order) and reads a stamped 0 as fee-free on native-hl-exec; the earnings read reports the fee-free notional by name', /if \(buildPath === 'native-hl-exec' && typeof feeBps === 'number'\) return Math\.max\(0, feeBps\)/.test(fees) && /export function hlBuilderFeeBpsOfAction/.test(fees) && /b\.b\.toLowerCase\(\) !== TREASURY_ADDRESS\.toLowerCase\(\)/.test(fees) && /referredFeeFreeUsd/.test(src('app/api/intent-links/route.ts')))
   const referral = src('lib/share-referral.ts')
   check('source: the claim is write-once (createMany skipDuplicates), refuses a self-referral and an internal run, resolves the referrer from first-party records only (no request field), and the arrival reader selects only wallet_arrivals.via', /skipDuplicates: true/.test(referral) && /if \(creator === wallet\) return \{ outcome: 'self'/.test(referral) && /if \(input\.internal\) return \{ outcome: 'internal'/.test(referral) && /prisma\.walletArrival\.findUnique\(\{ where: \{ address: wallet \}, select: \{ via: true \} \}\)/.test(referral) && !/req\b|headers|cookies/.test(referral))
 
@@ -305,7 +328,12 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
       // the ledgered credit: the referred trader's HL order earns the creator 5 bps
       const notional = 1000
       await prisma.embedTurn.create({
-        data: { embedKeyId: '', origin: 'https://www.pantessa.com', sessionId: `${sessionPrefix}-1`, prompt: '', outcome: 'signed', artifact: 'hl-order', chain: 'hyperliquid', valueUsd: notional, buildPath: 'native-hl-exec', originKind: 'chat', walletAddress: trader, isInternal: false, verification: 'attested', symbols: [] },
+        data: { embedKeyId: '', origin: 'https://www.pantessa.com', sessionId: `${sessionPrefix}-1`, prompt: '', outcome: 'signed', artifact: 'hl-order', chain: 'hyperliquid', valueUsd: notional, buildPath: 'native-hl-exec', originKind: 'chat', walletAddress: trader, isInternal: false, verification: 'attested', symbols: [], feeBps: Math.floor(F.HL_BUILDER_FEE_TENTH_BPS / 10) },
+      })
+      // Fix A: an HL order that self-healed to fee-free (the stored action bore no builder field → feeBps 0) books $0 and the rail says why
+      const feeFreeUsd = 2000
+      await prisma.embedTurn.create({
+        data: { embedKeyId: '', origin: 'https://www.pantessa.com', sessionId: `${sessionPrefix}-4`, prompt: '', outcome: 'signed', artifact: 'hl-order', chain: 'hyperliquid', valueUsd: feeFreeUsd, buildPath: 'native-hl-exec', originKind: 'chat', walletAddress: trader, isInternal: false, verification: 'attested', symbols: [], feeBps: 0 },
       })
       // a fee-free leg by the same wallet earns nothing; an internal row is never counted
       await prisma.embedTurn.create({
@@ -317,12 +345,12 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
       const expectedUsd = F.creatorEarningsUsd(notional, F.netFeeBpsFor('native-hl-exec'))
       if (opts.base) {
         const { session } = await siweSignIn(opts.base, creator)
-        const earn = session ? ((await (await fetch(`${opts.base}/api/intent-links`, { headers: { cookie: session } })).json()) as { earnings?: { referredWallets?: number; referredEarnedUsd?: number; referredSignedUsd?: number; totalEarnedUsd?: number } }) : {}
+        const earn = session ? ((await (await fetch(`${opts.base}/api/intent-links`, { headers: { cookie: session } })).json()) as { earnings?: { referredWallets?: number; referredEarnedUsd?: number; referredSignedUsd?: number; referredFeeFreeUsd?: number; totalEarnedUsd?: number } }) : {}
         const e = earn.earnings
         check(
-          `referral credit (served): the creator's /chat?tab=links earnings read (GET /api/intent-links) — a creator with NO links of their own — counts the two referred wallets and credits $${expectedUsd.toFixed(2)} on the referred trader's $${notional} HL order; the deposit leg and the internal row earn nothing`,
-          !!session && e?.referredWallets === 2 && Math.abs((e?.referredEarnedUsd ?? -1) - expectedUsd) < 1e-9 && Math.abs((e?.referredSignedUsd ?? -1) - (notional + 500)) < 1e-9 && Math.abs((e?.totalEarnedUsd ?? -1) - expectedUsd) < 1e-9,
-          JSON.stringify(e ?? earn).slice(0, 240),
+          `referral credit (served): the creator's /chat?tab=links earnings read (GET /api/intent-links) — a creator with NO links of their own — counts the two referred wallets and credits $${expectedUsd.toFixed(2)} on the referred trader's $${notional} HL order that BORE the builder fee; the $${feeFreeUsd} HL order that rode fee-free earns $0 and is reported as referredFeeFreeUsd; the deposit leg and the internal row earn nothing`,
+          !!session && e?.referredWallets === 2 && Math.abs((e?.referredEarnedUsd ?? -1) - expectedUsd) < 1e-9 && Math.abs((e?.referredSignedUsd ?? -1) - (notional + 500 + feeFreeUsd)) < 1e-9 && Math.abs((e?.totalEarnedUsd ?? -1) - expectedUsd) < 1e-9 && Math.abs((e?.referredFeeFreeUsd ?? -1) - feeFreeUsd) < 1e-9,
+          JSON.stringify(e ?? earn).slice(0, 300),
         )
       } else {
         console.log('  ⚪ referral credit (served): no BASE — the earnings read over HTTP is skipped (the fixtures above prove the chain to the row)')
@@ -403,6 +431,9 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
     const stranger = privateKeyToAccount(generatePrivateKey())
     const insider = privateKeyToAccount(generatePrivateKey())
     const other = privateKeyToAccount(generatePrivateKey())
+    const connectOnly = privateKeyToAccount(generatePrivateKey())
+    const bodyClaimer = privateKeyToAccount(generatePrivateKey())
+    const beaconPrefix = `perps-beacon-${Math.random().toString(36).slice(2, 8)}`
     try {
       await prisma.creatorHandle.create({ data: { handle, creator: creatorWallet } })
       const organic = { headers: { [ORGANIC_PROBE]: '1' } }
@@ -419,9 +450,35 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
       check('http referral: an INTERNAL run\'s sign-in with the cookie stamps the (analytics) arrival but never claims a referral', internal.status === 200 && internal.body.via === creatorVia && internal.body.referral === undefined && (await prisma.referredWallet.findUnique({ where: { wallet: insider.address.toLowerCase() } })) === null, JSON.stringify(internal.body))
       const selfIn = await siweSignIn(base, creator, { cookies: [`yf_via=${creatorVia}`], ...organic })
       check('http referral: the creator signing in on their own share is never their own referral', selfIn.status === 200 && selfIn.body.referral === undefined && (await prisma.referredWallet.findUnique({ where: { wallet: creatorWallet } })) === null)
+
+      // Fix B: the CONNECT-ONLY signer (no SIWE ever) through the sign site —
+      // a first-party `signed` beacon from a page that carried ?via=<creator>
+      // rides the yf_via cookie ViaTracker set; a via claimed in the BODY is ignored.
+      const beacon = (wallet: string, extra: { cookie?: string; bodyVia?: string }) =>
+        fetch(`${base}/api/embed/telemetry`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...(extra.cookie ? { cookie: extra.cookie } : {}) },
+          body: JSON.stringify({ firstParty: true, sessionId: `${beaconPrefix}-${Math.random().toString(36).slice(2, 10)}`, page: `${base}/t/HYPE`, walletAddress: wallet, outcome: 'signed', artifact: 'hl-order', chain: 'hyperliquid', valueUsd: 25, buildPath: 'native-hl-exec', feeBps: 10, ...(extra.bodyVia ? { via: extra.bodyVia } : {}) }),
+        })
+      const cookied = await beacon(connectOnly.address, { cookie: `yf_via=${creatorVia}; yf_via_landing=/t/HYPE` })
+      const cookiedBody = (await cookied.json().catch(() => ({}))) as { ok?: boolean; verification?: string }
+      const connectRow = await prisma.referredWallet.findUnique({ where: { wallet: connectOnly.address.toLowerCase() } })
+      const connectArrival = await prisma.walletArrival.findUnique({ where: { address: connectOnly.address.toLowerCase() } })
+      check(
+        'http referral (Fix B): a connect-only signer\'s COUNTED first-party sign from a page that carried ?via=<creator> (the yf_via cookie) claims the signer for that creator at the sign site — the arrival stamped from the same cookie, the via: slug on the row — with no SIWE ever',
+        cookied.status === 200 && cookiedBody.ok === true && connectRow?.creator === creatorWallet && connectRow?.intentLinkSlug === R.viaReferralSlug(creatorVia) && connectArrival?.via === creatorVia && connectArrival?.landing === '/t/HYPE',
+        `${cookied.status} ${JSON.stringify(cookiedBody).slice(0, 120)} row=${connectRow?.intentLinkSlug ?? 'none'} arrival=${connectArrival?.via ?? 'none'}`,
+      )
+      const bodied = await beacon(bodyClaimer.address, { bodyVia: creatorVia })
+      const bodyRow = await prisma.referredWallet.findUnique({ where: { wallet: bodyClaimer.address.toLowerCase() } })
+      check('http referral (Fix B): a via CLAIMED IN THE BEACON BODY with no cookie is ignored — the sign is recorded, nobody is referred', bodied.status === 200 && bodyRow === null && (await prisma.walletArrival.findUnique({ where: { address: bodyClaimer.address.toLowerCase() } })) === null, `${bodied.status} row=${bodyRow?.creator ?? 'none'}`)
+      const selfBeacon = await beacon(creator.address, { cookie: `yf_via=${creatorVia}` })
+      check('http referral (Fix B): the creator signing on their own share at the sign site is never their own referral', selfBeacon.status === 200 && (await prisma.referredWallet.findUnique({ where: { wallet: creatorWallet } })) === null)
     } finally {
-      await prisma.referredWallet.deleteMany({ where: { wallet: { in: [stranger.address.toLowerCase(), insider.address.toLowerCase(), creatorWallet] } } }).catch(() => {})
-      await prisma.walletArrival.deleteMany({ where: { address: { in: [stranger.address.toLowerCase(), insider.address.toLowerCase(), creatorWallet] } } }).catch(() => {})
+      const wallets = [stranger.address.toLowerCase(), insider.address.toLowerCase(), creatorWallet, connectOnly.address.toLowerCase(), bodyClaimer.address.toLowerCase()]
+      await prisma.embedTurn.deleteMany({ where: { sessionId: { startsWith: beaconPrefix } } }).catch(() => {})
+      await prisma.referredWallet.deleteMany({ where: { wallet: { in: wallets } } }).catch(() => {})
+      await prisma.walletArrival.deleteMany({ where: { address: { in: wallets } } }).catch(() => {})
       await prisma.creatorHandle.deleteMany({ where: { handle } }).catch(() => {})
     }
   }

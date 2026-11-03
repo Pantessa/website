@@ -146,6 +146,28 @@ export async function claimShareReferral(input: { wallet: string; via: string; i
   }
 }
 
+/** The sign site's call (app/api/embed/telemetry, a COUNTED first-party sign
+ *  with no link): a connect-only signer never passed the SIWE door, so the
+ *  `yf_via` cookie ViaTracker / ViaSeed set on landing is read HERE — the
+ *  same evidence class as `wallet_arrivals.via` (the SIWE door reads the
+ *  very same cookie into that row) and nothing more: never a body field.
+ *  Stamps the arrival first (insert-only, first writer wins, as the door
+ *  does), then claims under the same fences. `landing` is validated like
+ *  the door's. */
+export async function claimReferralFromViaCookie(input: { wallet: string; via: string | null | undefined; landing?: string | null; internal: boolean }): Promise<ShareReferralResult | null> {
+  const wallet = input.wallet.toLowerCase()
+  if (input.internal) return { outcome: 'internal', creator: null }
+  const via = (input.via ?? '').trim()
+  if (!VIA_RE.test(via)) return null
+  const landing = input.landing && /^\/[\w\-/.]{0,80}$/.test(input.landing) ? input.landing : null
+  try {
+    await prisma.walletArrival.createMany({ data: [{ address: wallet, via, landing }], skipDuplicates: true })
+  } catch {
+    /* the arrival is analytics; the claim below reads the record that exists */
+  }
+  return claimReferralFromArrival({ wallet, internal: false })
+}
+
 /** The SIWE door's call: the wallet just proved itself; its arrival record
  *  (stamped a moment ago, or on an earlier sign-in) names the share it came
  *  in on. Reads only the server's own `wallet_arrivals` row. */
