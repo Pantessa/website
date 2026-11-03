@@ -45,6 +45,9 @@ import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicCh
 import { recoverMessageAddress } from 'viem'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { COUNTED_EVENT_WHERE, COUNTED_TURN_WHERE, reverifyPendingForSlug } from '@/lib/link-receipt-verify'
+import { assertSigner, bindJobToTenant, gatePlan, planTenantOf, regateIntent, approveUrl, tenantAgentKey, type PlanTenant, type ResolvedTenant } from '@/lib/broker-tenant'
+import { blot, TenantRefusedError, refusalSay } from '@/lib/tenant/gate'
+import { approvalCount } from '@/lib/tenant/store'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
 
@@ -71,6 +74,32 @@ export interface OpenResult {
    *  from the public feed — the one place the employer wallet is disclosed
    *  (engagement-time, never in the feed itself; security T-D1). */
   discovery?: { slotToken: string; kind: string; mandate: string; capUsd: number; wallet: string }
+  /** FIVE-MILLION: present when a tenant desk key opened the intent — the
+   *  policy's verdict on the plan, and the approval it still needs, if any. */
+  tenant?: TenantEcho
+}
+
+/** What a tenant caller hears about its own desk on every answer. */
+export interface TenantEcho {
+  slug: string
+  desk: string
+  policyVersion: number | null
+  sandbox: boolean
+  verdict: 'allowed' | 'refused'
+  venues?: string[]
+  approval?: { needed: number; have: number; approveUrl: string }
+}
+
+function tenantEcho(ctx: ResolvedTenant, t: PlanTenant, have = 0, intentId?: string): TenantEcho {
+  return {
+    slug: ctx.tenantSlug,
+    desk: ctx.deskId,
+    policyVersion: ctx.policyVersion,
+    sandbox: ctx.sandbox,
+    verdict: t.verdict,
+    ...(t.venues?.length ? { venues: t.venues } : {}),
+    ...(t.needsApproval && t.approvers && intentId ? { approval: { needed: t.approvers, have, approveUrl: approveUrl(ctx.tenantId, intentId) } } : {}),
+  }
 }
 
 /** Per-call desk options read from the MCP request (lib/internal-run.ts):
@@ -120,8 +149,13 @@ export async function openIntent(opts: {
    *  the desk's attested v4 pool — the ask gains the venue words (so the sign
    *  link's chat turn routes there too) and the plan carries `venue`. */
   venue?: unknown
+  /** FIVE-MILLION: the resolved desk key (lib/broker-tenant). Set ONLY for a
+   *  `dk_` caller; the plan is gated by the tenant's active policy before the
+   *  desk answers, and the intent is bound to the key. Retail = undefined. */
+  tenant?: ResolvedTenant | null
 }, call?: DeskCallOpts): Promise<OpenResult> {
   assertDeskOpen()
+  const tenant = opts.tenant ?? null
   let wallet = cleanWallet(opts.wallet)
   const agent = cleanAgentName(opts.agent)
   const agentKey = cleanAgentKey(opts.agentKey)
@@ -146,6 +180,10 @@ export async function openIntent(opts: {
   // ADDITIVE alongside `wallet`: after resolution the open proceeds through
   // every existing gate exactly as a wallet-targeted open.
   let discovery: OpenResult['discovery']
+  if (tenant && opts.slotToken != null && opts.slotToken !== '') {
+    throw new TenantRefusedError({ gate: 'policy', reason: 'NOT_ON_TENANT_DESK', detail: 'slot_token courts a retail roster listing — a tenant desk opens intents for its own signers.', say: refusalSay(tenant, 'NOT_ON_TENANT_DESK', 'slot_token courts a retail roster listing — a tenant desk opens intents for its own signers.') })
+  }
+  if (tenant) assertSigner(tenant, wallet)
   if (opts.slotToken != null && opts.slotToken !== '') {
     const token = typeof opts.slotToken === 'string' ? opts.slotToken.trim() : ''
     if (!/^[A-Za-z0-9_-]{6,24}$/.test(token)) throw new Error('slot_token is not a valid listing token.')
@@ -185,6 +223,11 @@ export async function openIntent(opts: {
   // 2026-09-23). Read-only and fail-soft — null means plan from the wallet.
   const venue = await readVenueFunding(opts.ask, wallet)
   const plan = planIntent(opts.ask, scan, venue)
+
+  // FIVE-MILLION: a tenant desk key's plan answers to the tenant's ACTIVE
+  // policy before the desk says anything else — default-deny, refusals by
+  // name, the intent bound to the key (lib/broker-tenant).
+  if (tenant) return openTenantIntent(tenant, plan, { wallet, agent, agentKey, callbackUrl, callbackSecret, origin, policyPool }, call)
 
   // THE ROSTER (R2): the desk derives the hash from the PRESENTED key
   // itself — a hired mandate slot binds the proposal, gates it (cap at
@@ -317,13 +360,119 @@ export async function openIntent(opts: {
   return out
 }
 
+/* ── FIVE-MILLION: the tenant open + choose (lib/broker-tenant) ──────── */
+
+/** A tenant desk key's open: the plan is judged by the tenant's ACTIVE policy
+ *  before the desk answers. The intent row is written in every case — a
+ *  refusal is a fact the blotter and broker_status keep — then a refusal
+ *  throws in the desk's own words (gate: 'policy'). */
+async function openTenantIntent(
+  ctx: ResolvedTenant,
+  plan: BrokerPlan,
+  o: { wallet: string | null; agent: string | null; agentKey: string | null; callbackUrl: string | null; callbackSecret: string | null; origin: BrokerOrigin | null; policyPool: boolean },
+  call?: DeskCallOpts,
+): Promise<OpenResult> {
+  const id = mintSlug(10)
+  // The key IS the identity: whatever agent_key the caller typed is ignored.
+  const bound = tenantAgentKey(ctx)
+  const usd = askUsd(plan.ask)
+  await blot(
+    ctx,
+    'intent',
+    { ask: plan.ask, gate: plan.quote.gate, kind: plan.quote.kind, usd, wallet: o.wallet, agent: o.agent, ...(o.agentKey && o.agentKey !== bound ? { agentKeyIgnored: true } : {}), ...(o.origin ? { origin: o.origin } : {}) },
+    { intentId: id, valueUsd: usd },
+  )
+  const v = await gatePlan(ctx, { ask: plan.ask, venue: o.policyPool ? POLICY_POOL_VENUE : undefined }, 'open', id)
+  const t = planTenantOf(ctx, v)
+  const state: BrokerState = !v.allowed ? 'refused' : v.needsApproval ? 'awaiting_approval' : 'open'
+  const stored = { ...plan, ...(o.policyPool ? { venue: POLICY_POOL_VENUE } : {}), tenant: t }
+  await prisma.brokerIntent.create({
+    data: {
+      id,
+      ask: plan.ask,
+      wallet: o.wallet,
+      agent: o.agent,
+      agentKey: bound,
+      // A tenant's flow never lands on a PUBLIC /agents track record.
+      agentKeyHash: null,
+      callbackUrl: o.callbackUrl,
+      callbackSecret: o.callbackSecret,
+      state,
+      plan: stored as object,
+      ...(o.origin ? { origin: o.origin as object } : {}),
+      isInternal: call?.internal === true,
+      tenantId: ctx.tenantId,
+      deskKeyId: ctx.keyId,
+    },
+  })
+  if (!v.allowed) {
+    const reason = v.reason ?? 'VENUE_DENIED'
+    const detail = v.detail ?? 'refused by the desk policy.'
+    throw new TenantRefusedError({ gate: 'policy', reason, detail, say: refusalSay(ctx, reason, detail), intentId: id, state: 'refused' })
+  }
+  const out: OpenResult = {
+    intentId: id,
+    state,
+    plan: stored,
+    contract: CONTRACT,
+    tenant: tenantEcho(ctx, t, 0, id),
+    ...(o.origin ? { origin: o.origin } : {}),
+    next: v.needsApproval
+      ? [
+          `Over desk "${ctx.deskId}"'s approval threshold: ${v.approvers} distinct admin approval${v.approvers === 1 ? '' : 's'} at POST ${approveUrl(ctx.tenantId, id)} (SIWE, a tenant admin).`,
+          'Poll broker_status for the count; then broker_handoff (your human signs) or broker_execute (your own wallet signs, leg by leg).',
+        ]
+      : [
+          `Admitted by the ${ctx.tenantSlug} desk policy${ctx.policyVersion != null ? ` v${ctx.policyVersion}` : ''} on ${v.venues.join(', ') || 'its venue'}. Every leg is judged again when it is built.`,
+          'broker_handoff for a human signer, or broker_execute when the intent wallet holds the key; broker_status any time.',
+        ],
+    ...(o.callbackUrl && o.callbackSecret
+      ? { callback: { url: o.callbackUrl, secret: o.callbackSecret, note: 'Saved once. Verify each webhook: X-Pantessa-Signature = "sha256=" + HMAC-SHA256(rawBody, this secret).' } }
+      : {}),
+  }
+  assertNoTxMaterial(out)
+  return out
+}
+
+/** A tenant's broker_choose: the rewritten ask is judged again (it can be a
+ *  different order — a funding route adds legs). */
+async function chooseTenantPlan(ctx: ResolvedTenant, row: { id: string; plan: unknown; origin: unknown }, plan: BrokerPlan): Promise<OpenResult> {
+  const venue = (row.plan as { venue?: unknown } | null)?.venue
+  const v = await gatePlan(ctx, { ask: plan.ask, venue }, 'choose', row.id)
+  const t = planTenantOf(ctx, v)
+  const state: BrokerState = !v.allowed ? 'refused' : v.needsApproval ? 'awaiting_approval' : 'open'
+  const stored = { ...plan, ...(venue === POLICY_POOL_VENUE ? { venue } : {}), tenant: t }
+  await prisma.brokerIntent.update({ where: { id: row.id }, data: { ask: plan.ask, plan: stored as object, state } })
+  if (!v.allowed) {
+    const reason = v.reason ?? 'VENUE_DENIED'
+    const detail = v.detail ?? 'refused by the desk policy.'
+    throw new TenantRefusedError({ gate: 'policy', reason, detail, say: refusalSay(ctx, reason, detail), intentId: row.id, state: 'refused' })
+  }
+  const out: OpenResult = {
+    intentId: row.id,
+    state,
+    plan: stored,
+    contract: CONTRACT,
+    tenant: tenantEcho(ctx, t, 0, row.id),
+    ...originField(row.origin),
+    next: v.needsApproval ? [`The rewrite is over the approval threshold: ${v.approvers} admin approval(s) at POST ${approveUrl(ctx.tenantId, row.id)}, then broker_handoff or broker_execute.`] : ['broker_handoff when the working ask is what your human should sign, or broker_execute.'],
+  }
+  assertNoTxMaterial(out)
+  return out
+}
+
 /** Choose an option: rewrite the working sentence and re-quote. The chosen
  *  resume re-enters the same parse ladder — no other negotiation channel
  *  exists, by design. */
-export async function chooseOption(intentId: string, optionId: string): Promise<OpenResult> {
+export async function chooseOption(intentId: string, optionId: string, tenant?: ResolvedTenant | null): Promise<OpenResult> {
   assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state !== 'open') throw new Error(`Intent ${intentId} is ${row.state} — choosing is over.`)
+  // An approval is for the EXACT ask the admins read: a tenant intent that
+  // already carries one cannot be rewritten under it.
+  if (tenant && row.tenantId && (await approvalCount(row.id)) > 0) {
+    throw new TenantRefusedError({ gate: 'policy', reason: 'APPROVAL_PENDING', detail: 'this intent carries admin approvals for its exact ask — open a new intent to change it.', say: refusalSay(tenant, 'APPROVAL_PENDING', 'this intent carries admin approvals for its exact ask — open a new intent to change it.'), intentId: row.id, state: row.state })
+  }
   const prior = row.plan as unknown as BrokerPlan
   const opt = prior.options.find((o) => o.id === optionId)
   if (!opt) throw new Error(`Unknown option "${optionId}" — offered: ${prior.options.map((o) => o.id).join(', ')}.`)
@@ -344,6 +493,7 @@ export async function chooseOption(intentId: string, optionId: string): Promise<
   const scan = row.wallet ? await scanFundingSources(row.wallet).catch(() => null) : null
   const venue = await readVenueFunding(opt.resume, row.wallet)
   const plan = planIntent(opt.resume, scan, venue)
+  if (tenant && row.tenantId) return chooseTenantPlan(tenant, row, plan)
   await prisma.brokerIntent.update({ where: { id: row.id }, data: { ask: plan.ask, plan: plan as object } })
   const out: OpenResult = {
     intentId: row.id,
@@ -371,10 +521,16 @@ export interface HandoffResult {
  *  intent. The link is a full /i intent link, so the human gets the entire
  *  guarded runtime (connect-to-act, funding cascade, receipts) and the
  *  broker gets the funnel to report back. */
-export async function handoffIntent(intentId: string, call?: DeskCallOpts): Promise<HandoffResult> {
+export async function handoffIntent(intentId: string, call?: DeskCallOpts, tenant?: ResolvedTenant | null): Promise<HandoffResult> {
   assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state === 'closed') throw new Error(`Intent ${intentId} is closed.`)
+  // FIVE-MILLION: re-judged with the policy active NOW, approvals counted; a
+  // refusal revokes any link already minted (lib/broker-tenant regateIntent).
+  if (tenant && row.tenantId) {
+    if (row.state === 'refused') throw new TenantRefusedError({ gate: 'policy', reason: 'REFUSED', detail: `intent ${row.id} was refused by the desk policy — open a new one.`, say: refusalSay(tenant, 'REFUSED', `intent ${row.id} was refused by the desk policy — open a new one.`), intentId: row.id, state: 'refused' })
+    await regateIntent(tenant, row, 'handoff')
+  }
   if (row.linkSlug) {
     const out = {
       intentId: row.id,
@@ -407,6 +563,7 @@ export async function handoffIntent(intentId: string, call?: DeskCallOpts): Prom
     where: { id: row.id },
     data: { state: 'handed_off', linkSlug: slug },
   })
+  if (tenant && row.tenantId) await blot(tenant, 'offered', { lane: 'human', url: `${SITE}/i/${slug}`, ask: row.ask, policyVersion: tenant.policyVersion }, { intentId: row.id })
   // THE POLICY POOL: the sign link is the hand-off the ledger watches for.
   if (planNamesPolicyPool(row.plan)) {
     const cfg = policyPoolConfig()
@@ -535,6 +692,8 @@ export interface StatusResult {
   job?: { id: string; status: string; currentStep: number; legs: { seq: number; kind: string; status: string; title: string }[] }
   /** PROVENANCE: the origin the intent was opened with, if any — echoed, never acted on. */
   origin?: BrokerOrigin
+  /** FIVE-MILLION: a tenant intent's policy verdict + approvals so far. */
+  tenant?: { slug: string; desk: string; policyVersion: number | null; verdict: string; reason?: string; approval?: { needed: number; have: number } }
   say: string
 }
 
@@ -573,6 +732,8 @@ export async function intentStatus(intentId: string): Promise<StatusResult> {
   }
 
   let state = row.state as BrokerState
+  const tenantPlan = row.tenantId ? ((row.plan as { tenant?: PlanTenant } | null)?.tenant ?? null) : null
+  const approvalsHave = row.tenantId && tenantPlan?.needsApproval ? await approvalCount(row.id) : 0
   if (state === 'handed_off' && funnel.signed > 0) state = 'signed'
   if (state !== 'closed' && funnel.settled > 0) state = 'settled'
 
@@ -612,7 +773,11 @@ export async function intentStatus(intentId: string): Promise<StatusResult> {
             ? 'Still negotiating — nothing has been handed to a human yet.'
             : state === 'declined'
               ? 'Declined — the recipient said no to this card. That is an answer, not an offense; propose differently next period.'
-              : 'Closed.'
+              : state === 'refused'
+                ? `Refused by the tenant desk policy${tenantPlan?.reason ? ` (${tenantPlan.reason})` : ''} — nothing was built or offered. Open a new intent the policy admits.`
+                : state === 'awaiting_approval'
+                  ? `Awaiting approval — ${approvalsHave} of ${tenantPlan?.approvers ?? '?'} distinct admin approvals. Call broker_handoff or broker_execute once they land.`
+                  : 'Closed.'
 
   const out: StatusResult = {
     intentId: row.id,
@@ -623,6 +788,18 @@ export async function intentStatus(intentId: string): Promise<StatusResult> {
     signedUsd: Math.round(signedUsd * 100) / 100,
     ...(jobInfo ? { job: jobInfo } : {}),
     ...originField(row.origin),
+    ...(tenantPlan
+      ? {
+          tenant: {
+            slug: tenantPlan.slug,
+            desk: tenantPlan.deskId,
+            policyVersion: tenantPlan.policyVersion,
+            verdict: tenantPlan.verdict,
+            ...(tenantPlan.reason ? { reason: tenantPlan.reason } : {}),
+            ...(tenantPlan.needsApproval ? { approval: { needed: tenantPlan.approvers ?? 0, have: approvalsHave } } : {}),
+          },
+        }
+      : {}),
     say,
   }
   assertNoTxMaterial(out)
@@ -662,10 +839,13 @@ export interface ExecuteResult {
  *  so a lying agent fails its own job closed one leg later. Every build
  *  passes the same deterministic builders + fail-closed guards + spend
  *  policy as a human turn. */
-export async function executeIntent(intentId: string, walletSignature: unknown, call?: DeskCallOpts, proof: DeskExecuteProof = {}): Promise<ExecuteResult> {
+export async function executeIntent(intentId: string, walletSignature: unknown, call?: DeskCallOpts, proof: DeskExecuteProof = {}, tenant?: ResolvedTenant | null): Promise<ExecuteResult> {
   assertDeskOpen()
   const row = await mustIntent(intentId)
-  if (row.state !== 'open') throw new Error(`Intent ${intentId} is ${row.state} — execution starts from an open intent.`)
+  const tenantRow = tenant && row.tenantId ? tenant : null
+  // A tenant intent waiting on approvals is executable once they land: the
+  // re-gate below counts them again against the compiled job.
+  if (row.state !== 'open' && !(tenantRow && row.state === 'awaiting_approval')) throw new Error(`Intent ${intentId} is ${row.state} — execution starts from an open intent.`)
   if (!row.wallet)
     throw new Error(
       'broker_execute needs the wallet that will SIGN — re-open the intent passing your agent wallet address. ' +
@@ -683,7 +863,10 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   if (!callerKey || !row.agentKey || !sameSecret(callerKey, row.agentKey)) {
     throw new Error('broker_execute needs the agent_key this intent was opened with — pass the same desk identity string you passed to broker_open.')
   }
-  assertUnderDeskCap(askUsd(row.ask))
+  // A tenant's own policy is its cap (OVER_ORDER / OVER_DAY); the retail desk
+  // ceiling governs everyone else.
+  if (!tenantRow) assertUnderDeskCap(askUsd(row.ask))
+  else assertSigner(tenantRow, row.wallet)
   // THE ROSTER (R2, T5): a roster-bound intent re-checks its slot at the
   // BUILD gate — a fire that landed after open refuses here, and the slot
   // cap re-applies against the build's own price (fail-closed when a
@@ -697,9 +880,17 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   // path by definition, so it signs the desk's consent text — bound to THIS
   // intent id + wallet — and the desk recovers the signer before any job row
   // exists. Single-use by construction: the intent must still be `open`.
-  await assertWalletProof(row.id, row.wallet, walletSignature, proof.issuedAt)
+  // FIVE-MILLION (CUSTODY): on a TENANT desk the desk key + a custody address
+  // the tenant's owner REGISTERED (tenant.signers) is the consent — a Safe has
+  // no key to personal_sign with. A signature that IS given is still verified;
+  // a wallet outside the registered list needs it exactly as before.
+  const signerConsent = !!tenantRow && tenantRow.signers.includes(row.wallet.toLowerCase())
+  const noSignature = walletSignature === undefined || walletSignature === null || walletSignature === ''
+  const consent: 'tenant-signer' | 'personal_sign' = signerConsent && noSignature ? 'tenant-signer' : 'personal_sign'
+  if (consent === 'personal_sign') await assertWalletProof(row.id, row.wallet, walletSignature, proof.issuedAt)
 
   const compiled = await compileDeskAsk(row.ask, row.wallet)
+  if (tenantRow) await regateIntent(tenantRow, row, 'execute', compiled)
 
   // The funding plan's buy, before any leg can move money (see
   // lib/venue-preflight.ts): a desk-driven job strands the employer's
@@ -709,6 +900,10 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   if (deskUnfillable) throw new Error(deskUnfillable)
 
   const job = await createJob(row.wallet, compiled, 'broker', { internal: call?.internal === true })
+  if (tenantRow) {
+    await bindJobToTenant(job.id, tenantRow)
+    await blot(tenantRow, 'intent', { stage: 'execute', consent, wallet: row.wallet, ask: row.ask, legs: compiled.steps.length }, { intentId: row.id, jobId: job.id, valueUsd: askUsd(row.ask) })
+  }
   // Kick the first build inline (the chat/jobs-API/DCA pattern) so leg 0 is
   // offered by the time the agent's first poll lands; the cron advances the
   // rest, including the waits between legs.

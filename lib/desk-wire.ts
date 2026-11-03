@@ -273,6 +273,14 @@ function staleOf(kind: DeskLegKind, artifact: Record<string, unknown> | null, st
       const expires = ms(artifact.addressExpires)
       if (expires != null) return clamp(expires)
     }
+    if (kind === 'order') {
+      // A CoW order carries its own clock: `validTo` (unix SECONDS) in the
+      // signed message. The book refuses an expired order, so sign nothing
+      // past it — ask the runner for a fresh build instead. (The SDK's
+      // src/desk.ts mirror reads the same field, five-million CUSTODY ask 3.)
+      const validTo = num(obj(obj(obj(artifact.orderRequest)?.typedData)?.message)?.validTo)
+      if (validTo != null) return clamp(validTo * 1000)
+    }
   }
   const touched = ms(step.updatedAt)
   return touched == null ? null : clamp(touched + LEG_OFFER_TTL_MS)

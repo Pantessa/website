@@ -57,6 +57,8 @@ import { deskNext, deskDone, chooseWithHistory, assertCloseAllowed } from '@/lib
 import { clientIpFrom, bumpAndCheckBrokerCall } from '@/lib/turn-limits'
 import { pricingBlock } from '@/lib/broker-pricing'
 import { isInternalRun } from '@/lib/internal-run'
+import { assertIntentCaller, assertTenantTool, deskCaller, gateServedLeg, tenantAgentKey, usableCaller } from '@/lib/broker-tenant'
+import { TenantRefusedError } from '@/lib/tenant/gate'
 
 export const maxDuration = 60
 
@@ -77,11 +79,30 @@ async function guarded<T>(run: () => Promise<T>) {
   try {
     return ok(await run())
   } catch (e) {
+    // FIVE-MILLION: a tenant policy refusal answers as JSON (gate: 'policy',
+    // reason, detail, say) so an agent reads the reason, not prose.
+    if (e instanceof TenantRefusedError) return { content: [{ type: 'text' as const, text: JSON.stringify(e.payload) }], isError: true }
     return {
       content: [{ type: 'text' as const, text: e instanceof Error ? e.message : 'Call failed.' }],
       isError: true,
     }
   }
+}
+
+/**
+ * FIVE-MILLION — THE TENANT CALLER. A request carrying `Authorization: Bearer
+ * dk_…` is a tenant desk (lib/broker-tenant): the key resolves to a tenant,
+ * its desk id and its ACTIVE policy, and every tool below answers to that
+ * policy — default-deny, refusals by name with `gate: 'policy'`, the intent
+ * bound to the key (the self-chosen agent_key is ignored). A `dk_` key that
+ * does not resolve is refused, never demoted to retail; a paused key or
+ * tenant refuses every tool but broker_status / broker_close. No key, or a
+ * `yf_` key, is the retail desk exactly as before.
+ */
+async function tenantOf(extra: unknown, tool: string) {
+  const ctx = usableCaller(await deskCaller(extra), tool)
+  assertTenantTool(ctx, tool)
+  return ctx
 }
 
 /** The desk's own contract version. Bumped whenever the tool set or the
@@ -148,8 +169,9 @@ const handler = createMcpHandler(
           'Round-trip across every settlement boundary, batched within one.',
         inputSchema: {},
       },
-      async () =>
+      async (_args, extra) =>
         guarded(async () => ({
+          ...(await tenantOf(extra, 'broker_capabilities').then((t) => (t ? { tenant: { slug: t.tenantSlug, desk: t.deskId, policyVersion: t.policyVersion, sandbox: t.sandbox, note: 'This desk key answers to the tenant policy: default-deny, every order judged before the desk answers and every leg judged again when it is built.' } } : {}))),
           version: DESK_VERSION,
           capabilities: CAPABILITIES,
           loop: {
@@ -235,7 +257,10 @@ const handler = createMcpHandler(
         },
       },
       async ({ ask, wallet, agent, agent_key, callback_url, slot_token, origin, venue }, extra) =>
-        guarded(() => openIntent({ ask, wallet, agent, agentKey: agent_key, callbackUrl: callback_url, slotToken: slot_token, origin, venue }, callOpts(extra))),
+        guarded(async () => {
+          const tenant = await tenantOf(extra, 'broker_open')
+          return openIntent({ ask, wallet, agent, agentKey: tenant ? tenantAgentKey(tenant) : agent_key, callbackUrl: callback_url, slotToken: slot_token, origin, venue, tenant }, callOpts(extra))
+        }),
     )
 
     server.registerTool(
@@ -250,11 +275,15 @@ const handler = createMcpHandler(
           option_id: z.string().min(1).max(24),
         },
       },
-      async ({ intent_id, option_id }) =>
+      async ({ intent_id, option_id }, extra) =>
         // The chosen option is KEPT on the plan (plan.chosen + plan.history):
         // a rewrite with no record of what rewrote it is a quote, a final ask,
         // and no account of how one became the other.
-        guarded(() => chooseWithHistory(intent_id, option_id, () => chooseOption(intent_id, option_id))),
+        guarded(async () => {
+          const tenant = await tenantOf(extra, 'broker_choose')
+          await assertIntentCaller(intent_id, tenant)
+          return chooseWithHistory(intent_id, option_id, () => chooseOption(intent_id, option_id, tenant))
+        }),
     )
 
     server.registerTool(
@@ -266,7 +295,12 @@ const handler = createMcpHandler(
           'they connect their own wallet, the guarded layer rebuilds and checks the ask from scratch, and only their signature moves anything. Idempotent.',
         inputSchema: { intent_id: z.string().min(4).max(24) },
       },
-      async ({ intent_id }, extra) => guarded(() => handoffIntent(intent_id, callOpts(extra))),
+      async ({ intent_id }, extra) =>
+        guarded(async () => {
+          const tenant = await tenantOf(extra, 'broker_handoff')
+          await assertIntentCaller(intent_id, tenant)
+          return handoffIntent(intent_id, callOpts(extra), tenant)
+        }),
     )
 
     server.registerTool(
@@ -289,7 +323,12 @@ const handler = createMcpHandler(
           wallet_signature: z
             .string()
             .regex(/^0x[0-9a-fA-F]{130}$/)
-            .describe('personal_sign over the consent text (see description) by the wallet this intent was opened for.'),
+            .optional()
+            .describe(
+              'personal_sign over the consent text (see description) by the wallet this intent was opened for. Required — except on a TENANT desk ' +
+                '(a dk_ key) for a wallet the tenant registered as a signer: the desk key plus the registered custody address IS the consent there ' +
+                '(a Safe cannot personal_sign). A signature that is given is always verified.',
+            ),
           issued_at: z
             .string()
             .optional()
@@ -310,7 +349,13 @@ const handler = createMcpHandler(
         },
       },
       async ({ intent_id, wallet_signature, issued_at, agent_key }, extra) =>
-        guarded(() => executeIntent(intent_id, wallet_signature, callOpts(extra), { issuedAt: issued_at, agentKey: agent_key })),
+        guarded(async () => {
+          const tenant = await tenantOf(extra, 'broker_execute')
+          await assertIntentCaller(intent_id, tenant)
+          // The retail desk always needs the consent signature (refused by name, as before).
+          if (!tenant && !wallet_signature) throw new Error('broker_execute needs wallet_signature — personal_sign over the consent text in this tool\'s description, by the wallet the intent was opened for.')
+          return executeIntent(intent_id, wallet_signature, callOpts(extra), { issuedAt: issued_at, agentKey: tenant ? tenantAgentKey(tenant) : agent_key }, tenant)
+        }),
     )
 
     // ── the agent-signed leg loop (C3) ────────────────────────────────
@@ -332,10 +377,22 @@ const handler = createMcpHandler(
           'intent was opened with — legs are served only to the agent that proved the wallet.',
         inputSchema: {
           intent_id: z.string().min(4).max(24),
-          agent_key: z.string().min(6).max(80).describe('The desk identity this intent was opened with. Legs are served to no one else.'),
+          agent_key: z
+            .string()
+            .min(6)
+            .max(80)
+            .optional()
+            .describe('The desk identity this intent was opened with. Legs are served to no one else. (A tenant desk key IS the identity — its agent_key is ignored.)'),
         },
       },
-      async ({ intent_id, agent_key }) => guarded(() => deskNext(intent_id, agent_key)),
+      async ({ intent_id, agent_key }, extra) =>
+        guarded(async () => {
+          const tenant = await tenantOf(extra, 'broker_next')
+          await assertIntentCaller(intent_id, tenant)
+          if (!tenant) return deskNext(intent_id, agent_key)
+          // A tenant leg is judged on what was BUILT before it is served.
+          return gateServedLeg(tenant, await deskNext(intent_id, tenantAgentKey(tenant)))
+        }),
     )
 
     server.registerTool(
@@ -350,7 +407,7 @@ const handler = createMcpHandler(
           'result claiming a hash the chain does not have fails the job closed one leg later. Requires the intent\u2019s bound agent_key.',
         inputSchema: {
           intent_id: z.string().min(4).max(24),
-          agent_key: z.string().min(6).max(80).describe('The desk identity this intent was opened with.'),
+          agent_key: z.string().min(6).max(80).optional().describe('The desk identity this intent was opened with. (A tenant desk key IS the identity — its agent_key is ignored.)'),
           seq: z.number().int().min(0).max(63).describe('The leg index you signed — the `seq` broker_next served.'),
           result: z
             .record(z.unknown())
@@ -358,7 +415,13 @@ const handler = createMcpHandler(
             .describe('Your evidence: txHash / chainId / txs / orderResponse / batch / detail / explorerUrl. Unknown keys are ignored and named back to you.'),
         },
       },
-      async ({ intent_id, agent_key, seq, result }, extra) => guarded(() => deskDone(intent_id, agent_key, seq, result ?? {}, callOpts(extra))),
+      async ({ intent_id, agent_key, seq, result }, extra) =>
+        guarded(async () => {
+          const tenant = await tenantOf(extra, 'broker_done')
+          await assertIntentCaller(intent_id, tenant)
+          if (!tenant) return deskDone(intent_id, agent_key, seq, result ?? {}, callOpts(extra))
+          return gateServedLeg(tenant, await deskDone(intent_id, tenantAgentKey(tenant), seq, result ?? {}, callOpts(extra)))
+        }),
     )
 
     server.registerTool(
@@ -382,7 +445,11 @@ const handler = createMcpHandler(
           agent: z.string().max(40).optional().describe('Your agent name — the byline on the link.'),
         },
       },
-      async ({ slices, chain, agent }, extra) => guarded(() => tileIntent({ slices, chain, agent }, callOpts(extra))),
+      async ({ slices, chain, agent }, extra) =>
+        guarded(async () => {
+          await tenantOf(extra, 'broker_tile')
+          return tileIntent({ slices, chain, agent }, callOpts(extra))
+        }),
     )
 
     server.registerTool(
@@ -404,7 +471,10 @@ const handler = createMcpHandler(
         },
       },
       async ({ ask, recipient, sender_label, agent, agent_key, origin }, extra) =>
-        guarded(() => sendToInbox({ ask, recipient, senderLabel: sender_label, agent, agentKey: agent_key, origin }, callOpts(extra))),
+        guarded(async () => {
+          await tenantOf(extra, 'broker_send')
+          return sendToInbox({ ask, recipient, senderLabel: sender_label, agent, agentKey: agent_key, origin }, callOpts(extra))
+        }),
     )
 
     server.registerTool(
@@ -428,9 +498,11 @@ const handler = createMcpHandler(
             ),
         },
       },
-      async ({ intent_id, agent_key }) =>
+      async ({ intent_id, agent_key }, extra) =>
         guarded(async () => {
-          await assertCloseAllowed(intent_id, agent_key)
+          const tenant = await tenantOf(extra, 'broker_close')
+          await assertIntentCaller(intent_id, tenant)
+          await assertCloseAllowed(intent_id, tenant ? tenantAgentKey(tenant) : agent_key)
           return closeIntent(intent_id)
         }),
     )
@@ -444,7 +516,12 @@ const handler = createMcpHandler(
           'guardrail-priced turns). Poll after handoff; states only move forward. Echoes the intent\u2019s origin (provenance) when one was given at open.',
         inputSchema: { intent_id: z.string().min(4).max(24) },
       },
-      async ({ intent_id }) => guarded(() => intentStatus(intent_id)),
+      async ({ intent_id }, extra) =>
+        guarded(async () => {
+          const tenant = await tenantOf(extra, 'broker_status')
+          await assertIntentCaller(intent_id, tenant)
+          return intentStatus(intent_id)
+        }),
     )
   },
   {},

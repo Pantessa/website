@@ -9,6 +9,10 @@ import {
 } from '@/lib/cow'
 import { orderValueUsd, policyCheck, COW_POLICY_HOST } from '@/lib/cow-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
+import { bookLinkSigned, joinTenantLeg, joinTenantLink, linkGate, relayGate } from '@/lib/tenant/gate'
+import type { GateOrder } from '@/lib/tenant/order'
+import { cowAppDataHash, resolveToken } from '@/lib/cow'
+import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS } from '@/lib/fees'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -71,6 +75,33 @@ export async function POST(req: NextRequest) {
     )
   }
   const valueUsd = orderValueUsd(order, chainId)
+  // FIVE-MILLION: an order a TENANT job built is re-gated with the tenant's
+  // ACTIVE policy before it reaches the book — joined from the server's own
+  // job rows (the offered step whose built order IS this order), never a
+  // body claim. A tenant signer BLOCKS: 403 { error, reason }.
+  const tenantLeg = await joinTenantLeg(from, (a) => cowArtifactIs(a, order, chainId))
+  if (tenantLeg) {
+    const refused = await relayGate(tenantLeg, 'cow-submit', { usd: valueUsd ?? null })
+    if (refused) return NextResponse.json(refused, { status: 403 })
+  }
+  // The LINK lane (no job): a wallet the tenant named, a live handed-off
+  // tenant link whose ask is a swap on this chain — re-gated as the CoW order
+  // it actually is, and booked `signed` once the book accepts it.
+  const tenantLink = tenantLeg ? null : await joinTenantLink(from, (o) => (o.op === 'swap' || o.op === 'limit') && o.chainId === chainId)
+  let linkOrder: GateOrder | null = null
+  if (tenantLink) {
+    linkOrder = {
+      ...tenantLink.base,
+      venue: 'cow',
+      candidates: ['cow'],
+      op: mode === 'limit' ? 'limit' : 'swap',
+      chainId,
+      tokens: cowLegTokens(order, chainId, tenantLink.base.tokens),
+      usd: valueUsd ?? tenantLink.base.usd,
+    }
+    const refused = await linkGate(tenantLink, 'cow-submit', linkOrder)
+    if (refused) return NextResponse.json(refused, { status: 403 })
+  }
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
@@ -123,9 +154,45 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    if (tenantLink && linkOrder) {
+      const appData = (order.appData ?? '').toLowerCase()
+      const feeBps = appData === cowAppDataHash(LINK_SWAP_FEE_BPS).toLowerCase() ? LINK_SWAP_FEE_BPS : appData === cowAppDataHash(SWAP_FEE_BPS).toLowerCase() ? SWAP_FEE_BPS : null
+      await bookLinkSigned(tenantLink, 'cow-submit', linkOrder, { valueUsd: valueUsd ?? null, feeBps, payload: { orderUid, explorerUrl, mode } })
+    }
+
     return NextResponse.json({ orderUid, explorerUrl })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'submission failed'
     return NextResponse.json({ error: `Couldn't reach the CoW order book: ${msg}` }, { status: 502 })
   }
+}
+
+/** Is this job step's built artifact THIS CoW order (same chain, tokens,
+ *  amounts, expiry, appData, receiver)? */
+function cowArtifactIs(artifact: Record<string, unknown>, order: CowOrderParameters, chainId: number): boolean {
+  const req = artifact.orderRequest as { protocol?: unknown; chainId?: unknown; typedData?: { message?: Record<string, unknown> } } | undefined
+  if (!req || req.protocol !== 'cow') return false
+  if (typeof req.chainId === 'number' && req.chainId !== chainId) return false
+  const m = req.typedData?.message
+  if (!m) return false
+  const lo = (v: unknown) => String(v ?? '').toLowerCase()
+  return (
+    lo(m.sellToken) === lo(order.sellToken) &&
+    lo(m.buyToken) === lo(order.buyToken) &&
+    String(m.sellAmount) === String(order.sellAmount) &&
+    String(m.buyAmount) === String(order.buyAmount) &&
+    Number(m.validTo) === Number(order.validTo) &&
+    lo(m.appData) === lo(order.appData) &&
+    lo(m.receiver) === lo(order.receiver)
+  )
+}
+
+/** The tokens a CoW leg touches, the way the policy lists them: the link's
+ *  own symbols when the order's two addresses ARE those symbols on this chain,
+ *  else the raw addresses (a symbol-listing rule then refuses — default-deny). */
+function cowLegTokens(order: CowOrderParameters, chainId: number, symbols: string[]): string[] {
+  const addrs = [order.sellToken.toLowerCase(), order.buyToken.toLowerCase()]
+  const bySymbol = new Map(symbols.map((sym) => [resolveToken(sym, chainId) ?? '', sym]))
+  const named = addrs.map((a) => bySymbol.get(a))
+  return named.every((n): n is string => !!n) ? named : addrs
 }
