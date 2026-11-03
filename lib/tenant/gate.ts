@@ -14,6 +14,8 @@
 // nothing in here ever returns "allowed with a warning".
 
 import prisma from '@/lib/db'
+import { Prisma } from '@prisma/client'
+import { guardianIsTestnet } from '@/lib/hl-guardian-store'
 import { recordBlotter, spentTodayUsd } from '@/lib/tenant/blotter'
 import { evaluateTenantPolicy, chainName, RISK_REDUCING_OPS } from '@/lib/tenant/policy'
 import { orderOfLeg, ordersOfPlan, type GateOrder } from '@/lib/tenant/order'
@@ -32,6 +34,13 @@ export interface GateIds {
   silent?: boolean
 }
 
+/** The network a Hyperliquid order lands on when its leg does not say — the
+ *  server's own HL network (the guardian layer's switch). Under the sandbox
+ *  an HL order is refused unless this is testnet. */
+export function serverHlNetwork(): 'mainnet' | 'testnet' {
+  return guardianIsTestnet() ? 'testnet' : 'mainnet'
+}
+
 type Ctx = TenantContext & Partial<Pick<ResolvedTenant, 'pausedBy' | 'keyRevoked' | 'tenantName'>>
 
 /** Every refusal the desk answers is a spec TenantRefusal (the door reasons
@@ -46,10 +55,18 @@ export async function tenantGate(ctx: Ctx, order: GateOrder, ids: GateIds): Prom
   // BLOTTER's spentTodayUsd THROWS when the blotter cannot be read, so a day
   // cap never silently reads $0 — an unreadable spend refuses (OVER_DAY) any
   // order a day cap governs, instead of judging it against a guess.
+  // An offered-but-unsettled leg RESERVES its dollars (QA F6): N intents
+  // executed in parallel, or an agent that broadcasts without reporting, are
+  // judged against what is signed AND what is already out for signature. The
+  // order's own intent / job is excluded (a re-judge of the same leg).
   let spent = 0
   let spendUnreadable = false
   try {
-    spent = await spentTodayUsd(ctx.tenantId, order.deskId)
+    const [signed, open] = await Promise.all([
+      spentTodayUsd(ctx.tenantId, order.deskId),
+      openOffersUsd(ctx.tenantId, order.deskId, { intentId: ids.intentId ?? null, jobId: ids.jobId ?? null }),
+    ])
+    spent = signed + open
   } catch {
     spendUnreadable = true
   }
@@ -88,8 +105,11 @@ function judgeShape(ctx: Ctx, order: GateOrder): TenantVerdict {
   for (const venue of candidates) {
     const v = evaluateTenantPolicy(ctx.policy, pause, { ...order, venue })
     if (v.allowed) {
-      if (ctx.sandbox && order.network === 'mainnet' && venue === 'hyperliquid') {
-        return { allowed: false, reason: 'SANDBOX_ONLY', detail: 'this tenant is in the sandbox — the leg targets Hyperliquid MAINNET. Testnet legs trade here; mainnet opens with a plan that includes it.' }
+      // QA F4: an HL order whose network is unknown (every plan-stage order)
+      // lands on the server's own HL network — mainnet unless the layer runs
+      // testnet — so the sandbox refuses it at open, handoff, execute and next.
+      if (ctx.sandbox && venue === 'hyperliquid' && (order.network ?? serverHlNetwork()) === 'mainnet') {
+        return { allowed: false, reason: 'SANDBOX_ONLY', detail: 'this tenant is in the sandbox — Hyperliquid here is MAINNET. Testnet legs trade in the sandbox; mainnet opens with a plan that includes it.' }
       }
       return v
     }
@@ -244,7 +264,10 @@ export async function gateTenantOffer(
   }
   if (!reason) return null
   const say = refusalSay(ctx, reason, `${detail} Leg ${step.seq + 1} was not offered and the job is canceled.`)
-  await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'failed', artifact: undefined, result: { error: say, policyRefused: reason } as object } })
+  // An explicit JSON null, never `undefined` (Prisma's "leave as is"): a
+  // refused leg must not stay servable from the row (QA F3).
+  await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'failed', artifact: Prisma.DbNull, result: { error: say, policyRefused: reason } as object } })
+  await prisma.jobStep.updateMany({ where: { jobId: job.id, status: { in: ['offered', 'pending'] } }, data: { artifact: Prisma.DbNull } })
   await prisma.job.update({ where: { id: job.id }, data: { status: 'canceled', failReason: say.slice(0, 500) } })
   if (intent) await prisma.brokerIntent.update({ where: { id: intent.id }, data: { state: 'refused' } }).catch(() => {})
   await blot(ctx, 'refused', { stage: 'offer', seq: step.seq, builder: step.builder, reason, detail }, { intentId: intent?.id ?? null, jobId: job.id, venue: order?.venue ?? null, chainId: order?.chainId ?? null, valueUsd: order?.usd ?? null })
@@ -322,24 +345,19 @@ export async function relayGate(
   return { error: refusalSay(join.ctx, v.reason, v.detail), reason: v.reason }
 }
 
-/* ── the link lane: a leg signed through a desk-minted LINK (no job) ─────
+/* ── the link lane (tx/refresh only) ─────────────────────────────────────
  *
  * broker_handoff mints /i/<slug> for a human; the human's own chat turn builds
- * the leg, so no job row exists for a relay to join. What the server DOES own:
- * the tenant-scoped broker_intents row (its linkSlug, its wallet — the signer
- * the tenant's agent named at open — and the tenant's own `signers` list, set
- * by the owner). A submission from a wallet the TENANT named, while one of its
- * handed-off links is live and that link's ask compiles to an order of the
- * same venue/chain/coin, is that tenant's leg: it is re-gated with the ACTIVE
- * policy, and (because no runner books it) its `signed` row is written here.
- * Never a body claim: the join reads only rows the tenant (or the desk) wrote.
- * The tx/refresh lane joins by the recipe's own linkSlug (the server built it;
- * omitting it only skips a REBUILD — the prebuilt calldata was gated at
- * handoff and is bounded by its own slippage). */
-
-const LINK_STATES = ['handed_off', 'signed']
-/** A sign link's binding window (the expectations table's, lib/link-receipt-verify). */
-const LINK_WINDOW_MS = 7 * 24 * 3600 * 1000
+ * the leg, so no job row exists for a relay to join. The server records no
+ * CoW order and no HL action per link (intent_link_expectations stores EVM
+ * {to, selector} only), so /api/cow/submit and /api/hl/submit join NOTHING
+ * for the link lane: such a submission is not gated, not refused and not
+ * booked on the tenant's blotter — the intent was judged at handoff (QA B2:
+ * a join by wallet let a free tenant refuse, or book, a stranger's orders).
+ * tx/refresh is different: the recipe it rebuilds carries the linkSlug the
+ * SERVER put there when it built the chain, so that rebuild is joined by
+ * slug and re-gated (omitting it only skips a rebuild; the prebuilt calldata
+ * was judged at handoff and is bounded by its own slippage). */
 
 export interface LinkJoin {
   intentId: string
@@ -347,60 +365,28 @@ export interface LinkJoin {
   ctx: ResolvedTenant
   /** The order the LINK's ask compiles to (the policy judged it at handoff). */
   base: GateOrder
-  join: 'intent-wallet' | 'tenant-signer' | 'link-slug'
 }
 
-type LinkRow = { id: string; ask: string; plan: unknown; wallet: string | null; linkSlug: string | null; tenantId: string | null; deskKeyId: string | null }
-const LINK_SELECT = { id: true, ask: true, plan: true, wallet: true, linkSlug: true, tenantId: true, deskKeyId: true } as const
-
-async function linkJoinOf(row: LinkRow, want: (o: GateOrder) => boolean, join: LinkJoin['join']): Promise<LinkJoin | null> {
-  if (!row.tenantId || !row.linkSlug) return null
+/** Join a rebuild to its tenant link by the slug the server-built recipe carries. */
+export async function joinTenantLinkBySlug(slug: string, want: (o: GateOrder) => boolean): Promise<LinkJoin | null> {
+  if (!slug) return null
+  const row = await prisma.brokerIntent
+    .findFirst({ where: { linkSlug: slug, tenantId: { not: null } }, select: { id: true, ask: true, plan: true, linkSlug: true, tenantId: true, deskKeyId: true } })
+    .catch(() => null)
+  if (!row?.tenantId || !row.linkSlug) return null
   const ctx = await tenantContextForJob(row)
   if (!ctx) return null
   const orders = ordersOfPlan({ ask: row.ask, venue: (row.plan as { venue?: unknown } | null)?.venue }, ctx.deskId) ?? []
   const base = orders.find(want)
-  return base ? { intentId: row.id, linkSlug: row.linkSlug, ctx, base, join } : null
+  return base ? { intentId: row.id, linkSlug: row.linkSlug, ctx, base } : null
 }
 
-/** Join a relay submission from `wallet` to a live tenant LINK (see above). */
-export async function joinTenantLink(wallet: string, want: (o: GateOrder) => boolean): Promise<LinkJoin | null> {
-  if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) return null
-  const w = wallet.toLowerCase()
-  const signerOf = await prisma.tenant.findMany({ where: { signers: { array_contains: [w] } }, select: { id: true } }).catch(() => [])
-  const rows = await prisma.brokerIntent
-    .findMany({
-      where: {
-        tenantId: { not: null },
-        linkSlug: { not: null },
-        state: { in: LINK_STATES },
-        updatedAt: { gte: new Date(Date.now() - LINK_WINDOW_MS) },
-        OR: [{ wallet: w }, ...(signerOf.length ? [{ tenantId: { in: signerOf.map((t) => t.id) } }] : [])],
-      },
-      orderBy: { updatedAt: 'desc' },
-      take: 20,
-      select: LINK_SELECT,
-    })
-    .catch(() => [] as LinkRow[])
-  for (const row of rows) {
-    const j = await linkJoinOf(row, want, row.wallet === w ? 'intent-wallet' : 'tenant-signer')
-    if (j) return j
-  }
-  return null
-}
-
-/** Join by the link slug a server-built recipe carries (tx/refresh). */
-export async function joinTenantLinkBySlug(slug: string, want: (o: GateOrder) => boolean): Promise<LinkJoin | null> {
-  if (!slug) return null
-  const row = await prisma.brokerIntent.findFirst({ where: { linkSlug: slug, tenantId: { not: null } }, select: LINK_SELECT }).catch(() => null)
-  return row ? linkJoinOf(row, want, 'link-slug') : null
-}
-
-/** Re-gate a link-lane leg with the ACTIVE policy (approvals counted). null =
- *  allowed; otherwise the 403 body, after a `refused` row. */
-export async function linkGate(join: LinkJoin, relay: 'hl-submit' | 'cow-submit' | 'tx-refresh', leg: GateOrder): Promise<{ error: string; reason: TenantRefusal } | null> {
-  const v = await tenantGate(join.ctx, leg, { stage: 'relay', intentId: join.intentId, note: `${relay} via link ${join.linkSlug} (${join.join})` })
+/** Re-gate a joined link rebuild with the ACTIVE policy (approvals counted).
+ *  null = allowed; otherwise the 403 body, after a `refused` row. */
+export async function linkGate(join: LinkJoin, relay: 'tx-refresh', leg: GateOrder): Promise<{ error: string; reason: TenantRefusal } | null> {
+  const v = await tenantGate(join.ctx, leg, { stage: 'relay', intentId: join.intentId, note: `${relay} via link ${join.linkSlug}` })
   const refuse = async (reason: TenantRefusal, detail: string) => {
-    await blot(join.ctx, 'refused', { relay, lane: 'human', linkSlug: join.linkSlug, join: join.join, reason, detail }, { intentId: join.intentId, venue: leg.venue, chainId: leg.chainId, valueUsd: leg.usd })
+    await blot(join.ctx, 'refused', { relay, lane: 'human', linkSlug: join.linkSlug, reason, detail }, { intentId: join.intentId, venue: leg.venue, chainId: leg.chainId, valueUsd: leg.usd })
     return { error: refusalSay(join.ctx, reason, detail), reason }
   }
   if (!v.allowed) return refuse(v.reason, v.detail)
@@ -411,21 +397,101 @@ export async function linkGate(join: LinkJoin, relay: 'hl-submit' | 'cow-submit'
   return null
 }
 
-/** The `signed` row for a link-lane leg the venue ACCEPTED — the one place
- *  that books it (no runner owns it; BLOTTER's beacon path books only
- *  chain-VERIFIED EVM turns, and a CoW/HL turn never verifies there).
- *  `attested`: the venue accepted the wallet's signature; no chain receipt. */
-export async function bookLinkSigned(
-  join: LinkJoin,
-  relay: 'hl-submit' | 'cow-submit',
-  leg: GateOrder,
-  e: { valueUsd: number | null; feeBps?: number | null; txHash?: string | null; payload: Record<string, unknown> },
-): Promise<void> {
-  const feeUsd = e.valueUsd != null && e.feeBps != null ? Math.round(e.valueUsd * e.feeBps) / 10_000 : null
-  await blot(
-    join.ctx,
-    'signed',
-    { lane: 'human', relay, linkSlug: join.linkSlug, join: join.join, op: leg.op, tokens: leg.tokens, side: leg.side, policyVersion: join.ctx.policyVersion, ...e.payload },
-    { intentId: join.intentId, venue: leg.venue, chainId: leg.chainId, valueUsd: e.valueUsd, feeBps: e.feeBps ?? null, feeUsd, txHash: e.txHash ?? null, verification: 'attested' },
-  )
+/* ── reserved spend: offered-but-unsettled legs (QA F6) ──────────────────
+ *
+ * The day cap reads BLOTTER's spentTodayUsd (signed rows) PLUS every leg the
+ * desk put out for signature today that has not resolved: a `build` (ok) or
+ * `offered` row whose job is still live and whose (job, leg) has no later
+ * `signed` / `refused` / `settled` row, and a human-lane `offered` link whose
+ * intent is still handed off with no later `signed` row. The latest offer of
+ * a leg counts once. Throws when the blotter cannot be read (the gate then
+ * refuses OVER_DAY, never a guessed $0). */
+
+const LIVE_JOB_STATES = ['running', 'waiting_signature', 'waiting_settlement']
+const CLOSING_KINDS = new Set(['signed', 'refused', 'settled'])
+
+export async function openOffersUsd(tenantId: string, deskId: string, exclude: { intentId?: string | null; jobId?: string | null } = {}, now = new Date()): Promise<number> {
+  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const rows = await prisma.blotterRow.findMany({
+    where: { tenantId, deskId, createdAt: { gte: dayStart }, kind: { in: ['build', 'offered', 'signed', 'refused', 'settled'] } },
+    select: { seq: true, kind: true, jobId: true, intentId: true, valueUsd: true, payload: true },
+    orderBy: { seq: 'asc' },
+  })
+  const open = new Map<string, { usd: number; jobId: string | null; intentId: string | null }>()
+  for (const r of rows) {
+    const p = (r.payload ?? {}) as { seq?: unknown; ok?: unknown; lane?: unknown }
+    const legSeq = typeof p.seq === 'number' ? p.seq : null
+    const key = r.jobId ? (legSeq != null ? `j:${r.jobId}:${legSeq}` : null) : r.intentId ? `i:${r.intentId}` : null
+    if (!key) continue
+    if (CLOSING_KINDS.has(r.kind)) {
+      open.delete(key)
+      continue
+    }
+    if (r.kind === 'build' && p.ok !== true) continue
+    if (r.kind === 'offered' && !r.jobId && p.lane !== 'human') continue
+    if (exclude.jobId && r.jobId === exclude.jobId) continue
+    if (exclude.intentId && r.intentId === exclude.intentId) continue
+    open.set(key, { usd: typeof r.valueUsd === 'number' && Number.isFinite(r.valueUsd) ? r.valueUsd : 0, jobId: r.jobId, intentId: r.intentId })
+  }
+  if (open.size === 0) return 0
+  const jobIds = [...new Set([...open.values()].map((o) => o.jobId).filter((x): x is string => !!x))]
+  const intentIds = [...new Set([...open.values()].filter((o) => !o.jobId).map((o) => o.intentId).filter((x): x is string => !!x))]
+  const [liveJobs, liveLinks] = await Promise.all([
+    jobIds.length ? prisma.job.findMany({ where: { id: { in: jobIds }, status: { in: LIVE_JOB_STATES } }, select: { id: true } }) : Promise.resolve([]),
+    intentIds.length ? prisma.brokerIntent.findMany({ where: { id: { in: intentIds }, state: 'handed_off' }, select: { id: true } }) : Promise.resolve([]),
+  ])
+  const liveJob = new Set(liveJobs.map((j) => j.id))
+  const liveLink = new Set(liveLinks.map((i) => i.id))
+  let usd = 0
+  for (const o of open.values()) {
+    if (o.jobId ? liveJob.has(o.jobId) : o.intentId ? liveLink.has(o.intentId) : false) usd += o.usd
+  }
+  return Math.round(usd * 100) / 100
+}
+
+/* ── withdrawal: pause / revoke / refusal take back what is out (QA F3) ── */
+
+/** Cancel a tenant's (or one key's) live jobs and wipe every offered or
+ *  pending artifact to an explicit JSON null, and close + revoke its live
+ *  handed-off links. One `refused` row per job withdrawn. Returns counts. */
+export async function withdrawTenantOffers(scope: { tenantId: string; keyId?: string | null; deskId?: string | null }, reason: TenantRefusal, detail: string): Promise<{ jobs: number; links: number }> {
+  const jobs = await prisma.job.findMany({
+    where: { tenantId: scope.tenantId, ...(scope.keyId ? { deskKeyId: scope.keyId } : {}), status: { in: [...LIVE_JOB_STATES, 'paused'] } },
+    select: { id: true, deskKeyId: true },
+  })
+  for (const j of jobs) {
+    await prisma.jobStep.updateMany({ where: { jobId: j.id, status: { in: ['offered', 'pending', 'running'] } }, data: { artifact: Prisma.DbNull } })
+    await prisma.jobStep.updateMany({ where: { jobId: j.id, status: 'offered' }, data: { status: 'pending' } })
+    await prisma.job.update({ where: { id: j.id }, data: { status: 'canceled', failReason: `${reason}: ${detail}`.slice(0, 500) } })
+    const intent = await prisma.brokerIntent.findFirst({ where: { jobId: j.id }, select: { id: true } })
+    if (intent) await prisma.brokerIntent.update({ where: { id: intent.id }, data: { state: 'closed' } }).catch(() => {})
+    await blot({ tenantId: scope.tenantId, keyId: j.deskKeyId ?? undefined, deskId: scope.deskId ?? undefined }, 'refused', { stage: 'withdraw', reason, detail }, { intentId: intent?.id ?? null, jobId: j.id })
+  }
+  const links = await prisma.brokerIntent.findMany({
+    where: { tenantId: scope.tenantId, ...(scope.keyId ? { deskKeyId: scope.keyId } : {}), state: { in: ['handed_off', 'open', 'awaiting_approval'] }, linkSlug: { not: null } },
+    select: { id: true, linkSlug: true, deskKeyId: true },
+  })
+  for (const l of links) {
+    if (l.linkSlug) await prisma.intentLink.update({ where: { id: l.linkSlug }, data: { revoked: true } }).catch(() => {})
+    await prisma.brokerIntent.update({ where: { id: l.id }, data: { state: 'closed' } }).catch(() => {})
+    await blot({ tenantId: scope.tenantId, keyId: l.deskKeyId ?? undefined, deskId: scope.deskId ?? undefined }, 'refused', { stage: 'withdraw', lane: 'human', linkSlug: l.linkSlug, reason, detail }, { intentId: l.id })
+  }
+  return { jobs: jobs.length, links: links.length }
+}
+
+/**
+ * The Jobs REST channel (`GET /api/jobs/:id?t=`): before a tenant job's
+ * offered artifact is served, the tenant must be active, the key live, and
+ * the leg admitted by the policy active NOW (gateTenantOffer — a refusal
+ * fails the step, cancels the job and nulls the artifact). Returns the
+ * refusal to answer with, or null to serve as is.
+ */
+export async function recheckTenantJob(job: { id: string; tenantId: string | null; deskKeyId: string | null; steps: { id: string; seq: number; builder: string; params: unknown; kind: string; status: string; artifact: unknown; valueUsd: number | null }[] }): Promise<{ reason: TenantRefusal; say: string } | null> {
+  if (!job.tenantId) return null
+  for (const step of job.steps) {
+    if (step.status !== 'offered' || !step.artifact || typeof step.artifact !== 'object') continue
+    const refused = await gateTenantOffer(job, step, { artifact: step.artifact as Record<string, unknown>, valueUsd: step.valueUsd })
+    if (refused) return refused
+  }
+  return null
 }

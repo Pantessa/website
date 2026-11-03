@@ -25,6 +25,7 @@
 // retail desk is gated exactly as main today.
 
 import prisma from '@/lib/db'
+import { Prisma } from '@prisma/client'
 import { cancelJob, getJobWithSteps } from '@/lib/jobs-runner'
 import type { CompiledJob } from '@/lib/jobs'
 import { resolveDeskCaller, approvalCount, type DeskCaller, type ResolvedTenant } from '@/lib/tenant/store'
@@ -124,10 +125,36 @@ export async function assertIntentCaller(intentId: unknown, ctx: ResolvedTenant 
 
 /** A tenant may name a wallet only from its custody list (when it keeps one). */
 export function assertSigner(ctx: ResolvedTenant, wallet: string | null | undefined): void {
-  if (!wallet || ctx.signers.length === 0) return
-  if (!ctx.signers.includes(wallet.toLowerCase())) {
-    throw refusal('SIGNER_DENIED', `${wallet.toLowerCase()} is not one of the ${ctx.tenantSlug} desk's signers (${ctx.signers.length} on file) — a tenant leg is offered only to its own custody.`, ctx)
+  if (!wallet) return
+  const w = wallet.toLowerCase()
+  if (ctx.signers.length > 0 && !ctx.signers.includes(w)) {
+    throw refusal('SIGNER_DENIED', `${w} is not one of the ${ctx.tenantSlug} desk's signers (${ctx.signers.length} on file) — a tenant leg is offered only to its own custody.`, ctx)
   }
+  // The policy's maker-checked custody list binds too (QA B1): when the ACTIVE
+  // policy names its signing wallets, no other wallet carries a tenant leg.
+  const named = policySigningWallets(ctx)
+  if (named && !named.includes(w)) {
+    throw refusal('SIGNER_DENIED', `${w} is not one of the signing wallets the active policy${ctx.policyVersion != null ? ` v${ctx.policyVersion}` : ''} names (${named.length}).`, ctx)
+  }
+}
+
+/** The active policy's `signing.wallets`, lowercased — null when it names none. */
+export function policySigningWallets(ctx: Pick<ResolvedTenant, 'policy'>): string[] | null {
+  const list = ctx.policy?.signing?.wallets
+  return Array.isArray(list) && list.length > 0 ? list.map((x) => x.toLowerCase()) : null
+}
+
+/**
+ * May this wallet execute WITHOUT its own personal_sign consent? Only a
+ * custody address that PROVED control to be registered (tenant.signers is
+ * written only by POST /api/tenants/:id/signers with a verified signature)
+ * AND — when the active policy names signing wallets — is in that list too.
+ * The caller still refuses the shortcut for a job with an `auto` step.
+ */
+export function consentFreeSigner(ctx: Pick<ResolvedTenant, 'signers' | 'policy'>, wallet: string): boolean {
+  const w = wallet.toLowerCase()
+  const named = policySigningWallets(ctx)
+  return ctx.signers.includes(w) && (!named || named.includes(w))
 }
 
 /* ── the gate at each desk stage ─────────────────────────────────────── */
@@ -230,6 +257,8 @@ export async function gateServedLeg<T extends DeskDriveResult>(ctx: ResolvedTena
   const fail = async (reason: TenantRefusal, detail: string): Promise<never> => {
     await blot(ctx, 'refused', { stage: 'leg', seq: leg.seq, reason, detail }, { intentId: out.intentId, jobId: out.jobId, venue: order?.venue ?? null, chainId: order?.chainId ?? null, valueUsd: order?.usd ?? null })
     await cancelJob(out.jobId, out.wallet).catch(() => false)
+    // The refused leg must not stay servable from the row (QA F3): explicit JSON null.
+    await prisma.jobStep.updateMany({ where: { jobId: out.jobId, status: { in: ['offered', 'pending'] } }, data: { artifact: Prisma.DbNull } }).catch(() => {})
     await prisma.brokerIntent.update({ where: { id: out.intentId }, data: { state: 'refused' } }).catch(() => {})
     throw refusal(reason, `${detail} Leg ${leg.seq + 1} was not served and the job is canceled.`, ctx, { intentId: out.intentId, state: 'refused', jobId: out.jobId, seq: leg.seq })
   }

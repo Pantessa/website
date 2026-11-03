@@ -33,6 +33,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     await advanceJob(job).catch(() => {})
     job = (await getJobWithSteps(id)) ?? job
   }
+  // FIVE-MILLION (TENANT, QA F3): a TENANT job's offered artifact is served
+  // only while the tenant is active, its desk key live, and the leg admitted
+  // by the policy active NOW. Otherwise nothing is served — the step fails,
+  // the job is canceled, the artifact is nulled (lib/tenant/gate) — and the
+  // answer carries the reason.
+  if (job.tenantId) {
+    const { recheckTenantJob } = await import('@/lib/tenant/gate')
+    const refused = await recheckTenantJob(job)
+    if (refused) {
+      const after = (await getJobWithSteps(id)) ?? job
+      return NextResponse.json({ job: { ...after, steps: after.steps.map((st) => ({ ...st, artifact: null })) }, tenantRefusal: refused }, { status: 403 })
+    }
+  }
   return NextResponse.json({ job })
 }
 

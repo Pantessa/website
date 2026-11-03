@@ -26,8 +26,9 @@ import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 
 import { createSiweMessage } from 'viem/siwe'
 import { evaluateTenantPolicy, validatePolicyDoc, withinHours, SAMPLE_POLICY, TESTNET_CHAIN_IDS } from '../lib/tenant/policy'
 import { ordersOfPlan, orderOfLeg, orderOfPlan, venueOfBuildPath, swapCandidates } from '../lib/tenant/order'
-import { judge } from '../lib/tenant/gate'
-import { deskKeyPresented, generateDeskKey, hashDeskKey } from '../lib/tenant/store'
+import { judge, serverHlNetwork } from '../lib/tenant/gate'
+import { consentFreeSigner, policySigningWallets } from '../lib/broker-tenant'
+import { deskKeyPresented, generateDeskKey, hashDeskKey, liveSignerNonces, mintSignerChallenge, signerChallengeText, signerNonceOk } from '../lib/tenant/store'
 import { DESK_KEY_RE, type TenantOrder, type TenantPolicyDoc } from '../lib/tenant/spec'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -93,7 +94,10 @@ export function tenantPurePins(check: Check): void {
   check('tenant policy: an overnight window (22:00–06:00, Mondays) admits Mon 23:00 and the Tue 02:00 tail, refuses Tue 23:00', withinHours(RICH.desks[1].hours!, Date.UTC(2026, 10, 2, 23, 0)) && withinHours(RICH.desks[1].hours!, Date.UTC(2026, 10, 3, 2, 0)) && !withinHours(RICH.desks[1].hours!, Date.UTC(2026, 10, 3, 23, 0)))
   check('tenant policy: a zone the runtime cannot read fails CLOSED', !withinHours({ tz: 'Mars/Olympus', from: '00:00', to: '23:59', days: [0, 1, 2, 3, 4, 5, 6] }, Date.now()))
   check('tenant policy: SANDBOX_ONLY for a mainnet chain on a sandbox tenant; Base Sepolia (84532) passes', reason(evaluateTenantPolicy(SAMPLE_POLICY, { status: 'active', sandbox: true }, order({ venue: 'cow', tokens: ['USDC', 'ETH'] }))) === 'SANDBOX_ONLY' && TESTNET_CHAIN_IDS.has(84532) && reason(evaluateTenantPolicy({ ...SAMPLE_POLICY, venues: [{ venue: 'transfer', chains: [84532] }] }, { status: 'active', sandbox: true }, order({ venue: 'transfer', op: 'transfer', chainId: 84532, tokens: ['USDC'], side: null }))) === 'allowed')
-  check('tenant policy: Hyperliquid on a sandbox tenant passes the PURE gate (no chain id); the leg gate refuses a MAINNET leg by its network', reason(evaluateTenantPolicy(RICH, { status: 'active', sandbox: true }, order({ venue: 'hyperliquid', op: 'perp-open', chainId: null, tokens: ['HYPE'], side: 'long' }))) === 'allowed' && reason(judge({ ...ctxOf(RICH), sandbox: true }, { ...order({ venue: 'hyperliquid', op: 'perp-open', chainId: null, tokens: ['HYPE'], side: 'long' }), network: 'mainnet' })) === 'SANDBOX_ONLY' && reason(judge({ ...ctxOf(RICH), sandbox: true }, { ...order({ venue: 'hyperliquid', op: 'perp-open', chainId: null, tokens: ['HYPE'], side: 'long' }), network: 'testnet' })) === 'allowed')
+  const hlo = order({ venue: 'hyperliquid', op: 'perp-open', chainId: null, tokens: ['HYPE'], side: 'long' })
+  check('tenant policy: Hyperliquid passes the PURE engine on a sandbox (no chain id) — the gate decides it by network', reason(evaluateTenantPolicy(RICH, { status: 'active', sandbox: true }, hlo)) === 'allowed')
+  check('tenant gate (F4): under the sandbox an HL order whose network is UNKNOWN (every plan-stage order) is the server\'s HL network — mainnet here — and refuses SANDBOX_ONLY; a stated mainnet leg refuses; a testnet leg passes', process.env.HL_GUARDIAN_TESTNET !== 'true' && serverHlNetwork() === 'mainnet' && reason(judge({ ...ctxOf(RICH), sandbox: true }, hlo)) === 'SANDBOX_ONLY' && reason(judge({ ...ctxOf(RICH), sandbox: true }, { ...hlo, network: 'mainnet' })) === 'SANDBOX_ONLY' && reason(judge({ ...ctxOf(RICH), sandbox: true }, { ...hlo, network: 'testnet' })) === 'allowed' && reason(judge(ctxOf(RICH), hlo)) === 'allowed')
+  check('tenant gate (F4): a guardian arm (perp-close, no network) on a sandbox tenant → SANDBOX_ONLY too', reason(judge({ ...ctxOf(RICH), sandbox: true }, { ...hlo, op: 'perp-close', usd: null })) === 'SANDBOX_ONLY')
   check('tenant policy: shape before money — a Base-only desk asked for Arbitrum AND unpriced hears CHAIN_DENIED', reason(ev({ chainId: 42161, usd: null })) === 'CHAIN_DENIED')
 
   // ── approvals ──────────────────────────────────────────────────────────
@@ -167,6 +171,18 @@ export function tenantPurePins(check: Check): void {
   check('tenant keys: two mints never collide', generateDeskKey().secret !== generateDeskKey().secret)
   check('tenant keys: the header reader — none / a yf_ key (retail) / a dk_ key (tenant) / garbage (retail-other)', deskKeyPresented(null).kind === 'none' && deskKeyPresented({ authorization: 'Bearer yf_' + 'a'.repeat(64) }).kind === 'other' && deskKeyPresented({ authorization: `Bearer ${k.secret}` }).kind === 'desk' && deskKeyPresented(new Headers({ Authorization: `Bearer ${k.secret}` })).kind === 'desk' && deskKeyPresented({ authorization: 'Basic abc' }).kind === 'other')
 
+  // ── B1: signers are PROVEN, and both lists bind ────────────────────────
+  if (!process.env.SESSION_SECRET) process.env.SESSION_SECRET = (() => { try { return readFileSync('.env.local', 'utf8').match(/^SESSION_SECRET=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') } catch { return undefined } })() ?? 'tenant-pins-pure-secret'
+  const A = '0x' + 'a'.repeat(40)
+  const Bw = '0x' + 'b'.repeat(40)
+  const sig = { signers: [A], policy: RICH }
+  check('tenant signers (B1): the consent-free shortcut needs the wallet in tenant.signers — and, when the ACTIVE policy names signing wallets, in that list too', consentFreeSigner(sig, A) && !consentFreeSigner(sig, Bw) && !consentFreeSigner({ signers: [A], policy: { ...RICH, signing: { lane: 'safe', wallets: [Bw] } } }, A) && consentFreeSigner({ signers: [A], policy: { ...RICH, signing: { lane: 'safe', wallets: [A.toUpperCase().replace('0X', '0x')] } } }, A) && policySigningWallets({ policy: RICH }) === null)
+  const ch = mintSignerChallenge({ id: 'tid', slug: 'acme' }, A, 1_800_000_000_000)
+  const life = Date.parse(ch.expiresAt) - 1_800_000_000_000
+  check('tenant signers (B1): the challenge is ASCII, names the tenant slug, the address and a nonce, and lives at most 15 minutes (10–15, per 5-minute bucket)', ch.message === signerChallengeText('acme', A, ch.nonce) && /^[\x20-\x7e]+$/.test(ch.message) && ch.message.startsWith('Pantessa tenant acme: register 0x') && life > 10 * 60_000 && life <= 15 * 60_000, String(life))
+  check('tenant signers (B1): a POST with no nonce (the console\'s shape) is matched against the challenges still live — the minted one among them, none once expired', liveSignerNonces({ id: 'tid' }, A, 1_800_000_000_000 + 60_000).includes(ch.nonce) && !liveSignerNonces({ id: 'tid' }, A, Date.parse(ch.expiresAt) + 1).includes(ch.nonce) && liveSignerNonces({ id: 'tid' }, A, 1_800_000_000_000).length <= 3)
+  check('tenant signers (B1): a nonce verifies only for its tenant + address + window', signerNonceOk({ id: 'tid' }, A, ch.nonce, 1_800_000_000_000).ok && !signerNonceOk({ id: 'other' }, A, ch.nonce, 1_800_000_000_000).ok && !signerNonceOk({ id: 'tid' }, Bw, ch.nonce, 1_800_000_000_000).ok && !signerNonceOk({ id: 'tid' }, A, ch.nonce, 1_800_000_000_000 + 16 * 60_000).ok && !signerNonceOk({ id: 'tid' }, A, 'nope', 1_800_000_000_000).ok)
+
   // ── source pins: the four doors ────────────────────────────────────────
   const code = (f: string) => readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
   const route = code('app/api/broker/[transport]/route.ts')
@@ -178,13 +194,21 @@ export function tenantPurePins(check: Check): void {
   const bt = code('lib/broker-tenant.ts')
   check('tenant desk (source): a door refusal (paused key/tenant, revoked key) is a blotter row too — the firm sees the attempt', /blot\(ctx, 'policy_verdict', \{ stage: 'door'/.test(bt) && /caller\.tenantId\) await blot\(/.test(bt))
   const exec = code('lib/broker-exec.ts')
-  check('tenant desk (source): execute takes the registered-signer consent ONLY for a tenant caller with no signature given; everyone else still proves the wallet', /const signerConsent = !!tenantRow && tenantRow\.signers\.includes\(row\.wallet\.toLowerCase\(\)\)/.test(exec) && /if \(consent === 'personal_sign'\) await assertWalletProof\(/.test(exec) && /consent, wallet: row\.wallet/.test(exec))
+  check('tenant desk (source): execute takes the signer consent ONLY for a PROVEN signer the policy also names, with no signature given; everyone else still proves the wallet; an auto step always needs the wallet\'s own consent', /const signerConsent = !!tenantRow && consentFreeSigner\(tenantRow, row\.wallet\)/.test(exec) && /if \(consent === 'personal_sign'\) await assertWalletProof\(/.test(exec) && /consent, wallet: row\.wallet/.test(exec) && /consent === 'tenant-signer' && compiled\.steps\.some\(\(st\) => st\.kind === 'auto'\)/.test(exec))
+  const patchSrc = code('app/api/tenants/[id]/route.ts')
+  check('tenant signers (source, B1): PATCH refuses to ADD a signer (only removal); POST …/signers verifies personal_sign or EIP-1271 before adding, and burns the nonce on a tenant_updated row', /const added = list\.filter\(\(w\) => !current\.has\(w\)\)[\s\S]{0,120}if \(added\.length\)/.test(patchSrc) && (() => { const sg = code('app/api/tenants/[id]/signers/route.ts'); return /recoverMessageAddress\(\{ message, signature \}\)/.test(sg) && /client\.verifyMessage\(\{ address/.test(sg) && sg.indexOf('if (!proof)') < sg.indexOf('prisma.tenant.update') && /'tenant_updated', \{ by: gate\.addr, changes: \{ signers/.test(sg) && /payload: \{ path: \['nonce'\], equals: nonce \}/.test(sg) })())
   check('tenant desk (source): execute re-gates the COMPILED job before createJob, and createJob stamps the tenant + key in the SAME insert (no post-create update)', /regateIntent\(tenantRow, row, 'execute', compiled\)[\s\S]*await createJob\(row\.wallet, compiled, 'broker', \{ internal: call\?\.internal === true, \.\.\.\(tenantRow \? \{ tenantId: tenantRow\.tenantId, deskKeyId: tenantRow\.keyId \} : \{\}\) \}\)/.test(exec) && !/bindJobToTenant/.test(exec))
   const runner = code('lib/jobs-runner.ts')
   const create = runner.slice(runner.indexOf('export async function createJob('), runner.indexOf('export async function getJobWithSteps('))
   check('tenant runner (source): createJob takes { tenantId, deskKeyId } and writes them inside prisma.job.create', /tenantId\?: string \| null; deskKeyId\?: string \| null/.test(create) && /prisma\.job\.create\(\{[\s\S]*tenantId: opts\?\.tenantId \?\? null,\s*deskKeyId: opts\?\.deskKeyId \?\? null,/.test(create))
   const built = runner.indexOf('const built = await buildSignArtifact(fresh.wallet, step.builder')
   const offerGate = runner.indexOf('gateTenantOffer(fresh, step,')
+  check('tenant runner (source, B1): the AUTO branch (the guardian arm) meets gateTenantOffer before anything runs server-side', /if \(fresh\.tenantId\) \{\s*const \{ gateTenantOffer \} = await import\('@\/lib\/tenant\/gate'\)\s*const refused = await gateTenantOffer\(fresh, step, \{ artifact: \{\}, valueUsd: null \}\)\s*if \(refused\) return\s*\}\s*if \(step\.builder === 'native-hl-guardian'\) \{\s*const armed = await armGuardianPolicy\(/.test(runner))
+  check('tenant runner (source, F3): a tenant leg\'s stale re-arm and every gate refusal write an explicit JSON null (Prisma.DbNull), never undefined', /artifact: fresh\.tenantId \? Prisma\.DbNull : undefined/.test(runner) && /status: 'failed', artifact: Prisma\.DbNull/.test(code('lib/tenant/gate.ts')) && /artifact: Prisma\.DbNull/.test(bt))
+  check('tenant REST (source, F3): GET /api/jobs/:id re-checks a tenant job (recheckTenantJob) before serving and strips every artifact on a refusal', (() => { const jr = code('app/api/jobs/[id]/route.ts'); return /if \(job\.tenantId\) \{[\s\S]{0,120}recheckTenantJob\(job\)/.test(jr) && /artifact: null/.test(jr) && jr.indexOf('recheckTenantJob(job)') < jr.lastIndexOf('return NextResponse.json({ job })') })())
+  check('tenant withdraw (source, F3): a tenant pause, a key pause and a key revoke each withdraw the open offers', /if \(data\.status === 'paused'\) await withdrawTenantOffers\(/.test(patchSrc) && (() => { const kr = code('app/api/tenants/[id]/keys/[keyId]/route.ts'); return /if \(body\.paused\) await withdrawTenantOffers\(/.test(kr) && /withdrawTenantOffers\(\{ tenantId: id, keyId, deskId: key\.deskId \}, 'KEY_REVOKED'/.test(kr) })())
+  check('tenant store (source, F5): the sandbox is derived at resolve time from the OWNER\'s effective plan, and the column refreshed', /sandbox: tenant\.sandbox \|\| !eff\.mainnet/.test(code('lib/tenant/store.ts')) && /if \(!mainnet && !tenant\.sandbox\) data\.sandbox = true/.test(code('lib/tenant/store.ts')))
+  check('tenant gate (source, F6): the day cap counts signed + OPEN offers (openOffersUsd), the order\'s own intent/job excluded', /spentTodayUsd\(ctx\.tenantId, order\.deskId\),\s*openOffersUsd\(ctx\.tenantId, order\.deskId, \{ intentId: ids\.intentId \?\? null, jobId: ids\.jobId \?\? null \}\)/.test(code('lib/tenant/gate.ts')))
   check('tenant runner (source): the OFFER site re-gates a tenant leg right after it is built — before affordability and before it is ever stored as offered (the Jobs REST channel never serves an un-gated tenant leg)', built > 0 && offerGate > built && offerGate < runner.indexOf('const verdict = await checkAffordability(fresh.wallet, built.artifact') && offerGate < runner.indexOf("status: 'offered',", built) && /if \(fresh\.tenantId\) \{\s*const \{ gateTenantOffer \} = await import\('@\/lib\/tenant\/gate'\)[\s\S]{0,260}if \(refused\) return/.test(runner))
   const hl = code('app/api/hl/submit/route.ts')
   const hlGate = hl.indexOf('joinTenantLeg(from')
@@ -194,7 +218,7 @@ export function tenantPurePins(check: Check): void {
   check('tenant relay (source): /api/cow/submit re-gates a tenant order BEFORE it reaches the book', cowGate > 0 && cowGate < cow.indexOf('fetch(`${apiBase}/api/v1/orders`') && /relayGate\(tenantLeg, 'cow-submit'/.test(cow))
   const rf = code('app/api/tx/refresh/route.ts')
   const rfGate = rf.indexOf('joinTenantLeg(from')
-  check('tenant relay (source): the LINK lane — hl/submit and cow/submit join a link leg (joinTenantLink), re-gate it (linkGate) before the venue, and book `signed` only AFTER the venue accepted it', [[hl, 'fetch(`${apiUrl}/exchange`'], [cow, 'fetch(`${apiBase}/api/v1/orders`']].every(([src, relayAt]) => { const j = src.indexOf('joinTenantLink(from'); const g = src.indexOf('linkGate(tenantLink'); const b = src.indexOf('bookLinkSigned(tenantLink'); const r = src.indexOf(relayAt); return j > 0 && g > j && g < r && b > r }))
+  check('tenant relay (source, B2): hl/submit and cow/submit NEVER join by wallet — no link-lane join, no link booking; only the server-built job step (joinTenantLeg) joins', [hl, cow].every((src) => !/joinTenantLink\b|bookLinkSigned|linkGate\(/.test(src) && /joinTenantLeg\(from/.test(src)) && !/export async function joinTenantLink\(/.test(code('lib/tenant/gate.ts')))
   check('tenant relay (source): tx/refresh joins a link leg by the recipe\'s own linkSlug before any rebuild', (() => { const j = rf.indexOf('joinTenantLinkBySlug(linkSlug'); return j > 0 && j < rf.indexOf('buildUniswapSwap(') })())
   check('tenant relay (source): /api/tx/refresh re-gates a tenant step BEFORE any rebuild, and refuses with the card\'s withhold shape', rfGate > 0 && rfGate < rf.indexOf('buildLifiBridgeLeg(') && rfGate < rf.indexOf('buildUniswapSwap(') && /blocked: true, blockKind: 'policy'/.test(rf.slice(rfGate, rfGate + 700)))
 }
@@ -360,15 +384,59 @@ export async function tenantLivePins(base: string, check: Check, opts: LiveOpts 
   const mainnet = await api('PATCH', T, { sandbox: false })
   check('tenant live: PATCH sandbox:false without the mainnet entitlement → 403 naming it', mainnet.status === 403 ? mainnet.json?.entitlement === 'mainnet' : mainnet.status === 200, JSON.stringify(mainnet.json).slice(0, 160))
   let prisma: (typeof import('../lib/db'))['default'] | null = null
-  if (process.env.DATABASE_URL) {
-    prisma = (await import('../lib/db')).default
-    const host = (() => { try { return new URL(process.env.DATABASE_URL!).host } catch { return '?' } })()
-    log(`  · FIXTURE: tenant ${slug} sandbox → false directly in the DB (${host}) — the owner's free plan has no mainnet, the demo drives Base`)
-    await prisma.tenant.update({ where: { id: tenantId }, data: { sandbox: false } })
-  } else {
-    log('  ⚪ tenant live: no DATABASE_URL in the environment — the sandbox flip, the execute binding and the relay fixtures are skipped')
+  if (!process.env.DATABASE_URL) {
+    log('  ⚪ tenant live: no DATABASE_URL in the environment — the plan fixture, the execute binding and the relay fixtures are skipped')
     return
   }
+  prisma = (await import('../lib/db')).default
+  if (!process.env.SESSION_SECRET) {
+    const sec = readFileSync('.env.local', 'utf8').match(/^SESSION_SECRET=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '')
+    if (sec) process.env.SESSION_SECRET = sec
+  }
+  const { signJobToken } = await import('../lib/job-token')
+  const host = (() => { try { return new URL(process.env.DATABASE_URL!).host } catch { return '?' } })()
+  // QA F5: the sandbox is derived from the OWNER's effective plan at every
+  // call, so the demo needs a mainnet plan, not a flipped column. FIXTURE: an
+  // active 'agent' subscription row for the owner (TEST DB), restored after.
+  const ownerLower = owner.address.toLowerCase()
+  const priorSub = await prisma.subscription.findUnique({ where: { ownerAddress: ownerLower } })
+  await prisma.subscription.upsert({ where: { ownerAddress: ownerLower }, create: { ownerAddress: ownerLower, plan: 'agent', status: 'active' }, update: { plan: 'agent', status: 'active' } })
+  log(`  · FIXTURE: an active 'agent' subscription for ${ownerLower} on the TEST DB (${host}) — the Agent plan includes mainnet; restored at the end`)
+  const offSandbox = await api('PATCH', T, { sandbox: false })
+  check('tenant live: on the Agent plan PATCH sandbox:false → 200 (mainnet is in the plan)', offSandbox.status === 200 && offSandbox.json?.tenant?.sandbox === false, JSON.stringify(offSandbox.json).slice(0, 160))
+  const restoreSub = async () => {
+    if (priorSub) await prisma!.subscription.update({ where: { ownerAddress: ownerLower }, data: { plan: priorSub.plan, status: priorSub.status } }).catch(() => {})
+    else await prisma!.subscription.delete({ where: { ownerAddress: ownerLower } }).catch(() => {})
+  }
+  const activate = async (document: unknown, note: string) => {
+    const v = await api('POST', `${T}/policy`, { document, note })
+    const on = await api('POST', `${T}/policy/${v.json?.version}/approve`)
+    return on.status === 200 && on.json?.state === 'active'
+  }
+  const fixtureJob = async (wallet: string, chainId: number, recipe: Record<string, string>) =>
+    prisma!.job.create({
+      data: {
+        wallet, title: 'tenant pins fixture', source: 'broker', originEnv: process.env.VERCEL_ENV ?? 'dev', isInternal: true, status: 'waiting_signature', tenantId, deskKeyId: keyId,
+        steps: { create: [{ seq: 0, kind: 'sign', builder: 'native-swap', title: 'Buy $25 of ETH', status: 'offered', params: { amountHuman: '25', sellToken: 'USDC', buyToken: 'ETH', chainId }, valueUsd: 25, artifact: { buildPath: 'native-swap-uniswap', txChain: { summary: 'fixture', steps: [{ label: 'swap', tx: { chainId } }], refresh: { kind: 'uniswap-swap', stepIndex: 0, params: recipe } } } }] },
+      },
+      include: { steps: true },
+    })
+  const getJob = (id: string, wallet: string) => api('GET', `/api/jobs/${id}?t=${encodeURIComponent(signJobToken(id, wallet))}`, undefined, J)
+  const artifactOf = async (jobId: string) => (await prisma!.jobStep.findFirst({ where: { jobId, seq: 0 }, select: { artifact: true } }))?.artifact ?? null
+
+  // ── 3b. QA F6: an offered-but-unsettled leg RESERVES the day cap ───────
+  const capDoc = { ...SAMPLE_POLICY, desks: [{ id: 'macro', perOrderUsd: 500, perDayUsd: 40, approvals: { overUsd: 250, approvers: 1 } }] }
+  check('tenant live (F6): a $40/day desk policy is activated', await activate(capDoc, 'tenant pins: $40/day'))
+  const wr = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
+  const reserved = await fixtureJob(wr, 8453, { sellToken: 'USDC', buyToken: 'ETH', amountHuman: '25', chainId: '8453' })
+  const { recordBlotter } = await import('../lib/tenant/blotter')
+  await recordBlotter({ tenantId, kind: 'offered', jobId: reserved.id, deskId: 'macro', keyId, venue: 'uniswap-v3', chainId: 8453, valueUsd: 25, payload: { lane: 'agent', seq: 0, offerKey: 'tenant-pins-reserve', fixture: true } })
+  const overDay = await desk('broker_open', { ask: 'Buy $25 of ETH on Base', agent: 'tenant-pins' })
+  check('tenant live (F6): with a $25 leg already OFFERED (live job, unsigned) a second $25 order → OVER_DAY on a $40/day desk', overDay.isError && overDay.payload?.reason === 'OVER_DAY', JSON.stringify(overDay.payload).slice(0, 220))
+  await prisma.job.update({ where: { id: reserved.id }, data: { status: 'canceled' } })
+  const released = await desk('broker_open', { ask: 'Buy $25 of ETH on Base', agent: 'tenant-pins' })
+  check('tenant live (F6): the offer\'s job canceled → the reservation is released and the same order is admitted', !released.isError && released.payload?.state === 'open', JSON.stringify(released.payload).slice(0, 200))
+  check('tenant live: the sample policy is active again', await activate(SAMPLE_POLICY, 'tenant pins: the sample policy again'))
 
   // ── 3. the README demo, over the wire ─────────────────────────────────
   const ok25 = await desk('broker_open', { ask: 'Buy $25 of ETH on Base', agent: 'tenant-pins', agent_key: 'self-chosen-key-ignored' })
@@ -427,21 +495,38 @@ export async function tenantLivePins(base: string, check: Check, opts: LiveOpts 
     if (run.payload?.jobId) await prisma.job.update({ where: { id: run.payload.jobId }, data: { status: 'canceled' } }).catch(() => {})
   } else check('tenant live: an execute-ready open', false, JSON.stringify(ex.payload).slice(0, 200))
 
-  // ── 5b. custody consent: a REGISTERED signer needs no personal_sign ────
-  // A Safe (any smart account) cannot personal_sign; on a tenant desk the
-  // desk key + a custody address the OWNER registered is the consent.
-  const custody = privateKeyToAccount(generatePrivateKey()).address.toLowerCase() // a keyless address, like a Safe
+  // ── 5b. custody consent: a PROVEN signer needs no personal_sign (QA B1) ─
+  // A Safe (any smart account) cannot personal_sign at execute; on a tenant
+  // desk a custody address that PROVED control to be registered is the consent.
+  const custodyAcct = privateKeyToAccount(generatePrivateKey())
+  const custody = custodyAcct.address.toLowerCase()
   const unreg = await desk('broker_open', { ask: 'Buy $25 of ETH on Base', wallet: custody, agent: 'tenant-pins' })
   const unregExec = await desk('broker_execute', { intent_id: unreg.payload?.intentId })
   check('tenant live: an UNREGISTERED wallet executing with no consent signature → refused by name (wallet_signature)', !unreg.isError && unregExec.isError && /wallet_signature/.test(String(unregExec.payload?.say ?? unregExec.payload)), JSON.stringify(unregExec.payload).slice(0, 200))
-  const adminSigners = await api('PATCH', T, { signers: [custody] }, { ...J, cookie: stranger })
-  check('tenant live: a non-admin cannot register signers (404)', adminSigners.status === 404)
-  const reg = await api('PATCH', T, { signers: [custody] })
-  check('tenant live: the OWNER registers the custody address as a signer', reg.status === 200 && (reg.json?.tenant?.signers ?? []).includes(custody), JSON.stringify(reg.json).slice(0, 160))
+  const patchAdd = await api('PATCH', T, { signers: [custody] })
+  check('tenant live (B1): PATCH can no longer ADD a signer — 400 naming the proof door', patchAdd.status === 400 && patchAdd.json?.reason === 'SIGNER_DENIED' && /signers\/challenge/.test(patchAdd.json?.error ?? ''), JSON.stringify(patchAdd.json).slice(0, 200))
+  const strangerChal = await api('GET', `${T}/signers/challenge?address=${custody}`, undefined, { ...J, cookie: stranger })
+  check('tenant live (B1): a non-admin cannot mint a signer challenge (404)', strangerChal.status === 404)
+  const chal = await api('GET', `${T}/signers/challenge?address=${custody}`)
+  const chalMsg: string = chal.json?.challenge ?? ''
+  check('tenant live (B1): GET …/signers/challenge answers `challenge` (+ expiresAt): names this tenant + this address + a nonce, ASCII only, ≤15 minutes', chal.status === 200 && /^Pantessa tenant [a-z0-9-]+: register 0x[0-9a-f]{40} as a signer\. Nonce \d{13}-[0-9a-f]{24}\.$/.test(chalMsg) && chalMsg.includes(custody) && /^[\x20-\x7e]+$/.test(chalMsg) && Date.parse(chal.json?.expiresAt) - Date.now() <= 15 * 60_000 + 5_000, chalMsg)
+  const imp = privateKeyToAccount(generatePrivateKey())
+  const impPost = await api('POST', `${T}/signers`, { address: custody, signature: await imp.signMessage({ message: chalMsg }) })
+  check('tenant live (B1): a signature by anyone but the address itself → 403 SIGNER_DENIED, nothing registered', impPost.status === 403 && impPost.json?.reason === 'SIGNER_DENIED', JSON.stringify(impPost.json).slice(0, 200))
+  const otherChal = await api('GET', `${T}/signers/challenge?address=${imp.address.toLowerCase()}`)
+  const crossPost = await api('POST', `${T}/signers`, { address: custody, nonce: otherChal.json?.nonce, signature: await custodyAcct.signMessage({ message: chalMsg }) })
+  check('tenant live (B1): a nonce minted for ANOTHER address → 400', crossPost.status === 400 && crossPost.json?.field === 'nonce', JSON.stringify(crossPost.json).slice(0, 160))
+  const goodSig = await custodyAcct.signMessage({ message: chalMsg })
+  const proven = await api('POST', `${T}/signers`, { address: custody, signature: goodSig })
+  check('tenant live (B1): POST …/signers { address, signature } — the address\'s own personal_sign over the challenge registers it (proof personal_sign)', proven.status === 200 && proven.json?.proof === 'personal_sign' && (proven.json?.tenant?.signers ?? []).includes(custody), JSON.stringify(proven.json).slice(0, 200))
+  const replay = await api('POST', `${T}/signers`, { address: custody, signature: goodSig })
+  check('tenant live (B1): the same challenge twice → 409 (single-use)', replay.status === 409, JSON.stringify(replay.json).slice(0, 160))
+  const regRow = await prisma.blotterRow.findFirst({ where: { tenantId, kind: 'tenant_updated', payload: { path: ['nonce'], equals: chal.json?.nonce } }, select: { payload: true } })
+  check('tenant live (B1): the registration is a tenant_updated row carrying proof: personal_sign', (regRow?.payload as { proof?: string } | undefined)?.proof === 'personal_sign', JSON.stringify(regRow?.payload ?? null).slice(0, 160))
   const regOpen = await desk('broker_open', { ask: 'Buy $25 of ETH on Base', wallet: custody, agent: 'tenant-pins' })
   const regExec = await desk('broker_execute', { intent_id: regOpen.payload?.intentId })
   const regJob = regExec.payload?.jobId ? await prisma.job.findUnique({ where: { id: regExec.payload.jobId }, select: { wallet: true, tenantId: true, deskKeyId: true } }) : null
-  check('tenant live: a REGISTERED signer\'s intent executes with NO consent signature (the desk key + the registered custody address is the consent) — the job is the custody wallet\'s, bound to the tenant', !regExec.isError && regExec.payload?.state === 'executing' && regJob?.wallet === custody && regJob?.tenantId === tenantId && regJob?.deskKeyId === keyId, JSON.stringify(regExec.isError ? regExec.payload : regJob).slice(0, 220))
+  check('tenant live: a PROVEN signer\'s intent executes with NO consent signature — the job is the custody wallet\'s, bound to the tenant', !regExec.isError && regExec.payload?.state === 'executing' && regJob?.wallet === custody && regJob?.tenantId === tenantId && regJob?.deskKeyId === keyId, JSON.stringify(regExec.isError ? regExec.payload : regJob).slice(0, 220))
   if (regExec.payload?.jobId) await prisma.job.update({ where: { id: regExec.payload.jobId }, data: { status: 'canceled' } }).catch(() => {})
   const badOpen = await desk('broker_open', { ask: 'Buy $25 of ETH on Base', wallet: custody, agent: 'tenant-pins' })
   const stranger2 = privateKeyToAccount(generatePrivateKey())
@@ -452,7 +537,18 @@ export async function tenantLivePins(base: string, check: Check, opts: LiveOpts 
   check('tenant live: a consent signature that IS given is still verified — a registered signer with a stranger\'s signature is refused', badExec.isError && /recovers to/.test(String(badExec.payload?.say ?? badExec.payload)), JSON.stringify(badExec.payload).slice(0, 200))
   const outside = await desk('broker_open', { ask: 'Buy $25 of ETH on Base', wallet: agent.address, agent: 'tenant-pins' })
   check('tenant live: with signers registered, an intent for a wallet OUTSIDE them → SIGNER_DENIED', outside.isError && outside.payload?.reason === 'SIGNER_DENIED', JSON.stringify(outside.payload).slice(0, 160))
-  await api('PATCH', T, { signers: [] })
+  // B1: the tenant-signer consent never carries an AUTO step (the guardian arm).
+  check('tenant live (B1): a policy admitting Hyperliquid is activated', await activate({ ...SAMPLE_POLICY, venues: [...SAMPLE_POLICY.venues, { venue: 'hyperliquid' }] }, 'tenant pins: + hyperliquid'))
+  const armOpen = await desk('broker_open', { ask: 'protect my HYPE long with a 5% stop', wallet: custody, agent: 'tenant-pins' })
+  const armExec = await desk('broker_execute', { intent_id: armOpen.payload?.intentId })
+  check("tenant live (B1): a job with an AUTO step (a guardian arm) is refused under the tenant-signer consent — SIGNER_DENIED, \"auto steps need the wallet's own consent\"", !armOpen.isError && armExec.isError && armExec.payload?.reason === 'SIGNER_DENIED' && /auto steps need the wallet's own consent/.test(armExec.payload?.detail ?? ''), JSON.stringify(armOpen.isError ? armOpen.payload : armExec.payload).slice(0, 220))
+  // B1: the policy's maker-checked signing.wallets binds as well.
+  check('tenant live (B1): a policy naming a DIFFERENT signing wallet is activated', await activate({ ...SAMPLE_POLICY, signing: { lane: 'wallet', wallets: [stranger2.address.toLowerCase()] } }, 'tenant pins: signing.wallets'))
+  const notNamed = await desk('broker_open', { ask: 'Buy $25 of ETH on Base', wallet: custody, agent: 'tenant-pins' })
+  check('tenant live (B1): a registered signer the ACTIVE policy\'s signing.wallets does not name → SIGNER_DENIED', notNamed.isError && notNamed.payload?.reason === 'SIGNER_DENIED' && /signing wallets the active policy/.test(notNamed.payload?.detail ?? ''), JSON.stringify(notNamed.payload).slice(0, 200))
+  check('tenant live: the sample policy is active again', await activate(SAMPLE_POLICY, 'tenant pins: the sample policy again'))
+  const removed = await api('PATCH', T, { signers: [] })
+  check('tenant live (B1): PATCH may still REMOVE signers', removed.status === 200 && (removed.json?.tenant?.signers ?? []).length === 0, JSON.stringify(removed.json).slice(0, 160))
 
   // ── 5c. the runner's offer site: a policy activated AFTER execute governs
   //        every leg not yet offered (the Jobs REST channel included) ───────
@@ -464,6 +560,12 @@ export async function tenantLivePins(base: string, check: Check, opts: LiveOpts 
   const lateJobId: string | undefined = lateRun.payload?.jobId
   const lateJob0 = lateJobId ? await prisma.job.findUnique({ where: { id: lateJobId }, include: { steps: true } }) : null
   check('tenant runner (live): the job broker_execute creates carries tenant_id + desk_key_id from its first row; its first build passed the offer gate (allowed, then withheld only for funds)', !!lateJob0 && lateJob0.tenantId === tenantId && lateJob0.deskKeyId === keyId && lateJob0.status !== 'canceled' && lateJob0.steps[0]?.status !== 'failed', JSON.stringify(lateJob0 ? { status: lateJob0.status, tenantId: lateJob0.tenantId, steps: lateJob0.steps.map((x) => [x.status, (x.result as { error?: string } | null)?.error?.slice(0, 60)]) } : lateRun.payload).slice(0, 260))
+  // F3: an OFFERED artifact (a fixture job: a built Base uniswap-v3 leg) is
+  // served by the Jobs REST channel while the policy admits it…
+  const wo = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
+  const offeredJob = await fixtureJob(wo, 8453, { sellToken: 'USDC', buyToken: 'ETH', amountHuman: '25', chainId: '8453' })
+  const served = await getJob(offeredJob.id, wo)
+  check('tenant REST (F3): GET /api/jobs/:id?t= serves a tenant job\'s offered artifact while the active policy admits it', served.status === 200 && !!served.json?.job?.steps?.[0]?.artifact, `${served.status} ${JSON.stringify(served.json).slice(0, 160)}`)
   const denyDoc = { ...SAMPLE_POLICY, venues: [SAMPLE_POLICY.venues[0]] } // CoW only — the job's uniswap-v3 leg is now outside the policy
   const denyV = await api('POST', `${T}/policy`, { document: denyDoc, note: 'tenant pins: deny uniswap-v3 after execute' })
   const denyOn = await api('POST', `${T}/policy/${denyV.json?.version}/approve`)
@@ -478,8 +580,12 @@ export async function tenantLivePins(base: string, check: Check, opts: LiveOpts 
     const s0 = lateJob?.steps.find((x) => x.seq === 0)
     check('tenant runner (live): the next OFFER refuses under the new policy — the step fails VENUE_DENIED unoffered, the job is canceled, the intent refused, and broker_next serves no leg', lateJob?.status === 'canceled' && s0?.status === 'failed' && (s0?.result as { policyRefused?: string } | null)?.policyRefused === 'VENUE_DENIED' && s0?.artifact == null && lateIntent?.state === 'refused' && !lateNext.payload?.next?.leg, JSON.stringify({ job: lateJob?.status, step: s0?.status, result: s0?.result, intent: lateIntent?.state, next: lateNext.payload?.next ?? lateNext.payload }).slice(0, 320))
   }
-  const backOn = await api('POST', `${T}/policy`, { document: SAMPLE_POLICY, note: 'tenant pins: the sample policy again' })
-  await api('POST', `${T}/policy/${backOn.json?.version}/approve`)
+  // …and once the policy denies it, the REST channel serves NOTHING: the leg is
+  // re-judged before serving, refused, its artifact wiped to an explicit null.
+  const withdrawn = await getJob(offeredJob.id, wo)
+  const offeredRow = await prisma.job.findUnique({ where: { id: offeredJob.id }, select: { status: true } })
+  check('tenant REST (F3): under the new policy GET /api/jobs/:id?t= serves no artifact — 403 with tenantRefusal VENUE_DENIED, the job canceled, the stored artifact an explicit NULL', withdrawn.status === 403 && withdrawn.json?.tenantRefusal?.reason === 'VENUE_DENIED' && (withdrawn.json?.job?.steps ?? []).every((x: { artifact?: unknown }) => x.artifact == null) && offeredRow?.status === 'canceled' && (await artifactOf(offeredJob.id)) === null, `${withdrawn.status} ${JSON.stringify(withdrawn.json?.tenantRefusal ?? withdrawn.json).slice(0, 200)}`)
+  check('tenant live: the sample policy is active again', await activate(SAMPLE_POLICY, 'tenant pins: the sample policy again'))
 
   // ── 6. the relays: a tenant leg is re-gated from the server's own job row ─
   const w = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
@@ -505,34 +611,71 @@ export async function tenantLivePins(base: string, check: Check, opts: LiveOpts 
   const cowRes = await api('POST', '/api/cow/submit', { chainId: 42161, order: cowOrder, signature: `0x${'1'.repeat(130)}`, from: w }, J)
   check('tenant relay (live): /api/cow/submit of a TENANT order on Arbitrum → 403 CHAIN_DENIED before the book', cowRes.status === 403 && cowRes.json?.reason === 'CHAIN_DENIED', JSON.stringify(cowRes.json).slice(0, 220))
 
-  // ── 6b. the LINK lane: a leg signed through a desk-minted link (no job) ─
-  const lw = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
+  // ── 6b. the LINK lane (QA B2) ──────────────────────────────────────────
+  // tx/refresh rebuilds carry the server-built recipe's linkSlug → joined + re-gated.
   const lslug = `tp${Math.random().toString(36).slice(2, 10)}`
   const linkIntent = await prisma.brokerIntent.create({
-    data: { id: `tp${Math.random().toString(36).slice(2, 10)}`, ask: 'Buy $25 of ETH on Arbitrum', wallet: lw, agent: 'tenant-pins', agentKey: `tenant:${keyId}`, state: 'handed_off', plan: { ask: 'Buy $25 of ETH on Arbitrum' }, linkSlug: lslug, isInternal: true, tenantId, deskKeyId: keyId },
+    data: { id: `tp${Math.random().toString(36).slice(2, 10)}`, ask: 'Buy $25 of ETH on Arbitrum', wallet: null, agent: 'tenant-pins', agentKey: `tenant:${keyId}`, state: 'handed_off', plan: { ask: 'Buy $25 of ETH on Arbitrum' }, linkSlug: lslug, isInternal: true, tenantId, deskKeyId: keyId },
   })
-  const linkCow = { ...cowOrder, receiver: lw, validTo: Math.floor(Date.now() / 1000) + 600 }
-  const linkCowRes = await api('POST', '/api/cow/submit', { chainId: 42161, order: linkCow, signature: `0x${'2'.repeat(130)}`, from: lw }, J)
-  check('tenant relay (live, link lane): a CoW order from the wallet a tenant LINK was opened for (no job) is joined to that intent and re-gated → 403 CHAIN_DENIED before the book', linkCowRes.status === 403 && linkCowRes.json?.reason === 'CHAIN_DENIED', JSON.stringify(linkCowRes.json).slice(0, 220))
   const linkRefresh = await api('POST', '/api/tx/refresh', { kind: 'uniswap-swap', sellToken: 'USDC', buyToken: 'ETH', amountHuman: '25', chainId: '42161', linkSlug: lslug, from: privateKeyToAccount(generatePrivateKey()).address }, J)
   check('tenant relay (live, link lane): a refresh recipe carrying a tenant link\'s slug is re-gated → 403 CHAIN_DENIED + the withhold shape', linkRefresh.status === 403 && linkRefresh.json?.reason === 'CHAIN_DENIED' && linkRefresh.json?.blocked === true, JSON.stringify(linkRefresh.json).slice(0, 220))
-  const refusedRows = await prisma.blotterRow.count({ where: { tenantId, intentId: linkIntent.id, kind: 'refused' } }).catch(() => -1)
-  log(`  · link-lane refused rows on the blotter for ${linkIntent.id}: ${refusedRows} (0 while the blotter is the stub)`)
   await prisma.brokerIntent.update({ where: { id: linkIntent.id }, data: { state: 'closed' } }).catch(() => {})
+  // CoW / HL submissions are NEVER joined by wallet: a SANDBOX tenant that names
+  // a retail wallet in a handed-off intent can neither refuse nor book that
+  // wallet's own orders.
+  const owner2 = privateKeyToAccount(generatePrivateKey())
+  const cookie2 = await signIn(base, owner2)
+  const H2 = { ...J, cookie: cookie2 }
+  const t2 = await api('POST', '/api/tenants', { slug: `drive-sbx-${Math.random().toString(36).slice(2, 8)}`, name: 'Sandbox Desk (tenant pins)' }, H2)
+  const T2 = `/api/tenants/${t2.json?.tenant?.id}`
+  const t2Doc = { ...SAMPLE_POLICY, venues: [...SAMPLE_POLICY.venues, { venue: 'hyperliquid' as const }] }
+  const t2v = await api('POST', `${T2}/policy`, { document: t2Doc }, H2)
+  await api('POST', `${T2}/policy/${t2v.json?.version}/approve`, undefined, H2)
+  const t2key = await api('POST', `${T2}/keys`, { deskId: 'macro' }, H2)
+  const desk2 = deskClient(base, t2key.json?.secret ?? null)
+  const hlSandbox = await desk2('broker_open', { ask: 'Long $25 of HYPE on Hyperliquid', agent: 'tenant-pins' })
+  check('tenant live (F4): a SANDBOX tenant whose policy admits Hyperliquid opens an HL order → SANDBOX_ONLY (the server\'s HL network is mainnet)', t2.json?.tenant?.sandbox === true && hlSandbox.isError && hlSandbox.payload?.reason === 'SANDBOX_ONLY', JSON.stringify(hlSandbox.payload).slice(0, 200))
+  const R = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
+  const named = await prisma.brokerIntent.create({
+    data: { id: `tp${Math.random().toString(36).slice(2, 10)}`, ask: 'Buy $25 of ETH on Base', wallet: R, agent: 'tenant-pins', state: 'handed_off', plan: { ask: 'Buy $25 of ETH on Base' }, linkSlug: `tp${Math.random().toString(36).slice(2, 10)}`, isInternal: true, tenantId: t2.json?.tenant?.id, deskKeyId: t2key.json?.id ?? null },
+  })
+  const rowsBefore = await prisma.blotterRow.count({ where: { tenantId: t2.json?.tenant?.id } })
+  const retailCow = { ...cowOrder, sellToken: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', buyToken: '0x4200000000000000000000000000000000000006', receiver: R, validTo: Math.floor(Date.now() / 1000) + 600 }
+  const retailCowRes = await api('POST', '/api/cow/submit', { chainId: 8453, order: retailCow, signature: `0x${'2'.repeat(130)}`, from: R }, J)
+  const rowsAfter = await prisma.blotterRow.count({ where: { tenantId: t2.json?.tenant?.id } })
+  check('tenant relay (live, B2): the retail wallet a sandbox tenant NAMED submits its own CoW order on Base → NOT refused by the tenant (no tenant reason) and NOTHING booked in that tenant\'s blotter', retailCowRes.json?.reason === undefined && !/desk policy/.test(String(retailCowRes.json?.error ?? '')) && rowsAfter === rowsBefore, `${retailCowRes.status} ${JSON.stringify(retailCowRes.json).slice(0, 160)} rows ${rowsBefore}→${rowsAfter}`)
+  await prisma.brokerIntent.update({ where: { id: named.id }, data: { state: 'closed' } }).catch(() => {})
 
-  // ── 7. pause, resume, revoke ──────────────────────────────────────────
+  // ── 7. pause, resume, revoke — and what is out is WITHDRAWN (QA F3) ────
+  const wl = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
+  const liveJob = await fixtureJob(wl, 8453, { sellToken: 'USDC', buyToken: 'ETH', amountHuman: '25', chainId: '8453' })
+  const bigLink = await prisma.brokerIntent.findUnique({ where: { id: bigId }, select: { linkSlug: true, state: true } })
   const paused = await api('PATCH', `${T}/keys/${keyId}`, { paused: true })
   check('tenant live: an admin pauses the key', paused.status === 200 && paused.json?.paused === true)
+  const liveAfter = await prisma.job.findUnique({ where: { id: liveJob.id }, select: { status: true } })
+  const bigAfter = await prisma.brokerIntent.findUnique({ where: { id: bigId }, select: { state: true } })
+  const bigLinkRow = bigLink?.linkSlug ? await prisma.intentLink.findUnique({ where: { id: bigLink.linkSlug }, select: { revoked: true } }) : null
+  check('tenant live (F3): pausing the key WITHDRAWS its open offers — the live job canceled, its artifact an explicit NULL', liveAfter?.status === 'canceled' && (await artifactOf(liveJob.id)) === null, JSON.stringify({ job: liveAfter?.status, artifact: await artifactOf(liveJob.id) }).slice(0, 160))
+  check('tenant live (F3): pausing the key closes its live handed-off links — the $400 sign link revoked, the intent closed', bigLink?.state === 'handed_off' && bigLinkRow?.revoked === true && bigAfter?.state === 'closed', JSON.stringify({ before: bigLink?.state, revoked: bigLinkRow?.revoked, after: bigAfter?.state }))
   const pausedOpen = await desk('broker_open', { ask: 'Buy $25 of ETH on Base' })
   check('tenant live: a PAUSED key → broker_open refused by name (KEY_PAUSED)', pausedOpen.isError && pausedOpen.payload?.reason === 'KEY_PAUSED', JSON.stringify(pausedOpen.payload).slice(0, 160))
   const pausedStatus = await desk('broker_status', { intent_id: ok25.payload?.intentId })
   check('tenant live: a paused key still answers broker_status (an agent mid-flight can look)', !pausedStatus.isError && pausedStatus.payload?.intentId === ok25.payload?.intentId)
+  // A leg that slipped out while the key was paused (a race) is refused at the relay AND at the REST channel.
+  const racer = await fixtureJob(w, 42161, recipe)
   const relayPaused = await api('POST', '/api/tx/refresh', { kind: 'uniswap-swap', ...recipe, from: w }, J)
   check('tenant relay (live): with the key paused the tenant step\'s relay → 403 KEY_PAUSED', relayPaused.status === 403 && relayPaused.json?.reason === 'KEY_PAUSED', JSON.stringify(relayPaused.json).slice(0, 160))
+  const racerFresh = await fixtureJob(wl, 8453, { sellToken: 'USDC', buyToken: 'ETH', amountHuman: '25', chainId: '8453' })
+  const restPaused = await getJob(racerFresh.id, wl)
+  check('tenant REST (F3): with the key paused GET /api/jobs/:id?t= serves NOTHING — 403 KEY_PAUSED, the artifact nulled', restPaused.status === 403 && restPaused.json?.tenantRefusal?.reason === 'KEY_PAUSED' && (await artifactOf(racerFresh.id)) === null, `${restPaused.status} ${JSON.stringify(restPaused.json?.tenantRefusal ?? restPaused.json).slice(0, 160)}`)
+  await prisma.job.update({ where: { id: racer.id }, data: { status: 'canceled' } }).catch(() => {})
   await api('PATCH', `${T}/keys/${keyId}`, { paused: false })
+  const tJob = await fixtureJob(wl, 8453, { sellToken: 'USDC', buyToken: 'ETH', amountHuman: '25', chainId: '8453' })
   const tPause = await api('PATCH', T, { status: 'paused' })
+  const tJobAfter = await prisma.job.findUnique({ where: { id: tJob.id }, select: { status: true } })
   const tPausedOpen = await desk('broker_open', { ask: 'Buy $25 of ETH on Base' })
   check('tenant live: a PAUSED tenant → TENANT_PAUSED', tPause.status === 200 && tPausedOpen.isError && tPausedOpen.payload?.reason === 'TENANT_PAUSED', JSON.stringify(tPausedOpen.payload).slice(0, 160))
+  check('tenant live (F3): pausing the TENANT withdraws every live job\'s offers (canceled, artifact NULL)', tJobAfter?.status === 'canceled' && (await artifactOf(tJob.id)) === null, JSON.stringify(tJobAfter))
   await api('PATCH', T, { status: 'active' })
   const patchRows = await prisma.blotterRow.groupBy({ by: ['kind'], where: { tenantId, kind: { in: ['tenant_paused', 'tenant_resumed', 'tenant_updated'] } }, _count: { _all: true } }).catch(() => [])
   const patchKinds = Object.fromEntries(patchRows.map((r) => [r.kind, r._count._all]))
@@ -541,12 +684,22 @@ export async function tenantLivePins(base: string, check: Check, opts: LiveOpts 
   check('tenant live: resumed key + tenant → the desk trades again', !resumed.isError && resumed.payload?.state === 'open', JSON.stringify(resumed.payload).slice(0, 160))
   const close = await desk('broker_close', { intent_id: resumed.payload?.intentId })
   check('tenant live: broker_close with the key (no agent_key needed) walks away', !close.isError && close.payload?.state === 'closed', JSON.stringify(close.payload).slice(0, 160))
+  // F5: a DOWNGRADE puts the tenant back in the sandbox at the next call, whatever the column says.
+  await prisma.subscription.update({ where: { ownerAddress: ownerLower }, data: { status: 'canceled' } })
+  const downgraded = await desk('broker_open', { ask: 'Buy $25 of ETH on Base' })
+  const colAfter = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { sandbox: true, plan: true } })
+  check('tenant live (F5): the owner\'s plan lapses → the next desk call is SANDBOX_ONLY on Base, and the sticky column is refreshed (sandbox true, plan free)', downgraded.isError && downgraded.payload?.reason === 'SANDBOX_ONLY' && colAfter?.sandbox === true && colAfter?.plan === 'free', JSON.stringify({ reason: downgraded.payload?.reason, col: colAfter }))
+  await restoreSub()
+  const revokeJob = await fixtureJob(wl, 8453, { sellToken: 'USDC', buyToken: 'ETH', amountHuman: '25', chainId: '8453' })
   const revoked = await api('DELETE', `${T}/keys/${keyId}`)
   const revokedOpen = await desk('broker_open', { ask: 'Buy $25 of ETH on Base' })
   check('tenant live: a REVOKED key → KEY_REVOKED (never retail)', revoked.status === 200 && revoked.json?.revoked === true && revokedOpen.isError && revokedOpen.payload?.reason === 'KEY_REVOKED', JSON.stringify(revokedOpen.payload).slice(0, 160))
+  const revokeJobAfter = await prisma.job.findUnique({ where: { id: revokeJob.id }, select: { status: true } })
+  check('tenant live (F3): revoking the key withdraws its open offers (canceled, artifact NULL)', revokeJobAfter?.status === 'canceled' && (await artifactOf(revokeJob.id)) === null, JSON.stringify(revokeJobAfter))
+  const racer2 = await fixtureJob(w, 42161, recipe)
   const relayRevoked = await api('POST', '/api/tx/refresh', { kind: 'uniswap-swap', ...recipe, from: w }, J)
   check('tenant relay (live): the revoked key\'s job step never moves → 403', relayRevoked.status === 403 && relayRevoked.json?.reason === 'KEY_PAUSED', JSON.stringify(relayRevoked.json).slice(0, 160))
-  await prisma.job.update({ where: { id: fixture.id }, data: { status: 'canceled' } }).catch(() => {})
+  await prisma.job.updateMany({ where: { id: { in: [fixture.id, racer2.id] } }, data: { status: 'canceled' } }).catch(() => {})
 }
 
 /* ── CLI ─────────────────────────────────────────────────────────────── */

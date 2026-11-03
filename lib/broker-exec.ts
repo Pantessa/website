@@ -45,7 +45,7 @@ import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicCh
 import { recoverMessageAddress } from 'viem'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { COUNTED_EVENT_WHERE, COUNTED_TURN_WHERE, reverifyPendingForSlug } from '@/lib/link-receipt-verify'
-import { assertSigner, gatePlan, planTenantOf, regateIntent, approveUrl, tenantAgentKey, type PlanTenant, type ResolvedTenant } from '@/lib/broker-tenant'
+import { assertSigner, consentFreeSigner, gatePlan, planTenantOf, regateIntent, approveUrl, tenantAgentKey, type PlanTenant, type ResolvedTenant } from '@/lib/broker-tenant'
 import { blot, TenantRefusedError, refusalSay } from '@/lib/tenant/gate'
 import { approvalCount } from '@/lib/tenant/store'
 import type { TenantRefusal } from '@/lib/tenant/spec'
@@ -570,7 +570,9 @@ export async function handoffIntent(intentId: string, call?: DeskCallOpts, tenan
     where: { id: row.id },
     data: { state: 'handed_off', linkSlug: slug },
   })
-  if (tenant && row.tenantId) await blot(tenant, 'offered', { lane: 'human', url: `${SITE}/i/${slug}`, ask: row.ask, policyVersion: tenant.policyVersion }, { intentId: row.id })
+  // The handed-off link RESERVES its dollars against the desk's day cap until
+  // it is signed or closed (lib/tenant/gate openOffersUsd, QA F6).
+  if (tenant && row.tenantId) await blot(tenant, 'offered', { lane: 'human', url: `${SITE}/i/${slug}`, ask: row.ask, policyVersion: tenant.policyVersion }, { intentId: row.id, valueUsd: askUsd(row.ask) })
   // THE POLICY POOL: the sign link is the hand-off the ledger watches for.
   if (planNamesPolicyPool(row.plan)) {
     const cfg = policyPoolConfig()
@@ -891,12 +893,20 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   // the tenant's owner REGISTERED (tenant.signers) is the consent — a Safe has
   // no key to personal_sign with. A signature that IS given is still verified;
   // a wallet outside the registered list needs it exactly as before.
-  const signerConsent = !!tenantRow && tenantRow.signers.includes(row.wallet.toLowerCase())
+  const signerConsent = !!tenantRow && consentFreeSigner(tenantRow, row.wallet)
   const noSignature = walletSignature === undefined || walletSignature === null || walletSignature === ''
   const consent: 'tenant-signer' | 'personal_sign' = signerConsent && noSignature ? 'tenant-signer' : 'personal_sign'
   if (consent === 'personal_sign') await assertWalletProof(row.id, row.wallet, walletSignature, proof.issuedAt)
 
   const compiled = await compileDeskAsk(row.ask, row.wallet)
+  // QA B1: an `auto` step runs SERVER-SIDE with the wallet's delegation (the
+  // guardian arm). Main fences it to a session that owns the wallet; here the
+  // tenant-signer shortcut never carries one — such a job needs the wallet's
+  // own personal_sign consent, always.
+  if (tenantRow && consent === 'tenant-signer' && compiled.steps.some((st) => st.kind === 'auto')) {
+    const detail = "auto steps need the wallet's own consent — this job arms something the server runs with the wallet's delegation, so sign the execute consent (wallet_signature) with that wallet."
+    throw new TenantRefusedError({ gate: 'policy', reason: 'SIGNER_DENIED', detail, say: refusalSay(tenantRow, 'SIGNER_DENIED', detail), intentId: row.id, state: row.state })
+  }
   if (tenantRow) await regateIntent(tenantRow, row, 'execute', compiled)
 
   // The funding plan's buy, before any leg can move money (see

@@ -18,6 +18,7 @@ const WITHHELD_HOLD_MS = 90_000
  *  hold-down, so ~9 minutes) before the step fails by name. */
 const RPC_WITHHOLD_MAX = 6
 import prisma from '@/lib/db'
+import { Prisma } from '@prisma/client'
 import { callMcpTool } from '@/lib/mcp-call'
 import { CONFIDENTIAL_LEVEL, crossChainValueUsd, expectedOriginChainId, guardCrossChainBuild, type BuiltSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
 import { floorBlockFromError, floorProblemLine } from '@/lib/venue-floor'
@@ -235,7 +236,10 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
       if (step.status === 'offered') {
         // Stale artifact? Re-arm it for a fresh build; else wait for the user.
         if (step.expiresAt && step.expiresAt < new Date()) {
-          await prisma.jobStep.updateMany({ where: { id: step.id, status: 'offered' }, data: { status: 'pending', artifact: undefined } })
+          // FIVE-MILLION (TENANT, QA F3): a TENANT leg's stale artifact is
+          // wiped to an explicit JSON null (`undefined` is Prisma's "leave as
+          // is", so it stayed servable); retail keeps the prior behaviour.
+          await prisma.jobStep.updateMany({ where: { id: step.id, status: 'offered' }, data: { status: 'pending', artifact: fresh.tenantId ? Prisma.DbNull : undefined } })
           continue
         }
         if (fresh.status !== 'waiting_signature') {
@@ -402,6 +406,13 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
     // auto — server-side under an existing consent.
     const claim = await prisma.jobStep.updateMany({ where: { id: step.id, status: 'pending' }, data: { status: 'running' } })
     if (claim.count !== 1) return
+    // FIVE-MILLION (TENANT, QA B1): an auto step of a tenant job meets the
+    // tenant gate like every other branch, with the policy active NOW.
+    if (fresh.tenantId) {
+      const { gateTenantOffer } = await import('@/lib/tenant/gate')
+      const refused = await gateTenantOffer(fresh, step, { artifact: {}, valueUsd: null })
+      if (refused) return
+    }
     if (step.builder === 'native-hl-guardian') {
       const armed = await armGuardianPolicy(fresh.wallet, step.params as unknown as GuardianArmAsk, { internal: fresh.isInternal === true })
       if (!armed.ok) {

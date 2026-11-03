@@ -11,7 +11,7 @@
 // revoked key that quietly became an ungated retail caller would be the
 // worst possible failure of a desk that sells "a tenant signer BLOCKS".
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { NextRequest } from 'next/server'
 import prisma from '@/lib/db'
 import { getEffectivePlan } from '@/lib/billing'
@@ -81,8 +81,24 @@ export async function resolveDeskCaller(headers: HeaderLike): Promise<DeskCaller
     return { kind: 'refused', reason: 'KEY_REVOKED', detail: `this desk key (${key.prefix}…) was revoked by a tenant admin and will never work again — ask for a new one.`, tenantId: key.tenantId, keyId: key.id, deskId: key.deskId }
   }
   recordKeyUse(key.id)
-  const active = await activePolicy(key.tenantId)
-  return { kind: 'tenant', ctx: contextOf(key.tenant, key, active) }
+  const [active, plan] = await Promise.all([activePolicy(key.tenantId), effectiveTenantPlan(key.tenant)])
+  return { kind: 'tenant', ctx: contextOf(key.tenant, key, active, false, plan) }
+}
+
+/**
+ * QA F5 — the sandbox is DERIVED at resolve time: a tenant is in the sandbox
+ * when its column says so OR its owner's EFFECTIVE plan now (lib/billing
+ * getEffectivePlan) does not include mainnet. A downgrade puts it back in the
+ * sandbox at the next call; the sticky columns are refreshed from the plan.
+ */
+async function effectiveTenantPlan(tenant: TenantRow): Promise<{ plan: string; mainnet: boolean }> {
+  const plan = await ownerPlanId(tenant.ownerAddress)
+  const mainnet = entitlementsFor(plan).mainnet === true
+  const data: { plan?: string; sandbox?: boolean } = {}
+  if (tenant.plan !== plan) data.plan = plan
+  if (!mainnet && !tenant.sandbox) data.sandbox = true
+  if (Object.keys(data).length) await prisma.tenant.update({ where: { id: tenant.id }, data }).catch(() => {})
+  return { plan, mainnet }
 }
 
 /** Spec contract: `Authorization: Bearer dk_…` → TenantContext, or null for a
@@ -96,7 +112,13 @@ export async function resolveDeskKey(req: Pick<NextRequest, 'headers'>): Promise
 type TenantRow = NonNullable<Awaited<ReturnType<typeof prisma.tenant.findUnique>>>
 type KeyRow = { id: string; deskId: string; paused: boolean }
 
-function contextOf(tenant: TenantRow, key: KeyRow, active: { version: number; doc: TenantPolicyDoc } | null, keyRevoked = false): ResolvedTenant {
+function contextOf(
+  tenant: TenantRow,
+  key: KeyRow,
+  active: { version: number; doc: TenantPolicyDoc } | null,
+  keyRevoked: boolean,
+  eff: { plan: string; mainnet: boolean },
+): ResolvedTenant {
   const tenantPaused = tenant.status !== 'active'
   const pausedBy = key.paused || keyRevoked ? 'key' : tenantPaused ? 'tenant' : null
   return {
@@ -106,8 +128,8 @@ function contextOf(tenant: TenantRow, key: KeyRow, active: { version: number; do
     ownerAddress: tenant.ownerAddress.toLowerCase(),
     deskId: key.deskId,
     keyId: key.id,
-    plan: tenant.plan,
-    sandbox: tenant.sandbox,
+    plan: eff.plan,
+    sandbox: tenant.sandbox || !eff.mainnet,
     status: pausedBy ? 'paused' : 'active',
     pausedBy,
     keyRevoked,
@@ -126,6 +148,7 @@ export async function tenantContextForJob(job: { tenantId: string | null; deskKe
   const tenant = await prisma.tenant.findUnique({ where: { id: job.tenantId } }).catch(() => null)
   const key = job.deskKeyId ? await prisma.deskKey.findUnique({ where: { id: job.deskKeyId } }).catch(() => null) : null
   const active = await activePolicy(job.tenantId)
+  const eff = tenant ? await effectiveTenantPlan(tenant) : { plan: 'free', mainnet: false }
   if (!tenant) {
     return {
       tenantId: job.tenantId, tenantSlug: '?', tenantName: '?', ownerAddress: '', deskId: key?.deskId ?? '?', keyId: job.deskKeyId ?? '?', plan: 'free', sandbox: true,
@@ -134,7 +157,7 @@ export async function tenantContextForJob(job: { tenantId: string | null; deskKe
   }
   // A key that is gone, revoked, or belongs to another tenant never moves a leg.
   const living = key && key.tenantId === tenant.id && !key.revokedAt ? key : null
-  return contextOf(tenant, living ?? { id: job.deskKeyId ?? '?', deskId: key?.deskId ?? '?', paused: false }, active, !living)
+  return contextOf(tenant, living ?? { id: job.deskKeyId ?? '?', deskId: key?.deskId ?? '?', paused: false }, active, !living, eff)
 }
 
 /** Fire-and-forget: a key's last use, for the admin's key list. */
@@ -233,3 +256,58 @@ export function deskKeyView(k: { id: string; deskId: string; label: string; pref
 
 /** "the Desk plan" — a plan id in a sentence. */
 export const planName = (id: string): string => `the ${id.charAt(0).toUpperCase()}${id.slice(1)} plan`
+
+/* ── signer registration: proof of control (QA B1) ───────────────────────
+ * A custody address enters `tenant.signers` only with the address's own
+ * signature over a challenge bound to THIS tenant, THIS address and a
+ * 15-minute window — personal_sign for an EOA, EIP-1271 for a smart account
+ * (a Safe). The challenge is stateless (HMAC over tenant + address + expiry
+ * with SESSION_SECRET) and single-use through the blotter: the nonce rides
+ * the `tenant_updated` row that registers it, and a nonce already on a row
+ * is refused. ASCII only — a wallet is asked to sign it (#830). */
+
+export const SIGNER_CHALLENGE_TTL_MS = 15 * 60_000
+/** Challenges are minted per 5-minute bucket and live until the end of the
+ *  third bucket after (10–15 minutes) — deterministic, so a POST that carries
+ *  only { address, signature } (the console's shape) can be matched against
+ *  the few challenges that can still be live, no store needed. */
+export const SIGNER_CHALLENGE_BUCKET_MS = 5 * 60_000
+
+function challengeMac(tenantId: string, address: string, expiresAt: number): string {
+  const secret = process.env.SESSION_SECRET
+  if (!secret) throw new Error('SESSION_SECRET is not set — signer challenges cannot be minted on this server.')
+  return createHmac('sha256', secret).update(`tenant-signer:${tenantId}:${address.toLowerCase()}:${expiresAt}`).digest('hex').slice(0, 24)
+}
+
+/** The exact text the address signs. */
+export function signerChallengeText(slug: string, address: string, nonce: string): string {
+  return `Pantessa tenant ${slug}: register ${address.toLowerCase()} as a signer. Nonce ${nonce}.`
+}
+
+const expiryOfBucket = (b: number) => (b + 3) * SIGNER_CHALLENGE_BUCKET_MS
+const nonceOf = (tenantId: string, address: string, expiresAt: number) => `${expiresAt}-${challengeMac(tenantId, address, expiresAt)}`
+
+/** Mint a challenge: nonce = `<expiresAtMs>-<mac>`, expiring 10–15 minutes from now. */
+export function mintSignerChallenge(t: { id: string; slug: string }, address: string, now = Date.now()): { message: string; nonce: string; expiresAt: string } {
+  const expiresAt = expiryOfBucket(Math.floor(now / SIGNER_CHALLENGE_BUCKET_MS))
+  const nonce = nonceOf(t.id, address, expiresAt)
+  return { message: signerChallengeText(t.slug, address, nonce), nonce, expiresAt: new Date(expiresAt).toISOString() }
+}
+
+/** Every challenge nonce for (tenant, address) that can still be live now. */
+export function liveSignerNonces(t: { id: string }, address: string, now = Date.now()): string[] {
+  const b = Math.floor(now / SIGNER_CHALLENGE_BUCKET_MS)
+  return [b, b - 1, b - 2].map(expiryOfBucket).filter((exp) => exp > now).map((exp) => nonceOf(t.id, address, exp))
+}
+
+/** Check a nonce is this tenant's, for this address, and inside its window. */
+export function signerNonceOk(t: { id: string }, address: string, nonce: unknown, now = Date.now()): { ok: true } | { ok: false; why: string } {
+  if (typeof nonce !== 'string' || !/^\d{13}-[0-9a-f]{24}$/.test(nonce)) return { ok: false, why: 'nonce is not one this desk minted — GET the challenge again.' }
+  const [exp, mac] = nonce.split('-')
+  const expiresAt = Number(exp)
+  if (!(expiresAt > now)) return { ok: false, why: 'this challenge expired (15 minutes) — GET a fresh one.' }
+  if (expiresAt - now > SIGNER_CHALLENGE_TTL_MS + 60_000) return { ok: false, why: 'this challenge is not one this desk minted.' }
+  const want = challengeMac(t.id, address, expiresAt)
+  if (want.length !== mac.length || !timingSafeEqual(Buffer.from(want), Buffer.from(mac))) return { ok: false, why: 'this challenge was minted for another tenant or another address.' }
+  return { ok: true }
+}
