@@ -174,13 +174,15 @@ export function statementMath(input: { ym: string; tenantCreatedAt: Date; feeBps
     const bucket = l.settled === 'verified' ? verified : l.settled === 'attested' ? attested : l.settled === 'mismatch' ? mismatch : signedOnly
     bucket.count++
     bucket.usd += usd
-    const counted = bucket === verified || bucket === signedOnly || (bucket === attested && STATEMENT_COUNTS_ATTESTED)
+    // QA F7 (2026-11-03): a signature with no settlement is REPORTED, never billed —
+    // the page promises billing on settled notional (chain-verified, or venue-attested).
+    const counted = bucket === verified || (bucket === attested && STATEMENT_COUNTS_ATTESTED)
     if (counted) credit += l.feeUsd ?? 0
   }
   for (const x of [verified, attested, signedOnly, mismatch]) x.usd = round2(x.usd)
-  const notional = round2(verified.usd + (STATEMENT_COUNTS_ATTESTED ? attested.usd : 0) + signedOnly.usd)
+  const notional = round2(verified.usd + (STATEMENT_COUNTS_ATTESTED ? attested.usd : 0))
 
-  const parts = [verified.count ? 'verified' : '', STATEMENT_COUNTS_ATTESTED && attested.count ? 'attested' : '', signedOnly.count ? 'signed' : ''].filter(Boolean)
+  const parts = [verified.count ? 'verified' : '', STATEMENT_COUNTS_ATTESTED && attested.count ? 'attested' : ''].filter(Boolean)
   const basis = (parts.length ? parts.join('+') : 'none') as StatementNumbers['basis']
   const noteBits = [
     verified.count ? `${fmtUsd(verified.usd)} receipt-verified on chain (${verified.count} leg${verified.count === 1 ? '' : 's'})` : '',
@@ -189,7 +191,7 @@ export function statementMath(input: { ym: string; tenantCreatedAt: Date; feeBps
         ? `${fmtUsd(attested.usd)} venue-attested off-chain legs, no EVM receipt exists (${attested.count})`
         : `${fmtUsd(attested.usd)} venue-attested off-chain legs NOT counted (${attested.count})`
       : '',
-    signedOnly.count ? `${fmtUsd(signedOnly.usd)} signed with no settlement yet, counted on the signature (${signedOnly.count})` : '',
+    signedOnly.count ? `${fmtUsd(signedOnly.usd)} signed with no settlement yet, NOT counted until it settles (${signedOnly.count})` : '',
     mismatch.count ? `${fmtUsd(mismatch.usd)} the chain refuted, never counted (${mismatch.count})` : '',
     unpriced ? `${unpriced} leg${unpriced === 1 ? '' : 's'} carried no price and add $0` : '',
   ].filter(Boolean)
