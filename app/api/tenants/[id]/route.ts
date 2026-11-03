@@ -13,7 +13,7 @@ import { getSessionAddress } from '@/lib/auth'
 import { SIGNING_LANES } from '@/lib/tenant/spec'
 import { activePolicy, deskKeyView, lowerList, planName, tenantEntitlements, tenantForAdmin, tenantView } from '@/lib/tenant/store'
 import { cheapestPlanAllowing, entitlementsJson, planAllows } from '@/lib/tenant/entitlements'
-import { blot } from '@/lib/tenant/gate'
+import { blot, withdrawTenantOffers } from '@/lib/tenant/gate'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -82,6 +82,19 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: `${field} must be an array of up to 50 0x wallet addresses.`, field }, { status: 400 })
     }
     const list = [...new Set(raw.map((w) => (w as string).toLowerCase()))]
+    if (field === 'signers') {
+      // QA B1: a signer is ADDED only with its own proof of control (GET
+      // …/signers/challenge, then POST …/signers with the signature). PATCH
+      // may only REMOVE signers.
+      const current = new Set(lowerList(gate.tenant.signers))
+      const added = list.filter((w) => !current.has(w))
+      if (added.length) {
+        return NextResponse.json(
+          { error: `signers are added only with a proof of control: GET /api/tenants/${id}/signers/challenge?address=<0x…>, sign the text with that wallet (personal_sign, or EIP-1271 for a Safe), then POST /api/tenants/${id}/signers. PATCH may only remove signers (not on file: ${added.join(', ')}).`, field, reason: 'SIGNER_DENIED' },
+          { status: 400 },
+        )
+      }
+    }
     data[field] = field === 'admins' ? list.filter((w) => w !== gate.tenant.ownerAddress.toLowerCase()) : list
   }
   if (Object.keys(data).length === 0) {
@@ -94,6 +107,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   // one tenant_updated row naming each field before → after.
   if (data.status !== undefined && data.status !== before.status) {
     await blot({ tenantId: id }, data.status === 'paused' ? 'tenant_paused' : 'tenant_resumed', { by: gate.addr, from: before.status, to: data.status })
+    // QA F3: a pause withdraws what is out — live jobs canceled, offered
+    // artifacts nulled, live handed-off links revoked.
+    if (data.status === 'paused') await withdrawTenantOffers({ tenantId: id }, 'TENANT_PAUSED', `the ${before.slug} desk was paused by ${gate.addr}.`)
   }
   const changes: Record<string, { from: unknown; to: unknown }> = {}
   const was: Record<string, unknown> = { name: before.name, signingLane: before.signingLane, sandbox: before.sandbox, admins: lowerList(before.admins), signers: lowerList(before.signers) }

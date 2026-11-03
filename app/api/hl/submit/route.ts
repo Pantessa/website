@@ -20,8 +20,7 @@ import {
 } from '@/lib/hyperliquid-exec'
 import { policyCheck } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
-import { bookLinkSigned, joinTenantLeg, joinTenantLink, linkGate, relayGate } from '@/lib/tenant/gate'
-import type { GateOrder } from '@/lib/tenant/order'
+import { joinTenantLeg, relayGate } from '@/lib/tenant/gate'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -249,25 +248,11 @@ export async function POST(req: NextRequest) {
     const refused = await relayGate(tenantLeg, 'hl-submit', { usd: guard.valueUsd ?? null, network: isTestnet ? 'testnet' : 'mainnet' })
     if (refused) return NextResponse.json(refused, { status: 403 })
   }
-  // The LINK lane (no job): a wallet the tenant named, a live handed-off
-  // tenant link whose ask is a Hyperliquid order on this coin — re-gated the
-  // same way, and booked `signed` below once the venue accepts it.
-  const tenantLink = tenantLeg ? null : await joinTenantLink(from, (o) => o.venue === 'hyperliquid' && o.tokens.includes(coin))
-  let linkOrder: GateOrder | null = null
-  if (tenantLink) {
-    linkOrder = {
-      ...tenantLink.base,
-      venue: 'hyperliquid',
-      candidates: ['hyperliquid'],
-      op: !isLeverage && expected.kind === 'close' ? 'perp-close' : 'perp-open',
-      side: !isLeverage && expected.kind === 'close' ? null : expected.isBuy === false ? 'short' : expected.isBuy === true ? 'long' : tenantLink.base.side,
-      leverage: isLeverage ? (expected.leverage ?? null) : tenantLink.base.leverage,
-      usd: guard.valueUsd ?? tenantLink.base.usd,
-      network: isTestnet ? 'testnet' : 'mainnet',
-    }
-    const refused = await linkGate(tenantLink, 'hl-submit', linkOrder)
-    if (refused) return NextResponse.json(refused, { status: 403 })
-  }
+  // The LINK lane (a human signing a desk-minted /i link) is NOT joined here:
+  // the server stores no HL action per link, and a join by wallet let a
+  // stranger's orders be refused or booked by a tenant that merely named the
+  // wallet (QA B2). Such a leg is retail at this relay; its intent was judged
+  // by the tenant policy at handoff (lib/tenant/gate, the link-lane note).
 
   // 3 — the kill switch, at the point of submission (the spend policy was
   //     retired 2026-10-30; policyCheck refuses only frozen / revoked now).
@@ -373,15 +358,6 @@ export async function POST(req: NextRequest) {
       note: `hl ${expected.kind} ${filled ? 'filled' : 'placed'}: ${coin}${delegation ? ' (delegated agent)' : ''}`,
       orgId: grant.orgId ?? undefined,
     }).catch(() => {})
-  }
-
-  if (tenantLink && linkOrder) {
-    const fTenth = (action as { builder?: { f?: unknown } }).builder?.f
-    await bookLinkSigned(tenantLink, 'hl-submit', linkOrder, {
-      valueUsd: filled ? Number(filled.totalSz) * Number(filled.avgPx) || null : null,
-      feeBps: typeof fTenth === 'number' && Number.isInteger(fTenth / 10) ? fTenth / 10 : null,
-      payload: { status: filled ? 'filled' : 'unfilled', coin, kind: expected.kind, oid: filled?.oid ?? null, delegated: !!delegation, network: isTestnet ? 'testnet' : 'mainnet' },
-    })
   }
 
   return NextResponse.json({
