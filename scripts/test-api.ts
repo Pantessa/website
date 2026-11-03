@@ -10873,7 +10873,8 @@ async function main() {
         const EF = '0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae'
         const euroLive: [layer: string, message: string, slugs: string[], wallet: string, path: RegExp, euro: number][] = [
           ['uniswap', 'swap €20 of ETH for USDC on ethereum', [], EF, /^native-swap/, 20],
-          ['hyperliquid', 'long €20 of HYPE on hyperliquid', ['hyperliquid-free'], EF, /^native-hl/, 20],
+          // An open a wallet can't collateralize auto-funds as ONE job (hlAutoFundedJobTurn → native-job).
+          ['hyperliquid', 'long €20 of HYPE on hyperliquid', ['hyperliquid-free'], EF, /^native-(?:hl|job)/, 20],
           ['aave', 'supply €25 of USDC to aave', ['aave-free'], EF, /^native-aave/, 25],
           ['morpho', 'lend €25 of USDC on morpho on ethereum', ['morpho-free'], EF, /^native-morpho/, 25],
           ['lido', 'stake €20 of eth on lido', ['lido-free'], EF, /^native-lido/, 20],
