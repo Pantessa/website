@@ -189,7 +189,11 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: 'desc' },
     take: 100,
   })
-  if (links.length === 0) return NextResponse.json({ links: [] })
+  // A share referral pays a creator who never minted a link (squad five-million,
+  // PERPS 2026-11-03: a trader who arrived on this wallet's chart / live / deck
+  // share is its referral for life — lib/share-referral). The empty short-
+  // circuit used to hide that rail; it now applies only when the rail is empty too.
+  if (links.length === 0 && (await prisma.referredWallet.count({ where: { creator } })) === 0) return NextResponse.json({ links: [] })
   /** What the creator SEES. `links` (all of them) stays the money base. */
   const listed = links.filter((l) => !l.revoked)
 
