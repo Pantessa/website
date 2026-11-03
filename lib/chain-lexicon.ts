@@ -16,6 +16,28 @@
 //  swap/transfer-shaped), only on words ≥5 chars, and never on words that
 //  are token symbols or everyday English — "a ton of USDC" and "swap ETH"
 //  must never read as chains.
+//
+//  THE MONEY SLOT (2026-11-03). Every native grammar (swap, Hyperliquid,
+//  Aave, Morpho, jobs, Lido, the intent net) reads ONE canonical money form,
+//  "$N (worth) of TOKEN", through normalizeWorth → normalizeDollarWords.
+//  Euros and pounds ride the same slot: "€3", "€ 3", "3 euros", "three
+//  euros", "3 eur", "EUR 3", "£3", "3 pounds", "GBP 3" are first made
+//  canonical ("€3" / "£3"), then — ONLY when a rate has been PUBLISHED into
+//  this module (lib/ecb-fx publishes the ECB's daily reference rate after
+//  each fetch; the chat route warms it before its first parse) — rewritten
+//  to the dollar form at that rate ("€3" → "$3.49"), rounded to the cent.
+//  Why rewrite rather than carry `currency: 'EUR'` on every parsed intent:
+//  normalizeWorth is synchronous and every grammar already calls it, so the
+//  rewrite reaches all of them (and every chip they emit, which then carries
+//  the dollar figure and round-trips through the plain dollar path) with no
+//  grammar touched; a per-intent field would mean seven parsers, seven
+//  pricing sites and seven chip composers learning a second currency.
+//  Why a published rate and never a face-value fallback: with NO rate known
+//  "€3" stays "€3", which no grammar reads, so the ask falls out honestly
+//  ("tell me how much") instead of trading three dollars for three euros.
+//  The route tells the user which rate it used (fiatInAsk + fiatClause) and
+//  traces it; the registry is module-scope, per instance, like the ECB
+//  cache it mirrors.
 // ─────────────────────────────────────────────────────────────────────────
 
 /** Canonical chain word → alias alternations (regex fragments, no anchors).
@@ -262,7 +284,7 @@ export function normalizeDollarWords(rawText: string): string {
     if (mult) n *= NUMBER_WORDS[mult.toLowerCase()] ?? 1
     return n > 0 ? `$${n}` : _full
   })
-  return spelled.replace(DIGIT_DOLLARS_RE, '$$$1')
+  return normalizeFiatWords(spelled.replace(DIGIT_DOLLARS_RE, '$$$1'))
 }
 
 export function normalizeWorth(rawText: string): string {
@@ -273,4 +295,139 @@ export function normalizeWorth(rawText: string): string {
     if (/^(?:with|using|shares?|units?)$/.test(w)) return full
     return wordDistance(w, 'worth') <= 2 ? `${amt} worth ` : full
   })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Fiat other than the dollar — see THE MONEY SLOT in the header.
+// ─────────────────────────────────────────────────────────────────────────
+
+export type FiatCode = 'EUR' | 'GBP'
+export interface FiatRate {
+  /** USD per ONE unit of the currency. */
+  rate: number
+  /** Earned from the ECB feed, or the onramp's fallback constant. */
+  via: 'ecb' | 'fallback'
+  /** When it was published (ms). */
+  at: number
+}
+
+/** The sign every grammar's canonical form uses and the words users type.
+ *  `eur`/`gbp` as suffix words never eat EURC/EURe/GBPT (the lookahead),
+ *  and as prefix codes they need a digit right after ("EUR 3", "gbp3"). */
+const FIAT: Record<FiatCode, { sign: '€' | '£'; words: string }> = {
+  EUR: { sign: '€', words: String.raw`euros?|eur` },
+  GBP: { sign: '£', words: String.raw`pounds?|gbp|quid` },
+}
+const FIAT_BY_SIGN: Record<'€' | '£', FiatCode> = { '€': 'EUR', '£': 'GBP' }
+const fiatOfWord = (w: string): FiatCode => (/^(?:euros?|eur)$/i.test(w) ? 'EUR' : 'GBP')
+
+const FIAT_WORDS = `${FIAT.EUR.words}|${FIAT.GBP.words}`
+const SPELLED_FIAT_RE = new RegExp(
+  String.raw`\b(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[\s-]+(one|two|three|four|five|six|seven|eight|nine))?(?:\s+(hundred|thousand))?\s+(${FIAT_WORDS})(?:['’]s?)?(?![a-z])`,
+  'gi',
+)
+/** "3 euros" / "3eur" / "10 pounds" / "5 quid" → "€3" / "£10". */
+const DIGIT_FIAT_RE = new RegExp(String.raw`(?<![\w$€£.])(\d+(?:\.\d+)?)\s?(${FIAT_WORDS})(?:['’]s?)?(?![a-z])`, 'gi')
+/** "EUR 3" / "gbp 10" (the ISO code leading the number). */
+const CODE_FIAT_RE = /(?<![\w$€£])(eur|gbp)\s?(\d+(?:\.\d+)?)(?![a-z])/gi
+/** "€ 3" / "€€3" → "€3"; the sign may sit a space away or be doubled (the
+ *  dollar's own "$$20" live case, 2026-09-21). */
+const SIGN_FIAT_RE = /(?<![\w$€£.])([€£]){1,2}\s?(\d+(?:\.\d+)?)/g
+/** The canonical fiat form, ready for the rate. */
+const CANONICAL_FIAT_RE = /(?<![\w$€£.])([€£])(\d+(?:\.\d+)?)(?![\d])/g
+
+const FIAT_RATES: Partial<Record<FiatCode, FiatRate>> = {}
+
+/** lib/ecb-fx publishes here after every fetch (earned or fallen back). A
+ *  code left out keeps whatever it had — a feed day that lost GBP does not
+ *  erase yesterday's rate. */
+export function publishFiatRates(rates: Partial<Record<FiatCode, Pick<FiatRate, 'rate' | 'via'> & { at?: number }>>): void {
+  for (const code of Object.keys(rates) as FiatCode[]) {
+    const r = rates[code]
+    if (!r || !Number.isFinite(r.rate) || r.rate <= 0) continue
+    FIAT_RATES[code] = { rate: r.rate, via: r.via, at: r.at ?? Date.now() }
+  }
+}
+/** The published USD-per-unit rate, or null when none has been published in
+ *  this process — the state in which a euro ask stays a euro ask. */
+export function fiatRate(code: FiatCode): FiatRate | null {
+  return FIAT_RATES[code] ?? null
+}
+/** Harness only: back to the cold state. */
+export function clearFiatRates(): void {
+  for (const code of Object.keys(FIAT_RATES) as FiatCode[]) delete FIAT_RATES[code]
+}
+
+/** Dollars rounded to the cent, printed the way the dollar grammars read
+ *  them ("23.24", "3.49", "12"). */
+export function fiatToUsd(amount: number, rate: number): string {
+  return String(Math.round(amount * rate * 100) / 100)
+}
+
+/** Every euro/pound spelling → the canonical "€N" / "£N" (no rate needed). */
+export function canonicalFiatWords(rawText: string): string {
+  const spelled = rawText.replace(SPELLED_FIAT_RE, (_full, lead: string, unit: string | undefined, mult: string | undefined, word: string) => {
+    let n = NUMBER_WORDS[lead.toLowerCase()] ?? 0
+    if (unit) n += NUMBER_WORDS[unit.toLowerCase()] ?? 0
+    if (mult) n *= NUMBER_WORDS[mult.toLowerCase()] ?? 1
+    return n > 0 ? `${FIAT[fiatOfWord(word)].sign}${n}` : _full
+  })
+  return spelled
+    .replace(DIGIT_FIAT_RE, (_full, amt: string, word: string) => `${FIAT[fiatOfWord(word)].sign}${amt}`)
+    .replace(CODE_FIAT_RE, (_full, code: string, amt: string) => `${FIAT[code.toUpperCase() as FiatCode].sign}${amt}`)
+    .replace(SIGN_FIAT_RE, (_full, sign: '€' | '£', amt: string) => `${sign}${amt}`)
+}
+
+/** The fiat half of normalizeDollarWords: canonical "€N" / "£N", then the
+ *  dollar form at the PUBLISHED rate — or left as is when none is known. */
+export function normalizeFiatWords(rawText: string): string {
+  if (!/[€£]|\b(?:euros?|eur|pounds?|gbp|quid)\b/i.test(rawText)) return rawText
+  return canonicalFiatWords(rawText).replace(CANONICAL_FIAT_RE, (full, sign: '€' | '£', amt: string) => {
+    const r = fiatRate(FIAT_BY_SIGN[sign])
+    if (!r) return full
+    const n = Number(amt)
+    return Number.isFinite(n) ? `$${fiatToUsd(n, r.rate)}` : full
+  })
+}
+
+export interface FiatInAsk {
+  currency: FiatCode
+  sign: '€' | '£'
+  /** As typed, in the currency. */
+  amount: number
+  /** The dollar figure the grammars read, or null when no rate is published. */
+  usd: string | null
+  rate: number | null
+  via: FiatRate['via'] | null
+}
+
+/** The first euro/pound amount in an ask and what it became — for the reply's
+ *  clause and the trace. Reads the same registry the grammars read, so the
+ *  figure here is the figure they parsed. */
+export function fiatInAsk(rawText: string): FiatInAsk | null {
+  const canon = canonicalFiatWords(rawText)
+  const m = new RegExp(CANONICAL_FIAT_RE.source).exec(canon)
+  if (!m) return null
+  const sign = m[1] as '€' | '£'
+  const amount = Number(m[2])
+  if (!Number.isFinite(amount)) return null
+  const currency = FIAT_BY_SIGN[sign]
+  const r = fiatRate(currency)
+  return { currency, sign, amount, usd: r ? fiatToUsd(amount, r.rate) : null, rate: r?.rate ?? null, via: r?.via ?? null }
+}
+
+/** Does the ask carry a euro or pound amount at all (rate or no rate)? */
+export function mentionsFiat(rawText: string): boolean {
+  return fiatInAsk(rawText) !== null
+}
+
+/** "€20 ≈ $23.24 at the ECB rate (1.1622 USD per EUR)" — or the fallback
+ *  named for what it is. Null when nothing was converted. */
+export function fiatClause(f: FiatInAsk | null): string | null {
+  if (!f || f.usd === null || f.rate === null) return null
+  const printed = `${f.sign}${f.amount}`
+  const perUnit = `${f.rate} USD per ${f.currency}`
+  return f.via === 'ecb'
+    ? `${printed} ≈ $${f.usd} at the ECB rate (${perUnit})`
+    : `${printed} ≈ $${f.usd} at a fallback rate (${perUnit} — the ECB feed was unreachable)`
 }

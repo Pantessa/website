@@ -62,7 +62,8 @@ import { privateLaneClosedTurn, privateLaneOpen, privateRefundCheck, refundDiscl
 import { CROSS_CHAIN_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import prismaDb from '@/lib/db'
-import { prettyChainWord } from '@/lib/chain-lexicon'
+import { fiatClause, fiatInAsk, mentionsFiat, prettyChainWord } from '@/lib/chain-lexicon'
+import { warmFiatRates } from '@/lib/ecb-fx'
 import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlCanonicalAsk, hlOpenCollateralShortfall, hlUnsizedChips, nearestHlCoins, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
 import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
@@ -475,7 +476,7 @@ export async function POST(req: NextRequest) {
   // ready, not when after() got round to writing them.
   const turnStartedAt = Date.now()
   const turn = await withTurnScope(() => handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw })))
-  let res = await fenceConnectAsk(await withAddedApps(turn.result, turn.scope.addedApps), raw)
+  let res = await prefixFiatClause(await fenceConnectAsk(await withAddedApps(turn.result, turn.scope.addedApps), raw), raw)
   const turnFinishedAt = Date.now()
   try {
     if (!raw || !res.headers.get('content-type')?.includes('application/json')) {
@@ -610,6 +611,35 @@ async function prefixRescuedReply(res: Response, label: string, rescue: { from: 
   }
 }
 
+/** A turn whose ask carried a euro or pound amount says what the figure
+ *  became and at which rate — ONE clause, on every reply a native layer
+ *  priced from it (a native buildPath or a signable artifact; the planner's
+ *  prose and a layer's own "how much" never used the number). The `fiat`
+ *  field carries the same facts for the harness and the failures queue. The
+ *  registry was warmed by handleChatTurn before any parse, so this reads the
+ *  rate the grammars read. A streamed turn (no JSON) passes as is. */
+async function prefixFiatClause(res: Response, raw: string): Promise<Response> {
+  try {
+    if (!raw || !res.headers.get('content-type')?.includes('application/json')) return res
+    const reqBody = JSON.parse(raw) as { message?: unknown; phase?: unknown }
+    if (reqBody.phase === 'execute' || typeof reqBody.message !== 'string') return res
+    const fiat = fiatInAsk(reqBody.message)
+    const clause = fiatClause(fiat)
+    if (!fiat || !clause) return res
+    const data = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
+    if (!data) return res
+    const priced = (typeof data.buildPath === 'string' && data.buildPath.startsWith('native-')) || !!(data.txRequest || data.txChain || data.orderRequest || data.jobId)
+    if (!priced) return res
+    const line = `💱 ${clause}.`
+    const reply = typeof data.reply === 'string' && data.reply.trim() ? `${line}\n\n${data.reply}` : line
+    const headers = new Headers(res.headers)
+    headers.delete('content-length')
+    return NextResponse.json({ ...data, reply, fiat: { currency: fiat.currency, amount: fiat.amount, usd: fiat.usd, rate: fiat.rate, via: fiat.via } }, { status: res.status, headers })
+  } catch {
+    return res
+  }
+}
+
 async function handleChatTurn(req: NextRequest): Promise<Response> {
   try {
     const body = await req.json()
@@ -701,6 +731,22 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
     const nativeTrace = clientTurnId
       ? (event: unknown) => recordTraceLine(clientTurnId, nativeSeq++, event, 'wallet')
       : () => {}
+    // ── Euros and pounds (2026-11-03) ── every grammar below reads the ONE
+    // money slot (lib/chain-lexicon normalizeDollarWords), which rewrites
+    // "€20 of ETH" to "$23.24 of ETH" at the ECB rate — but only at a rate
+    // PUBLISHED in this process, so the feed is warmed here, before the first
+    // parse. With no rate (GBP on a feed outage with nothing cached) the
+    // figure stays "€20", which no grammar reads: an honest "how much"
+    // instead of twenty dollars for twenty euros. The reply's clause and the
+    // `fiat` field are added at the POST exit (prefixFiatClause) from the
+    // same registry, so the user sees the figure the grammars parsed.
+    if (mentionsFiat(message)) {
+      await warmFiatRates()
+      const fiat = fiatInAsk(message)
+      const clause = fiatClause(fiat)
+      if (fiat && clause) nativeTrace({ type: 'status', label: `money: ${clause} — every grammar below reads $${fiat.usd}` })
+      else if (fiat) nativeTrace({ type: 'note', level: 'warn', label: `money: ${fiat.sign}${fiat.amount} — no ${fiat.currency} rate is published (feed down, nothing cached) — the figure stays unread, never a face-value dollar` })
+    }
     if (resolvedSet.dropped.length > 0 || resolvedSet.keptUnresolved.length > 0) {
       nativeTrace({
         type: 'status',
