@@ -1,0 +1,172 @@
+/* /desk — the governed desk for institutions (squad five-million, DESKPAGE
+   lane, 2026-11-03). Rides the brochure frame (x-main + the site nav + the
+   footer) like /pricing: a compliance desk arrives from a link, not from
+   inside the app. Type: Fraunces (--font-chat-display) for the display lines,
+   the body font for prose, Geist Mono for the vocabulary, hashes and
+   figures. Colors are tokens only, so light/dark come for free; a CSS-var
+   color at an opacity is a color-mix, never a Tailwind `/NN` modifier. */
+
+.dk { padding: 56px 0 80px; }
+
+/* ── The line ─────────────────────────────────────────────────────────── */
+.dk__hero { max-width: 900px; }
+.dk__eyebrow { font-family: var(--font-mono); font-size: var(--fs-sm); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted-2); }
+.dk__h1 {
+  font-family: var(--font-chat-display); font-weight: 500; font-optical-sizing: auto;
+  font-size: clamp(2.3rem, 4.6vw, 4rem); line-height: 1.04; letter-spacing: -0.018em;
+  margin-top: 14px; color: var(--fg); text-wrap: balance;
+}
+.dk__h1 em { font-style: italic; color: var(--muted-2); }
+.dk__lead { margin-top: 18px; font-size: 16px; line-height: 1.6; color: var(--muted); max-width: 70ch; text-wrap: pretty; }
+.dk__lead strong { color: var(--fg); font-weight: 600; }
+.dk__who { margin-top: 12px; font-size: var(--fs-md); color: var(--muted-2); }
+.dk__ctas { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* ── Sections ─────────────────────────────────────────────────────────── */
+.dk__sec { margin-top: 64px; scroll-margin-top: 80px; }
+.dk__sechead { display: grid; gap: 8px; max-width: 760px; }
+.dk__n { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+.dk__h2 {
+  font-family: var(--font-chat-display); font-weight: 500; font-optical-sizing: auto;
+  font-size: clamp(1.6rem, 2.6vw, 2.2rem); letter-spacing: -0.012em; line-height: 1.1; color: var(--fg); text-wrap: balance;
+}
+.dk__sub { font-size: 15px; line-height: 1.6; color: var(--muted); max-width: 68ch; text-wrap: pretty; }
+.dk__sub strong { color: var(--fg); font-weight: 600; }
+.dk__sub a, .dk__fine a, .dk__line-b a, .dk__honest a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in oklch, var(--accent) 40%, transparent); }
+.dk__sub a:hover, .dk__fine a:hover, .dk__line-b a:hover, .dk__honest a:hover { text-decoration-color: var(--accent); }
+
+.dk__split { margin-top: 24px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 16px; align-items: start; }
+.dk__panel { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); padding: 20px 22px; min-width: 0; }
+.dk__panel-k { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-2); }
+.dk__panel-p { margin-top: 10px; font-size: var(--fs-md); line-height: 1.6; color: var(--muted); }
+.dk__panel-p strong { color: var(--fg); font-weight: 600; }
+.dk__panel-p + .dk__panel-p { margin-top: 8px; }
+
+/* The policy sample as code. */
+.dk__code {
+  margin: 12px 0 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+  overflow: auto; white-space: pre; max-height: 620px; tab-size: 2;
+}
+
+/* The vocabulary rows (the spec constants). */
+.dk__vocab { margin-top: 14px; display: grid; gap: 10px; }
+.dk__vocabrow { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.dk__vocab-k { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+.dk__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dk__chip { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); white-space: nowrap; }
+.dk__chip--on { border-color: color-mix(in oklch, var(--accent) 50%, var(--line)); color: var(--fg); }
+
+/* Tables (the kinds, the sample export). */
+.dk__tablewrap { overflow-x: auto; margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surf-1); }
+.dk__table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dk__table th, .dk__table td { padding: 9px 12px; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
+.dk__table th { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); border-top: 0; font-weight: 500; white-space: nowrap; }
+.dk__table td { color: var(--muted); line-height: 1.45; }
+.dk__table td:first-child { color: var(--fg); }
+.dk__mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dk__hash { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted-2); white-space: nowrap; }
+.dk__badge { display: inline-flex; align-items: center; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; padding: 3px 8px; border-radius: 999px; background: var(--accent); color: var(--bg); font-weight: 600; }
+.dk__badge--warn { background: transparent; color: #e8c468; border: 1px dashed #e8c468; }
+html[data-theme='light'] .dk__badge--warn { color: #a3720c; border-color: #a3720c; }
+.dk__chain { margin-top: 14px; font-size: var(--fs-md); line-height: 1.6; color: var(--muted); max-width: 72ch; }
+.dk__chain code, .dk__sub code, .dk__line-b code, .dk__honest code, .dk__panel-p code { font-family: var(--font-mono); font-size: 0.9em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); overflow-wrap: anywhere; }
+
+/* What signs — four lanes with an honest status each. */
+.dk__cards { margin-top: 24px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.dk__card { border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); padding: 18px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.dk__card-t { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; color: var(--fg); }
+.dk__card-b { font-size: var(--fs-md); line-height: 1.55; color: var(--muted); flex: 1; }
+.dk__status { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 7px; color: var(--muted-2); }
+.dk__status i { width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); flex: none; }
+.dk__status--live i { background: var(--accent); }
+.dk__status--drill i { background: #e8c468; }
+
+/* What cannot happen — four numbered lines. */
+.dk__lines { margin-top: 24px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); overflow: hidden; }
+.dk__line { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; padding: 16px 18px; box-shadow: 0 1px 0 var(--line); }
+.dk__line:last-child { box-shadow: none; }
+.dk__line-n { font-family: var(--font-mono); color: var(--accent); font-size: 12px; padding-top: 2px; }
+.dk__line-t { font-weight: 600; color: var(--fg); }
+.dk__line-b { margin-top: 3px; font-size: var(--fs-md); color: var(--muted); line-height: 1.55; }
+
+/* The signal. */
+.dk__signal {
+  margin-top: 24px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center;
+  border: 1px solid color-mix(in oklch, var(--accent) 35%, var(--line)); background: color-mix(in oklch, var(--accent) 5%, var(--surf-1));
+  border-radius: var(--r-lg); padding: 22px 24px;
+}
+.dk__signal-t { font-family: var(--font-chat-display); font-weight: 500; font-size: 22px; letter-spacing: -0.01em; color: var(--fg); }
+.dk__signal-b { margin-top: 6px; font-size: var(--fs-md); line-height: 1.55; color: var(--muted); max-width: 62ch; }
+
+/* Pricing. */
+.dk__price { margin-top: 24px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.dk__bignum { margin-top: 10px; font-family: var(--font-chat-display); font-weight: 500; font-size: 44px; line-height: 1; letter-spacing: -0.01em; color: var(--fg); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.dk__bignum small { font-family: var(--font-mono); font-size: var(--fs-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.dk__tiers { list-style: none; margin: 14px 0 0; padding: 0; display: grid; }
+.dk__tiers li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--fg); }
+.dk__tiers li span:last-child { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+.dk__example { margin-top: 14px; padding: 12px 14px; border-radius: 10px; border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent); background: color-mix(in oklch, var(--accent) 7%, transparent); font-size: var(--fs-md); color: var(--fg); line-height: 1.5; }
+.dk__example strong { font-family: var(--font-mono); font-weight: 500; }
+.dk__fine { margin-top: 14px; font-size: var(--fs-sm); line-height: 1.55; color: var(--muted-2); }
+.dk__seats { margin-top: 12px; display: grid; gap: 8px; }
+.dk__seat { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--fg); }
+.dk__seat span:last-child { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+
+/* Honest about today. */
+.dk__honest { margin-top: 24px; border: 1px dashed var(--line-2); border-radius: 14px; padding: 18px 20px; max-width: 900px; }
+.dk__honest ul { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 7px; font-size: var(--fs-md); color: var(--muted); line-height: 1.5; }
+.dk__honest li strong { color: var(--fg); font-weight: 600; }
+
+/* The pilot form. */
+.dk__form { margin-top: 24px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); padding: 22px; position: relative; }
+.dk__field { display: grid; gap: 6px; min-width: 0; }
+.dk__field--wide { grid-column: 1 / -1; }
+.dk__label { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); }
+.dk__input {
+  width: 100%; min-width: 0; min-height: 44px; border-radius: 12px; padding: 11px 14px; font: inherit; font-size: 14px;
+  border: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 55%, transparent); color: var(--fg); outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.dk__input::placeholder { color: var(--muted-2); }
+.dk__input:focus { border-color: color-mix(in oklch, var(--accent) 60%, var(--line)); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent); }
+textarea.dk__input { min-height: 92px; resize: vertical; line-height: 1.5; }
+select.dk__input { appearance: none; -webkit-appearance: none; padding-right: 36px; background-image: linear-gradient(45deg, transparent 50%, var(--muted-2) 50%), linear-gradient(135deg, var(--muted-2) 50%, transparent 50%); background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+.dk__hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.dk__submit { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.dk__btn { min-height: 44px; padding: 0 22px; border-radius: 10px; font: inherit; font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid transparent; cursor: pointer; text-decoration: none; transition: transform 0.12s, background 0.15s, border-color 0.15s; }
+.dk__btn:active { transform: translateY(1px); }
+.dk__btn--solid { background: var(--fg); color: var(--bg); }
+.dk__btn--solid:hover { background: oklch(0.88 0 0); }
+html[data-theme='light'] .dk__btn--solid:hover { background: oklch(0.3 0 0); }
+.dk__btn--ghost { border-color: var(--line-2); color: var(--fg); background: transparent; }
+.dk__btn--ghost:hover { border-color: var(--fg); }
+.dk__btn:disabled { opacity: 0.55; cursor: default; transform: none; }
+.dk__done { font-size: 15px; color: var(--accent); line-height: 1.5; }
+.dk__err { font-size: 12.5px; color: #e8c468; }
+html[data-theme='light'] .dk__err { color: #a3720c; }
+.dk__formnote { grid-column: 1 / -1; font-size: var(--fs-sm); color: var(--muted-2); line-height: 1.5; }
+
+/* Prose links on a touch screen: a 44px hit box without moving the line
+   (vertical padding, the same negative margin), the pricing toggle's trick. */
+@media (pointer: coarse) {
+  .dk__sub a, .dk__fine a, .dk__line-b a, .dk__honest a, .dk__panel-p a, .dk__seat a { display: inline-block; padding: 14px 0; margin: -14px 0; }
+}
+
+/* ── Postures ─────────────────────────────────────────────────────────── */
+@media (max-width: 1023px) {
+  .dk__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dk__split, .dk__price { grid-template-columns: 1fr; }
+}
+@media (max-width: 639px) {
+  .dk { padding: 32px 0 64px; }
+  .dk__sec { margin-top: 48px; }
+  .dk__cards { grid-template-columns: 1fr; }
+  .dk__form { grid-template-columns: 1fr; padding: 16px; }
+  .dk__signal { grid-template-columns: 1fr; padding: 18px; }
+  .dk__input { font-size: 16px; }
+  .dk__vocabrow { grid-template-columns: 1fr; gap: 6px; }
+  .dk__code { font-size: 11px; max-height: 420px; }
+  .dk__panel { padding: 16px; }
+  .dk__ctas .dk__btn { flex: 1 1 100%; justify-content: center; }
+}

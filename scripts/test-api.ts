@@ -35989,6 +35989,21 @@ async function main() {
     }
   }
 
+  // ── THE GOVERNED DESK page + the pilot door + lib/legal + the tenant docs (squad five-million, DESKPAGE lane, 2026-11-03) ──
+  // Pure: the /desk samples agree with lib/tenant/spec (the policy shape, the
+  // blotter kinds, a hash chain that verifies, the pricing arithmetic),
+  // lib/legal keeps the shipped strings and honours LEGAL_*, the lane's sources
+  // carry no forbidden phrase, the pilot parser + limiter. Served: /desk carries
+  // every spec word and number, the OG card, the sitemap, /docs/desk's tenant
+  // section, the pilot route (bad email 400, good one stored + deleted,
+  // honeypot stores nothing, 429 from one platform IP). The LEGAL_* second
+  // server is `npm run pins:desk-page -- --live --legal-server` only.
+  {
+    const DP = await import('./desk-page-pins')
+    DP.deskPagePins(check)
+    await DP.deskPageLivePins(check, BASE, { legalServer: false })
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

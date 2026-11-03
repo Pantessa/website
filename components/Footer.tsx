@@ -4,6 +4,7 @@ import ThemeToggle from '@/components/ThemeToggle'
 import SpineLink from '@/components/SpineLink'
 import { X_PROFILE_URL } from '@/lib/social'
 import { MARKETS_HREF } from '@/lib/markets'
+import { LEGAL_ENTITY_SHORT } from '@/lib/legal'
 
 /** `app`: the link lands inside the app shell, which sends a signed-out
  *  visitor home — so it renders as a SpineLink (the sign-in door for them). */
@@ -29,6 +30,8 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
       { label: 'Site Buttons', href: '/links/embed' },
       { label: 'Live Activity', href: '/activity' },
       { label: 'Pricing', href: '/pricing' },
+      // The governed desk for institutions (squad five-million, 2026-11-03).
+      { label: 'The Desk', href: '/desk' },
       { label: 'Blog', href: '/blog' },
       { label: 'Terms', href: '/docs/terms' },
       { label: 'Privacy', href: '/docs/privacy' },
@@ -148,7 +151,7 @@ export default function Footer() {
         </div>
 
         <div className="footer__bottom">
-          <span className="mono">© 2026 PANTESSA INC.</span>
+          <span className="mono">© 2026 {LEGAL_ENTITY_SHORT}</span>
           <div className="footer__bottomright">
             <span className="mono">NON-CUSTODIAL · YOUR WALLET SIGNS</span>
             <ThemeToggle />

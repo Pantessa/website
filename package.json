@@ -89,7 +89,8 @@
     "drive:native": "tsx scripts/drive-native.ts",
     "drive:prints": "tsx scripts/drive-print-alerts.ts",
     "drive:guest-chat": "node scripts/guest-chat-drive.mjs",
-    "pins:markets-mobile": "tsx scripts/markets-mobile-pins.ts"
+    "pins:markets-mobile": "tsx scripts/markets-mobile-pins.ts",
+    "pins:desk-page": "tsx scripts/desk-page-pins.ts"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.111",
