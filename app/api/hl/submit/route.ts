@@ -20,6 +20,8 @@ import {
 } from '@/lib/hyperliquid-exec'
 import { policyCheck } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
+import { bookLinkSigned, joinTenantLeg, joinTenantLink, linkGate, relayGate } from '@/lib/tenant/gate'
+import type { GateOrder } from '@/lib/tenant/order'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -237,6 +239,36 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Refused at submit: ${bad.join(' ')}` }, { status: 403 })
   }
 
+  // 2b — FIVE-MILLION: a leg a TENANT job owns is re-gated with the tenant's
+  //      ACTIVE policy at submit. The join is the server's own record — the
+  //      live tenant jobs of the recovered wallet, the offered step whose
+  //      built action carries THIS nonce — never a claim in the body. A
+  //      tenant signer BLOCKS: 403 { error, reason }.
+  const tenantLeg = await joinTenantLeg(from, (a) => hlArtifactHasNonce(a, nonce))
+  if (tenantLeg) {
+    const refused = await relayGate(tenantLeg, 'hl-submit', { usd: guard.valueUsd ?? null, network: isTestnet ? 'testnet' : 'mainnet' })
+    if (refused) return NextResponse.json(refused, { status: 403 })
+  }
+  // The LINK lane (no job): a wallet the tenant named, a live handed-off
+  // tenant link whose ask is a Hyperliquid order on this coin — re-gated the
+  // same way, and booked `signed` below once the venue accepts it.
+  const tenantLink = tenantLeg ? null : await joinTenantLink(from, (o) => o.venue === 'hyperliquid' && o.tokens.includes(coin))
+  let linkOrder: GateOrder | null = null
+  if (tenantLink) {
+    linkOrder = {
+      ...tenantLink.base,
+      venue: 'hyperliquid',
+      candidates: ['hyperliquid'],
+      op: !isLeverage && expected.kind === 'close' ? 'perp-close' : 'perp-open',
+      side: !isLeverage && expected.kind === 'close' ? null : expected.isBuy === false ? 'short' : expected.isBuy === true ? 'long' : tenantLink.base.side,
+      leverage: isLeverage ? (expected.leverage ?? null) : tenantLink.base.leverage,
+      usd: guard.valueUsd ?? tenantLink.base.usd,
+      network: isTestnet ? 'testnet' : 'mainnet',
+    }
+    const refused = await linkGate(tenantLink, 'hl-submit', linkOrder)
+    if (refused) return NextResponse.json(refused, { status: 403 })
+  }
+
   // 3 — the kill switch, at the point of submission (the spend policy was
   //     retired 2026-10-30; policyCheck refuses only frozen / revoked now).
   const grant = await getActiveGrant(from.toLowerCase())
@@ -343,10 +375,29 @@ export async function POST(req: NextRequest) {
     }).catch(() => {})
   }
 
+  if (tenantLink && linkOrder) {
+    const fTenth = (action as { builder?: { f?: unknown } }).builder?.f
+    await bookLinkSigned(tenantLink, 'hl-submit', linkOrder, {
+      valueUsd: filled ? Number(filled.totalSz) * Number(filled.avgPx) || null : null,
+      feeBps: typeof fTenth === 'number' && Number.isInteger(fTenth / 10) ? fTenth / 10 : null,
+      payload: { status: filled ? 'filled' : 'unfilled', coin, kind: expected.kind, oid: filled?.oid ?? null, delegated: !!delegation, network: isTestnet ? 'testnet' : 'mainnet' },
+    })
+  }
+
   return NextResponse.json({
     status: filled ? 'filled' : 'unfilled',
     filled,
     valueUsd: guard.valueUsd,
     explorerUrl: `https://app.hyperliquid${isTestnet ? '-testnet' : ''}.xyz/trade/${coin}`,
   })
+}
+
+/** Does a job step's built HL artifact carry this nonce — the order itself,
+ *  its leverage pre-step, or a batch member? (Nonces are ms timestamps minted
+ *  per build, so the nonce IS the leg's identity at the venue.) */
+function hlArtifactHasNonce(artifact: Record<string, unknown>, nonce: number): boolean {
+  const req = artifact.orderRequest as { protocol?: unknown; hl?: { nonce?: unknown; pre?: { nonce?: unknown } }; batch?: Array<{ nonce?: unknown }> } | undefined
+  if (!req || req.protocol !== 'hyperliquid') return false
+  if (req.hl?.nonce === nonce || req.hl?.pre?.nonce === nonce) return true
+  return Array.isArray(req.batch) && req.batch.some((m) => m?.nonce === nonce)
 }

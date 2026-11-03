@@ -25,6 +25,9 @@ import { dryRunTx, isAllowanceLag } from '@/lib/dry-run'
 import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS } from '@/lib/fees'
 import { resolveCreatorPayout } from '@/lib/creator-split'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
+import { joinTenantLeg, joinTenantLinkBySlug, linkGate, relayGate } from '@/lib/tenant/gate'
+import type { GateOrder } from '@/lib/tenant/order'
+import type { TenantVenue } from '@/lib/tenant/spec'
 
 /** Dry-run the rebuilt tx before offering it. A tx that reverts at
  *  estimation must NEVER reach the wallet: MetaMask's estimate fails too and
@@ -97,6 +100,39 @@ export async function POST(req: NextRequest) {
   // creator's half is re-read from the database (lib/creator-split), never
   // taken from the recipe. A malformed slug is simply no slug.
   const linkSlug = typeof body.linkSlug === 'string' && INTENT_SLUG_RE.test(body.linkSlug) ? body.linkSlug : undefined
+
+  // FIVE-MILLION: a rebuild of a step a TENANT job owns is re-gated with the
+  // tenant's ACTIVE policy before anything is quoted. The join is the server's
+  // own record — the live tenant jobs of `from`, the offered step whose stored
+  // refresh recipe IS this request (same kind, every recipe param equal) —
+  // never a claim in the body. Refused → 403 { error, reason }, plus the
+  // card's own withhold shape (blocked) so the chain card never falls back to
+  // its prebuilt calldata.
+  if (from) {
+    const tenantLeg = await joinTenantLeg(from, (a) => refreshRecipeIs(a, body))
+    if (tenantLeg) {
+      const refused = await relayGate(tenantLeg, 'tx-refresh')
+      if (refused) return NextResponse.json({ ...refused, blocked: true, blockKind: 'policy', reasons: refused.error }, { status: 403 })
+    }
+    // The LINK lane: the recipe's own linkSlug (the server put it there when
+    // it built the chain) names the tenant link this rebuild belongs to.
+    const venue = REFRESH_VENUE[String(body.kind)] ?? null
+    const tenantLink = !tenantLeg && linkSlug && venue ? await joinTenantLinkBySlug(linkSlug, (o) => o.op === 'swap' || o.op === 'bridge') : null
+    if (tenantLink && venue) {
+      const recipeChain = body.kind === 'lifi-bridge' ? Number(body.origin ?? 8453) : Number(body.chainId)
+      const sell = typeof body.sellToken === 'string' ? body.sellToken.toUpperCase() : null
+      const stableSell = !!sell && /^(USDC|USDT|DAI|USDG|USDC\.E|USDBC)$/.test(sell)
+      const leg: GateOrder = {
+        ...tenantLink.base,
+        venue: body.kind === 'lifi-bridge' && body.venue === 'near' ? 'near-intents' : venue,
+        candidates: undefined,
+        chainId: Number.isInteger(recipeChain) && recipeChain > 0 ? recipeChain : tenantLink.base.chainId,
+        usd: body.kind === 'lifi-bridge' ? Number(body.usd) || tenantLink.base.usd : stableSell ? Number(body.amountHuman) || tenantLink.base.usd : tenantLink.base.usd,
+      }
+      const refused = await linkGate(tenantLink, 'tx-refresh', leg)
+      if (refused) return NextResponse.json({ ...refused, blocked: true, blockKind: 'policy', reasons: refused.error }, { status: 403 })
+    }
+  }
 
   // Funding-bridge legs (the Robinhood funding job) refresh from their own
   // recipe shape: {leg, usd} — the builder re-quotes the cross-chain route,
@@ -301,4 +337,21 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ error: err instanceof Error ? err.message : 'rebuild failed' }, { status: 502 })
   }
+}
+
+/** Is this request the refresh recipe a job step's built txChain carries? */
+function refreshRecipeIs(artifact: Record<string, unknown>, body: Record<string, unknown>): boolean {
+  const refresh = (artifact.txChain as { refresh?: { kind?: unknown; params?: Record<string, unknown> } } | undefined)?.refresh
+  if (!refresh || refresh.kind !== body.kind || !refresh.params || typeof refresh.params !== 'object') return false
+  const params = Object.entries(refresh.params).filter(([k]) => k !== 'creatorBps')
+  return params.length > 0 && params.every(([k, v]) => String(body[k] ?? '') === String(v))
+}
+
+/** The venue each refresh recipe rebuilds on. */
+const REFRESH_VENUE: Record<string, TenantVenue> = {
+  'uniswap-swap': 'uniswap-v3',
+  'uniswap-v4-swap': 'uniswap-v4',
+  'lifi-swap': 'lifi',
+  'lifi-bridge': 'lifi',
+  [POLICY_POOL_REFRESH_KIND]: 'policy-pool',
 }

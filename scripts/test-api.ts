@@ -35997,6 +35997,23 @@ async function main() {
     }
   }
 
+  // ── FIVE-MILLION: the tenant desk (TENANT lane, 2026-11-03) ─────────────
+  // The policy engine's every refusal, the validator, the plan → order map,
+  // desk keys and source pins on the four doors (pure); then the README demo
+  // over the wire: an owner creates a tenant, activates the sample policy,
+  // mints a dk_ key, and the desk answers allowed / CHAIN_DENIED /
+  // VENUE_DENIED / awaiting approval → approve → proceeds / KEY_PAUSED /
+  // TENANT_PAUSED / KEY_REVOKED / KEY_UNKNOWN, a retail open untouched, the
+  // execute binding its job, and the relays refusing a tenant leg (job lane +
+  // link lane). The fixtures (sandbox flip, relay jobs) need the harness's
+  // DATABASE_URL (the TEST DB, inline). scripts/tenant-pins.ts.
+  console.log('— tenant (five-million)')
+  {
+    const { tenantPurePins, tenantLivePins } = await import('./tenant-pins')
+    tenantPurePins(check)
+    await tenantLivePins(BASE, check, { log: (l) => console.log(l) }).catch((e: unknown) => check('tenant live: the drive ran to the end', false, e instanceof Error ? e.message : String(e)))
+  }
+
   // ── BLOTTER (five-million, 2026-11-03): the tenant's hash-chained blotter + the
   // monthly statement (lib/tenant/blotter, lib/tenant/statement, the runner's tenant
   // rows, the sign-site row). Pure pins here; `npm run pins:blotter` adds the DB pass
