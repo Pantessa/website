@@ -16,7 +16,7 @@ import type { NextRequest } from 'next/server'
 import prisma from '@/lib/db'
 import { getEffectivePlan } from '@/lib/billing'
 import { entitlementsFor } from '@/lib/tenant/entitlements'
-import { DESK_KEY_PREFIX, DESK_KEY_RE, DESK_PLAN_IDS, SIGNING_LANES, type DeskPlanId, type SigningLane, type TenantContext, type TenantEntitlements, type TenantPolicyDoc } from '@/lib/tenant/spec'
+import { DESK_KEY_PREFIX, DESK_KEY_RE, SIGNING_LANES, type SigningLane, type TenantContext, type TenantEntitlements, type TenantPolicyDoc } from '@/lib/tenant/spec'
 
 /* ── keys ─────────────────────────────────────────────────────────────── */
 
@@ -229,38 +229,6 @@ export function tenantView(t: TenantRow) {
 /** A desk key as its admins read it. */
 export function deskKeyView(k: { id: string; deskId: string; label: string; prefix: string; paused: boolean; lastUsedAt: Date | null; revokedAt: Date | null; createdAt: Date }) {
   return { id: k.id, deskId: k.deskId, label: k.label, prefix: k.prefix, paused: k.paused, revoked: !!k.revokedAt, revokedAt: k.revokedAt, lastUsedAt: k.lastUsedAt, createdAt: k.createdAt }
-}
-
-/* ── entitlement questions (PLANS #1036's names and semantics) ───────────
- * PLANS' lib/tenant/entitlements.ts exports these same five names. They are
- * mirrored here over `entitlementsFor` alone so this lane compiles against
- * the stub and reads the REAL table the moment #1036 merges (same semantics:
- * a cap of N admits the Nth and refuses the N+1th; Infinity = unlimited and
- * travels as null). The coordinator can point the imports at PLANS' file at
- * merge — nothing behaves differently. */
-
-export type EntitlementFlag = 'mainnet' | 'blotterExport' | 'approvals' | 'hooks' | 'statement'
-export type EntitlementCap = 'tenants' | 'keysPerTenant'
-
-export function planAllows(plan: string, feature: EntitlementFlag): boolean {
-  return entitlementsFor(plan)[feature] === true
-}
-
-export function capAllows(plan: string, cap: EntitlementCap, current: number): boolean {
-  const n = Number.isFinite(current) && current > 0 ? Math.floor(current) : 0
-  return n < entitlementsFor(plan)[cap]
-}
-
-export function cheapestPlanAllowing(feature: EntitlementFlag): DeskPlanId {
-  return DESK_PLAN_IDS.find((p) => entitlementsFor(p)[feature] === true) ?? 'enterprise'
-}
-
-export function cheapestPlanForCap(cap: EntitlementCap, count: number): DeskPlanId {
-  return DESK_PLAN_IDS.find((p) => count <= entitlementsFor(p)[cap]) ?? 'enterprise'
-}
-
-export function entitlementsJson(e: TenantEntitlements): Omit<TenantEntitlements, EntitlementCap> & { tenants: number | null; keysPerTenant: number | null } {
-  return { ...e, tenants: Number.isFinite(e.tenants) ? e.tenants : null, keysPerTenant: Number.isFinite(e.keysPerTenant) ? e.keysPerTenant : null }
 }
 
 /** "the Desk plan" — a plan id in a sentence. */

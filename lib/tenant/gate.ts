@@ -20,7 +20,7 @@ import { orderOfLeg, ordersOfPlan, type GateOrder } from '@/lib/tenant/order'
 import { approvalCount, tenantContextForJob, type ResolvedTenant } from '@/lib/tenant/store'
 import type { BlotterKind, BlotterVerification, TenantContext, TenantRefusal, TenantVerdict, TenantVenue } from '@/lib/tenant/spec'
 
-export type GateStage = 'open' | 'choose' | 'handoff' | 'execute' | 'leg' | 'relay'
+export type GateStage = 'open' | 'choose' | 'handoff' | 'execute' | 'offer' | 'leg' | 'relay'
 
 export interface GateIds {
   stage: GateStage
@@ -34,9 +34,9 @@ export interface GateIds {
 
 type Ctx = TenantContext & Partial<Pick<ResolvedTenant, 'pausedBy' | 'keyRevoked' | 'tenantName'>>
 
-/** The refusal reasons the gate can answer beyond the spec's union (a signer
- *  outside the tenant's custody list). Kept as strings on the wire. */
-export type DeskRefusal = TenantRefusal | 'SIGNER_DENIED' | 'APPROVAL_PENDING' | 'KEY_UNKNOWN' | 'KEY_REVOKED' | 'TENANT_MISMATCH' | 'NOT_ON_TENANT_DESK'
+/** Every refusal the desk answers is a spec TenantRefusal (the door reasons
+ *  joined the spec 2026-11-03). Kept as an alias for readers of this file. */
+export type DeskRefusal = TenantRefusal
 
 /** Judge ONE order: candidates (a swap the cascade has not built yet) are
  *  tried in the builder's own order and the first the policy admits governs;
@@ -192,7 +192,7 @@ export async function blot(
 }
 
 /** The desk's own words for a refusal. */
-export function refusalSay(ctx: Pick<TenantContext, 'tenantSlug' | 'policyVersion' | 'deskId'>, reason: string, detail: string): string {
+export function refusalSay(ctx: Pick<TenantContext, 'tenantSlug' | 'policyVersion' | 'deskId'>, reason: TenantRefusal, detail: string): string {
   const v = ctx.policyVersion != null ? ` v${ctx.policyVersion}` : ''
   return `Refused by the ${ctx.tenantSlug} desk policy${v} (desk ${ctx.deskId}) — ${reason}: ${detail}`
 }
@@ -200,10 +200,55 @@ export function refusalSay(ctx: Pick<TenantContext, 'tenantSlug' | 'policyVersio
 /** A structured refusal the MCP route answers as isError with a JSON body
  *  (`gate: 'policy'`), so an agent reads the reason instead of parsing prose. */
 export class TenantRefusedError extends Error {
-  constructor(public payload: { gate: 'policy'; reason: DeskRefusal | string; detail: string; say: string; intentId?: string; state?: string; [k: string]: unknown }) {
+  constructor(public payload: { gate: 'policy'; reason: TenantRefusal; detail: string; say: string; intentId?: string; state?: string; [k: string]: unknown }) {
     super(payload.say)
     this.name = 'TenantRefusedError'
   }
+}
+
+/* ── the runner's OFFER site (lib/jobs-runner advanceJob) ───────────────
+ *
+ * The one place a tenant job's leg becomes servable — to broker_next AND to
+ * the Jobs REST channel (`GET /api/jobs/:id?t=`), which never passes through
+ * the desk. So the leg is judged HERE, on what was just built, with the
+ * tenant's policy active NOW (a policy activated after execute governs every
+ * leg not yet offered). A refusal fails the step, cancels the job, lands the
+ * intent `refused` and writes the `refused` row; the leg is never stored as
+ * offered. Errors propagate: the runner's catch fails the step (closed). */
+export async function gateTenantOffer(
+  job: { id: string; tenantId: string | null; deskKeyId: string | null },
+  step: { id: string; seq: number; builder: string; params: unknown; kind: string },
+  built: { artifact: Record<string, unknown>; valueUsd: number | null | undefined },
+): Promise<{ reason: TenantRefusal; say: string } | null> {
+  const ctx = await tenantContextForJob(job)
+  if (!ctx) return null
+  const intent = await prisma.brokerIntent.findFirst({ where: { jobId: job.id }, select: { id: true } })
+  const order = orderOfLeg({ builder: step.builder, params: step.params, kind: step.kind, artifact: built.artifact, valueUsd: built.valueUsd ?? null }, ctx.deskId)
+  let reason: TenantRefusal | null = null
+  let detail = ''
+  if (!order) {
+    reason = 'VENUE_DENIED'
+    detail = `the desk cannot name the venue of leg ${step.seq + 1} (${step.builder}), and a tenant leg it cannot judge is never offered.`
+  } else {
+    const v = await tenantGate(ctx, order, { stage: 'offer', intentId: intent?.id ?? null, jobId: job.id, note: `offer leg ${step.seq}` })
+    if (!v.allowed) {
+      reason = v.reason
+      detail = v.detail
+    } else if (v.needsApproval) {
+      const have = intent ? await approvalCount(intent.id) : 0
+      if (have < v.approvers) {
+        reason = 'APPROVAL_PENDING'
+        detail = `the built leg (~$${order.usd ?? '?'}) is over the desk's approval threshold and carries ${have} of ${v.approvers} admin approvals.`
+      }
+    }
+  }
+  if (!reason) return null
+  const say = refusalSay(ctx, reason, `${detail} Leg ${step.seq + 1} was not offered and the job is canceled.`)
+  await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'failed', artifact: undefined, result: { error: say, policyRefused: reason } as object } })
+  await prisma.job.update({ where: { id: job.id }, data: { status: 'canceled', failReason: say.slice(0, 500) } })
+  if (intent) await prisma.brokerIntent.update({ where: { id: intent.id }, data: { state: 'refused' } }).catch(() => {})
+  await blot(ctx, 'refused', { stage: 'offer', seq: step.seq, builder: step.builder, reason, detail }, { intentId: intent?.id ?? null, jobId: job.id, venue: order?.venue ?? null, chainId: order?.chainId ?? null, valueUsd: order?.usd ?? null })
+  return { reason, say }
 }
 
 /* ── the relays: join a submitted leg to the JOB that owns it ─────────── */
@@ -253,7 +298,7 @@ export async function relayGate(
   join: RelayJoin,
   relay: 'hl-submit' | 'cow-submit' | 'tx-refresh',
   live: { usd?: number | null; network?: 'mainnet' | 'testnet' } = {},
-): Promise<{ error: string; reason: string } | null> {
+): Promise<{ error: string; reason: TenantRefusal } | null> {
   const o = orderOfLeg(join.step, join.ctx.deskId)
   const intent = await prisma.brokerIntent.findFirst({ where: { jobId: join.jobId }, select: { id: true } }).catch(() => null)
   if (!o) {
@@ -352,9 +397,9 @@ export async function joinTenantLinkBySlug(slug: string, want: (o: GateOrder) =>
 
 /** Re-gate a link-lane leg with the ACTIVE policy (approvals counted). null =
  *  allowed; otherwise the 403 body, after a `refused` row. */
-export async function linkGate(join: LinkJoin, relay: 'hl-submit' | 'cow-submit' | 'tx-refresh', leg: GateOrder): Promise<{ error: string; reason: string } | null> {
+export async function linkGate(join: LinkJoin, relay: 'hl-submit' | 'cow-submit' | 'tx-refresh', leg: GateOrder): Promise<{ error: string; reason: TenantRefusal } | null> {
   const v = await tenantGate(join.ctx, leg, { stage: 'relay', intentId: join.intentId, note: `${relay} via link ${join.linkSlug} (${join.join})` })
-  const refuse = async (reason: string, detail: string) => {
+  const refuse = async (reason: TenantRefusal, detail: string) => {
     await blot(join.ctx, 'refused', { relay, lane: 'human', linkSlug: join.linkSlug, join: join.join, reason, detail }, { intentId: join.intentId, venue: leg.venue, chainId: leg.chainId, valueUsd: leg.usd })
     return { error: refusalSay(join.ctx, reason, detail), reason }
   }

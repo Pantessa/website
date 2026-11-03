@@ -100,7 +100,12 @@ export interface JobBirth {
 /** Create a job. `opts.internal` stamps `jobs.is_internal` (lib/internal-run.ts):
  *  our own harness/drill runs create REAL jobs rows for throwaway wallets,
  *  and the GTM arc must never read one as an arrival, a build, or a sign. */
-export async function createJob(wallet: string, compiled: CompiledJob, source = 'chat', opts?: { internal?: boolean } & JobBirth) {
+export async function createJob(
+  wallet: string,
+  compiled: CompiledJob,
+  source = 'chat',
+  opts?: { internal?: boolean; /** FIVE-MILLION: the tenant desk + key that own this job, stamped in the SAME insert so its first row is already the tenant's. */ tenantId?: string | null; deskKeyId?: string | null } & JobBirth,
+) {
   const job = await prisma.job.create({
     data: {
       wallet: wallet.toLowerCase(),
@@ -110,6 +115,8 @@ export async function createJob(wallet: string, compiled: CompiledJob, source = 
       isInternal: opts?.internal === true,
       surface: opts?.surface ?? null,
       intentLinkSlug: opts?.intentLinkSlug ?? null,
+      tenantId: opts?.tenantId ?? null,
+      deskKeyId: opts?.deskKeyId ?? null,
       steps: {
         create: compiled.steps.map((s, i) => ({
           seq: i,
@@ -250,6 +257,16 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
       if (claim.count !== 1) return
       try {
         const built = await buildSignArtifact(fresh.wallet, step.builder, step.params as Record<string, unknown>)
+        // FIVE-MILLION (TENANT): a tenant job's leg is judged by its tenant's
+        // ACTIVE policy on what was just built, BEFORE it can become servable
+        // to broker_next or the Jobs REST channel. A refusal fails the step and
+        // cancels the job (lib/tenant/gate gateTenantOffer); nothing is offered.
+        // Imported on demand: the tenant gate reads the jobs compiler.
+        if (fresh.tenantId) {
+          const { gateTenantOffer } = await import('@/lib/tenant/gate')
+          const refused = await gateTenantOffer(fresh, step, { artifact: stampJobStepPath(step.builder, built.artifact, built.buildPath), valueUsd: built.valueUsd })
+          if (refused) return
+        }
         // THE affordability choke point (lib/affordability.ts): a step is
         // offered only when the wallet can PROVABLY cover what it spends —
         // a typed "Fund robinhood chain with $20 from base" on a $0 wallet

@@ -179,7 +179,13 @@ export function tenantPurePins(check: Check): void {
   check('tenant desk (source): a door refusal (paused key/tenant, revoked key) is a blotter row too — the firm sees the attempt', /blot\(ctx, 'policy_verdict', \{ stage: 'door'/.test(bt) && /caller\.tenantId\) await blot\(/.test(bt))
   const exec = code('lib/broker-exec.ts')
   check('tenant desk (source): execute takes the registered-signer consent ONLY for a tenant caller with no signature given; everyone else still proves the wallet', /const signerConsent = !!tenantRow && tenantRow\.signers\.includes\(row\.wallet\.toLowerCase\(\)\)/.test(exec) && /if \(consent === 'personal_sign'\) await assertWalletProof\(/.test(exec) && /consent, wallet: row\.wallet/.test(exec))
-  check('tenant desk (source): execute re-gates the COMPILED job before createJob and binds the job to the tenant right after it', /regateIntent\(tenantRow, row, 'execute', compiled\)[\s\S]*await createJob\([\s\S]*bindJobToTenant\(job\.id, tenantRow\)/.test(exec))
+  check('tenant desk (source): execute re-gates the COMPILED job before createJob, and createJob stamps the tenant + key in the SAME insert (no post-create update)', /regateIntent\(tenantRow, row, 'execute', compiled\)[\s\S]*await createJob\(row\.wallet, compiled, 'broker', \{ internal: call\?\.internal === true, \.\.\.\(tenantRow \? \{ tenantId: tenantRow\.tenantId, deskKeyId: tenantRow\.keyId \} : \{\}\) \}\)/.test(exec) && !/bindJobToTenant/.test(exec))
+  const runner = code('lib/jobs-runner.ts')
+  const create = runner.slice(runner.indexOf('export async function createJob('), runner.indexOf('export async function getJobWithSteps('))
+  check('tenant runner (source): createJob takes { tenantId, deskKeyId } and writes them inside prisma.job.create', /tenantId\?: string \| null; deskKeyId\?: string \| null/.test(create) && /prisma\.job\.create\(\{[\s\S]*tenantId: opts\?\.tenantId \?\? null,\s*deskKeyId: opts\?\.deskKeyId \?\? null,/.test(create))
+  const built = runner.indexOf('const built = await buildSignArtifact(fresh.wallet, step.builder')
+  const offerGate = runner.indexOf('gateTenantOffer(fresh, step,')
+  check('tenant runner (source): the OFFER site re-gates a tenant leg right after it is built — before affordability and before it is ever stored as offered (the Jobs REST channel never serves an un-gated tenant leg)', built > 0 && offerGate > built && offerGate < runner.indexOf('const verdict = await checkAffordability(fresh.wallet, built.artifact') && offerGate < runner.indexOf("status: 'offered',", built) && /if \(fresh\.tenantId\) \{\s*const \{ gateTenantOffer \} = await import\('@\/lib\/tenant\/gate'\)[\s\S]{0,260}if \(refused\) return/.test(runner))
   const hl = code('app/api/hl/submit/route.ts')
   const hlGate = hl.indexOf('joinTenantLeg(from')
   check('tenant relay (source): /api/hl/submit joins + re-gates a tenant leg AFTER the signer is recovered and BEFORE the venue relay', hlGate > hl.indexOf('signer.toLowerCase() !== from.toLowerCase()') && hlGate < hl.indexOf('fetch(`${apiUrl}/exchange`') && /relayGate\(tenantLeg, 'hl-submit'/.test(hl) && /status: 403/.test(hl.slice(hlGate, hlGate + 600)))
@@ -357,7 +363,7 @@ export async function tenantLivePins(base: string, check: Check, opts: LiveOpts 
   if (process.env.DATABASE_URL) {
     prisma = (await import('../lib/db')).default
     const host = (() => { try { return new URL(process.env.DATABASE_URL!).host } catch { return '?' } })()
-    log(`  · FIXTURE: tenant ${slug} sandbox → false directly in the DB (${host}) — the stub entitlements say mainnet=false, the demo drives Base`)
+    log(`  · FIXTURE: tenant ${slug} sandbox → false directly in the DB (${host}) — the owner's free plan has no mainnet, the demo drives Base`)
     await prisma.tenant.update({ where: { id: tenantId }, data: { sandbox: false } })
   } else {
     log('  ⚪ tenant live: no DATABASE_URL in the environment — the sandbox flip, the execute binding and the relay fixtures are skipped')
@@ -447,6 +453,33 @@ export async function tenantLivePins(base: string, check: Check, opts: LiveOpts 
   const outside = await desk('broker_open', { ask: 'Buy $25 of ETH on Base', wallet: agent.address, agent: 'tenant-pins' })
   check('tenant live: with signers registered, an intent for a wallet OUTSIDE them → SIGNER_DENIED', outside.isError && outside.payload?.reason === 'SIGNER_DENIED', JSON.stringify(outside.payload).slice(0, 160))
   await api('PATCH', T, { signers: [] })
+
+  // ── 5c. the runner's offer site: a policy activated AFTER execute governs
+  //        every leg not yet offered (the Jobs REST channel included) ───────
+  const late = privateKeyToAccount(generatePrivateKey())
+  const lateOpen = await desk('broker_open', { ask: 'Buy $25 of ETH on Base', wallet: late.address, agent: 'tenant-pins' })
+  const { deskExecuteConsentMessage: lateConsent } = await import('../lib/broker-exec')
+  const lateIssued = new Date().toISOString()
+  const lateRun = await desk('broker_execute', { intent_id: lateOpen.payload?.intentId, wallet_signature: await late.signMessage({ message: lateConsent(lateOpen.payload?.intentId ?? '', late.address, lateIssued) }), issued_at: lateIssued })
+  const lateJobId: string | undefined = lateRun.payload?.jobId
+  const lateJob0 = lateJobId ? await prisma.job.findUnique({ where: { id: lateJobId }, include: { steps: true } }) : null
+  check('tenant runner (live): the job broker_execute creates carries tenant_id + desk_key_id from its first row; its first build passed the offer gate (allowed, then withheld only for funds)', !!lateJob0 && lateJob0.tenantId === tenantId && lateJob0.deskKeyId === keyId && lateJob0.status !== 'canceled' && lateJob0.steps[0]?.status !== 'failed', JSON.stringify(lateJob0 ? { status: lateJob0.status, tenantId: lateJob0.tenantId, steps: lateJob0.steps.map((x) => [x.status, (x.result as { error?: string } | null)?.error?.slice(0, 60)]) } : lateRun.payload).slice(0, 260))
+  const denyDoc = { ...SAMPLE_POLICY, venues: [SAMPLE_POLICY.venues[0]] } // CoW only — the job's uniswap-v3 leg is now outside the policy
+  const denyV = await api('POST', `${T}/policy`, { document: denyDoc, note: 'tenant pins: deny uniswap-v3 after execute' })
+  const denyOn = await api('POST', `${T}/policy/${denyV.json?.version}/approve`)
+  check('tenant runner (live): a CoW-only policy is activated AFTER the execute', denyOn.status === 200 && denyOn.json?.state === 'active', JSON.stringify(denyOn.json).slice(0, 160))
+  if (lateJobId) {
+    // FIXTURE: age the withheld step past the runner's 90s hold-down so the next advance rebuilds it now.
+    await prisma.$executeRaw`UPDATE job_steps SET updated_at = now() - interval '5 minutes' WHERE job_id = ${lateJobId}`
+    log(`  · FIXTURE: job ${lateJobId}'s withheld step aged past the 90s hold-down (TEST DB) so broker_next rebuilds it under the new policy`)
+    const lateNext = await desk('broker_next', { intent_id: lateOpen.payload?.intentId })
+    const lateJob = await prisma.job.findUnique({ where: { id: lateJobId }, include: { steps: true } })
+    const lateIntent = await prisma.brokerIntent.findUnique({ where: { id: lateOpen.payload?.intentId }, select: { state: true } })
+    const s0 = lateJob?.steps.find((x) => x.seq === 0)
+    check('tenant runner (live): the next OFFER refuses under the new policy — the step fails VENUE_DENIED unoffered, the job is canceled, the intent refused, and broker_next serves no leg', lateJob?.status === 'canceled' && s0?.status === 'failed' && (s0?.result as { policyRefused?: string } | null)?.policyRefused === 'VENUE_DENIED' && s0?.artifact == null && lateIntent?.state === 'refused' && !lateNext.payload?.next?.leg, JSON.stringify({ job: lateJob?.status, step: s0?.status, result: s0?.result, intent: lateIntent?.state, next: lateNext.payload?.next ?? lateNext.payload }).slice(0, 320))
+  }
+  const backOn = await api('POST', `${T}/policy`, { document: SAMPLE_POLICY, note: 'tenant pins: the sample policy again' })
+  await api('POST', `${T}/policy/${backOn.json?.version}/approve`)
 
   // ── 6. the relays: a tenant leg is re-gated from the server's own job row ─
   const w = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()

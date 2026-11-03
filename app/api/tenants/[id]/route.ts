@@ -11,7 +11,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
 import { SIGNING_LANES } from '@/lib/tenant/spec'
-import { activePolicy, cheapestPlanAllowing, deskKeyView, entitlementsJson, planAllows, planName, tenantEntitlements, tenantForAdmin, tenantView } from '@/lib/tenant/store'
+import { activePolicy, deskKeyView, lowerList, planName, tenantEntitlements, tenantForAdmin, tenantView } from '@/lib/tenant/store'
+import { cheapestPlanAllowing, entitlementsJson, planAllows } from '@/lib/tenant/entitlements'
+import { blot } from '@/lib/tenant/gate'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -85,6 +87,19 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: 'Nothing to change — send name, signingLane, status, sandbox, admins or signers.' }, { status: 400 })
   }
+  const before = gate.tenant
   const tenant = await prisma.tenant.update({ where: { id }, data })
+  // Every state change on a tenant desk is a blotter row: a pause / resume on
+  // its own kind, everything else (name, lane, sandbox, admins, signers) as
+  // one tenant_updated row naming each field before → after.
+  if (data.status !== undefined && data.status !== before.status) {
+    await blot({ tenantId: id }, data.status === 'paused' ? 'tenant_paused' : 'tenant_resumed', { by: gate.addr, from: before.status, to: data.status })
+  }
+  const changes: Record<string, { from: unknown; to: unknown }> = {}
+  const was: Record<string, unknown> = { name: before.name, signingLane: before.signingLane, sandbox: before.sandbox, admins: lowerList(before.admins), signers: lowerList(before.signers) }
+  for (const k of ['name', 'signingLane', 'sandbox', 'admins', 'signers'] as const) {
+    if (data[k] !== undefined && JSON.stringify(data[k]) !== JSON.stringify(was[k])) changes[k] = { from: was[k], to: data[k] }
+  }
+  if (Object.keys(changes).length) await blot({ tenantId: id }, 'tenant_updated', { by: gate.addr, changes })
   return NextResponse.json({ tenant: tenantView(tenant) })
 }

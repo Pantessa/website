@@ -45,9 +45,10 @@ import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicCh
 import { recoverMessageAddress } from 'viem'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { COUNTED_EVENT_WHERE, COUNTED_TURN_WHERE, reverifyPendingForSlug } from '@/lib/link-receipt-verify'
-import { assertSigner, bindJobToTenant, gatePlan, planTenantOf, regateIntent, approveUrl, tenantAgentKey, type PlanTenant, type ResolvedTenant } from '@/lib/broker-tenant'
+import { assertSigner, gatePlan, planTenantOf, regateIntent, approveUrl, tenantAgentKey, type PlanTenant, type ResolvedTenant } from '@/lib/broker-tenant'
 import { blot, TenantRefusedError, refusalSay } from '@/lib/tenant/gate'
 import { approvalCount } from '@/lib/tenant/store'
+import type { TenantRefusal } from '@/lib/tenant/spec'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
 
@@ -528,7 +529,13 @@ export async function handoffIntent(intentId: string, call?: DeskCallOpts, tenan
   // FIVE-MILLION: re-judged with the policy active NOW, approvals counted; a
   // refusal revokes any link already minted (lib/broker-tenant regateIntent).
   if (tenant && row.tenantId) {
-    if (row.state === 'refused') throw new TenantRefusedError({ gate: 'policy', reason: 'REFUSED', detail: `intent ${row.id} was refused by the desk policy — open a new one.`, say: refusalSay(tenant, 'REFUSED', `intent ${row.id} was refused by the desk policy — open a new one.`), intentId: row.id, state: 'refused' })
+    if (row.state === 'refused') {
+      // The intent's own recorded refusal, by its spec name — never re-judged into a pass.
+      const prior = (row.plan as { tenant?: PlanTenant } | null)?.tenant
+      const reason = (prior?.reason ?? 'VENUE_DENIED') as TenantRefusal
+      const detail = `intent ${row.id} was refused by the desk policy${prior?.detail ? ` (${prior.detail})` : ''} — open a new one.`
+      throw new TenantRefusedError({ gate: 'policy', reason, detail, say: refusalSay(tenant, reason, detail), intentId: row.id, state: 'refused' })
+    }
     await regateIntent(tenant, row, 'handoff')
   }
   if (row.linkSlug) {
@@ -899,9 +906,8 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   const deskUnfillable = await unfillableFundedBuyReason(compiled)
   if (deskUnfillable) throw new Error(deskUnfillable)
 
-  const job = await createJob(row.wallet, compiled, 'broker', { internal: call?.internal === true })
+  const job = await createJob(row.wallet, compiled, 'broker', { internal: call?.internal === true, ...(tenantRow ? { tenantId: tenantRow.tenantId, deskKeyId: tenantRow.keyId } : {}) })
   if (tenantRow) {
-    await bindJobToTenant(job.id, tenantRow)
     await blot(tenantRow, 'intent', { stage: 'execute', consent, wallet: row.wallet, ask: row.ask, legs: compiled.steps.length }, { intentId: row.id, jobId: job.id, valueUsd: askUsd(row.ask) })
   }
   // Kick the first build inline (the chat/jobs-API/DCA pattern) so leg 0 is

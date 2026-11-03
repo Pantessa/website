@@ -9,7 +9,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
-import { planAllows, tenantEntitlements, tenantForAdmin } from '@/lib/tenant/store'
+import { tenantEntitlements, tenantForAdmin } from '@/lib/tenant/store'
+import { planAllows } from '@/lib/tenant/entitlements'
 import { blot } from '@/lib/tenant/gate'
 
 export const runtime = 'nodejs'

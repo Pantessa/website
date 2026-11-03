@@ -28,7 +28,8 @@ import prisma from '@/lib/db'
 import { cancelJob, getJobWithSteps } from '@/lib/jobs-runner'
 import type { CompiledJob } from '@/lib/jobs'
 import { resolveDeskCaller, approvalCount, type DeskCaller, type ResolvedTenant } from '@/lib/tenant/store'
-import { gateOrders, blot, refusalSay, TenantRefusedError, tenantGate, type DeskRefusal, type GateStage, type PlanVerdict } from '@/lib/tenant/gate'
+import { gateOrders, blot, refusalSay, TenantRefusedError, tenantGate, type GateStage, type PlanVerdict } from '@/lib/tenant/gate'
+import type { TenantRefusal } from '@/lib/tenant/spec'
 import { ordersOfCompiled, ordersOfPlan, orderOfLeg } from '@/lib/tenant/order'
 import type { DeskDriveResult } from '@/lib/desk-drive'
 
@@ -51,7 +52,7 @@ export interface PlanTenant {
   deskId: string
   policyVersion: number | null
   verdict: 'allowed' | 'refused'
-  reason?: string
+  reason?: TenantRefusal
   detail?: string
   needsApproval?: boolean
   approvers?: number
@@ -65,7 +66,7 @@ export async function deskCaller(extra: unknown): Promise<DeskCaller> {
   return resolveDeskCaller(headers ?? null)
 }
 
-function refusal(reason: DeskRefusal | string, detail: string, ctx: Pick<ResolvedTenant, 'tenantSlug' | 'policyVersion' | 'deskId'> | null, extra: Record<string, unknown> = {}): TenantRefusedError {
+function refusal(reason: TenantRefusal, detail: string, ctx: Pick<ResolvedTenant, 'tenantSlug' | 'policyVersion' | 'deskId'> | null, extra: Record<string, unknown> = {}): TenantRefusedError {
   const say = ctx ? refusalSay(ctx, reason, detail) : `Refused — ${reason}: ${detail}`
   return new TenantRefusedError({ gate: 'policy', reason, detail, say, ...extra })
 }
@@ -212,12 +213,6 @@ export async function regateIntent(
   return v
 }
 
-/** Bind a freshly created job to the tenant + desk key that opened it (the
- *  relays read this, never a client claim). Called before the first advance. */
-export async function bindJobToTenant(jobId: string, ctx: ResolvedTenant): Promise<void> {
-  await prisma.job.update({ where: { id: jobId }, data: { tenantId: ctx.tenantId, deskKeyId: ctx.keyId } })
-}
-
 /**
  * broker_next / broker_done: judge the leg the runner is about to serve. An
  * allowed leg writes one `offered` row per build (keyed by the step's build
@@ -232,7 +227,7 @@ export async function gateServedLeg<T extends DeskDriveResult>(ctx: ResolvedTena
   const step = job?.steps.find((s) => s.seq === leg.seq)
   if (!job || !step) return out
   const order = orderOfLeg(step, ctx.deskId)
-  const fail = async (reason: string, detail: string): Promise<never> => {
+  const fail = async (reason: TenantRefusal, detail: string): Promise<never> => {
     await blot(ctx, 'refused', { stage: 'leg', seq: leg.seq, reason, detail }, { intentId: out.intentId, jobId: out.jobId, venue: order?.venue ?? null, chainId: order?.chainId ?? null, valueUsd: order?.usd ?? null })
     await cancelJob(out.jobId, out.wallet).catch(() => false)
     await prisma.brokerIntent.update({ where: { id: out.intentId }, data: { state: 'refused' } }).catch(() => {})
