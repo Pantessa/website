@@ -29,6 +29,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE}/links`, changeFrequency: 'daily', priority: 0.9 },
     { url: `${SITE}/links/embed`, changeFrequency: 'monthly', priority: 0.7 },
     { url: `${SITE}/pricing`, changeFrequency: 'monthly', priority: 0.8 },
+    // The governed desk for institutions (squad five-million, 2026-11-03).
+    { url: `${SITE}/desk`, changeFrequency: 'monthly', priority: 0.8 },
     { url: `${SITE}/agents`, changeFrequency: 'daily', priority: 0.7 },
     { url: `${SITE}/roster`, changeFrequency: 'weekly', priority: 0.6 },
     { url: `${SITE}/mosaic`, changeFrequency: 'daily', priority: 0.6 },

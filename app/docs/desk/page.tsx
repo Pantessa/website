@@ -178,6 +178,99 @@ await driveJob({
           <code>surface</code> that names the source.
         </p>
 
+        <h2 id="governed-desk">Run a governed desk</h2>
+        <div className="docs__callout" data-governed-desk-status="shipping">
+          <p>
+            <strong>Shipping in this release.</strong> The routes below are the contract the tenant layer is built to (squad five-million, 2026-11-03); the
+            page for the firm buying it is <Link href="/desk">/desk</Link>.
+          </p>
+        </div>
+        <p>
+          Everything above is one wallet acting for itself. A <strong>tenant</strong> is a firm: a versioned, <strong>default-deny</strong> policy that says which
+          venues exist for it, scoped desk keys that can never widen that policy, a gate that <em>blocks</em> (never warns) for a tenant signer, and a hash-chained
+          blotter the firm exports. The retail desk is untouched: a <code>yf_</code> key or no key is gated exactly as today.
+        </p>
+        <h3>1. Create the tenant</h3>
+        <p>
+          <code>POST /api/tenants</code> <code>{'{ slug, name }'}</code> as a signed-in owner (SIWE) → <code>{'{ id, slug, status: "active", sandbox: true }'}</code>.
+          A tenant starts in the sandbox: only Base Sepolia and the Hyperliquid testnet pass the gate until the owner’s plan allows mainnet. <code>GET /api/tenants</code>{' '}
+          lists yours; <code>GET</code>/<code>PATCH /api/tenants/:id</code> reads and edits (name, admins, pause). Admins are the owner plus <code>tenant.admins</code>.
+        </p>
+        <h3>2. Propose a policy, have a different admin approve it</h3>
+        <p>
+          <code>POST /api/tenants/:id/policy</code> with the policy document proposes version <em>max + 1</em>. It is validated against the vocabulary the builders
+          speak — an unknown venue, op, chain, side or a malformed desk id is refused by name at proposal, never discovered at trade time. The shape:
+        </p>
+        <pre className="splash__code mono">{`{
+  "version": 1,
+  "default": "deny",
+  "venues": [
+    { "venue": "cow",        "chains": [1, 8453], "ops": ["swap", "limit"],
+      "tokens": ["USDC", "WETH"], "sides": ["buy", "sell"],
+      "maxOrderUsd": 500, "maxPriceImpactBps": 50 },
+    { "venue": "uniswap-v3", "chains": [8453], "ops": ["swap"], "maxOrderUsd": 500 }
+  ],
+  "desks": [
+    { "id": "macro", "perOrderUsd": 500, "perDayUsd": 5000,
+      "approvals": { "overUsd": 250, "approvers": 1 },
+      "hours": { "tz": "America/New_York", "from": "07:00", "to": "18:00", "days": [1,2,3,4,5] } }
+  ],
+  "hooks": { "preTrade": "https://compliance.example.com/pre-trade" },
+  "signing": { "lane": "walletconnect", "wallets": ["0x…"] }
+}`}</pre>
+        <p>
+          <strong>Maker-checker:</strong> <code>POST /api/tenants/:id/policy/:version/approve</code> by a <em>different</em> admin activates it (the previously active
+          version becomes <code>superseded</code>); <code>…/reject</code> closes a proposal. On a plan without approvals the proposer self-activates. Every proposal,
+          activation and rejection is a blotter row.
+        </p>
+        <h3>3. Mint a desk key</h3>
+        <p>
+          <code>POST /api/tenants/:id/keys</code> <code>{'{ deskId, label }'}</code> → <code>{'{ secret, id, prefix }'}</code>. The secret (<code>dk_…</code>) is shown
+          once; only its sha256 is stored, and <code>prefix</code> (the first 11 characters) is how you recognise it later. The desk id must exist in the{' '}
+          <em>active</em> policy. <code>PATCH</code> <code>{'{ paused }'}</code> pauses and resumes; <code>DELETE</code> revokes. Keys per tenant and tenants per owner
+          are capped by the plan.
+        </p>
+        <h3>4. Call the desk with the key</h3>
+        <pre className="splash__code mono">{`POST https://www.pantessa.com/api/broker/mcp
+Authorization: Bearer dk_…
+
+broker_open { ask: "Buy $25 of ETH on Base" }`}</pre>
+        <p>
+          A request wearing a desk key is a tenant caller: the key resolves to its tenant, the active policy, its desk and its plan. <code>broker_open</code> plans the
+          ask as usual, then the gate judges the order <em>before</em> the desk answers. Allowed → the intent proceeds as any other. Refused → the desk’s own words
+          carry <code>gate: "policy"</code> and the reason’s name, and the intent lands <code>refused</code>:
+        </p>
+        <pre className="splash__code mono">{`{ "gate": "policy", "reason": "CHAIN_DENIED",
+  "detail": "uniswap-v3 is allowed on Ethereum, Base; this order is on Arbitrum" }`}</pre>
+        <p>
+          The reasons: <code>NO_POLICY</code> · <code>TENANT_PAUSED</code> · <code>KEY_PAUSED</code> · <code>DESK_UNKNOWN</code> · <code>VENUE_DENIED</code> ·{' '}
+          <code>CHAIN_DENIED</code> · <code>OP_DENIED</code> · <code>TOKEN_DENIED</code> · <code>SIDE_DENIED</code> · <code>UNPRICED</code> · <code>OVER_ORDER</code> ·{' '}
+          <code>OVER_DAY</code> · <code>OVER_LEVERAGE</code> · <code>OVER_IMPACT</code> · <code>OUTSIDE_HOURS</code> · <code>SANDBOX_ONLY</code>. An order the desk
+          cannot price is <code>UNPRICED</code> and refused — a tenant order is never warned through. A paused key or tenant refuses by name on every tool but{' '}
+          <code>broker_status</code> and <code>broker_close</code>.
+        </p>
+        <h3>5. Approvals over a threshold</h3>
+        <p>
+          Over the desk’s <code>approvals.overUsd</code> the verdict is <code>allowed</code> with <code>needsApproval: true</code> and the number of approvers;
+          the intent waits as <code>awaiting_approval</code>. <code>POST /api/tenants/:id/intents/:intentId/approve</code> by distinct admins (SIWE) counts them, and{' '}
+          <code>broker_next</code> refuses to offer a leg until the count is met. <code>broker_handoff</code>, <code>broker_execute</code> and <code>broker_next</code> all
+          re-gate; the three relays (<code>/api/tx/refresh</code>, <code>/api/hl/submit</code>, <code>/api/cow/submit</code>) re-judge a leg whose job belongs to a tenant
+          from the server’s own record, never a client claim, and refuse <code>403</code> <code>{'{ error, reason }'}</code>.
+        </p>
+        <h3>6. The blotter, the verify, the statement</h3>
+        <p>
+          <code>GET /api/tenants/:id/blotter?from&to&kind&format=json|csv</code> exports the rows (CSV needs the plan’s export entitlement). Every row
+          hashes the one before it; <code>GET …/blotter/verify</code> replays the chain and answers <code>{'{ ok, rows, brokenAt? }'}</code>.{' '}
+          <code>GET …/statement?ym=YYYY-MM</code> cuts the month: the platform fee (waived inside the design-partner window), the tiered execution fee on
+          receipt-verified notional (or the tenant’s flat bps), less the fees already collected inside transactions on those rows. One statement row per month per
+          tenant; when Stripe is configured and the owner has a customer, a draft invoice carries the same three lines.
+        </p>
+        <h3>7. What it costs</h3>
+        <p>
+          Self-serve seats (Agent, Desk) are on <Link href="/pricing#desk">/pricing</Link>; the firm-sized desk — platform fee plus tiers, design partners free for the
+          first months — is on <Link href="/desk#pricing">/desk</Link>.
+        </p>
+
         <h2>What it costs</h2>
         <p>
           The desk is <strong>free to call</strong> by default — Pantessa earns the link-tier fee on

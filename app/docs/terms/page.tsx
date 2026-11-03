@@ -3,18 +3,24 @@ import Link from 'next/link'
 import { DOCS_PAGES, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
 import { LINK_FEE_PCT, SWAP_FEE_PCT } from '@/lib/fees'
+import { GOVERNING_LAW, LEGAL_ENTITY, VENUE } from '@/lib/legal'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'terms')!
 const UPDATED = 'September 3, 2026'
 
 // ── Counsel-owned values. Everything else on this page states how the product
-// actually works and is kept in step with the code. These four are legal or
-// operational decisions, not facts about the software, so they live here as
-// one-line edits rather than buried in prose.
-const LEGAL_ENTITY = 'Yeetful, Inc.'
+// actually works and is kept in step with the code. The entity, governing law
+// and venue are legal decisions, not facts about the software: they live in
+// lib/legal.ts (ONE place for the Terms, the Privacy policy and the footer),
+// each overridable by env — LEGAL_ENTITY / LEGAL_GOVERNING_LAW / LEGAL_VENUE —
+// so counsel's strings land with a deploy (squad five-million, 2026-11-03).
 const CONTACT = 'legal@pantessa.com'
-const GOVERNING_LAW = '[governing jurisdiction — TO BE COMPLETED]'
-const VENUE = '[venue — TO BE COMPLETED]'
+
+// Request-time, not prerendered: the counsel-owned strings come from env via
+// lib/legal.ts, and a static page would bake the placeholders at build. These
+// two pages are light and rarely hit; the footer's short entity on static
+// pages still bakes at build (set LEGAL_* on Vercel, then redeploy).
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: PAGE.seoTitle,

@@ -2,13 +2,20 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
+import { LEGAL_ENTITY } from '@/lib/legal'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'privacy')!
 const UPDATED = 'September 18, 2026'
 
-// See the note in app/docs/terms/page.tsx — these are the counsel-owned values.
-const LEGAL_ENTITY = 'Yeetful, Inc.'
+// See the note in app/docs/terms/page.tsx — the entity is the counsel-owned
+// value, read from lib/legal.ts (env LEGAL_ENTITY) with the Terms + footer.
 const CONTACT = 'privacy@pantessa.com'
+
+// Request-time, not prerendered: the counsel-owned strings come from env via
+// lib/legal.ts, and a static page would bake the placeholders at build. These
+// two pages are light and rarely hit; the footer's short entity on static
+// pages still bakes at build (set LEGAL_* on Vercel, then redeploy).
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: PAGE.seoTitle,
