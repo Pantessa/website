@@ -1,8 +1,10 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { SITE } from '@/lib/docs'
-import { ANSWER_PACK, EARN_CENTS_PER_ANSWER, LISTED_PLANS, PLAN_BY_ID, TASTE, answersEarnedByFee } from '@/lib/plans'
+import { ANSWER_PACK, DESK_PLANS, DESK_PLAN_FEATURES, EARN_CENTS_PER_ANSWER, LISTED_PLANS, PLAN_BY_ID, TASTE, answersEarnedByFee } from '@/lib/plans'
+import { DESIGN_PARTNER_FREE_DAYS, DESK_FEE_TIERS, DESK_PLATFORM_FEE_USD, tieredDeskFeeUsd } from '@/lib/tenant/spec'
 import PricingPlans from '@/components/PricingPlans'
+import DeskPlans, { type DeskTierView, type EnterpriseView } from './DeskPlans'
 import StayUpToDate from '@/components/StayUpToDate'
 import Footer from '@/components/Footer'
 import { CREATOR_FEE_SPLIT, LINK_FEE_PCT, LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, SWAP_FEE_PCT } from '@/lib/fees'
@@ -10,7 +12,13 @@ import { CREATOR_FEE_SPLIT, LINK_FEE_PCT, LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, SWAP_
 /** /pricing (pricing v2) — the take rate is the business; a plan prices house
  * answers and nothing else. Server component for SEO; cards + checkout are the
  * PricingPlans client child. Every number is read from lib/plans + lib/fees,
- * so the page, the checkout and the gate can never drift. */
+ * so the page, the checkout and the gate can never drift.
+ *
+ * THE DESK (2026-11-03, squad five-million): a second section prices the
+ * governed desk — Sandbox · Agent · Desk · Enterprise — from lib/plans
+ * (DESK_PLAN_FEATURES, written from lib/tenant/entitlements) and
+ * lib/tenant/spec (the Enterprise platform fee, bps tiers, design-partner
+ * days). The DeskPlans client child owns its month/year switch + checkout. */
 
 const TITLE = 'Pricing — Pantessa'
 const DESCRIPTION = `Looking is free, forever. Trading costs ${SWAP_FEE_PCT}, taken inside the trade you sign. Every trade refills your chat — or get Plus for $${PLAN_BY_ID.plus.priceUsd} a month, or bring your own API key for free.`
@@ -30,9 +38,37 @@ const JSON_LD = JSON.stringify({
   description: DESCRIPTION,
   offers: [
     ...LISTED_PLANS.map((p) => ({ '@type': 'Offer', name: `Pantessa ${p.name}`, price: String(p.priceUsd), priceCurrency: 'USD' })),
+    ...DESK_PLANS.map((p) => ({ '@type': 'Offer', name: `Pantessa ${p.name} (desk)`, price: String(p.priceUsd), priceCurrency: 'USD' })),
     { '@type': 'Offer', name: `Pantessa — ${ANSWER_PACK.answers} answers`, price: String(ANSWER_PACK.priceUsd), priceCurrency: 'USD' },
   ],
 })
+
+// ── The desk, computed — never typed ────────────────────────────────────────
+const usd = (n: number) => `$${n.toLocaleString('en-US')}`
+const usdShort = (n: number) => (n >= 1_000_000 ? `$${(n / 1_000_000).toLocaleString('en-US')}M` : usd(n))
+const DESK_TIERS: DeskTierView[] = DESK_PLAN_FEATURES.map((t) => ({
+  id: t.id,
+  name: t.name,
+  tagline: t.tagline,
+  inherits: t.inherits,
+  adds: t.adds.map((f) => ({ text: f.text, ...(f.soon ? { soon: true } : {}) })),
+  price: t.plan ? { month: t.plan.priceUsd, year: t.plan.yearlyUsd ?? null } : null,
+}))
+const TIER_LINES = DESK_FEE_TIERS.map((t, i) => {
+  const prev = i > 0 ? DESK_FEE_TIERS[i - 1].uptoUsd : 0
+  return Number.isFinite(t.uptoUsd) ? `${t.bps} bps to ${usdShort(t.uptoUsd)}` : `${t.bps} bps above ${usdShort(prev)}`
+})
+const EXAMPLE_NOTIONAL = 25_000_000
+const EXAMPLE_FEE = tieredDeskFeeUsd(EXAMPLE_NOTIONAL)
+const DESK_ENTERPRISE: EnterpriseView = {
+  platformUsd: usd(DESK_PLATFORM_FEE_USD),
+  tiers: TIER_LINES,
+  partner: `Design partners: free for the first ${DESIGN_PARTNER_FREE_DAYS} days.`,
+  example:
+    `Enterprise at ${usdShort(EXAMPLE_NOTIONAL)} of verified notional in a month: ${usd(DESK_PLATFORM_FEE_USD)} + ${usd(EXAMPLE_FEE)} = ` +
+    `${usd(DESK_PLATFORM_FEE_USD + EXAMPLE_FEE)}, less the fees already taken inside those trades. Agent and Desk trades pay the ` +
+    `fee every trade pays, taken inside the transaction (${SWAP_FEE_PCT} on a swap).`,
+}
 
 /** The refill ladder, computed from the live rates — never typed. */
 const organicFee = (usd: number) => (usd * SWAP_FEE_BPS) / 10_000
@@ -47,7 +83,7 @@ const LADDER = [
 const FAQ: { q: string; a: string }[] = [
   {
     q: 'What costs money, exactly?',
-    a: `Two things. Trading: ${SWAP_FEE_PCT} on a swap (${LINK_FEE_PCT} through a shared link, half of it to whoever shared it), taken inside the transaction you sign. And house-model answers beyond the free ones. Nothing else — no seat, no account fee, no minimum, no fee on sends, bridges, staking, lending or NFT sales.`,
+    a: `Two things. Trading: ${SWAP_FEE_PCT} on a swap (${LINK_FEE_PCT} through a shared link, half of it to whoever shared it), taken inside the transaction you sign. And house-model answers beyond the free ones. Nothing else — no seat, no account fee, no minimum, no fee on sends, bridges, staking, lending or NFT sales. The desk plans below are a separate product, for agents and firms that trade under a written policy.`,
   },
   {
     q: 'What is a house answer?',
@@ -128,6 +164,30 @@ export default function PricingPage() {
               </p>
             </div>
           </div>
+
+          <section className="deskprice" id="desk" aria-labelledby="desk-pricing-h">
+            <div className="deskprice__head">
+              <div className="deskprice__headtext">
+                <span className="pricing__eyebrow mono">FOR AGENTS AND FIRMS</span>
+                <h2 id="desk-pricing-h" className="pricing__h2 deskprice__h2">
+                  The desk
+                </h2>
+                <p className="deskprice__sub">
+                  Run an agent, or a firm’s trading, under rules you write. A default-deny policy judges every order before
+                  anything is built, every step lands on a hash-chained blotter, and your wallet or your custody signs. The
+                  sandbox is free, so you can wire a policy before you pay.
+                </p>
+              </div>
+            </div>
+            <DeskPlans tiers={DESK_TIERS} enterprise={DESK_ENTERPRISE} />
+            <p className="pricing__fine">
+              <Link href="/desk">What the desk is</Link>
+              {' · '}
+              <Link href="/docs/desk">The desk docs</Link>
+              {' · '}
+              <Link href="/docs/venues">The venues it can reach</Link>
+            </p>
+          </section>
 
           <div className="pricing__faq">
             {FAQ.map((f) => (

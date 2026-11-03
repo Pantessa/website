@@ -8,7 +8,9 @@ import { getSessionAddress } from '@/lib/auth'
 import { brandCtaStyle, brandThemeStyle } from '@/lib/brand-theme'
 import Footer from '@/components/Footer'
 import ShareActions from '@/components/ShareActions'
-import { creatorPagePost, postHref } from '@/lib/share-posts'
+import { ViaSeed } from '@/components/ViaTracker'
+import { creatorPagePost, postHref, withVia } from '@/lib/share-posts'
+import { viaIdOf } from '@/lib/share-receipts'
 import { YeetfulMark } from '@/components/Logo'
 import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
 
@@ -105,11 +107,19 @@ export default async function StorefrontPage({ params }: Params) {
   // color runs edge to edge without touching layout.
   const themeStyle = brandThemeStyle(brand, { fullBleed: true })
 
-  const sharePost = creatorPagePost(store.handle, brand?.name ?? null)
+  // THE REFERRAL DOOR (squad five-million, PERPS 2026-11-03): this page is
+  // the creator's. Its share, its "Tweet your page", every link on it and the
+  // page itself carry the CREATOR's via (server-derived from the handle's
+  // wallet — never the viewer's), so a visitor who arrives here and later
+  // trades anywhere is this creator's referral for life (lib/share-referral).
+  const creatorVia = viaIdOf(store.creator)
+  const basePost = creatorPagePost(store.handle, brand?.name ?? null)
+  const sharePost = { ...basePost, url: withVia(basePost.url, creatorVia) }
   const tweetHref = postHref(sharePost)
 
   return (
     <>
+      <ViaSeed via={creatorVia} />
       <main className="x-main" style={themeStyle}>
         <section className="max-w-2xl mx-auto px-4 py-16">
           <div className="flex items-center gap-2 mb-6">
@@ -192,7 +202,7 @@ export default async function StorefrontPage({ params }: Params) {
               {store.links.map((l) => (
                 <li key={l.slug}>
                   <Link
-                    href={`/i/${l.slug}`}
+                    href={withVia(`/i/${l.slug}`, creatorVia)}
                     className="flex items-center gap-4 py-3.5 group hover:bg-[color-mix(in_srgb,var(--fg)_4%,transparent)] transition-colors"
                   >
                     {/* The ask carries the amount — two lines on a phone beats
@@ -223,7 +233,7 @@ export default async function StorefrontPage({ params }: Params) {
             <Link href="/links" className="btn btn--ghost text-[13px]">
               The leaderboard
             </Link>
-            <ShareActions post={sharePost} variant="pill" label="Share this page" surface="l" />
+            <ShareActions post={sharePost} variant="pill" label="Share this page" surface="l" viaFixed />
           </div>
           <p className="mono text-[11px] text-[color:var(--muted-2)] mt-6">
             Every link opens with an explicit Connect &amp; build step — nothing runs, nothing

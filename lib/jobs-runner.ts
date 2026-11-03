@@ -24,7 +24,7 @@ import { floorBlockFromError, floorProblemLine } from '@/lib/venue-floor'
 import { PRIVATE_LANE_CLOSED_NOTE, privateLaneOpen } from '@/lib/private-lane'
 import { buildHlExecTurn, readHlCollateralUsd, type HlIntent } from '@/lib/hyperliquid-exec'
 import { withHlBatch, batchCompletionVerdict, hlCreditArrival, hlCreditSettled, type HlCreditArrival } from '@/lib/hl-batch'
-import { fenceLegResult, recordJobStepMoney } from '@/lib/job-step-money'
+import { fenceLegResult, recordJobStepMoney, recordTenantBuild, recordTenantLeg, recordTenantWaitSettled, settleTenantJobLegs } from '@/lib/job-step-money'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
 import { LINK_SWAP_FEE_BPS } from '@/lib/fees'
@@ -191,6 +191,10 @@ export async function advanceJobs(limit = 20, opts: AdvanceOptions = {}): Promis
       notes.push(`${job.id.slice(0, 8)}: ${(e as Error).message}`)
     }
   }
+  // FIVE-MILLION: tenant legs whose chain did not answer at signing settle on a
+  // later tick (bounded; this env's jobs only; never throws).
+  const tenantSettled = await settleTenantJobLegs(null, 5, jobsEnv())
+  if (tenantSettled > 0) notes.push(`settled ${tenantSettled} tenant leg(s) on their blotters`)
   return { touched: jobs.length, notes }
 }
 
@@ -291,6 +295,8 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
           },
         })
         await prisma.job.update({ where: { id: fresh.id }, data: { status: 'waiting_signature' } })
+        // FIVE-MILLION: a tenant desk's blotter gets the leg it just built (lib/job-step-money).
+        if (fresh.tenantId) await recordTenantBuild(fresh, step, built)
       } catch (e) {
         // An RPC that didn't answer mid-build (rate limit, timeout, 5xx) is
         // not a refusal: WITHHOLD the step like an affordability short —
@@ -336,6 +342,7 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
           data: { status: 'failed', result: { error: (e as Error).message, ...(policyBlock ? { policyBlock } : {}) } as object },
         })
         await failJob(fresh.id, `"${step.title}" refused: ${(e as Error).message}`)
+        if (fresh.tenantId) await recordTenantBuild(fresh, step, null, (e as Error).message)
       }
       return
     }
@@ -356,6 +363,7 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
       if (settled.done) {
         await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'done', result: settled.result as object } })
         await prisma.job.update({ where: { id: fresh.id }, data: { currentStep: step.seq + 1, status: 'running' } })
+        if (fresh.tenantId) await recordTenantWaitSettled(fresh, step, settled.result)
         continue
       }
       if (settled.failed) {
@@ -826,7 +834,7 @@ export async function completeSignStep(
   // ONE server-side money writer (lib/job-step-money, agent-desk round-2 decision 1): every sign
   // step's money row is booked HERE — browser or agent — receipt-verified, internal from the job
   // row; the browser beacon for the same step is deduped at the telemetry route. Fail-soft.
-  await recordJobStepMoney({
+  const money = await recordJobStepMoney({
     jobId,
     seq,
     wallet: job.wallet,
@@ -837,6 +845,11 @@ export async function completeSignStep(
     internal: job.isInternal === true,
     source: job.source,
   })
+  // FIVE-MILLION: a tenant desk's job also books the leg on its hash-chained
+  // blotter — `signed`, then `settled` once the chain (or the venue) decides.
+  if (job.tenantId) {
+    await recordTenantLeg({ jobId, seq, wallet: job.wallet, builder: step.builder, artifact: step.artifact, valueUsd: step.valueUsd ?? null, result, tenantId: job.tenantId, deskKeyId: job.deskKeyId }, money)
+  }
   await prisma.job.update({ where: { id: jobId }, data: { currentStep: seq + 1, status: 'running' } })
   const fresh = await getJobWithSteps(jobId)
   if (fresh) await advanceJob(fresh).catch(() => {})

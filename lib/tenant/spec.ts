@@ -157,6 +157,13 @@ export type TenantRefusal =
   | 'OVER_IMPACT'
   | 'OUTSIDE_HOURS'
   | 'SANDBOX_ONLY'
+  // the desk's own door refusals (TENANT lane, 2026-11-03)
+  | 'KEY_UNKNOWN'
+  | 'KEY_REVOKED'
+  | 'TENANT_MISMATCH'
+  | 'NOT_ON_TENANT_DESK'
+  | 'SIGNER_DENIED'
+  | 'APPROVAL_PENDING'
 
 export type TenantVerdict =
   | { allowed: true; rule: TenantVenueRule; desk: TenantDeskRule; needsApproval: false }
@@ -241,6 +248,9 @@ export const BLOTTER_KINDS = [
   'key_paused',
   'key_resumed',
   'key_revoked',
+  'tenant_paused',
+  'tenant_resumed',
+  'tenant_updated', // admins / signers / signing lane / name changed (PATCH)
   'statement', // a monthly statement was cut
 ] as const
 export type BlotterKind = (typeof BLOTTER_KINDS)[number]

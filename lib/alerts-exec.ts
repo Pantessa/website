@@ -20,6 +20,7 @@ import { sendEmail } from '@/lib/email'
 import { SITE_URL } from '@/lib/site-url'
 import { readQuotes, type QuoteMap } from '@/lib/quotes'
 import { alertFires, alertLabel, fmtQuotePrice, groupAlertsBySymbol, type AlertCondition } from '@/lib/watchlists'
+import { alertTelegramMessage, chatsForOwner, sendTelegram, telegramChannelId, telegramEnabled } from '@/lib/telegram'
 
 /** Escape for an HTML mail body — every interpolated field is either
  *  user-authored (actionAsk) or derived from one; the mail must never carry
@@ -55,7 +56,63 @@ export async function notifyAlertFired(n: { owner: string; alertId: string; symb
   if (n.email && !n.isInternal) {
     void sendEmail({ to: n.email, ...renderAlertEmail({ symbol: n.symbol, title: n.title, body: n.body, actionAsk: n.actionAsk, href: n.href }) })
   }
+  // Telegram, beside the mail (squad five-million, PERPS): every chat the
+  // owner linked from the bell, the same words, ONE button that lands on
+  // the chip. Fire-and-forget like the mail; never for an internal row.
+  void telegramFanOut(n, telegramSendImpl).catch(() => {})
   return id
+}
+
+/** The Telegram seam the pins mock: a module-level override of the sender
+ *  (production never sets it). */
+export let telegramSendImpl: typeof sendTelegram = sendTelegram
+export function setTelegramSendImpl(impl: typeof sendTelegram | null): void {
+  telegramSendImpl = impl ?? sendTelegram
+}
+
+/** The fan-out itself — awaitable so a drill can prove delivery. Returns the
+ *  number of chats a send was attempted for (0 for an internal row, an
+ *  unconfigured bot, or an owner with no linked chat). A fired PRINT trigger
+ *  (its href names the tape) is also posted once to the public channel when
+ *  TELEGRAM_CHANNEL_ID is set — the market's sentence only, never the
+ *  owner's chip, one post per market per CHANNEL_POST_COOLDOWN_MS in this
+ *  process (the print sweep already cools a market 10 min per rule). */
+export async function telegramFanOut(
+  n: { owner: string; symbol: string; title: string; body: string; actionAsk: string | null; isInternal: boolean; href?: string },
+  send: typeof sendTelegram = telegramSendImpl,
+): Promise<number> {
+  if (n.isInternal || !telegramEnabled()) return 0
+  const chats = await chatsForOwner(n.owner)
+  let sent = 0
+  if (chats.length > 0) {
+    const m = alertTelegramMessage({ symbol: n.symbol, title: n.title, body: n.body, actionAsk: n.actionAsk, href: n.href })
+    await Promise.all(chats.map((chatId) => send(chatId, m.text, { url: m.url, label: m.label })))
+    sent = chats.length
+  }
+  const channel = telegramChannelId()
+  if (channel && isPrintAlertHref(n.href) && channelPostDue(n.href!)) {
+    const m = alertTelegramMessage({ symbol: n.symbol, title: n.title, body: n.body.replace(/\s*The chip is ready to send[^.]*\./, ''), actionAsk: null, href: n.href })
+    await send(channel, m.text, { url: m.url, label: m.label })
+  }
+  return sent
+}
+
+export const CHANNEL_POST_COOLDOWN_MS = 10 * 60_000
+const channelPosted = new Map<string, number>()
+
+/** A print alert's notification points at the tape filtered to its market. */
+export function isPrintAlertHref(href: string | undefined): boolean {
+  return typeof href === 'string' && /^\/live\?m=/.test(href)
+}
+
+/** One channel post per market per cooldown (in-process; a cold cron
+ *  instance may repeat one post — the venue-level cooldown is the belt). */
+function channelPostDue(href: string, now = Date.now()): boolean {
+  const last = channelPosted.get(href) ?? 0
+  if (now - last < CHANNEL_POST_COOLDOWN_MS) return false
+  channelPosted.set(href, now)
+  if (channelPosted.size > 500) for (const [k, t] of channelPosted) if (now - t > CHANNEL_POST_COOLDOWN_MS) channelPosted.delete(k)
+  return true
 }
 
 export interface SweepOptions {

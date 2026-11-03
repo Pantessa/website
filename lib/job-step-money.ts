@@ -14,13 +14,17 @@
 // Deliberately NOT done here: creator referral claiming and earned-answer grants. Both key off a
 // link slug and a chat pool a job step has neither of.
 
+import { createHash } from 'node:crypto'
 import prisma from '@/lib/db'
-import { jobStepBuildPath, jobStepChainId, jobStepSignedInfo } from '@/lib/job-step-telemetry'
+import { Prisma } from '@prisma/client'
+import { jobStepBuildPath, jobStepChainId, jobStepSignedInfo, stampJobStepPath } from '@/lib/job-step-telemetry'
 import { feeBpsOfArtifact } from '@/lib/fees'
 import { isBuildPath } from '@/lib/build-path'
 import { COUNTED_VERIFICATIONS, receiptClientFor, verifyTurnNow } from '@/lib/link-receipt-verify'
 import { chainById } from '@/lib/chains'
 import { recordCreatorPaidOnchain } from '@/lib/creator-paid'
+import { deskIdOfKey, legFeeBps, legFeeUsd, recordBlotterOnce, tenantVenueOfBuildPath } from '@/lib/tenant/blotter'
+import type { BlotterVerification } from '@/lib/tenant/spec'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
 
@@ -92,6 +96,10 @@ export interface JobStepMoneyResult {
   valueUsd: number | null
   verification: string
   rowId: string
+  /** FIVE-MILLION: what the chain said about the claimed hash (absent on the
+   *  idempotent second call) — the tenant blotter's `settled` row reuses it. */
+  claim?: LegClaim
+  claimTxHash?: string
 }
 
 /**
@@ -171,11 +179,11 @@ export async function recordJobStepMoney(leg: {
     const claim = await claimedLegReceipt(chainId, txHash, leg.wallet)
     if (claim === 'refuted') {
       await prisma.embedTurn.update({ where: { id: row.id }, data: { verification: 'mismatch' } }).catch(() => {})
-      return { recorded: false, valueUsd: leg.valueUsd ?? null, verification: 'mismatch', rowId: row.id }
+      return { recorded: false, valueUsd: leg.valueUsd ?? null, verification: 'mismatch', rowId: row.id, claim, claimTxHash: txHash }
     }
     // Unreadable chain: leave it `unverified` (T-R4 — delay, never mint). The
     // lazy re-check promotes it once the node answers.
-    if (claim === 'unreadable') return { recorded: false, valueUsd: leg.valueUsd ?? null, verification: 'unverified', rowId: row.id }
+    if (claim === 'unreadable') return { recorded: false, valueUsd: leg.valueUsd ?? null, verification: 'unverified', rowId: row.id, claim, claimTxHash: txHash }
 
     const verification = await Promise.race([
       verifyTurnNow(row.id, chainId),
@@ -190,7 +198,7 @@ export async function recordJobStepMoney(leg: {
         new Promise<number>((r) => setTimeout(() => r(0), 4000)),
       ]).catch(() => 0)
     }
-    return { recorded: (COUNTED_VERIFICATIONS as readonly string[]).includes(verification), valueUsd: leg.valueUsd ?? null, verification, rowId: row.id }
+    return { recorded: (COUNTED_VERIFICATIONS as readonly string[]).includes(verification), valueUsd: leg.valueUsd ?? null, verification, rowId: row.id, claim, claimTxHash: txHash }
   } catch {
     return null
   }
@@ -236,7 +244,9 @@ export async function jobStepMoneyAlreadyBooked(beacon: { jobId: string; seq?: u
  * match and would fail every leg closed. Sender + status is the part that is
  * both available and the part a fabricated hash cannot satisfy.
  */
-async function claimedLegReceipt(chainId: number | undefined, txHash: string | undefined, wallet: string): Promise<'ok' | 'refuted' | 'unreadable' | 'off-chain'> {
+export type LegClaim = 'ok' | 'refuted' | 'unreadable' | 'off-chain'
+
+async function claimedLegReceipt(chainId: number | undefined, txHash: string | undefined, wallet: string): Promise<LegClaim> {
   if (!chainId) return 'off-chain'
   if (!txHash) return 'refuted'
   const client = receiptClientFor(chainId)
@@ -255,5 +265,274 @@ async function claimedLegReceipt(chainId: number | undefined, txHash: string | u
     return receipt.status === 'success' ? 'ok' : 'refuted'
   } catch {
     return 'unreadable'
+  }
+}
+
+/* ── the tenant desk's rows (FIVE-MILLION, 2026-11-03) ─────────────────────
+ *
+ * A job whose `tenant_id` is set belongs to a governed desk (lib/tenant/spec):
+ * every leg the runner BUILDS, every leg a signer reports SIGNED, and every leg
+ * the chain (or the venue) proves SETTLED is a row on that tenant's hash-chained
+ * blotter (lib/tenant/blotter). Each write is keyed (`recordBlotterOnce`), so a
+ * re-run never doubles a row. Fail-soft like the money row: the leg the signer
+ * just signed is never broken by the ledger. A retail job (no tenant) writes
+ * nothing here.
+ *
+ *   signed   — the signer's claim (the job's own wallet or its desk agent,
+ *              authenticated at the door): value, net fee in bps + USD (the fee
+ *              that rides the calldata), tx hash, venue, chain, desk.
+ *   settled  — `verified`: an EVM leg whose hash the CHAIN says was sent by the
+ *              job's wallet and succeeded (the same sender + status read the
+ *              money row uses); `mismatch`: the chain refutes it; `attested`: an
+ *              off-chain leg (a Hyperliquid or CoW / Seaport order) — there is
+ *              no receipt to read, the signer's report is the evidence. An
+ *              unreadable chain writes nothing yet: `settleTenantJobLegs` (the
+ *              statement + blotter reads run it) re-checks later.
+ *   build    — the route the runner built (build path, venue, value, the guard's
+ *              checks) or the refusal. The venue cascade reports only the venue
+ *              it settled on, so `quotesConsidered` is null — never invented.
+ */
+
+export interface TenantJobRef {
+  id: string
+  wallet: string
+  tenantId: string | null
+  deskKeyId: string | null
+}
+
+/** The broker intent a job was opened from (broker_execute binds `job_id`). */
+async function intentIdOfJob(jobId: string): Promise<string | null> {
+  try {
+    const intent = await prisma.brokerIntent.findFirst({ where: { jobId }, select: { id: true } })
+    return intent?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+/** An order artifact (CoW / Seaport / Hyperliquid) settles off-chain. */
+function isOrderArtifact(artifact: unknown): boolean {
+  return !!(artifact && typeof artifact === 'object' && (artifact as { orderRequest?: unknown }).orderRequest)
+}
+
+/** The hash a leg's completion names: `txHash`, else the LAST of `txs` (a chain's
+ *  final transaction is the one that moves the money). */
+function legTxHash(result: Record<string, unknown>): string | undefined {
+  if (typeof result.txHash === 'string' && LEG_TX_HASH_RE.test(result.txHash)) return result.txHash
+  const txs = Array.isArray(result.txs) ? (result.txs as { hash?: unknown }[]) : []
+  const last = [...txs].reverse().find((t) => typeof t?.hash === 'string' && LEG_TX_HASH_RE.test(t.hash))
+  return last?.hash as string | undefined
+}
+
+const short = (v: unknown, max: number): string | null => (typeof v === 'string' && v ? v.slice(0, max) : null)
+
+/** A `build` row: the leg the runner just offered (built) or refused (refusal). */
+export async function recordTenantBuild(
+  job: TenantJobRef,
+  step: { seq: number; builder: string; title: string },
+  built: { artifact: Record<string, unknown>; guardReport?: unknown; valueUsd: number | null; buildPath?: string } | null,
+  refusal?: string,
+): Promise<void> {
+  if (!job.tenantId) return
+  try {
+    const artifact = built ? stampJobStepPath(step.builder, built.artifact, built.buildPath) : null
+    const buildPath = artifact ? (jobStepBuildPath(step.builder, artifact) ?? null) : null
+    const checks = (built?.guardReport as { checks?: { id?: unknown; ok?: unknown; level?: unknown }[] } | null | undefined)?.checks
+    const [deskId, intentId] = await Promise.all([deskIdOfKey(job.deskKeyId), intentIdOfJob(job.id)])
+    await recordBlotterOnce(`job:${job.id}:${step.seq}:build:${built ? `ok:${artifactStamp(artifact)}` : `refused:${Date.now()}`}`, {
+      tenantId: job.tenantId,
+      kind: 'build',
+      intentId,
+      jobId: job.id,
+      deskId,
+      keyId: job.deskKeyId,
+      venue: tenantVenueOfBuildPath(buildPath) ?? buildPath,
+      chainId: artifact ? (jobStepChainId(artifact) ?? null) : null,
+      valueUsd: built?.valueUsd ?? null,
+      payload: {
+        source: 'runner',
+        jobId: job.id,
+        seq: step.seq,
+        builder: step.builder,
+        title: short(step.title, 160),
+        ok: !!built,
+        buildPath,
+        routeChosen: buildPath,
+        summary: short((artifact as { summary?: unknown } | null)?.summary, 300),
+        feeBps: built ? legFeeBps(buildPath, feeBpsOfArtifact(artifact)) : null,
+        checks: Array.isArray(checks) ? checks.slice(0, 24).map((c) => ({ id: short(c?.id, 60), ok: c?.ok === true, level: short(c?.level, 20) })) : null,
+        quotesConsidered: null,
+        quotesNote: 'the venue cascade reports only the venue it settled on',
+        ...(refusal ? { refusal: refusal.slice(0, 300) } : {}),
+      },
+    })
+  } catch (err) {
+    console.error('[blotter] tenant build dropped', job.tenantId, job.id, (err as Error)?.message ?? err)
+  }
+}
+
+/** A stable stamp for one built artifact (re-offers after a TTL rebuild are new builds). */
+function artifactStamp(artifact: unknown): string {
+  try {
+    return createHash('sha256').update(JSON.stringify(artifact ?? null)).digest('hex').slice(0, 16)
+  } catch {
+    return String(Date.now())
+  }
+}
+
+/** The `signed` row, then its `settled` row when the evidence decides. */
+export async function recordTenantLeg(
+  leg: { jobId: string; seq: number; wallet: string; builder: string; artifact: unknown; valueUsd: number | null; result: Record<string, unknown>; tenantId: string | null; deskKeyId: string | null },
+  money: JobStepMoneyResult | null,
+): Promise<void> {
+  if (!leg.tenantId) return
+  try {
+    const buildPath = jobStepBuildPath(leg.builder, leg.artifact) ?? null
+    const chainId = jobStepChainId(leg.artifact) ?? (typeof leg.result.chainId === 'number' ? leg.result.chainId : undefined)
+    const txHash = legTxHash(leg.result)
+    const offChain = isOrderArtifact(leg.artifact) || !chainId
+    const bps = legFeeBps(buildPath, feeBpsOfArtifact(leg.artifact))
+    const [deskId, intentId] = await Promise.all([deskIdOfKey(leg.deskKeyId), intentIdOfJob(leg.jobId)])
+    const base = { tenantId: leg.tenantId, intentId, jobId: leg.jobId, deskId, keyId: leg.deskKeyId, venue: tenantVenueOfBuildPath(buildPath) ?? buildPath, chainId: offChain ? null : (chainId ?? null), txHash: txHash ?? null }
+    const order = leg.result.orderResponse
+    const signed = await recordBlotterOnce(`job:${leg.jobId}:${leg.seq}:signed`, {
+      ...base,
+      kind: 'signed',
+      valueUsd: leg.valueUsd,
+      feeUsd: legFeeUsd(leg.valueUsd, bps),
+      feeBps: bps,
+      payload: {
+        source: 'job-step',
+        jobId: leg.jobId,
+        seq: leg.seq,
+        builder: leg.builder,
+        buildPath,
+        wallet: leg.wallet.toLowerCase(),
+        offChain,
+        txs: Array.isArray(leg.result.txs) ? (leg.result.txs as { hash?: unknown; chainId?: unknown }[]).slice(0, LEG_TXS_MAX).map((t) => ({ hash: t?.hash, chainId: t?.chainId })) : null,
+        orderRef: typeof order === 'string' ? order.slice(0, 200) : order && typeof order === 'object' ? short((order as { uid?: unknown; orderUid?: unknown }).uid ?? (order as { orderUid?: unknown }).orderUid, 200) : null,
+        moneyRowId: money?.rowId ?? null,
+      },
+    })
+    if (!signed) return
+    let verification: BlotterVerification | null
+    let how: string
+    if (offChain) {
+      verification = 'attested'
+      how = 'off-chain leg: no EVM receipt exists; the signer reported the venue accepted it'
+    } else {
+      const claim = money?.claim && money.claimTxHash === txHash ? money.claim : await claimedLegReceipt(chainId, txHash, leg.wallet)
+      verification = claimVerification(claim)
+      how = claimHow(claim)
+    }
+    if (verification) await recordTenantSettled(base, leg.jobId, leg.seq, signed.seq, verification, how)
+  } catch (err) {
+    console.error('[blotter] tenant leg dropped', leg.tenantId, leg.jobId, leg.seq, (err as Error)?.message ?? err)
+  }
+}
+
+function claimVerification(claim: LegClaim): BlotterVerification | null {
+  return claim === 'ok' ? 'verified' : claim === 'refuted' ? 'mismatch' : claim === 'off-chain' ? 'attested' : null
+}
+function claimHow(claim: LegClaim): string {
+  return claim === 'ok'
+    ? 'receipt: the chain says the job wallet sent it and it succeeded'
+    : claim === 'refuted'
+      ? 'receipt: no hash, another sender, or a reverted transaction'
+      : claim === 'off-chain'
+        ? 'off-chain leg: no EVM receipt exists'
+        : 'the chain did not answer yet'
+}
+
+async function recordTenantSettled(
+  base: { tenantId: string; intentId: string | null; jobId: string; deskId: string | null; keyId: string | null; venue: string | null; chainId: number | null; txHash: string | null },
+  jobId: string,
+  seq: number,
+  signedSeq: number,
+  verification: BlotterVerification,
+  how: string,
+): Promise<void> {
+  await recordBlotterOnce(`job:${jobId}:${seq}:settled`, { ...base, kind: 'settled', verification, payload: { source: 'job-step', jobId, seq, signedSeq, how } })
+}
+
+/** A `settled` row for a WAIT step the runner saw settle (a bridge's arrival, a
+ *  1Click SUCCESS, an NFT owned, an HL credit) — the venue/chain proof of the legs
+ *  it waited on. Carries no value (the legs' `signed` rows carry the money). */
+export async function recordTenantWaitSettled(job: TenantJobRef, step: { seq: number; waitPredicate: unknown }, result: unknown): Promise<void> {
+  if (!job.tenantId) return
+  try {
+    const pred = (step.waitPredicate ?? {}) as { kind?: unknown; fromStep?: unknown; fromSteps?: unknown }
+    const kind = typeof pred.kind === 'string' ? pred.kind : null
+    // A chain read (balance, ownerOf) is chain evidence; a venue's status read is the venue's word.
+    const chainRead = kind === 'chain-arrival' || kind === 'nft-owned'
+    const settles = Array.isArray(pred.fromSteps) ? pred.fromSteps.filter((n): n is number => Number.isInteger(n)) : Number.isInteger(pred.fromStep) ? [pred.fromStep as number] : []
+    const [deskId, intentId] = await Promise.all([deskIdOfKey(job.deskKeyId), intentIdOfJob(job.id)])
+    let resultText: string | null = null
+    try {
+      resultText = JSON.stringify(result ?? null).slice(0, 400)
+    } catch {
+      resultText = null
+    }
+    await recordBlotterOnce(`job:${job.id}:${step.seq}:wait`, {
+      tenantId: job.tenantId,
+      kind: 'settled',
+      intentId,
+      jobId: job.id,
+      deskId,
+      keyId: job.deskKeyId,
+      verification: chainRead ? 'verified' : 'attested',
+      payload: { source: 'wait', jobId: job.id, seq: step.seq, predicate: kind, settles, result: resultText },
+    })
+  } catch (err) {
+    console.error('[blotter] tenant wait dropped', job.tenantId, job.id, (err as Error)?.message ?? err)
+  }
+}
+
+/**
+ * The lazy re-check: a tenant's `signed` job legs whose chain did not answer at
+ * completion get their `settled` row once it does. Bounded (`limit` legs, the last
+ * 35 days); never throws. `tenantId` null = every tenant (the jobs cron runs it
+ * each tick, fenced to the jobs of ITS env); the statement runs it per tenant.
+ */
+export async function settleTenantJobLegs(tenantId: string | null, limit = 10, env?: string): Promise<number> {
+  try {
+    const byTenant = tenantId ? Prisma.sql`AND s.tenant_id = ${tenantId}` : Prisma.empty
+    const byEnv = env ? Prisma.sql`AND EXISTS (SELECT 1 FROM jobs j WHERE j.id = s.job_id AND j.origin_env = ${env})` : Prisma.empty
+    const pending = await prisma.$queryRaw<{ tenant_id: string; seq: number; job_id: string | null; chain_id: number | null; tx_hash: string | null; intent_id: string | null; desk_id: string | null; key_id: string | null; venue: string | null; payload: unknown }[]>`
+      SELECT s.tenant_id, s.seq, s.job_id, s.chain_id, s.tx_hash, s.intent_id, s.desk_id, s.key_id, s.venue, s.payload
+      FROM blotter_rows s
+      WHERE s.kind = 'signed' AND s.payload->>'source' = 'job-step' AND s.chain_id IS NOT NULL
+        ${byTenant} ${byEnv}
+        AND s.created_at > now() - interval '35 days'
+        AND NOT EXISTS (
+          SELECT 1 FROM blotter_rows t
+          WHERE t.tenant_id = s.tenant_id AND t.kind = 'settled'
+            AND t.payload->>'once' = 'job:' || s.job_id || ':' || (s.payload->>'seq') || ':settled'
+        )
+      ORDER BY s.created_at DESC
+      LIMIT ${limit}`
+    let settled = 0
+    for (const p of pending) {
+      const payload = (p.payload ?? {}) as { seq?: unknown; wallet?: unknown }
+      const seq = Number(payload.seq)
+      const wallet = typeof payload.wallet === 'string' ? payload.wallet : null
+      if (!p.job_id || !Number.isInteger(seq) || !wallet) continue
+      const claim = await claimedLegReceipt(p.chain_id ?? undefined, p.tx_hash ?? undefined, wallet)
+      const verification = claimVerification(claim)
+      if (!verification) continue
+      await recordTenantSettled(
+        { tenantId: p.tenant_id, intentId: p.intent_id, jobId: p.job_id, deskId: p.desk_id, keyId: p.key_id, venue: p.venue, chainId: p.chain_id, txHash: p.tx_hash },
+        p.job_id,
+        seq,
+        Number(p.seq),
+        verification,
+        claimHow(claim),
+      )
+      settled++
+    }
+    return settled
+  } catch (err) {
+    console.error('[blotter] tenant settle sweep failed', tenantId ?? '(all)', (err as Error)?.message ?? err)
+    return 0
   }
 }
