@@ -139,7 +139,7 @@ export default function DeskPlans({ tiers, enterprise }: { tiers: DeskTierView[]
               </div>
               {t.id === 'enterprise' && (
                 <div className="deskprice__terms">
-                  <p className="deskprice__termshead">Plus execution, per month, on receipt-verified notional</p>
+                  <p className="deskprice__termshead">Plus execution, per month, on settled notional</p>
                   <ul className="deskprice__tiers mono">
                     {enterprise.tiers.map((line) => (
                       <li key={line}>{line}</li>

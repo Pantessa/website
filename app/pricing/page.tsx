@@ -65,7 +65,7 @@ const DESK_ENTERPRISE: EnterpriseView = {
   tiers: TIER_LINES,
   partner: `Design partners: free for the first ${DESIGN_PARTNER_FREE_DAYS} days.`,
   example:
-    `Enterprise at ${usdShort(EXAMPLE_NOTIONAL)} of verified notional in a month: ${usd(DESK_PLATFORM_FEE_USD)} + ${usd(EXAMPLE_FEE)} = ` +
+    `Enterprise at ${usdShort(EXAMPLE_NOTIONAL)} of settled notional in a month: ${usd(DESK_PLATFORM_FEE_USD)} + ${usd(EXAMPLE_FEE)} = ` +
     `${usd(DESK_PLATFORM_FEE_USD + EXAMPLE_FEE)}, less the fees already taken inside those trades. Agent and Desk trades pay the ` +
     `fee every trade pays, taken inside the transaction (${SWAP_FEE_PCT} on a swap).`,
 }

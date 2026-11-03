@@ -239,6 +239,7 @@ export async function gateTenantOffer(
   job: { id: string; tenantId: string | null; deskKeyId: string | null },
   step: { id: string; seq: number; builder: string; params: unknown; kind: string },
   built: { artifact: Record<string, unknown>; valueUsd: number | null | undefined },
+  opts: { silent?: boolean } = {},
 ): Promise<{ reason: TenantRefusal; say: string } | null> {
   const ctx = await tenantContextForJob(job)
   if (!ctx) return null
@@ -250,7 +251,8 @@ export async function gateTenantOffer(
     reason = 'VENUE_DENIED'
     detail = `the desk cannot name the venue of leg ${step.seq + 1} (${step.builder}), and a tenant leg it cannot judge is never offered.`
   } else {
-    const v = await tenantGate(ctx, order, { stage: 'offer', intentId: intent?.id ?? null, jobId: job.id, note: `offer leg ${step.seq}` })
+    // QA N-1: a re-check from the Jobs read (every poll) writes NO verdict row — the offer's own gate wrote it; a refusal still books `refused` below.
+    const v = await tenantGate(ctx, order, { stage: 'offer', intentId: intent?.id ?? null, jobId: job.id, note: `offer leg ${step.seq}`, silent: opts.silent === true })
     if (!v.allowed) {
       reason = v.reason
       detail = v.detail
@@ -490,7 +492,7 @@ export async function recheckTenantJob(job: { id: string; tenantId: string | nul
   if (!job.tenantId) return null
   for (const step of job.steps) {
     if (step.status !== 'offered' || !step.artifact || typeof step.artifact !== 'object') continue
-    const refused = await gateTenantOffer(job, step, { artifact: step.artifact as Record<string, unknown>, valueUsd: step.valueUsd })
+    const refused = await gateTenantOffer(job, step, { artifact: step.artifact as Record<string, unknown>, valueUsd: step.valueUsd }, { silent: true })
     if (refused) return refused
   }
   return null

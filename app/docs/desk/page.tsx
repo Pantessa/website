@@ -258,18 +258,23 @@ broker_open { ask: "Buy $25 of ETH on Base" }`}</pre>
           from the server’s own record, never a client claim, and refuse <code>403</code> <code>{'{ error, reason }'}</code>.
         </p>
         <p>
-          <strong>Who may sign.</strong> A wallet an admin registered in the tenant’s <code>signers</code> executes with no EOA consent signature: the desk key
-          plus the registered address is the consent, which is how a Safe or a custody wallet that cannot <code>personal_sign</code> owns a job. A wallet the
-          tenant never named still signs the five-line consent. On the human lane (<code>broker_handoff</code>), a CoW order or a Hyperliquid action carries no link
-          slug, so the relays join it to the tenant only through a wallet the tenant named (the intent’s <code>wallet</code> or a registered signer); a stranger’s
-          wallet signing a tenant’s link is judged at handoff, not again at the relay. Register your signers.
+          <strong>Who may sign.</strong> A signer joins the tenant’s <code>signers</code> only by proving control: an admin asks for a challenge for the address
+          (<code>GET /api/tenants/:id/signers/challenge?address=0x…</code>, a short ASCII text, 15 minutes, single use), the wallet signs that text
+          (<code>personal_sign</code>; a Safe or any smart account signs it as a message and the desk verifies EIP-1271 on the chain you name), and{' '}
+          <code>POST /api/tenants/:id/signers</code> <code>{'{ address, signature, chainId? }'}</code> registers it. A replayed challenge is refused; when the ledger
+          cannot record the burn, nothing is registered. <code>PATCH</code> can only remove signers. A proven signer executes with no EOA consent signature — the desk
+          key plus the proven address is the consent — <strong>except</strong> a job with an <code>auto</code> step (a guardian arm, anything the server runs with the
+          wallet’s delegation): that always needs the wallet’s own <code>personal_sign</code> consent. When the active policy sets <code>signing.wallets</code>, a
+          signer must be in both lists. On the human lane (<code>broker_handoff</code>) a CoW order or a Hyperliquid action carries no link slug and no server-built
+          job leg, so the relays never join it to the tenant: it is judged at handoff and not booked in the blotter; <code>/api/tx/refresh</code> legs join by the
+          recipe’s own slug.
         </p>
         <h3>6. The blotter, the verify, the statement</h3>
         <p>
           <code>GET /api/tenants/:id/blotter?from&to&kind&format=json|csv</code> exports the rows (CSV needs the plan’s export entitlement). Every row
           hashes the one before it; <code>GET …/blotter/verify</code> replays the chain and answers <code>{'{ ok, rows, brokenAt? }'}</code>.{' '}
           <code>GET …/statement?ym=YYYY-MM</code> cuts the month: the platform fee (waived inside the design-partner window), the tiered execution fee on
-          settled notional — chain-verified, or venue-reported for Hyperliquid and CoW; a signature that never settled is not billed — (or the tenant’s flat bps), less the fees already collected inside transactions on those rows. One statement row per month per
+          settled notional — chain-verified, or signer-reported for the off-chain venues Hyperliquid and CoW; a signature that never settled is not billed — (or the tenant’s flat bps), less the fees already collected inside transactions on those rows. One statement row per month per
           tenant; when Stripe is configured and the owner has a customer, a draft invoice carries the same three lines.
         </p>
         <h3>7. What it costs</h3>

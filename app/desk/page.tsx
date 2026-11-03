@@ -417,7 +417,7 @@ export default function DeskPage() {
               <h2 className="dk__h2" id="dk-pricing">
                 A platform fee, and basis points on what the chain proved.
               </h2>
-              <p className="dk__sub">Invoiced monthly from the blotter. Billed on settled notional only: a leg the chain proved, or a fill the venue itself reports (Hyperliquid, CoW). A signature that never settled is not billed.</p>
+              <p className="dk__sub">Invoiced monthly from the blotter. Billed on settled notional only: a leg the chain proved, or an off-chain fill (Hyperliquid, CoW) as your signer reports it back to the desk. A signature that never settled is not billed.</p>
             </div>
             <div className="dk__price" data-pricing>
               <div className="dk__panel">
@@ -442,7 +442,7 @@ export default function DeskPage() {
                 </ul>
                 <p className="dk__example" data-pricing-example>
                   A {usdShort(PRICING_EXAMPLE_NOTIONAL_USD)} month: <strong>{usd0(exampleTotal)}</strong> — {usd0(DESK_PLATFORM_FEE_USD)} platform, {usd0(exampleExec)} execution,
-                  marginal tiers on settled notional (chain-verified, or venue-reported for Hyperliquid and CoW).
+                  marginal tiers on settled notional (chain-verified, or signer-reported for the off-chain venues Hyperliquid and CoW).
                 </p>
                 <p className="dk__fine">
                   Fees already collected inside a transaction on those rows are credited against the statement. Design partners run <strong>{FREE_DAYS} days free</strong>.

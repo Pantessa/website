@@ -15,7 +15,6 @@ import { planNamesPolicyPool, policyPoolOriginFor } from '@/lib/policy-pool/venu
 import { policyPoolConfig } from '@/lib/policy-pool/config'
 import { recordPolicyPoolEvent } from '@/lib/policy-pool/ledger'
 import { recordTenantTurn } from '@/lib/tenant/blotter'
-import { claimReferralFromViaCookie } from '@/lib/share-referral'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -239,9 +238,14 @@ export async function POST(req: NextRequest) {
   // that whale for life and stamp an arrival that poisons their later real
   // sign-in. The link referral above still claims on `attested` — the same
   // forged-attested class, on main since S-2 (PERPS.md § For Nate).
-  if (outcome === 'signed' && verification === 'verified' && !intentLinkSlug && walletAddress && !internalRun && req.cookies.get('yf_via')?.value) {
-    await Promise.race([claimReferralFromViaCookie({ wallet: walletAddress, via: req.cookies.get('yf_via')?.value, landing: req.cookies.get('yf_via_landing')?.value ?? null, internal: false }), new Promise((r) => setTimeout(r, 2000))]).catch(() => null)
-  }
+  // QA re-check (2026-11-03): the sign-site cookie claim is OFF. A `verified`
+  // receipt proves the chain's SENDER, not the beacon's author — the chat route
+  // records {to, selector} expectations for ANY body wallet and the verifier
+  // checks no time window, so a beacon naming a victim's historical USDC approve
+  // verified and the yf_via cookie bound the victim for life. Until expectations
+  // are bound to the exact calldata hash + the tx time (or the claim moves to the
+  // relays' server-recovered signer — wave 2), a connect-only trader is claimed
+  // only at the SIWE door (/api/auth/verify) when they KEEP a thread.
   // Every trade you sign refills your chat (pricing v2): a VERIFIED receipt
   // banks answers from the fee it paid — to the embed HOST for a keyed embed
   // turn (their visitors chat on the host's pool), else to the signer. The
