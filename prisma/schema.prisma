@@ -1045,6 +1045,10 @@ model Job {
   surface        String?
   /// The live intent link the ask rode (validated in the chat route).
   intentLinkSlug String?  @map("intent_link_slug")
+  /// FIVE-MILLION: a tenant desk owns this job (gated by its policy at every
+  /// leg); the desk key that opened it. NULL = a retail job.
+  tenantId    String?  @map("tenant_id")
+  deskKeyId   String?  @map("desk_key_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -1479,6 +1483,9 @@ model BrokerIntent {
   /// mandate slot — the proposal auto-addressed to the employer's inbox and
   /// the build gate re-checks this slot (fired-agent race, T5).
   rosterSlotId   String?  @map("roster_slot_id")
+  /// FIVE-MILLION: the tenant + desk key behind this intent (NULL = retail).
+  tenantId       String?  @map("tenant_id")
+  deskKeyId      String?  @map("desk_key_id")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
@@ -1958,4 +1965,166 @@ model PolicyPoolCursor {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("policy_pool_cursors")
+}
+
+// ── FIVE-MILLION (2026-11-03): tenants, desk keys, the blotter, Telegram ────
+// The governed desk for institutions (GTM-PLAN-5M-ARR §4). Additive only;
+// DDL mirrored in prisma/ddl/2026-11-03-five-million.sql. Contract:
+// lib/tenant/spec.ts.
+
+/// One firm's governed desk. `admins` are lowercased wallets that may propose
+/// and approve policy beside the owner; `signers` are the custody addresses a
+/// leg may be offered to; `sandbox` keeps a tenant on testnets until its plan
+/// allows mainnet (lib/tenant/entitlements).
+model Tenant {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  name         String
+  ownerAddress String   @map("owner_address")
+  admins       Json     @default("[]")
+  plan         String   @default("free")
+  /// Per-tenant execution bps override (null = the tiered default); wave 1
+  /// SHOWS it on the statement, builds still carry the standard fee.
+  feeBps       Int?     @map("fee_bps")
+  /// 'calldata' (fee rides the artifact) | 'invoice' (wave 2: fee out of
+  /// calldata, billed from the blotter).
+  feeMode      String   @default("calldata") @map("fee_mode")
+  signingLane  String   @default("wallet") @map("signing_lane")
+  signers      Json     @default("[]")
+  status       String   @default("active")
+  sandbox      Boolean  @default(true)
+  isInternal   Boolean  @default(false) @map("is_internal")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  policies  TenantPolicy[]
+  keys      DeskKey[]
+  approvals TenantApproval[]
+
+  @@index([ownerAddress])
+  @@map("tenants")
+}
+
+/// A versioned policy document (lib/tenant/spec TenantPolicyDoc). Maker-
+/// checker: `proposed` by one admin, `active` when a DIFFERENT admin approves
+/// (self-activation only where the plan has no approvals entitlement); the
+/// previous active version becomes `superseded`.
+model TenantPolicy {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  version     Int
+  state       String    @default("proposed")
+  document    Json
+  proposedBy  String    @map("proposed_by")
+  approvedBy  String?   @map("approved_by")
+  note        String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  activatedAt DateTime? @map("activated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, version])
+  @@index([tenantId, state])
+  @@map("tenant_policies")
+}
+
+/// A scoped desk key (`dk_…`, sha256 stored): bound to one tenant and one
+/// desk id inside its policy; it can never widen the policy, `paused` refuses
+/// everywhere, `revokedAt` is final.
+model DeskKey {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  deskId     String    @map("desk_id")
+  label      String    @default("Desk key")
+  hash       String    @unique
+  prefix     String
+  paused     Boolean   @default(false)
+  ipAllow    Json      @default("[]") @map("ip_allow")
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("desk_keys")
+}
+
+/// One distinct admin approval of an over-threshold intent.
+model TenantApproval {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  intentId  String   @map("intent_id")
+  approver  String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([intentId, approver])
+  @@index([tenantId, intentId])
+  @@map("tenant_approvals")
+}
+
+/// The hash-chained blotter: per-tenant monotonic `seq`, `hash` =
+/// blotterHash(prevHash, seq, kind, createdAt, payload) (lib/tenant/spec).
+/// Every state transition on a tenant desk is a row; nothing is ever updated.
+model BlotterRow {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  seq          Int
+  prevHash     String   @map("prev_hash")
+  hash         String
+  kind         String
+  intentId     String?  @map("intent_id")
+  jobId        String?  @map("job_id")
+  deskId       String?  @map("desk_id")
+  keyId        String?  @map("key_id")
+  venue        String?
+  chainId      Int?     @map("chain_id")
+  valueUsd     Float?   @map("value_usd")
+  feeUsd       Float?   @map("fee_usd")
+  feeBps       Int?     @map("fee_bps")
+  txHash       String?  @map("tx_hash")
+  verification String?
+  payload      Json
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, seq])
+  @@index([tenantId, createdAt])
+  @@index([intentId])
+  @@map("blotter_rows")
+}
+
+/// A Telegram chat linked to an owner wallet (PERPS lane): price + print
+/// alerts deliver there with the chip link. One row per chat; `code` is the
+/// one-time /start token, cleared on link.
+model TelegramLink {
+  id        String    @id @default(cuid())
+  owner     String
+  chatId    String?   @map("chat_id")
+  code      String?   @unique
+  linkedAt  DateTime? @map("linked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([owner])
+  @@index([chatId])
+  @@map("telegram_links")
+}
+
+/// A pilot request from /desk (DESKPAGE lane): never lose a lead. Mailed to
+/// hello@ and kept here; `firm`/`custody`/`venues` are the form's own words.
+model DeskPilotRequest {
+  id        String   @id @default(cuid())
+  email     String
+  name      String?
+  firm      String?
+  custody   String?
+  venues    String?
+  notes     String?
+  source    String   @default("desk")
+  ipHash    String?  @map("ip_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("desk_pilot_requests")
 }
