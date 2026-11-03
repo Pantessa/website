@@ -21,7 +21,13 @@ export async function POST(req: NextRequest) {
   const creator = addr.toLowerCase()
 
   const links = await prisma.intentLink.findMany({ where: { creator }, select: { id: true } })
-  if (links.length === 0) return NextResponse.json({ error: 'No links, no earnings yet.' }, { status: 400 })
+  // A sharer with no links but a referral rail (lib/share-referral: a trader
+  // who arrived on their chart / live / deck share) earns on it, and
+  // GET /api/intent-links shows it — so this door admits them too (QA F8,
+  // 2026-11-03); the two reads must match. The refusal stands only when
+  // there is nothing on either leg.
+  const referredCount = await prisma.referredWallet.count({ where: { creator } })
+  if (links.length === 0 && referredCount === 0) return NextResponse.json({ error: 'No links, no earnings yet.' }, { status: 400 })
 
   // isInternal: false — the same drill-row exclusion as /api/intent-links
   // (claimable USDC must never accrue from internal runs); keep in lockstep.

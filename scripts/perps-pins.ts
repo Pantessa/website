@@ -144,6 +144,20 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
   const w1 = '0x9Cc0B7A0DdB091E17647d689206e730131E9892A'
   const idx = R.viaIndex([w1, 'nope', w1.toLowerCase(), '0x0000000000000000000000000000000000000001'])
   check('referral index: via id → lowercased wallet, non-addresses dropped, a repeated wallet counted once, the id is viaIdOf', idx.size === 2 && idx.get(viaIdOf(w1)) === w1.toLowerCase() && VIA_RE.test(viaIdOf(w1)))
+  // F2: a via two wallets hash to is nobody's — proven through the hasher seam
+  // (a real 40-bit collision is a GPU job, not a pin).
+  const wA = '0x1111111111111111111111111111111111111111'
+  const wB = '0x2222222222222222222222222222222222222222'
+  const wC = '0x3333333333333333333333333333333333333333'
+  const colliding = (w: string) => (w === wA || w === wB ? 'samevia001' : viaIdOf(w))
+  const collided = R.viaIndex([wA, wC, wB, wA], colliding)
+  check(
+    'referral index (F2): a via that two DIFFERENT wallets map to resolves to NOBODY (the entry is kept as null, so the resolver neither picks the first wallet seen nor treats it as a miss to rebuild on); the same wallet twice is not a collision; the other wallets are untouched',
+    collided.has('samevia001') && collided.get('samevia001') === null && collided.get(viaIdOf(wC)) === wC && collided.size === 2 && R.viaIndex([wA, wA], colliding).get('samevia001') === wA,
+    JSON.stringify([...collided.entries()]),
+  )
+  const referralSrcF2 = src('lib/share-referral.ts')
+  check('source (F2): creatorForVia answers null for a collided entry without a miss-rebuild and logs the collision once per process', /else if \(index\.get\(via\) !== wallet\) index\.set\(via, null\)/.test(referralSrcF2) && /if \(!index\.has\(via\)\) return undefined/.test(referralSrcF2) && /collisionLogged\.add\(via\)/.test(referralSrcF2) && /const known = resolveEntry\(fresh, via\)\n\s*if \(known !== undefined\) return known/.test(referralSrcF2))
   check('referral slug: a share referral carries `via:<id>` in intent_link_slug (never a link), and the reader recognises only that shape', R.viaReferralSlug('abc123abcd') === 'via:abc123abcd' && R.isViaReferralSlug('via:abc123abcd') && !R.isViaReferralSlug('abc123abcd') && !R.isViaReferralSlug('via:NOT OK') && !R.isViaReferralSlug(null))
   check('referral: a malformed via never resolves and never claims', (await R.creatorForVia('NOT OK')) === null && (await R.claimShareReferral({ wallet: w1, via: 'NOT OK', internal: false })).outcome === 'bad-via' && (await R.claimShareReferral({ wallet: w1, via: 'abc123abcd', internal: true })).outcome === 'internal')
 
@@ -206,8 +220,8 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
   )
   const telemetry = src('app/api/embed/telemetry/route.ts')
   check(
-    'source (Fix B): the sign site claims a connect-only signer from the SERVER-readable yf_via cookie — beside the link referral, on a COUNTED sign with NO link, never internal, never a body field (no body.via is read anywhere), through claimReferralFromViaCookie',
-    /if \(outcome === 'signed' && counted && !intentLinkSlug && walletAddress && !internalRun && req\.cookies\.get\('yf_via'\)\?\.value\)/.test(telemetry) && /claimReferralFromViaCookie\(\{ wallet: walletAddress, via: req\.cookies\.get\('yf_via'\)\?\.value/.test(telemetry) && !/body\.(via|referrer|creator)\b/.test(telemetry) && telemetry.indexOf('claimReferralFromViaCookie(') > telemetry.indexOf("if (outcome === 'signed' && counted && intentLinkSlug && walletAddress && !internalRun)") && /same evidence class as/.test(telemetry),
+    'source (Fix B + F1): the sign site claims a connect-only signer from the SERVER-readable yf_via cookie ONLY on a `verified` receipt (the chain proved the sender) — never on `attested`/`dev`, never from a beacon alone — beside the link referral, with NO link, never internal, never a body field (no body.via is read anywhere), through claimReferralFromViaCookie; the comment names the forged-attested class the link referral still carries',
+    /if \(outcome === 'signed' && verification === 'verified' && !intentLinkSlug && walletAddress && !internalRun && req\.cookies\.get\('yf_via'\)\?\.value\)/.test(telemetry) && !/counted && !intentLinkSlug/.test(telemetry) && /forged-attested class/.test(telemetry) && /claimReferralFromViaCookie\(\{ wallet: walletAddress, via: req\.cookies\.get\('yf_via'\)\?\.value/.test(telemetry) && !/body\.(via|referrer|creator)\b/.test(telemetry) && telemetry.indexOf('claimReferralFromViaCookie(') > telemetry.indexOf("if (outcome === 'signed' && counted && intentLinkSlug && walletAddress && !internalRun)") && /same evidence class as/.test(telemetry),
   )
   const fees = src('lib/fees.ts')
   check('source (Fix A): lib/fees stamps an HL row with the rate its signed action bore (presence + recipient, never key order) and reads a stamped 0 as fee-free on native-hl-exec; the earnings read reports the fee-free notional by name', /if \(buildPath === 'native-hl-exec' && typeof feeBps === 'number'\) return Math\.max\(0, feeBps\)/.test(fees) && /export function hlBuilderFeeBpsOfAction/.test(fees) && /b\.b\.toLowerCase\(\) !== TREASURY_ADDRESS\.toLowerCase\(\)/.test(fees) && /referredFeeFreeUsd/.test(src('app/api/intent-links/route.ts')))
@@ -228,6 +242,8 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
     const creatorVia = viaIdOf(creatorWallet)
     const trader = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
     const trader2 = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
+    const trader3 = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
+    const trader4 = privateKeyToAccount(generatePrivateKey()).address.toLowerCase()
     const handle = `perps${rand()}`
     const sessionPrefix = `perps-pins-${rand()}`
     const envWas = { token: process.env.TELEGRAM_BOT_TOKEN, channel: process.env.TELEGRAM_CHANNEL_ID }
@@ -324,9 +340,18 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
       await prisma.walletArrival.create({ data: { address: trader2, via: creatorVia, landing: '/live' } })
       const fromArrival = await R.claimReferralFromArrival({ wallet: trader2, internal: false })
       check('referral from the arrival record: a wallet with no wallet_arrivals row claims nothing; one whose arrival names the creator\'s share is claimed from that record alone', noArrival === null && fromArrival?.outcome === 'claimed' && fromArrival.creator === creatorWallet)
+      // F1: the function the sign site's `verified`-only branch calls — proven here, gated there
+      const fromCookie = await R.claimReferralFromViaCookie({ wallet: trader3, via: creatorVia, landing: '/t/HYPE', internal: false })
+      const cookieArrival = await prisma.walletArrival.findUnique({ where: { address: trader3 } })
+      const cookieInternal = await R.claimReferralFromViaCookie({ wallet: trader4, via: creatorVia, internal: true })
+      const cookieBad = await R.claimReferralFromViaCookie({ wallet: trader4, via: 'NOT OK', internal: false })
+      check(
+        'referral from the via cookie (F1, the function behind the sign site\'s verified-only gate): stamps the arrival (via + a validated landing, insert-only) then claims from it; an internal run claims nothing and stamps nothing; a malformed via reads as nothing',
+        fromCookie?.outcome === 'claimed' && fromCookie.creator === creatorWallet && cookieArrival?.via === creatorVia && cookieArrival?.landing === '/t/HYPE' && cookieInternal?.outcome === 'internal' && cookieBad === null && (await prisma.walletArrival.findUnique({ where: { address: trader4 } })) === null && (await prisma.referredWallet.findUnique({ where: { wallet: trader4 } })) === null,
+      )
 
       // the ledgered credit: the referred trader's HL order earns the creator 5 bps
-      const notional = 1000
+      const notional = 30_000 // 10 bps × half = $15 — over the claims door's $10 floor (F8)
       await prisma.embedTurn.create({
         data: { embedKeyId: '', origin: 'https://www.pantessa.com', sessionId: `${sessionPrefix}-1`, prompt: '', outcome: 'signed', artifact: 'hl-order', chain: 'hyperliquid', valueUsd: notional, buildPath: 'native-hl-exec', originKind: 'chat', walletAddress: trader, isInternal: false, verification: 'attested', symbols: [], feeBps: Math.floor(F.HL_BUILDER_FEE_TENTH_BPS / 10) },
       })
@@ -348,10 +373,22 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
         const earn = session ? ((await (await fetch(`${opts.base}/api/intent-links`, { headers: { cookie: session } })).json()) as { earnings?: { referredWallets?: number; referredEarnedUsd?: number; referredSignedUsd?: number; referredFeeFreeUsd?: number; totalEarnedUsd?: number } }) : {}
         const e = earn.earnings
         check(
-          `referral credit (served): the creator's /chat?tab=links earnings read (GET /api/intent-links) — a creator with NO links of their own — counts the two referred wallets and credits $${expectedUsd.toFixed(2)} on the referred trader's $${notional} HL order that BORE the builder fee; the $${feeFreeUsd} HL order that rode fee-free earns $0 and is reported as referredFeeFreeUsd; the deposit leg and the internal row earn nothing`,
-          !!session && e?.referredWallets === 2 && Math.abs((e?.referredEarnedUsd ?? -1) - expectedUsd) < 1e-9 && Math.abs((e?.referredSignedUsd ?? -1) - (notional + 500 + feeFreeUsd)) < 1e-9 && Math.abs((e?.totalEarnedUsd ?? -1) - expectedUsd) < 1e-9 && Math.abs((e?.referredFeeFreeUsd ?? -1) - feeFreeUsd) < 1e-9,
+          `referral credit (served): the creator's /chat?tab=links earnings read (GET /api/intent-links) — a creator with NO links of their own — counts the three referred wallets (claimed direct, from the arrival record, from the via cookie) and credits $${expectedUsd.toFixed(2)} on the referred trader's $${notional} HL order that BORE the builder fee; the $${feeFreeUsd} HL order that rode fee-free earns $0 and is reported as referredFeeFreeUsd; the deposit leg and the internal row earn nothing`,
+          !!session && e?.referredWallets === 3 && Math.abs((e?.referredEarnedUsd ?? -1) - expectedUsd) < 1e-9 && Math.abs((e?.referredSignedUsd ?? -1) - (notional + 500 + feeFreeUsd)) < 1e-9 && Math.abs((e?.totalEarnedUsd ?? -1) - expectedUsd) < 1e-9 && Math.abs((e?.referredFeeFreeUsd ?? -1) - feeFreeUsd) < 1e-9,
           JSON.stringify(e ?? earn).slice(0, 300),
         )
+        // F8: the claims door admits the same link-less creator — what the studio shows is claimable
+        const claimRes = await fetch(`${opts.base}/api/intent-links/claims`, { method: 'POST', headers: { cookie: session ?? '' } })
+        const claimJ = (await claimRes.json().catch(() => ({}))) as { id?: string; amountUsd?: number; status?: string; error?: string }
+        check(
+          `referral claim (served, F8): POST /api/intent-links/claims admits a creator with NO links whose referral rail earned $${expectedUsd.toFixed(2)} — one claim row for exactly that amount (the earnings read and the claims door match)`,
+          claimRes.status === 200 && typeof claimJ.id === 'string' && Math.abs((claimJ.amountUsd ?? -1) - Math.round(expectedUsd * 100) / 100) < 1e-9 && claimJ.status === 'requested',
+          `${claimRes.status} ${JSON.stringify(claimJ).slice(0, 160)}`,
+        )
+        const nobody = privateKeyToAccount(generatePrivateKey())
+        const { session: nobodySession } = await siweSignIn(opts.base, nobody)
+        const nobodyClaim = await fetch(`${opts.base}/api/intent-links/claims`, { method: 'POST', headers: { cookie: nobodySession ?? '' } })
+        check('referral claim (served, F8): a wallet with neither links nor referrals is still refused by name (400 "No links, no earnings yet.")', nobodyClaim.status === 400 && /No links, no earnings yet/.test(((await nobodyClaim.json().catch(() => ({}))) as { error?: string }).error ?? ''))
       } else {
         console.log('  ⚪ referral credit (served): no BASE — the earnings read over HTTP is skipped (the fixtures above prove the chain to the row)')
       }
@@ -362,8 +399,9 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
       else process.env.TELEGRAM_CHANNEL_ID = envWas.channel
       await prisma.telegramLink.deleteMany({ where: { owner } }).catch(() => {})
       await prisma.embedTurn.deleteMany({ where: { sessionId: { startsWith: sessionPrefix } } }).catch(() => {})
-      await prisma.referredWallet.deleteMany({ where: { wallet: { in: [trader, trader2] } } }).catch(() => {})
-      await prisma.walletArrival.deleteMany({ where: { address: { in: [trader, trader2, creatorWallet] } } }).catch(() => {})
+      await prisma.referredWallet.deleteMany({ where: { wallet: { in: [trader, trader2, trader3, trader4] } } }).catch(() => {})
+      await prisma.walletArrival.deleteMany({ where: { address: { in: [trader, trader2, trader3, trader4, creatorWallet] } } }).catch(() => {})
+      await prisma.intentLinkClaim.deleteMany({ where: { creator: creatorWallet } }).catch(() => {})
       await prisma.creatorHandle.deleteMany({ where: { handle } }).catch(() => {})
       R.resetViaIndex()
     }
@@ -451,9 +489,12 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
       const selfIn = await siweSignIn(base, creator, { cookies: [`yf_via=${creatorVia}`], ...organic })
       check('http referral: the creator signing in on their own share is never their own referral', selfIn.status === 200 && selfIn.body.referral === undefined && (await prisma.referredWallet.findUnique({ where: { wallet: creatorWallet } })) === null)
 
-      // Fix B: the CONNECT-ONLY signer (no SIWE ever) through the sign site —
-      // a first-party `signed` beacon from a page that carried ?via=<creator>
-      // rides the yf_via cookie ViaTracker set; a via claimed in the BODY is ignored.
+      // Fix B + F1: the CONNECT-ONLY signer through the sign site. A first-party
+      // `signed` beacon for an HL order verifies `attested` (`dev` on a local
+      // build) — no chain proved the sender — so WITH the yf_via cookie it claims
+      // nothing and stamps no arrival (F1); only a `verified` on-chain receipt
+      // may (the function it gates, claimReferralFromViaCookie, is proven on the
+      // DB tier); a via claimed in the BODY is ignored either way.
       const beacon = (wallet: string, extra: { cookie?: string; bodyVia?: string }) =>
         fetch(`${base}/api/embed/telemetry`, {
           method: 'POST',
@@ -465,8 +506,8 @@ export async function perpsPins(check: Check, opts: { base?: string } = {}): Pro
       const connectRow = await prisma.referredWallet.findUnique({ where: { wallet: connectOnly.address.toLowerCase() } })
       const connectArrival = await prisma.walletArrival.findUnique({ where: { address: connectOnly.address.toLowerCase() } })
       check(
-        'http referral (Fix B): a connect-only signer\'s COUNTED first-party sign from a page that carried ?via=<creator> (the yf_via cookie) claims the signer for that creator at the sign site — the arrival stamped from the same cookie, the via: slug on the row — with no SIWE ever',
-        cookied.status === 200 && cookiedBody.ok === true && connectRow?.creator === creatorWallet && connectRow?.intentLinkSlug === R.viaReferralSlug(creatorVia) && connectArrival?.via === creatorVia && connectArrival?.landing === '/t/HYPE',
+        'http referral (F1): a first-party HL sign that verifies attested/dev (no chain proved the sender) WITH the creator\'s yf_via cookie is recorded but claims NOBODY and stamps NO arrival — a curl beacon naming any wallet plus a cookie binds nothing',
+        cookied.status === 200 && cookiedBody.ok === true && cookiedBody.verification !== 'verified' && connectRow === null && connectArrival === null,
         `${cookied.status} ${JSON.stringify(cookiedBody).slice(0, 120)} row=${connectRow?.intentLinkSlug ?? 'none'} arrival=${connectArrival?.via ?? 'none'}`,
       )
       const bodied = await beacon(bodyClaimer.address, { bodyVia: creatorVia })
