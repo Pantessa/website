@@ -147,6 +147,9 @@ export const BLOTTER_KIND_WORDS: Record<BlotterKind, string> = {
   key_paused: 'a desk key was paused',
   key_resumed: 'a desk key was resumed',
   key_revoked: 'a desk key was revoked',
+  tenant_paused: 'the tenant was paused: every key refuses until resumed',
+  tenant_resumed: 'the tenant was resumed',
+  tenant_updated: 'admins, signers, the signing lane or the name changed',
   statement: 'a monthly statement was cut',
 }
 
