@@ -14,6 +14,7 @@ import { readOrigin, type OriginFeed } from '@/lib/broker-origin'
 import { planNamesPolicyPool, policyPoolOriginFor } from '@/lib/policy-pool/venue'
 import { policyPoolConfig } from '@/lib/policy-pool/config'
 import { recordPolicyPoolEvent } from '@/lib/policy-pool/ledger'
+import { recordTenantTurn } from '@/lib/tenant/blotter'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -286,6 +287,28 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // FIVE-MILLION: a turn through a TENANT's desk-minted link books its `signed` +
+  // `settled` rows on that tenant's blotter — only on a VERIFIED receipt (this
+  // beacon is public; a forged one must write nothing to a firm's audit trail).
+  // A receipt still unverified here is picked up by the statement's sweep once
+  // the lazy re-check promotes it (lib/tenant/statement).
+  if (outcome === 'signed' && verification === 'verified' && deskIntent?.tenantId) {
+    await recordTenantTurn({
+      tenantId: deskIntent.tenantId,
+      deskKeyId: deskIntent.deskKeyId,
+      intentId: deskIntent.id,
+      turnId: row.id,
+      wallet: walletAddress ?? null,
+      valueUsd: usd(body.valueUsd) ?? null,
+      buildPath: isBuildPath(body.buildPath) ? body.buildPath : null,
+      stampedFeeBps: feeBps ?? null,
+      chainId: chainIdOfTurn({ chain: str(body.chain, 40), txUrl: str(body.txUrl, 300) }, body.chainId),
+      txHash: extractTxHash(str(body.txUrl, 300)),
+      artifact: artifact ?? null,
+      signers: await prisma.tenant.findUnique({ where: { id: deskIntent.tenantId }, select: { signers: true } }).then((t) => t?.signers ?? null).catch(() => null),
+    })
+  }
+
   // `internal` echoes the stamp so drills (and the harness) can assert their
   // rows can never read as growth.
   return NextResponse.json({ ok: true, ...(internalRun ? { internal: true } : {}), ...(verification ? { verification } : {}), ...(earned ? { earnedAnswers: earned } : {}) })
@@ -294,12 +317,12 @@ export async function POST(req: NextRequest) {
 /** The desk intent bound to this sign link — its feed (lib/broker-origin: the
  *  "born from" half of the joint number), id, origin and plan — or null when
  *  the link was not desk-minted or the read failed. */
-async function deskIntentForLink(slug: string): Promise<{ id: string; feed: OriginFeed | undefined; origin: ReturnType<typeof readOrigin>; plan: unknown } | null> {
+async function deskIntentForLink(slug: string): Promise<{ id: string; feed: OriginFeed | undefined; origin: ReturnType<typeof readOrigin>; plan: unknown; tenantId: string | null; deskKeyId: string | null } | null> {
   try {
-    const intent = await prisma.brokerIntent.findFirst({ where: { linkSlug: slug }, select: { id: true, origin: true, plan: true } })
+    const intent = await prisma.brokerIntent.findFirst({ where: { linkSlug: slug }, select: { id: true, origin: true, plan: true, tenantId: true, deskKeyId: true } })
     if (!intent) return null
     const origin = readOrigin(intent.origin)
-    return { id: intent.id, feed: origin?.feed, origin, plan: intent.plan }
+    return { id: intent.id, feed: origin?.feed, origin, plan: intent.plan, tenantId: intent.tenantId, deskKeyId: intent.deskKeyId }
   } catch {
     return null
   }
