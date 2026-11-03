@@ -51,6 +51,20 @@ import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from 
 import { creatorBpsFor, payableCreator, stableSideOf, type CreatorPaid } from '@/lib/creator-split'
 import { checkFillAgainstTape, startSwapTape } from '@/lib/stock-tape'
 import { UnknownTokenError } from '@/lib/token-list'
+import { BASE_SEPOLIA_CHAIN_ID, BASE_SEPOLIA_USDC } from '@/lib/chains'
+import {
+  NATIVE_CURRENCY,
+  POLICY_POOL_BUILD_PATH,
+  policyPoolChainName,
+  policyPoolClient,
+  policyPoolConfig,
+  type PolicyPoolConfig,
+} from '@/lib/policy-pool/config'
+import { POLICY_POOL_HOOK_ABI, decodeHookData, encodeHookData, intentIdFor, poolIdFor, type Attestation } from '@/lib/policy-pool/spec'
+import { attestationFor, signAttestation, verifyAttestation } from '@/lib/policy-pool/attestation'
+import { policyDecision } from '@/lib/policy-pool/policy'
+import { recordPolicyPoolEvent } from '@/lib/policy-pool/ledger'
+import { decodeErrorResult, type Address, type Hex } from 'viem'
 
 // Standard v4 fee → tickSpacing pairs (mirrors v3's tier scan; v4 has no
 // enumerable tier list, these are the factory-conventional no-hook keys).
@@ -255,6 +269,10 @@ export interface V4SwapPlan {
    *  sets it only when the output is a registry stable). `feeBps` stays the
    *  whole tier; the treasury's portion carries feeBps − creator.bps. */
   creator?: { address: string; bps: number }
+  /** hookData handed to the pool's hook with the swap. Absent/empty = the
+   *  classic no-hook encoding, byte-identical to before. THE POLICY POOL
+   *  (buildPolicyPoolSwap) carries the desk's signed attestation here. */
+  hookData?: `0x${string}`
 }
 
 /** What the output split pays, in order. The second PAY_PORTION reads the
@@ -282,7 +300,7 @@ export function encodeV4SwapCalldata(plan: V4SwapPlan): `0x${string}` {
         zeroForOne: plan.zeroForOne,
         amountIn: plan.amountIn,
         amountOutMinimum: plan.minOut,
-        hookData: '0x',
+        hookData: plan.hookData ?? '0x',
       },
     ],
   )
@@ -361,6 +379,30 @@ export interface V4GuardExpectations {
   /** The link creator paid inside this swap (output side only), or absent.
    *  `payer` is the wallet the SWEEP pays: the creator must not be it. */
   creator?: { address: string; bps: number; payer: string }
+  /** THE POLICY POOL: present ⇒ the swap MUST target the pinned hook and
+   *  carry hookData that decodes to the attestation described here, signed
+   *  by the pinned policy signer. Absent ⇒ hooks and hookData are refused,
+   *  exactly as before. */
+  policyPool?: V4PolicyPoolExpectation
+}
+
+/** What the guard requires of a policy-pool swap's hookData. Every field is
+ *  the builder's own record of what it asked the signer for; the guard
+ *  re-decodes the calldata and compares — never trusts the builder's memory
+ *  of the bytes. `signatureVerified` is the verdict of `verifyAttestation`
+ *  over the DECODED attestation, computed by `guardPolicyPoolBuild` (async;
+ *  viem's recovery is async) and handed in — the sync guard refuses unless it
+ *  is literally `true`. */
+export interface V4PolicyPoolExpectation {
+  hook: `0x${string}`
+  poolId: `0x${string}`
+  signer: `0x${string}`
+  intentId: `0x${string}`
+  swapper: `0x${string}`
+  zeroForOne: boolean
+  maxAmountIn: bigint
+  origin: string
+  signatureVerified: boolean
 }
 
 export interface V4GuardResult {
@@ -369,6 +411,35 @@ export interface V4GuardResult {
 }
 
 const eqAddr = (a: string | undefined, b: string | undefined) => !!a && !!b && a.toLowerCase() === b.toLowerCase()
+
+/** 65 bytes = 0x + 130 hex. */
+const SIG_65_RE = /^0x[0-9a-fA-F]{130}$/
+
+/** The reasons a policy-pool swap's hookData fails the guard (empty = passes).
+ *  Pure, sync, fail-closed: anything that does not decode refuses. */
+function policyPoolHookDataReasons(hookData: `0x${string}`, zeroForOne: boolean, amountIn: bigint, pp: V4PolicyPoolExpectation): string[] {
+  const reasons: string[] = []
+  if (!hookData || hookData === '0x') return ['The policy pool swap carries no attestation (empty hookData) — the hook would revert NotAttested.']
+  let att: Attestation
+  let sig: `0x${string}`
+  try {
+    ;({ att, sig } = decodeHookData(hookData))
+  } catch {
+    return ['The policy pool hookData does not decode as (Attestation, signature) — refusing.']
+  }
+  if (att.intentId.toLowerCase() !== pp.intentId.toLowerCase()) reasons.push('The attestation names a different intent than this build — refusing.')
+  if (att.poolId.toLowerCase() !== pp.poolId.toLowerCase()) reasons.push('The attestation names a different pool than the pinned policy pool — refusing.')
+  if (!eqAddr(att.swapper, pp.swapper)) reasons.push('The attestation names a different swapper than this build is for — refusing.')
+  if (att.zeroForOne !== pp.zeroForOne) reasons.push('The attestation direction does not match what the desk asked for — refusing.')
+  if (att.zeroForOne !== zeroForOne) reasons.push('The attestation direction does not match the swap direction — refusing.')
+  if (att.maxAmountIn !== pp.maxAmountIn) reasons.push('The attestation maxAmountIn is not the size the desk asked for — refusing.')
+  if (amountIn > att.maxAmountIn) reasons.push('The swap amountIn exceeds the attested maximum — the hook would revert OverSize.')
+  if (att.origin !== pp.origin) reasons.push('The attestation origin is not the provenance the desk recorded — refusing.')
+  if (att.expiry <= BigInt(Math.floor(Date.now() / 1000))) reasons.push('The attestation has already expired — refusing.')
+  if (!SIG_65_RE.test(sig)) reasons.push('The attestation signature is not 65 bytes — refusing.')
+  if (pp.signatureVerified !== true) reasons.push(`The attestation signature does not verify to the pinned policy signer ${pp.signer.slice(0, 8)}… — refusing.`)
+  return reasons
+}
 
 /**
  * Verify a built v4 step chain before it can be offered for signing. Every
@@ -529,14 +600,25 @@ export function guardUniswapV4Build(steps: V4BuiltStep[], exp: V4GuardExpectatio
         if (k.fee !== expectIn.fee || k.tickSpacing !== expectIn.tickSpacing) {
           reasons.push('The pool fee/tickSpacing does not match the quoted pool.')
         }
-        if (!eqAddr(k.hooks, ZERO_HOOKS)) reasons.push('The pool has a hook contract — only no-hook pools are allowed.')
+        const pp = exp.policyPool
+        if (!pp) {
+          if (!eqAddr(k.hooks, ZERO_HOOKS)) reasons.push('The pool has a hook contract — only no-hook pools are allowed.')
+        } else {
+          // THE POLICY POOL: the ONE hooked pool the desk is allowed to route
+          // through. The hook must be the pinned one (and the one the key was
+          // quoted with), and the hookData must be the desk's own attestation.
+          if (!eqAddr(k.hooks, pp.hook)) reasons.push('The pool hook is not the pinned policy pool hook — refusing.')
+          if (!eqAddr(expectIn.hooks, pp.hook)) reasons.push('The quoted pool key does not carry the pinned policy pool hook — refusing.')
+          if (poolIdFor(k).toLowerCase() !== pp.poolId.toLowerCase()) reasons.push('The swap pool key does not hash to the pinned policy pool id — refusing.')
+          reasons.push(...policyPoolHookDataReasons(sp.hookData, sp.zeroForOne, sp.amountIn, pp))
+        }
         const currencyIn = sp.zeroForOne ? k.currency0 : k.currency1
         const currencyOut = sp.zeroForOne ? k.currency1 : k.currency0
         if (!eqAddr(currencyIn, exp.sellToken)) reasons.push('The swap direction does not sell the asked token.')
         if (!eqAddr(currencyOut, exp.buyToken)) reasons.push('The swap direction does not buy the asked token.')
         if (sp.amountIn !== exp.amountIn) reasons.push('The swap amountIn is not exactly the asked amount.')
         if (sp.amountOutMinimum !== exp.minOut) reasons.push('The swap minimum-out does not match the quoted bound.')
-        if (sp.hookData !== '0x') reasons.push('Unexpected hookData on the swap — refusing.')
+        if (!exp.policyPool && sp.hookData !== '0x') reasons.push('Unexpected hookData on the swap — refusing.')
         const [settleCur, settleAmt] = decodeAbiParameters([...CURRENCY_AMOUNT_PARAMS], params[1]) as [string, bigint]
         if (!eqAddr(settleCur, exp.sellToken)) reasons.push('SETTLE_ALL is for a different currency than the sell token.')
         if (settleAmt !== exp.amountIn) reasons.push('SETTLE_ALL max does not match the swap amount.')
@@ -642,7 +724,7 @@ async function probeV4Executability(
         zeroForOne: plan.zeroForOne,
         amountIn: plan.amountIn,
         amountOutMinimum: plan.minOut,
-        hookData: '0x',
+        hookData: plan.hookData ?? '0x',
       },
     ],
   )
@@ -972,3 +1054,438 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
 
   return { summary, guardrails, blocked: !guardrails.ok, steps, minimumOut: minHuman, poolFee: best.fee, ...(creatorPaid ? { creatorPaid } : {}) }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  THE POLICY POOL — the gated-pool mode of this builder (BUILDER lane,
+//  squad policy-pool 2026-11-02; contract in
+//  /Users/nate/pantessa/squad-policy-pool-2026-11-02/README.md).
+//
+//  ONE hooked v4 pool (lib/policy-pool/config) whose hook refuses every swap
+//  that does not carry an attestation signed by the desk's policy signer.
+//  The build is the no-hook build above with three differences:
+//    1. the desk POLICY runs first (lib/policy-pool/policy policyDecision —
+//       the per-order cap, the pinned pool) and a refusal returns a typed
+//       refusal with no artifact;
+//    2. the policy signer attests THIS intent, THIS pool, THIS swapper, THIS
+//       side, THIS size, for ten minutes (lib/policy-pool/attestation), and
+//       the attestation rides in hookData — the quote and the swap both carry
+//       it, because the hook runs inside the Quoter's simulation too;
+//    3. the guard (guardPolicyPoolBuild) re-decodes the hookData and refuses
+//       unless every attested field equals what the desk asked for and the
+//       signature recovers to the pinned signer.
+//  The no-hook path above is untouched: a hook or hookData anywhere else
+//  still refuses. Exact-in, ERC-20 in only (the pool's native side is the
+//  OUTPUT — "Buy $25 of ETH"): selling native ETH needs the value-carrying
+//  settle shape this guard does not accept, so it refuses by name.
+//  Every step writes its ledger row (lib/policy-pool/ledger) and the ledger
+//  never blocks a build.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface PolicyPoolSwapParams extends UniswapV4SwapParams {
+  /** The desk intent id (BrokerIntent.id / job id / a minted chat id). Hashed on-chain; single use. */
+  intentId: string
+  /** Provenance, emitted verbatim in DeskFill: `dune:<queryId>` or `desk:<intentId>` (lib/policy-pool/venue). */
+  origin: string
+  /** The wallet the attestation binds as tx.origin; null = bearer (smart-account custody). */
+  swapper: Address | null
+}
+
+/** The desk said no (or could not say yes): nothing was built, nothing to sign. */
+export interface PolicyPoolRefusal {
+  refused: true
+  /** `policy` = the desk policy refused (cap / wrong pool); `config` = the pool
+   *  is not deployed or half-configured; `venue` = the ask does not fit the
+   *  pool (pair, side, chain). */
+  kind: 'policy' | 'config' | 'venue'
+  reason: string
+  capUsd?: number
+  buildPath: typeof POLICY_POOL_BUILD_PATH
+}
+
+export interface PolicyPoolBuilt extends UniswapV4Built {
+  refused?: undefined
+  chainId: number
+  poolId: Hex
+  hook: Address
+  hookData: Hex
+  attestation: { intentId: Hex; deskIntentId: string; swapper: Address; zeroForOne: boolean; maxAmountIn: string; expiry: number; origin: string }
+  usd: number
+  buildPath: typeof POLICY_POOL_BUILD_PATH
+}
+
+const refusal = (kind: PolicyPoolRefusal['kind'], reason: string, capUsd?: number): PolicyPoolRefusal => ({
+  refused: true,
+  kind,
+  reason,
+  ...(capUsd !== undefined ? { capUsd } : {}),
+  buildPath: POLICY_POOL_BUILD_PATH,
+})
+
+export function isPolicyPoolRefusal(v: PolicyPoolBuilt | PolicyPoolRefusal): v is PolicyPoolRefusal {
+  return (v as PolicyPoolRefusal).refused === true
+}
+
+/** The envelopes a hook revert travels in on its way out: the PoolManager
+ *  wraps a failed hook call (v4-core CustomRevert.bubbleUpAndRevertWith →
+ *  WrappedError), the V4 Quoter wraps anything that is not its own QuoteSwap
+ *  (UnexpectedRevertBytes), and the Universal Router wraps a failed command
+ *  (ExecutionFailed). Each carries the inner bytes verbatim. */
+const REVERT_ENVELOPE_ABI = [
+  { type: 'error', name: 'WrappedError', inputs: [{ name: 'target', type: 'address' }, { name: 'selector', type: 'bytes4' }, { name: 'reason', type: 'bytes' }, { name: 'details', type: 'bytes' }] },
+  { type: 'error', name: 'UnexpectedRevertBytes', inputs: [{ name: 'revertData', type: 'bytes' }] },
+  { type: 'error', name: 'ExecutionFailed', inputs: [{ name: 'commandIndex', type: 'uint256' }, { name: 'message', type: 'bytes' }] },
+] as const
+
+/** Peel every known envelope off revert data; the innermost bytes come back. */
+export function unwrapRevertData(data: Hex, depth = 0): Hex {
+  if (depth > 6 || !/^0x[0-9a-fA-F]{8,}$/.test(data)) return data
+  try {
+    const dec = decodeErrorResult({ abi: REVERT_ENVELOPE_ABI, data })
+    const inner = dec.errorName === 'WrappedError' ? (dec.args[2] as Hex) : dec.errorName === 'UnexpectedRevertBytes' ? (dec.args[0] as Hex) : (dec.args[1] as Hex)
+    return typeof inner === 'string' && inner.length >= 10 ? unwrapRevertData(inner, depth + 1) : data
+  } catch {
+    return data
+  }
+}
+
+/** The hook's own revert, by name (NotAttested, BadSigner, OverSize, …), read
+ *  off raw revert data or any viem error chain — through the PoolManager /
+ *  Quoter / Universal Router envelopes — or null when the revert is not the hook's. */
+export function policyPoolRevertName(err: unknown): string | null {
+  let data: unknown = typeof err === 'string' ? err : undefined
+  if (data === undefined) {
+    const walk = err instanceof Error && 'walk' in err && typeof (err as { walk?: unknown }).walk === 'function'
+      ? (err as { walk: (fn: (e: unknown) => boolean) => unknown }).walk((e) => !!e && typeof e === 'object' && 'data' in (e as object))
+      : null
+    data = walk && typeof walk === 'object' && 'data' in walk ? (walk as { data?: unknown }).data : undefined
+  }
+  if (typeof data !== 'string' || !/^0x[0-9a-fA-F]{8,}$/.test(data)) return null
+  try {
+    return decodeErrorResult({ abi: POLICY_POOL_HOOK_ABI, data: unwrapRevertData(data as Hex) }).errorName
+  } catch {
+    return null
+  }
+}
+
+/** The pool currency an ask's token names, or null when it is neither side.
+ *  The pool is two currencies by address; a symbol is read against the
+ *  chain's registry (first-class chains) or the pinned testnet USDC — and
+ *  "ETH" means the native side when the pool has one. */
+function policyPoolCurrencyFor(token: string, cfg: PolicyPoolConfig): Address | null {
+  const t = token.trim()
+  const sides = [cfg.poolKey.currency0, cfg.poolKey.currency1]
+  if (/^0x[0-9a-fA-F]{40}$/.test(t)) return sides.find((s) => s.toLowerCase() === t.toLowerCase()) ?? null
+  const sym = t.toUpperCase()
+  const hasNative = sides.some((s) => s.toLowerCase() === NATIVE_CURRENCY)
+  if (sym === 'ETH' && hasNative) return NATIVE_CURRENCY
+  if (cfg.chainId === BASE_SEPOLIA_CHAIN_ID) {
+    if (sym === 'USDC') return sides.find((s) => s.toLowerCase() === BASE_SEPOLIA_USDC.toLowerCase()) ?? null
+    return null
+  }
+  const resolved = resolveToken(sym, cfg.chainId)
+  return resolved ? (sides.find((s) => s.toLowerCase() === resolved.toLowerCase()) ?? null) : null
+}
+
+const ERC20_DECIMALS_CACHE = new Map<string, number>()
+async function currencyDecimals(client: NonNullable<ReturnType<typeof policyPoolClient>>, chainId: number, currency: Address): Promise<number> {
+  if (currency.toLowerCase() === NATIVE_CURRENCY) return 18
+  const key = `${chainId}:${currency.toLowerCase()}`
+  const hit = ERC20_DECIMALS_CACHE.get(key)
+  if (hit !== undefined) return hit
+  const d = Number(await client.readContract({ address: currency, abi: erc20Abi, functionName: 'decimals' }))
+  ERC20_DECIMALS_CACHE.set(key, d)
+  return d
+}
+
+/** Is this currency a $1 stable on the pool's chain? Prices the order for the cap. */
+function policyPoolStable(currency: Address, cfg: PolicyPoolConfig): boolean {
+  if (cfg.chainId === BASE_SEPOLIA_CHAIN_ID) return currency.toLowerCase() === BASE_SEPOLIA_USDC.toLowerCase()
+  return chainById(cfg.chainId)?.stables[currency.toLowerCase()] !== undefined
+}
+
+function policyPoolLabel(currency: Address, cfg: PolicyPoolConfig): string {
+  if (currency.toLowerCase() === NATIVE_CURRENCY) return 'ETH'
+  if (cfg.chainId === BASE_SEPOLIA_CHAIN_ID) return currency.toLowerCase() === BASE_SEPOLIA_USDC.toLowerCase() ? 'USDC' : `${currency.slice(0, 6)}…`
+  return tokenLabel(currency, cfg.chainId)
+}
+
+/**
+ * Verify a policy-pool step chain: the no-hook guard with the policy-pool
+ * expectation, plus the one check that cannot be synchronous — the
+ * attestation signature recovered from the DECODED hookData against the
+ * pinned signer (viem's recovery is async). Fail-closed: a swap step whose
+ * calldata does not expose its hookData verifies as `false`.
+ */
+export async function guardPolicyPoolBuild(
+  steps: V4BuiltStep[],
+  exp: Omit<V4GuardExpectations, 'policyPool'> & { policyPool: Omit<V4PolicyPoolExpectation, 'signatureVerified'> },
+): Promise<V4GuardResult> {
+  let signatureVerified = false
+  const swap = steps[steps.length - 1]
+  const hookData = swap ? swapHookDataOf(swap.tx.data as Hex) : null
+  if (hookData && hookData !== '0x') {
+    try {
+      const { att, sig } = decodeHookData(hookData)
+      signatureVerified = await verifyAttestation(att, sig, { chainId: exp.chainId, hook: exp.policyPool.hook, signer: exp.policyPool.signer })
+    } catch {
+      signatureVerified = false
+    }
+  }
+  return guardUniswapV4Build(steps, { ...exp, policyPool: { ...exp.policyPool, signatureVerified } })
+}
+
+/** The swap action's hookData inside a Universal Router execute, or null when the calldata is not that shape. */
+export function swapHookDataOf(data: Hex): Hex | null {
+  try {
+    const dec = decodeFunctionData({ abi: UNIVERSAL_ROUTER_ABI, data })
+    const [, inputs] = dec.args as [Hex, readonly Hex[], bigint]
+    const [, params] = decodeAbiParameters([...ACTIONS_ENVELOPE_PARAMS], inputs[0]) as [Hex, readonly Hex[]]
+    const [sp] = decodeAbiParameters([EXACT_IN_SINGLE_PARAM], params[0]) as unknown as [{ hookData: Hex }]
+    return sp.hookData
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Build a guarded swap THROUGH THE POLICY POOL. Returns a typed refusal (no
+ * artifact) when the pool is off, the ask does not fit it, or the desk
+ * policy says no; otherwise the same 1–3 step chain as the no-hook build,
+ * with the signed attestation in the swap's hookData and the guard's verdict
+ * as the block-level `calldata` check (`blocked: true` withholds it).
+ */
+export async function buildPolicyPoolSwap(params: PolicyPoolSwapParams): Promise<PolicyPoolBuilt | PolicyPoolRefusal> {
+  let cfg: PolicyPoolConfig | null
+  try {
+    cfg = policyPoolConfig()
+  } catch (err) {
+    return refusal('config', `The policy pool is half-configured: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  if (!cfg) return refusal('config', 'The policy pool is not deployed yet (POLICY_POOL_HOOK is unset) — nothing was built.')
+  if (params.chainId !== cfg.chainId) {
+    return refusal('venue', `The policy pool runs on ${cfg.chainName}, not ${policyPoolChainName(params.chainId)} — nothing was built.`)
+  }
+  const chainId = cfg.chainId
+  const client = policyPoolClient(chainId)
+  if (!client) return refusal('config', `No RPC client for ${cfg.chainName}.`)
+  const from = params.from as Address
+  if (!/^0x[0-9a-fA-F]{40}$/.test(from)) throw new Error('A valid wallet address is required.')
+  const deskIntentId = params.intentId.trim()
+  if (!deskIntentId) throw new Error('A desk intent id is required for a policy pool build.')
+  const origin = params.origin.trim()
+  if (!origin || origin.length > 120 || /[^\x20-\x7e]/.test(origin)) throw new Error('The policy pool origin must be short printable ASCII.')
+
+  // The ask's pair onto the pool's two currencies.
+  const sellCur = policyPoolCurrencyFor(params.sellToken, cfg)
+  const buyCur = policyPoolCurrencyFor(params.buyToken, cfg)
+  const pairWords = `${policyPoolLabel(cfg.poolKey.currency0, cfg)} ↔ ${policyPoolLabel(cfg.poolKey.currency1, cfg)}`
+  if (!sellCur || !buyCur || sellCur === buyCur) {
+    return refusal('venue', `The policy pool trades ${pairWords} only on ${cfg.chainName} — ${params.sellToken.toUpperCase()} → ${params.buyToken.toUpperCase()} isn't that pair. Nothing was built.`)
+  }
+  if (sellCur.toLowerCase() === NATIVE_CURRENCY) {
+    return refusal('venue', `The policy pool build sells the ${policyPoolLabel(cfg.poolKey.currency1, cfg)} side for ETH (exact-in, ERC-20 in). Selling ETH into it needs the native settle path, which this build doesn't carry yet — nothing was built.`)
+  }
+  const sellDec = await currencyDecimals(client, chainId, sellCur)
+  const buyDec = await currencyDecimals(client, chainId, buyCur)
+  const atoms = humanToAtoms(params.amountHuman, sellDec)
+  if (!atoms) throw new Error(`Couldn't read the amount "${params.amountHuman}" (${sellDec} decimals max).`)
+  const amountIn = BigInt(atoms)
+  if (amountIn <= BigInt(0)) throw new Error('The amount must be positive.')
+  if (amountIn > UINT128_MAX) throw new Error('Amount too large for a v4 swap.')
+  const zeroForOne = sellCur.toLowerCase() === cfg.poolKey.currency0.toLowerCase()
+  const sellLabel = policyPoolLabel(sellCur, cfg)
+  const buyLabel = policyPoolLabel(buyCur, cfg)
+  // Dollar size for the cap: a $1 stable in prices itself; anything else has
+  // no size the desk can check (policyDecision refuses by name).
+  const usd = policyPoolStable(sellCur, cfg) ? Number(params.amountHuman) : NaN
+  const swapper = params.swapper
+  // Ledger rows name the currencies (LEDGER's page renders "25 USDC / 0.0104 ETH" from meta.currencyIn/Out).
+  const ledgerBase = { intentId: deskIntentId, origin, swapper: (swapper ?? from).toLowerCase(), chainId, amountIn: amountIn.toString(), ...(Number.isFinite(usd) ? { usd } : {}) }
+  const currencyMeta = { currencyIn: sellCur, currencyOut: buyCur }
+
+  // ── 1. The desk policy ────────────────────────────────────────────────────
+  const decision = policyDecision({ usd, chainId, hook: cfg.hook, poolId: cfg.poolId })
+  if (!decision.allowed) {
+    await recordPolicyPoolEvent({ kind: 'guard_refused', ...ledgerBase, reason: decision.reason, meta: { ...currencyMeta, capUsd: decision.capUsd, sell: sellLabel, buy: buyLabel } })
+    return refusal('policy', `The desk policy refused: ${decision.reason} Nothing was built, no signature needed.`, decision.capUsd)
+  }
+  await recordPolicyPoolEvent({ kind: 'guard_allowed', ...ledgerBase, meta: { ...currencyMeta, capUsd: decision.capUsd, sell: sellLabel, buy: buyLabel } })
+
+  // ── 2. The attestation ────────────────────────────────────────────────────
+  const att = attestationFor({ intentId: deskIntentId, poolId: cfg.poolId, swapper, zeroForOne, maxAmountIn: amountIn, origin })
+  const sig = await signAttestation(att, { chainId, hook: cfg.hook })
+  const hookData = encodeHookData(att, sig)
+  await recordPolicyPoolEvent({ kind: 'attested', ...ledgerBase, meta: { ...currencyMeta, expiry: Number(att.expiry), intentIdHash: att.intentId } })
+
+  // ── 3. Quote against the hooked pool, attestation in hand ─────────────────
+  // The hook runs inside the Quoter's simulation and checks tx.origin, so the
+  // call is made AS the swapper (bearer attestations quote as the payer).
+  const poolKey: V4PoolKey = { ...cfg.poolKey }
+  let amountOut: bigint
+  try {
+    const { result } = await client.simulateContract({
+      account: swapper ?? from,
+      address: cfg.pins.quoter,
+      abi: V4_QUOTER_ABI,
+      functionName: 'quoteExactInputSingle',
+      args: [{ poolKey, zeroForOne, exactAmount: amountIn, hookData }],
+    })
+    amountOut = result[0]
+  } catch (err) {
+    const name = policyPoolRevertName(err)
+    const msg = err instanceof Error ? err.message.split('\n')[0].slice(0, 160) : 'quote failed'
+    throw new NoV4PoolError(
+      name
+        ? `The policy pool's hook refused the quote (${name}) for ${sellLabel} → ${buyLabel} on ${cfg.chainName}.`
+        : `The policy pool couldn't quote ${sellLabel} → ${buyLabel} on ${cfg.chainName} for this amount (${msg}).`,
+    )
+  }
+  if (amountOut <= BigInt(0)) throw new NoV4PoolError(`The policy pool quoted nothing for ${sellLabel} → ${buyLabel} on ${cfg.chainName}.`)
+
+  const slippageBps = params.slippageBps ?? UNI_DEFAULT_SLIPPAGE_BPS
+  const nowSec = Math.floor(Date.now() / 1000)
+  // The swap dies at the earlier of the router deadline and the attestation's expiry.
+  const deadline = Math.min(nowSec + (params.deadlineSec ?? UNI_DEADLINE_SEC), Number(att.expiry))
+  const permit2Expiration = deadline + 3600
+  const minOut = (amountOut * BigInt(10_000 - slippageBps)) / BigInt(10_000)
+  const feeBps = params.feeBps ?? SWAP_FEE_BPS
+  const feeOn = feeBps > 0
+  let creatorPaid: CreatorPaid | undefined
+  {
+    const address = feeOn ? payableCreator(params.creator, from, [cfg.pins.universalRouter, cfg.pins.permit2]) : null
+    const bps = creatorBpsFor(feeBps)
+    if (address && bps > 0 && stableSideOf(chainId, sellCur, buyCur) === 'out') creatorPaid = { address, bps, side: 'out' }
+  }
+  const minOutAfterFee = feeOn ? v4OutputSplit(minOut, feeBps, creatorPaid).sweepMin : minOut
+
+  // Executability: the swap action alone, attestation attached. A healthy
+  // pool reverts WITH data (CurrencyNotSettled); the hook's own refusals
+  // carry data too and are read by name below.
+  const plan: V4SwapPlan = { poolKey, zeroForOne, amountIn, minOut, deadline, hookData, feeBps: feeOn ? feeBps : 0, ...(creatorPaid ? { creator: creatorPaid } : {}) }
+  const executability = await probeV4Executability(client, cfg.pins.universalRouter, plan, swapper ?? from)
+  if (executability === 'gated') {
+    throw new GatedV4PoolError(`The policy pool on ${cfg.chainName} refused a direct swap for ${sellLabel} → ${buyLabel} — nothing was built.`)
+  }
+
+  // ── 4. Approvals (as the no-hook build) + the swap step ───────────────────
+  const [erc20Allowance, permit2Allowance] = await Promise.all([
+    client.readContract({ address: sellCur, abi: erc20Abi, functionName: 'allowance', args: [from, cfg.pins.permit2] }),
+    client.readContract({ address: cfg.pins.permit2, abi: PERMIT2_ABI, functionName: 'allowance', args: [from, sellCur, cfg.pins.universalRouter] }),
+  ])
+  const needsErc20Approve = erc20Allowance < amountIn
+  const needsPermit2Approve = permit2Allowance[0] < amountIn || Number(permit2Allowance[1]) <= nowSec
+  const steps: V4BuiltStep[] = []
+  if (needsErc20Approve) {
+    steps.push({
+      label: 'approve',
+      title: `Approve ${sellLabel} to Permit2`,
+      tx: { to: sellCur, data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [cfg.pins.permit2, amountIn] }), value: '0', chainId, action: 'approve' },
+    })
+  }
+  if (needsPermit2Approve) {
+    steps.push({
+      label: 'permit',
+      title: `Allow Uniswap's router to pull ${params.amountHuman} ${sellLabel} (Permit2)`,
+      tx: {
+        to: cfg.pins.permit2,
+        data: encodeFunctionData({ abi: PERMIT2_ABI, functionName: 'approve', args: [sellCur, cfg.pins.universalRouter, amountIn, permit2Expiration] }),
+        value: '0',
+        chainId,
+        action: 'approve',
+      },
+    })
+  }
+  steps.push({
+    label: 'swap',
+    title: `Swap ${params.amountHuman} ${sellLabel} → ${buyLabel} through the policy pool`,
+    tx: { to: cfg.pins.universalRouter, data: encodeV4SwapCalldata(plan), value: '0', chainId, action: 'swap' },
+    validUntil: deadline,
+  })
+
+  // ── 5. The guard: decode what we just built, recover the signer ───────────
+  const guard = await guardPolicyPoolBuild(steps, {
+    chainId,
+    universalRouter: cfg.pins.universalRouter,
+    permit2: cfg.pins.permit2,
+    sellToken: sellCur,
+    buyToken: buyCur,
+    amountIn,
+    minOut,
+    poolKey,
+    permit2Expiration,
+    feeBps: feeOn ? feeBps : 0,
+    ...(creatorPaid ? { creator: { address: creatorPaid.address, bps: creatorPaid.bps, payer: from } } : {}),
+    policyPool: { hook: cfg.hook, poolId: cfg.poolId, signer: cfg.signer, intentId: att.intentId, swapper: att.swapper, zeroForOne, maxAmountIn: amountIn, origin },
+  })
+  const calldataCheck: GuardrailCheck = {
+    id: 'calldata',
+    level: 'block',
+    ok: guard.ok,
+    note: guard.ok
+      ? `Calldata verified: Universal Router ${cfg.pins.universalRouter.slice(0, 8)}…, exactly ${params.amountHuman} ${sellLabel} in, output to the payer${feeOn ? ' minus the treasury split' : ''}, the policy pool's hook ${cfg.hook.slice(0, 8)}… with the desk's attestation (signer ${cfg.signer.slice(0, 8)}…) in hookData.`
+      : `Build failed verification: ${guard.reasons.join(' ')}`,
+  }
+  const attestationCheck: GuardrailCheck = {
+    id: 'policy-pool',
+    level: 'warn',
+    ok: true,
+    note: `Desk policy: $${usd} is under the $${decision.capUsd} per-order cap. Attested for intent ${deskIntentId} (origin ${origin}), ${swapper ? `bound to ${swapper.slice(0, 8)}…` : 'bearer'}, expires in ${Math.max(0, Math.round((Number(att.expiry) - nowSec) / 60))} min; the hook refuses any other swap into this pool.`,
+  }
+  const feeCheck: GuardrailCheck = {
+    id: 'fee',
+    level: 'warn',
+    ok: true,
+    note: feeOn
+      ? `Pantessa fee: ${feeBps / 100}% of the output, split by the router's own PAY_PORTION command to the Pantessa treasury — visible in the router calldata, minimum received shown post-fee.`
+      : 'No Pantessa fee on this swap.',
+  }
+  const approvalNote =
+    steps.length === 3
+      ? `Two approvals attached (${sellLabel} → Permit2, then Permit2 → router) — v4 pulls funds through Permit2.`
+      : steps.length === 2
+        ? steps[0].label === 'approve'
+          ? `One approval attached (${sellLabel} → Permit2); the router grant is already in place.`
+          : `One Permit2 grant attached — the ${sellLabel} → Permit2 allowance is already in place.`
+        : 'All approvals already in place.'
+  const allowanceCheck: GuardrailCheck = { id: 'allowance', level: 'warn', ok: steps.length === 1, note: approvalNote }
+
+  const checks: GuardrailCheck[] = [recipientCheck(from, from), validityCheck(deadline), allowanceCheck, calldataCheck, attestationCheck, feeCheck]
+  // The same spend-policy gate as every native build (UNISWAP_POLICY_HOST —
+  // the venue is still Uniswap). The grant store is DB-backed; a chain the
+  // registry doesn't know (the testnet) still prices from the stable side.
+  const grant = await getActiveGrant(from.toLowerCase()).catch(() => null)
+  const policy = grant ? toPolicy(grant) : null
+  const spentToday = grant ? await spentTodayUsd(grant.id) : 0
+  const spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  const { check: polCheck, violation } = policyCheck(usd, policy, spentToday, UNISWAP_POLICY_HOST, spentTotal, { selfSigned: true })
+  checks.push(polCheck)
+  const guardrails = buildReport(usd, checks, violation ? { violation, valueUsd: usd, host: UNISWAP_POLICY_HOST } : null)
+  if (violation && grant) {
+    await recordLedger({ grantId: grant.id, orgId: grant.orgId ?? undefined, host: UNISWAP_POLICY_HOST, serviceName: 'Uniswap', amountUsd: 0, ok: false, note: `blocked: ${violation} (policy pool swap)` })
+  }
+
+  const outHuman = formatAtoms(amountOut.toString(), buyDec)
+  const minHuman = formatAtoms(minOutAfterFee.toString(), buyDec)
+  const feeNote = feeOn ? (creatorPaid ? `, incl. ${feeBps / 100}% Pantessa fee, half paid to the link's creator` : `, incl. ${feeBps / 100}% Pantessa fee on the output`) : ''
+  const summary = `Swap ${formatAtoms(amountIn.toString(), sellDec)} ${sellLabel} → ~${outHuman} ${buyLabel} through the policy pool on ${cfg.chainName} (${cfg.poolKey.fee / 100}bps pool, hook ${cfg.hook.slice(0, 8)}…), min received ${minHuman} (${slippageBps}bps slippage${feeNote}), attested for intent ${deskIntentId}`
+
+  return {
+    summary,
+    guardrails,
+    blocked: !guardrails.ok,
+    steps,
+    minimumOut: minHuman,
+    poolFee: cfg.poolKey.fee,
+    ...(creatorPaid ? { creatorPaid } : {}),
+    chainId,
+    poolId: cfg.poolId,
+    hook: cfg.hook,
+    hookData,
+    attestation: { intentId: att.intentId, deskIntentId, swapper: att.swapper, zeroForOne, maxAmountIn: amountIn.toString(), expiry: Number(att.expiry), origin },
+    usd,
+    buildPath: POLICY_POOL_BUILD_PATH,
+  }
+}
+
+/** The on-chain intent id for a desk intent — re-exported for dispatch sites and the demo. */
+export { intentIdFor as policyPoolIntentIdFor }

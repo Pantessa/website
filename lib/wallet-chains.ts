@@ -1,4 +1,4 @@
-import { http, type Chain, type Transport } from 'viem'
+import { fallback, http, type Chain, type Transport } from 'viem'
 import { mainnet, base, baseSepolia, arbitrum, optimism } from 'wagmi/chains'
 import { arcChain, robinhoodChain } from '@/lib/chains'
 
@@ -45,7 +45,18 @@ export const WALLET_CHAINS = [base, baseSepolia, mainnet, arbitrum, optimism, ro
 export function walletTransports(): Record<(typeof WALLET_CHAINS)[number]['id'], Transport> {
   return {
     [base.id]: http(),
-    [baseSepolia.id]: http(),
+    // Base Sepolia (the policy pool's rehearsal chain, TRYIT 2026-11-02):
+    // sepolia.base.org first, as before — measured from a browser page
+    // 2026-11-02: ~250 JSON-RPC calls in two minutes, then every call ended
+    // net::ERR_FAILED (a 429 with no CORS headers) and a SendTxChain's
+    // receipt wait stalled at "Still confirming" on a swap that had mined.
+    // publicnode's base-sepolia endpoint is the FALLBACK only, and only
+    // after measuring it the same day: unlike its mainnet tiers (the 09-04
+    // "Archive requests require a personal token" wall at −128 blocks, the
+    // reason the standing rule says never to pin it here), it served
+    // eth_getBalance at −100 / −128 / −200 / −1,000 / −20,000 blocks with
+    // CORS `*`. A testnet's fallback, reached only when the primary fails.
+    [baseSepolia.id]: fallback([http(), http('https://base-sepolia-rpc.publicnode.com')]),
     [mainnet.id]: http('https://ethereum-rpc.publicnode.com'),
     [arbitrum.id]: http(),
     [optimism.id]: http(),
