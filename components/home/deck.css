@@ -60,6 +60,13 @@
    suggestions beyond six and the add box wait on /live, a tap away), the
    pick-mode toggle too. */
 .deck__chan .battle--stage .battle__stagebar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+/* The window, Hold and the pick sheet's "Change" share the bar's right end. */
+.deck__chan .battle--stage .battle__stagebar > .battle__controls { margin-left: auto; }
+@media (max-width: 640px) {
+  /* A phone's deck bar carries the same pick's trigger (`.picksheet--deck`), so the bar keeps its whole row for
+     the window and Hold. */
+  .deck__chan .battle--stage .battle__stagebar > .picksheet { display: none; }
+}
 .deck__chan .battle--stage .battle__picker { padding-top: 8px; }
 .deck__chan .battle--stage .battle__pickhead, .deck__chan .battle--stage .battle__add { display: none; }
 .deck__chan .battle--stage .battle__chips { margin-top: 0; }

@@ -7,12 +7,8 @@
 
 .picksheet { position: relative; display: inline-flex; align-items: center; }
 
-/* THE DECK's stage seat (components/home/deck.css hides the battle's whole pick head there — modes,
-   count, add box — for a shorter field). The sheet is the one control that belongs on the stage: the
-   head comes back as a single right-aligned row holding only this seat (four classes outrank
-   deck.css's three), everything else in it stays hidden. */
-.deck__chan .battle--stage .battle__picker .battle__pickhead { display: flex; justify-content: flex-end; margin-bottom: 8px; }
-.deck__chan .battle--stage .battle__picker .battle__pickhead > :not(.picksheet) { display: none; }
+/* THE DECK's stage seat: deck.css hides the battle's whole pick head there; the trigger sits at the right end
+   of the stage bar instead (Battle.tsx), so it never costs the field a row of its own. */
 
 .picksheet__trigger { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: filter .12s ease, border-color .12s ease; }
 .picksheet__trigger:hover { filter: brightness(1.1); }
