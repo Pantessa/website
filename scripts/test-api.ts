@@ -35989,6 +35989,17 @@ async function main() {
     }
   }
 
+  // ── BLOTTER (five-million, 2026-11-03): the tenant's hash-chained blotter + the
+  // monthly statement (lib/tenant/blotter, lib/tenant/statement, the runner's tenant
+  // rows, the sign-site row). Pure pins here; `npm run pins:blotter` adds the DB pass
+  // (20-way concurrent seq, tamper → verify, the cut + a draft invoice) and, with
+  // BASE=http://localhost:441x, the routes.
+  {
+    console.log('— blotter (five-million)')
+    const { blotterPurePins } = await import('./blotter-pins')
+    blotterPurePins(check)
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
