@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import type { Candle } from '../lib/charts'
 import { crowdRead, fuelBeforePlayer, fuelWithin, fundingLine, liqBuckets, liquidationMap, oiAtBars, parsePlayer, playerLiqPrice, playerState, bookRows, bookWalls, heatCells, heatMedian, heatSummary, heatTone, spotRead, unitUsd, unitsFor, DAY_SEC, HEAT_WEEKS, type OiPoint } from '../lib/derivs'
 import { fieldAhead } from '../lib/battlefield'
-import { marginBarsFor, wallHits, wallRungAt, wallRungs, wallSummary, wallWidthPx } from '../lib/wall'
+import { marginBarsFor, wallHits, wallRungAt, wallRungs, wallSummary, wallWidthPx, withWall, WALL_HIDDEN_KEY } from '../lib/wall'
 import { composeExecAsk } from '../lib/trade-asks'
 import { chartPairFor } from '../lib/charts'
 import { parseBoardParam, parseViewParam, viewUrl } from '../lib/markets'
@@ -218,6 +218,20 @@ export function battlefieldPins(check: Check): void {
     /wallRungs\(\{/.test(wallSrc) && /hatch\(tokens\.up\)/.test(wallSrc) && /· est\./.test(wallSrc) && /addEventListener\('pointermove'/.test(wallSrc) && /pointer-events: none/.test(readFileSync('components/markets/chart/battlefield.css', 'utf8')) && !existsSync('components/markets/chart/PositionRivers.tsx') && !existsSync('components/markets/chart/StrataOverlay.tsx'))
   check('wall: the chart re-asks its right margin on every range change, absorbs the volume profile while the Wall draws, offers the WALL toggle only with the Battlefield, and the symbol page opens with it lit',
     /syncMarginRef\.current\(\)/.test(chart) && /marginBarsFor\(wallPxRef\.current/.test(chart) && /overlays\.has\('vp'\) && !wallOn/.test(chart) && /o\.key !== 'wall' \|\| battlefield/.test(chart) && /DEFAULT_SYMBOL_OVERLAYS: OverlayKey\[\] = \['sma50', 'sma200', 'vp', 'wall'\]/.test(readFileSync('lib/chart-indicators.ts', 'utf8')))
+  // The trash (Nate, 2026-11-04: "a trash to get rid of it and a way to add it back on").
+  const wallBase = new Set(['sma50', 'sma200', 'vp', 'wall'] as const)
+  const hid = withWall(wallBase, false)
+  const back = withWall(hid, true)
+  check('wall trash: hiding the Wall clears the right margin (the volume profile it absorbs leaves with it, the lines stay), showing it brings only the Wall back, and the input set is never mutated',
+    [...hid].join(',') === 'sma50,sma200' && [...back].join(',') === 'sma50,sma200,wall' && withWall(new Set(['vp', 'wall'] as const), true).has('vp') && wallBase.size === 4 && WALL_HIDDEN_KEY === 'pantessa.chart.wall.v1',
+    `hid=${[...hid].join(',')} back=${[...back].join(',')}`)
+  check('wall trash: the ladder wears a trash on its top right, outside the aria-hidden layer, that calls onHide; the long label gives way to "THE WALL" where it would reach the trash',
+    /onHide && lay && active && \(/.test(wallSrc) && /className="wall__trash"/.test(wallSrc) && /onClick=\{onHide\}/.test(wallSrc) && /aria-label="Hide the Wall"/.test(wallSrc) &&
+      wallSrc.indexOf('className="wall__trash"') > wallSrc.indexOf('</div>\n      {/* The trash') && /: 'THE WALL', lay\.x0/.test(wallSrc) && /\.wall__trash \{/.test(readFileSync('components/markets/chart/battlefield.css', 'utf8')))
+  check('wall trash: the chart hides the Wall from the trash with a receipt (Undo where the key was, the WALL chip lit), the chip and the trash both remember it on this browser, the memory is read after mount, and a reset does not write it',
+    /onHide=\{hideWall\}/.test(chart) && /setWall\(false, true\)/.test(chart) && /o\.key === 'wall'\s*\? setWall\(!overlays\.has\('wall'\)\)/.test(chart) &&
+      /if \(battlefield && wallHiddenHere\(\)\) setOverlays/.test(chart) && /rememberWallHidden\(!on\)/.test(chart) && /data-wall-hidden/.test(chart) && /onClick=\{\(\) => setWall\(true\)\}/.test(chart) &&
+      /' is-hint'/.test(chart) && !/rememberWallHidden/.test(chart.slice(chart.indexOf('const resetChart'), chart.indexOf('const resetChart') + 600)))
 }
 
 if (process.argv[1]?.endsWith('battlefield-pins.ts')) {

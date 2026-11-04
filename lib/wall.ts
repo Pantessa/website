@@ -17,6 +17,7 @@
 //  Pure + client-safe. Pinned by scripts/battlefield-pins.ts.
 // ─────────────────────────────────────────────────────────────────────────
 
+import type { OverlayKey } from './chart-indicators'
 import type { Candle } from './charts'
 import type { BookBody, LiqHit, LiqLevel } from './derivs'
 
@@ -215,4 +216,43 @@ export function marginBarsFor(px: number, barSpacing: number, fallback: number):
   if (!(px > 0)) return fallback
   const spacing = Math.max(1, barSpacing || 1)
   return Math.max(fallback, Math.ceil(px / spacing) + 1)
+}
+
+// ── Hiding the Wall (Nate, 2026-11-04: "the block is pretty annoying to the
+//    right, can we add a trash to get rid of it and a way to add it back on?")
+
+/** This browser's choice to keep the Wall off, in localStorage: "off" or absent. */
+export const WALL_HIDDEN_KEY = 'pantessa.chart.wall.v1'
+
+/** The overlay set with the Wall shown or hidden. Hiding it clears the right
+ *  margin: the volume profile the Wall absorbs while it draws leaves with it,
+ *  so the block never comes back as a grey profile in the same seat (its own
+ *  chip still turns it on alone). Showing it brings only the Wall back. */
+export function withWall(cur: ReadonlySet<OverlayKey>, on: boolean): Set<OverlayKey> {
+  const next = new Set(cur)
+  if (on) next.add('wall')
+  else {
+    next.delete('wall')
+    next.delete('vp')
+  }
+  return next
+}
+
+/** Whether this browser asked to keep the Wall off. A blocked or empty store reads as "show it". */
+export function wallHiddenHere(): boolean {
+  try {
+    return window.localStorage.getItem(WALL_HIDDEN_KEY) === 'off'
+  } catch {
+    return false
+  }
+}
+
+/** Remember (or forget) that this browser keeps the Wall off. Never throws. */
+export function rememberWallHidden(hidden: boolean): void {
+  try {
+    if (hidden) window.localStorage.setItem(WALL_HIDDEN_KEY, 'off')
+    else window.localStorage.removeItem(WALL_HIDDEN_KEY)
+  } catch {
+    /* a blocked store: the choice lasts this page only */
+  }
 }

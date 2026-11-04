@@ -25,8 +25,13 @@
 // geometry (DrawingLayer's ChartGeom). The chart widens its right margin
 // while the panel draws (MarketChart reads `onStatus`); the hover is read off
 // the plot's own pointer events, so the chart keeps every gesture.
+//
+// A trash at the ladder's top right hides it (Nate, 2026-11-04: "the block
+// is pretty annoying to the right"): MarketChart turns the overlay off and
+// this browser remembers; the WALL chip in the overlay row brings it back.
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { Trash2 } from 'lucide-react'
 import type { Candle, ChartPair, ChartTf } from '@/lib/charts'
 import { fieldDate } from '@/lib/battlefield'
 import { fmtUsdShort, liquidationMap, type BookBody, type DerivsBody } from '@/lib/derivs'
@@ -46,6 +51,8 @@ const TOP = 18
 /** A rung's row in the panel, wide and narrow. */
 const ROW_H = 11
 const ROW_H_NARROW = 7
+/** The trash's square, docked to the ladder's top right on the label's line. */
+const TRASH = 18
 /** Bursts drawn: the biggest hits on screen, and only those at least this share of the biggest. */
 const HITS_SHOWN = 10
 const HIT_FLOOR = 0.1
@@ -72,6 +79,8 @@ export interface TheWallProps {
   /** The plot wrapper the geometry measures: the hover is read off its pointer events. */
   hostRef: RefObject<HTMLDivElement | null>
   onStatus?: (s: WallStatus) => void
+  /** The trash: hide the Wall (the chart turns its overlay off and remembers). */
+  onHide?: () => void
 }
 
 type Hover = { kind: 'rung'; rung: WallRung; x: number; y: number } | { kind: 'hit'; hit: WallHit; x: number; y: number }
@@ -124,7 +133,7 @@ function hatch(ink: string): CanvasPattern | null {
 /** The row a rung sits on, top first: the highest band is row 0. */
 const rowOf = (k: number, perSide: number) => perSide - 1 - k
 
-export default function TheWall({ geom, bars, symbol, pair, tf, tokens, last, hostRef, onStatus }: TheWallProps) {
+export default function TheWall({ geom, bars, symbol, pair, tf, tokens, last, hostRef, onStatus, onHide }: TheWallProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [derivs, setDerivs] = useState<DerivsBody | null>(null)
   const [perp, setPerp] = useState<BookBody | null>(null)
@@ -391,7 +400,13 @@ export default function TheWall({ geom, bars, symbol, pair, tf, tokens, last, ho
       ctx.lineTo(lay.x1, lay.lineY + 0.5)
       ctx.stroke()
       ctx.setLineDash([])
-      if (!lay.isNarrow && lay.top - TOP >= 12) text(`THE WALL · ±${Math.round((wall.perSide * wall.step * 100) / last)}% in ${wall.step > 0 ? ((wall.step / last) * 100).toFixed(1) : '1.5'}% rungs`, lay.x0, lay.top - 8, tokens.muted2, 'left', 8.5)
+      if (!lay.isNarrow && lay.top - TOP >= 12) {
+        // The label shares its line with the trash: the long form only where it clears it.
+        const full = `THE WALL · ±${Math.round((wall.perSide * wall.step * 100) / last)}% in ${wall.step > 0 ? ((wall.step / last) * 100).toFixed(1) : '1.5'}% rungs`
+        ctx.font = `8.5px ${FONT}`
+        const room = lay.x1 - lay.x0 - (onHide ? TRASH + 10 : 0)
+        text(ctx.measureText(full).width + 6 <= room ? full : 'THE WALL', lay.x0, lay.top - 8, tokens.muted2, 'left', 8.5)
+      }
 
       // The two biggest standing rungs a side carry their dollars.
       const labelled = new Set<number>()
@@ -492,25 +507,41 @@ export default function TheWall({ geom, bars, symbol, pair, tf, tokens, last, ho
     }
     draw()
     return () => cancelAnimationFrame(raf)
-  }, [geom, bars, wall, shownHits, lay, active, last, tokens, patterns, hover])
+  }, [geom, bars, wall, shownHits, lay, active, last, tokens, patterns, hover, onHide])
 
   if (noMarket || !geom) return null
   const tip = hover && lay && last ? tipFor(hover, last, bars, tf) : null
   const tipLeft = lay && hover ? Math.max(8, Math.min(geom.width - 272, (hover.kind === 'rung' ? lay.x0 : hover.x) - 276)) : 0
   const tipTop = hover ? Math.max(6, Math.min(geom.height - 120, hover.y - 48)) : 0
   return (
-    <div className="wall" aria-hidden="true">
-      <canvas ref={canvasRef} className="wall__canvas" style={{ width: geom.width, height: geom.height }} />
-      {tip && (
-        <div className={`bf__tip wall__tip bf__tip--${tip.bulls ? 'bulls' : 'bears'}`} style={{ left: tipLeft, top: tipTop }}>
-          <span className="bf__tip-k mono">{tip.k}</span>
-          <strong>{tip.head}</strong>
-          {tip.lines.map((l) => (
-            <span key={l}>{l}</span>
-          ))}
-        </div>
+    <>
+      <div className="wall" aria-hidden="true">
+        <canvas ref={canvasRef} className="wall__canvas" style={{ width: geom.width, height: geom.height }} />
+        {tip && (
+          <div className={`bf__tip wall__tip bf__tip--${tip.bulls ? 'bulls' : 'bears'}`} style={{ left: tipLeft, top: tipTop }}>
+            <span className="bf__tip-k mono">{tip.k}</span>
+            <strong>{tip.head}</strong>
+            {tip.lines.map((l) => (
+              <span key={l}>{l}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* The trash: outside the aria-hidden layer, the one part of the Wall that takes a press. */}
+      {onHide && lay && active && (
+        <button
+          type="button"
+          className="wall__trash"
+          data-wall-trash
+          style={{ left: lay.x1 - TRASH, top: Math.max(2, lay.top - 8 - TRASH / 2) }}
+          title="Hide the Wall (the WALL chip above brings it back)"
+          aria-label="Hide the Wall"
+          onClick={onHide}
+        >
+          <Trash2 className="h-3 w-3" aria-hidden="true" />
+        </button>
       )}
-    </div>
+    </>
   )
 }
 
