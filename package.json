@@ -53,10 +53,14 @@
     "probe:creator-split": "tsx scripts/probe-creator-split.ts",
     "probe:listings": "tsx scripts/action-gate-pins.ts --live",
     "pins:tape": "tsx scripts/tape-pins.ts",
+    "pins:tenant": "tsx scripts/tenant-pins.ts",
     "pins:venues": "tsx scripts/venue-manifest-pins.ts",
+    "pins:plans": "tsx scripts/plans-pins.ts",
     "pins:exec": "tsx scripts/exec-strip-pins.ts",
     "pins:policy-pool": "tsx scripts/policy-pool-builder-pins.ts",
+    "pins:blotter": "tsx scripts/blotter-pins.ts",
     "demo:policy-pool": "tsx scripts/policy-pool-demo.ts",
+    "drill:safe": "tsx scripts/safe-drill.ts",
     "drive:policy-pool-try": "node scripts/policy-pool-try-drive.mjs",
     "pins:prints": "tsx scripts/print-alert-pins.ts",
     "pins:battle": "tsx scripts/battle-pins.ts",
@@ -89,7 +93,11 @@
     "drive:native": "tsx scripts/drive-native.ts",
     "drive:prints": "tsx scripts/drive-print-alerts.ts",
     "drive:guest-chat": "node scripts/guest-chat-drive.mjs",
-    "pins:markets-mobile": "tsx scripts/markets-mobile-pins.ts"
+    "pins:markets-mobile": "tsx scripts/markets-mobile-pins.ts",
+    "pins:desk-page": "tsx scripts/desk-page-pins.ts",
+    "pins:perps": "tsx scripts/perps-pins.ts",
+    "pins:console": "tsx scripts/console-pins.ts",
+    "drill:hl-first-order": "tsx scripts/hl-first-order-drill.ts"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.111",

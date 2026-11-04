@@ -9,6 +9,8 @@ import {
 } from '@/lib/auth'
 import prisma from '@/lib/db'
 import { VIA_RE } from '@/lib/share-receipts'
+import { claimReferralFromArrival } from '@/lib/share-referral'
+import { isInternalRun } from '@/lib/internal-run'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -76,5 +78,19 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ address: parsed.address.toLowerCase(), ...(stampedVia ? { via: stampedVia } : {}) })
+  // The share that pays (squad five-million, PERPS): the wallet just proved
+  // itself, and the server's OWN arrival record (stamped above, or on an
+  // earlier sign-in) names the share it came in on. Resolve that via to the
+  // sharer and claim the write-once lifetime referral (lib/share-referral) —
+  // never from a body field, never for an internal run, never a self-
+  // referral. The response says only that a claim happened (no address).
+  let referral: string | null = null
+  try {
+    const r = await claimReferralFromArrival({ wallet: parsed.address.toLowerCase(), internal: isInternalRun(req.headers) })
+    if (r?.outcome === 'claimed') referral = 'share'
+  } catch {
+    /* best-effort, never blocks a login */
+  }
+
+  return NextResponse.json({ address: parsed.address.toLowerCase(), ...(stampedVia ? { via: stampedVia } : {}), ...(referral ? { referral } : {}) })
 }

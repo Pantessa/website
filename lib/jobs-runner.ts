@@ -18,13 +18,14 @@ const WITHHELD_HOLD_MS = 90_000
  *  hold-down, so ~9 minutes) before the step fails by name. */
 const RPC_WITHHOLD_MAX = 6
 import prisma from '@/lib/db'
+import { Prisma } from '@prisma/client'
 import { callMcpTool } from '@/lib/mcp-call'
 import { CONFIDENTIAL_LEVEL, crossChainValueUsd, expectedOriginChainId, guardCrossChainBuild, type BuiltSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
 import { floorBlockFromError, floorProblemLine } from '@/lib/venue-floor'
 import { PRIVATE_LANE_CLOSED_NOTE, privateLaneOpen } from '@/lib/private-lane'
 import { buildHlExecTurn, readHlCollateralUsd, type HlIntent } from '@/lib/hyperliquid-exec'
 import { withHlBatch, batchCompletionVerdict, hlCreditArrival, hlCreditSettled, type HlCreditArrival } from '@/lib/hl-batch'
-import { fenceLegResult, recordJobStepMoney } from '@/lib/job-step-money'
+import { fenceLegResult, recordJobStepMoney, recordTenantBuild, recordTenantLeg, recordTenantWaitSettled, settleTenantJobLegs } from '@/lib/job-step-money'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
 import { LINK_SWAP_FEE_BPS } from '@/lib/fees'
@@ -100,7 +101,12 @@ export interface JobBirth {
 /** Create a job. `opts.internal` stamps `jobs.is_internal` (lib/internal-run.ts):
  *  our own harness/drill runs create REAL jobs rows for throwaway wallets,
  *  and the GTM arc must never read one as an arrival, a build, or a sign. */
-export async function createJob(wallet: string, compiled: CompiledJob, source = 'chat', opts?: { internal?: boolean } & JobBirth) {
+export async function createJob(
+  wallet: string,
+  compiled: CompiledJob,
+  source = 'chat',
+  opts?: { internal?: boolean; /** FIVE-MILLION: the tenant desk + key that own this job, stamped in the SAME insert so its first row is already the tenant's. */ tenantId?: string | null; deskKeyId?: string | null } & JobBirth,
+) {
   const job = await prisma.job.create({
     data: {
       wallet: wallet.toLowerCase(),
@@ -110,6 +116,8 @@ export async function createJob(wallet: string, compiled: CompiledJob, source = 
       isInternal: opts?.internal === true,
       surface: opts?.surface ?? null,
       intentLinkSlug: opts?.intentLinkSlug ?? null,
+      tenantId: opts?.tenantId ?? null,
+      deskKeyId: opts?.deskKeyId ?? null,
       steps: {
         create: compiled.steps.map((s, i) => ({
           seq: i,
@@ -191,6 +199,10 @@ export async function advanceJobs(limit = 20, opts: AdvanceOptions = {}): Promis
       notes.push(`${job.id.slice(0, 8)}: ${(e as Error).message}`)
     }
   }
+  // FIVE-MILLION: tenant legs whose chain did not answer at signing settle on a
+  // later tick (bounded; this env's jobs only; never throws).
+  const tenantSettled = await settleTenantJobLegs(null, 5, jobsEnv())
+  if (tenantSettled > 0) notes.push(`settled ${tenantSettled} tenant leg(s) on their blotters`)
   return { touched: jobs.length, notes }
 }
 
@@ -224,7 +236,10 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
       if (step.status === 'offered') {
         // Stale artifact? Re-arm it for a fresh build; else wait for the user.
         if (step.expiresAt && step.expiresAt < new Date()) {
-          await prisma.jobStep.updateMany({ where: { id: step.id, status: 'offered' }, data: { status: 'pending', artifact: undefined } })
+          // FIVE-MILLION (TENANT, QA F3): a TENANT leg's stale artifact is
+          // wiped to an explicit JSON null (`undefined` is Prisma's "leave as
+          // is", so it stayed servable); retail keeps the prior behaviour.
+          await prisma.jobStep.updateMany({ where: { id: step.id, status: 'offered' }, data: { status: 'pending', artifact: fresh.tenantId ? Prisma.DbNull : undefined } })
           continue
         }
         if (fresh.status !== 'waiting_signature') {
@@ -246,6 +261,16 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
       if (claim.count !== 1) return
       try {
         const built = await buildSignArtifact(fresh.wallet, step.builder, step.params as Record<string, unknown>)
+        // FIVE-MILLION (TENANT): a tenant job's leg is judged by its tenant's
+        // ACTIVE policy on what was just built, BEFORE it can become servable
+        // to broker_next or the Jobs REST channel. A refusal fails the step and
+        // cancels the job (lib/tenant/gate gateTenantOffer); nothing is offered.
+        // Imported on demand: the tenant gate reads the jobs compiler.
+        if (fresh.tenantId) {
+          const { gateTenantOffer } = await import('@/lib/tenant/gate')
+          const refused = await gateTenantOffer(fresh, step, { artifact: stampJobStepPath(step.builder, built.artifact, built.buildPath), valueUsd: built.valueUsd })
+          if (refused) return
+        }
         // THE affordability choke point (lib/affordability.ts): a step is
         // offered only when the wallet can PROVABLY cover what it spends —
         // a typed "Fund robinhood chain with $20 from base" on a $0 wallet
@@ -291,6 +316,8 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
           },
         })
         await prisma.job.update({ where: { id: fresh.id }, data: { status: 'waiting_signature' } })
+        // FIVE-MILLION: a tenant desk's blotter gets the leg it just built (lib/job-step-money).
+        if (fresh.tenantId) await recordTenantBuild(fresh, step, built)
       } catch (e) {
         // An RPC that didn't answer mid-build (rate limit, timeout, 5xx) is
         // not a refusal: WITHHOLD the step like an affordability short —
@@ -336,6 +363,7 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
           data: { status: 'failed', result: { error: (e as Error).message, ...(policyBlock ? { policyBlock } : {}) } as object },
         })
         await failJob(fresh.id, `"${step.title}" refused: ${(e as Error).message}`)
+        if (fresh.tenantId) await recordTenantBuild(fresh, step, null, (e as Error).message)
       }
       return
     }
@@ -356,6 +384,7 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
       if (settled.done) {
         await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'done', result: settled.result as object } })
         await prisma.job.update({ where: { id: fresh.id }, data: { currentStep: step.seq + 1, status: 'running' } })
+        if (fresh.tenantId) await recordTenantWaitSettled(fresh, step, settled.result)
         continue
       }
       if (settled.failed) {
@@ -377,6 +406,13 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
     // auto — server-side under an existing consent.
     const claim = await prisma.jobStep.updateMany({ where: { id: step.id, status: 'pending' }, data: { status: 'running' } })
     if (claim.count !== 1) return
+    // FIVE-MILLION (TENANT, QA B1): an auto step of a tenant job meets the
+    // tenant gate like every other branch, with the policy active NOW.
+    if (fresh.tenantId) {
+      const { gateTenantOffer } = await import('@/lib/tenant/gate')
+      const refused = await gateTenantOffer(fresh, step, { artifact: {}, valueUsd: null })
+      if (refused) return
+    }
     if (step.builder === 'native-hl-guardian') {
       const armed = await armGuardianPolicy(fresh.wallet, step.params as unknown as GuardianArmAsk, { internal: fresh.isInternal === true })
       if (!armed.ok) {
@@ -826,7 +862,7 @@ export async function completeSignStep(
   // ONE server-side money writer (lib/job-step-money, agent-desk round-2 decision 1): every sign
   // step's money row is booked HERE — browser or agent — receipt-verified, internal from the job
   // row; the browser beacon for the same step is deduped at the telemetry route. Fail-soft.
-  await recordJobStepMoney({
+  const money = await recordJobStepMoney({
     jobId,
     seq,
     wallet: job.wallet,
@@ -837,6 +873,11 @@ export async function completeSignStep(
     internal: job.isInternal === true,
     source: job.source,
   })
+  // FIVE-MILLION: a tenant desk's job also books the leg on its hash-chained
+  // blotter — `signed`, then `settled` once the chain (or the venue) decides.
+  if (job.tenantId) {
+    await recordTenantLeg({ jobId, seq, wallet: job.wallet, builder: step.builder, artifact: step.artifact, valueUsd: step.valueUsd ?? null, result, tenantId: job.tenantId, deskKeyId: job.deskKeyId }, money)
+  }
   await prisma.job.update({ where: { id: jobId }, data: { currentStep: seq + 1, status: 'running' } })
   const fresh = await getJobWithSteps(jobId)
   if (fresh) await advanceJob(fresh).catch(() => {})

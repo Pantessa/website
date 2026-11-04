@@ -14,6 +14,7 @@ import { readOrigin, type OriginFeed } from '@/lib/broker-origin'
 import { planNamesPolicyPool, policyPoolOriginFor } from '@/lib/policy-pool/venue'
 import { policyPoolConfig } from '@/lib/policy-pool/config'
 import { recordPolicyPoolEvent } from '@/lib/policy-pool/ledger'
+import { recordTenantTurn } from '@/lib/tenant/blotter'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -223,6 +224,28 @@ export async function POST(req: NextRequest) {
       /* fail-soft */
     }
   }
+  // The share that pays (squad five-million, PERPS 2026-11-03): a connect-only
+  // signer who came in on `?via=` (a chart / live / deck share, or the creator
+  // page's ViaSeed) never passed the SIWE door, so the `yf_via` cookie
+  // ViaTracker set on landing is read HERE — the same evidence class as
+  // wallet_arrivals.via (the SIWE door reads this very cookie into that row)
+  // and nothing more: never a body field (a beacon's `via` is ignored). Same
+  // fences as the link referral above — a link's creator wins the turn, never
+  // internal, never self, write-once (lib/share-referral) — and ONE stricter:
+  // only a `verified` receipt (QA F1): the chain proved the SENDER is this
+  // wallet. An `attested` sign (hl-order, job-step — no EVM receipt to read)
+  // proves nobody, so a curl beacon naming any whale plus a cookie would bind
+  // that whale for life and stamp an arrival that poisons their later real
+  // sign-in. The link referral above still claims on `attested` — the same
+  // forged-attested class, on main since S-2 (PERPS.md § For Nate).
+  // QA re-check (2026-11-03): the sign-site cookie claim is OFF. A `verified`
+  // receipt proves the chain's SENDER, not the beacon's author — the chat route
+  // records {to, selector} expectations for ANY body wallet and the verifier
+  // checks no time window, so a beacon naming a victim's historical USDC approve
+  // verified and the yf_via cookie bound the victim for life. Until expectations
+  // are bound to the exact calldata hash + the tx time (or the claim moves to the
+  // relays' server-recovered signer — wave 2), a connect-only trader is claimed
+  // only at the SIWE door (/api/auth/verify) when they KEEP a thread.
   // Every trade you sign refills your chat (pricing v2): a VERIFIED receipt
   // banks answers from the fee it paid — to the embed HOST for a keyed embed
   // turn (their visitors chat on the host's pool), else to the signer. The
@@ -286,6 +309,28 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // FIVE-MILLION: a turn through a TENANT's desk-minted link books its `signed` +
+  // `settled` rows on that tenant's blotter — only on a VERIFIED receipt (this
+  // beacon is public; a forged one must write nothing to a firm's audit trail).
+  // A receipt still unverified here is picked up by the statement's sweep once
+  // the lazy re-check promotes it (lib/tenant/statement).
+  if (outcome === 'signed' && verification === 'verified' && deskIntent?.tenantId) {
+    await recordTenantTurn({
+      tenantId: deskIntent.tenantId,
+      deskKeyId: deskIntent.deskKeyId,
+      intentId: deskIntent.id,
+      turnId: row.id,
+      wallet: walletAddress ?? null,
+      valueUsd: usd(body.valueUsd) ?? null,
+      buildPath: isBuildPath(body.buildPath) ? body.buildPath : null,
+      stampedFeeBps: feeBps ?? null,
+      chainId: chainIdOfTurn({ chain: str(body.chain, 40), txUrl: str(body.txUrl, 300) }, body.chainId),
+      txHash: extractTxHash(str(body.txUrl, 300)),
+      artifact: artifact ?? null,
+      signers: await prisma.tenant.findUnique({ where: { id: deskIntent.tenantId }, select: { signers: true } }).then((t) => t?.signers ?? null).catch(() => null),
+    })
+  }
+
   // `internal` echoes the stamp so drills (and the harness) can assert their
   // rows can never read as growth.
   return NextResponse.json({ ok: true, ...(internalRun ? { internal: true } : {}), ...(verification ? { verification } : {}), ...(earned ? { earnedAnswers: earned } : {}) })
@@ -294,12 +339,12 @@ export async function POST(req: NextRequest) {
 /** The desk intent bound to this sign link — its feed (lib/broker-origin: the
  *  "born from" half of the joint number), id, origin and plan — or null when
  *  the link was not desk-minted or the read failed. */
-async function deskIntentForLink(slug: string): Promise<{ id: string; feed: OriginFeed | undefined; origin: ReturnType<typeof readOrigin>; plan: unknown } | null> {
+async function deskIntentForLink(slug: string): Promise<{ id: string; feed: OriginFeed | undefined; origin: ReturnType<typeof readOrigin>; plan: unknown; tenantId: string | null; deskKeyId: string | null } | null> {
   try {
-    const intent = await prisma.brokerIntent.findFirst({ where: { linkSlug: slug }, select: { id: true, origin: true, plan: true } })
+    const intent = await prisma.brokerIntent.findFirst({ where: { linkSlug: slug }, select: { id: true, origin: true, plan: true, tenantId: true, deskKeyId: true } })
     if (!intent) return null
     const origin = readOrigin(intent.origin)
-    return { id: intent.id, feed: origin?.feed, origin, plan: intent.plan }
+    return { id: intent.id, feed: origin?.feed, origin, plan: intent.plan, tenantId: intent.tenantId, deskKeyId: intent.deskKeyId }
   } catch {
     return null
   }

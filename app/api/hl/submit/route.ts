@@ -20,6 +20,7 @@ import {
 } from '@/lib/hyperliquid-exec'
 import { policyCheck } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
+import { joinTenantLeg, relayGate } from '@/lib/tenant/gate'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -237,6 +238,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Refused at submit: ${bad.join(' ')}` }, { status: 403 })
   }
 
+  // 2b — FIVE-MILLION: a leg a TENANT job owns is re-gated with the tenant's
+  //      ACTIVE policy at submit. The join is the server's own record — the
+  //      live tenant jobs of the recovered wallet, the offered step whose
+  //      built action carries THIS nonce — never a claim in the body. A
+  //      tenant signer BLOCKS: 403 { error, reason }.
+  const tenantLeg = await joinTenantLeg(from, (a) => hlArtifactHasNonce(a, nonce))
+  if (tenantLeg) {
+    const refused = await relayGate(tenantLeg, 'hl-submit', { usd: guard.valueUsd ?? null, network: isTestnet ? 'testnet' : 'mainnet' })
+    if (refused) return NextResponse.json(refused, { status: 403 })
+  }
+  // The LINK lane (a human signing a desk-minted /i link) is NOT joined here:
+  // the server stores no HL action per link, and a join by wallet let a
+  // stranger's orders be refused or booked by a tenant that merely named the
+  // wallet (QA B2). Such a leg is retail at this relay; its intent was judged
+  // by the tenant policy at handoff (lib/tenant/gate, the link-lane note).
+
   // 3 — the kill switch, at the point of submission (the spend policy was
   //     retired 2026-10-30; policyCheck refuses only frozen / revoked now).
   const grant = await getActiveGrant(from.toLowerCase())
@@ -349,4 +366,14 @@ export async function POST(req: NextRequest) {
     valueUsd: guard.valueUsd,
     explorerUrl: `https://app.hyperliquid${isTestnet ? '-testnet' : ''}.xyz/trade/${coin}`,
   })
+}
+
+/** Does a job step's built HL artifact carry this nonce — the order itself,
+ *  its leverage pre-step, or a batch member? (Nonces are ms timestamps minted
+ *  per build, so the nonce IS the leg's identity at the venue.) */
+function hlArtifactHasNonce(artifact: Record<string, unknown>, nonce: number): boolean {
+  const req = artifact.orderRequest as { protocol?: unknown; hl?: { nonce?: unknown; pre?: { nonce?: unknown } }; batch?: Array<{ nonce?: unknown }> } | undefined
+  if (!req || req.protocol !== 'hyperliquid') return false
+  if (req.hl?.nonce === nonce || req.hl?.pre?.nonce === nonce) return true
+  return Array.isArray(req.batch) && req.batch.some((m) => m?.nonce === nonce)
 }

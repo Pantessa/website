@@ -9,6 +9,7 @@ import {
 } from '@/lib/cow'
 import { orderValueUsd, policyCheck, COW_POLICY_HOST } from '@/lib/cow-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
+import { joinTenantLeg, relayGate } from '@/lib/tenant/gate'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -71,6 +72,20 @@ export async function POST(req: NextRequest) {
     )
   }
   const valueUsd = orderValueUsd(order, chainId)
+  // FIVE-MILLION: an order a TENANT job built is re-gated with the tenant's
+  // ACTIVE policy before it reaches the book — joined from the server's own
+  // job rows (the offered step whose built order IS this order), never a
+  // body claim. A tenant signer BLOCKS: 403 { error, reason }.
+  const tenantLeg = await joinTenantLeg(from, (a) => cowArtifactIs(a, order, chainId))
+  if (tenantLeg) {
+    const refused = await relayGate(tenantLeg, 'cow-submit', { usd: valueUsd ?? null })
+    if (refused) return NextResponse.json(refused, { status: 403 })
+  }
+  // The LINK lane (a human signing a desk-minted /i link) is NOT joined here:
+  // the server stores no CoW order per link, and a join by wallet let a
+  // stranger's orders be refused or booked by a tenant that merely named the
+  // wallet (QA B2). Such an order is retail at this relay; its intent was
+  // judged by the tenant policy at handoff (lib/tenant/gate, the link-lane note).
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
@@ -128,4 +143,24 @@ export async function POST(req: NextRequest) {
     const msg = err instanceof Error ? err.message : 'submission failed'
     return NextResponse.json({ error: `Couldn't reach the CoW order book: ${msg}` }, { status: 502 })
   }
+}
+
+/** Is this job step's built artifact THIS CoW order (same chain, tokens,
+ *  amounts, expiry, appData, receiver)? */
+function cowArtifactIs(artifact: Record<string, unknown>, order: CowOrderParameters, chainId: number): boolean {
+  const req = artifact.orderRequest as { protocol?: unknown; chainId?: unknown; typedData?: { message?: Record<string, unknown> } } | undefined
+  if (!req || req.protocol !== 'cow') return false
+  if (typeof req.chainId === 'number' && req.chainId !== chainId) return false
+  const m = req.typedData?.message
+  if (!m) return false
+  const lo = (v: unknown) => String(v ?? '').toLowerCase()
+  return (
+    lo(m.sellToken) === lo(order.sellToken) &&
+    lo(m.buyToken) === lo(order.buyToken) &&
+    String(m.sellAmount) === String(order.sellAmount) &&
+    String(m.buyAmount) === String(order.buyAmount) &&
+    Number(m.validTo) === Number(order.validTo) &&
+    lo(m.appData) === lo(order.appData) &&
+    lo(m.receiver) === lo(order.receiver)
+  )
 }

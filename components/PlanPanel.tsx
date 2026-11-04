@@ -6,12 +6,19 @@
 // GET /api/billing/plan; purchases go through /pricing → Stripe Checkout,
 // management through the Stripe Billing Portal, the key through
 // /api/billing/ai-key (session only; the key is never sent back).
+//
+// The desk plans (Agent, Desk, hand-sold Enterprise — 2026-11-03) price the
+// desk and carry Plus's monthly answer pool. For them the plan card says what
+// the plan buys, THE DESK card lists the tenant entitlements (GET
+// /api/billing/plan `desk`, read from lib/tenant/entitlements) plus the one
+// "Plus's answers included" line, with the way to /desk. Any plan with no
+// allowance never prints "0 of 0" answers.
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Card, CardTitle, Kpi, SkeletonCard, timeAgo } from '@/lib/dashboard-ui'
 import type { PlanUsage } from '@/lib/billing'
-import type { Plan } from '@/lib/plans'
+import { includedAnswersLine, type Plan } from '@/lib/plans'
 import type { InferenceKeyMeta } from '@/lib/byok'
 
 interface LedgerEntry {
@@ -21,10 +28,27 @@ interface LedgerEntry {
   pool: string | null
   createdAt: string
 }
+/** A cap of null = unlimited (JSON has no Infinity). */
+interface DeskBlock {
+  family: 'answers' | 'desk'
+  plan: string
+  entitlements: {
+    tenants: number | null
+    keysPerTenant: number | null
+    mainnet: boolean
+    blotterExport: boolean
+    approvals: boolean
+    hooks: boolean
+    statement: boolean
+  }
+  features: { text: string; soon?: boolean }[]
+}
 interface PlanResponse {
   usage: PlanUsage
   ledger: LedgerEntry[]
   plans: Plan[]
+  deskPlans?: Plan[]
+  desk?: DeskBlock
   pack: { answers: number; priceUsd: number }
   taste: { wallet: number; freshWallet: number; guest: number; ip: number }
   aiKey: { enabled: boolean; key: InferenceKeyMeta | null; models: { id: string; label: string }[] }
@@ -56,6 +80,25 @@ export default function PlanPanel() {
   }, [])
   useEffect(load, [load])
 
+  // Back from a desk checkout (`?desk=agent`): the plan turns on when Stripe's
+  // webhook lands, usually seconds later — re-read a few times, then stop.
+  const [pendingDesk, setPendingDesk] = useState<string | null>(null)
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('desk')
+    if (q) setPendingDesk(q)
+  }, [])
+  const deskOn = data?.desk?.family === 'desk'
+  useEffect(() => {
+    if (!pendingDesk || deskOn) return
+    let n = 0
+    const t = setInterval(() => {
+      n += 1
+      load()
+      if (n >= 10) clearInterval(t)
+    }, 3000)
+    return () => clearInterval(t)
+  }, [pendingDesk, deskOn, load])
+
   const openPortal = async () => {
     setPortalBusy(true)
     try {
@@ -83,6 +126,10 @@ export default function PlanPanel() {
   const daysLeft = Math.max(0, Math.ceil((new Date(u.periodEnd).getTime() - Date.now()) / 86_400_000))
   const isPaid = u.priceUsd > 0
   const onOwnKey = !!data.aiKey.key
+  // A desk plan (Agent, Desk, Enterprise) prices the desk (and carries Plus's pool).
+  const deskPlan = data.desk?.family === 'desk'
+  const hasAllowance = u.allowance > 0
+  const renewLine = u.renewsAt ? ` · renews ${new Date(u.renewsAt).toLocaleDateString()}` : ''
 
   return (
     <div className="flex flex-col gap-4 min-w-0">
@@ -99,9 +146,13 @@ export default function PlanPanel() {
               )}
             </CardTitle>
             <p className="text-[length:var(--fs-md)] text-[color:var(--muted)] mt-1">
-              {isPaid
-                ? `${u.allowance.toLocaleString()} house answers each month${u.renewsAt ? ` · renews ${new Date(u.renewsAt).toLocaleDateString()}` : ` · resets in ${daysLeft}d`}`
-                : 'Charts, watchlists, alerts, trades and automations are all free, with no limits.'}
+              {deskPlan
+                ? isPaid
+                  ? `Pays for the desk: tenants, desk keys, the policy gate and the blotter${renewLine}.`
+                  : 'Hand-sold: billed from your monthly statement.'
+                : isPaid && hasAllowance
+                  ? `${u.allowance.toLocaleString()} house answers each month${u.renewsAt ? renewLine : ` · resets in ${daysLeft}d`}`
+                  : 'Charts, watchlists, alerts, trades and automations are all free, with no limits.'}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -117,6 +168,8 @@ export default function PlanPanel() {
         </div>
       </Card>
 
+      {(deskPlan || pendingDesk) && data.desk && <DeskCard desk={data.desk} planName={u.planName} allowance={u.allowance} on={deskPlan} pending={pendingDesk} />}
+
       {/* where your answers come from */}
       <Card>
         <CardTitle serif eyebrow="HOUSE ANSWERS">
@@ -125,10 +178,16 @@ export default function PlanPanel() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
           <Kpi label="free, every day" value={String(u.tasteDaily)} sub="resets midnight UTC" small />
           <Kpi label="banked" value={u.bank.toLocaleString()} sub="earned + bought · never expire" small />
-          <Kpi label={isPaid ? 'plan, left this month' : 'plan'} value={isPaid ? planLeft.toLocaleString() : '—'} sub={isPaid ? `of ${u.allowance.toLocaleString()}` : `Plus adds ${(data.plans.find((p) => p.id === 'plus')?.credits ?? 0).toLocaleString()} a month`} small />
+          {hasAllowance ? (
+            <Kpi label="plan, left this month" value={planLeft.toLocaleString()} sub={`of ${u.allowance.toLocaleString()}`} small />
+          ) : deskPlan ? (
+            <Kpi label="plan" value="—" sub={`${u.planName} adds no answers`} small />
+          ) : (
+            <Kpi label="plan" value="—" sub={`Plus adds ${(data.plans.find((p) => p.id === 'plus')?.credits ?? 0).toLocaleString()} a month`} small />
+          )}
           <Kpi label="banked this month" value={u.granted > 0 ? `+${u.granted.toLocaleString()}` : '0'} small />
         </div>
-        {isPaid && (
+        {hasAllowance && (
           <div className="planmeter" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Plan answers used this month">
             <div className="planmeter__fill" style={{ width: `${pct}%` }} />
           </div>
@@ -169,6 +228,53 @@ export default function PlanPanel() {
         )}
       </Card>
     </div>
+  )
+}
+
+/** THE DESK — what a desk plan lets a tenant do. Read-only: tenants and keys
+ *  are made on /desk and through the desk API. */
+function DeskCard({ desk, planName, allowance, on, pending }: { desk: DeskBlock; planName: string; allowance: number; on: boolean; pending: string | null }) {
+  const e = desk.entitlements
+  const cap = (n: number | null) => (n === null ? 'Unlimited' : n.toLocaleString())
+  const soon = desk.features.filter((f) => f.soon)
+  return (
+    <Card>
+      <CardTitle serif eyebrow="THE DESK">
+        {on ? `What ${planName} buys` : 'Waiting for Stripe'}
+      </CardTitle>
+      {!on && pending && (
+        <p className="text-[length:var(--fs-md)] leading-relaxed text-[color:var(--muted)] mt-2">
+          Checkout finished. Your desk plan turns on when Stripe confirms the payment, usually within a minute. This page
+          checks again by itself for half a minute; still on {planName} after a few minutes? Write to hello@pantessa.com.
+        </p>
+      )}
+      {on && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
+            <Kpi label="tenants" value={cap(e.tenants)} small />
+            <Kpi label="desk keys per tenant" value={cap(e.keysPerTenant)} small />
+            <Kpi label="chains" value={e.mainnet ? 'Mainnet' : 'Sandbox'} sub={e.mainnet ? undefined : 'Base Sepolia · HL testnet'} small />
+            <Kpi label="blotter export" value={e.blotterExport ? 'CSV' : '—'} small />
+            <Kpi label="maker-checker" value={e.approvals ? 'On' : '—'} small />
+            <Kpi label="statement" value={e.statement ? 'Monthly' : '—'} small />
+          </div>
+          {allowance > 0 && <p className="text-[length:var(--fs-md)] text-[color:var(--muted)] mt-3">{`${includedAnswersLine(allowance)}.`}</p>}
+          {soon.length > 0 && (
+            <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)] mt-3">
+              Included, not built yet: {soon.map((f) => f.text.toLowerCase()).join(', ')}.
+            </p>
+          )}
+        </>
+      )}
+      <div className="flex items-center gap-2 flex-wrap mt-4">
+        <Link href="/desk" className="btn btn--solid !h-10 !px-4 !text-[13.5px]">
+          Open the desk
+        </Link>
+        <Link href="/docs/desk" className="btn btn--ghost !h-10 !px-4 !text-[13.5px]">
+          Desk docs
+        </Link>
+      </div>
+    </Card>
   )
 }
 

@@ -1112,13 +1112,17 @@ async function main() {
   // connection, a wallet is free to mint); Plus is the one plan on sale;
   // Growth/Scale are retired from sale but their ids must stay valid so a
   // subscription row carrying one can never strand.
+  // RE-PINNED 2026-11-03 (five-million): the desk plans Agent + Desk went on
+  // sale beside Plus (PAID_PLANS = every plan checkout sells); the answers
+  // grid LISTED_PLANS is still Free + Plus. The desk plans' own pins are the
+  // `plans (desk plans)` block at the end (scripts/plans-pins.ts).
   check(
-    'plans: Free (0) + Plus ($9 / $79 / 600) on sale; Growth + Scale retired but still valid ids',
+    'plans: Free (0) + Plus ($9 / $79 / 600) on sale in the answers grid; checkout sells plus + the desk plans (agent, desk); Growth + Scale retired but still valid ids',
     PLAN_BY_ID.free.credits === 0 && PLAN_BY_ID.free.priceUsd === 0 &&
       PLAN_BY_ID.plus.priceUsd === 9 && PLAN_BY_ID.plus.yearlyUsd === 79 && PLAN_BY_ID.plus.credits === 600 &&
       PLAN_BY_ID.growth.legacy === true && PLAN_BY_ID.scale.legacy === true &&
       LISTED_PLANS.map((p) => p.id).join() === 'free,plus' &&
-      PAID_PLANS.map((p) => p.id).join() === 'plus' &&
+      PAID_PLANS.map((p) => p.id).join() === 'plus,agent,desk' &&
       planChargeUsd(PLAN_BY_ID.plus, 'month') === 9 && planChargeUsd(PLAN_BY_ID.plus, 'year') === 79,
   )
   // The maxed-plan rule (PRICING.md): an allowance may never cost more than
@@ -2021,7 +2025,11 @@ async function main() {
       pricingHtml.includes('Bring your own API key') &&
       pricingHtml.includes('1,000 answers') &&
       />Plus</.test(pricingHtml) &&
-      !/>Growth<|>Scale<|YEET credit|\$99|\$499/.test(pricingHtml),
+      // RE-PINNED 2026-11-03 (five-million): $499 is the DESK plan's price now
+      // (it was retired Scale's). The retired names stay banned; a $499 may
+      // appear only inside the desk section (#desk), never in the answers grid.
+      !/>Growth<|>Scale<|YEET credit|\$99/.test(pricingHtml) &&
+      (pricingHtml.indexOf('$499') === -1 || (pricingHtml.indexOf('id="desk"') > -1 && pricingHtml.indexOf('$499') > pricingHtml.indexOf('id="desk"'))),
   )
   // The refill ladder is COMPUTED from the live rates, so the page can never
   // promise a number the grant does not pay.
@@ -35987,6 +35995,96 @@ async function main() {
         )
       } else console.log('  ⚪ policy-pool try (chat): no PRIVATE_KEY in .env.local — the chat sentence is skipped')
     }
+  }
+
+  // ── FIVE-MILLION: the tenant desk (TENANT lane, 2026-11-03) ─────────────
+  // The policy engine's every refusal, the validator, the plan → order map,
+  // desk keys and source pins on the four doors (pure); then the README demo
+  // over the wire: an owner creates a tenant, activates the sample policy,
+  // mints a dk_ key, and the desk answers allowed / CHAIN_DENIED /
+  // VENUE_DENIED / awaiting approval → approve → proceeds / KEY_PAUSED /
+  // TENANT_PAUSED / KEY_REVOKED / KEY_UNKNOWN, a retail open untouched, the
+  // execute binding its job, and the relays refusing a tenant leg (job lane +
+  // link lane). The fixtures (sandbox flip, relay jobs) need the harness's
+  // DATABASE_URL (the TEST DB, inline). scripts/tenant-pins.ts.
+  console.log('— tenant (five-million)')
+  {
+    const { tenantPurePins, tenantLivePins } = await import('./tenant-pins')
+    await tenantPurePins(check)
+    await tenantLivePins(BASE, check, { log: (l) => console.log(l) }).catch((e: unknown) => check('tenant live: the drive ran to the end', false, e instanceof Error ? e.message : String(e)))
+  }
+
+  // ── BLOTTER (five-million, 2026-11-03): the tenant's hash-chained blotter + the
+  // monthly statement (lib/tenant/blotter, lib/tenant/statement, the runner's tenant
+  // rows, the sign-site row). Pure pins here; `npm run pins:blotter` adds the DB pass
+  // (20-way concurrent seq, tamper → verify, the cut + a draft invoice) and, with
+  // BASE=http://localhost:441x, the routes.
+  {
+    console.log('— blotter (five-million)')
+    const { blotterPurePins } = await import('./blotter-pins')
+    blotterPurePins(check)
+  }
+
+  // ── THE GOVERNED DESK page + the pilot door + lib/legal + the tenant docs (squad five-million, DESKPAGE lane, 2026-11-03) ──
+  // Pure: the /desk samples agree with lib/tenant/spec (the policy shape, the
+  // blotter kinds, a hash chain that verifies, the pricing arithmetic),
+  // lib/legal keeps the shipped strings and honours LEGAL_*, the lane's sources
+  // carry no forbidden phrase, the pilot parser + limiter. Served: /desk carries
+  // every spec word and number, the OG card, the sitemap, /docs/desk's tenant
+  // section, the pilot route (bad email 400, good one stored + deleted,
+  // honeypot stores nothing, 429 from one platform IP). The LEGAL_* second
+  // server is `npm run pins:desk-page -- --live --legal-server` only.
+  {
+    const DP = await import('./desk-page-pins')
+    DP.deskPagePins(check)
+    await DP.deskPageLivePins(check, BASE, { legalServer: false })
+  }
+
+  // ── PLANS (squad five-million, 2026-11-03): the desk plans on sale ────────
+  // Agent $49 / Desk $499 + the entitlements they buy (lib/tenant/entitlements),
+  // the /pricing desk section, checkout (test-mode Stripe only — a live key
+  // skips every session-creating call), a locally signed webhook activating
+  // agent, the one-plan 409. scripts/plans-pins.ts; `npm run pins:plans`.
+  console.log('— plans (desk plans)')
+  {
+    const plansMod = await import('./plans-pins')
+    plansMod.plansPins(check)
+    await plansMod.plansLivePins(check, BASE, (a) => signIn(a))
+  }
+
+
+  // ── five-million/perps — THE TRADER'S LOOP (squad five-million, 2026-11-03) ──
+  // Alerts to Telegram with the chip link (lib/telegram, the one notification
+  // path, the bell's line), the referral carried on every share and claimed
+  // from the server's own arrival record (lib/share-referral, the SIWE door,
+  // ShareLive, the creator page), the HL creator-earnings rate; fixtures on
+  // the TEST DB are deleted after. The Telegram routes' webhook round-trip
+  // runs only when the server under test carries TELEGRAM_BOT_TOKEN +
+  // TELEGRAM_BOT_NAME and this process TELEGRAM_WEBHOOK_SECRET (named skips
+  // otherwise). scripts/perps-pins.ts is the one source; `npm run pins:perps`.
+  console.log('— perps (five-million): telegram alerts, the share referral, the HL rate')
+  {
+    const { perpsPins } = await import('./perps-pins')
+    await perpsPins(check, { base: BASE })
+  }
+
+  // ── five-million/console — THE DESK CONSOLE (squad five-million, CONSOLE lane, 2026-11-03) ──
+  // /dashboard/desk + /dashboard/desk/[id]: the vocabulary the server hands the
+  // console is lib/tenant/spec's; the browser's policy shape check names the
+  // same field as validatePolicyDoc over a corpus; the approvals queue read off
+  // the blotter; source pins (server pages, no node:crypto in the browser, the
+  // contract's routes, 44px, the secret never stored, the Desk rail seat). Live:
+  // the served pages for a signed-in owner, then a drive through the routes the
+  // console calls (a fresh owner's console-drive-* tenant, the burner as the
+  // second admin; with DATABASE_URL an over-threshold intent the queue finds and
+  // the burner approves). The fixture tenant is left paused, keys revoked,
+  // is_internal. scripts/console-pins.ts; `npm run pins:console`.
+  console.log('— console (five-million): the desk console')
+  {
+    const C = await import('./console-pins')
+    C.consolePurePins(check)
+    await C.consoleRailPins(check)
+    await C.consoleLivePins(check, BASE, { signIn: (a) => signIn(a), log: (l) => console.log(l) }).catch((e: unknown) => check('console live: the drive ran to the end', false, e instanceof Error ? e.message : String(e)))
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)

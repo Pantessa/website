@@ -45,6 +45,104 @@ import { usePhoneSheet } from '@/components/markets/shell/usePhoneSheet'
 const promptHref = (ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`
 const FIRED_SHOWN = 5
 
+type TelegramState = { enabled: boolean; linked: boolean; chats: number }
+
+/** ONE line under the armed rules (squad five-million, PERPS 2026-11-03):
+ *  "Get these on Telegram". A tap mints a single-use link through
+ *  /api/alerts/telegram (owner-gated — a guest never reaches this branch; the
+ *  popover's door is the same unified sign-in door as the rest of it) and
+ *  opens it in a new tab; the bot's /start binds the chat. Linked, the line
+ *  reads "Telegram ✓ · unlink". Hidden when the server has no bot. */
+function TelegramLine({ open }: { open: boolean }) {
+  const [state, setState] = useState<TelegramState | null>(null)
+  const [link, setLink] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const refresh = useCallback(async () => {
+    try {
+      const r = await fetch('/api/alerts/telegram', { cache: 'no-store' })
+      if (!r.ok) return
+      const j = (await r.json()) as Partial<TelegramState>
+      setState({ enabled: !!j.enabled, linked: !!j.linked, chats: Number(j.chats) || 0 })
+      if (j.linked) setLink(null)
+    } catch {
+      /* the line just stays as it was */
+    }
+  }, [])
+  useEffect(() => {
+    if (open) void refresh()
+  }, [open, refresh])
+  if (!state || !state.enabled) return null
+
+  const mint = async () => {
+    setBusy(true)
+    setErr(null)
+    // Open the tab INSIDE the tap (a popup after the await is blocked), then
+    // aim it once the link is minted; the anchor below stays as the fallback.
+    const tab = typeof window !== 'undefined' ? window.open('', '_blank') : null
+    try {
+      const r = await fetch('/api/alerts/telegram', { method: 'POST' })
+      const j = (await r.json()) as { url?: string; error?: string }
+      if (!r.ok || !j.url) throw new Error(j.error ?? 'Could not mint a Telegram link.')
+      setLink(j.url)
+      if (tab) tab.location.href = j.url
+    } catch (e) {
+      tab?.close()
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const unlink = async () => {
+    setBusy(true)
+    try {
+      await fetch('/api/alerts/telegram', { method: 'DELETE' })
+      setLink(null)
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="mkt-alertpop__sec mkt-alertpop__sec--telegram" aria-label="Telegram alerts" data-telegram={state.linked ? 'linked' : link ? 'pending' : 'off'}>
+      <div className="mkt-alertpop__row">
+        {state.linked ? (
+          <>
+            <span className="mkt-alertpop__rowLabel">
+              Telegram ✓<span className="wl__muted">{state.chats > 1 ? ` · ${state.chats} chats` : ' · every alert lands in your chat'}</span>
+            </span>
+            <button type="button" className="wl__link mono" disabled={busy} onClick={unlink} data-journey="Unlink Telegram">
+              unlink
+            </button>
+          </>
+        ) : link ? (
+          <>
+            <span className="mkt-alertpop__rowLabel">
+              In Telegram, press <strong>Start</strong><span className="wl__muted"> · then come back</span>
+            </span>
+            <a className="wl__link mono" href={link} target="_blank" rel="noopener noreferrer" data-journey="Open Telegram link">
+              open ↗
+            </a>
+            <button type="button" className="wl__link mono" onClick={() => void refresh()}>
+              linked?
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="mkt-alertpop__rowLabel">
+              Get these on Telegram<span className="wl__muted"> · the chip rides along</span>
+            </span>
+            <button type="button" className="wl__link mono" disabled={busy} onClick={mint} data-journey="Get alerts on Telegram">
+              {busy ? '…' : 'link'}
+            </button>
+          </>
+        )}
+      </div>
+      {err && <p className="mkt-alertpop__err">{err}</p>}
+    </section>
+  )
+}
+
 export default function RailAlerts() {
   const alerts = useSharedAlerts()
   const { status, address } = useSession()
@@ -162,6 +260,9 @@ export default function RailAlerts() {
           ))}
         </section>
           )}
+
+          {/* ── Telegram: one line under the armed rules (PERPS) ── */}
+          <TelegramLine open={open} />
 
           {count === 0 && armed.length === 0 && (
         <p className="mkt-alertpop__empty">

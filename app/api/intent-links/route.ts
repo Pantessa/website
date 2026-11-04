@@ -189,7 +189,11 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: 'desc' },
     take: 100,
   })
-  if (links.length === 0) return NextResponse.json({ links: [] })
+  // A share referral pays a creator who never minted a link (squad five-million,
+  // PERPS 2026-11-03: a trader who arrived on this wallet's chart / live / deck
+  // share is its referral for life — lib/share-referral). The empty short-
+  // circuit used to hide that rail; it now applies only when the rail is empty too.
+  if (links.length === 0 && (await prisma.referredWallet.count({ where: { creator } })) === 0) return NextResponse.json({ links: [] })
   /** What the creator SEES. `links` (all of them) stays the money base. */
   const listed = links.filter((l) => !l.revoked)
 
@@ -310,12 +314,19 @@ export async function GET(req: NextRequest) {
   let referredEarnedUsd = 0
   let referredSignedUsd = 0
   let referredSigns = 0
+  // Referred notional on a fee-bearing path whose signed artifact bore NO fee
+  // (an HL order that self-healed to fee-free while the treasury sat under
+  // the venue's builder floor — fees.ts netFeeBpsForTurn): it earned $0, and
+  // the rail says so instead of a bare zero (squad five-million, PERPS).
+  let referredFeeFreeUsd = 0
   for (const t of referredTurns) {
     const v = t._sum.valueUsd ?? 0
     referredSignedUsd += v
     referredSigns += t._count._all
     if (t.buildPath && FEE_BEARING_BUILD_PATHS.has(t.buildPath)) {
-      referredEarnedUsd += creatorEarningsUsd(v, netFeeBpsForTurn(t.buildPath, t.feeBps))
+      const bps = netFeeBpsForTurn(t.buildPath, t.feeBps)
+      referredEarnedUsd += creatorEarningsUsd(v, bps)
+      if (!(bps > 0)) referredFeeFreeUsd += v
     }
   }
 
@@ -407,6 +418,8 @@ export async function GET(req: NextRequest) {
       referredEarnedUsd,
       referredSignedUsd,
       referredSigns,
+      // Fee-bearing-path notional that rode fee-free (HL under the builder floor): $0 earned, said why.
+      referredFeeFreeUsd,
       // Newest week first; direct + rail merged per ISO week (UTC).
       weekly,
     },
