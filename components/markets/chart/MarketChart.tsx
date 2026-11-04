@@ -72,6 +72,7 @@ import FrontBoard from './FrontBoard'
 import PositionHeat from './PositionHeat'
 import ExecutionsStrip from './ExecutionsStrip'
 import TheWall, { marginBarsFor, type WallStatus } from './TheWall'
+import { rememberWallHidden, wallHiddenHere, withWall } from '@/lib/wall'
 import { parseBoardParam, parseViewParam, syncViewParam, type BoardMode, type ChartView } from '@/lib/markets'
 import { hasPerpCold } from '@/lib/symbol-venues'
 import DepthChart from './DepthChart'
@@ -341,6 +342,35 @@ export default function MarketChart({
   // engine, so every range change re-asks at the current bar spacing.
   const [wallStatus, setWallStatus] = useState<WallStatus | null>(null)
   const wallOn = battlefield && view === 'candles' && overlays.has('wall')
+  // Hidden by hand stays hidden on this browser (Nate, 2026-11-04: "a trash
+  // to get rid of it and a way to add it back on"). Read after mount, in the
+  // same commit as the theme tokens, so the Wall never mounts to be removed;
+  // the trash and the WALL chip both write it, a reset does not.
+  useEffect(() => {
+    if (battlefield && wallHiddenHere()) setOverlays((cur) => (cur.has('wall') ? withWall(cur, false) : cur))
+  }, [battlefield])
+  // The trash's receipt: "hidden" with Undo where the key was, for a moment.
+  const [wallNote, setWallNote] = useState(false)
+  const setWall = useCallback((on: boolean, note = false) => {
+    setOverlays((cur) => withWall(cur, on))
+    rememberWallHidden(!on)
+    setWallNote(!on && note)
+  }, [])
+  const hideWall = useCallback(() => setWall(false, true), [setWall])
+  const indRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!wallNote) return
+    // A phone scrolls the overlay row sideways: bring the WALL chip into it.
+    const row = indRef.current
+    const chip = row?.querySelector<HTMLElement>('[data-overlay="wall"]')
+    if (row && chip && row.scrollWidth > row.clientWidth) {
+      const r = row.getBoundingClientRect()
+      const c = chip.getBoundingClientRect()
+      row.scrollTo({ left: row.scrollLeft + (c.left - r.left) - (row.clientWidth - c.width) / 2, behavior: 'smooth' })
+    }
+    const t = setTimeout(() => setWallNote(false), 9_000)
+    return () => clearTimeout(t)
+  }, [wallNote])
   const wallPxRef = useRef(0)
   wallPxRef.current = wallOn && wallStatus?.active ? wallStatus.px : 0
   const marginRef = useRef(RIGHT_OFFSET)
@@ -1639,22 +1669,26 @@ export default function MarketChart({
             )}
           </div>
         )}
-        {!altOn && <div className="mkt-chart__ind" role="group" aria-label="Overlays">
+        {!altOn && <div ref={indRef} className="mkt-chart__ind" role="group" aria-label="Overlays">
           {OVERLAYS.filter((o) => (o.key !== 'vwap' || hasVolume(candles)) && (o.key !== 'wall' || battlefield) && (o.key !== 'vp' || !wallOn)).map((o) => (
             <button
               key={o.key}
               type="button"
-              className={`mkt-ind mono${overlays.has(o.key) ? ' is-active' : ''}`}
+              className={`mkt-ind mono${overlays.has(o.key) ? ' is-active' : ''}${o.key === 'wall' && wallNote ? ' is-hint' : ''}`}
               aria-pressed={overlays.has(o.key)}
+              data-overlay={o.key}
               title={o.title}
               style={{ '--ind-sw': o.swatch } as CSSProperties}
               onClick={() =>
-                setOverlays((cur) => {
-                  const next = new Set(cur)
-                  if (next.has(o.key)) next.delete(o.key)
-                  else next.add(o.key)
-                  return next
-                })
+                // The Wall's chip remembers like its trash does.
+                o.key === 'wall'
+                  ? setWall(!overlays.has('wall'))
+                  : setOverlays((cur) => {
+                      const next = new Set(cur)
+                      if (next.has(o.key)) next.delete(o.key)
+                      else next.add(o.key)
+                      return next
+                    })
               }
             >
               <span className="mkt-ind__sw" aria-hidden="true" />
@@ -1819,7 +1853,7 @@ export default function MarketChart({
         {fieldOn && tokens && <FrontBoard symbol={pair.symbol} pair={pair} tf={tf} bars={candles} tokens={tokens} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} board={board} onBoard={setBoard} />}
         {depthOn && tokens && <DepthChart symbol={pair.symbol} pair={pair} tokens={tokens} last={last} perpListed={hasPerpCold(pair.symbol)} printSink={depthPrintRef} printStatus={liveFeed ? tailStatus : null} printLabel={liveFeed?.label ?? null} onLevel={onLimit} settings={depthSettings} onSettings={setDepthSettings} />}
         {tapeOn && <TapeView symbol={pair.symbol} pair={pair} printSink={tapePrintRef} printStatus={liveFeed ? tailStatus : null} printLabel={liveFeed?.label ?? null} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} />}
-        {wallOn && tokens && <TheWall geom={geom} bars={bars} symbol={pair.symbol} pair={pair} tf={tf} tokens={tokens} last={last} hostRef={wrapRef} onStatus={setWallStatus} />}
+        {wallOn && tokens && <TheWall geom={geom} bars={bars} symbol={pair.symbol} pair={pair} tf={tf} tokens={tokens} last={last} hostRef={wrapRef} onStatus={setWallStatus} onHide={hideWall} />}
         {!altOn && <DrawingLayer
           geom={geom}
           lines={lines}
@@ -1891,6 +1925,16 @@ export default function MarketChart({
             traded at that price · the bars on screen
           </span>
           <span>bursts on the bars = clusters a bar&rsquo;s range reached · est.</span>
+        </p>
+      )}
+      {/* Just hidden by its trash: say where it went, and undo it. */}
+      {battlefield && !wallOn && wallNote && view === 'candles' && (
+        <p className="wall-legend mono" role="status" data-wall-hidden>
+          <b>THE WALL</b>
+          <span>hidden on this browser · the WALL chip above brings it back</span>
+          <button type="button" className="wall-legend__undo" onClick={() => setWall(true)}>
+            Undo
+          </button>
         </p>
       )}
       {/* A year of positioning under the candles (the symbol page; coins and perps). */}
