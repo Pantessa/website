@@ -9,7 +9,7 @@
 //  or submitted, recipient is always the payer — the same trust shape as
 //  the chat fast-path that produced the chain.
 // ─────────────────────────────────────────────────────────────────────────
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, GatedV4PoolError, buildPolicyPoolSwap, isPolicyPoolRefusal } from '@/lib/uniswap-v4'
 import { POLICY_POOL_REFRESH_KIND, policyPoolClient, policyPoolConfig } from '@/lib/policy-pool/config'
@@ -25,6 +25,7 @@ import { dryRunTx, isAllowanceLag } from '@/lib/dry-run'
 import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS } from '@/lib/fees'
 import { resolveCreatorPayout } from '@/lib/creator-split'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
+import { builtTxsOf, CHAT_EXPECTATION_SLUG, observeChainHeads, recordBuiltExpectations } from '@/lib/link-receipt-verify'
 
 /** Dry-run the rebuilt tx before offering it. A tx that reverts at
  *  estimation must NEVER reach the wallet: MetaMask's estimate fails too and
@@ -65,6 +66,28 @@ async function dryRunGate(
       : `the rebuilt ${what} would revert on-chain (${verdict.reason.slice(0, 200)})`
   console.warn('[tx/refresh] withheld', JSON.stringify({ kind, chainId, verdict: verdict.kind, raw: verdict.raw.slice(0, 200) }))
   return NextResponse.json({ blocked: true, blockKind: 'execution', reasons })
+}
+
+/** Offer a rebuilt step — and record it as the build the wallet will sign.
+ *  RECEIPT BINDING (2026-11-04, lib/link-receipt-verify): a signature
+ *  verifies only against the EXACT calldata this server produced, and the
+ *  card signs the REFRESHED step, so the original build's row would never
+ *  match it. The build moment and the chain head are captured BEFORE the
+ *  response goes out (an honest signature is later than both); the write
+ *  itself waits. The step's own chainId leads; the branch's chain is the
+ *  fallback, never Base by default (a head read on the wrong chain would
+ *  fence an honest signature out). */
+async function offerStep(
+  payload: { tx: { to: string; data: string; value: string; chainId?: number }; [k: string]: unknown },
+  from: string,
+  linkSlug: string | undefined,
+  chainId: number,
+): Promise<NextResponse> {
+  const recordedAt = new Date()
+  const txs = builtTxsOf({ txRequest: { ...payload.tx, chainId: payload.tx.chainId ?? chainId } })
+  const heads = await observeChainHeads(txs.map((t) => t.chainId))
+  after(() => recordBuiltExpectations({ slug: linkSlug ?? CHAT_EXPECTATION_SLUG, wallet: from.toLowerCase(), txs, recordedAt, heads }))
+  return NextResponse.json(payload)
 }
 
 export async function POST(req: NextRequest) {
@@ -142,7 +165,7 @@ export async function POST(req: NextRequest) {
       const bridgeStep = built.steps[built.bridgeStepIndex]
       const gate = await dryRunGate(origin, from, bridgeStep.tx, 'bridge', 'lifi-bridge')
       if (gate) return gate
-      return NextResponse.json({ tx: bridgeStep.tx, summary: built.summary, guardrails: built.guardrails, validUntil: bridgeStep.validUntil ?? null })
+      return offerStep({ tx: bridgeStep.tx, summary: built.summary, guardrails: built.guardrails, validUntil: bridgeStep.validUntil ?? null }, from, linkSlug, origin)
     } catch (err) {
       return NextResponse.json({ error: err instanceof Error ? err.message.slice(0, 300) : 'rebuild failed' }, { status: 502 })
     }
@@ -204,7 +227,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: verdict.kind === 'no-gas' ? `${verdict.reason} — send a little ETH there, then reopen this step` : `the rebuilt swap would revert on-chain (${verdict.reason.slice(0, 200)})` })
         }
       }
-      return NextResponse.json({ tx: built.steps[0].tx, summary: built.summary, guardrails: built.guardrails, validUntil: built.steps[0].validUntil ?? null })
+      return offerStep({ tx: built.steps[0].tx, summary: built.summary, guardrails: built.guardrails, validUntil: built.steps[0].validUntil ?? null }, from, linkSlug, poolChainId)
     } catch (err) {
       if (err instanceof GatedV4PoolError) return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: err.message })
       return NextResponse.json({ error: err instanceof Error ? err.message.slice(0, 300) : 'rebuild failed' }, { status: 502 })
@@ -239,7 +262,7 @@ export async function POST(req: NextRequest) {
       const swapStep = lifi.steps[lifi.swapStepIndex]
       const gate = await dryRunGate(chainId, from, swapStep.tx, 'swap', 'lifi-swap')
       if (gate) return gate
-      return NextResponse.json({ tx: swapStep.tx, summary: lifi.summary, guardrails: lifi.guardrails, validUntil: swapStep.validUntil ?? null })
+      return offerStep({ tx: swapStep.tx, summary: lifi.summary, guardrails: lifi.guardrails, validUntil: swapStep.validUntil ?? null }, from, linkSlug, chainId)
     }
     if (body.kind === 'uniswap-v4-swap') {
       // v4 chains re-quote the FINAL step; the builder re-reads both Permit2
@@ -254,7 +277,7 @@ export async function POST(req: NextRequest) {
       }
       const gate = await dryRunGate(chainId, from, v4.steps[0].tx, 'swap', 'uniswap-v4-swap')
       if (gate) return gate
-      return NextResponse.json({ tx: v4.steps[0].tx, summary: v4.summary, guardrails: v4.guardrails, validUntil: v4.steps[0].validUntil ?? null })
+      return offerStep({ tx: v4.steps[0].tx, summary: v4.summary, guardrails: v4.guardrails, validUntil: v4.steps[0].validUntil ?? null }, from, linkSlug, chainId)
     }
     const uni = await buildUniswapSwap({ sellToken, buyToken, amountHuman, from, chainId, feeBps, creator: await resolveCreatorPayout({ wallet: from, linkSlug }) })
     if (uni.blocked) {
@@ -270,7 +293,7 @@ export async function POST(req: NextRequest) {
     }
     const gate = await dryRunGate(chainId, from, uni.swapTx, 'swap', 'uniswap-swap')
     if (gate) return gate
-    return NextResponse.json({ tx: uni.swapTx, summary: uni.summary, guardrails: uni.guardrails, validUntil: uni.validUntil })
+    return offerStep({ tx: uni.swapTx, summary: uni.summary, guardrails: uni.guardrails, validUntil: uni.validUntil }, from, linkSlug, chainId)
   } catch (err) {
     if (err instanceof OffTapeError) {
       // The pool (or the chain's own venue) moved off the stock's tape since

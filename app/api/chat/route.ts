@@ -3,7 +3,7 @@ import { asksAboutOwnWallet, OWN_WALLET_SIGN_IN_REPLY } from '@/lib/own-wallet-r
 import { fenceToolOutput, toolOutputNonce, toolOutputRule } from '@/lib/tool-output-fence'
 import { contentOriginOf, hardenReportForOrigin, isThirdPartyOrigin, outboundToThirdParty, rawAddressTokenRefusal, type ContentOrigin } from '@/lib/content-origin'
 import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
-import { recordTurnExpectations } from '@/lib/link-receipt-verify'
+import { builtTxsOf, observeChainHeads, recordTurnExpectations } from '@/lib/link-receipt-verify'
 import { erc20Abi, formatEther, formatUnits, getAddress, isAddress, parseEther, parseUnits } from 'viem'
 import { openseaEnabled, openseaSlugOf } from '@/lib/opensea'
 import { getPaidFetch, hasAgentWallet } from '@/lib/agent-wallet'
@@ -519,9 +519,15 @@ export async function POST(req: NextRequest) {
     // S-2 (2026-09-08): EVERY wallet-bound build records — a first-party
     // chat / keyed-embed sign verifies against its own build the same way
     // (key CHAT_EXPECTATION_SLUG), so money follows the receipt everywhere.
+    // RECEIPT BINDING (2026-11-04): the row carries the keccak256 of the EXACT
+    // calldata built, the build moment and the chain head this server saw —
+    // both captured BEFORE the response goes out, so an honest signature is
+    // always later than both; only the write itself waits for `after`.
     if (typeof reqBody.walletAddress === 'string') {
       const artifactData = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
-      after(() => recordTurnExpectations(reqBody, artifactData))
+      const recordedAt = new Date()
+      const heads = await observeChainHeads(builtTxsOf(artifactData).map((t) => t.chainId))
+      after(() => recordTurnExpectations(reqBody, artifactData, { recordedAt, heads }))
     }
     // Every refusal carries a next step (POLISH/DEADENDS 2026-10-13,
     // lib/refusal-next-step): a money ask answered with words and nothing to
