@@ -577,7 +577,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
             )}
             <Flame className="w-[18px] h-[18px]" />
-            <span className="mono text-[8.5px] font-medium tracking-normal">COMMUNITY</span>
+            <span className="mono text-[8px] font-medium tracking-normal">COMMUNITY</span>
           </Link>
           <Link
             href={LEADERBOARD_HREF}

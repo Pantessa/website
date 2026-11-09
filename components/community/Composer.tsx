@@ -275,7 +275,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
   }
 
   const titlePlaceholder =
-    kind === 'idea' ? (sym ? `Your call on ${sym}, in one line` : 'Your call, in one line') : kind === 'link' ? 'Title (leave empty to use the page title)' : kind === 'video' ? 'What the video is, in one line' : 'Why you took it, in one line'
+    kind === 'idea' ? (sym ? `Your call on ${sym}, in one line` : 'Your call, in one line') : kind === 'link' ? 'Title (leave empty to use the page title)' : kind === 'video' ? 'What the video is, in one line' : 'What you saw, in one line'
 
   return (
     <form
@@ -402,7 +402,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
           </label>
         </div>
 
-        <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Why. Plain text." maxLength={COMPOSER_BODY_MAX} aria-label="Why" />
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder={kind === 'idea' ? 'Why. Plain text.' : 'Anything to add. Plain text.'} maxLength={COMPOSER_BODY_MAX} aria-label="More" />
 
         {kind === 'idea' &&
           (attachable ? (

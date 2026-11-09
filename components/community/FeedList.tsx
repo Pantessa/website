@@ -176,7 +176,7 @@ export default function FeedList({ community, symbol, initialSort = 'hot', refre
               <>
                 <a href="#share-here">Post the first one</a>
                 <span aria-hidden> · </span>
-                <Link href="/community#rooms">Find a room</Link>
+                <Link href="/g/new">Start a room</Link>
               </>
             )}
           </p>

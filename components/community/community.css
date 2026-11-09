@@ -139,6 +139,8 @@ button.cmy-video:hover .cmy-video__play { transform: scale(1.06); background: va
 .cmy-compose__row { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
 .cmy-compose__field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; min-width: 0; }
 .cmy-compose__field--sym { flex: 0 1 190px; }
+/* A field standing alone in the column (the link box, the room picker) takes its own height, not the row's flex basis. */
+.cmy-compose__open > .cmy-compose__field { flex: 0 0 auto; }
 .cmy-compose__label { font-family: var(--cmy-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
 .cmy-compose input[type='text'], .cmy-compose input[type='url'], .cmy-compose textarea {
   width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: 14px; color: var(--fg); outline: none; transition: border-color .12s ease;
@@ -241,6 +243,14 @@ button.cmy-video:hover .cmy-video__play { transform: scale(1.06); background: va
 @media (hover: none) {
   .cmy-vote__btn { width: 44px; height: 44px; }
   .cmy-card__act, .cmy-share__btn { min-height: 44px; padding: 0 10px; }
+  .cmy-card__act { min-width: 44px; justify-content: center; }
+  /* The market chip and the headline: 44px hit areas, same look (the chip's sits above the headline's where they meet). */
+  .cmy-card__sym { position: relative; z-index: 1; padding: 5px 9px; }
+  .cmy-card__sym::after { content: ''; position: absolute; inset: -10px -6px; }
+  .cmy-card__room { position: relative; z-index: 1; padding: 5px 10px; }
+  .cmy-card__room::after { content: ''; position: absolute; inset: -9px -4px; }
+  .cmy-card__title { margin-top: 10px; }
+  .cmy-card__title a { display: block; min-height: 44px; padding: 11px 0 13px; margin: -11px 0 -13px; }
   .cmy-tabs__tab { min-height: 44px; }
   .cmy-chip { min-height: 44px; }
   .cmy-fact__tx { min-height: 32px; position: relative; }
@@ -249,5 +259,8 @@ button.cmy-video:hover .cmy-video__play { transform: scale(1.06); background: va
   .cmy-compose__close { width: 44px; height: 44px; }
   .cmy-compose__check { min-height: 44px; }
   .cmy-rail__new { min-height: 44px; }
+  .cmy-strip__chip { min-height: 44px; }
+  .cmy-feed__emptydo a { display: inline-block; padding: 13px 6px; }
+  .cmy-feed__emptydo { margin-top: 0; }
   .cmy-compose input[type='text'], .cmy-compose input[type='url'], .cmy-compose textarea { font-size: 16px; }
 }
