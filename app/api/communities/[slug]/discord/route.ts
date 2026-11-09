@@ -11,8 +11,11 @@
 // this route ever carries the URL or its token, and nothing logs it.
 // The channel a DELETE removes is picked from THIS room's own rows.
 import { NextResponse } from 'next/server'
-import { getActor } from '@/lib/community/identity'
-import { COMMUNITY_SLUG_RE, type Actor } from '@/lib/community/spec'
+import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '@/lib/community/origin'
+import { getSessionAddress } from '@/lib/auth'
+import { clientIpFrom } from '@/lib/turn-limits'
+import { LINK_HOURLY_CAP, linkTripped } from '@/lib/community/limits'
+import { COMMUNITY_SLUG_RE, walletKey, type MemberKey } from '@/lib/community/spec'
 import { linkChannel, mintLinkCode, roleOf, unlinkChannel } from '@/lib/community/store'
 import { parseDiscordWebhookUrl, readWebhookObject } from '@/lib/discord/webhook'
 import { roomDiscordChannels } from '@/lib/discord/channels'
@@ -39,7 +42,7 @@ async function readBody(req: Request): Promise<Record<string, unknown> | null> {
 }
 
 /** null = may manage; otherwise the refusal. */
-async function managerRefusal(slug: string, actor: Actor): Promise<NextResponse | null> {
+async function managerRefusal(slug: string, actor: { key: MemberKey }): Promise<NextResponse | null> {
   try {
     const role = await roleOf(slug, actor.key)
     if (role === 'owner' || role === 'mod') return null
@@ -60,10 +63,18 @@ export async function GET(_req: Request, ctx: Ctx) {
 }
 
 export async function POST(req: Request, ctx: Ctx) {
+  // S7: our own page made this request (the identity cookie can be SameSite=None).
+  if (!sameOriginJson(req.headers)) return NextResponse.json(CROSS_SITE_REFUSAL, { status: 403 })
   const { slug } = await ctx.params
   if (!COMMUNITY_SLUG_RE.test(slug)) return refuse(404, 'No such room.')
-  const actor = await getActor().catch(() => null)
-  if (!actor) return refuse(401, 'Sign in to manage this room.', { needsIdentity: true })
+  // S7: managing a room needs the WALLET session; a provider identity cookie
+  // alone (even one linked to the owner's wallet) never manages a room.
+  const wallet = await getSessionAddress().catch(() => null)
+  if (!wallet) return refuse(401, 'Sign in with your wallet to manage this room.', { needsIdentity: true })
+  const actor = { key: walletKey(wallet) }
+  // S8: every POST may send our server to Discord: fenced per wallet + per IP.
+  const tripped = await linkTripped(clientIpFrom(req.headers), actor.key, 'discord')
+  if (tripped) return refuse(429, `Too many Discord link attempts in the last hour (${LINK_HOURLY_CAP} a ${tripped === 'ip' ? 'network' : 'wallet'}). Try again later.`, { rateGate: tripped })
   const body = await readBody(req)
   if (!body) return refuse(400, 'Send JSON: { webhookUrl }.')
 
@@ -101,10 +112,15 @@ export async function POST(req: Request, ctx: Ctx) {
 }
 
 export async function DELETE(req: Request, ctx: Ctx) {
+  // S7: our own page made this request (the identity cookie can be SameSite=None).
+  if (!sameOrigin(req.headers)) return NextResponse.json(CROSS_SITE_REFUSAL, { status: 403 })
   const { slug } = await ctx.params
   if (!COMMUNITY_SLUG_RE.test(slug)) return refuse(404, 'No such room.')
-  const actor = await getActor().catch(() => null)
-  if (!actor) return refuse(401, 'Sign in to manage this room.', { needsIdentity: true })
+  // S7: managing a room needs the WALLET session; a provider identity cookie
+  // alone (even one linked to the owner's wallet) never manages a room.
+  const wallet = await getSessionAddress().catch(() => null)
+  if (!wallet) return refuse(401, 'Sign in with your wallet to manage this room.', { needsIdentity: true })
+  const actor = { key: walletKey(wallet) }
   const body = await readBody(req)
   if (!body) return refuse(400, 'Send JSON: { title }.')
   const denied = await managerRefusal(slug, actor)

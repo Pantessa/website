@@ -202,7 +202,7 @@ export async function handleInteraction(interaction: unknown, deps: InteractionD
       const kept = list.filter((m) => n(m) > 0).slice(0, 5)
       return kept.length ? kept.map((m, k) => `${k + 1}. ${escapeDiscord(m.label, 48)} · ${n(m)} ${unit}`).join('\n') : 'Nobody yet.'
     }
-    const description = `**Brought people in**\n${rows(byInvites, (m) => m.invited, 'joined')}\n\n**Traded with proof**\n${rows(byTrades, (m) => m.verifiedTrades, 'verified')}`
+    const description = `**Brought people in**\n${rows(byInvites, (m) => m.invited, 'joined')}\n\n**Verified receipts**\n${rows(byTrades, (m) => m.verifiedTrades, 'verified')}`
     return reply('', { embeds: [{ title: `${plainDiscord(room.name, 48)} board`, url: roomUrl, description, color: DISCORD_EMBED_COLOR }] })
   }
   return reply('Unknown command.', { ephemeral: true })

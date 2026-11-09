@@ -17,6 +17,7 @@
 import { BOT_COMMANDS, type FeedPost, type PublicMember, type TradeProof } from '@/lib/community/spec'
 import { joinUrlFor, roomInviteUrl, shareUrl, tgEntryUrl, type LinkCtx } from './links'
 import { joinPayload } from '@/lib/community/spec'
+import { NO_PROOF_HEADLINE, proofFactLine, proofLinkIsRebuilt, proofTagLine } from '@/lib/community/proof-words'
 
 /** The Bot API's hard cap on a message's text. */
 export const TG_TEXT_MAX = 4096
@@ -63,7 +64,27 @@ export function tidy(raw: unknown, max: number): string {
 
 /** Tidy, cap, escape: the only way a dynamic value enters a message. */
 const t = (raw: unknown, max: number): string => escapeHtml(tidy(raw, max))
-const roomName = (room: RoomRef): string => t(room.name, NAME_MAX) || escapeHtml(room.slug)
+// ── QA-SECURITY-2 T3: what the bot repeats can never become a live link ──
+// Telegram itself links bare domains, t.me/…, @names, /commands, #tags and
+// $TICKERS in a bot's text. So: a PERSON's name that carries any of those is
+// replaced by the neutral word; a title or a room name is sent inside
+// <code>…</code>, where Telegram detects nothing. Nothing invisible is inserted.
+const LINKISH_RE = /:\/\/|[@＠]|^\s*\/|\bt\.me\b|\b[a-z0-9-]+\.[a-z]{2,}\b|\$[A-Za-z]{2,}|#\w/i
+export function isLinkish(raw: unknown): boolean {
+  return typeof raw === 'string' && LINKISH_RE.test(raw.normalize('NFKC'))
+}
+/** A person's name as the bot may repeat it. */
+export const nameText = (raw: unknown, max = LABEL_MAX): string => (isLinkish(raw) ? 'A member' : t(raw, max))
+/** A board label (memberLabel's output: a site @handle, a short wallet, a
+ *  provider name already screened by S6): inside <code> when it carries
+ *  anything Telegram would link (a site handle's @), plain otherwise. */
+export const labelText = (raw: unknown, max = LABEL_MAX): string => (isLinkish(raw) ? codeText(raw, max) : t(raw, max))
+/** A title / room name: escaped, inside <code> so nothing in it links. '' stays ''. */
+export const codeText = (raw: unknown, max: number): string => {
+  const v = t(raw, max)
+  return v ? `<code>${v}</code>` : ''
+}
+const roomName = (room: RoomRef): string => codeText(room.name, NAME_MAX) || escapeHtml(room.slug)
 const buttonText = (s: string): string => tidy(s, BUTTON_MAX)
 
 function fit(lines: string[]): string {
@@ -94,7 +115,7 @@ export function joinButton(ctx: LinkCtx, room: RoomRef, opts: { invite?: string 
 export function welcomeMessage(ctx: LinkCtx, room: RoomRef, opts: { pinHint?: boolean } = {}): TgMessage {
   return {
     text: fit([
-      `<b>${roomName(room)}</b> is on Pantessa.`,
+      `${roomName(room)} is on Pantessa.`,
       'Chart ideas, calls and trades with proof, in one feed.',
       'One tap and you are in. No wallet, no form.',
       opts.pinHint ? 'Admins: pin this message so new members see it.' : '',
@@ -133,7 +154,7 @@ export const notAnsweringMessage = (): TgMessage => say('Pantessa is not answeri
 /** The private-chat reply to a proven join. The first button opens the room
  *  inside Telegram (a web_app button: allowed in a private chat). */
 export function joinedMessage(ctx: LinkCtx, room: RoomRef, opts: { joined: boolean; inviteCode: string | null }): TgMessage {
-  const lines = [opts.joined ? `You are in <b>${roomName(room)}</b>.` : `You are already in <b>${roomName(room)}</b>.`]
+  const lines = [opts.joined ? `You are in ${roomName(room)}.` : `You are already in ${roomName(room)}.`]
   const openText = buttonText(`Open ${tidy(room.name, NAME_MAX) || room.slug}`)
   const entry = tgEntryUrl(ctx.site, joinPayload(room.slug))
   // Telegram refuses a web_app button that is not https (a local origin): fall back to a plain link there.
@@ -155,7 +176,7 @@ export function noSuchRoomMessage(slug: string): TgMessage {
 }
 
 export function joinPromptMessage(ctx: LinkCtx, room: RoomRef): TgMessage {
-  return { text: fit([`Join <b>${roomName(room)}</b> on Pantessa.`, 'One tap. No wallet, no form.']), buttons: [[joinButton(ctx, room)]] }
+  return { text: fit([`Join ${roomName(room)} on Pantessa.`, 'One tap. No wallet, no form.']), buttons: [[joinButton(ctx, room)]] }
 }
 
 export function startMessage(ctx: LinkCtx): TgMessage {
@@ -222,8 +243,9 @@ export function chartMessage(ctx: LinkCtx, market: { symbol: string; label: stri
 }
 
 export function unknownSymbolMessage(raw: string): TgMessage {
-  const asked = t(raw.replace(/\s+/g, ' ').split(' ')[0] ?? '', 16)
-  return say(asked ? `I do not have a chart for ${asked}. Try a ticker like ETH, HYPE or AAPL.` : 'Send /chart with a ticker, like /chart ETH.')
+  // T3: never echo what was typed (it could be a link in the bot's voice).
+  const asked = typeof raw === 'string' && raw.trim().length > 0
+  return say(asked ? 'I do not have a chart for that. Try a ticker like ETH, HYPE or AAPL.' : 'Send /chart with a ticker, like /chart ETH.')
 }
 
 const POST_ID_RE = /^[A-Za-z0-9_-]{6,40}$/
@@ -238,32 +260,32 @@ export function callsMessage(ctx: LinkCtx, room: RoomRef, posts: readonly CallRo
     .slice(0, 3)
     .map((p) => ({ p, url: postUrl(ctx.site, p.id) }))
     .filter((r): r is { p: CallRow; url: string } => !!r.url)
-  if (!rows.length) return { text: fit([`No calls in <b>${roomName(room)}</b> yet.`, 'Post the first one from any chart.']), buttons: [[joinButton(ctx, room)]] }
+  if (!rows.length) return { text: fit([`No calls in ${roomName(room)} yet.`, 'Post the first one from any chart.']), buttons: [[joinButton(ctx, room)]] }
   const lines = rows.map(({ p, url }, i) => {
     const sym = t(p.symbol, 12)
-    return `${i + 1}. <a href="${escapeHtml(url)}">${t(p.title, TITLE_MAX) || 'Untitled'}</a>${sym ? ` · ${sym}` : ''} · ${t(p.authorLabel, LABEL_MAX)}`
+    return `${i + 1}. <a href="${escapeHtml(url)}">${t(p.title, TITLE_MAX) || 'Untitled'}</a>${sym ? ` · ${sym}` : ''} · ${labelText(p.authorLabel)}`
   })
-  return { text: fit([`<b>Newest calls in ${roomName(room)}</b>`, ...lines]), buttons: [[joinButton(ctx, room)]] }
+  return { text: fit([`<b>Newest calls in</b> ${roomName(room)}`, ...lines]), buttons: [[joinButton(ctx, room)]] }
 }
 
 /** `/top`: who brought members and who traded with proof. Zero rows are not ranked. */
 export function topMessage(ctx: LinkCtx, room: RoomRef, byInvites: readonly PublicMember[], byTrades: readonly PublicMember[]): TgMessage {
   const inv = byInvites.filter((m) => m.invited > 0).slice(0, 5)
   const trd = byTrades.filter((m) => m.verifiedTrades > 0).slice(0, 5)
-  const lines = [`<b>${roomName(room)} board</b>`]
+  const lines = [`${roomName(room)} <b>board</b>`]
   if (!inv.length && !trd.length) lines.push('Nobody has brought a member or traded with proof yet.', 'Send /invite for your own link.')
-  if (inv.length) lines.push('Brought the most members', ...inv.map((m, i) => `${i + 1}. ${t(m.label, LABEL_MAX)} · ${Math.trunc(m.invited)}`))
-  if (trd.length) lines.push('Traded with proof', ...trd.map((m, i) => `${i + 1}. ${t(m.label, LABEL_MAX)} · ${Math.trunc(m.verifiedTrades)} verified`))
+  if (inv.length) lines.push('Brought the most members', ...inv.map((m, i) => `${i + 1}. ${labelText(m.label)} · ${Math.trunc(m.invited)}`))
+  if (trd.length) lines.push('Verified receipts', ...trd.map((m, i) => `${i + 1}. ${labelText(m.label)} · ${Math.trunc(m.verifiedTrades)} verified`))
   return { text: fit(lines), buttons: [[joinButton(ctx, room)]] }
 }
 
 /** `/invite`, answered in the group so the share is seen. The button joins
  *  AND credits the sender. */
 export function inviteMessage(ctx: LinkCtx, room: RoomRef, who: { name: string | null }, code: string): TgMessage {
-  const name = t(who.name, LABEL_MAX)
+  const name = who.name ? nameText(who.name) : ''
   return {
     text: fit([
-      name ? `<b>${name}</b> is inviting you to <b>${roomName(room)}</b>.` : `An invite to <b>${roomName(room)}</b>.`,
+      name ? `<b>${name}</b> is inviting you to ${roomName(room)}.` : `An invite to ${roomName(room)}.`,
       'One tap and you are in. No wallet, no form.',
       `Outside Telegram: <code>${escapeHtml(roomInviteUrl(ctx.site, room.slug, code))}</code>`,
     ]),
@@ -279,14 +301,11 @@ const KIND_WORDS: Record<FeedPost['kind'], string> = { idea: 'Chart idea', video
 
 const isVerified = (proof: TradeProof | null | undefined): proof is TradeProof => !!proof && proof.verification === 'verified'
 
-/** A verified fill in plain words, from the receipt row only ("Buy ETH · $25"). */
+/** A verified proof in the two-part wording (S1/S9): what the chain
+ *  confirmed, then the author's own tag. */
 export function proofLine(proof: TradeProof): string {
-  const first = proof.symbols.find((s) => typeof s === 'string') ?? ''
-  const [tag, sym] = first.includes(':') ? first.split(':') : ['', first]
-  const side = proof.side ?? (['buy', 'sell', 'long', 'short'].includes(tag) ? tag : '')
-  const words = [side ? side[0].toUpperCase() + side.slice(1) : '', tidy(sym, 12).toUpperCase()].filter(Boolean).join(' ')
-  const size = proof.sizeUsd !== null && Number.isFinite(proof.sizeUsd) && proof.sizeUsd > 0 ? `$${fmtPrice(proof.sizeUsd).replace(/\.00$/, '')}` : ''
-  return [words, size].filter(Boolean).join(' · ')
+  const tag = proofTagLine(proof)
+  return [proofFactLine(proof), tag].filter(Boolean).join('. ')
 }
 
 type AnnouncedPost = Pick<FeedPost, 'id' | 'kind' | 'title' | 'symbol' | 'authorLabel' | 'linkSlug' | 'proof'>
@@ -299,16 +318,24 @@ export function announcementMessage(ctx: LinkCtx, room: RoomRef, post: Announced
   const open = postUrl(ctx.site, post.id)
   if (!open) return null
   const verified = post.kind === 'trade' && isVerified(post.proof)
-  const kind = `${KIND_WORDS[post.kind] ?? 'Post'}${verified ? ', verified on-chain' : ''}`
   const sym = t(post.symbol, 12)
-  const lines = [`<b>${escapeHtml(kind)}</b>${sym ? ` · ${sym}` : ''}`, t(post.title, TITLE_MAX)]
-  if (verified && post.proof) {
-    const fill = proofLine(post.proof)
-    if (fill) lines.push(escapeHtml(fill))
+  const typed = codeText(post.title, TITLE_MAX)
+  const lines: string[] = []
+  if (post.kind === 'trade') {
+    // S9 / T4: the FIRST line is what the chain confirmed; the market is the
+    // author's tag; the typed title follows as the author's words.
+    lines.push(`<b>${escapeHtml(verified && post.proof ? proofFactLine(post.proof) : NO_PROOF_HEADLINE)}</b>`)
+    const tag = verified && post.proof ? proofTagLine(post.proof) : null
+    if (tag) lines.push(escapeHtml(tag))
+    if (typed) lines.push(`The author says: ${typed}`)
+  } else {
+    lines.push(`<b>${escapeHtml(KIND_WORDS[post.kind] ?? 'Post')}</b>${sym ? ` · ${sym}` : ''}`)
+    if (typed) lines.push(typed)
   }
-  lines.push(`${t(post.authorLabel, LABEL_MAX) || 'A member'} in ${roomName(room)}`)
+  lines.push(`${labelText(post.authorLabel) || 'A member'} in ${roomName(room)}`)
   const first: TgButton[] = [{ text: 'Open', url: open }]
   if (post.linkSlug && LINK_SLUG_RE.test(post.linkSlug)) first.push({ text: 'Trade this', url: `${ctx.site}/i/${post.linkSlug}` })
+  if (verified && post.proof && proofLinkIsRebuilt(post.proof)) first.push({ text: 'The transaction', url: post.proof.txUrl })
   return { text: fit(lines), buttons: [first, [joinButton(ctx, room)]] }
 }
 

@@ -328,6 +328,7 @@ export function RoomMain() {
         </p>
       )}
 
+      <ProviderLine onSignedOut={refresh} />
       <header className="grp-head">
         <div className="grp-head__id">
           <div className="grp-eyebrow">Room</div>
@@ -427,5 +428,39 @@ export function RoomSide() {
         {plural(room.members, 'member')}. A member is a signed-in wallet, or a Telegram or Discord account the platform itself vouched for.
       </p>
     </div>
+  )
+}
+
+/** QA-SECURITY-2 T6: a wallet-less identity (Telegram / Discord, no wallet
+ *  session) is named in one plain line with a way out. Sign out clears the
+ *  provider cookie through POST /api/auth/logout, then re-reads identity. */
+function ProviderLine({ onSignedOut }: { onSignedOut: () => void }) {
+  const { status, address } = useSession()
+  const identity = useRoomStore((s) => s.identity)
+  const loadIdentity = useRoomStore((s) => s.loadIdentity)
+  const [busy, setBusy] = useState(false)
+  const sessionAddress = status === 'authed' && address ? address : ''
+  const provider = identity?.provider ?? null
+  if (sessionAddress || !provider) return null
+  const where = provider.p === 'tg' ? 'Telegram' : 'Discord'
+  const name = provider.name || (provider.username ? provider.username : null)
+  const signOut = async () => {
+    setBusy(true)
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => null)
+      await loadIdentity('', true)
+      onSignedOut()
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <p className="grp-ident" data-provider-line={provider.p}>
+      Signed in with {where}
+      {name ? <> as <strong>{name}</strong></> : null} ·{' '}
+      <button type="button" className="grp-ident__out" onClick={() => void signOut()} disabled={busy}>
+        Sign out
+      </button>
+    </p>
   )
 }

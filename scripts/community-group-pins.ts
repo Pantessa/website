@@ -51,6 +51,19 @@ const eq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /** Pure pins: no server, no network, no DB. */
 export function communityGroupPins(check: Check): void {
+  {
+    const room = readFileSync(join(process.cwd(), 'components/community/group/Room.tsx'), 'utf8')
+    const chan = readFileSync(join(process.cwd(), 'components/community/group/ChannelsPanel.tsx'), 'utf8')
+    check(
+      'T6 room: a wallet-less identity reads "Signed in with Telegram as <name> · Sign out"; Sign out POSTs /api/auth/logout (JSON) and re-reads identity',
+      /<ProviderLine onSignedOut=\{refresh\} \/>/.test(room) && /if \(sessionAddress \|\| !provider\) return null/.test(room) && /Signed in with \{where\}/.test(room) &&
+        /fetch\('\/api\/auth\/logout', \{ method: 'POST', headers: \{ 'content-type': 'application\/json' \}, body: '\{\}' \}\)/.test(room) && /await loadIdentity\('', true\)/.test(room),
+    )
+    check(
+      "S10 room: the owner's announce switch (owner and mods / every member) reads me.announceFrom and PATCHes the room as JSON",
+      /me\?\.role === 'owner' && me\.announceFrom && <AnnounceSwitch/.test(chan) && /method: 'PATCH', headers: \{ 'content-type': 'application\/json' \}, body: JSON\.stringify\(\{ announceFrom: next \}\)/.test(chan) && /owner and mods/.test(chan) && /every member/.test(chan),
+    )
+  }
   // ── the slug a name suggests ────────────────────────────────────────────
   const slugCases: [string, string][] = [
     ['ETH Swing Traders', 'eth-swing-traders'],

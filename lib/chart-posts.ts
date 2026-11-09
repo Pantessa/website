@@ -57,6 +57,10 @@ export const COMMENT_IP_HOURLY_CAP = 200
 
 const POST_ID_RE = /^[a-z0-9]{6,16}$/
 const CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g
+/** QA-SECURITY S5: C1 controls, soft hyphen, bidi overrides / isolates / marks
+ *  and zero-width characters — invisible in a title, a room name, an about
+ *  text or a comment, and the tools of a lookalike name. */
+export const INVISIBLE_RE = /[\u0080-\u009f\u00ad\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g
 
 // ── pure helpers (harness-pinned) ────────────────────────────────────────────
 
@@ -68,6 +72,7 @@ export function cleanText(raw: unknown, max: number): string {
   return raw
     .replace(/\r\n?/g, '\n')
     .replace(CONTROL_RE, '')
+    .replace(INVISIBLE_RE, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
@@ -362,7 +367,11 @@ async function decorate(rows: Row[]): Promise<PublicPost[]> {
     handlesFor(rows.map((r) => r.author)),
     executedBySlug(rows.map((r) => r.linkSlug).filter((s): s is string => !!s)),
     rows.length
-      ? prisma.chartPostComment.groupBy({ by: ['postId'], where: { postId: { in: rows.map((r) => r.id) }, isInternal: false }, _count: { _all: true } }).catch(() => [])
+      ? // An internal post counts its own (internal) replies, exactly as
+        // readComments shows them; a public post never counts internal ones.
+        prisma.chartPostComment
+          .groupBy({ by: ['postId'], where: { postId: { in: rows.map((r) => r.id) }, OR: [{ isInternal: false }, { postId: { in: rows.filter((r) => r.isInternal).map((r) => r.id) } }] }, _count: { _all: true } })
+          .catch(() => [])
       : Promise.resolve([] as { postId: string; _count: { _all: number } }[]),
   ])
   const comments = new Map(commentCounts.map((c) => [c.postId, c._count._all]))

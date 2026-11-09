@@ -10,7 +10,7 @@
 //   · a secret (a Discord webhook URL) never leaves this module's write path
 //   · join is idempotent; member_count moves only on a real insert/delete
 
-import { randomBytes } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { authorLabel, decoratePosts, handlesFor, type PostRow } from '@/lib/chart-posts'
@@ -19,6 +19,7 @@ import { mintSlug } from '@/lib/intent-links'
 import { absoluteUrl } from '@/lib/site-url'
 import { hourStartUTC } from '@/lib/turn-limits'
 import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
+import { chainNameFor, explorerTxFor } from './proof-words'
 import {
   ANNOUNCE_HOURLY_CAP,
   COMMUNITY_SLUG_RE,
@@ -33,6 +34,7 @@ import {
   walletKey,
   walletOfKey,
   type Actor,
+  type AnnounceFrom,
   type ChannelPlatform,
   type CommunityRole,
   type FeedKind,
@@ -60,6 +62,7 @@ import {
   decodeCursor,
   encodeCursor,
   higherRole,
+  labelWithSource,
   memberLabel,
 } from './rules'
 
@@ -172,6 +175,8 @@ export interface CommunityPatch {
   name?: unknown
   about?: unknown
   symbols?: unknown
+  /** S10: 'mods' | 'members' — whose posts reach the linked chats. */
+  announceFrom?: unknown
 }
 
 /** Owner only. Fields not sent are left alone. */
@@ -196,6 +201,10 @@ export async function updateCommunity(slug: string, by: MemberKey, patch: Commun
     if (!v.ok) return refuse(400, v.reason)
     data.symbols = v.value
   }
+  if (patch.announceFrom !== undefined) {
+    if (patch.announceFrom !== 'mods' && patch.announceFrom !== 'members') return refuse(400, "announceFrom must be 'mods' or 'members'.")
+    data.announceFrom = patch.announceFrom
+  }
   if (Object.keys(data).length) await prisma.community.update({ where: { slug: s }, data })
   const community = await getCommunity(s)
   return community ? { ok: true, community } : refuse(404, 'No such room.')
@@ -208,6 +217,8 @@ export interface JoinInput {
   /** Provider-reported name for a wallet-less member (rendered as text). */
   displayName?: string | null
   isInternal?: boolean
+  /** S4: asked only when this join WOULD credit an inviter; false withholds the credit (the seat is still made). */
+  creditAllowed?: () => Promise<boolean>
 }
 
 /** A seat moves the room's count when it is a real person in a real room, or
@@ -229,6 +240,7 @@ export async function joinCommunity(slug: string, actor: Actor, input: JoinInput
     if (INVITE_CODE_RE.test(code)) {
       const inv = await prisma.communityInvite.findUnique({ where: { code } }).catch(() => null)
       if (inv && inv.communitySlug === s && inv.inviterKey !== actor.key) via = code
+      if (via && input.creditAllowed && !(await input.creditAllowed().catch(() => true))) via = null
     }
     const memberInternal = input.isInternal === true
     const display = actor.wallet ? null : (input.displayName ?? actor.provider?.name ?? actor.provider?.username ?? null)
@@ -323,7 +335,7 @@ export async function communitiesOf(key: MemberKey): Promise<PublicCommunity[]> 
 const TRADES_WINDOW_MS = 30 * 86_400_000
 const MEMBERS_SCAN = 1000
 
-export async function listMembers(slug: string, opts: { sort?: 'invites' | 'trades' | 'new'; limit?: number } = {}): Promise<PublicMember[]> {
+export async function listMembers(slug: string, opts: { sort?: 'invites' | 'trades' | 'new'; limit?: number; refs?: boolean } = {}): Promise<PublicMember[]> {
   const s = normSlug(slug)
   const room = COMMUNITY_SLUG_RE.test(s) ? await prisma.community.findUnique({ where: { slug: s }, select: { isInternal: true } }) : null
   if (!room) return []
@@ -361,6 +373,7 @@ export async function listMembers(slug: string, opts: { sort?: 'invites' | 'trad
       invited: code ? usesOf.get(code) ?? 0 : 0,
       verifiedTrades: wallet ? tradesOf.get(wallet) ?? 0 : 0,
       joinedAt: Math.floor(m.createdAt.getTime() / 1000),
+      ...(opts.refs ? { ref: memberRef(s, m.memberKey) } : {}),
     }
   })
   if (sort === 'invites') out.sort((a, b) => b.invited - a.invited || b.verifiedTrades - a.verifiedTrades || a.joinedAt - b.joinedAt)
@@ -381,10 +394,12 @@ export async function inviterLabel(slug: string, code: unknown): Promise<string 
   if (!seat) return null
   const wallet = seat.wallet ?? walletOfKey(seat.memberKey)
   const handles = wallet ? await handlesFor([wallet]) : new Map<string, string>()
-  return memberLabel({ wallet, handle: wallet ? handles.get(wallet) : null, displayName: seat.displayName, source: seat.source })
+  const label = memberLabel({ wallet, handle: wallet ? handles.get(wallet) : null, displayName: seat.displayName, source: seat.source })
+  return labelWithSource(label, { wallet, source: seat.source })
 }
 
-/** When a provider identity is linked to a wallet, its seats move to the wallet key (one seat per person). */
+/** NOT REACHABLE — see QA-SECURITY-2 T7 (its only caller, the link route, was removed).
+ *  When a provider identity is linked to a wallet, its seats move to the wallet key (one seat per person). */
 export async function mergeSeats(from: MemberKey, toWallet: string): Promise<number> {
   const w = toWallet.toLowerCase()
   const to = walletKey(w)
@@ -428,6 +443,7 @@ export async function mergeSeats(from: MemberKey, toWallet: string): Promise<num
   const votes = await prisma.postVote.findMany({ where: { voterKey: from } })
   for (const v of votes) {
     await prisma.$transaction(async (tx) => {
+      await lockPostRow(tx, v.postId)
       const dup = await tx.postVote.findUnique({ where: { postId_voterKey: { postId: v.postId, voterKey: to } } })
       if (dup) await tx.postVote.delete({ where: { postId_voterKey: { postId: v.postId, voterKey: from } } })
       else await tx.postVote.update({ where: { postId_voterKey: { postId: v.postId, voterKey: from } }, data: { voterKey: to } })
@@ -456,19 +472,28 @@ export interface FeedQuery {
 
 const FEED_KINDS: FeedKind[] = ['idea', 'link', 'video', 'trade']
 
-/** Only a proof the server wrote parses back; anything else reads as none. */
-function storedProof(raw: unknown): TradeProof | null {
+/** Only a proof the server wrote parses back; anything else reads as none.
+ *  S2: the link must be exactly the registry's rebuild of the proof's own
+ *  chain + hash, and the chain name is re-read from the registry. A proof in
+ *  the pre-SECFIX shape (no chainId / txHash) reads as none. */
+export function storedProof(raw: unknown): TradeProof | null {
   if (!raw || typeof raw !== 'object') return null
   const p = raw as Record<string, unknown>
   if (p.verification !== 'verified' || typeof p.turnId !== 'string' || typeof p.signedAt !== 'number' || !Array.isArray(p.symbols)) return null
+  if (typeof p.chainId !== 'number' || typeof p.txHash !== 'string' || typeof p.txUrl !== 'string') return null
+  const rebuilt = explorerTxFor(p.chainId, p.txHash)
+  const chain = chainNameFor(p.chainId)
+  if (!rebuilt || !chain || p.txUrl !== rebuilt) return null
   const side = p.side === 'buy' || p.side === 'sell' || p.side === 'long' || p.side === 'short' ? p.side : null
   return {
     turnId: p.turnId,
+    chainId: p.chainId,
+    txHash: p.txHash.toLowerCase(),
     symbols: p.symbols.filter((x): x is string => typeof x === 'string').slice(0, 8),
     side,
-    sizeUsd: typeof p.sizeUsd === 'number' && Number.isFinite(p.sizeUsd) ? p.sizeUsd : null,
-    chain: typeof p.chain === 'string' ? p.chain : null,
-    txUrl: typeof p.txUrl === 'string' && p.txUrl.startsWith('https://') ? p.txUrl : null,
+    sizeUsd: typeof p.sizeUsd === 'number' && Number.isFinite(p.sizeUsd) && p.sizeUsd > 0 ? p.sizeUsd : null,
+    chain,
+    txUrl: rebuilt,
     signedAt: p.signedAt,
     verification: 'verified',
   }
@@ -579,7 +604,16 @@ export async function getFeedPost(id: string, viewer?: MemberKey | null): Promis
   return post ?? null
 }
 
-/** score = the sum of the post's votes, recomputed inside the vote's transaction (self-healing under races). */
+/** S3: the FIRST statement of every transaction that writes a post's votes.
+ *  Under READ COMMITTED a statement's snapshot predates its wait for a row
+ *  lock, so without this two overlapping votes each summed without the other
+ *  and the last writer won (25 votes left score 1). Holding the post row
+ *  first serializes them: each later statement sees every earlier commit. */
+export async function lockPostRow(tx: Prisma.TransactionClient, postId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM chart_posts WHERE id = ${postId} FOR UPDATE`
+}
+
+/** score = the sum of the post's votes, recomputed inside the vote's transaction (after lockPostRow). */
 async function recomputeScore(tx: Prisma.TransactionClient, postId: string): Promise<number> {
   const rows = await tx.$queryRaw<{ score: number }[]>`
     UPDATE chart_posts SET score = COALESCE((SELECT SUM(value) FROM post_votes WHERE post_id = ${postId}), 0)::int
@@ -598,6 +632,7 @@ export async function castVote(postId: string, voter: MemberKey, value: 1 | 0 | 
   const post = await prisma.chartPost.findUnique({ where: { id: postId }, select: { id: true, isInternal: true } })
   if (!post || (post.isInternal && !opts.isInternal)) return refuse(404, 'No such post.')
   const score = await prisma.$transaction(async (tx) => {
+    await lockPostRow(tx, postId)
     if (value === 0) await tx.postVote.deleteMany({ where: { postId, voterKey: voter } })
     else
       await tx.postVote.upsert({
@@ -618,12 +653,33 @@ export async function mintLinkCode(slug: string, by: MemberKey, platform: Channe
   if (platform !== 'telegram' && platform !== 'discord') return refuse(400, 'platform must be telegram or discord.')
   if (!(await prisma.community.findUnique({ where: { slug: COMMUNITY_SLUG_RE.test(s) ? s : '-' }, select: { slug: true } }))) return refuse(404, 'No such room.')
   if (!canManage(await roleOf(s, by))) return refuse(403, 'Only the owner or a mod can link a chat.')
+  // S8: expired codes go when a new one is minted (a spent code is deleted on use).
+  await prisma.channelLinkCode.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - LINK_CODE_TTL_MS) } } }).catch(() => null)
   const code = randomBytes(8).toString('hex')
   const row = await prisma.channelLinkCode.create({ data: { code, communitySlug: s, platform, createdBy: by } })
   return { ok: true, code, expiresAt: row.createdAt.getTime() + LINK_CODE_TTL_MS }
 }
 
 const cleanTitle = (t: string | null | undefined) => (typeof t === 'string' ? t.replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 128) || null : null)
+
+/** S8: at most this many linked chats a room (each one hears every announced post). */
+export const ROOM_CHANNELS_MAX = 5
+const TOO_MANY_CHANNELS = `A room can link at most ${ROOM_CHANNELS_MAX} chats. Unlink one first.`
+
+/** true = linking this chat would be the room's sixth (re-linking one it already has is fine). */
+async function channelCapReached(slug: string, platform: ChannelPlatform, externalId: string): Promise<boolean> {
+  const rows = await prisma.communityChannel.findMany({ where: { communitySlug: slug }, select: { platform: true, externalId: true } })
+  if (rows.some((r) => r.platform === platform && r.externalId === externalId)) return false
+  return rows.length >= ROOM_CHANNELS_MAX
+}
+
+/** T2: the refusal when this chat is already linked to a DIFFERENT room (null = free, or the same room).
+ *  Names the room by its slug only ([a-z0-9-]: nothing a chat client would link). */
+async function linkedElsewhere(slug: string, platform: ChannelPlatform, externalId: string): Promise<string | null> {
+  const row = await prisma.communityChannel.findUnique({ where: { platform_externalId: { platform, externalId } }, select: { communitySlug: true } })
+  if (!row || row.communitySlug === slug) return null
+  return `This chat is already linked to the room "${row.communitySlug}". Unlink it on that room's page, or remove the bot and add it again.`
+}
 
 async function upsertChannel(slug: string, platform: ChannelPlatform, linkedBy: string, chat: { externalId: string; title?: string | null; secret?: string | null }) {
   const externalId = String(chat.externalId).slice(0, 128)
@@ -641,12 +697,19 @@ export async function redeemLinkCode(code: string, platform: ChannelPlatform, ch
   if (!chat || !String(chat.externalId ?? '')) return refuse(400, 'No chat to link.')
   const row = await prisma.channelLinkCode.findUnique({ where: { code: c } })
   if (!row || row.platform !== platform) return refuse(404, 'That link code is not known. Mint a new one on the room page.')
+  if (Date.now() - row.createdAt.getTime() > LINK_CODE_TTL_MS) {
+    await prisma.channelLinkCode.deleteMany({ where: { code: c } }).catch(() => null)
+    return refuse(410, 'That link code expired. Mint a new one on the room page.')
+  }
+  // T2: a chat linked to ANOTHER room is never re-pointed (the code is not spent).
+  const elsewhere = await linkedElsewhere(row.communitySlug, platform, String(chat.externalId).slice(0, 128))
+  if (elsewhere) return refuse(409, elsewhere)
   // Single use: whoever deletes the row spends it.
   const spent = await prisma.channelLinkCode.deleteMany({ where: { code: c } })
   if (!spent.count) return refuse(404, 'That link code was already used.')
-  if (Date.now() - row.createdAt.getTime() > LINK_CODE_TTL_MS) return refuse(410, 'That link code expired. Mint a new one on the room page.')
   const community = await getCommunity(row.communitySlug)
   if (!community) return refuse(404, 'That room no longer exists.')
+  if (await channelCapReached(row.communitySlug, platform, String(chat.externalId).slice(0, 128))) return refuse(409, TOO_MANY_CHANNELS)
   await upsertChannel(row.communitySlug, platform, row.createdBy, chat)
   return { ok: true, community: (await getCommunity(row.communitySlug)) ?? community }
 }
@@ -658,6 +721,9 @@ export async function linkChannel(slug: string, by: MemberKey, platform: Channel
   if (!(await prisma.community.findUnique({ where: { slug: COMMUNITY_SLUG_RE.test(s) ? s : '-' }, select: { slug: true } }))) return refuse(404, 'No such room.')
   if (!canManage(await roleOf(s, by))) return refuse(403, 'Only the owner or a mod can link a chat.')
   if (!chat || !String(chat.externalId ?? '')) return refuse(400, 'No chat to link.')
+  const elsewhere = await linkedElsewhere(s, platform, String(chat.externalId).slice(0, 128))
+  if (elsewhere) return refuse(409, elsewhere)
+  if (await channelCapReached(s, platform, String(chat.externalId).slice(0, 128))) return refuse(409, TOO_MANY_CHANNELS)
   await upsertChannel(s, platform, by, chat)
   return { ok: true }
 }
@@ -711,4 +777,71 @@ export async function channelsToAnnounce(slug: string): Promise<DeliveryChannel[
   const out = rows.filter((r) => (counts.get(`ch:${r.id}`) ?? 1) <= ANNOUNCE_HOURLY_CAP)
   if (out.length) await prisma.communityChannel.updateMany({ where: { id: { in: out.map((r) => r.id) } }, data: { lastPostAt: new Date() } }).catch(() => null)
   return out.map((r) => ({ id: r.id, platform: r.platform === 'discord' ? 'discord' : 'telegram', externalId: r.externalId, secret: r.secret }))
+}
+
+// ── S10: the owner's brakes ────────────────────────────────────────────────
+
+/** Whose posts this room announces (S10). null = no such room. */
+export async function roomAnnounceFrom(slug: string): Promise<AnnounceFrom | null> {
+  const s = normSlug(slug)
+  if (!COMMUNITY_SLUG_RE.test(s)) return null
+  const row = await prisma.community.findUnique({ where: { slug: s }, select: { announceFrom: true } })
+  return row ? (row.announceFrom === 'members' ? 'members' : 'mods') : null
+}
+
+/** Pure: does this post go to the room's linked chats? Members' posts only when the owner widened it. */
+export function shouldAnnounce(announceFrom: AnnounceFrom | null, authorRole: CommunityRole | null): boolean {
+  if (!authorRole) return false
+  return announceFrom === 'members' || canManage(authorRole)
+}
+
+/** An opaque, room-scoped handle for a seat: never the key itself. */
+export function memberRef(slug: string, key: string): string {
+  const secret = process.env.SESSION_SECRET
+  if (!secret || secret.length < 16) throw new Error('SESSION_SECRET must be set (≥16 chars).')
+  return createHmac('sha256', secret).update(`community-member:${slug}:${key}`).digest('base64url').slice(0, 22)
+}
+
+const sameRef = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
+
+/** Owner / mod removes a seat named by its ref. The owner's seat never goes;
+ *  a mod removes members only. */
+export async function removeMember(slug: string, by: MemberKey, ref: unknown): Promise<{ ok: true; removed: boolean } | StoreRefusal> {
+  const s = normSlug(slug)
+  const room = COMMUNITY_SLUG_RE.test(s) ? await prisma.community.findUnique({ where: { slug: s }, select: { isInternal: true } }) : null
+  if (!room) return refuse(404, 'No such room.')
+  const myRole = await roleOf(s, by)
+  if (!canManage(myRole)) return refuse(403, 'Only the owner or a mod can remove a member.')
+  if (typeof ref !== 'string' || !/^[A-Za-z0-9_-]{22}$/.test(ref)) return refuse(400, 'ref is required (from the members list).')
+  const seats = await prisma.communityMember.findMany({ where: { communitySlug: s }, select: { id: true, memberKey: true, role: true, isInternal: true }, take: 5000 })
+  const seat = seats.find((m) => sameRef(memberRef(s, m.memberKey), ref))
+  if (!seat) return refuse(404, 'That member is not in this room.')
+  if (seat.role === 'owner') return refuse(403, 'The owner cannot be removed.')
+  if (seat.memberKey === by) return refuse(409, 'Leave the room instead.')
+  if (myRole === 'mod' && seat.role !== 'member') return refuse(403, 'A mod can remove members only.')
+  const removed = await prisma.$transaction(async (tx) => {
+    const del = await tx.communityMember.deleteMany({ where: { id: seat.id } })
+    if (del.count && counts(seat.isInternal, room.isInternal)) await tx.community.update({ where: { slug: s }, data: { memberCount: { decrement: 1 } } })
+    return del.count > 0
+  })
+  return { ok: true, removed }
+}
+
+/** The post's author, or an owner / mod of the room it sits in, deletes it:
+ *  the post, its votes and its comments in one transaction. */
+export async function deletePost(id: string, by: string, opts: { isInternal?: boolean } = {}): Promise<{ ok: true } | StoreRefusal> {
+  if (typeof id !== 'string' || !/^[a-z0-9]{6,16}$/.test(id) || !/^0x[a-fA-F0-9]{40}$/.test(by)) return refuse(404, 'No such post.')
+  const post = await prisma.chartPost.findUnique({ where: { id }, select: { id: true, author: true, communitySlug: true, isInternal: true } })
+  if (!post || (post.isInternal && !opts.isInternal)) return refuse(404, 'No such post.')
+  const w = by.toLowerCase()
+  const mine = post.author === w
+  const manager = !mine && post.communitySlug ? canManage(await roleOf(post.communitySlug, walletKey(w))) : false
+  if (!mine && !manager) return refuse(403, 'Only the author or the room owner or a mod can remove this post.')
+  await prisma.$transaction(async (tx) => {
+    await lockPostRow(tx, id)
+    await tx.postVote.deleteMany({ where: { postId: id } })
+    await tx.chartPostComment.deleteMany({ where: { postId: id } })
+    await tx.chartPost.deleteMany({ where: { id } })
+  })
+  return { ok: true }
 }

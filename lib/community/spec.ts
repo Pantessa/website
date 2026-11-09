@@ -85,12 +85,21 @@ export interface PublicMember {
   /** Receipt-verified fills by this member's wallet in the window (0 for a wallet-less member). */
   verifiedTrades: number
   joinedAt: number
+  /** S10: an opaque handle for this seat (an HMAC of the member key under
+   *  SESSION_SECRET, scoped to the room), present ONLY on an owner / mod's
+   *  `?manage=1` read — what `POST …/members/remove { ref }` takes. Never a key. */
+  ref?: string
 }
+
+/** Whose posts a room announces to its linked chats (S10). */
+export type AnnounceFrom = 'mods' | 'members'
 
 export interface MyMembership {
   key: MemberKey
   role: CommunityRole
   invite: { code: string; url: string; uses: number }
+  /** Present ONLY for the owner (the setting they may change). */
+  announceFrom?: AnnounceFrom
 }
 
 export const communityPath = (slug: string) => `/g/${slug}`
@@ -106,17 +115,29 @@ export type FeedWindow = 'day' | 'week' | 'all'
 export const FEED_SORTS: FeedSort[] = ['hot', 'new', 'top']
 export const FEED_PAGE = 25
 
-/** A fill the SERVER re-derived from the author's own verified receipt row.
- *  Nothing here is typed by the poster. `sizeUsd` is null when the author
- *  chose to hide the size (the proof still stands: the tx is public). */
+/** A fill the SERVER re-derived from the author's own verified receipt row
+ *  AND read back from the chain at post time (QA-SECURITY S1, S2).
+ *  CHAIN-CONFIRMED: `chainId`, `txHash`, `chain`, `txUrl`, `sizeUsd` (the
+ *  transaction's own transfers, clamped to the recorded size). `sizeUsd` is
+ *  null when the author chose to hide the size (the proof still stands: the
+ *  tx is public). Print them with lib/community/proof-words. */
 export interface TradeProof {
   turnId: string
-  /** Side-tagged symbols as the receipt carries them, e.g. ["buy:ETH"]. */
+  /** The registry chain the transaction was read on. */
+  chainId: number
+  /** The transaction hash (0x + 64 hex, lowercase). */
+  txHash: string
+  /** NOT chain-confirmed: the author's own tag as the app recorded it at
+   *  signing, e.g. ["buy:ETH"]. Print it as the author's words
+   *  ("Tagged by the author: bought ETH"), never under the verified mark. */
   symbols: string[]
+  /** NOT chain-confirmed: read from the author's tag (see `symbols`). */
   side: 'buy' | 'sell' | 'long' | 'short' | null
   sizeUsd: number | null
-  chain: string | null
-  txUrl: string | null
+  /** The registry's name for `chainId` (never the beacon's label). */
+  chain: string
+  /** REBUILT from the registry's explorer + `txHash`; never a stored string. */
+  txUrl: string
   /** When the fill was signed (unix ms) — the receipt row's own clock. */
   signedAt: number
   /** Always literal: the chain confirmed the tx, its sender and its target. */

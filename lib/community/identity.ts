@@ -134,6 +134,11 @@ export async function getActor(): Promise<Actor | null> {
 }
 
 /**
+ * NOT REACHABLE — see QA-SECURITY-2 T7. The route that called this
+ * (`POST /api/me/identity/link`) was removed: a 30-day provider cookie is no
+ * proof that the person at the wallet owns the Telegram account. Kept for the
+ * day linking is designed with a fresh proof made FOR the wallet session.
+ *
  * Bind a provider identity to a wallet. Only ever called with BOTH proofs in
  * hand in one request (the SIWE session and the verified identity cookie).
  * First writer wins: an identity already linked to another wallet is left

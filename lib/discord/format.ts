@@ -7,8 +7,11 @@
 // Every URL we emit is built on SITE (our canonical origin) from ids, never
 // from a poster's string.
 
-import type { FeedPost, PublicCommunity } from '@/lib/community/spec'
+import type { FeedPost, PublicCommunity, TradeProof } from '@/lib/community/spec'
 import { communityPath } from '@/lib/community/spec'
+import { proofFactLine, proofLinkIsRebuilt, proofTagLine } from '@/lib/community/proof-words'
+
+const isVerifiedProof = (p: TradeProof | null | undefined): p is TradeProof => !!p && p.verification === 'verified'
 
 /** The brand's emerald (--accent / --gem-5 in app/x402-design.css: #3ECF8E). */
 export const DISCORD_EMBED_COLOR = 0x3ecf8e
@@ -49,7 +52,7 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/
 const SAFE_SYMBOL = /^[A-Za-z0-9:._-]{1,24}$/
 
 export function kindLine(post: Pick<FeedPost, 'kind' | 'proof'>): string {
-  if (post.kind === 'trade') return post.proof?.verification === 'verified' ? 'Trade, verified on-chain' : 'Trade'
+  if (post.kind === 'trade') return post.proof?.verification === 'verified' ? 'Trade, transaction verified on-chain' : 'Trade'
   if (post.kind === 'video') return 'Video'
   if (post.kind === 'link') return 'Link'
   return 'Chart idea'
@@ -101,12 +104,25 @@ export interface DiscordMessage {
 export function discordAnnouncement(post: FeedPost, community: PublicCommunity, site: string, opts: { buttons?: boolean } = {}): DiscordMessage {
   const links = announcementLinks(post, community, site)
   const roomName = plainDiscord(community.name, 48) || community.slug
-  const title = escapeDiscord(post.title, 256) || escapeDiscord(`New post in ${community.name}`, 256)
+  // S9: a trade's headline is what the CHAIN confirmed; the poster's typed
+  // title is their words, quoted in the body, never the headline.
+  const proof = post.kind === 'trade' && isVerifiedProof(post.proof) ? post.proof : null
+  const typed = escapeDiscord(post.title, 1000)
+  const title =
+    post.kind === 'trade'
+      ? escapeDiscord(proof ? proofFactLine(proof) : 'A trade post (no proof on record)', 256)
+      : typed.slice(0, 256) || escapeDiscord(`New post in ${community.name}`, 256)
   const meta = [kindLine(post)]
   if (post.symbol && SAFE_SYMBOL.test(post.symbol)) meta.push(escapeDiscord(post.symbol.toUpperCase(), 24))
   const by = escapeDiscord(post.authorLabel, 64)
   if (by) meta.push(`by ${by}`)
   const lines = [meta.join(' · ')]
+  if (post.kind === 'trade') {
+    const tag = proof ? proofTagLine(proof) : null
+    if (tag) lines.push(escapeDiscord(tag, 200))
+    if (typed) lines.push(`The author wrote: "${typed}"`)
+    if (proof && proofLinkIsRebuilt(proof)) lines.push(`[The transaction](${proof.txUrl})`)
+  }
   if (!opts.buttons) {
     const md: string[] = []
     if (links.open) md.push(`[Open](${links.open})`)
@@ -121,7 +137,8 @@ export function discordAnnouncement(post: FeedPost, community: PublicCommunity, 
     footer: { text: `${roomName} on Pantessa` },
   }
   if (links.open) embed.url = links.open
-  if (Number.isFinite(post.createdAt) && post.createdAt > 0) embed.timestamp = new Date(post.createdAt).toISOString()
+  // createdAt is unix SECONDS (PublicPost); Discord wants ISO-8601.
+  if (Number.isFinite(post.createdAt) && post.createdAt > 0) embed.timestamp = new Date(post.createdAt * 1000).toISOString()
   const msg: DiscordMessage = { embeds: [embed], allowed_mentions: { parse: [] } }
   if (opts.buttons) {
     const row: DiscordButton[] = []

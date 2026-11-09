@@ -19,6 +19,7 @@
 //          "verified" prints only behind feed-rules isVerified.
 // Every user string is a text node.
 
+import { tradeHeadline } from '@/lib/community/proof-words'
 import { useCallback, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { ExternalLink, MessageSquare, Play, ShieldCheck } from 'lucide-react'
@@ -73,7 +74,10 @@ export default function PostCard({ post, showCommunity = false, onAsk, full = fa
   const outLink = post.kind === 'link' ? post.linkUrl : post.kind === 'video' && post.video && !post.video.embedUrl ? post.video.url : null
   const sketch = post.kind === 'idea' && post.chartState ? post.chartState : null
 
-  let title: ReactNode = post.title
+  // T4: a trade's headline is what the chain confirmed; the typed title is the author's words under it.
+  const trade = post.kind === 'trade' ? tradeHeadline({ title: post.title, proof }) : null
+  const headText = trade ? trade.headline : post.title
+  let title: ReactNode = headText
   if (outLink) {
     title = (
       <a href={outLink} target="_blank" rel="noopener noreferrer nofollow ugc">
@@ -82,11 +86,11 @@ export default function PostCard({ post, showCommunity = false, onAsk, full = fa
       </a>
     )
   } else if (!full) {
-    title = <Link href={href}>{post.title}</Link>
+    title = <Link href={href}>{headText}</Link>
   }
 
   return (
-    <article className="cmy-card" data-post={post.id} data-kind={post.kind} data-has-sketch={sketch ? '' : undefined} aria-label={post.title}>
+    <article className="cmy-card" data-post={post.id} data-kind={post.kind} data-has-sketch={sketch ? '' : undefined} aria-label={headText}>
       <VoteButtons postId={post.id} score={typeof post.score === 'number' ? post.score : null} myVote={post.myVote ?? 0} />
 
       <div className="cmy-card__main">
@@ -109,6 +113,7 @@ export default function PostCard({ post, showCommunity = false, onAsk, full = fa
         </div>
 
         <h3 className="cmy-card__title">{title}</h3>
+        {trade?.authorWords && <p className="cmy-card__said" data-author-words="">{trade.authorWords}</p>}
 
         {/* A trade: the fact first, from the receipt the chain confirmed. */}
         {post.kind === 'trade' && proof && <TradeFact post={post} />}
@@ -161,11 +166,12 @@ function TradeFact({ post }: { post: FeedPost }) {
   const proof = post.proof!
   const fact = tradeFact(proof, post.symbol)
   return (
+    <>
     <div className="cmy-fact" data-proof="verified" data-side={proof.side ?? undefined}>
       <span className="cmy-fact__badge">
         <ShieldCheck aria-hidden /> verified on-chain
       </span>
-      <span className="cmy-fact__line">{fact.line}</span>
+      <span className="cmy-fact__line">{fact.fact}</span>
       <time className="cmy-fact__when" dateTime={new Date(proof.signedAt).toISOString()}>
         {ageLabel(Math.floor(proof.signedAt / 1000))}
       </time>
@@ -175,6 +181,9 @@ function TradeFact({ post }: { post: FeedPost }) {
         </a>
       )}
     </div>
+    {/* The market and side are the author's tag: outside the verified box, in their words. */}
+    {fact.tag && <p className="cmy-fact-tag" data-unverified="">{fact.tag}</p>}
+    </>
   )
 }
 

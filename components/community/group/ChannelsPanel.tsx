@@ -6,7 +6,8 @@
 // bot lanes own, mounted through the seam in channel-panels.tsx; until a
 // lane's panel exists its seat says so by name.
 
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import type { AnnounceFrom } from '@/lib/community/spec'
 import { MessageCircle, Send } from 'lucide-react'
 import { DiscordPanel, TelegramPanel } from './channel-panels'
 import { useRoom } from './Room'
@@ -37,8 +38,43 @@ function Seat({ id, title, linked, focused, children }: { id: 'telegram' | 'disc
   )
 }
 
+/** S10: the owner's one switch — whose posts reach the linked chats. */
+function AnnounceSwitch({ slug, value, onSaved }: { slug: string; value: AnnounceFrom; onSaved: () => void }) {
+  const [current, setCurrent] = useState<AnnounceFrom>(value)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const pick = async (next: AnnounceFrom) => {
+    if (next === current || busy) return
+    setBusy(true)
+    setErr(null)
+    try {
+      const res = await fetch(`/api/communities/${encodeURIComponent(slug)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ announceFrom: next }) })
+      const d = (await res.json().catch(() => null)) as { announceFrom?: AnnounceFrom; error?: string } | null
+      if (!res.ok) throw new Error(d?.error ?? 'Could not save that. Try again.')
+      setCurrent(d?.announceFrom === 'members' ? 'members' : 'mods')
+      onSaved()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save that. Try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <fieldset className="grp-chan__announce" data-announce-from={current} disabled={busy}>
+      <legend className="grp-chan__k">Announce posts from</legend>
+      <label>
+        <input type="radio" name={`announce-${slug}`} checked={current === 'mods'} onChange={() => void pick('mods')} /> owner and mods
+      </label>
+      <label>
+        <input type="radio" name={`announce-${slug}`} checked={current === 'members'} onChange={() => void pick('members')} /> every member
+      </label>
+      {err && <p className="grp-chan__wait" role="alert">{err}</p>}
+    </fieldset>
+  )
+}
+
 export default function ChannelsPanel() {
-  const { slug, room, canManage, focused } = useRoom()
+  const { slug, room, canManage, focused, me, refresh } = useRoom()
   if (!room) return null
   const telegram = room.channels.filter((c) => c.platform === 'telegram')
   const discord = room.channels.filter((c) => c.platform === 'discord')
@@ -65,6 +101,7 @@ export default function ChannelsPanel() {
       {canManage && (
         <>
           <p className="grp-chan__lead">New posts are announced in a linked chat, and the chat can join the room in one tap.</p>
+          {me?.role === 'owner' && me.announceFrom && <AnnounceSwitch slug={slug} value={me.announceFrom} onSaved={refresh} />}
           <Seat id="telegram" title={telegram[0]?.title ?? null} linked={telegram.length > 0} focused={focused === 'telegram'}>
             {TelegramPanel ? <TelegramPanel slug={slug} canManage={canManage} /> : null}
           </Seat>

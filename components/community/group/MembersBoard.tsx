@@ -12,7 +12,7 @@ import { useRoom, type BoardSort } from './Room'
 
 const TABS: { id: BoardSort; label: string; unit: (n: number) => string; none: string }[] = [
   { id: 'invites', label: 'Brought the most', unit: (n) => (n === 1 ? 'member' : 'members'), none: 'Nobody has brought a member yet. Share your invite link to be first.' },
-  { id: 'trades', label: 'Traded with proof', unit: (n) => (n === 1 ? 'verified trade' : 'verified trades'), none: 'No member has a verified trade on record yet.' },
+  { id: 'trades', label: 'Verified receipts', unit: (n) => (n === 1 ? 'receipt-verified transaction' : 'receipt-verified transactions'), none: 'No member has a receipt-verified transaction on record yet.' },
 ]
 const SHOWN = 10
 const valueOf = (m: PublicMember, sort: BoardSort) => (sort === 'invites' ? m.invited : m.verifiedTrades)

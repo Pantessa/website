@@ -55,37 +55,6 @@ export function parseJsonObject(text: string | null): Record<string, unknown> | 
   }
 }
 
-/**
- * Is this a request our OWN page made? The identity cookie can be
- * SameSite=None (a Mini App inside Telegram Web is an iframe), so a route
- * that reads or sets it cannot lean on the cookie's own cross-site rule.
- * Two checks a real page passes without knowing they exist:
- *   · `Sec-Fetch-Site`, when the browser sends it, is same-origin or none
- *   · `Origin`, when present, names the host the request was sent to
- */
-export function sameOrigin(headers: Headers): boolean {
-  const site = headers.get('sec-fetch-site')
-  if (site && site !== 'same-origin' && site !== 'none') return false
-  const origin = headers.get('origin')
-  if (origin) {
-    const host = (headers.get('x-forwarded-host') ?? headers.get('host') ?? '').split(',')[0].trim().toLowerCase()
-    try {
-      if (!host || new URL(origin).host.toLowerCase() !== host) return false
-    } catch {
-      return false
-    }
-  }
-  return true
-}
-
-/**
- * The sign-in route SETS a cookie, so a cross-site page must not be able to
- * plant somebody else's Telegram identity in a visitor's browser (login
- * CSRF). On top of `sameOrigin`, the body must be JSON: a cross-site form or
- * a no-cors fetch cannot send that without a preflight this route never
- * answers.
- */
-export function sameOriginJson(headers: Headers): boolean {
-  const type = (headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
-  return type === 'application/json' && sameOrigin(headers)
-}
+// sameOrigin / sameOriginJson live in lib/community/origin (ONE implementation,
+// QA-SECURITY S7); re-exported here so this lane's callers keep their import.
+export { sameOrigin, sameOriginJson } from '@/lib/community/origin'

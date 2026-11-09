@@ -46,7 +46,7 @@ function post(over: Partial<FeedPost> = {}): FeedPost {
     forkOf: null,
     author: '0x' + 'a'.repeat(40),
     authorLabel: '@nate',
-    createdAt: Date.UTC(2026, 10, 9),
+    createdAt: Math.floor(Date.UTC(2026, 10, 9) / 1000),
     comments: 0,
     executedBy: 0,
     isInternal: false,
@@ -136,7 +136,7 @@ export function communityDiscordPins(check: Check): void {
     ['video', {}, 'Video'],
     ['link', {}, 'Link'],
     ['trade', {}, 'Trade'],
-    ['trade', { proof: { turnId: 't', symbols: ['buy:ETH'], side: 'buy', sizeUsd: 25, chain: 'base', txUrl: null, signedAt: 1, verification: 'verified' } }, 'Trade, verified on-chain'],
+    ['trade', { proof: { turnId: 't', chainId: 8453, txHash: '0xabababababababababababababababababababababababababababababababab', symbols: ['buy:ETH'], side: 'buy', sizeUsd: 25, chain: 'Base', txUrl: 'https://basescan.org/tx/0xabababababababababababababababababababababababababababababababab', signedAt: 1, verification: 'verified' } }, 'Trade, transaction verified on-chain'],
   ] as const) {
     const p = post({ kind, ...(extra as Partial<FeedPost>) })
     const m = discordAnnouncement(p, room, SITE)
@@ -157,6 +157,22 @@ export function communityDiscordPins(check: Check): void {
   const bot = discordAnnouncement(post({ linkSlug: null }), room, SITE, { buttons: true })
   check('discord announce: bot shape = link buttons on our site, no Trade without a link', bot.components?.[0].components.map((b) => b.label).join('|') === 'Open|Join Tape Readers' && urlsIn(bot).every((u) => u.startsWith(`${SITE}/`)))
   check('discord announce: an unsafe linkSlug is never a URL', !JSON.stringify(discordAnnouncement(post({ linkSlug: '../../x' }), room, SITE)).includes('/i/'))
+
+  {
+    const proof = { turnId: 't', chainId: 8453, txHash: '0xabababababababababababababababababababababababababababababababab', symbols: ['buy:BTC'], side: 'buy' as const, sizeUsd: null, chain: 'Base', txUrl: 'https://basescan.org/tx/0xabababababababababababababababababababababababababababababababab', signedAt: 1, verification: 'verified' as const }
+    const typed = discordAnnouncement(post({ kind: 'trade', title: 'Bought $5,000,000 of BTC at the low', proof }), room, SITE)
+    const e0 = typed.embeds[0]
+    const forged = discordAnnouncement(post({ kind: 'trade', proof: { ...proof, txUrl: 'https://evil.example/claim?tx=0xabababababababababababababababababababababababababababababababab' } }), room, SITE)
+    check(
+      'S9 discord: a trade embed\'s TITLE is the chain-confirmed line, never the typed title; the typed title is quoted in the body as the author\'s words; the tag line is the author\'s; the tx link is the registry rebuild and a forged link never appears',
+      e0.title === 'Verified on-chain: this wallet moved funds on Base' && !e0.title.includes('5,000,000') && e0.description.includes('The author wrote: "Bought $5,000,000 of BTC at the low"') &&
+        e0.description.includes('Tagged by the author: bought BTC') && e0.description.includes(`[The transaction](${proof.txUrl})`) &&
+        urlsIn(typed).every((u) => u.startsWith(`${SITE}/`) || u === proof.txUrl) && !JSON.stringify(forged).includes('evil.example'),
+      `${e0.title} | ${e0.description.slice(0, 160)}`,
+    )
+    const ts = discordAnnouncement(post({ createdAt: 1_762_700_000 }), room, SITE).embeds[0].timestamp ?? ''
+    check('bug (a) discord timestamp: createdAt is unix seconds, so the embed prints 2025, never 1970', ts.startsWith('2025-11-') && !ts.startsWith('1970'), ts)
+  }
 
   // ── the commands ──
   const spec = discordCommandSpec()
