@@ -41,6 +41,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // target, so it ranks with /links.
     { url: `${SITE}/leaderboard`, changeFrequency: 'hourly', priority: 0.8 },
     { url: `${SITE}/analytics`, changeFrequency: 'hourly', priority: 0.7 },
+    // The community feed (squad community, 2026-11-09): chart ideas, videos
+    // and trades with proof, public to read.
+    { url: `${SITE}/community`, changeFrequency: 'hourly', priority: 0.8 },
     // Docs come from the registry — a page flips `ready` and it's indexed.
     ...readyPages().map((p) => ({
       url: p.slug ? `${SITE}/docs/${p.slug}` : `${SITE}/docs`,

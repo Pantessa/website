@@ -1,0 +1,51 @@
+/* /tg — the Mini App entry (lane TELEGRAM). One quiet card: the page lives
+   for a second inside Telegram's webview, or says where it belongs. */
+.tgentry {
+  min-height: 70dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--bg);
+  color: var(--fg);
+}
+.tgentry__card {
+  width: min(420px, 100%);
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg, 16px);
+  background: var(--surf-1);
+  text-align: center;
+}
+.tgentry__brand {
+  margin: 0 0 12px;
+  font-family: var(--font-chat-display, Georgia, serif);
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: -0.015em;
+}
+.tgentry__line {
+  margin: 0;
+  font-size: var(--fs-base, 15px);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.tgentry__line--error { color: var(--fg); }
+.tgentry__links {
+  margin: 16px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.tgentry__links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 14px;
+}
+.tgentry__links a:hover { border-color: var(--fg); }
