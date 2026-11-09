@@ -176,7 +176,7 @@ import prisma from '../lib/db'
 import { identiconCells } from '../components/ManagerMark'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
-import { chainIdOfTurn, CHAT_EXPECTATION_SLUG, COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedReceiptClass, expectedTurnClass, extractTxHash } from '../lib/link-receipt-verify'
+import { calldataHashOf, chainIdOfTurn, CHAT_EXPECTATION_SLUG, COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedReceiptClass, expectedTurnClass, extractTxHash, RECEIPT_CLOCK_SLACK_MS } from '../lib/link-receipt-verify'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
 import { cleanOrigin, cleanOriginText, originLine, readOrigin, ORIGIN_TEXT_MAX } from '../lib/broker-origin'
 import { brandFromRow, isDeniedBrandHost, isDeniedBrandName, THIRD_PARTY_BRAND_HOSTS } from '../lib/brand-denylist'
@@ -384,6 +384,7 @@ import { depthPins } from './depth-pins'
 import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
 import { homeAppsPins } from './home-apps-pins'
+import { receiptBindingLivePins, receiptBindingPins } from './receipt-binding-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -3218,7 +3219,7 @@ async function main() {
       // (the code under test). The scan starts at a random tx so two harnesses
       // sharing the TEST DB don't pick one hash (the single-use rule would read
       // the second as reused).
-      let foreign: { hash: string; from: string; to: string | null; input: string; block: string; receipt: string } | null = null
+      let foreign: { hash: string; from: string; to: string | null; input: string; block: string; blockTime: number; receipt: string } | null = null
       const foreignReverted: string[] = []
       let foreignDark = ''
       try {
@@ -3238,7 +3239,7 @@ async function main() {
               foreignReverted.push(t.hash)
               continue
             }
-            foreign = { hash: t.hash, from: t.from.toLowerCase(), to: t.to ? t.to.toLowerCase() : null, input: t.input, block: String(blk.number), receipt: r.status }
+            foreign = { hash: t.hash, from: t.from.toLowerCase(), to: t.to ? t.to.toLowerCase() : null, input: t.input, block: String(blk.number), blockTime: Number(blk.timestamp) * 1000, receipt: r.status }
             break pick
           }
         }
@@ -3350,17 +3351,79 @@ async function main() {
         const db = new PrismaClient({ datasources: { db: { url: dbUrlS2 } } })
         const sel = foreign.input.length >= 10 ? foreign.input.slice(0, 10).toLowerCase() : null
         const verifiedSession = `fixture-s2-real-${Date.now()}`
+        // RECEIPT BINDING (2026-11-04, squad five-million QA F1): the fixture
+        // rows are what the chat route records today — {to, selector} PLUS
+        // the keccak256 of the exact calldata, the build moment and the head
+        // the server saw. Three more links by the same creator, one per
+        // case, in this order (a verified row spends the hash per table, so
+        // the attack and the legacy row go first): the forged plant by
+        // height, the forged plant by time alone, the legacy row, then the
+        // honest build and its replay on the original link.
+        const mintS2 = async () => ((await (await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'Swap $2 of ETH to USDC on Base' }) })).json()) as { slug?: string }).slug ?? 'missing'
+        const forgedSlug = await mintS2()
+        const forgedTimeSlug = await mintS2()
+        const legacySlug = await mintS2()
+        const victimTx = `https://basescan.org/tx/${foreign.hash}`
+        const bound = { wallet: foreign.from, chainId: 8453, toAddr: foreign.to ?? '', selector: sel, calldataHash: calldataHashOf(foreign.input) }
+        const referred = (slugId: string) => db.referredWallet.findFirst({ where: { wallet: foreign.from, intentLinkSlug: slugId }, select: { wallet: true } }).catch(() => null)
+        const arrivals = () => db.walletArrival.count({ where: { address: foreign.from } }).catch(() => -1)
+        const arrivalsBefore = await arrivals()
+        const planted: string[] = []
         try {
-          const exp = await db.intentLinkExpectation.create({ data: { slug: s2Slug, wallet: foreign.from, chainId: 8453, toAddr: foreign.to ?? '', selector: sel } })
-          const real = await beacon({ walletAddress: foreign.from, txUrl: `https://basescan.org/tx/${foreign.hash}`, sessionId: verifiedSession, valueUsd: 4000 })
+          // F1, THE ATTACK: a stranger's POST /api/chat planted an expectation
+          // for the victim's wallet under the stranger's link — same to, same
+          // selector, even the same calldata hash as a tx the victim once
+          // sent — and the beacon names that historical tx. The plant was
+          // recorded with the chain head AT the victim's block: a build never
+          // precedes its own transaction. MISMATCH (a replay, terminal); no
+          // referred_wallets row, no arrival stamp, $0 on the planter's link.
+          const plant = await db.intentLinkExpectation.create({ data: { ...bound, slug: forgedSlug, recordedAt: new Date(), recordedBlock: Number(foreign.block) } })
+          planted.push(plant.id)
+          const forged = await beacon({ walletAddress: foreign.from, txUrl: victimTx, intentLinkSlug: forgedSlug, page: `https://${PROD_HOST}/i/${forgedSlug}`, valueUsd: 4000 })
+          const forgedRow = (await studio()).links.find((l) => l.slug === forgedSlug)
+          check(
+            'receipt binding (F1): a forged beacon naming the victim’s HISTORICAL tx against a planted expectation (same to, selector AND calldata hash, recorded with the head at the victim’s block) is a MISMATCH — never verified, no referred_wallets row, no arrival stamp, $0 on the planter’s link',
+            forged.body.verification === 'mismatch' && (await referred(forgedSlug)) === null && (await arrivals()) === arrivalsBefore && (forgedRow?.signedUsd ?? 0) === 0,
+            JSON.stringify({ v: forged.body, row: forgedRow ?? null, ...foreignNote }),
+          )
+          // The same plant with NO head on record (the RPC was dark when the
+          // stranger built): the time fence alone — recorded a slack and a
+          // second after the victim's block — refuses just the same.
+          const plantTime = await db.intentLinkExpectation.create({ data: { ...bound, slug: forgedTimeSlug, recordedAt: new Date(foreign.blockTime + RECEIPT_CLOCK_SLACK_MS + 1000), recordedBlock: null } })
+          planted.push(plantTime.id)
+          const forgedTime = await beacon({ walletAddress: foreign.from, txUrl: victimTx, intentLinkSlug: forgedTimeSlug, page: `https://${PROD_HOST}/i/${forgedTimeSlug}`, valueUsd: 4000 })
+          check(
+            'receipt binding (F1, time fence): the same plant with no head on record, recorded a slack-and-a-second after the victim’s block, is a MISMATCH too and claims nothing',
+            forgedTime.body.verification === 'mismatch' && (await referred(forgedTimeSlug)) === null && (await arrivals()) === arrivalsBefore,
+            JSON.stringify({ v: forgedTime.body, ...foreignNote }),
+          )
+          // A LEGACY row (recorded before the binding: {to, selector}, no
+          // hash) ATTESTS a matching receipt — counted as before, never
+          // `verified`, and it spends nothing.
+          const legacy = await db.intentLinkExpectation.create({ data: { slug: legacySlug, wallet: foreign.from, chainId: 8453, toAddr: foreign.to ?? '', selector: sel } })
+          planted.push(legacy.id)
+          const attested = await beacon({ walletAddress: foreign.from, txUrl: victimTx, intentLinkSlug: legacySlug, page: `https://${PROD_HOST}/i/${legacySlug}`, valueUsd: 4000 })
+          const legacyAfter = await db.intentLinkExpectation.findUnique({ where: { id: legacy.id }, select: { usedTxHash: true } }).catch(() => null)
+          check(
+            'receipt binding: a legacy hash-less expectation ({to, selector} only) stores ATTESTED for a matching receipt — never verified — and is not spent',
+            attested.body.verification === 'attested' && legacyAfter?.usedTxHash === null,
+            JSON.stringify({ v: attested.body, legacyAfter, ...foreignNote }),
+          )
+          // THE HONEST BUILD: the exact calldata, recorded before the tx (the
+          // head one block under it, the moment a minute before) → VERIFIED,
+          // the studio counts it, and the build is SPENT by that hash.
+          const exp = await db.intentLinkExpectation.create({ data: { ...bound, slug: s2Slug, recordedAt: new Date(foreign.blockTime - 60_000), recordedBlock: Number(foreign.block) - 1 } })
+          planted.push(exp.id)
+          const real = await beacon({ walletAddress: foreign.from, txUrl: victimTx, sessionId: verifiedSession, valueUsd: 4000 })
           const s2Real = await studio()
           const realRow = s2Real.links.find((l) => l.slug === s2Slug)
+          const spent = await db.intentLinkExpectation.findUnique({ where: { id: exp.id }, select: { usedTxHash: true } }).catch(() => null)
           check(
-            'receipt money: a REAL receipt (success, sent by the signing wallet, to the artifact on record) stores VERIFIED and the studio counts it ($4,000 moved → $10 earned at the 50bps link tier)',
-            real.body.verification === 'verified' && !!realRow && realRow.signedUsd === 4000 && Math.abs(realRow.earnedUsd - 10) < 0.001,
-            JSON.stringify({ v: real.body, row: realRow, ...foreignNote }),
+            'receipt money: a REAL receipt (success, sent by the signing wallet, the EXACT calldata on record, mined after its build) stores VERIFIED, the studio counts it ($4,000 moved → $10 earned at the 50bps link tier), and the build is spent by that hash (RE-PINNED 2026-11-04 (receipt-binding))',
+            real.body.verification === 'verified' && !!realRow && realRow.signedUsd === 4000 && Math.abs(realRow.earnedUsd - 10) < 0.001 && spent?.usedTxHash === foreign.hash.toLowerCase(),
+            JSON.stringify({ v: real.body, row: realRow, spent, ...foreignNote }),
           )
-          const reused = await beacon({ walletAddress: foreign.from, txUrl: `https://basescan.org/tx/${foreign.hash}`, valueUsd: 4000 })
+          const reused = await beacon({ walletAddress: foreign.from, txUrl: victimTx, valueUsd: 4000 })
           const s2Reuse = await studio()
           const reuseSignedUsd = s2Reuse.links.find((l) => l.slug === s2Slug)?.signedUsd
           check(
@@ -3368,12 +3431,14 @@ async function main() {
             reused.body.verification === 'mismatch' && reuseSignedUsd === 4000,
             JSON.stringify({ v: reused.body, signedUsd: reuseSignedUsd ?? null, ...foreignNote }),
           )
-          await db.intentLinkExpectation.delete({ where: { id: exp.id } }).catch(() => {})
         } finally {
-          await db.embedTurn.deleteMany({ where: { intentLinkSlug: s2Slug, outcome: 'signed' } }).catch(() => {})
-          await db.intentLinkEvent.deleteMany({ where: { slug: s2Slug, kind: { in: ['signed', 'settled'] } } }).catch(() => {})
-          await db.referredWallet.deleteMany({ where: { wallet: foreign.from, intentLinkSlug: s2Slug } }).catch(() => {})
+          const slugs = [s2Slug, forgedSlug, forgedTimeSlug, legacySlug]
+          await db.intentLinkExpectation.deleteMany({ where: { id: { in: planted } } }).catch(() => {})
+          await db.embedTurn.deleteMany({ where: { intentLinkSlug: { in: slugs }, outcome: 'signed' } }).catch(() => {})
+          await db.intentLinkEvent.deleteMany({ where: { slug: { in: slugs }, kind: { in: ['signed', 'settled'] } } }).catch(() => {})
+          await db.referredWallet.deleteMany({ where: { wallet: foreign.from, intentLinkSlug: { in: slugs } } }).catch(() => {})
           await db.$disconnect().catch(() => {})
+          for (const extra of [forgedSlug, forgedTimeSlug, legacySlug]) await fetch(`${BASE}/api/intent-links/${extra}`, { method: 'DELETE', headers: { cookie: mallorySession } }).catch(() => {})
         }
       }
       await fetch(`${BASE}/api/intent-links/${s2Slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
@@ -22635,24 +22700,27 @@ async function main() {
 
     // ── RECEIPT VERIFICATION (overnight 2026-09-01, T-R1..T-R7) ────────────
     check(
-      'receipts: the pure verdict matrix — reuse/reverted/wrong-from/wrong-target = mismatch; RPC-dark or no expectations = unverified; exact match = verified',
+      'receipts: the pure verdict matrix — reuse/reverted/wrong-from = mismatch; RPC-dark, no expectations, or a tx matching nobody’s build = unverified; a legacy {to, selector} match = ATTESTED; only the exact calldata mined after its build = verified (RE-PINNED 2026-11-04 (receipt-binding): the full ladder is scripts/receipt-binding-pins)',
       (() => {
         const W = '0x1111111111111111111111111111111111111111'
         const exp = [{ toAddr: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', selector: '0x12345678' }]
-        const tx = { from: W, to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', input: '0x12345678deadbeef' }
+        const tx = { from: W, to: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', input: '0x12345678deadbeef', blockNumber: 500 }
+        const bound = [{ id: 'b1', toAddr: exp[0].toAddr, selector: '0x12345678', calldataHash: calldataHashOf(tx.input), recordedAt: new Date(), recordedBlock: 499 }]
         return (
-          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'verified' &&
-          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: exp, hashReused: true }) === 'mismatch' &&
-          decideReceiptVerdict({ wallet: W, tx: { ...tx, from: '0x2222222222222222222222222222222222222222' }, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'mismatch' &&
-          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'reverted', expectations: exp, hashReused: false }) === 'mismatch' &&
-          decideReceiptVerdict({ wallet: W, tx: { ...tx, to: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'mismatch' &&
-          decideReceiptVerdict({ wallet: W, tx: { ...tx, input: '0x99999999' }, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'mismatch' &&
-          decideReceiptVerdict({ wallet: W, tx: null, receiptStatus: null, expectations: exp, hashReused: false }) === 'unverified' && // RPC dark: delay, never mint (T-R4)
-          decideReceiptVerdict({ wallet: W, tx: { ...tx, from: '0x3333333333333333333333333333333333333333' }, receiptStatus: null, expectations: exp, hashReused: false }) === 'mismatch' && // foreign sender is decisive even with no receipt
+          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'attested' && // a legacy row counts as before, never verifies
+          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: bound, hashReused: false }) === 'verified' &&
+          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: bound, hashReused: true }) === 'mismatch' &&
+          decideReceiptVerdict({ wallet: W, tx: { ...tx, from: '0x2222222222222222222222222222222222222222' }, receiptStatus: 'success', expectations: bound, hashReused: false }) === 'mismatch' &&
+          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'reverted', expectations: bound, hashReused: false }) === 'mismatch' &&
+          decideReceiptVerdict({ wallet: W, tx: { ...tx, to: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }, receiptStatus: 'success', expectations: bound, hashReused: false }) === 'unverified' && // matches nobody's build
+          decideReceiptVerdict({ wallet: W, tx: { ...tx, input: '0x99999999' }, receiptStatus: 'success', expectations: bound, hashReused: false }) === 'unverified' &&
+          decideReceiptVerdict({ wallet: W, tx: null, receiptStatus: null, expectations: bound, hashReused: false }) === 'unverified' && // RPC dark: delay, never mint (T-R4)
+          decideReceiptVerdict({ wallet: W, tx: { ...tx, from: '0x3333333333333333333333333333333333333333' }, receiptStatus: null, expectations: bound, hashReused: false }) === 'mismatch' && // foreign sender is decisive even with no receipt
           decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: [], hashReused: false }) === 'unverified' && // no artifact on record
-          decideReceiptVerdict({ wallet: null, tx, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'mismatch' && // signer-less claim never binds
+          decideReceiptVerdict({ wallet: null, tx, receiptStatus: 'success', expectations: bound, hashReused: false }) === 'mismatch' && // signer-less claim never binds
+          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: [{ ...bound[0], recordedBlock: 500 }], hashReused: false }) === 'mismatch' && // the forged plant: recorded with the head at the tx's own block
           // a later successful chain read flips the SAME facts to verified — the re-check path (T-R4)
-          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: exp, hashReused: false }) === 'verified'
+          decideReceiptVerdict({ wallet: W, tx, receiptStatus: 'success', expectations: bound, hashReused: false }) === 'verified'
         )
       })(),
     )
@@ -36010,6 +36078,13 @@ async function main() {
       } else console.log('  ⚪ policy-pool try (chat): no PRIVATE_KEY in .env.local — the chat sentence is skipped')
     }
   }
+
+  // RECEIPT BINDING (2026-11-04): a receipt verifies only against the exact
+  // calldata built for that wallet, mined after the build, once — the pure
+  // ladder, the recorder, the source fences, then the recording site driven
+  // with the burner against this server.
+  receiptBindingPins(check)
+  await receiptBindingLivePins(check, BASE)
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
