@@ -69,7 +69,12 @@ const t = (raw: unknown, max: number): string => escapeHtml(tidy(raw, max))
 // $TICKERS in a bot's text. So: a PERSON's name that carries any of those is
 // replaced by the neutral word; a title or a room name is sent inside
 // <code>…</code>, where Telegram detects nothing. Nothing invisible is inserted.
-const LINKISH_RE = /:\/\/|[@＠]|^\s*\/|\bt\.me\b|\b[a-z0-9-]+\.[a-z]{2,}\b|\$[A-Za-z]{2,}|#\w/i
+// QA-SECURITY-3 R4: the rule is SHAPE-based, in any script (Telegram links
+// Unicode labels, underscores, phone numbers and commands): a dot between a
+// letter/digit run and 2+ letters (вход.com, _evil.com, vitalik.eth; "J. Smith"
+// passes: a space follows its dot), 7+ digits in a phone shape, ://, an @, a
+// slash command, t.me, tg:, a $ or # before a letter.
+const LINKISH_RE = /:\/\/|[@＠]|(?:^|\s)\/\p{L}|^\s*\/|t\s*\.\s*me\b|\btg:|[\p{L}\p{N}_-]\.\p{L}{2,}|(?:\+?\(?\d[\s\-()]*){7,}|[$#]\p{L}/iu
 export function isLinkish(raw: unknown): boolean {
   return typeof raw === 'string' && LINKISH_RE.test(raw.normalize('NFKC'))
 }

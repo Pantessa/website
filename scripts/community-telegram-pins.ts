@@ -474,6 +474,7 @@ export async function communityTelegramBotPins(check: Check): Promise<void> {
   if (botPinsRan) return
   botPinsRan = true
   await polishFencePins(check)
+  polishLinkishPins(check)
   const CODE = 'abcdef0123456789'
 
   // link by an admin: Telegram is asked first, then the code is spent, then the welcome is sent and pinned.
@@ -750,6 +751,19 @@ async function http(base: string, method: string, path: string, opts: { headers?
     /* not json */
   }
   return { status: res.status, json, text, res }
+}
+
+// ── lane POLISH (2026-11-09): R4 — the display-name defang is shape-based, any script ──
+function polishLinkishPins(check: Check): void {
+  const bypasses = ['вход.com', 'кто.com', 'пример.рф', 'a_b.com', '_evil.com', '+1 415 555 0100', '(415) 555-0100', 'tap /link now', '$X', '#крипто', 'vitalik.eth', 'tg:resolve', 't.me/x']
+  const ordinary = ['Мария', '李雷', 'J. Smith', 'Ana K', 'Bob', 'ETH desk 2024', 'نور']
+  const missed = bypasses.filter((n) => !isLinkish(n))
+  const lost = ordinary.filter((n) => isLinkish(n))
+  check(
+    'community telegram: R4 — an IDN domain (вход.com), a leading-underscore domain (_evil.com), a phone number, a mid-text /command, $X, #крипто and vitalik.eth read as linkish; "Мария", "李雷" and "J. Smith" pass',
+    !missed.length && !lost.length,
+    `missed=${missed.join(',')} lost=${lost.join(',')}`,
+  )
 }
 
 // ── lane POLISH (2026-11-09): T9 / T10 over an injected memory ─────────────
