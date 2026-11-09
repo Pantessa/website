@@ -17,6 +17,12 @@ export const dynamic = 'force-dynamic'
 export const alt = 'A room on Pantessa. Join in one tap.'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
+/** T13: a real room's card is cached an hour at the edge (the house pattern:
+ *  app/api/og/live sets cache-control on the response; force-dynamic stays
+ *  because the read is the database). An unread store (an honest card) and a
+ *  404 are cached briefly. */
+export const ROOM_CARD_CACHE = 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400'
+export const ROOM_CARD_MISS_CACHE = 'public, max-age=60, s-maxage=60'
 
 const toDataUri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
 
@@ -24,7 +30,10 @@ type Params = { params: Promise<{ slug: string }> }
 
 export default async function Image({ params }: Params) {
   const { slug } = await params
-  const room = await readRoom(slug).then((r) => r.room, () => null)
+  const read = await readRoom(slug).catch(() => ({ room: null, known: false, internal: false }))
+  // T13: no such room → a 404 with no image drawn (a made-up slug used to cost a full render).
+  if (read.known && !read.room) return new Response(null, { status: 404, headers: { 'cache-control': ROOM_CARD_MISS_CACHE } })
+  const room = read.room
   const card = roomCardText(room)
   const pal = brandOgPalette(null)
   const fonts = join(process.cwd(), 'assets', 'og-fonts')
@@ -77,6 +86,7 @@ export default async function Image({ params }: Params) {
     ),
     {
       ...size,
+      headers: { 'cache-control': room ? ROOM_CARD_CACHE : ROOM_CARD_MISS_CACHE },
       fonts: [
         { name: 'Geist', data: sans, weight: 500, style: 'normal' },
         { name: 'Geist', data: sansSemi, weight: 600, style: 'normal' },

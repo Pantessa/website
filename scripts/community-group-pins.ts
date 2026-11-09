@@ -185,7 +185,13 @@ export function communityGroupPins(check: Check): void {
   const meta = roomMeta(room, 'eth-swing')
   check('group meta: title is "<Name> on Pantessa", description is the about line; an internal room, a t- room and an unreadable one are never indexed', meta.title === 'ETH Swing Traders on Pantessa' && meta.description === 'Daily levels on ETH. Calls are stamped.' && meta.noindex === false && roomMeta(room, 't-group-x').noindex === true && roomMeta(room, 'eth-swing', true).noindex === true && roomMeta(null, 'eth-swing').noindex === true && roomMeta({ ...room, about: '' }, 'eth-swing').description === ROOM_DEFAULT_ABOUT)
   const og = code(read('app', 'g', '[slug]', 'opengraph-image.tsx'))
-  check('group card: the OG image draws the Emerald mark and the pinned words, and falls to the honest card when the room cannot be read', /gemMarkSvg\(\)/.test(og) && /roomCardText\(room\)/.test(og) && /readRoom\(slug\)\.then\(\(r\) => r\.room, \(\) => null\)/.test(og) && /card\.members/.test(og) && /card\.markets\.map/.test(og))
+  // RE-PINNED 2026-11-09 (polish, T13): the card reads { room, known }; an unread store still draws the honest card.
+  check('group card: the OG image draws the Emerald mark and the pinned words, and falls to the honest card when the room cannot be read', /gemMarkSvg\(\)/.test(og) && /roomCardText\(room\)/.test(og) && /readRoom\(slug\)\.catch\(\(\) => \(\{ room: null, known: false/.test(og) && /card\.members/.test(og) && /card\.markets\.map/.test(og))
+  check(
+    'group card: T13 — no such room answers 404 before a font is read or an image drawn; a real room\'s card carries an hour of edge cache (s-maxage=3600)',
+    /if \(read\.known && !read\.room\) return new Response\(null, \{ status: 404/.test(og) && og.indexOf('status: 404') < og.indexOf('readFile(') && og.indexOf('status: 404') < og.indexOf('new ImageResponse(') &&
+      /ROOM_CARD_CACHE = '[^']*s-maxage=3600/.test(og) && /'cache-control': room \? ROOM_CARD_CACHE/.test(og),
+  )
   const page = code(read('app', 'g', '[slug]', 'page.tsx'))
   check('group page: an unknown room is notFound(), an unreadable store still renders (the browser asks the API), and the page is not force-dynamic', /if \(known && !room\) notFound\(\)/.test(page) && !/force-dynamic/.test(page) && /initial=\{room\}/.test(page))
 
@@ -314,7 +320,9 @@ export async function communityGroupPinsServed(check: Check, base: string): Prom
     const ogBytes = (await ogRes.arrayBuffer()).byteLength
     check('group served: the room card renders (200, image/png, a real image)', ogRes.status === 200 && (ogRes.headers.get('content-type') ?? '').includes('image/png') && ogBytes > 10_000, `status ${ogRes.status} · ${ogBytes} bytes`)
     const ogGhost = await get(`/g/${ghost}/opengraph-image`)
-    check('group served: a card for a room that does not exist is still an image, never a 500', ogGhost.status === 200 && (ogGhost.headers.get('content-type') ?? '').includes('image/png'), `status ${ogGhost.status}`)
+    const twGhost = await get(`/g/${ghost}/twitter-image`)
+    // RE-PINNED 2026-11-09 (polish, T13): a made-up slug is a 404 with no image (was: still an image).
+    check('group served: T13 — a card for a room that does not exist (og + twitter) is a 404 with no image drawn, never a 500; a real room\'s card is cacheable at the edge', ogGhost.status === 404 && !(ogGhost.headers.get('content-type') ?? '').includes('image/png') && twGhost.status === 404 && /s-maxage=3600/.test(ogRes.headers.get('cache-control') ?? ''), `status ${ogGhost.status}/${twGhost.status} cc=${ogRes.headers.get('cache-control')}`)
 
     // The invite: a second wallet joins through the owner's link.
     const stranger = await fetch(`${base}/api/communities/${slug}/join`, { method: 'POST', headers: { 'content-type': 'application/json', ...INTERNAL }, body: JSON.stringify({ via: code_ }) })
