@@ -19,6 +19,7 @@ import { mintSlug } from '@/lib/intent-links'
 import { absoluteUrl } from '@/lib/site-url'
 import { hourStartUTC } from '@/lib/turn-limits'
 import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
+import { chainNameFor, explorerTxFor } from './proof-words'
 import {
   ANNOUNCE_HOURLY_CAP,
   COMMUNITY_SLUG_RE,
@@ -456,19 +457,28 @@ export interface FeedQuery {
 
 const FEED_KINDS: FeedKind[] = ['idea', 'link', 'video', 'trade']
 
-/** Only a proof the server wrote parses back; anything else reads as none. */
-function storedProof(raw: unknown): TradeProof | null {
+/** Only a proof the server wrote parses back; anything else reads as none.
+ *  S2: the link must be exactly the registry's rebuild of the proof's own
+ *  chain + hash, and the chain name is re-read from the registry. A proof in
+ *  the pre-SECFIX shape (no chainId / txHash) reads as none. */
+export function storedProof(raw: unknown): TradeProof | null {
   if (!raw || typeof raw !== 'object') return null
   const p = raw as Record<string, unknown>
   if (p.verification !== 'verified' || typeof p.turnId !== 'string' || typeof p.signedAt !== 'number' || !Array.isArray(p.symbols)) return null
+  if (typeof p.chainId !== 'number' || typeof p.txHash !== 'string' || typeof p.txUrl !== 'string') return null
+  const rebuilt = explorerTxFor(p.chainId, p.txHash)
+  const chain = chainNameFor(p.chainId)
+  if (!rebuilt || !chain || p.txUrl !== rebuilt) return null
   const side = p.side === 'buy' || p.side === 'sell' || p.side === 'long' || p.side === 'short' ? p.side : null
   return {
     turnId: p.turnId,
+    chainId: p.chainId,
+    txHash: p.txHash.toLowerCase(),
     symbols: p.symbols.filter((x): x is string => typeof x === 'string').slice(0, 8),
     side,
-    sizeUsd: typeof p.sizeUsd === 'number' && Number.isFinite(p.sizeUsd) ? p.sizeUsd : null,
-    chain: typeof p.chain === 'string' ? p.chain : null,
-    txUrl: typeof p.txUrl === 'string' && p.txUrl.startsWith('https://') ? p.txUrl : null,
+    sizeUsd: typeof p.sizeUsd === 'number' && Number.isFinite(p.sizeUsd) && p.sizeUsd > 0 ? p.sizeUsd : null,
+    chain,
+    txUrl: rebuilt,
     signedAt: p.signedAt,
     verification: 'verified',
   }

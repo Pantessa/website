@@ -95,9 +95,9 @@ export function communityFeedPins(check: Check): void {
       asciiLine('“a” — b… c’s d 🚀'),
     )
     check(
-      'community feed: a share line leads with the cashtag once, keeps the author\'s title, and says what stands behind it ("Time and price stamped" for an idea, "Trade verified on-chain" ONLY for a verified trade)',
+      'community feed: a share line leads with the cashtag once, keeps the author\'s title, and says what stands behind it ("Time and price stamped" for an idea, "Transaction verified on-chain" ONLY for a verified trade)',
       postShareText(idea) === '$UNI 1D: reclaim of 7.10 holds, target the September high. Time and price stamped.' &&
-        postShareText(trade) === '$ETH: Added on the sweep of the range low. Trade verified on-chain.' &&
+        postShareText(trade) === '$ETH: Added on the sweep of the range low. Transaction verified on-chain.' &&
         postShareText(noProof) === '$BTC: Bought the dip, trust me.' && !/verified/i.test(postShareText(noProof)) &&
         postShareText(xVideo) === 'Clip from the Fed presser, the one line that moved the two-year.',
       `${postShareText(idea)} | ${postShareText(noProof)}`,
@@ -154,11 +154,12 @@ export function communityFeedPins(check: Check): void {
     const f1 = tradeFact(trade.proof!, trade.symbol)
     const f2 = tradeFact(hidden.proof!, hidden.symbol)
     check(
-      'community feed: the fact line is built from the proof alone (never the title): side, size or "size hidden", market, chain',
-      f1.line === 'Bought $2,500 of ETH on Base' && f2.line === 'Went short SOL on Hyperliquid, size hidden' && !f1.line.includes(trade.title) &&
-        tradeFact({ ...trade.proof!, side: null, sizeUsd: null, chain: null }, '').line === 'Traded ETH, size hidden' &&
-        tradeFact({ ...trade.proof!, side: 'long', sizeUsd: 12_500 }, 'HYPE').line === 'Went long HYPE with $12.5K on Base' && tradeFact({ ...trade.proof!, side: 'sell', sizeUsd: 40 }, 'AAPL').line === 'Sold $40 of AAPL on Base',
-      `${f1.line} | ${f2.line}`,
+      'S1/S9 card: the fact line is ONLY what the chain confirmed ("Verified on-chain: this wallet moved $2,500.00 on Base" / "moved funds on Arbitrum"); the market + side are a separate line in the author\'s words, rendered OUTSIDE the verified box; never the title',
+      f1.fact === 'Verified on-chain: this wallet moved $2,500.00 on Base' && f1.tag === 'Tagged by the author: bought ETH' &&
+        f2.fact === 'Verified on-chain: this wallet moved funds on Arbitrum' && f2.tag === 'Tagged by the author: went short SOL' && !f1.fact.includes(trade.title) && !/ETH/.test(f1.fact) &&
+        tradeFact({ ...trade.proof!, side: null, symbols: [], sizeUsd: null }, '').tag === null &&
+        /<\/div>\s*\{fact\.tag && <p className="cmy-fact-tag" data-unverified="">\{fact\.tag\}<\/p>\}/.test(card) && /\{fact\.fact\}/.test(card),
+      `${f1.fact} | ${f1.tag} | ${f2.fact}`,
     )
     const s1 = sameTradeAsk(trade.proof!, trade.symbol)
     const s2 = sameTradeAsk(hidden.proof!, hidden.symbol)
@@ -215,7 +216,7 @@ export function communityFeedPins(check: Check): void {
     check(
       'community feed: a trade post types nothing about the trade — it lists GET /api/me/fills, sends proofTurnId + showSize (default on) and no symbol; the composer says only chain-confirmed trades appear',
       /fetch\(`\/api\/me\/fills\?/.test(comp) && /payload\.proofTurnId = picked/.test(comp) && /payload\.showSize = showSize/.test(comp) && /useState\(true\)\s*\n\s*const \[fills/.test(comp.replace(/const \[showSize, setShowSize\] = /, '')) &&
-        /if \(kind !== 'trade' && sym\) payload\.symbol = sym/.test(comp) && /Only trades the chain confirmed from your wallet appear here\./.test(comp) && /data-fills-empty/.test(comp),
+        /if \(kind !== 'trade' && sym\) payload\.symbol = sym/.test(comp) && /Only transactions the chain confirmed from your wallet appear here\. The market is your own tag/.test(comp) && /data-fills-empty/.test(comp),
     )
     check(
       'community feed: posting signed out HOLDS the post behind the unified door (no redirectTo) and keeps the draft (sessionStorage); a 403 needsJoin offers "Join … and post" (the join route, then the post again)',

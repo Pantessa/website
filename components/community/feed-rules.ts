@@ -15,6 +15,7 @@ import { chartPairFor } from '@/lib/charts'
 import { composeExecAsk } from '@/lib/trade-asks'
 import { X_MENTION } from '@/lib/social'
 import { absoluteUrl } from '@/lib/site-url'
+import { fmtProofDollars, proofFactLine, proofTagLine } from '@/lib/community/proof-words'
 import { callPath } from '@/lib/chart-calls'
 import { COMMUNITY_SLUG_RE, INVITE_CODE_RE, invitePath, type FeedKind, type FeedPost, type FeedSort, type FeedWindow, type TradeProof, type VideoHost } from '@/lib/community/spec'
 
@@ -113,8 +114,6 @@ export function isVerified(post: Pick<FeedPost, 'proof'>): boolean {
   return post.proof?.verification === 'verified'
 }
 
-const SIDE_PAST: Record<NonNullable<TradeProof['side']>, string> = { buy: 'Bought', sell: 'Sold', long: 'Went long', short: 'Went short' }
-
 /** A dollar size a trader reads at a glance: $25, $1,250, $12.5K, $1.2M. */
 export function fmtProofUsd(n: number): string {
   const a = Math.abs(n)
@@ -133,18 +132,17 @@ export function proofMarket(proof: TradeProof, symbol: string): string {
 }
 
 /**
- * The fact line of a trade post, from the proof alone:
- *   "Bought $250 of ETH on Base" · "Went long ETH, size hidden" · "Traded ETH".
- * Nothing the poster typed is in it.
+ * A trade post's two lines (QA-SECURITY S1/S9):
+ *   fact  what the chain confirmed — "Verified on-chain: this wallet moved
+ *         $25.00 on Base" (or "moved funds on Base" when the size is hidden);
+ *   tag   the author's own tag, worded as theirs — "Tagged by the author:
+ *         bought ETH" (null when there is none). Never under the verified mark.
+ * Nothing the poster typed is in either.
  */
-export function tradeFact(proof: TradeProof, symbol: string): { verb: string; size: string | null; market: string; chain: string | null; line: string } {
-  const market = proofMarket(proof, symbol)
-  const verb = proof.side ? SIDE_PAST[proof.side] : 'Traded'
-  const size = typeof proof.sizeUsd === 'number' && Number.isFinite(proof.sizeUsd) && proof.sizeUsd > 0 ? fmtProofUsd(proof.sizeUsd) : null
-  const perp = proof.side === 'long' || proof.side === 'short'
-  const what = size ? (perp ? `${verb} ${market} with ${size}` : `${verb} ${size} of ${market}`) : `${verb} ${market}`
-  const where = proof.chain ? ` on ${proof.chain}` : ''
-  return { verb, size, market, chain: proof.chain, line: `${what}${where}${size ? '' : ', size hidden'}` }
+export function tradeFact(proof: TradeProof, _symbol?: string): { fact: string; tag: string | null; size: string | null; chain: string; line: string } {
+  const size = typeof proof.sizeUsd === 'number' && Number.isFinite(proof.sizeUsd) && proof.sizeUsd > 0 ? fmtProofDollars(proof.sizeUsd) : null
+  const fact = proofFactLine(proof)
+  return { fact, tag: proofTagLine(proof), size, chain: proof.chain, line: fact }
 }
 
 /** What a reader's copy of the trade costs by default (lib/tape FOLLOW_USD). */
@@ -253,6 +251,6 @@ export function postShareText(post: Pick<FeedPost, 'kind' | 'symbol' | 'title' |
   const fallback = post.kind === 'trade' ? 'A trade with proof' : post.kind === 'video' ? 'A video' : post.kind === 'link' ? 'A link' : 'A chart idea'
   const said = title.length >= 3 ? title : fallback
   const lead = !sym ? said : opens ? `$${said.replace(/^\$/, '')}` : `${sym}: ${said}`
-  const stands = post.kind === 'trade' && isVerified(post) ? ' Trade verified on-chain.' : post.kind === 'idea' ? ' Time and price stamped.' : ''
+  const stands = post.kind === 'trade' && isVerified(post) ? ' Transaction verified on-chain.' : post.kind === 'idea' ? ' Time and price stamped.' : ''
   return `${lead}${/[.!?]$/.test(lead) ? '' : '.'}${stands}`
 }

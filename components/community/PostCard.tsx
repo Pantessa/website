@@ -161,11 +161,12 @@ function TradeFact({ post }: { post: FeedPost }) {
   const proof = post.proof!
   const fact = tradeFact(proof, post.symbol)
   return (
+    <>
     <div className="cmy-fact" data-proof="verified" data-side={proof.side ?? undefined}>
       <span className="cmy-fact__badge">
         <ShieldCheck aria-hidden /> verified on-chain
       </span>
-      <span className="cmy-fact__line">{fact.line}</span>
+      <span className="cmy-fact__line">{fact.fact}</span>
       <time className="cmy-fact__when" dateTime={new Date(proof.signedAt).toISOString()}>
         {ageLabel(Math.floor(proof.signedAt / 1000))}
       </time>
@@ -175,6 +176,9 @@ function TradeFact({ post }: { post: FeedPost }) {
         </a>
       )}
     </div>
+    {/* The market and side are the author's tag: outside the verified box, in their words. */}
+    {fact.tag && <p className="cmy-fact-tag" data-unverified="">{fact.tag}</p>}
+    </>
   )
 }
 

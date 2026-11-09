@@ -122,7 +122,7 @@ const post = (over: Partial<FeedPost> = {}): FeedPost => ({
   myVote: 0,
   ...over,
 })
-const PROOF: TradeProof = { turnId: 't1', symbols: ['buy:ETH'], side: 'buy', sizeUsd: 25, chain: 'base', txUrl: null, signedAt: 0, verification: 'verified' }
+const PROOF: TradeProof = { turnId: 't1', chainId: 8453, txHash: '0xabababababababababababababababababababababababababababababababab', symbols: ['buy:ETH'], side: 'buy', sizeUsd: 25, chain: 'Base', txUrl: 'https://basescan.org/tx/0xabababababababababababababababababababababababababababababababab', signedAt: 0, verification: 'verified' }
 
 // Telegram-shaped updates (Bot API field names, exactly).
 const GROUP = { id: -1001234567890, type: 'supergroup', title: 'ETH Traders chat' }
@@ -361,11 +361,22 @@ export function communityTelegramPins(check: Check): void {
   check(
     'community telegram: an announcement says "verified on-chain" ONLY for a trade whose proof is literally verified; "Trade this" only with a link slug; a post URL never becomes a button; an unlinkable id sends nothing',
     /Chart idea/.test(idea.text) && !/verified/i.test(idea.text) && flatButtons(idea).map((b) => b.text).join('|') === 'Open|Trade this|Join ETH Traders' && flatButtons(idea)[1].url === `${SITE}/i/abc123` && flatButtons(idea)[0].url === `${SITE}/c/cmh1abcd2efgh3ijkl` &&
-      /<b>Trade, verified on-chain<\/b>/.test(tradeVerified.text) && tradeVerified.text.includes('Buy ETH · $25') &&
+      /<b>Trade, transaction verified on-chain<\/b>/.test(tradeVerified.text) && tradeVerified.text.includes('Verified on-chain: this wallet moved $25.00 on Base') &&
       !/verified/i.test(tradeNoProof.text) && !/verified/i.test(tradeBadProof.text) && !/verified on-chain/.test(ideaWithProof.text) &&
       flatButtons(noLink).map((b) => b.text).join('|') === 'Open|Join ETH Traders' && !JSON.stringify(noLink).includes('evil.example') &&
       announcementMessage(CTX, ROOM, post({ id: '../../x y' })) === null && announcementMessage(CTX, ROOM, post({ linkSlug: 'a/b?x' }))?.buttons[0].length === 1,
   )
+  {
+    const typed = announcementMessage(CTX, ROOM, post({ kind: 'trade', title: 'Bought $5,000,000 of BTC at the low', proof: { ...PROOF, sizeUsd: null } })) as TgMessage
+    const lines = typed.text.split('\n')
+    const forged = announcementMessage(CTX, ROOM, post({ kind: 'trade', proof: { ...PROOF, txUrl: 'https://evil.example/claim?tx=0xabababababababababababababababababababababababababababababababab' } })) as TgMessage
+    check(
+      'S9 telegram: a trade announcement\'s headline is the chain-confirmed line ("Verified on-chain: this wallet moved funds on Base"), the market is the author\'s tag, and the typed title is QUOTED as the author\'s words below; the tx button is the rebuilt explorer link, a forged link is never a button',
+      lines[1] === '<b>Verified on-chain: this wallet moved funds on Base</b>' && lines[2] === 'Tagged by the author: bought ETH' && lines[3] === 'The author wrote: "Bought $5,000,000 of BTC at the low"' &&
+        flatButtons(tradeVerified).some((b) => b.text === 'The transaction' && b.url === PROOF.txUrl) && !JSON.stringify(forged).includes('evil.example') && !flatButtons(forged).some((b) => b.text === 'The transaction'),
+      lines.slice(0, 4).join(' | '),
+    )
+  }
   const wire = webhookReply('-100123', welcome, { replyTo: 7, threadId: 9 })
   check(
     'community telegram: a reply rides the webhook response as a sendMessage call — HTML, previews off, the buttons as an inline keyboard, answered under the asking message',
@@ -632,8 +643,8 @@ export async function communityTelegramBotPins(check: Check): Promise<void> {
     const boom = await deliverTelegramWith({ links: CTX, call: async () => { throw new Error('boom') }, unlink: async () => {} })(channel, { post: post(), community: ROOM })
     check(
       'community telegram: the deliverer sends one message per post (kind line, title, author, Open / Trade this / Join), resolves false and never throws; an internal post, a wrong platform and a bad chat id send nothing; a kicked bot is unlinked, a rate limit is not',
-      sent === true && api.calls.length === 1 && p.chat_id === '-1001234567890' && p.parse_mode === 'HTML' && /Trade, verified on-chain/.test(p.text) && p.reply_markup.inline_keyboard.flat().map((b) => b.text).join('|') === 'Open|Trade this|Join ETH Traders' &&
-        p.reply_markup.inline_keyboard.flat().every((b) => isOurUrl(b.url, CTX)) && internal === false && wrongPlatform === false && badChat === false && unconfigured === false &&
+      sent === true && api.calls.length === 1 && p.chat_id === '-1001234567890' && p.parse_mode === 'HTML' && /Trade, transaction verified on-chain/.test(p.text) && p.reply_markup.inline_keyboard.flat().map((b) => b.text).join('|') === 'Open|Trade this|The transaction|Join ETH Traders' &&
+        p.reply_markup.inline_keyboard.flat().every((b) => isOurUrl(b.url, CTX) || b.url === PROOF.txUrl) && internal === false && wrongPlatform === false && badChat === false && unconfigured === false &&
         gone === false && unlinked.join() === '-1001234567890' && flood === false && boom === false,
       `sent=${sent} calls=${api.calls.length} unlinked=${unlinked.join()}`,
     )

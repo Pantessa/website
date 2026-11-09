@@ -68,7 +68,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     if (!fp || fp.kind === 'idea') return { title: 'Call · Pantessa', robots: { index: false, follow: false } }
     const where = fp.community ? ` in ${fp.community.name}` : ''
     const t = `${fp.symbol ? `${fp.symbol}: ` : ''}${fp.title} · Pantessa`
-    const d = `A ${KIND_NOUN[fp.kind]} by ${fp.authorLabel}${where}.${fp.kind === 'trade' && fp.proof?.verification === 'verified' ? ' The trade is verified on-chain.' : ''}`
+    const d = `A ${KIND_NOUN[fp.kind]} by ${fp.authorLabel}${where}.${fp.kind === 'trade' && fp.proof?.verification === 'verified' ? ' The transaction is verified on-chain.' : ''}`
     return {
       title: t,
       description: d,

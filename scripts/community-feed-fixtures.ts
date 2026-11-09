@@ -64,7 +64,7 @@ export const FIXTURE_POSTS: FeedPost[] = [
     createdAt: NOW - 40 * 60,
     comments: 5,
     community: { slug: 'eth-swing', name: 'ETH swing' },
-    proof: { turnId: 'turn_fx_1', symbols: ['buy:ETH'], side: 'buy', sizeUsd: 2500, chain: 'Base', txUrl: 'https://basescan.org/tx/0xabc', signedAt: (NOW - 55 * 60) * 1000, verification: 'verified' },
+    proof: { turnId: 'turn_fx_1', chainId: 8453, txHash: '0xabababababababababababababababababababababababababababababababab', symbols: ['buy:ETH'], side: 'buy', sizeUsd: 2500, chain: 'Base', txUrl: 'https://basescan.org/tx/0xabababababababababababababababababababababababababababababababab', signedAt: (NOW - 55 * 60) * 1000, verification: 'verified' },
     score: 64,
   },
   {
@@ -106,7 +106,7 @@ export const FIXTURE_POSTS: FeedPost[] = [
     authorLabel: '@northwall',
     createdAt: NOW - 3 * 86400,
     comments: 21,
-    proof: { turnId: 'turn_fx_2', symbols: ['short:SOL'], side: 'short', sizeUsd: null, chain: 'Hyperliquid', txUrl: null, signedAt: (NOW - 3 * 86400 - 600) * 1000, verification: 'verified' },
+    proof: { turnId: 'turn_fx_2', chainId: 42161, txHash: '0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd', symbols: ['sell:SOL'], side: 'short', sizeUsd: null, chain: 'Arbitrum', txUrl: 'https://arbiscan.io/tx/0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd', signedAt: (NOW - 3 * 86400 - 600) * 1000, verification: 'verified' },
     score: 240,
   },
   {

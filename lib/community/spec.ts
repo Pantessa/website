@@ -106,17 +106,29 @@ export type FeedWindow = 'day' | 'week' | 'all'
 export const FEED_SORTS: FeedSort[] = ['hot', 'new', 'top']
 export const FEED_PAGE = 25
 
-/** A fill the SERVER re-derived from the author's own verified receipt row.
- *  Nothing here is typed by the poster. `sizeUsd` is null when the author
- *  chose to hide the size (the proof still stands: the tx is public). */
+/** A fill the SERVER re-derived from the author's own verified receipt row
+ *  AND read back from the chain at post time (QA-SECURITY S1, S2).
+ *  CHAIN-CONFIRMED: `chainId`, `txHash`, `chain`, `txUrl`, `sizeUsd` (the
+ *  transaction's own transfers, clamped to the recorded size). `sizeUsd` is
+ *  null when the author chose to hide the size (the proof still stands: the
+ *  tx is public). Print them with lib/community/proof-words. */
 export interface TradeProof {
   turnId: string
-  /** Side-tagged symbols as the receipt carries them, e.g. ["buy:ETH"]. */
+  /** The registry chain the transaction was read on. */
+  chainId: number
+  /** The transaction hash (0x + 64 hex, lowercase). */
+  txHash: string
+  /** NOT chain-confirmed: the author's own tag as the app recorded it at
+   *  signing, e.g. ["buy:ETH"]. Print it as the author's words
+   *  ("Tagged by the author: bought ETH"), never under the verified mark. */
   symbols: string[]
+  /** NOT chain-confirmed: read from the author's tag (see `symbols`). */
   side: 'buy' | 'sell' | 'long' | 'short' | null
   sizeUsd: number | null
-  chain: string | null
-  txUrl: string | null
+  /** The registry's name for `chainId` (never the beacon's label). */
+  chain: string
+  /** REBUILT from the registry's explorer + `txHash`; never a stored string. */
+  txUrl: string
   /** When the fill was signed (unix ms) — the receipt row's own clock. */
   signedAt: number
   /** Always literal: the chain confirmed the tx, its sender and its target. */

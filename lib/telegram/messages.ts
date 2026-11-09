@@ -17,6 +17,7 @@
 import { BOT_COMMANDS, type FeedPost, type PublicMember, type TradeProof } from '@/lib/community/spec'
 import { joinUrlFor, roomInviteUrl, shareUrl, tgEntryUrl, type LinkCtx } from './links'
 import { joinPayload } from '@/lib/community/spec'
+import { proofFactLine, proofLinkIsRebuilt, proofTagLine } from '@/lib/community/proof-words'
 
 /** The Bot API's hard cap on a message's text. */
 export const TG_TEXT_MAX = 4096
@@ -279,14 +280,11 @@ const KIND_WORDS: Record<FeedPost['kind'], string> = { idea: 'Chart idea', video
 
 const isVerified = (proof: TradeProof | null | undefined): proof is TradeProof => !!proof && proof.verification === 'verified'
 
-/** A verified fill in plain words, from the receipt row only ("Buy ETH · $25"). */
+/** A verified proof in the two-part wording (S1/S9): what the chain
+ *  confirmed, then the author's own tag. */
 export function proofLine(proof: TradeProof): string {
-  const first = proof.symbols.find((s) => typeof s === 'string') ?? ''
-  const [tag, sym] = first.includes(':') ? first.split(':') : ['', first]
-  const side = proof.side ?? (['buy', 'sell', 'long', 'short'].includes(tag) ? tag : '')
-  const words = [side ? side[0].toUpperCase() + side.slice(1) : '', tidy(sym, 12).toUpperCase()].filter(Boolean).join(' ')
-  const size = proof.sizeUsd !== null && Number.isFinite(proof.sizeUsd) && proof.sizeUsd > 0 ? `$${fmtPrice(proof.sizeUsd).replace(/\.00$/, '')}` : ''
-  return [words, size].filter(Boolean).join(' · ')
+  const tag = proofTagLine(proof)
+  return [proofFactLine(proof), tag].filter(Boolean).join('. ')
 }
 
 type AnnouncedPost = Pick<FeedPost, 'id' | 'kind' | 'title' | 'symbol' | 'authorLabel' | 'linkSlug' | 'proof'>
@@ -299,16 +297,24 @@ export function announcementMessage(ctx: LinkCtx, room: RoomRef, post: Announced
   const open = postUrl(ctx.site, post.id)
   if (!open) return null
   const verified = post.kind === 'trade' && isVerified(post.proof)
-  const kind = `${KIND_WORDS[post.kind] ?? 'Post'}${verified ? ', verified on-chain' : ''}`
+  const kind = `${KIND_WORDS[post.kind] ?? 'Post'}${verified ? ', transaction verified on-chain' : ''}`
   const sym = t(post.symbol, 12)
-  const lines = [`<b>${escapeHtml(kind)}</b>${sym ? ` · ${sym}` : ''}`, t(post.title, TITLE_MAX)]
-  if (verified && post.proof) {
-    const fill = proofLine(post.proof)
-    if (fill) lines.push(escapeHtml(fill))
+  const lines = [`<b>${escapeHtml(kind)}</b>${sym ? ` · ${sym}` : ''}`]
+  const typed = t(post.title, TITLE_MAX)
+  if (post.kind === 'trade') {
+    // S9: the headline is what the chain confirmed; the typed title is the
+    // author's words, quoted under it.
+    lines.push(`<b>${escapeHtml(verified && post.proof ? proofFactLine(post.proof) : 'A trade post (no proof on record)')}</b>`)
+    const tag = verified && post.proof ? proofTagLine(post.proof) : null
+    if (tag) lines.push(escapeHtml(tag))
+    if (typed) lines.push(`The author wrote: "${typed}"`)
+  } else {
+    lines.push(typed)
   }
   lines.push(`${t(post.authorLabel, LABEL_MAX) || 'A member'} in ${roomName(room)}`)
   const first: TgButton[] = [{ text: 'Open', url: open }]
   if (post.linkSlug && LINK_SLUG_RE.test(post.linkSlug)) first.push({ text: 'Trade this', url: `${ctx.site}/i/${post.linkSlug}` })
+  if (verified && post.proof && proofLinkIsRebuilt(post.proof)) first.push({ text: 'The transaction', url: post.proof.txUrl })
   return { text: fit(lines), buttons: [first, [joinButton(ctx, room)]] }
 }
 

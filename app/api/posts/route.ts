@@ -19,7 +19,7 @@ import {
 import { mintPostLink } from './mint-link'
 import { chartPairFor } from '@/lib/charts'
 import { getCommunity, getFeedPost, roleOf } from '@/lib/community/store'
-import { fillLabel, resolveTradeProof } from '@/lib/community/proof'
+import { REFUSE_NOT_YOURS, fillLabel, resolveTradeProof } from '@/lib/community/proof'
 import { fanoutPost } from '@/lib/community/fanout'
 import { walletKey, type PublicCommunity, type TradeProof } from '@/lib/community/spec'
 
@@ -90,8 +90,13 @@ export async function POST(req: NextRequest) {
   // A trade post: the proof is re-derived from the author's own verified row.
   let proof: TradeProof | null = null
   if (draft.kind === 'trade') {
-    proof = draft.proofTurnId ? await resolveTradeProof(author, draft.proofTurnId, { showSize: draft.showSize, includeInternal: internal }) : null
-    if (!proof) return NextResponse.json({ error: 'That is not one of your verified trades. Pick a fill from your list.' }, { status: 400 })
+    // S1 + S2: only the hash and the chain come from the row; the chain is
+    // READ now (what this wallet moved), fail closed on no answer.
+    const r = draft.proofTurnId
+      ? await resolveTradeProof(author, draft.proofTurnId, { showSize: draft.showSize, includeInternal: internal })
+      : ({ ok: false, status: 400, reason: REFUSE_NOT_YOURS } as const)
+    if (!r.ok) return NextResponse.json({ error: r.reason }, { status: r.status })
+    proof = r.proof
     const traded = proof.symbols.map((t) => t.split(':')[1]).filter((x): x is string => !!x)
     if (!draft.symbol) {
       const first = traded.map((t) => chartPairFor(t)?.symbol).find((x): x is string => !!x)

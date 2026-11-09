@@ -69,6 +69,7 @@
 .cmy-fact__badge svg { width: 13px; height: 13px; }
 .cmy-fact__line { font-size: 14px; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
 .cmy-fact[data-side='sell'] .cmy-fact__line, .cmy-fact[data-side='short'] .cmy-fact__line { color: var(--fg); }
+.cmy-fact-tag { margin-top: 4px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 .cmy-fact__when { font-size: 11.5px; color: var(--muted-2); }
 .cmy-fact__tx { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-family: var(--cmy-mono); font-size: 11px; color: var(--muted); padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); transition: color .12s ease, border-color .12s ease; }
 .cmy-fact__tx svg { width: 11px; height: 11px; }

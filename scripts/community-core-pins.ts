@@ -11,7 +11,9 @@ import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 
 import { validatePostDraft } from '../lib/chart-posts'
 import { hotRank, RESERVED_COMMUNITY_SLUGS } from '../lib/community/spec'
 import { checkName, checkSlug, checkSymbols, decodeCursor, encodeCursor, higherRole, memberLabel, parseVote, voteDelta } from '../lib/community/rules'
-import { fillLabel, proofSide, safeTxUrl } from '../lib/community/proof'
+import { clampProofSize, decideProof, explorerTxFor, fillLabel, locateTx, proofSide, readOnChain, REFUSE_CHAIN_UNREAD, REFUSE_NOTHING_MOVED } from '../lib/community/proof'
+import { proofFactLine, proofTagLine } from '../lib/community/proof-words'
+import { storedProof } from '../lib/community/store'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -74,13 +76,69 @@ export function communityCorePins(check: Check): void {
     JSON.stringify(decodeCursor(off)) === '{"o":25}' && !!dk && 't' in dk && dk.id === 'abc123def0' && decodeCursor('not-base64!!') === null && decodeCursor(encodeCursor({ o: 99_999 })) === null && decodeCursor(Buffer.from('{"t":1,"id":"X; DROP"}').toString('base64url')) === null && decodeCursor(null) === null,
   )
   check(
-    'community core: roles merge to the higher; proof side reads the tag (an HL perp build is long/short); a tx link must be https; the fill label is plain words',
+    'community core: roles merge to the higher; proof side reads the tag (an HL perp build is long/short)',
     higherRole('member', 'owner') === 'owner' && higherRole('mod', 'member') === 'mod' &&
-      proofSide(['buy:ETH'], 'native-swap-uniswap') === 'buy' && proofSide(['sell:HYPE'], 'native-hl-exec') === 'short' && proofSide([], null) === null &&
-      safeTxUrl('https://basescan.org/tx/0x1') !== null && safeTxUrl('javascript:alert(1)') === null && safeTxUrl('http://basescan.org/tx/0x1') === null &&
-      fillLabel({ symbols: ['buy:ETH'], side: 'buy', sizeUsd: 25, chain: 'Base' }) === 'Bought $25 of ETH on Base' &&
-      fillLabel({ symbols: ['sell:AAPL'], side: 'sell', sizeUsd: null, chain: null }) === 'Sold AAPL',
+      proofSide(['buy:ETH'], 'native-swap-uniswap') === 'buy' && proofSide(['sell:HYPE'], 'native-hl-exec') === 'short' && proofSide([], null) === null,
   )
+  secfixProofPins(check)
+}
+
+/** QA-SECURITY S1 + S2 (lane SECFIX): what a trade proof may show. Pure. */
+export function secfixProofPins(check: Check): void {
+  const H = `0x${'ab'.repeat(32)}`
+  const row = (o: Partial<{ chain: string | null; txUrl: string | null; valueUsd: number | null }> = {}) => ({
+    id: 'turnfixture01', symbols: ['buy:ETH'], valueUsd: 25, chain: 'base', txUrl: `https://basescan.org/tx/${H}`, buildPath: 'native-swap-uniswap', createdAt: new Date(1_762_000_000_000), ...o,
+  })
+  check(
+    'S1 size clamp: the shown size is min(recorded, on-chain × 1.05); a recorded 999,999,999 on a $10 transaction shows $10.50; hidden = null; no recorded value = the chain figure',
+    clampProofSize(999_999_999, 10, true) === 10.5 && clampProofSize(25, 24.9, true) === 25 && clampProofSize(25, 100, true) === 25 && clampProofSize(25, 10, false) === null && clampProofSize(null, 12.345, true) === 12.35 && clampProofSize(0, 7, true) === 7,
+  )
+  const nothing = decideProof(row(), { usd: null }, true)
+  const zero = decideProof(row(), { usd: 0 }, true)
+  const unread = decideProof(row(), 'error', true)
+  const gone = decideProof(row(), 'gone', true)
+  check(
+    'S1 refusal: a null or zero on-chain read (the approve-only trick) is refused by name; no RPC answer refuses (fail closed, 503); a hash the chain does not know is refused',
+    !nothing.ok && nothing.reason === REFUSE_NOTHING_MOVED && !zero.ok && zero.reason === REFUSE_NOTHING_MOVED && !unread.ok && unread.status === 503 && unread.reason === REFUSE_CHAIN_UNREAD && !gone.ok && /not on Base/.test(gone.reason),
+  )
+  const ok = decideProof(row({ valueUsd: 999_999_999, chain: '8453' }), { usd: 20 }, true)
+  check(
+    'S1 chain from the id: the chain NAME comes from the registry for the chain id (a stored "8453" reads Base), the hash from the link; the size is clamped to the chain',
+    ok.ok && ok.proof.chainId === 8453 && ok.proof.chain === 'Base' && ok.proof.txHash === H && ok.proof.sizeUsd === 21 && ok.proof.verification === 'verified',
+    ok.ok ? JSON.stringify(ok.proof) : ok.reason,
+  )
+  const evil = decideProof(row({ txUrl: `https://evil.example/claim?tx=${H}` }), { usd: 20 }, true)
+  const noChain = decideProof(row({ chain: 'narnia', txUrl: `https://evil.example/claim?tx=${H}` }), { usd: 20 }, true)
+  const noHash = decideProof(row({ txUrl: 'https://basescan.org/tx/0x1' }), { usd: 20 }, true)
+  check(
+    'S2 link rebuilt: a stored https://evil.example/claim?tx=0x… link is NEVER emitted — the proof carries the registry explorer rebuilt from chain + hash; no registry chain or no hash = no proof',
+    evil.ok && evil.proof.txUrl === `https://basescan.org/tx/${H}` && !JSON.stringify(evil.proof).includes('evil.example') && !noChain.ok && !noHash.ok && locateTx({ chain: null, txUrl: `https://evil.example/x?tx=${H}` }) === null,
+  )
+  const good = ok.ok ? ok.proof : null
+  check(
+    'S2 storedProof: only a proof whose txUrl is exactly the rebuild of its own chainId + txHash reads back; a swapped host, an unknown chain and the pre-SECFIX shape read as none',
+    !!good && storedProof(good)?.txUrl === explorerTxFor(8453, H) &&
+      storedProof({ ...good, txUrl: `https://evil.example/claim?tx=${H}` }) === null &&
+      storedProof({ ...good, chainId: 999_999 }) === null &&
+      storedProof({ turnId: 't', symbols: ['buy:ETH'], side: 'buy', sizeUsd: 25, chain: 'Base', txUrl: `https://basescan.org/tx/${H}`, signedAt: 1, verification: 'verified' }) === null,
+  )
+  check(
+    'S1 wording: "verified" sits only beside what the chain confirmed (this wallet moved $X on <chain>); the market + side are the author\'s tag; the default title says both apart',
+    proofFactLine({ sizeUsd: 25, chain: 'Base' }) === 'Verified on-chain: this wallet moved $25.00 on Base' &&
+      proofFactLine({ sizeUsd: null, chain: 'Base' }) === 'Verified on-chain: this wallet moved funds on Base' &&
+      proofTagLine({ symbols: ['buy:ETH'], side: 'buy' }) === 'Tagged by the author: bought ETH' && proofTagLine({ symbols: [], side: null }) === null &&
+      fillLabel({ symbols: ['buy:ETH'], side: 'buy', sizeUsd: 25, chain: 'Base' }) === 'Tagged by the author: bought ETH. Verified on-chain: this wallet moved $25.00 on Base.' &&
+      !/verified/i.test(proofTagLine({ symbols: ['sell:AAPL'], side: 'sell' }) ?? ''),
+  )
+}
+
+/** S1: the chain read's hard timeout + error classes (async; pure over an injected reader). */
+export async function secfixProofReadPins(check: Check): Promise<void> {
+  const slow = await readOnChain(() => new Promise((r) => setTimeout(() => r({ usd: 5 }), 500)), 8453, '0x', '0x', 50)
+  const boom = await readOnChain(async () => { throw Object.assign(new Error('rpc down'), { name: 'HttpRequestError' }) }, 8453, '0x', '0x', 50)
+  const gone = await readOnChain(async () => { throw Object.assign(new Error('no tx'), { name: 'TransactionNotFoundError' }) }, 8453, '0x', '0x', 50)
+  const fine = await readOnChain(async () => ({ usd: 9 }), 8453, '0x', '0x', 50)
+  check('S1 chain read: a read slower than the timeout is an error (fail closed); an RPC error is an error; an unknown tx is gone; an answer passes through', slow === 'error' && boom === 'error' && gone === 'gone' && typeof fine === 'object' && fine.usd === 9)
 }
 
 // ── served ───────────────────────────────────────────────────────────────
@@ -131,6 +189,7 @@ const ORGANIC = { 'x-yf-organic-probe': '1' }
 /** Served pins: against a running `next start` (BASE) on the standard harness belt + the TEST DB.
  *  Every row written carries the internal-run header and is cleaned up. */
 export async function communityCorePinsServed(check: Check, base: string): Promise<void> {
+  await secfixProofReadPins(check)
   loadEnvLocal()
   const pk = process.env.PRIVATE_KEY
   if (!pk) {
@@ -272,11 +331,16 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
       check('community core (served): GET /api/posts/<id> answers the FeedPost fields + commentList', one.status === 200 && onePost?.kind === 'video' && onePost.mediaUrl.startsWith('https://www.youtube.com/') && Array.isArray(onePost.commentList))
     }
 
-    // ── trade proof ──
-    const tx = `https://basescan.org/tx/0x${'c0'.repeat(32)}`
-    const mk = async (wallet: string, verification: string | null) => {
+    // ── trade proof (QA-SECURITY S1 + S2) ──
+    // The fixture hashes are not real transactions: every trade post through
+    // the API must be REFUSED (the chain is read at post time and does not
+    // know them). The positive path runs resolveTradeProof in-process with
+    // the chain reader injected (a real mined tx is not available here).
+    const hash = `0x${'c0'.repeat(32)}`
+    const tx = `https://basescan.org/tx/${hash}`
+    const mk = async (wallet: string, verification: string | null, o: { txUrl?: string; valueUsd?: number } = {}) => {
       const row = await prisma.embedTurn.create({
-        data: { embedKeyId: 'first-party', origin: 'http://localhost', sessionId: `harness-core-${slug}`, outcome: 'signed', walletAddress: wallet, verification, txUrl: tx, valueUsd: 25, chain: 'base', symbols: ['buy:ETH'], buildPath: 'native-swap-uniswap', isInternal: true },
+        data: { embedKeyId: 'first-party', origin: 'http://localhost', sessionId: `harness-core-${slug}`, outcome: 'signed', walletAddress: wallet, verification, txUrl: o.txUrl ?? tx, valueUsd: o.valueUsd ?? 25, chain: 'base', symbols: ['buy:ETH'], buildPath: 'native-swap-uniswap', isInternal: true },
         select: { id: true },
       })
       fixtureIds.push(row.id)
@@ -285,25 +349,49 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
     const mine = await mk(a, 'verified')
     const theirs = await mk(b, 'verified')
     const unverified = await mk(a, 'unverified')
+    const evilRow = await mk(a, 'verified', { txUrl: `https://evil.example/claim?tx=${hash}`, valueUsd: 999_999_999 })
     const fills = await call('GET', '/api/me/fills?symbol=ETH&limit=50', { cookie: sa })
-    const myFill = ((fills.json.fills ?? []) as { turnId: string; label: string }[]).find((x) => x.turnId === mine)
-    const tradeOk = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'trade', proofTurnId: mine } })
-    const tradeHidden = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'trade', proofTurnId: mine, showSize: false, title: 'Added here' } })
+    const fillList = (fills.json.fills ?? []) as { turnId: string; label: string; txUrl: string; chain: string; chainId: number }[]
+    const myFill = fillList.find((x) => x.turnId === mine)
+    const evilFill = fillList.find((x) => x.turnId === evilRow)
+    check(
+      'S2 (served): /api/me/fills rebuilds every tx link from the registry — the evil.example row is offered only with basescan.org; the label is the author\'s tag + the chain, no size claimed; other wallets\' and unverified rows absent',
+      !!myFill && myFill.label === 'Tagged by you: bought ETH · a transaction on Base' && myFill.txUrl === tx && myFill.chainId === 8453 &&
+        !!evilFill && evilFill.txUrl === tx && !JSON.stringify(fills.json).includes('evil.example') &&
+        !fillList.some((x) => x.turnId === unverified || x.turnId === theirs),
+      `${fills.status} ${JSON.stringify(myFill ?? null).slice(0, 160)}`,
+    )
+    const tradeFake = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'trade', proofTurnId: mine } })
+    const tradeEvil = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'trade', proofTurnId: evilRow, title: 'Bought $999,999,999 of ETH' } })
     const tradeTheirs = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'trade', proofTurnId: theirs } })
     const tradeUnver = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'trade', proofTurnId: unverified } })
-    const tradeWrongSym = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'trade', proofTurnId: mine, symbol: 'AAPL' } })
-    const tp = tradeOk.json.post as { kind: string; symbol: string; title: string; proof: { sizeUsd: number | null; side: string; chain: string; txUrl: string; verification: string; turnId: string } | null } | undefined
-    const th = tradeHidden.json.post as { proof: { sizeUsd: number | null } | null; title: string } | undefined
+    const refusedByChain = (r: { status: number; json: Json }) => (r.status === 400 && /not on Base|moved nothing/.test(r.json.error ?? '')) || (r.status === 503 && /Could not read that transaction/.test(r.json.error ?? ''))
     check(
-      "community core (served): trade proof — my verified fill is in /api/me/fills with its plain-words label; a trade post derives symbol, title and the proof from MY row (size shown or hidden); another wallet's row, an unverified row and a mismatched symbol are refused",
-      !!myFill && myFill.label === 'Bought $25 of ETH on Base' && !((fills.json.fills ?? []) as { turnId: string }[]).some((x) => x.turnId === unverified || x.turnId === theirs) &&
-        tradeOk.status === 201 && tp?.kind === 'trade' && tp.symbol === 'ETH' && tp.title === 'Bought $25 of ETH on Base' && tp.proof?.sizeUsd === 25 && tp.proof.side === 'buy' && tp.proof.chain === 'Base' && tp.proof.txUrl === tx && tp.proof.verification === 'verified' && tp.proof.turnId === mine &&
-        tradeHidden.status === 201 && th?.proof?.sizeUsd === null && th.title === 'Added here' &&
-        tradeTheirs.status === 400 && tradeUnver.status === 400 && tradeWrongSym.status === 400,
-      `${fills.status} ${tradeOk.status}/${tradeHidden.status}/${tradeTheirs.status}/${tradeUnver.status}/${tradeWrongSym.status} ${tradeOk.json.error ?? ''}`,
+      'S1 (served): a verified receipt row whose hash is not a real transaction is REFUSED as a trade post (the chain is read at post time); the evil.example row likewise; another wallet\'s and an unverified row are refused as not yours',
+      refusedByChain(tradeFake) && refusedByChain(tradeEvil) && tradeTheirs.status === 400 && /not one of your verified trades/.test(tradeTheirs.json.error ?? '') && tradeUnver.status === 400,
+      `${tradeFake.status} ${tradeFake.json.error ?? ''} | ${tradeEvil.status} ${tradeEvil.json.error ?? ''} | ${tradeTheirs.status}/${tradeUnver.status}`,
     )
     const organicTrade = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'trade', proofTurnId: mine }, organic: true })
-    check('community core (served): an internal receipt row is no proof outside an internal run', organicTrade.status === 400, String(organicTrade.status))
+    check('community core (served): an internal receipt row is no proof outside an internal run', organicTrade.status === 400 && /not one of your verified trades/.test(organicTrade.json.error ?? ''), String(organicTrade.status))
+    {
+      const { resolveTradeProof } = await import('../lib/community/proof')
+      const seen: string[] = []
+      const reader = async (chainId: number, h: string, w: string) => {
+        seen.push(`${chainId}:${h}:${w}`)
+        return { usd: 20 }
+      }
+      const pos = await resolveTradeProof(a, evilRow, { showSize: true, includeInternal: true, readNotional: reader })
+      const hidden = await resolveTradeProof(a, mine, { showSize: false, includeInternal: true, readNotional: reader })
+      const zero = await resolveTradeProof(a, mine, { showSize: true, includeInternal: true, readNotional: async () => ({ usd: null }) })
+      const hang = await resolveTradeProof(a, mine, { showSize: true, includeInternal: true, readNotional: () => new Promise(() => {}), timeoutMs: 80 })
+      const other = await resolveTradeProof(a, theirs, { showSize: true, includeInternal: true, readNotional: reader })
+      check(
+        'S1 (DB, injected chain reader): the positive path reads the chain for (8453, the row\'s hash, the author); a recorded $999,999,999 shows $21 (on-chain $20 × 1.05); the evil link becomes basescan; hidden size = null; a null read and a hung read are refused; another wallet\'s row never reaches the reader',
+        pos.ok && pos.proof.sizeUsd === 21 && pos.proof.txUrl === tx && pos.proof.chain === 'Base' && seen[0] === `8453:${hash}:${a}` &&
+          hidden.ok && hidden.proof.sizeUsd === null && !zero.ok && /moved nothing/.test(zero.reason) && !hang.ok && hang.status === 503 && !other.ok && seen.length === 2,
+        pos.ok ? JSON.stringify(pos.proof).slice(0, 200) : pos.reason,
+      )
+    }
 
     // ── identity ──
     const strangerId = await call('GET', '/api/me/identity')
