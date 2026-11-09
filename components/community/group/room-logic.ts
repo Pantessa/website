@@ -286,16 +286,18 @@ export function roomCardText(room: Pick<PublicCommunity, 'slug' | 'name' | 'abou
   }
 }
 
-/** A room made by a harness run. The public shape has no internal flag yet,
- *  so the test prefix is the fence: never indexed. */
+/** The harness prefix. A room's own is_internal flag is the fence (the
+ *  server reads it); the prefix covers a read that could not get the flag. */
 export const isTestRoomSlug = (slug: string) => slug.startsWith('t-')
 
-export function roomMeta(room: Pick<PublicCommunity, 'slug' | 'name' | 'about'> | null, slug: string): { title: string; description: string; noindex: boolean } {
+/** Title and description for a room page. Never indexed: a room that could
+ *  not be read, an internal (harness) room, a test-prefixed address. */
+export function roomMeta(room: Pick<PublicCommunity, 'slug' | 'name' | 'about'> | null, slug: string, internal = false): { title: string; description: string; noindex: boolean } {
   if (!room) return { title: 'Room on Pantessa', description: ROOM_DEFAULT_ABOUT, noindex: true }
   return {
     title: `${oneLine(room.name) || room.slug} on Pantessa`,
     description: clip(oneLine(room.about) || ROOM_DEFAULT_ABOUT, 200),
-    noindex: isTestRoomSlug(slug),
+    noindex: internal || isTestRoomSlug(slug),
   }
 }
 

@@ -6,16 +6,20 @@
 //   components/community/telegram/TelegramPanel.tsx
 //   components/community/discord/DiscordPanel.tsx
 // (default exports, props { slug, canManage }). Lane GROUP creates nothing at
-// those paths, and a missing module fails the build, so until those lanes
-// merge the two seats are empty and ChannelsPanel says so by name.
+// those paths, and a missing module fails the build, so a seat stays empty
+// until its lane's panel is in the tree and ChannelsPanel says so by name.
+// The Discord panel is in (merged 2026-11-09) and is wired below.
 //
-// COORDINATOR, AT MERGE (two lines, nothing else changes):
+// COORDINATOR, WHEN THE TELEGRAM LANE MERGES (two lines, nothing else changes):
 //
-//   import dynamic from 'next/dynamic'
-//   export const TelegramPanel: PanelSeat = dynamic(() => import('@/components/community/telegram/TelegramPanel'), { ssr: false, loading: PanelLoading })
-//   export const DiscordPanel: PanelSeat = dynamic(() => import('@/components/community/discord/DiscordPanel'), { ssr: false, loading: PanelLoading })
+//   import TelegramPanelImpl from '@/components/community/telegram/TelegramPanel'
+//   export const TelegramPanel: PanelSeat = TelegramPanelImpl
+//
+// The pin `group seam` in scripts/community-group-pins.ts goes red the moment
+// a panel file exists and its seat is still empty.
 
 import type { ComponentType } from 'react'
+import DiscordPanelImpl from '@/components/community/discord/DiscordPanel'
 
 export interface ChannelPanelProps {
   slug: string
@@ -24,9 +28,5 @@ export interface ChannelPanelProps {
 
 export type PanelSeat = ComponentType<ChannelPanelProps> | null
 
-export function PanelLoading() {
-  return <p className="grp-chan__wait">Loading…</p>
-}
-
 export const TelegramPanel: PanelSeat = null
-export const DiscordPanel: PanelSeat = null
+export const DiscordPanel: PanelSeat = DiscordPanelImpl

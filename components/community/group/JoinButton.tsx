@@ -215,7 +215,7 @@ export default function JoinButton({ slug, name, via = null, onChange, size = 'm
   } else if (member) {
     control = (
       <>
-        <button type="button" className={`${cls} is-member`} aria-haspopup="menu" aria-expanded={menu} aria-controls={menu ? menuId : undefined} onClick={() => setMenu((m) => !m)} disabled={busy && optimistic === null} data-join-state="member">
+        <button type="button" className={`${cls} is-member`} aria-haspopup="menu" aria-expanded={menu} aria-controls={menu ? menuId : undefined} onClick={() => setMenu((m) => !m)} disabled={busy} data-join-state="member">
           <Check width={14} height={14} aria-hidden />
           Joined
           <ChevronDown width={13} height={13} aria-hidden />

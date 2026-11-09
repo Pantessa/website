@@ -24,9 +24,9 @@ type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<s
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
-  const { room, known } = await readRoom(slug)
+  const { room, known, internal } = await readRoom(slug)
   if (known && !room) return { title: 'Room not available · Pantessa', robots: { index: false, follow: false } }
-  const meta = roomMeta(room, slug)
+  const meta = roomMeta(room, slug, internal)
   const url = communityPath(slug)
   return {
     title: meta.title,

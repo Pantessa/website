@@ -24,7 +24,7 @@ type Params = { params: Promise<{ slug: string }> }
 
 export default async function Image({ params }: Params) {
   const { slug } = await params
-  const { room } = await readRoom(slug).catch(() => ({ room: null }))
+  const room = await readRoom(slug).then((r) => r.room, () => null)
   const card = roomCardText(room)
   const pal = brandOgPalette(null)
   const fonts = join(process.cwd(), 'assets', 'og-fonts')

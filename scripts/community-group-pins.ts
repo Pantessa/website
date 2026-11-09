@@ -167,9 +167,9 @@ export function communityGroupPins(check: Check): void {
   check('group card: one member is "1 member", an empty room is "New room", no about falls to the default, long text is cut, a missing room gets an honest card', lone.members === '1 member' && roomCardText({ ...room, members: 0 }).members === 'New room' && lone.about === ROOM_DEFAULT_ABOUT && lone.name.length === 44 && lone.moreMarkets === null && none.name === 'A room on Pantessa' && none.url === 'pantessa.com/g')
   check('group card: a symbol that is not ticker-shaped never reaches the card', eq(roomCardText({ ...room, symbols: ['ETH', '<b>', 'ok then'] }).markets, ['ETH']))
   const meta = roomMeta(room, 'eth-swing')
-  check('group meta: title is "<Name> on Pantessa", description is the about line, a t- room and an unreadable one are never indexed', meta.title === 'ETH Swing Traders on Pantessa' && meta.description === 'Daily levels on ETH. Calls are stamped.' && meta.noindex === false && roomMeta(room, 't-group-x').noindex === true && roomMeta(null, 'eth-swing').noindex === true && roomMeta({ ...room, about: '' }, 'eth-swing').description === ROOM_DEFAULT_ABOUT)
+  check('group meta: title is "<Name> on Pantessa", description is the about line; an internal room, a t- room and an unreadable one are never indexed', meta.title === 'ETH Swing Traders on Pantessa' && meta.description === 'Daily levels on ETH. Calls are stamped.' && meta.noindex === false && roomMeta(room, 't-group-x').noindex === true && roomMeta(room, 'eth-swing', true).noindex === true && roomMeta(null, 'eth-swing').noindex === true && roomMeta({ ...room, about: '' }, 'eth-swing').description === ROOM_DEFAULT_ABOUT)
   const og = code(read('app', 'g', '[slug]', 'opengraph-image.tsx'))
-  check('group card: the OG image draws the Emerald mark and the pinned words, and falls to the honest card when the room cannot be read', /gemMarkSvg\(\)/.test(og) && /roomCardText\(room\)/.test(og) && /readRoom\(slug\)\.catch\(/.test(og) && /card\.members/.test(og) && /card\.markets\.map/.test(og))
+  check('group card: the OG image draws the Emerald mark and the pinned words, and falls to the honest card when the room cannot be read', /gemMarkSvg\(\)/.test(og) && /roomCardText\(room\)/.test(og) && /readRoom\(slug\)\.then\(\(r\) => r\.room, \(\) => null\)/.test(og) && /card\.members/.test(og) && /card\.markets\.map/.test(og))
   const page = code(read('app', 'g', '[slug]', 'page.tsx'))
   check('group page: an unknown room is notFound(), an unreadable store still renders (the browser asks the API), and the page is not force-dynamic', /if \(known && !room\) notFound\(\)/.test(page) && !/force-dynamic/.test(page) && /initial=\{room\}/.test(page))
 
@@ -187,8 +187,9 @@ export function communityGroupPins(check: Check): void {
   const seam = read('components', 'community', 'group', 'channel-panels.tsx')
   for (const [lane, file, name] of [['telegram', 'TelegramPanel.tsx', 'TelegramPanel'], ['discord', 'DiscordPanel.tsx', 'DiscordPanel']] as const) {
     const exists = existsSync(join(ROOT, 'components', 'community', lane, file))
-    const wired = new RegExp(`export const ${name}: PanelSeat = dynamic\\(\\(\\) => import\\('@/components/community/${lane}/${name}'\\)`).test(code(seam))
-    check(`group seam: ${name} is ${exists ? 'WIRED now that the ' + lane + ' lane\'s panel exists' : 'an empty seat while the ' + lane + ' lane\'s panel is not in this tree (no import of a missing module)'}`, exists ? wired : !wired && new RegExp(`export const ${name}: PanelSeat = null`).test(seam))
+    const imported = new RegExp(`from '@/components/community/${lane}/${name}'`).test(code(seam))
+    const empty = new RegExp(`export const ${name}: PanelSeat = null`).test(code(seam))
+    check(`group seam: ${name} is ${exists ? 'WIRED now that the ' + lane + " lane's panel exists" : 'an empty seat while the ' + lane + " lane's panel is not in this tree (no import of a missing module)"}`, exists ? imported && !empty : !imported && empty)
   }
 
   // ── house rules ─────────────────────────────────────────────────────────
