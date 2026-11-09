@@ -67,6 +67,8 @@ import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
+import PostProofDoor from '@/components/community/PostProofDoor'
+import { proofDoorHref } from '@/components/community/feed-rules'
 import { signedTxsOf } from '@/components/SignedTxLines'
 import XchainSettlement from '@/components/XchainSettlement'
 import { REFUNDED_KIND, reportWalletRefusal } from '@/lib/wallet-refusal'
@@ -2624,6 +2626,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         <div className="mt-2 pt-1.5 border-t border-[var(--line)] flex items-center gap-2">
                           <span className="text-[10.5px] mono text-[color:var(--muted-2)]">✍️ signed &amp; settled</span>
                           <ShareReceiptButton kind="tx" chatId={currentChatId} messageId={msg.dbId} />
+                          {/* One quiet door into the community: shown only when
+                              this turn built a same-chain swap and the receipt
+                              holds its mined transaction (never an order, a
+                              send, a bridge or a cross-chain deposit). A new
+                              tab, so this thread stays mounted. */}
+                          {!embedded && <PostProofDoor href={proofDoorHref(signedTxsOf(msg.meta), buildPathOf(msg.meta))} />}
                           {/* The aha→link loop closes itself: the receipt that
                               just proved the ask offers to become an intent
                               link, minted in place (same modal as the

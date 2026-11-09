@@ -39,7 +39,24 @@ import {
   tradeFact,
   xShareHref,
   xWeight,
+  CALL_NEXT_LABEL,
+  COMMUNITY_NEW_HREF,
+  PROOF_DOOR_LABEL,
+  PROOF_DOOR_TITLE,
+  composeHref,
+  fillsSeenMark,
+  PROVABLE_BUILD_PATHS,
+  jobProofDoorHref,
+  jobStepTxs,
+  noRoomLine,
+  preselectFill,
+  proofDoorHref,
+  readComposeQuery,
+  readFeedSort,
+  stripComposeQuery,
+  symbolRoomsHref,
 } from '../components/community/feed-rules'
+import { DOCS_PAGES } from '../lib/docs'
 import { FIXTURE_POSTS } from './community-feed-fixtures'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -220,9 +237,9 @@ export function communityFeedPins(check: Check): void {
         /export const COMPOSER_TITLE_MAX = 120/.test(comp) && /export const POST_TITLE_MAX = 120/.test(posts) && /export const COMPOSER_BODY_MAX = 2000/.test(comp) && /export const POST_BODY_MAX = 2_000/.test(posts),
     )
     check(
-      'community feed: a trade post types nothing about the trade — it lists GET /api/me/fills, sends proofTurnId + showSize (default on) and no symbol; the composer says only chain-confirmed trades appear',
+      'community feed: a trade post types nothing about the trade — it lists GET /api/me/fills, sends proofTurnId + showSize (default on) and no symbol; the composer says only chain-confirmed trades appear, and that a post needs a swap (RE-PINNED 2026-11-09, lane SHARE: the proof reader refuses a one-way transfer or deposit)',
       /fetch\(`\/api\/me\/fills\?/.test(comp) && /payload\.proofTurnId = picked/.test(comp) && /payload\.showSize = showSize/.test(comp) && /useState\(true\)\s*\n\s*const \[fills/.test(comp.replace(/const \[showSize, setShowSize\] = /, '')) &&
-        /if \(kind !== 'trade' && sym\) payload\.symbol = sym/.test(comp) && /Only transactions the chain confirmed from your wallet appear here\. The market is your own tag/.test(comp) && /data-fills-empty/.test(comp),
+        /if \(kind !== 'trade' && sym\) payload\.symbol = sym/.test(comp) && /Only transactions the chain confirmed from your wallet appear here\. A post needs a swap, one asset for another: a transfer or a deposit is refused\. The market is your own tag/.test(comp) && /data-fills-empty/.test(comp),
     )
     check(
       'community feed: posting signed out HOLDS the post behind the unified door (no redirectTo) and keeps the draft (sessionStorage); a 403 needsJoin offers "Join … and post" (the join route, then the post again)',
@@ -273,6 +290,160 @@ export function communityFeedPins(check: Check): void {
       /if \(!feedPost \|\| feedPost\.kind === 'idea'\) notFound\(\)/.test(cpage) && /<PostCard post=\{feedPost\} showCommunity full \/>/.test(cpage) && /<VoteButtons postId=\{post\.id\}/.test(cpage) && /<ShareSheet url=/.test(cpage) &&
         /<CallComments postId=\{feedPost\.id\}/.test(cpage) && /Copy these lines to my chart/.test(tab) && /<VoteButtons postId=\{post\.id\}/.test(tab) && /<ShareSheet url=\{callPath\(post\.id\)\}/.test(tab) && /FEED_SORTS\.map/.test(tab) && /Most executed/.test(tab) &&
         /forkOf: post\.id/.test(tab) && /canSellAsk\(/.test(tab) && /canTradeAsk\(/.test(tab),
+    )
+  }
+
+  // ── lane SHARE (2026-11-09): the shortest path into the feed ──
+  {
+    const comp = code('components/community/Composer.tsx')
+    check(
+      'community share: ?compose= opens the composer on the right tab (idea · link · video · trade, any case), &symbol= pre-picks a market-shaped symbol only, anything else opens nothing',
+      COMPOSER_KINDS.every((k) => readComposeQuery(`?compose=${k.kind}`)?.kind === k.kind) &&
+        readComposeQuery('?compose=TRADE')?.kind === 'trade' &&
+        readComposeQuery('?compose=trade&symbol=ETH')?.symbol === 'ETH' &&
+        readComposeQuery('?compose=idea&symbol=xyz:AAPL')?.symbol === 'xyz:AAPL' &&
+        readComposeQuery('?compose=idea&symbol=%3Cscript%3E')?.symbol === '' &&
+        readComposeQuery('?compose=poll') === null &&
+        readComposeQuery('?tab=community') === null &&
+        readComposeQuery('') === null,
+    )
+    check(
+      'community share: the compose query is STRIPPED from the address (a reload or a copied URL never re-opens it); every other query and the hash stay; composeHref builds the same address the reader reads',
+      stripComposeQuery('/community', '?compose=trade') === '/community' &&
+        stripComposeQuery('/community', '?compose=trade&symbol=ETH&sort=new') === '/community?sort=new' &&
+        stripComposeQuery('/g/eth-swing', '?via=abc123&compose=idea', '#rooms') === '/g/eth-swing?via=abc123#rooms' &&
+        stripComposeQuery('/t/ETH', '?tab=community&compose=video') === '/t/ETH?tab=community' &&
+        composeHref('trade') === '/community?compose=trade' &&
+        composeHref('idea', { symbol: 'ETH' }) === '/community?compose=idea&symbol=ETH' &&
+        composeHref('trade', { room: 'eth-swing' }) === '/g/eth-swing?compose=trade' &&
+        composeHref('trade', { room: '../evil' }) === '/community?compose=trade' &&
+        readComposeQuery(composeHref('video', { symbol: 'UNI' }).split('?')[1])?.kind === 'video',
+    )
+    check(
+      'community share: the Composer reads the query itself (so /community, a room and the symbol tab all get it), from the address bar, inside its own Suspense, then rewrites the address with history.replaceState; a link-asked tab wins over a saved draft; still no redirectTo and no wall',
+      /readComposeQuery\(live\)/.test(comp) &&
+        /const live = window\.location\.search/.test(comp) &&
+        /window\.history\.replaceState\(window\.history\.state, '', stripComposeQuery\(window\.location\.pathname, live, window\.location\.hash\)\)/.test(comp) &&
+        (comp.match(/<Suspense fallback=\{null\}>\s*<ComposeQueryReader onQuery=\{onComposeQuery\} \/>\s*<\/Suspense>/g) ?? []).length === 2 &&
+        /if \(!askedRef\.current\) setKind\(k\.kind\)/.test(comp) &&
+        !/redirectTo/.test(comp) &&
+        /\{busy \? 'Posting' : address \? 'Post' : 'Sign in and post'\}/.test(comp),
+    )
+    const f = (turnId: string, signedAt: number) => ({ turnId, signedAt })
+    check(
+      'community share: the trade tab pre-picks the ONE fill that is new since the last look; none or several new ones pre-pick nothing; the mark is the newest fill time ever listed',
+      preselectFill([f('a', 300), f('b', 200), f('c', 100)], 200) === 'a' &&
+        preselectFill([f('a', 300), f('b', 200)], 100) === null &&
+        preselectFill([f('a', 300)], 300) === null &&
+        preselectFill([f('a', 300)], null) === 'a' &&
+        preselectFill([f('a', 300), f('b', 200)], null) === null &&
+        preselectFill([], null) === null &&
+        fillsSeenMark([f('a', 300), f('b', 200)], 250) === 300 &&
+        fillsSeenMark([f('a', 100)], 250) === 250 &&
+        fillsSeenMark([], null) === null &&
+        /const pre = preselectFill\(d\.fills, seen\)/.test(comp) &&
+        /if \(pre\) setPicked\(\(cur\) => cur \?\? pre\)/.test(comp),
+    )
+
+    // the receipt's door: gated on a mined transaction the proof reader can read
+    const H = `0x${'ab'.repeat(32)}`
+    const door = code('components/community/PostProofDoor.tsx')
+    const chat = code('components/ChatInterface.tsx')
+    const job = code('components/JobCard.tsx')
+    const SW = 'native-swap-uniswap'
+    check(
+      'community share: "Post it with proof" is offered ONLY when the turn built a same-chain swap (Uniswap v3 / v4, LiFi) AND the receipt holds its mined tx hash on a registry chain — never for a CoW order, a cross-chain deposit, a Hyperliquid order, a send or an unknown build (the proof reader refuses a one-way transaction), no txs, an unknown chain, an order uid or a malformed hash; the door goes to /community?compose=trade',
+      proofDoorHref([{ hash: H, chainId: 8453 }], SW) === '/community?compose=trade' &&
+        proofDoorHref([{ hash: H, chainId: 1 }], 'native-swap-uniswap-v4') === '/community?compose=trade' &&
+        proofDoorHref([{ hash: H, chainId: 4663 }], 'native-swap-lifi') === '/community?compose=trade' &&
+        proofDoorHref([{ hash: '0x1234', chainId: 8453 }, { hash: H, chainId: 8453 }], SW) === '/community?compose=trade' &&
+        ['native-swap-cow', 'native-cross-chain', 'native-hl-exec', 'native-send', 'native-lido-stake', '', undefined, null].every((bp) => proofDoorHref([{ hash: H, chainId: 8453 }], bp) === null) &&
+        [...PROVABLE_BUILD_PATHS].sort().join(',') === 'native-swap-lifi,native-swap-uniswap,native-swap-uniswap-v4' &&
+        proofDoorHref([], SW) === null &&
+        proofDoorHref(null, SW) === null &&
+        proofDoorHref([{ hash: H, chainId: 1337 }], SW) === null &&
+        proofDoorHref([{ hash: H, chainId: 999_999_999 }], SW) === null &&
+        proofDoorHref([{ hash: `0x${'ab'.repeat(56)}`, chainId: 8453 }], SW) === null &&
+        proofDoorHref([{ hash: H }], SW) === null &&
+        proofDoorHref([{ chainId: 8453 }], SW) === null,
+    )
+    const swapStep = { status: 'done', builder: 'swap', result: { txHash: H, txs: [{ hash: H, chainId: 8453, title: 'Swap' }] } }
+    const pathOf = (s: { builder?: string }) => (s.builder === 'swap' ? SW : s.builder === 'bridge' ? 'native-cross-chain' : undefined)
+    check(
+      'community share: a done job offers the door only from a step that built a same-chain swap and left a confirmed tx (a bridge step with a tx, an order step with no txs, a step of unknown build, a failed step and a pending step contribute nothing)',
+      jobProofDoorHref([swapStep], pathOf) === '/community?compose=trade' &&
+        jobProofDoorHref([{ ...swapStep, builder: 'bridge' }], pathOf) === null &&
+        jobProofDoorHref([{ ...swapStep, builder: 'mystery' }], pathOf) === null &&
+        jobProofDoorHref([{ status: 'done', builder: 'swap', result: { status: 'filled', oid: 123 } }], pathOf) === null &&
+        jobProofDoorHref([{ ...swapStep, status: 'failed' }], pathOf) === null &&
+        jobProofDoorHref([{ status: 'pending', builder: 'swap', result: null }], pathOf) === null &&
+        jobStepTxs([{ status: 'done', builder: 'swap', result: { txs: 'nope' } }], pathOf).length === 0,
+    )
+    check(
+      'community share: the door is mounted beside the receipt share — in the chat only inside the signed + settled row (signedTxsOf + claimsSettled), never in the embed, fed the receipt\'s own txs and the turn\'s own build path; on a done job fed its steps and what each BUILT (jobStepBuildPath); it renders nothing on a null href and opens a new tab (rel="noopener") so the thread stays mounted',
+      /<ShareReceiptButton kind="tx" chatId=\{currentChatId\} messageId=\{msg\.dbId\} \/>\s*\{!embedded && <PostProofDoor href=\{proofDoorHref\(signedTxsOf\(msg\.meta\), buildPathOf\(msg\.meta\)\)\} \/>\}/.test(chat) &&
+        /signedTxsOf\(msg\.meta\)\.length > 0 &&\s*claimsSettled\(msg\.meta\) &&\s*currentChatId &&\s*msg\.dbId && \(/.test(chat) &&
+        /<ShareReceiptButton kind="job" refId=\{jobId\} \/>\s*<PostProofDoor href=\{jobProofDoorHref\(job\.steps, \(s\) => jobStepBuildPath\(s\.builder, s\.artifact\)\)\} \/>/.test(job) &&
+        /if \(!href\) return null/.test(door) &&
+        /target="_blank" rel="noopener"/.test(door) &&
+        !/redirectTo/.test(door),
+    )
+    const guide = code('lib/guide.ts')
+    const docs = src('app/docs/community/page.tsx')
+    const strip = code('components/markets/community/RoomsStrip.tsx')
+    check(
+      'community share: the new doors never put "verified" beside anything typed — the receipt door, its tooltip, the chart\'s next step, the room line and the guide hint do not use the word at all; the docs page says the market and side are the author\'s tag, never under the verified mark',
+      PROOF_DOOR_LABEL === 'Post it with proof' &&
+        [PROOF_DOOR_LABEL, PROOF_DOOR_TITLE, CALL_NEXT_LABEL, noRoomLine('ETH')].every((t) => !/verif/i.test(t) && !/[—–]/.test(t)) &&
+        !/verif/i.test(door) &&
+        !/verif/i.test(strip) &&
+        /id: 'proof'[\s\S]*?body: 'A trade post shows what the chain confirmed, and a reader can do the same trade from the card\.'/.test(guide) &&
+        /are the author&apos;s own tag/.test(docs) &&
+        /never under\s+the verified mark/.test(docs) &&
+        /Hyperliquid fills cannot be posted as proof yet/.test(docs) &&
+        /it swapped one\s+asset for another/.test(docs) &&
+        /cross-chain swaps and bridges/.test(docs) &&
+        /sent funds one way only/.test(docs),
+    )
+
+    // the chart's next step, and the feed by address
+    const share = code('components/markets/chart/ChartShare.tsx')
+    const cfeed = code('components/community/CommunityFeed.tsx')
+    check(
+      'community share: a published call ends with ONE next step into the feed ("See it in the community" → /community?sort=new, a new tab so the chart stays), shown only once the call exists; /community reads ?sort= and gives the list its own first read for a sort the server did not render',
+      CALL_NEXT_LABEL === 'See it in the community' &&
+        COMMUNITY_NEW_HREF === '/community?sort=new' &&
+        readFeedSort('?sort=new') === 'new' &&
+        readFeedSort('?sort=top') === 'top' &&
+        readFeedSort('?sort=loud') === null &&
+        readFeedSort('') === null &&
+        /\{call \? \([\s\S]*?data-call-next=""[\s\S]*?<Link href=\{COMMUNITY_NEW_HREF\}[^>]*target="_blank" rel="noopener"[^>]*>\s*\{CALL_NEXT_LABEL\}/.test(share) &&
+        (share.match(/data-call-next/g) ?? []).length === 1 &&
+        /<FeedList key=\{sort\} initialSort=\{sort\} initial=\{sort === 'hot' \? initial : null\} refreshKey=\{key\} \/>/.test(cfeed),
+    )
+
+    // rooms on the symbol page
+    const tab = code('components/markets/community/CommunityTab.tsx')
+    const css = src('components/markets/comm.css')
+    check(
+      'community share: the symbol tab shows the rooms that follow the market as ONE line above the composer — one read (GET /api/communities?symbol=<SYM>&limit=3), name + members + a link to the room, no join button; no room → "No room follows <SYM> yet." with the door to /g/new; a failed read shows nothing; the line is capped at 56px',
+      symbolRoomsHref('ETH') === '/api/communities?symbol=ETH&limit=3' &&
+        noRoomLine('ETH') === 'No room follows ETH yet.' &&
+        /<RoomsStrip symbol=\{sym\} \/>\s*<FeedComposer symbol=\{sym\}/.test(tab) &&
+        /fetch\(symbolRoomsHref\(symbol\)\)/.test(strip) &&
+        /if \(rooms === 'error'\) return null/.test(strip) &&
+        /href=\{communityPath\(r\.slug\)\}/.test(strip) &&
+        /<Link href="\/g\/new" data-door="start-room">\s*Start one\.\s*<\/Link>/.test(strip) &&
+        !/JoinButton/.test(strip) &&
+        /\.mkc__rooms \{[^}]*max-height: 56px/.test(css),
+    )
+
+    // the docs page is registered beside its siblings
+    const i = DOCS_PAGES.findIndex((d) => d.slug === 'community')
+    check(
+      'community share: /docs/community is in the docs registry (ready, the creators\' door, right after Creator earnings), so the sidebar, the landing and the sitemap list it',
+      i > 0 && DOCS_PAGES[i].ready && DOCS_PAGES[i].door === 'creator' && DOCS_PAGES[i - 1].slug === 'creator-earnings' && DOCS_PAGES[i].seoTitle.length <= 60 && DOCS_PAGES[i].description.length <= 160,
+      `i=${i} seo=${DOCS_PAGES[i]?.seoTitle.length} desc=${DOCS_PAGES[i]?.description.length}`,
     )
   }
 }
@@ -350,6 +521,31 @@ export async function communityFeedPinsServed(check: Check, base: string): Promi
   const feedJson = (await feed.json().catch(() => ({}))) as { posts?: unknown[]; next?: unknown }
   check('community feed (served): GET /api/feed answers a stranger { posts, next } (the list\'s read is public)', feed.status === 200 && Array.isArray(feedJson.posts) && 'next' in feedJson, `status=${feed.status}`)
 
+
+  // ── lane SHARE: the doors a stranger meets ──
+  {
+    const dres = await fetch(`${base}/docs/community`, { headers: INTERNAL, redirect: 'manual', cache: 'no-store' })
+    const d = await dres.text()
+    const at = d.indexOf('<h1 class="docs__h1">')
+    const prose = at >= 0 ? d.slice(at, d.indexOf('</main>', at) > 0 ? d.indexOf('</main>', at) : undefined) : ''
+    const words = prose.replace(/<script[\s\S]*?<\/script>/g, ' ').replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').split(/\s+/).filter(Boolean).length
+    check(
+      'community share (served): /docs/community answers 200 in the docs layout, listed in the sidebar; it says what verified means (this wallet moved $X on a chain) and what it does not (the tag is the author\'s, no Hyperliquid proof yet); under 700 words',
+      dres.status === 200 && /<h1 class="docs__h1">Community and rooms<\/h1>/.test(d) && /href="\/docs\/community"/.test(d) && /Verified on-chain: this wallet moved \$25\.00 on Base/.test(d) && /Tagged by the author/.test(d) &&
+        /Hyperliquid fills cannot be posted as proof yet/.test(d) && /swapped one asset for another/.test(d) && /cross-chain swaps and bridges/.test(d) && /not set up on this deployment/.test(d) && words > 300 && words < 700,
+      `status=${dres.status} words=${words}`,
+    )
+    const sm2 = await (await fetch(`${base}/sitemap.xml`, { cache: 'no-store' })).text()
+    const cq = await fetch(`${base}/community?compose=trade`, { headers: INTERNAL, redirect: 'manual', cache: 'no-store' })
+    const rooms = await fetch(`${base}${symbolRoomsHref('ETH')}`, { cache: 'no-store' })
+    const rj = (await rooms.json().catch(() => ({}))) as { communities?: unknown[] }
+    check(
+      'community share (served): the sitemap lists /docs/community; /community?compose=trade answers a stranger 200 with no redirect (the composer opens in the browser, no wall); the symbol strip\'s read answers { communities } with at most 3 rooms',
+      sm2.includes('/docs/community</loc>') && cq.status === 200 && rooms.status === 200 && Array.isArray(rj.communities) && rj.communities.length <= 3,
+      `compose=${cq.status} rooms=${rooms.status}`,
+    )
+  }
+
   // ── the real thing: a room, a video, a link, a vote, the post page ──
   loadEnvLocal()
   const pk = process.env.PRIVATE_KEY
@@ -412,6 +608,28 @@ export async function communityFeedPinsServed(check: Check, base: string): Promi
     }
     const missing = await fetch(`${base}/c/zzzzzzzzzz`, { headers: INTERNAL, cache: 'no-store' })
     check('community feed (served): an unknown post id is a 404', missing.status === 404, `status=${missing.status}`)
+
+    // lane SHARE: the chart's Share dialog publishes { symbol, kind: 'idea', title, chartState } — the same call is in the feed's symbol read, newest first.
+    let callId: string | null = null
+    try {
+      const made = await call('POST', '/api/posts', { cookie: sa, body: { symbol: 'ETH', kind: 'idea', title: 'Share pin call', body: '', chartState: { v: 1, symbol: 'ETH', tf: '1d', lines: [{ id: 'sharepin1', kind: 'h', price: 2000, label: 'pin' }] }, mint: false } })
+      callId = (made.json.post as { id?: string } | undefined)?.id ?? null
+      const feedNew = await call('GET', `${feedHref({ symbol: 'ETH', sort: 'new', limit: 25 })}&internal=1`, { cookie: sa })
+      const all = await call('GET', `${feedHref({ sort: 'new', limit: 25 })}&internal=1`, { cookie: sa })
+      const inSym = ((feedNew.json.posts as FeedPost[] | undefined) ?? []).some((p) => p.id === callId)
+      const inAll = ((all.json.posts as FeedPost[] | undefined) ?? [])[0]?.id === callId
+      check(
+        'community share (served): a call published the way the chart\'s Share dialog publishes it is in GET /api/feed?symbol=ETH&sort=new and on TOP of the whole feed sorted new (what "See it in the community" opens)',
+        made.status === 201 && !!callId && inSym && inAll,
+        `post=${made.status} inSymbol=${inSym} topOfNew=${inAll}`,
+      )
+    } finally {
+      if (callId) {
+        await prisma.postVote.deleteMany({ where: { postId: callId } })
+        await prisma.chartPostComment.deleteMany({ where: { postId: callId } })
+        await prisma.chartPost.deleteMany({ where: { id: callId } })
+      }
+    }
   } catch (e) {
     check('community feed (served): ran to the end', false, e instanceof Error ? e.message : String(e))
   } finally {
