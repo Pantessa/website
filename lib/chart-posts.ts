@@ -31,8 +31,16 @@ import { validateBrandUrl } from '@/lib/brand-scan'
 import { COUNTED_EVENT_WHERE } from '@/lib/link-receipt-verify'
 import { hashIp, hourStartUTC } from '@/lib/turn-limits'
 import { chartStateToAsks, parseChartState, type ChartState } from '@/lib/chart-state'
+import { COMMUNITY_SLUG_RE, parseVideoUrl, type TradeProof } from '@/lib/community/spec'
 
 export type PostKind = 'idea' | 'link'
+/** What a write may be (squad community 2026-11-09): the forum's two kinds
+ *  plus a VIDEO (an allowlisted watch URL, rebuilt from its id) and a TRADE
+ *  (the author's own receipt-verified fill, re-derived on the server). The
+ *  symbol tab (listPosts / getPost) reads only the forum's two; the feed
+ *  (lib/community/store listFeed) reads all four. */
+export type DraftKind = PostKind | 'video' | 'trade'
+export const DRAFT_KINDS: DraftKind[] = ['idea', 'link', 'video', 'trade']
 export type PostSort = 'new' | 'executed'
 
 export const POST_TITLE_MAX = 120
@@ -67,13 +75,22 @@ export function cleanText(raw: unknown, max: number): string {
 }
 
 export interface PostDraft {
+  /** A charted ticker, or '' for a link / video post inside a room. */
   symbol: string
-  kind: PostKind
+  kind: DraftKind
   title: string
   body: string
   chartState: ChartState | null
   linkUrl: string | null
   forkOf: string | null
+  /** The room the post lives in (/g/<slug>), or null for the symbol forum. */
+  community: string | null
+  /** kind 'video': the REBUILT canonical watch URL (parseVideoUrl). */
+  mediaUrl: string | null
+  /** kind 'trade': the embed_turns id the proof is re-derived from. */
+  proofTurnId: string | null
+  /** kind 'trade': show the fill's dollar size (default true). */
+  showSize: boolean
 }
 
 export type DraftVerdict = { ok: true; draft: PostDraft } | { ok: false; reason: string }
@@ -85,14 +102,28 @@ export function validatePostDraft(body: unknown): DraftVerdict {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return { ok: false, reason: 'Invalid JSON body.' }
   const b = body as Record<string, unknown>
 
-  const kind: PostKind = b.kind === 'link' ? 'link' : b.kind === undefined || b.kind === 'idea' ? 'idea' : 'bad' as never
-  if ((kind as string) === 'bad') return { ok: false, reason: "kind must be 'idea' or 'link'." }
+  const kind: DraftKind | null = b.kind === undefined ? 'idea' : DRAFT_KINDS.includes(b.kind as DraftKind) ? (b.kind as DraftKind) : null
+  if (!kind) return { ok: false, reason: "kind must be 'idea', 'link', 'video' or 'trade'." }
 
-  const pair = typeof b.symbol === 'string' ? chartPairFor(b.symbol) : null
-  if (!pair) return { ok: false, reason: 'symbol must be a charted ticker (AAPL, ETH, HYPE…).' }
+  let community: string | null = null
+  if (b.community !== undefined && b.community !== null && b.community !== '') {
+    const c = typeof b.community === 'string' ? b.community.trim().toLowerCase() : ''
+    if (!COMMUNITY_SLUG_RE.test(c)) return { ok: false, reason: 'community must be a room slug.' }
+    community = c
+  }
+
+  // A symbol is required for an idea and a trade (fail closed through
+  // chartPairFor). A link / video inside a room may be about no one market:
+  // an empty symbol is '' there, a typed one must still chart. A trade's
+  // symbol may also come from its proof (the route fills it in).
+  const symbolTyped = typeof b.symbol === 'string' && b.symbol.trim() !== ''
+  const pair = symbolTyped ? chartPairFor(b.symbol as string) : null
+  const symbolOptional = (community !== null && (kind === 'link' || kind === 'video')) || kind === 'trade'
+  if (!pair && (symbolTyped || !symbolOptional)) return { ok: false, reason: 'symbol must be a charted ticker (AAPL, ETH, HYPE…).' }
 
   const title = cleanText(b.title, POST_TITLE_MAX).replace(/\n+/g, ' ')
   if (kind === 'idea' && title.length < 3) return { ok: false, reason: `title is required (3–${POST_TITLE_MAX} characters).` }
+  if (kind === 'video' && title.length < 3) return { ok: false, reason: `title is required (3–${POST_TITLE_MAX} characters).` }
   if (typeof b.title === 'string' && b.title.length > POST_TITLE_MAX) return { ok: false, reason: `title is over ${POST_TITLE_MAX} characters.` }
 
   if (b.body !== undefined && typeof b.body !== 'string') return { ok: false, reason: 'body must be plain text.' }
@@ -110,6 +141,7 @@ export function validatePostDraft(body: unknown): DraftVerdict {
     if (bytes > CHART_STATE_MAX_BYTES) return { ok: false, reason: `chartState is ${bytes} bytes; the cap is ${CHART_STATE_MAX_BYTES}.` }
     chartState = parseChartState(b.chartState)
     if (!chartState) return { ok: false, reason: 'chartState does not match the chart annotation schema (v1: symbol, tf, lines).' }
+    if (!pair) return { ok: false, reason: 'A chart needs a symbol.' }
     if (chartState.symbol !== pair.symbol) return { ok: false, reason: `chartState is for ${chartState.symbol}, not ${pair.symbol}.` }
   }
 
@@ -123,13 +155,32 @@ export function validatePostDraft(body: unknown): DraftVerdict {
     return { ok: false, reason: "linkUrl only belongs on a 'link' post." }
   }
 
+  let mediaUrl: string | null = null
+  if (kind === 'video') {
+    const v = parseVideoUrl(b.mediaUrl)
+    if (!v) return { ok: false, reason: 'mediaUrl must be a YouTube, Vimeo, Loom or X video link (https).' }
+    mediaUrl = v.url
+  } else if (b.mediaUrl !== undefined && b.mediaUrl !== null) {
+    return { ok: false, reason: "mediaUrl only belongs on a 'video' post." }
+  }
+
+  let proofTurnId: string | null = null
+  if (kind === 'trade') {
+    if (typeof b.proofTurnId !== 'string' || !/^[a-z0-9]{8,40}$/i.test(b.proofTurnId)) return { ok: false, reason: 'proofTurnId is required for a trade post (one of your verified fills).' }
+    proofTurnId = b.proofTurnId
+  } else if (b.proofTurnId !== undefined && b.proofTurnId !== null) {
+    return { ok: false, reason: "proofTurnId only belongs on a 'trade' post." }
+  }
+  if (b.showSize !== undefined && typeof b.showSize !== 'boolean') return { ok: false, reason: 'showSize must be true or false.' }
+  const showSize = b.showSize !== false
+
   let forkOf: string | null = null
   if (b.forkOf !== undefined && b.forkOf !== null) {
     if (typeof b.forkOf !== 'string' || !POST_ID_RE.test(b.forkOf)) return { ok: false, reason: 'forkOf must be a post id.' }
     forkOf = b.forkOf
   }
 
-  return { ok: true, draft: { symbol: pair.symbol, kind, title, body: text, chartState, linkUrl, forkOf } }
+  return { ok: true, draft: { symbol: pair?.symbol ?? '', kind, title, body: text, chartState, linkUrl, forkOf, community, mediaUrl, proofTurnId, showSize } }
 }
 
 /** The post's PRIMARY action — the first action in line order — or null. */
@@ -253,7 +304,7 @@ export interface PublicPost {
   isInternal: boolean
 }
 
-type Row = {
+export type PostRow = {
   id: string
   symbol: string
   kind: string
@@ -266,7 +317,16 @@ type Row = {
   author: string
   isInternal: boolean
   createdAt: Date
+  // squad community (2026-11-09) — optional so a narrow select still decorates.
+  communitySlug?: string | null
+  mediaUrl?: string | null
+  proofTurnId?: string | null
+  proof?: unknown
+  score?: number
 }
+type Row = PostRow
+/** The kinds the symbol forum lists (a video / trade post lives in the feed). */
+export const FORUM_KINDS: PostKind[] = ['idea', 'link']
 
 export async function handlesFor(addresses: string[]): Promise<Map<string, string>> {
   const uniq = [...new Set(addresses.map((a) => a.toLowerCase()))]
@@ -289,6 +349,12 @@ export async function executedBySlug(slugs: string[]): Promise<Map<string, numbe
   const m = new Map<string, number>()
   for (const r of rows) m.set(r.slug, (m.get(r.slug) ?? 0) + 1)
   return m
+}
+
+/** Row → PublicPost (handles, executed-by, comment counts) in three batched
+ *  reads. Exported for lib/community/store's feed, which adds its fields. */
+export async function decoratePosts(rows: Row[]): Promise<PublicPost[]> {
+  return decorate(rows)
 }
 
 async function decorate(rows: Row[]): Promise<PublicPost[]> {
@@ -335,7 +401,7 @@ export async function listPosts(
   const rows = await prisma.chartPost.findMany({
     where: {
       symbol: pair.symbol,
-      ...(opts.kind ? { kind: opts.kind } : {}),
+      kind: opts.kind ? opts.kind : { in: FORUM_KINDS },
       // #699 class: the public listing fences internal rows OUT.
       ...(opts.includeInternal ? {} : { isInternal: false }),
     },
@@ -354,29 +420,33 @@ export async function listPosts(
 export async function getPost(id: string): Promise<(PublicPost & { commentList: PublicComment[] }) | null> {
   if (!POST_ID_RE.test(id)) return null
   const row = await prisma.chartPost.findUnique({ where: { id } })
-  if (!row) return null
+  // The forum's reader (the symbol tab, /c/<id>): a video / trade post is the
+  // feed's (lib/community/store getFeedPost) and reads as no forum post here.
+  if (!row || !(FORUM_KINDS as string[]).includes(row.kind)) return null
   const [post] = await decorate([row])
+  return { ...post, commentList: await readComments(id, row.isInternal) }
+}
+
+/** A post's comments, oldest first (internal comments only on an internal post). */
+export async function readComments(postId: string, postIsInternal: boolean): Promise<PublicComment[]> {
   const comments = await prisma.chartPostComment.findMany({
-    where: { postId: id, ...(row.isInternal ? {} : { isInternal: false }) },
+    where: { postId, ...(postIsInternal ? {} : { isInternal: false }) },
     orderBy: { createdAt: 'asc' },
     take: 200,
   })
   const handles = await handlesFor(comments.map((c) => c.author))
-  return {
-    ...post,
-    commentList: comments.map((c) => ({
-      id: c.id,
-      author: c.author,
-      authorLabel: authorLabel(c.author, handles.get(c.author)),
-      body: c.body,
-      createdAt: Math.floor(c.createdAt.getTime() / 1000),
-    })),
-  }
+  return comments.map((c) => ({
+    id: c.id,
+    author: c.author,
+    authorLabel: authorLabel(c.author, handles.get(c.author)),
+    body: c.body,
+    createdAt: Math.floor(c.createdAt.getTime() / 1000),
+  }))
 }
 
 // ── writes ───────────────────────────────────────────────────────────────────
 
-export async function createPost(author: string, draft: PostDraft, isInternal: boolean): Promise<PublicPost> {
+export async function createPost(author: string, draft: PostDraft, isInternal: boolean, extra: { proof?: TradeProof | null } = {}): Promise<PublicPost> {
   const row = await prisma.chartPost.create({
     data: {
       id: mintSlug(10),
@@ -388,6 +458,10 @@ export async function createPost(author: string, draft: PostDraft, isInternal: b
       chartState: draft.chartState ? (draft.chartState as object) : undefined,
       linkUrl: draft.linkUrl,
       forkOf: draft.forkOf,
+      communitySlug: draft.community,
+      mediaUrl: draft.mediaUrl,
+      proofTurnId: draft.kind === 'trade' ? draft.proofTurnId : null,
+      proof: extra.proof ? (extra.proof as object) : undefined,
       isInternal,
     },
   })
