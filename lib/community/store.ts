@@ -10,7 +10,7 @@
 //   · a secret (a Discord webhook URL) never leaves this module's write path
 //   · join is idempotent; member_count moves only on a real insert/delete
 
-import { randomBytes } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { authorLabel, decoratePosts, handlesFor, type PostRow } from '@/lib/chart-posts'
@@ -34,6 +34,7 @@ import {
   walletKey,
   walletOfKey,
   type Actor,
+  type AnnounceFrom,
   type ChannelPlatform,
   type CommunityRole,
   type FeedKind,
@@ -173,6 +174,8 @@ export interface CommunityPatch {
   name?: unknown
   about?: unknown
   symbols?: unknown
+  /** S10: 'mods' | 'members' — whose posts reach the linked chats. */
+  announceFrom?: unknown
 }
 
 /** Owner only. Fields not sent are left alone. */
@@ -196,6 +199,10 @@ export async function updateCommunity(slug: string, by: MemberKey, patch: Commun
     const v = checkSymbols(patch.symbols)
     if (!v.ok) return refuse(400, v.reason)
     data.symbols = v.value
+  }
+  if (patch.announceFrom !== undefined) {
+    if (patch.announceFrom !== 'mods' && patch.announceFrom !== 'members') return refuse(400, "announceFrom must be 'mods' or 'members'.")
+    data.announceFrom = patch.announceFrom
   }
   if (Object.keys(data).length) await prisma.community.update({ where: { slug: s }, data })
   const community = await getCommunity(s)
@@ -324,7 +331,7 @@ export async function communitiesOf(key: MemberKey): Promise<PublicCommunity[]> 
 const TRADES_WINDOW_MS = 30 * 86_400_000
 const MEMBERS_SCAN = 1000
 
-export async function listMembers(slug: string, opts: { sort?: 'invites' | 'trades' | 'new'; limit?: number } = {}): Promise<PublicMember[]> {
+export async function listMembers(slug: string, opts: { sort?: 'invites' | 'trades' | 'new'; limit?: number; refs?: boolean } = {}): Promise<PublicMember[]> {
   const s = normSlug(slug)
   const room = COMMUNITY_SLUG_RE.test(s) ? await prisma.community.findUnique({ where: { slug: s }, select: { isInternal: true } }) : null
   if (!room) return []
@@ -362,6 +369,7 @@ export async function listMembers(slug: string, opts: { sort?: 'invites' | 'trad
       invited: code ? usesOf.get(code) ?? 0 : 0,
       verifiedTrades: wallet ? tradesOf.get(wallet) ?? 0 : 0,
       joinedAt: Math.floor(m.createdAt.getTime() / 1000),
+      ...(opts.refs ? { ref: memberRef(s, m.memberKey) } : {}),
     }
   })
   if (sort === 'invites') out.sort((a, b) => b.invited - a.invited || b.verifiedTrades - a.verifiedTrades || a.joinedAt - b.joinedAt)
@@ -429,6 +437,7 @@ export async function mergeSeats(from: MemberKey, toWallet: string): Promise<num
   const votes = await prisma.postVote.findMany({ where: { voterKey: from } })
   for (const v of votes) {
     await prisma.$transaction(async (tx) => {
+      await lockPostRow(tx, v.postId)
       const dup = await tx.postVote.findUnique({ where: { postId_voterKey: { postId: v.postId, voterKey: to } } })
       if (dup) await tx.postVote.delete({ where: { postId_voterKey: { postId: v.postId, voterKey: from } } })
       else await tx.postVote.update({ where: { postId_voterKey: { postId: v.postId, voterKey: from } }, data: { voterKey: to } })
@@ -589,7 +598,16 @@ export async function getFeedPost(id: string, viewer?: MemberKey | null): Promis
   return post ?? null
 }
 
-/** score = the sum of the post's votes, recomputed inside the vote's transaction (self-healing under races). */
+/** S3: the FIRST statement of every transaction that writes a post's votes.
+ *  Under READ COMMITTED a statement's snapshot predates its wait for a row
+ *  lock, so without this two overlapping votes each summed without the other
+ *  and the last writer won (25 votes left score 1). Holding the post row
+ *  first serializes them: each later statement sees every earlier commit. */
+export async function lockPostRow(tx: Prisma.TransactionClient, postId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM chart_posts WHERE id = ${postId} FOR UPDATE`
+}
+
+/** score = the sum of the post's votes, recomputed inside the vote's transaction (after lockPostRow). */
 async function recomputeScore(tx: Prisma.TransactionClient, postId: string): Promise<number> {
   const rows = await tx.$queryRaw<{ score: number }[]>`
     UPDATE chart_posts SET score = COALESCE((SELECT SUM(value) FROM post_votes WHERE post_id = ${postId}), 0)::int
@@ -608,6 +626,7 @@ export async function castVote(postId: string, voter: MemberKey, value: 1 | 0 | 
   const post = await prisma.chartPost.findUnique({ where: { id: postId }, select: { id: true, isInternal: true } })
   if (!post || (post.isInternal && !opts.isInternal)) return refuse(404, 'No such post.')
   const score = await prisma.$transaction(async (tx) => {
+    await lockPostRow(tx, postId)
     if (value === 0) await tx.postVote.deleteMany({ where: { postId, voterKey: voter } })
     else
       await tx.postVote.upsert({
@@ -721,4 +740,71 @@ export async function channelsToAnnounce(slug: string): Promise<DeliveryChannel[
   const out = rows.filter((r) => (counts.get(`ch:${r.id}`) ?? 1) <= ANNOUNCE_HOURLY_CAP)
   if (out.length) await prisma.communityChannel.updateMany({ where: { id: { in: out.map((r) => r.id) } }, data: { lastPostAt: new Date() } }).catch(() => null)
   return out.map((r) => ({ id: r.id, platform: r.platform === 'discord' ? 'discord' : 'telegram', externalId: r.externalId, secret: r.secret }))
+}
+
+// ── S10: the owner's brakes ────────────────────────────────────────────────
+
+/** Whose posts this room announces (S10). null = no such room. */
+export async function roomAnnounceFrom(slug: string): Promise<AnnounceFrom | null> {
+  const s = normSlug(slug)
+  if (!COMMUNITY_SLUG_RE.test(s)) return null
+  const row = await prisma.community.findUnique({ where: { slug: s }, select: { announceFrom: true } })
+  return row ? (row.announceFrom === 'members' ? 'members' : 'mods') : null
+}
+
+/** Pure: does this post go to the room's linked chats? Members' posts only when the owner widened it. */
+export function shouldAnnounce(announceFrom: AnnounceFrom | null, authorRole: CommunityRole | null): boolean {
+  if (!authorRole) return false
+  return announceFrom === 'members' || canManage(authorRole)
+}
+
+/** An opaque, room-scoped handle for a seat: never the key itself. */
+export function memberRef(slug: string, key: string): string {
+  const secret = process.env.SESSION_SECRET
+  if (!secret || secret.length < 16) throw new Error('SESSION_SECRET must be set (≥16 chars).')
+  return createHmac('sha256', secret).update(`community-member:${slug}:${key}`).digest('base64url').slice(0, 22)
+}
+
+const sameRef = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
+
+/** Owner / mod removes a seat named by its ref. The owner's seat never goes;
+ *  a mod removes members only. */
+export async function removeMember(slug: string, by: MemberKey, ref: unknown): Promise<{ ok: true; removed: boolean } | StoreRefusal> {
+  const s = normSlug(slug)
+  const room = COMMUNITY_SLUG_RE.test(s) ? await prisma.community.findUnique({ where: { slug: s }, select: { isInternal: true } }) : null
+  if (!room) return refuse(404, 'No such room.')
+  const myRole = await roleOf(s, by)
+  if (!canManage(myRole)) return refuse(403, 'Only the owner or a mod can remove a member.')
+  if (typeof ref !== 'string' || !/^[A-Za-z0-9_-]{22}$/.test(ref)) return refuse(400, 'ref is required (from the members list).')
+  const seats = await prisma.communityMember.findMany({ where: { communitySlug: s }, select: { id: true, memberKey: true, role: true, isInternal: true }, take: 5000 })
+  const seat = seats.find((m) => sameRef(memberRef(s, m.memberKey), ref))
+  if (!seat) return refuse(404, 'That member is not in this room.')
+  if (seat.role === 'owner') return refuse(403, 'The owner cannot be removed.')
+  if (seat.memberKey === by) return refuse(409, 'Leave the room instead.')
+  if (myRole === 'mod' && seat.role !== 'member') return refuse(403, 'A mod can remove members only.')
+  const removed = await prisma.$transaction(async (tx) => {
+    const del = await tx.communityMember.deleteMany({ where: { id: seat.id } })
+    if (del.count && counts(seat.isInternal, room.isInternal)) await tx.community.update({ where: { slug: s }, data: { memberCount: { decrement: 1 } } })
+    return del.count > 0
+  })
+  return { ok: true, removed }
+}
+
+/** The post's author, or an owner / mod of the room it sits in, deletes it:
+ *  the post, its votes and its comments in one transaction. */
+export async function deletePost(id: string, by: string, opts: { isInternal?: boolean } = {}): Promise<{ ok: true } | StoreRefusal> {
+  if (typeof id !== 'string' || !/^[a-z0-9]{6,16}$/.test(id) || !/^0x[a-fA-F0-9]{40}$/.test(by)) return refuse(404, 'No such post.')
+  const post = await prisma.chartPost.findUnique({ where: { id }, select: { id: true, author: true, communitySlug: true, isInternal: true } })
+  if (!post || (post.isInternal && !opts.isInternal)) return refuse(404, 'No such post.')
+  const w = by.toLowerCase()
+  const mine = post.author === w
+  const manager = !mine && post.communitySlug ? canManage(await roleOf(post.communitySlug, walletKey(w))) : false
+  if (!mine && !manager) return refuse(403, 'Only the author or the room owner or a mod can remove this post.')
+  await prisma.$transaction(async (tx) => {
+    await lockPostRow(tx, id)
+    await tx.postVote.deleteMany({ where: { postId: id } })
+    await tx.chartPostComment.deleteMany({ where: { postId: id } })
+    await tx.chartPost.deleteMany({ where: { id } })
+  })
+  return { ok: true }
 }

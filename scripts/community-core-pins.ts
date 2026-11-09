@@ -14,7 +14,7 @@ import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '../lib/community
 import { checkName, checkSlug, checkSymbols, decodeCursor, encodeCursor, higherRole, memberLabel, parseVote, voteDelta } from '../lib/community/rules'
 import { clampProofSize, decideProof, explorerTxFor, fillLabel, locateTx, proofSide, readOnChain, REFUSE_CHAIN_UNREAD, REFUSE_NOTHING_MOVED } from '../lib/community/proof'
 import { proofFactLine, proofTagLine } from '../lib/community/proof-words'
-import { storedProof } from '../lib/community/store'
+import { shouldAnnounce, storedProof } from '../lib/community/store'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -82,6 +82,14 @@ export function communityCorePins(check: Check): void {
       proofSide(['buy:ETH'], 'native-swap-uniswap') === 'buy' && proofSide(['sell:HYPE'], 'native-hl-exec') === 'short' && proofSide([], null) === null,
   )
   secfixProofPins(check)
+  check(
+    "S10 announce rule: a room announces only its owner's and mods' posts by default; 'members' widens it to every seat; no seat never announces",
+    !shouldAnnounce('mods', 'member') && shouldAnnounce('mods', 'owner') && shouldAnnounce('mods', 'mod') && shouldAnnounce('members', 'member') && !shouldAnnounce('members', null) && !shouldAnnounce(null, 'member'),
+  )
+  {
+    const route = readFileSync(join(process.cwd(), 'app/api/posts/route.ts'), 'utf8')
+    check('S10 announce wiring: the post route gates fanoutPost behind shouldAnnounce(roomAnnounceFrom, the author\'s role) before after()', /&& shouldAnnounce\(await roomAnnounceFrom\(room\.slug\)\.catch\(\(\) => null\), authorRole\)\) \{\s*const r = room\s*after\(\(\) => fanoutPost/.test(route))
+  }
   const h = (o: Record<string, string>) => new Headers(o)
   check(
     'S7 origin rule: no Origin / same host passes; another host, a cross-site Sec-Fetch-Site, a malformed Origin refuse; a body write also needs application/json; one refusal text',
@@ -214,6 +222,7 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
   const slug = `t-core-${Date.now().toString(36)}`
   const tgId = String(9_000_000_000 + Math.floor(Math.random() * 999_999_999))
   const fixtureIds: string[] = []
+  const s3Ids: string[] = []
   const J = (cookie?: string | null, extra: Record<string, string> = {}) => ({ 'content-type': 'application/json', ...INTERNAL, ...(cookie ? { cookie } : {}), ...extra })
 
   type Json = Record<string, unknown> & { error?: string }
@@ -467,6 +476,92 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
         `${tgDiscord.status}/${tgDiscordDel.status}/${tgTelegram.status}/${ownerDel.status}`,
       )
     }
+    // ── S3: overlapping votes keep score === SUM(post_votes) ──
+    {
+      const vid = (await prisma.chartPost.findFirst({ where: { communitySlug: slug, kind: 'video' }, select: { id: true } }))?.id
+      if (!vid) check('S3 (served): a post to vote on', false, 'no video post')
+      else {
+        const base0 = 9_100_000_000 + Math.floor(Math.random() * 99_999_999)
+        const voters = await Promise.all(Array.from({ length: 20 }, (_, i) => signIdentity({ p: 'tg', id: String(base0 + i), name: `Voter ${i}`, username: null })))
+        s3Ids.push(...voters.map((_, i) => String(base0 + i)))
+        const fire = (value: number, n = voters.length) => Promise.all(voters.slice(0, n).map((tok) => call('POST', `/api/posts/${vid}/vote`, { cookie: `pt_ident=${tok}`, body: { value } })))
+        const read = async () => {
+          const [{ sum }] = await prisma.$queryRaw<{ sum: number | null }[]>`SELECT COALESCE(SUM(value), 0)::int AS sum FROM post_votes WHERE post_id = ${vid}`
+          const row = await prisma.chartPost.findUnique({ where: { id: vid }, select: { score: true } })
+          return { sum: Number(sum), score: row?.score ?? NaN }
+        }
+        const up = await fire(1)
+        const r1 = await read()
+        const down = await fire(-1, 12)
+        const r2 = await read()
+        check(
+          'S3 (served): 20 concurrent votes leave chart_posts.score === SUM(post_votes.value); flipping 12 of them at once to -1 still agrees (the post row is locked first in the vote transaction)',
+          up.every((r) => r.status === 200) && down.every((r) => r.status === 200) && r1.score === r1.sum && r2.score === r2.sum && r2.sum === r1.sum - 24,
+          `up ${r1.score}/${r1.sum} · flip ${r2.score}/${r2.sum}`,
+        )
+      }
+    }
+    // ── S10: the owner's brakes ──
+    {
+      const pub = await call('GET', `/api/communities/${slug}`)
+      const ownerRead = await call('GET', `/api/communities/${slug}`, { cookie: sa })
+      const badPatch = await call('PATCH', `/api/communities/${slug}`, { cookie: sa, body: { announceFrom: 'everyone' } })
+      const bPatch = await call('PATCH', `/api/communities/${slug}`, { cookie: sb, body: { announceFrom: 'members' } })
+      const widen = await call('PATCH', `/api/communities/${slug}`, { cookie: sa, body: { announceFrom: 'members' } })
+      const ownerRead2 = await call('GET', `/api/communities/${slug}`, { cookie: sa })
+      const narrow = await call('PATCH', `/api/communities/${slug}`, { cookie: sa, body: { announceFrom: 'mods' } })
+      await call('POST', `/api/communities/${slug}/join`, { cookie: sb, body: {} })
+      const bRead = await call('GET', `/api/communities/${slug}`, { cookie: sb })
+      check(
+        "S10 (served): announceFrom defaults to 'mods'; only the owner reads it (in `me`) and changes it ('members' / 'mods'; anything else 400, a member 403); it is never on the public room",
+        (ownerRead.json.me as { announceFrom?: string } | null)?.announceFrom === 'mods' && !('announceFrom' in ((pub.json.community ?? {}) as object)) && pub.json.me === null &&
+          badPatch.status === 400 && bPatch.status === 403 && widen.status === 200 && widen.json.announceFrom === 'members' && (ownerRead2.json.me as { announceFrom?: string } | null)?.announceFrom === 'members' &&
+          narrow.json.announceFrom === 'mods' && (bRead.json.me as { role: string; announceFrom?: string } | null)?.role === 'member' && !('announceFrom' in ((bRead.json.me ?? {}) as object)),
+        `${badPatch.status}/${bPatch.status}/${widen.status}/${narrow.status}`,
+      )
+      const bPost = await call('POST', '/api/posts', { cookie: sb, body: { community: slug, kind: 'link', title: 'Spam from a member', linkUrl: 'https://example.com/b-spam' } })
+      const aPost = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'link', title: 'Owner post', linkUrl: 'https://example.com/a-own' } })
+      const bId = lpId(bPost)
+      const aId = lpId(aPost)
+      if (bId && aId) await call('POST', `/api/posts/${bId}/comments`, { cookie: sa, body: { body: 'a reply' } })
+      const bDelA = aId ? await call('DELETE', `/api/posts/${aId}`, { cookie: sb }) : null
+      const strangerDel = bId ? await call('DELETE', `/api/posts/${bId}`) : null
+      const xDel = bId ? await call('DELETE', `/api/posts/${bId}`, { cookie: sa, headers: { origin: 'https://evil.example' } }) : null
+      const ownerDelB = bId ? await call('DELETE', `/api/posts/${bId}`, { cookie: sa }) : null
+      const aDelOwn = aId ? await call('DELETE', `/api/posts/${aId}`, { cookie: sa }) : null
+      const gone = bId ? await call('GET', `/api/posts/${bId}`) : null
+      const leftover = bId ? (await prisma.chartPostComment.count({ where: { postId: bId } })) + (await prisma.postVote.count({ where: { postId: bId } })) : -1
+      check(
+        "S10 (served): DELETE /api/posts/<id> — a member cannot remove another's post (403), a stranger 401, cross-site 403; the room owner removes a member's post with its comments + votes (0 left, then 404); the author removes their own",
+        bDelA?.status === 403 && strangerDel?.status === 401 && xDel?.status === 403 && ownerDelB?.status === 200 && ownerDelB.json.deleted === true && aDelOwn?.status === 200 && gone?.status === 404 && leftover === 0,
+        [bDelA, strangerDel, xDel, ownerDelB, aDelOwn, gone].map((r) => r?.status).join('/') + ` left=${leftover}`,
+      )
+      const pubMembers = await call('GET', `/api/communities/${slug}/members?sort=new`)
+      const strangerManage = await call('GET', `/api/communities/${slug}/members?manage=1`)
+      const bManage = await call('GET', `/api/communities/${slug}/members?manage=1`, { cookie: sb })
+      const aManage = await call('GET', `/api/communities/${slug}/members?manage=1`, { cookie: sa })
+      type M = { label: string; role: string; ref?: string }
+      const rows = (aManage.json.members ?? []) as M[]
+      const ownerRef = rows.find((m) => m.role === 'owner')?.ref
+      const bRef = rows.find((m) => m.role === 'member' && m.label.startsWith(b.slice(0, 6)))?.ref
+      const keyLeak = JSON.stringify(aManage.json).includes(`w:${b}`)
+      const removeOwner = await call('POST', `/api/communities/${slug}/members/remove`, { cookie: sa, body: { ref: ownerRef } })
+      const removeBogus = await call('POST', `/api/communities/${slug}/members/remove`, { cookie: sa, body: { ref: 'A'.repeat(22) } })
+      const removeKey = await call('POST', `/api/communities/${slug}/members/remove`, { cookie: sa, body: { ref: `w:${b}` } })
+      const bRemovesOwner = await call('POST', `/api/communities/${slug}/members/remove`, { cookie: sb, body: { ref: ownerRef } })
+      const before = (await call('GET', `/api/communities/${slug}`)).json.community as { members: number }
+      const removeB = await call('POST', `/api/communities/${slug}/members/remove`, { cookie: sa, body: { ref: bRef } })
+      const after = (await call('GET', `/api/communities/${slug}`)).json.community as { members: number }
+      const bSeat = await call('GET', `/api/communities/${slug}`, { cookie: sb })
+      check(
+        "S10 (served): members — the public read carries no ref; ?manage=1 is 401 for a stranger, 403 for a member, and gives the owner an opaque ref per row (never a key); remove refuses the owner's seat, a bogus ref, a raw key and a member's attempt; the owner removes a member (members −1, their seat gone)",
+        !((pubMembers.json.members ?? []) as M[]).some((m) => 'ref' in m) && strangerManage.status === 401 && bManage.status === 403 && aManage.status === 200 && /no-store/.test(aManage.cc) &&
+          rows.every((m) => /^[A-Za-z0-9_-]{22}$/.test(m.ref ?? '')) && !keyLeak &&
+          removeOwner.status === 403 && removeBogus.status === 404 && removeKey.status === 400 && bRemovesOwner.status === 403 &&
+          removeB.status === 200 && removeB.json.removed === true && after.members === before.members - 1 && bSeat.json.me === null,
+        `${strangerManage.status}/${bManage.status}/${aManage.status} rm ${removeOwner.status}/${removeBogus.status}/${removeKey.status}/${bRemovesOwner.status}/${removeB.status} ${before?.members}->${after?.members}`,
+      )
+    }
   } catch (e) {
     check('community core (served): ran to the end', false, e instanceof Error ? e.message : String(e))
   } finally {
@@ -481,6 +576,7 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
       await prisma.channelLinkCode.deleteMany({ where: { communitySlug: slug } })
       await prisma.community.deleteMany({ where: { slug } })
       await prisma.identityLink.deleteMany({ where: { provider: 'tg', externalId: tgId } })
+      if (s3Ids.length) await prisma.postVote.deleteMany({ where: { voterKey: { in: s3Ids.map((i) => `tg:${i}`) } } })
       if (fixtureIds.length) await prisma.embedTurn.deleteMany({ where: { id: { in: fixtureIds } } })
       const left = (await prisma.community.count({ where: { slug } })) + (await prisma.communityMember.count({ where: { communitySlug: slug } })) + (await prisma.chartPost.count({ where: { communitySlug: slug } }))
       check('community core (served): cleanup — every row this run wrote is gone', left === 0, `left=${left}`)

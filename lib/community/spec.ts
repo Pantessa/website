@@ -85,12 +85,21 @@ export interface PublicMember {
   /** Receipt-verified fills by this member's wallet in the window (0 for a wallet-less member). */
   verifiedTrades: number
   joinedAt: number
+  /** S10: an opaque handle for this seat (an HMAC of the member key under
+   *  SESSION_SECRET, scoped to the room), present ONLY on an owner / mod's
+   *  `?manage=1` read — what `POST …/members/remove { ref }` takes. Never a key. */
+  ref?: string
 }
+
+/** Whose posts a room announces to its linked chats (S10). */
+export type AnnounceFrom = 'mods' | 'members'
 
 export interface MyMembership {
   key: MemberKey
   role: CommunityRole
   invite: { code: string; url: string; uses: number }
+  /** Present ONLY for the owner (the setting they may change). */
+  announceFrom?: AnnounceFrom
 }
 
 export const communityPath = (slug: string) => `/g/${slug}`

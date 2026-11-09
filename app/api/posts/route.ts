@@ -19,10 +19,10 @@ import {
 } from '@/lib/chart-posts'
 import { mintPostLink } from './mint-link'
 import { chartPairFor } from '@/lib/charts'
-import { getCommunity, getFeedPost, roleOf } from '@/lib/community/store'
+import { getCommunity, getFeedPost, roleOf, roomAnnounceFrom, shouldAnnounce } from '@/lib/community/store'
 import { REFUSE_NOT_YOURS, fillLabel, resolveTradeProof } from '@/lib/community/proof'
 import { fanoutPost } from '@/lib/community/fanout'
-import { walletKey, type PublicCommunity, type TradeProof } from '@/lib/community/spec'
+import { walletKey, type CommunityRole, type PublicCommunity, type TradeProof } from '@/lib/community/spec'
 
 // /api/posts — the symbol page's forum.
 //
@@ -84,10 +84,12 @@ export async function POST(req: NextRequest) {
 
   // A room post: the room must exist and the author must sit in it.
   let room: PublicCommunity | null = null
+  let authorRole: CommunityRole | null = null
   if (draft.community) {
     room = await getCommunity(draft.community)
     if (!room) return NextResponse.json({ error: 'No such room.' }, { status: 404 })
-    if (!(await roleOf(room.slug, walletKey(author)))) return NextResponse.json({ error: `Join /g/${room.slug} to post in it.`, needsJoin: true }, { status: 403 })
+    authorRole = await roleOf(room.slug, walletKey(author))
+    if (!authorRole) return NextResponse.json({ error: `Join /g/${room.slug} to post in it.`, needsJoin: true }, { status: 403 })
   }
 
   // A trade post: the proof is re-derived from the author's own verified row.
@@ -153,7 +155,9 @@ export async function POST(req: NextRequest) {
 
   const feedPost = await getFeedPost(created.id, walletKey(author))
   const post = feedPost ?? created
-  if (room && feedPost && !internal) {
+  // S10: a seat is one free tap, so only the owner and mods reach the room's
+  // linked chats unless the owner widened it to every member.
+  if (room && feedPost && !internal && shouldAnnounce(await roomAnnounceFrom(room.slug).catch(() => null), authorRole)) {
     const r = room
     after(() => fanoutPost(feedPost, r).then(() => undefined))
   }
