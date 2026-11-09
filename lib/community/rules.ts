@@ -26,29 +26,52 @@ export const BRAND_WORDS = ['pantessa', 'yeetful', 'metamask', 'coinbase', 'unis
 export const AUTHORITY_WORDS = ['official', 'support', 'helpdesk', 'security', 'verif', 'admin', 'staff'] as const
 /** Short authority words: refused only as a WHOLE word, so ordinary words that
  *  contain them pass (modern, teamwork). */
-export const AUTHORITY_EXACT = ['mod', 'mods', 'team', 'staff', 'admin'] as const
+export const AUTHORITY_EXACT = ['mod', 'mods', 'team', 'staff', 'admin', 'owner', 'moderator', 'moderators'] as const
+/** R5: authority phrases refused anywhere once separators are dropped ("help-desk", "Customer Service"). */
+export const AUTHORITY_SQUASHED = ['helpdesk', 'customerservice', 'customersupport', 'customercare'] as const
+/** R5: leet digits, for the comparison only. "1" reads as both i and l. */
+const LEET: Record<string, string> = { '4': 'a', '3': 'e', '0': 'o', '5': 's', '7': 't' }
 
 /** Common Cyrillic / Greek lookalikes → Latin, so "Pаntessa" (Cyrillic а) reads as the brand. */
 const CONFUSABLE: Record<string, string> = {
   'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i', 'ј': 'j', 'ѕ': 's', 'т': 't', 'к': 'k', 'м': 'm', 'н': 'h', 'в': 'b', 'ԁ': 'd', 'ӏ': 'l', 'ո': 'n', 'ս': 'u',
   'α': 'a', 'ε': 'e', 'ο': 'o', 'ρ': 'p', 'τ': 't', 'υ': 'u', 'ν': 'v', 'κ': 'k', 'ι': 'i', 'χ': 'x', 'η': 'n', 'ѵ': 'v',
+  // R5: Latin lookalikes NFKD does not fold.
+  'ɑ': 'a', 'ı': 'i', 'ƥ': 'p', 'ɩ': 'i', 'ɡ': 'g',
 }
-/** NFKC, lowercase, lookalikes folded, invisible characters gone. */
+/** NFKC, marks dropped (R5: "Pantessá" → "pantessa"), lowercase, lookalikes folded, invisible characters gone. */
 export function foldForBrand(raw: string): string {
-  return raw.normalize('NFKC').replace(INVISIBLE_RE, '').toLowerCase().replace(/./gu, (c) => CONFUSABLE[c] ?? c)
+  return raw
+    .normalize('NFKC')
+    .replace(INVISIBLE_RE, '')
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/./gu, (c) => CONFUSABLE[c] ?? c)
+}
+
+/** R5 (pure): the folded text plus its leet readings (1 → i, and 1 → l). */
+export function brandReadings(raw: string): string[] {
+  const t = foldForBrand(raw)
+  if (!/[0-9]/.test(t)) return [t]
+  const base = t.replace(/[0-9]/g, (d) => LEET[d] ?? d)
+  return [...new Set([t, base.replace(/1/g, 'i'), base.replace(/1/g, 'l')])]
 }
 
 /** The word in `text` that poses as ours, or null. `text` is folded first;
  *  words are runs of letters and digits. Also catches a brand spelled out
  *  across separators ("pan-tessa", "P a n t e s s a"). */
 export function impostorWord(text: string): string | null {
-  const t = foldForBrand(text)
-  const squashed = t.replace(/[^a-z0-9]/g, '')
-  for (const b of BRAND_WORDS) if (squashed.includes(b)) return b
-  const words = t.split(/[^a-z0-9]+/).filter(Boolean)
-  for (const w of words) {
-    for (const a of AUTHORITY_EXACT) if (w === a) return a
-    for (const a of AUTHORITY_WORDS) if (w.startsWith(a) || w.endsWith(a)) return a
+  for (const t of brandReadings(text)) {
+    const squashed = t.replace(/[^a-z0-9]/g, '')
+    for (const b of BRAND_WORDS) if (squashed.includes(b)) return b
+    for (const a of AUTHORITY_SQUASHED) if (squashed.includes(a)) return a
+    const words = t.split(/[^a-z0-9]+/).filter(Boolean)
+    for (const w of words) {
+      for (const a of AUTHORITY_EXACT) if (w === a) return a
+      for (const a of AUTHORITY_WORDS) if (w.startsWith(a) || w.endsWith(a)) return a
+    }
   }
   return null
 }
@@ -66,14 +89,16 @@ export function checkSlug(raw: unknown): Verdict<string> {
 }
 
 /** Check marks and badge glyphs a name could wear to look verified. */
-const BADGE_RE = /[\u2611\u2705\u2713\u2714\u2611\u{1F6E1}\u{1F396}\u{1F3C5}\u{1F530}\u{1F4DB}\u269C\u{1F947}-\u{1F949}\u2122\u00ae\u24c2\u{1F512}\u{1F510}]/u
+// R5: + the coloured circles / diamonds / stars a verified look borrows (🔵 🟢 💠 ⭐ 🌟 💎 ✪ 🗸).
+// Tested on the RAW name too: NFKC turns ™ and Ⓜ into letters before the cleaned test.
+const BADGE_RE = /[\u2611\u2705\u2713\u2714\u2611\u{1F6E1}\u{1F396}\u{1F3C5}\u{1F530}\u{1F4DB}\u269C\u{1F947}-\u{1F949}\u2122\u00ae\u24c2\u{1F512}\u{1F510}\u{1F534}\u{1F535}\u{1F7E0}-\u{1F7E2}\u{1F7E3}\u{1F7E4}\u{1F4A0}\u{1F48E}\u2B50\u{1F31F}\u272A\u{1F5F8}\u2606\u2605]/u
 
 export function checkName(raw: unknown): Verdict<string> {
   if (typeof raw !== 'string') return { ok: false, reason: `name is required (2 to ${COMMUNITY_NAME_MAX} characters).` }
   if (raw.length > COMMUNITY_NAME_MAX * 2) return { ok: false, reason: `name is over ${COMMUNITY_NAME_MAX} characters.` }
   const s = cleanText(raw.normalize('NFKC'), COMMUNITY_NAME_MAX).replace(/\s+/g, ' ')
   if ([...s.replace(/\s/g, '')].length < 2) return { ok: false, reason: `name is required (2 to ${COMMUNITY_NAME_MAX} characters).` }
-  if (BADGE_RE.test(s)) return { ok: false, reason: 'A room name cannot wear a check mark or a badge.' }
+  if (BADGE_RE.test(s) || BADGE_RE.test(raw)) return { ok: false, reason: 'A room name cannot wear a check mark or a badge.' }
   const word = impostorWord(s)
   if (word) return { ok: false, reason: `A room name cannot use "${word}": it reads as an official or brand account.` }
   return { ok: true, value: s }

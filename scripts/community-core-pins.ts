@@ -793,6 +793,21 @@ export const S12_FORGED_CURSORS: string[] = [
 
 function polishCorePins(check: Check): void {
   {
+    const refusedNames = ['Pantessá', 'p4ntessa', 'p-a-n-t-e-s-s-a', 'help-desk', 'Owner', 'Moderator', '\u{1F535} ETH calls', 'Pantessɑ Help', 'Officia1', 'Adm1n', 'Offıcial', 'Customer Service', 'Desk \u24C2']
+    const refusedSlugs = ['p4ntessa', 'pant3ssa', 'un1swap', 'c0inbase', '0fficial', 'supp0rt', 'help-desk', 'moderator', 'owner']
+    const passedNames = ['交易室', 'غرفة التداول', 'Трейдеры', 'ETH swing desk', 'Downers club', 'Moderate risk 2024']
+    const passedSlugs = ['uni-desk', 'modern-art', 'teamwork-fx', 'model-traders', 'moderate-risk', 'eth-2024']
+    const badN = refusedNames.filter((n) => checkName(n).ok)
+    const badS = refusedSlugs.filter((n) => checkSlug(n).ok)
+    const lostN = passedNames.filter((n) => !checkName(n).ok)
+    const lostS = passedSlugs.filter((n) => !checkSlug(n).ok)
+    check(
+      'community core: R5 — the brand / authority fence folds diacritics, leet digits (1 as i and l) and separators: Pantessá, p4ntessa, p-a-n-t-e-s-s-a, help-desk, Owner, Moderator and a blue-circle badge are refused; Chinese, Arabic and Cyrillic names and ordinary words still pass',
+      !badN.length && !badS.length && !lostN.length && !lostS.length,
+      `accepted=${[...badN, ...badS].join(',')} refused=${[...lostN, ...lostS].join(',')}`,
+    )
+  }
+  {
     const t = (symbols: string[], side: 'buy' | 'sell' | 'long' | 'short' | null, sizeUsd: number | null = 25, chain = 'Base') => fillLabel({ symbols, side, sizeUsd, chain } as Parameters<typeof fillLabel>[0])
     const all = [t(['buy:ETH'], 'buy'), t(['sell:AAPL'], 'sell', 1250), t(['buy:HYPE'], 'long'), t(['sell:BTC'], 'short'), t(['buy:UNI'], null), t([], null, 99, 'Base'), t([], 'buy', null, 'Ethereum')]
     check(
