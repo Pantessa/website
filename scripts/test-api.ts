@@ -385,6 +385,11 @@ import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
 import { readPins, readRedirectPins, readServedPins } from './read-pins'
 import { homeAppsPins } from './home-apps-pins'
+import { communityCorePins, communityCorePinsServed } from './community-core-pins'
+import { communityFeedPins, communityFeedPinsServed } from './community-feed-pins'
+import { communityGroupPins, communityGroupPinsServed } from './community-group-pins'
+import { communityTelegramPins, communityTelegramPinsServed } from './community-telegram-pins'
+import { communityDiscordPins, communityDiscordPinsServed } from './community-discord-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -35517,6 +35522,18 @@ async function main() {
   readPins(check)
   await readRedirectPins(check)
   await readServedPins(check, BASE)
+
+  // ── squad community (2026-11-09): one pin file per lane, wired once here ──
+  communityCorePins(check)
+  await communityCorePinsServed(check, BASE)
+  communityFeedPins(check)
+  await communityFeedPinsServed(check, BASE)
+  communityGroupPins(check)
+  await communityGroupPinsServed(check, BASE)
+  communityTelegramPins(check)
+  await communityTelegramPinsServed(check, BASE)
+  communityDiscordPins(check)
+  await communityDiscordPinsServed(check, BASE)
   // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
   // sign-in door, never a planner promise to "fetch your tokens".
   {

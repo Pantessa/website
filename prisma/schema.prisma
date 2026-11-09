@@ -1024,20 +1024,20 @@ model HlGuardianRun {
 /// cron. The orchestration primitive from HANDOFF-multistep-jobs.md — jobs
 /// never widen authority, they only sequence consents the user already gave.
 model Job {
-  id          String   @id @default(cuid())
-  wallet      String // lowercased owner (SIWE-verified at creation)
-  title       String // human summary of the whole job
-  source      String   @default("chat") // chat | api | broker | dca:<scheduleId>
-  status      String   @default("running") // running | waiting_signature | waiting_settlement | paused | done | failed | canceled
-  currentStep Int      @default(0) @map("current_step")
+  id             String   @id @default(cuid())
+  wallet         String // lowercased owner (SIWE-verified at creation)
+  title          String // human summary of the whole job
+  source         String   @default("chat") // chat | api | broker | dca:<scheduleId>
+  status         String   @default("running") // running | waiting_signature | waiting_settlement | paused | done | failed | canceled
+  currentStep    Int      @default(0) @map("current_step")
   /// Shared-DB env fence (the guardian lesson): only the creating env's
   /// runner advances a job. 'production' | 'preview' | 'dev'.
-  originEnv   String   @default("dev") @map("origin_env")
+  originEnv      String   @default("dev") @map("origin_env")
   /// Our own harness/drill run (lib/internal-run.ts) — stamped at createJob;
   /// the GTM arc never counts a stamped job as an arrival, build, or sign.
-  isInternal  Boolean  @default(false) @map("is_internal")
-  valueUsd    Float?   @map("value_usd") // rollup of step notionals (money moved)
-  failReason  String?  @map("fail_reason")
+  isInternal     Boolean  @default(false) @map("is_internal")
+  valueUsd       Float?   @map("value_usd") // rollup of step notionals (money moved)
+  failReason     String?  @map("fail_reason")
   /// Where the person who asked for this job was (lib/content-origin:
   /// first-party | link | embed). The Growth books credit every step of the
   /// job to it. NULL before 2026-09-25, and for jobs nobody asked for on a
@@ -1045,8 +1045,8 @@ model Job {
   surface        String?
   /// The live intent link the ask rode (validated in the chat route).
   intentLinkSlug String?  @map("intent_link_slug")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   steps JobStep[]
 
@@ -1605,24 +1605,34 @@ model RosterTryoutMark {
 // follows the author). Text columns are plain text rendered as text nodes,
 // never markup. is_internal fences harness rows out of every public read.
 model ChartPost {
-  id         String   @id // mintSlug(10)
-  symbol     String // chartPairFor-normalized ticker (fail-closed at write)
-  author     String // lowercased SIWE wallet
-  kind       String   @default("idea") // 'idea' | 'link'
-  title      String
-  body       String   @default("")
-  chartState Json?    @map("chart_state")
-  linkSlug   String?  @map("link_slug") // intent_links.id minted from the post
-  linkUrl    String?  @map("link_url") // kind 'link': the pinned https URL
-  forkOf     String?  @map("fork_of") // parent chart_posts.id
-  isInternal Boolean  @default(false) @map("is_internal")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id            String   @id // mintSlug(10)
+  symbol        String // chartPairFor-normalized ticker (fail-closed at write)
+  author        String // lowercased SIWE wallet
+  kind          String   @default("idea") // 'idea' | 'link'
+  title         String
+  body          String   @default("")
+  chartState    Json?    @map("chart_state")
+  linkSlug      String?  @map("link_slug") // intent_links.id minted from the post
+  linkUrl       String?  @map("link_url") // kind 'link': the pinned https URL
+  forkOf        String?  @map("fork_of") // parent chart_posts.id
+  // ── COMMUNITY (squad community, 2026-11-09) ──
+  // kind grows 'video' | 'trade'. A post may live in a community (/g/<slug>);
+  // symbol is '' for a community link/video post about no one market.
+  communitySlug String?  @map("community_slug")
+  mediaUrl      String?  @map("media_url") // kind 'video': an allowlisted host's watch URL (lib/community/spec parseVideoUrl)
+  proofTurnId   String?  @map("proof_turn_id") // kind 'trade': the author's own receipt-VERIFIED embed_turns.id
+  proof         Json? // server-derived snapshot of that fill (lib/community/spec TradeProof) — never a client claim
+  score         Int      @default(0) // denormalized sum of post_votes.value
+  isInternal    Boolean  @default(false) @map("is_internal")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   comments ChartPostComment[]
 
   @@index([symbol, isInternal, createdAt])
   @@index([author, createdAt])
   @@index([forkOf])
+  @@index([communitySlug, isInternal, createdAt])
+  @@index([isInternal, createdAt])
   @@map("chart_posts")
 }
 
@@ -1638,6 +1648,120 @@ model ChartPostComment {
 
   @@index([postId, createdAt])
   @@map("chart_post_comments")
+}
+
+// ── COMMUNITY (squad community, 2026-11-09) ────────────────────────────────
+// A community is a named room (/g/<slug>) anyone joins in one tap: a feed of
+// chart ideas, links, videos and trades with proof, a members board, and the
+// Telegram chats / Discord channels linked to it. A member is a PROVEN
+// identity, never a typed one: `w:<wallet>` (a SIWE session), `tg:<id>`
+// (Telegram's own signature over initData / a bot update), `dc:<id>`
+// (Discord's signed interaction). lib/community/identity is the one reader.
+// is_internal fences harness rows out of every public list and count.
+
+model Community {
+  slug        String   @id // /g/<slug> — lowercase [a-z0-9-]{3,32}
+  name        String
+  about       String   @default("")
+  owner       String // lowercased SIWE wallet
+  symbols     String[] @default([]) // tickers the room follows
+  memberCount Int      @default(0) @map("member_count") // denormalized, proven members
+  isInternal  Boolean  @default(false) @map("is_internal")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([isInternal, memberCount])
+  @@map("communities")
+}
+
+model CommunityMember {
+  id            String   @id @default(cuid())
+  communitySlug String   @map("community_slug")
+  memberKey     String   @map("member_key") // w:<wallet> | tg:<id> | dc:<id>
+  wallet        String? // the member's wallet when known (w: key, or a linked identity)
+  displayName   String?  @map("display_name") // provider-reported (Telegram/Discord name) — rendered as a text node
+  role          String   @default("member") // owner | mod | member
+  via           String? // the invite code that brought them (community_invites.code)
+  source        String   @default("site") // site | telegram | discord
+  isInternal    Boolean  @default(false) @map("is_internal")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([communitySlug, memberKey])
+  @@index([memberKey])
+  @@index([communitySlug, via])
+  @@index([communitySlug, createdAt])
+  @@map("community_members")
+}
+
+/// One invite code per member per community — it rides ?via= on every link
+/// the member shares, and a join that carried it is credited to them.
+model CommunityInvite {
+  code          String   @id // mintSlug(8)
+  communitySlug String   @map("community_slug")
+  inviterKey    String   @map("inviter_key")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([communitySlug, inviterKey])
+  @@map("community_invites")
+}
+
+/// One vote per proven identity per post. value is 1 or -1; a cleared vote
+/// deletes the row. chart_posts.score is the denormalized sum.
+model PostVote {
+  postId    String   @map("post_id")
+  voterKey  String   @map("voter_key")
+  value     Int
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([postId, voterKey])
+  @@index([voterKey])
+  @@map("post_votes")
+}
+
+/// A Telegram chat or a Discord channel linked to a community: new posts are
+/// announced there, and the bot answers commands there. `secret` holds a
+/// Discord webhook URL — server-only, never returned by any API.
+model CommunityChannel {
+  id            String    @id @default(cuid())
+  communitySlug String    @map("community_slug")
+  platform      String // telegram | discord
+  externalId    String    @map("external_id") // Telegram chat id | Discord channel (or webhook) id
+  title         String?
+  secret        String?
+  linkedBy      String    @map("linked_by") // member key of the owner/mod who linked it
+  announce      Boolean   @default(true)
+  lastPostAt    DateTime? @map("last_post_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@unique([platform, externalId])
+  @@index([communitySlug])
+  @@map("community_channels")
+}
+
+/// A single-use code that links a chat to a community (15 minutes). The
+/// owner mints it on the site; the bot receives it from inside the chat.
+model ChannelLinkCode {
+  code          String   @id
+  communitySlug String   @map("community_slug")
+  platform      String
+  createdBy     String   @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("channel_link_codes")
+}
+
+/// A Telegram / Discord identity bound to a wallet — written only when ONE
+/// request carried both proofs (the SIWE session and the provider's signed
+/// identity). Lets a member who joined from Telegram keep their seat when
+/// they later connect a wallet.
+model IdentityLink {
+  provider   String // tg | dc
+  externalId String   @map("external_id")
+  wallet     String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@id([provider, externalId])
+  @@index([wallet])
+  @@map("identity_links")
 }
 
 // ── MARKETS/WATCH ──────────────────────────────────────────────────────────
