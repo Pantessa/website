@@ -56,6 +56,9 @@ import SignatureWaitOpenApp from '@/components/SignatureWaitOpenApp'
 
 type Status = 'idle' | 'signing' | 'submitting' | 'enabling' | 'refreshing' | 'filled' | 'error'
 
+/** A step that has landed (the fee cap, the move into a builder dex, the leverage set). */
+const DONE_CHIP_CLASS = 'inline-flex items-center gap-1 text-[length:var(--fs-sm)] text-emerald-400'
+
 /** Thrown out of the direct→delegated fallback on a phone once enable-trading
  *  landed: the card re-armed itself; the caller has nothing to report. */
 class RearmAfterEnable extends Error {}
@@ -532,17 +535,17 @@ export default function SignHlActionButton({
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
           {hl.feeApproval && feeDone && (
-            <span className="inline-flex items-center gap-1 text-[length:var(--fs-sm)] text-emerald-400">
+            <span className={DONE_CHIP_CLASS}>
               <CheckCircle2 className="w-3.5 h-3.5" /> {hl.feeApproval.maxFeeRate} fee cap approved
             </span>
           )}
           {hl.dexTransfer && moveDone && (
-            <span className="inline-flex items-center gap-1 text-[length:var(--fs-sm)] text-emerald-400" data-hl-moved={hl.dexTransfer.dex}>
+            <span className={DONE_CHIP_CLASS} data-hl-moved={hl.dexTransfer.dex}>
               <CheckCircle2 className="w-3.5 h-3.5" /> ${hl.dexTransfer.amount} moved into the {dexName} dex
             </span>
           )}
           {hl.pre && preDone && (
-            <span className="inline-flex items-center gap-1 text-[length:var(--fs-sm)] text-emerald-400">
+            <span className={DONE_CHIP_CLASS}>
               <CheckCircle2 className="w-3.5 h-3.5" /> {hl.pre.expected.leverage}x leverage set
             </span>
           )}
