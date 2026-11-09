@@ -5,7 +5,14 @@
    one-line legend under the table. Sizes and gaps are the shared scale
    tokens (app/x402-design.css). */
 
-.mk-table__tag { margin-left: var(--sp-2); padding: 0 var(--sp-1); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); vertical-align: baseline; }
+/* A tagged name: the name gives way (ellipsis) and the tag keeps its place.
+   Only above the phone tier — there every board row drops its name
+   (markets.css, max-width 640px), and this row does too. */
+@media (min-width: 640.02px) {
+  .mk-table__name--tagged { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+}
+.mk-table__nametext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-table__tag { flex: none; padding: 0 var(--sp-1); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); }
 .mk-table__tag--always { color: var(--muted); }
 .mk-table__tag--closed { color: var(--muted-2); border-style: dashed; }
 
@@ -13,6 +20,17 @@
    hide the name to seat the chips; an index row has none to seat). */
 .mk-table[data-section='macro'] .mk-table__row:hover:not(:has(.mkt-quick)) .mk-table__name,
 .mk-table[data-section='macro'] .mk-table__row:focus-within:not(:has(.mkt-quick)) .mk-table__name { visibility: visible; }
+
+/* On a phone every board row drops its name and keeps the ticker — fine for
+   AAPL, thin for CL or DJI. A macro row keeps its name on a second line
+   under the symbol (the tag steps aside; the legend under the table says
+   what the change is measured over). */
+@media (max-width: 640px) {
+  .mk-table[data-section='macro'] .mk-table__link { grid-template-columns: 22px minmax(0, 1fr); grid-template-rows: auto auto; row-gap: 0; }
+  .mk-table[data-section='macro'] .mk-table__link > :first-child { grid-row: 1 / span 2; align-self: center; }
+  .mk-table[data-section='macro'] .mk-table__name { display: block; grid-column: 2; font-size: var(--fs-xs); }
+  .mk-table[data-section='macro'] .mk-table__tag { display: none; }
+}
 
 .mk-macro__legend { margin: var(--sp-2) 0 0; font-size: var(--fs-xs); line-height: 1.5; letter-spacing: 0.02em; color: var(--muted-2); }
 .mk-macro__legend b { font-weight: 600; color: var(--muted); }

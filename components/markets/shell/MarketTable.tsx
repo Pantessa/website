@@ -110,14 +110,17 @@ export default function MarketTable({
                 <Link href={`/t/${r.symbol}`} className="mk-table__link" data-mk-row>
                   <TokenIcon symbol={r.symbol} size={24} {...markWhere} />
                   <span className="mk-table__sym mono">{r.symbol}</span>
-                  <span className="mk-table__name">
-                    {r.name}
-                    {tag && (
+                  {tag ? (
+                    // A tagged row: the name gives way (ellipsis), the tag never does.
+                    <span className="mk-table__name mk-table__name--tagged">
+                      <span className="mk-table__nametext">{r.name}</span>
                       <span className={`mk-table__tag mk-table__tag--${tag.tone} mono`} data-tag={tag.text}>
                         {tag.text}
                       </span>
-                    )}
-                  </span>
+                    </span>
+                  ) : (
+                    <span className="mk-table__name">{r.name}</span>
+                  )}
                 </Link>
                 {/* EXEC's QuickAct: 2–3 honest chips, revealed on row hover/focus; the chips
                     stopPropagation so the row link stays a link (a MARKETS seat). */}

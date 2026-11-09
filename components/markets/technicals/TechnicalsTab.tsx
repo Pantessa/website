@@ -300,9 +300,10 @@ export default function TechnicalsTab({
         <div className="order-1 md:order-2">
           <RatingGauge title="Summary" gauge={data?.summary ?? null} size="lg" loading={loading} />
           {data && <VerdictChips chips={data.chips} onAsk={onAsk} />}
+          {/* The caption belongs to the chips: a verdict that carries none (a look-only index) says what it is instead. */}
           {data && (
             <p className="mono mt-2 text-center text-[9.5px] uppercase tracking-[0.14em] text-[color:var(--muted-2)]">
-              {onAsk ? 'sends the ask · your wallet signs' : 'prefills chat · you send it'}
+              {data.chips.length === 0 && pair.source === 'index' ? 'a reading · nothing here trades an index' : onAsk ? 'sends the ask · your wallet signs' : 'prefills chat · you send it'}
             </p>
           )}
         </div>

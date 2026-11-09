@@ -657,8 +657,6 @@ export default function SymbolPage({
         )}
         {/* The guide's one hint card: under the chips on a phone, right under
             the tabs on a desktop (where the chips hide). */}
-        {/* A look-only index says so where a phone's chips would be, and names the closest thing listed (the rail carries the same card on a desktop). */}
-        {pair && lookOnly && <LookOnlyCard pair={pair} seat="page" onAsk={buildHere} />}
         {pair && <GuideSeat surface="symbol" symbol={sym} ask={isHip3Pair(pair) || lookOnly ? null : composeAsk(pair, 'buy', { usd: 25 })} chartOnly={isHip3Pair(pair)} lookOnly={lookOnly} />}
 
         {/* ── Chart: always mounted; shown on Overview + Chart, parked elsewhere ── */}
@@ -711,6 +709,11 @@ export default function SymbolPage({
             )}
           </div>
         </div>
+
+        {/* A look-only index, on a PHONE: the chart leads, and right under it the page says it is here to read
+            and names the closest thing listed (a desktop carries the same card in the rail, where the ticket
+            would be — markets' look-only.css shows one per posture). It parks with the chart. */}
+        {pair && lookOnly && showChart && <LookOnlyCard pair={pair} seat="page" onAsk={buildHere} />}
 
         {/* ── Ask the chart (AI's AskChart slot), docked under the chart; parks with it ── */}
         {pair && (

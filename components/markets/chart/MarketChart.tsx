@@ -1502,8 +1502,10 @@ export default function MarketChart({
     if (!tools) return
     if (plusHintSeen()) return
     const touch = window.matchMedia?.('(hover: none)').matches
-    setPlusHint(touch ? 'tap a price, then + to put an order there' : 'point at a price, then + to put an order there')
-  }, [tools])
+    // On a look-only index the "+" drops a level (a line, a note) — never an order.
+    const what = lookOnly ? 'a level' : 'an order'
+    setPlusHint(touch ? `tap a price, then + to put ${what} there` : `point at a price, then + to put ${what} there`)
+  }, [tools, lookOnly])
   const dropLevel = useCallback(() => {
     const price = plusPriceRef.current
     if (price === null) return
@@ -1742,6 +1744,12 @@ export default function MarketChart({
           <span className="mono flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]">
             {stale ? (
               'feed stalled — retrying'
+            ) : lookOnly ? (
+              // Index data is delayed up to 15 minutes: the badge says so, and does not pulse.
+              <>
+                <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: 'var(--muted-2)' }} />
+                delayed
+              </>
             ) : (
               <>
                 <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: 'var(--accent)' }} />
@@ -1882,6 +1890,8 @@ export default function MarketChart({
           magnet={magnet}
           offersFor={offersFor}
           missingNote={missingActionNote(pair.symbol, pair.source)}
+          priceSign={levelPrefix}
+          ordersHere={!lookOnly}
           onAct={onAsk}
           askHref={askHref}
           readOnly={!tools}
