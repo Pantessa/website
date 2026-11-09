@@ -11508,12 +11508,12 @@ async function main() {
       const seatOrder = (h: string, tag: 'aside' | 'nav') =>
         Array.from(
           (h.match(new RegExp(`<${tag} [^>]*aria-label="Workspace"[\\s\\S]*?</${tag}>`))?.[0] ?? '').matchAll(
-            /aria-label="(MARKETS|APPS|JOBS|LINKS|WALLET|TEAM|CHATS|LEADERS|ANALYTICS|DOCS|Settings)"/g,
+            /aria-label="(MARKETS|APPS|JOBS|LINKS|WALLET|TEAM|CHATS|COMMUNITY|LEADERS|ANALYTICS|DOCS|Settings)"/g,
           ),
           (m) => m[1],
         ).join(' ')
       // RE-PINNED 2026-10-15 (progress): LEADERS + ANALYTICS, the public progress pages, seat under CHATS and above DOCS.
-      const SPINE_SEATS = /^MARKETS APPS JOBS LINKS WALLET (TEAM )?CHATS LEADERS ANALYTICS DOCS Settings$/
+      const SPINE_SEATS = /^MARKETS APPS JOBS LINKS WALLET (TEAM )?CHATS COMMUNITY LEADERS ANALYTICS DOCS Settings$/
       check(
         'spine: the WALLET seat sits right under LINKS in both postures on /chat, /markets and /wallet (MARKETS · APPS · JOBS · LINKS · WALLET · TEAM · CHATS · LEADERS · ANALYTICS · DOCS · Settings; a page link, lit only on its own page); isWalletPath is exactly /wallet + /wallet/*',
         [wpChat, wpMarkets, wpHtml].every(
