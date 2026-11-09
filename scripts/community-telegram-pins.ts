@@ -350,7 +350,7 @@ export function communityTelegramPins(check: Check): void {
     chartMsg.text.includes('$3,412.10') && chartMsg.text.includes('+1.23% 24h') && chartMsg.text.includes('Coinbase') && chartMsg.text.includes(`href="${SITE}/t/ETH"`) && flatButtons(chartMsg).length === 2 && flatButtons(chartMsg)[0].url === `${SITE}/t/ETH` &&
       flatButtons(chartBare).length === 1 && /No price right now/.test(chartBare.text) &&
       (calls.text.match(/href="/g) ?? []).length === 3 && calls.text.includes(`href="${SITE}/c/cmh1abcd2efgh3ijkl"`) && !calls.text.includes('cmh4') &&
-      top.text.includes('@bob · 12') && !top.text.includes('@zero') && !/Traded with proof/.test(top.text),
+      top.text.includes('@bob · 12') && !top.text.includes('@zero') && !/Verified receipts/.test(top.text),
   )
   const idea = announcementMessage(CTX, ROOM, post({ linkSlug: 'abc123' })) as TgMessage
   const tradeVerified = announcementMessage(CTX, ROOM, post({ kind: 'trade', proof: PROOF })) as TgMessage

@@ -254,7 +254,7 @@ export function topMessage(ctx: LinkCtx, room: RoomRef, byInvites: readonly Publ
   const lines = [`<b>${roomName(room)} board</b>`]
   if (!inv.length && !trd.length) lines.push('Nobody has brought a member or traded with proof yet.', 'Send /invite for your own link.')
   if (inv.length) lines.push('Brought the most members', ...inv.map((m, i) => `${i + 1}. ${t(m.label, LABEL_MAX)} · ${Math.trunc(m.invited)}`))
-  if (trd.length) lines.push('Traded with proof', ...trd.map((m, i) => `${i + 1}. ${t(m.label, LABEL_MAX)} · ${Math.trunc(m.verifiedTrades)} verified`))
+  if (trd.length) lines.push('Verified receipts', ...trd.map((m, i) => `${i + 1}. ${t(m.label, LABEL_MAX)} · ${Math.trunc(m.verifiedTrades)} verified`))
   return { text: fit(lines), buttons: [[joinButton(ctx, room)]] }
 }
 
