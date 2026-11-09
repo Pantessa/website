@@ -104,7 +104,7 @@ const ANALYTICS_TITLE = 'Analytics — money moved, links shared and new wallets
 // chart ideas videos, lines is easy to join like a telegram channel and easy
 // to share with prove on trades"). A public destination PAGE, seated directly
 // above LEADERS; on a phone it folds behind MORE with them. It lights by PATH
-// (/community and every room /g/*, lib/app-entry isCommunityPath), not by the
+// (/community and every room under /g/, lib/app-entry isCommunityPath), not by the
 // `surface` prop: a room page mounts the markets frame and still lights it.
 const COMMUNITY_TITLE = 'Community: chart ideas, videos and trades with proof, and the rooms that share them'
 
