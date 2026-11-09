@@ -51,6 +51,8 @@ export type GuideSeatProps = {
   ask?: string | null
   /** The page's chart takes no order here (lib/guide GuideCtx.chartOnly). */
   chartOnly?: boolean
+  /** The page's chart is a look-only index (lib/guide GuideCtx.lookOnly). */
+  lookOnly?: boolean
 }
 
 /** Which posture this viewport is, re-read on resize. Null before hydration. */
@@ -69,7 +71,7 @@ function usePosture(): 'desktop' | 'phone' | null {
   return phone ? 'phone' : 'desktop'
 }
 
-export default function GuideSeat({ surface, posture, symbol = null, ask = null, chartOnly = false }: GuideSeatProps) {
+export default function GuideSeat({ surface, posture, symbol = null, ask = null, chartOnly = false, lookOnly = false }: GuideSeatProps) {
   const here = usePosture()
   const state = useGuideState()
   const { address } = useAccount()
@@ -104,7 +106,7 @@ export default function GuideSeat({ surface, posture, symbol = null, ask = null,
   if (!active || !hint) return null
   if (state.off || state.dismissed[hint.id]) return null
 
-  const ctx: GuideCtx = { surface, symbol, ask, connected, chartOnly }
+  const ctx: GuideCtx = { surface, symbol, ask, connected, chartOnly, lookOnly }
   const onCta = (cta: GuideCta) => {
     analytics.guide(hint.id, 'cta', cta.kind)
     // The lesson landed: the card goes and never comes back.

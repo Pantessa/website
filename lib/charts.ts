@@ -23,8 +23,16 @@
 //                 primary is down, and says so in `feed`). Landed 2026-09-10;
 //                 the ticker set is the static lib/robinhood-tickers snapshot
 //                 minus the two listings the feed has no quote for.
+//   index       — LOOK-ONLY index data (2026-11-09): the 10-year yield, the
+//                 VIX, the dollar index, the Nasdaq 100, the Dow and the
+//                 Russell 2000, read from the same chart host the stock
+//                 fallback uses. Delayed, closed with its exchange, and no
+//                 venue here trades it: an index pair offers NO side on any
+//                 surface (isLookOnlyPair — lib/trade-asks, lib/symbol-venues
+//                 and the chip gate all read it). The table below is static,
+//                 so an index page resolves cold and is indexed.
 
-export type ChartSource = 'coinbase' | 'hyperliquid' | 'robinhood'
+export type ChartSource = 'coinbase' | 'hyperliquid' | 'robinhood' | 'index'
 
 /** Which upstream actually served a series — the honest eyebrow on the chart
  *  (a stock chart says "Yahoo Finance" while Robinhood's feed is down, never
@@ -35,6 +43,7 @@ export const CHART_FEED_LABELS: Record<ChartFeed, string> = {
   coinbase: 'Coinbase',
   hyperliquid: 'Hyperliquid',
   robinhood: 'Robinhood',
+  index: 'Index data',
   yahoo: 'Yahoo Finance',
 }
 
@@ -64,9 +73,15 @@ export const VENUE_TFS: { key: ChartTf; label: string }[] = CHART_TFS.filter((t)
 
 /** The frames a source can draw: a tokenized stock's tape (Robinhood's
  *  5-minute historicals, Yahoo behind it) has no minute bar and no prints,
- *  so 1s and 1m are a coin's and a perp's (2026-10-13, the live tail). */
+ *  so 1s and 1m are a coin's and a perp's (2026-10-13, the live tail). An
+ *  index is delayed data with no prints: the same four frames as a stock. */
 export function tfsForSource(source: ChartSource | null | undefined): { key: ChartTf; label: string }[] {
-  return source === 'robinhood' ? CHART_TFS.filter((t) => t.key !== '1m' && !isPrintTf(t.key)) : CHART_TFS
+  return source === 'robinhood' || source === 'index' ? CHART_TFS.filter((t) => t.key !== '1m' && !isPrintTf(t.key)) : CHART_TFS
+}
+
+/** Does this source draw this frame? (A stock or an index asked for 1m or a print frame does not.) */
+export function sourceHasTf(source: ChartSource | null | undefined, tf: ChartTf): boolean {
+  return tfsForSource(source).some((t) => t.key === tf)
 }
 
 /** The frames the Technicals gauge reads: venue candles only. */
@@ -124,6 +139,96 @@ const COINBASE_ALIASES: Record<string, string> = {
  *  every listed perp once a universe read has landed. */
 const HYPERLIQUID_PERPS = new Set(['HYPE', 'SYRUP', 'FARTCOIN', 'BRETT', 'AIXBT'])
 
+// ── Look-only indexes ──────────────────────────────────────────────────────
+// Nate, 2026-11-09: "our system is lacking view of many other stocks and
+// indexes like the US10Y". An index is not a token and nothing here trades
+// it, so it gets the full chart and NO order control: /t/US10Y, /t/VIX,
+// /t/DXY, /t/NDX, /t/DJI, /t/RUT. The data is the chart host the stock
+// candles already fall back to (lib/candles-server fetchIndex) — unofficial,
+// delayed up to 15 minutes, and said to be on the page.
+//
+// The page symbol is ours (US10Y, the way a trader types it); `host` is the
+// data host's own symbol and never reaches a visitor. `aliases` are other
+// spellings that land on the same page, already normalized (letters and
+// digits: "^TNX" → TNX, "DX-Y.NYB" → DXYNYB). Pinned (scripts/macro-pins):
+// no symbol or alias is a Coinbase product, a static perp or a Robinhood
+// Chain listing, so the table can never take a tradable market's page.
+
+/** How a charted value prints: dollars, a bare level (an index, an FX rate),
+ *  or a yield in percent (whose change is stated in basis points). */
+export type ChartUnit = 'usd' | 'level' | 'yield'
+
+export interface ChartIndex {
+  /** The page's symbol (`/t/US10Y`). */
+  symbol: string
+  /** The data host's symbol for it. Server-side only by use; never shown. */
+  host: string
+  /** The name the header and the board print. */
+  name: string
+  unit: ChartUnit
+  aliases: readonly string[]
+}
+
+export const CHART_INDEXES: readonly ChartIndex[] = [
+  { symbol: 'US10Y', host: '^TNX', name: 'US 10-year Treasury yield', unit: 'yield', aliases: ['TNX', '10Y', 'US10'] },
+  { symbol: 'VIX', host: '^VIX', name: 'VIX volatility index', unit: 'level', aliases: [] },
+  { symbol: 'DXY', host: 'DX-Y.NYB', name: 'US dollar index', unit: 'level', aliases: ['DXYNYB'] },
+  { symbol: 'NDX', host: '^NDX', name: 'Nasdaq 100', unit: 'level', aliases: ['NASDAQ100', 'NAS100', 'US100'] },
+  { symbol: 'DJI', host: '^DJI', name: 'Dow Jones Industrial Average', unit: 'level', aliases: ['DJIA', 'DOW', 'US30'] },
+  { symbol: 'RUT', host: '^RUT', name: 'Russell 2000', unit: 'level', aliases: ['RUSSELL2000', 'US2000', 'RTY'] },
+]
+
+/** Every name an index answers to (its symbol and its aliases) → its row. */
+const INDEX_BY_NAME: ReadonlyMap<string, ChartIndex> = new Map(CHART_INDEXES.flatMap((ix) => [ix.symbol, ...ix.aliases].map((n) => [n, ix] as const)))
+
+/** The index a symbol or an alias names ("tnx" → the US10Y row), or null. */
+export function chartIndexFor(symbolRaw: string): ChartIndex | null {
+  return INDEX_BY_NAME.get(normalizeChartSymbol(symbolRaw)) ?? null
+}
+
+/** The page symbol of the index a data-host symbol belongs to ("^TNX" → US10Y), or null. */
+export function indexSymbolForHost(host: string): string | null {
+  return CHART_INDEXES.find((ix) => ix.host === host)?.symbol ?? null
+}
+
+/**
+ * A pair that is here to READ: index data no venue on this app trades. The
+ * chart, its frames, its drawing tools and its alerts work; no surface may
+ * offer a side on it — no chip, no ticket, no suggested order, no venue row
+ * (lib/trade-asks sidesFor / execSidesFor, lib/symbol-venues venuesFor and
+ * the chip gate lib/trade-venue-gate all read this). Null → false.
+ */
+export function isLookOnlyPair(pair: ChartPair | null | undefined): boolean {
+  return !!pair && pair.source === 'index'
+}
+
+/** Does this symbol (or alias) name a look-only pair? Static — an index never depends on a warm table. */
+export function isLookOnlySymbol(symbolRaw: string): boolean {
+  return INDEX_BY_NAME.has(normalizeChartSymbol(symbolRaw))
+}
+
+/** The one sentence every surface gives for an order on an index: the chip
+ *  gate, the venue map, the empty ticket, a chart level. Named by the page
+ *  symbol ("tnx" → US10Y). */
+export function lookOnlyRefusal(symbolRaw: string): string {
+  const sym = INDEX_BY_NAME.get(normalizeChartSymbol(symbolRaw))?.symbol ?? symbolRaw.toUpperCase()
+  return `${sym} is an index: the chart is here to read, and nothing listed here places an order on it.`
+}
+
+/** Hyperliquid builder markets quoted as a bare level, not a dollar price:
+ *  an index (the S&P 500 in points) and the FX rates (dollars per euro, yen
+ *  per dollar). Read only for a builder-market pair, so a main-book coin
+ *  that ever wore one of these names keeps its dollar sign. */
+const HIP3_LEVEL_SYMBOLS: ReadonlySet<string> = new Set(['SP500', 'EUR', 'JPY'])
+
+/** How a pair's value prints (the header, the tab title, the boards). */
+export function chartUnitOf(pair: ChartPair | null | undefined): ChartUnit {
+  if (!pair) return 'usd'
+  if (pair.source === 'index') return INDEX_BY_NAME.get(pair.symbol)?.unit ?? 'level'
+  if (isHip3Pair(pair) && HIP3_LEVEL_SYMBOLS.has(pair.symbol)) return 'level'
+  return 'usd'
+}
+
 // ── The live Hyperliquid pair table ────────────────────────────────────────
 // Canonical chart symbol → the venue's own coin spelling, derived from the
 // cached universes (lib/hl-universe): 'ZK' → 'ZK', 'KPEPE' → 'kPEPE' (the
@@ -140,7 +245,10 @@ const HYPERLIQUID_PERPS = new Set(['HYPE', 'SYRUP', 'FARTCOIN', 'BRETT', 'AIXBT'
 //   · stables never chart; the xyz index product (`:XYZ100`) is not a market
 //     (lib/tape pickTapeMarkets drops it the same way); delisted rows are not
 //     passed in (lib/hl-universe splits listed from delisted).
-//   · the main book wins a ticker collision with the xyz dex.
+//   · the main book wins a ticker collision with the xyz dex;
+//   · an index keeps its name: a venue perp called VIX or DOW never takes
+//     /t/VIX or the DOW alias (chartPairFor answers the index before this
+//     table, and the table skips the name so the two can never disagree).
 export function hlChartTableFrom(main: Iterable<string>, xyz: Iterable<string>): Map<string, string> {
   const out = new Map<string, string>()
   const take = (coin: string, ticker: string) => {
@@ -150,7 +258,7 @@ export function hlChartTableFrom(main: Iterable<string>, xyz: Iterable<string>):
     // The whole Robinhood-Chain listing set, feedless names included: SATS on
     // Robinhood Chain is not the venue's SATS perp — a ticker that names a
     // stock token never charts as a perp wearing the stock's name.
-    if (COINBASE_USD.has(symbol) || ROBINHOOD_TICKER_SET.has(symbol) || out.has(symbol)) return
+    if (COINBASE_USD.has(symbol) || ROBINHOOD_TICKER_SET.has(symbol) || INDEX_BY_NAME.has(symbol) || out.has(symbol)) return
     out.set(symbol, coin)
   }
   for (const coin of main) {
@@ -304,15 +412,21 @@ export function normalizeChartSymbol(raw: string): string {
 
 /** Resolve a token symbol to its candle source, or null (no chart button,
  *  no API pass-through). Aliases collapse first, stables refuse early;
- *  Coinbase before Hyperliquid (static set, then the live table) before the
- *  Robinhood-Chain stocks. Sync — see resolveChartPair for the server path
- *  that warms the live table on a miss. */
+ *  Coinbase, then the look-only indexes (static — an index resolves the same
+ *  cold and warm), then Hyperliquid (static set, then the live table), then
+ *  the Robinhood-Chain stocks. Sync — see resolveChartPair for the server
+ *  path that warms the live table on a miss. */
 export function chartPairFor(symbolRaw: string): ChartPair | null {
   const norm = normalizeChartSymbol(symbolRaw)
   if (!norm || norm.length > 12 || STABLES.has(norm)) return null
   const symbol = COINBASE_ALIASES[norm] ?? norm
   if (COINBASE_USD.has(symbol)) {
     return { symbol, source: 'coinbase', pair: `${symbol}-USD`, label: `${symbol} / USD` }
+  }
+  const index = INDEX_BY_NAME.get(symbol)
+  if (index) {
+    // No "/ USD": an index is a level (or a yield), not a price in dollars.
+    return { symbol: index.symbol, source: 'index', pair: index.host, label: index.name }
   }
   const coin = hlPerpCoinFor(symbol)
   if (coin) {
@@ -453,6 +567,30 @@ const ENGLISH_WORD_TICKERS = new Set([
   'LULU', 'ONTO', 'DELL', 'OUST', 'PENG', 'LUNR', 'JOBY', 'WULF',
 ])
 
+/** An index symbol that is also an ordinary English word ("stuck in a rut"):
+ *  it charts only when clearly typed as a ticker ("RUT", "$RUT") or reached
+ *  through its name ("russell 2000" — folded below). */
+const INDEX_ENGLISH_WORDS = new Set(['RUT'])
+
+/** How people say an index: "the 10 year", "dollar index", "nasdaq 100",
+ *  "dow jones", "russell 2000". Folded onto the page symbol before the word
+ *  split (the S&P fold's idiom), so a chart ask in plain words opens the
+ *  index's chart. "nasdaq" and "s&p" alone still mean the FUNDS (QQQ, SPY):
+ *  those are the things a visitor can buy. */
+const INDEX_PHRASES: readonly [RegExp, string][] = [
+  [/\b(?:u\.?s\.?\s+)?(?:10|ten)[\s-]*(?:year|yr)\b(?:\s+(?:treasury|treasuries|note|bond|yields?))*/gi, ' US10Y '],
+  [/\b(?:u\.?s\.?\s+)?dollar\s+index\b/gi, ' DXY '],
+  [/\bnasdaq[\s-]*100\b/gi, ' NDX '],
+  [/\bdow\s+jones(?:\s+industrial(?:\s+average)?)?\b/gi, ' DJI '],
+  [/\brussell(?:[\s-]*2000)?\b/gi, ' RUT '],
+  [/\bvolatility\s+index\b/gi, ' VIX '],
+]
+function foldIndexPhrases(text: string): string {
+  let out = text
+  for (const [re, sym] of INDEX_PHRASES) out = out.replace(re, sym)
+  return out
+}
+
 /** Did the user CLEARLY type this word as a ticker? "$COIN" or "COIN" in an
  *  otherwise-lowercase sentence, yes; "coin" (a stopword) or "ON" inside a
  *  caps-lock message, no. */
@@ -486,8 +624,7 @@ export function parseChartAsk(message: string): ChartAsk | null {
   // Tokens: "$ETH", "ETH", "eth's", "bitcoin". Possessive + punctuation dropped.
   // "S&P 500" would split into "S" + "P" (P is a listed ticker) — fold the
   // index name onto its ETF before the split.
-  const words = text
-    .replace(/\bS\s*&\s*P(?:\s*500)?\b/gi, ' SPY ')
+  const words = foldIndexPhrases(text.replace(/\bS\s*&\s*P(?:\s*500)?\b/gi, ' SPY '))
     .replace(/['’]s\b/gi, '')
     .split(/[^A-Za-z0-9$]+/)
     .filter(Boolean)
@@ -507,6 +644,9 @@ export function parseChartAsk(message: string): ChartAsk | null {
     // ticker: four+ letters and not an English word ("aapl", "nvda" — yes;
     // "cost", "on", "now" — no).
     if (pair?.source === 'robinhood' && !byName && !ticker && (raw.length < 4 || ENGLISH_WORD_TICKERS.has(raw))) continue
+    // An index whose symbol is an English word ("rut") is prose unless it
+    // was typed as a ticker — the fold above writes the name in capitals.
+    if (pair?.source === 'index' && INDEX_ENGLISH_WORDS.has(raw) && !typedAsTicker(w, text)) continue
     // A perp only the live table knows (AI, MOVE, GOAT, PUMP…) must be
     // typed as a ticker ("$AI", or AI in a lowercase sentence) — a bare
     // lowercase word reads as it did before the table existed: no feed for
@@ -522,10 +662,11 @@ export function parseChartAsk(message: string): ChartAsk | null {
 // ── MARKETS/MSG ──────────────────────────────────────────────────────────
 /** Every symbol chartPairFor accepts STATICALLY, in canonical form (aliases
  *  collapsed, stables + feedless listings excluded): coins, then the static
- *  perps, then the charted Robinhood-Chain stocks. The sitemap's /t/<sym>
- *  set reads THIS, so a symbol is indexed iff it charts on a cold process —
- *  the live perp table (hundreds of venue listings that come and go) charts
- *  on demand and is deliberately NOT indexed. */
+ *  perps, then the charted Robinhood-Chain stocks, then the look-only
+ *  indexes. The sitemap's /t/<sym> set reads THIS, so a symbol is indexed
+ *  iff it charts on a cold process — the live perp table (hundreds of venue
+ *  listings that come and go) charts on demand and is deliberately NOT
+ *  indexed. */
 export function chartableSymbols(): string[] {
   const out: string[] = []
   const seen = new Set<string>()
@@ -539,6 +680,7 @@ export function chartableSymbols(): string[] {
   for (const s of COINBASE_USD) push(s)
   for (const s of HYPERLIQUID_PERPS) push(s)
   for (const s of [...ROBINHOOD_TICKER_SET].sort()) push(s)
+  for (const ix of CHART_INDEXES) push(ix.symbol)
   return out
 }
 
@@ -580,6 +722,9 @@ export function chartSymbolsIn(text: string): { symbol: string; at: number }[] {
     if (!pair) return
     if (pair.source === 'robinhood' && !byName && !ticker && (raw.length < 4 || ENGLISH_WORD_TICKERS.has(raw))) return
     if (isLiveOnlyHlPair(pair) && !byName && !typed) return
+    // A trade never moves an index: nothing here fills one ("buy SPY when the
+    // VIX is over 20" moved SPY).
+    if (pair.source === 'index') return
     out.push({ symbol: pair.symbol, at })
   })
   return out

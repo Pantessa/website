@@ -8,7 +8,7 @@
 // tickers per list, unlimited alerts, at every tier, forever. There is no cap
 // constant in this file on purpose. Never add one.
 
-import { chartPairFor, normalizeChartSymbol, parseChartAsk, type ChartPair, type ChartSource } from '@/lib/charts'
+import { CHART_INDEXES, chartIndexFor, chartPairFor, chartUnitOf, isLookOnlyPair, normalizeChartSymbol, parseChartAsk, type ChartPair, type ChartSource } from '@/lib/charts'
 import { ONRAMP_DEFAULT_NETWORK, ONRAMP_LANES_EVERYWHERE, onrampHasLane, type OnrampAsset, type OnrampLane, type OnrampNetwork } from '@/lib/onramp'
 import { ROBINHOOD_TICKERS } from '@/lib/robinhood-tickers'
 import { composeAsk } from '@/lib/trade-asks'
@@ -207,7 +207,8 @@ export function parseTradingViewExport(text: string): ImportResult {
 export interface TickerHit {
   symbol: string
   name: string
-  kind: 'stock' | 'coin' | 'perp'
+  /** `index`: look-only index data — watchable and alertable, never tradable. */
+  kind: 'stock' | 'coin' | 'perp' | 'index'
   pair: ChartPair
 }
 
@@ -225,13 +226,15 @@ export const COIN_NAMES: ReadonlyArray<readonly [string, string]> = [
 ]
 
 function kindOf(source: ChartSource): TickerHit['kind'] {
-  return source === 'robinhood' ? 'stock' : source === 'hyperliquid' ? 'perp' : 'coin'
+  return source === 'robinhood' ? 'stock' : source === 'hyperliquid' ? 'perp' : source === 'index' ? 'index' : 'coin'
 }
 
-/** Display name for a symbol (company for stocks, coin name otherwise). */
+/** Display name for a symbol (company for stocks, the index's own name, coin name otherwise). */
 export function symbolName(symbol: string): string {
   const coin = COIN_NAMES.find(([s]) => s === symbol)
   if (coin) return coin[1]
+  const index = chartIndexFor(symbol)
+  if (index) return index.name
   const stock = ROBINHOOD_TICKERS.find(([s]) => s === symbol)
   return stock ? stock[1] : symbol
 }
@@ -262,7 +265,8 @@ export function searchTickers(queryRaw: string, limit = 8): TickerHit[] {
   if (ask?.pair) push(ask.symbol)
   // 3. Ticker prefix, then name substring.
   const ql = q.toLowerCase()
-  const candidates: (readonly [string, string])[] = [...COIN_NAMES, ...ROBINHOOD_TICKERS]
+  // The look-only indexes are watchable: "vix", "dow", "10-year" find them.
+  const candidates: (readonly [string, string])[] = [...COIN_NAMES, ...ROBINHOOD_TICKERS, ...CHART_INDEXES.map((ix) => [ix.symbol, ix.name] as const)]
   for (const [s] of candidates) if (s.startsWith(upper)) push(s)
   for (const [s, n] of candidates) if (n.toLowerCase().includes(ql)) push(s)
   return out
@@ -825,8 +829,12 @@ export function usEquitySession(now: Date = new Date()): 'open' | 'closed' {
   return mins >= 9 * 60 + 30 && mins < 16 * 60 ? 'open' : 'closed'
 }
 
+/** A source's session by the clock. An index quote does not use this — its
+ *  session is read off its own last print (lib/quotes indexQuoteFrom), since
+ *  each index keeps its exchange's hours; the clock answer here (US equity
+ *  hours) is only what a caller with no quote in hand can say. */
 export function sessionFor(source: ChartSource, now: Date = new Date()): QuoteSession {
-  return source === 'robinhood' ? usEquitySession(now) : '24/7'
+  return source === 'robinhood' || source === 'index' ? usEquitySession(now) : '24/7'
 }
 
 // ── Quotes (README contract) ────────────────────────────────────────────────
@@ -840,6 +848,12 @@ export interface Quote {
   feed: string
   session: QuoteSession
   chartable: boolean
+  /** Index quotes only (lib/quotes indexQuoteFrom): the close the change is
+   *  measured from, and the printing session's range when the host states
+   *  one. Absent on every other feed. */
+  prevClose?: number
+  dayHigh?: number
+  dayLow?: number
 }
 
 export function fmtQuotePrice(n: number): string {
@@ -1004,10 +1018,20 @@ export function alertFires(rule: AlertRule, price: number): boolean {
   }
 }
 
+/** A price as a sentence about `symbol` states it: "$330.00" for a token,
+ *  "4.50%" for a yield, "27,495.00" for an index level or an FX rate — the
+ *  symbol's own unit (lib/charts chartUnitOf), so an alert on the 10-year
+ *  never reads "$4.50". */
+export function fmtSymbolPrice(symbol: string, n: number): string {
+  const unit = chartUnitOf(chartPairFor(symbol))
+  if (unit === 'yield') return `${fmtQuotePrice(n)}%`
+  return unit === 'level' ? fmtQuotePrice(n) : `$${fmtQuotePrice(n)}`
+}
+
 export function alertLabel(rule: AlertRule): string {
-  if (rule.condition === 'above') return `${rule.symbol} above $${fmtQuotePrice(rule.value)}`
-  if (rule.condition === 'below') return `${rule.symbol} below $${fmtQuotePrice(rule.value)}`
-  const base = rule.basePrice ? ` from $${fmtQuotePrice(rule.basePrice)}` : ''
+  if (rule.condition === 'above') return `${rule.symbol} above ${fmtSymbolPrice(rule.symbol, rule.value)}`
+  if (rule.condition === 'below') return `${rule.symbol} below ${fmtSymbolPrice(rule.symbol, rule.value)}`
+  const base = rule.basePrice ? ` from ${fmtSymbolPrice(rule.symbol, rule.basePrice)}` : ''
   return `${rule.symbol} moves ${rule.value}%${base}`
 }
 
@@ -1047,6 +1071,9 @@ export function alertActionChips(rule: AlertRule, pair: ChartPair | null, sizeUs
   const sym = rule.symbol
   const price = rule.condition === 'pct_move' ? null : rule.value
   const chips: AlertActionChip[] = []
+  // An index is here to read: its alert notifies, and carries no order
+  // (nothing listed here trades it — lib/charts isLookOnlyPair).
+  if (isLookOnlyPair(pair)) return chips
   // Fired chips — the same two doors the token page offers, sent when it fires.
   // A charted pair speaks the symbol page's own grammar (lib/trade-asks): a
   // Hyperliquid perp or a non-EVM-home coin (SOL) is the perp order, never a
@@ -1091,14 +1118,16 @@ export function alertActionChips(rule: AlertRule, pair: ChartPair | null, sizeUs
  *  suffix is dropped and the fired price is restated as past. `live` is the
  *  rail's own quote, shown beside it so a stale fire can't read as current. */
 export function firedAlertLines(
-  n: { title: string; price: number; createdAt: string },
+  n: { title: string; price: number; createdAt: string; symbol?: string },
   live: number | null | undefined,
   nowMs: number = Date.now(),
 ): { headline: string; meta: string } {
-  const headline = n.title.replace(/\s+—\s+(?:now|hit)\s+\$[\d,.]+$/, '')
+  // The fired price in the symbol's own unit (an index level or a yield wears no dollar sign).
+  const money = (v: number) => (n.symbol ? fmtSymbolPrice(n.symbol, v) : `$${fmtQuotePrice(v)}`)
+  const headline = n.title.replace(/\s+—\s+(?:now|hit)\s+\$?[\d,.]+%?$/, '')
   const ageMin = Math.max(0, Math.round((nowMs - Date.parse(n.createdAt)) / 60_000))
   const ago = !Number.isFinite(ageMin) ? '' : ageMin < 1 ? 'just now' : ageMin < 60 ? `${ageMin}m ago` : ageMin < 48 * 60 ? `${Math.round(ageMin / 60)}h ago` : `${Math.round(ageMin / 1440)}d ago`
-  const parts = [`hit $${fmtQuotePrice(n.price)}${ago ? ` ${ago}` : ''}`]
-  if (live != null && live > 0) parts.push(`now $${fmtQuotePrice(live)}`)
+  const parts = [`hit ${money(n.price)}${ago ? ` ${ago}` : ''}`]
+  if (live != null && live > 0) parts.push(`now ${money(live)}`)
   return { headline, meta: parts.join(' · ') }
 }

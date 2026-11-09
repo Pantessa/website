@@ -14,6 +14,15 @@
 //   coinbase    — /products/<X>-USD/stats (last + 24h open), per symbol.
 //   hyperliquid — ONE metaAndAssetCtxs call serves every perp (markPx vs
 //                 prevDayPx), cached for the whole TTL.
+//   index       — look-only index data (the 10-year yield, the VIX, the
+//                 dollar index, the Nasdaq 100, the Dow, the Russell 2000):
+//                 one small daily read per symbol from the chart host the
+//                 stock fallback uses, cached INDEX_QUOTE_TTL_MS (the data
+//                 is delayed up to 15 minutes; a minute's cache costs
+//                 nothing a reader could see). The change is against the
+//                 previous session's close, the session is read off the
+//                 print's age (lib/index-data), and a host that does not
+//                 answer serves the last good quote for a while, then omits.
 //
 // Cost scales with SYMBOLS, not users: a quote is cached per symbol for
 // QUOTE_TTL_MS, in-flight reads are shared, and a feed miss omits the
@@ -21,10 +30,20 @@
 // seam the cron's dedup pin counts through.
 
 import { chartPairFor, resolveChartPair, type ChartPair } from '@/lib/charts'
-import { primeHlUniverse } from '@/lib/hl-universe'
+import { hlPerpUniverseFresh, primeHlUniverse } from '@/lib/hl-universe'
+import { indexQuoteOf, type IndexChartPayload } from '@/lib/index-data'
 import { normalizeWatchSymbol, sessionFor, type Quote } from '@/lib/watchlists'
 
 export const QUOTE_TTL_MS = 15_000
+/** An index quote is served from memory this long (delayed data). */
+export const INDEX_QUOTE_TTL_MS = 60_000
+/** While the index host errors, the last good quote may be this old. */
+export const INDEX_QUOTE_STALE_MS = 30 * 60_000
+/** After the index host fails for a symbol, it is not asked again for this
+ *  long: a board polling fourteen rows must not wait on a down host. */
+export const INDEX_QUOTE_BACKOFF_MS = 30_000
+/** One index read may take this long (the batch a board polls waits on it). */
+const INDEX_TIMEOUT_MS = 4_000
 export const QUOTES_MAX_SYMBOLS = 250
 /** Robinhood's batch historicals answers 400 past 75 symbols (measured
  *  2026-09-16: 75 → 200, 76 → 400). A bigger request sent in one call failed
@@ -41,14 +60,18 @@ export type QuoteMap = Record<string, Quote>
 interface CacheEntry {
   at: number
   quote: Quote
+  /** How long this entry is fresh (an index quote keeps longer than the rest). */
+  ttl: number
 }
 
 const cache = new Map<string, CacheEntry>()
 const inflight = new Map<string, Promise<Quote | null>>()
+/** When the index host last failed for a symbol (the backoff's clock). */
+const indexFailedAt = new Map<string, number>()
 
-async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = UPSTREAM_TIMEOUT_MS): Promise<Response> {
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), UPSTREAM_TIMEOUT_MS)
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
     return await fetch(url, { ...init, signal: ctrl.signal, cache: 'no-store' })
   } finally {
@@ -315,6 +338,44 @@ export function yahooQuoteOf(result: YahooChartResult, pair: ChartPair): Quote |
   return quoteOf(Number(meta.regularMarketPrice), prev, 'yahoo', pair, meta.regularMarketTime ? meta.regularMarketTime * 1000 : Date.now())
 }
 
+// ── Index data (per symbol; look-only) ──────────────────────────────────────
+
+/** An index quote from the host's daily chart (lib/index-data has the rule).
+ *  Pure on its inputs, so the pins feed it measured payloads. `chg` is in
+ *  the quote's own unit — index points, or percentage points for a yield
+ *  (×100 = basis points, the way a yield's move is stated) — and `chgPct`
+ *  is the relative move. No earlier session in the bars → no quote: a
+ *  change that cannot be stated is not shown as flat. */
+export function indexQuoteFrom(result: IndexChartPayload, pair: ChartPair, nowMs = Date.now()): Quote | null {
+  const q = indexQuoteOf(result, nowMs)
+  if (!q || q.prev === null) return null
+  const chg = q.last - q.prev
+  return {
+    last: q.last,
+    chg,
+    chgPct: (chg / q.prev) * 100,
+    asOf: q.asOf,
+    feed: 'index',
+    session: q.live ? 'open' : 'closed',
+    chartable: true,
+    prevClose: q.prev,
+    ...(q.dayHigh !== null && q.dayLow !== null ? { dayHigh: q.dayHigh, dayLow: q.dayLow } : {}),
+  }
+}
+
+/** Exported for the harness's live pin. Throws when the host does not answer. */
+export async function fetchIndexQuote(pair: ChartPair): Promise<Quote | null> {
+  const res = await fetchWithTimeout(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(pair.pair)}?interval=1d&range=5d&includePrePost=false`,
+    { headers: { 'user-agent': UA, accept: 'application/json' } },
+    INDEX_TIMEOUT_MS,
+  )
+  if (!res.ok) throw new Error(`index ${res.status}`)
+  const result = ((await res.json()) as { chart?: { result?: IndexChartPayload[] } }).chart?.result?.[0]
+  if (!result?.meta) throw new Error('index shape')
+  return indexQuoteFrom(result, pair)
+}
+
 /** Exported for the harness's live pin (Yahoo against Robinhood's daily closes). */
 export async function fetchYahooQuote(pair: ChartPair): Promise<Quote | null> {
   const res = await fetchWithTimeout(
@@ -368,6 +429,11 @@ export interface QuoteRead {
   quotes: QuoteMap
   /** Symbols asked for that came back with no quote (chartless, or feed miss). */
   missing: string[]
+  /** The subset of `missing` that names NO market: the symbol resolved to no
+   *  pair while the venue's live universe was held and fresh. A board that
+   *  lists a venue market by name drops the row on this (the venue delisted
+   *  it) and keeps it on a plain miss (a feed did not answer this time). */
+  unlisted: string[]
   /** Distinct symbols that had to be fetched (cache misses). */
   fetched: number
 }
@@ -381,12 +447,13 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
   const { symbols } = cleanQuoteSymbols(symbolsRaw)
   const quotes: QuoteMap = {}
   const missing: string[] = []
+  const unlisted: string[] = []
   const now = Date.now()
   const toFetch: { symbol: string; pair: ChartPair }[] = []
   const unresolved: string[] = []
   for (const s of symbols) {
     const hit = cache.get(s)
-    if (hit && now - hit.at < QUOTE_TTL_MS) {
+    if (hit && now - hit.at < hit.ttl) {
       quotes[s] = hit.quote
       continue
     }
@@ -404,7 +471,11 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
   for (const s of unresolved) {
     const pair = await resolveChartPair(s)
     if (pair) toFetch.push({ symbol: s, pair })
-    else missing.push(s)
+    else {
+      missing.push(s)
+      // Unlisted, not merely unanswered: only with both universes in hand.
+      if (hlPerpUniverseFresh('main') && hlPerpUniverseFresh('xyz')) unlisted.push(s)
+    }
   }
 
   // Share in-flight reads across concurrent callers (two rails polling the
@@ -426,6 +497,7 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
   const stocks = fresh.filter((f) => f.pair.source === 'robinhood')
   const coins = fresh.filter((f) => f.pair.source === 'coinbase')
   const perps = fresh.filter((f) => f.pair.source === 'hyperliquid')
+  const indexes = fresh.filter((f) => f.pair.source === 'index')
 
   // One batch promise per ROBINHOOD_BATCH_MAX stocks; each symbol's inflight
   // entry resolves off its own chunk, so one refused chunk falls back alone.
@@ -439,11 +511,12 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
     )
   }
 
-  const settle = (symbol: string, p: Promise<Quote | null>) => {
+  const settle = (symbol: string, p: Promise<Quote | null>, ttl = QUOTE_TTL_MS, keep: () => boolean = () => true) => {
     const wrapped = p
       .catch(() => null)
       .then((q) => {
-        if (q) cache.set(symbol, { at: Date.now(), quote: q })
+        // `keep` false = a stand-in (the last good quote, served while its host errors): never re-stamped as fresh.
+        if (q && keep()) cache.set(symbol, { at: Date.now(), quote: q, ttl })
         return q
       })
       .finally(() => inflight.delete(symbol))
@@ -467,6 +540,33 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
     )
   })
   for (const p of perps) settle(p.symbol, fetchHyperliquid(p.pair))
+  // The index host is unofficial: when it errors, the last good quote stands
+  // in for a while (it is delayed data either way) before the symbol is omitted.
+  for (const ix of indexes) {
+    const held = cache.get(ix.symbol)
+    const standIn = () => (held && Date.now() - held.at < INDEX_QUOTE_STALE_MS ? held.quote : null)
+    let fresh = true
+    const backingOff = Date.now() - (indexFailedAt.get(ix.symbol) ?? 0) < INDEX_QUOTE_BACKOFF_MS
+    const read = backingOff
+      ? Promise.reject(new Error('backing off'))
+      : fetchIndexQuote(ix.pair).then((q) => {
+          indexFailedAt.delete(ix.symbol)
+          return q
+        })
+    settle(
+      ix.symbol,
+      read.catch((err) => {
+        fresh = false
+        if (!backingOff) {
+          indexFailedAt.set(ix.symbol, Date.now())
+          console.warn(`[quotes] index data did not answer for ${ix.symbol} (${err instanceof Error ? err.message : String(err)})`)
+        }
+        return standIn()
+      }),
+      INDEX_QUOTE_TTL_MS,
+      () => fresh,
+    )
+  }
   // Coinbase is per-product; a bounded worker pool keeps a 40-coin list under
   // its public rate limit while still finishing inside one poll.
   const coinQueue = coins.map((c) => ({ c, resolve: null as null | ((q: Quote | null) => void) }))
@@ -490,12 +590,13 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
   ])
   // Preserve request order in `missing` and drop duplicates from shared waits.
   const missSet = new Set(missing)
-  return { quotes, missing: symbols.filter((s) => missSet.has(s) && !quotes[s]), fetched: fresh.length }
+  return { quotes, missing: symbols.filter((s) => missSet.has(s) && !quotes[s]), unlisted, fetched: fresh.length }
 }
 
 /** Test seam: wipe the cache (the cron's fixture pin runs on a cold cache). */
 export function resetQuoteCache(): void {
   cache.clear()
+  indexFailedAt.clear()
   hlSnapshots.main = null
   hlSnapshots.xyz = null
 }

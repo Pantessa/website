@@ -24,7 +24,7 @@
 
 import { useEffect, useState } from 'react'
 import { useAskDoor } from '@/lib/ask-door'
-import { guideBody, guideCta, guideIndexOf, GUIDE_TOTAL, renderGuideText, type GuideCta, type GuideCtx, type GuideHint } from '@/lib/guide'
+import { guideBody, guideCta, guideIndexOf, guideTitle, GUIDE_TOTAL, renderGuideText, type GuideCta, type GuideCtx, type GuideHint } from '@/lib/guide'
 import { PantessaMark } from '@/components/Logo'
 import SpineLink from '@/components/SpineLink'
 import './guide.css'
@@ -155,7 +155,7 @@ export default function GuideCard({ hint, ctx, onCta, onDismiss, onOff, onAsk, c
           <span className="guide__num" aria-hidden>
             {n}/{GUIDE_TOTAL} ·{' '}
           </span>
-          {renderGuideText(hint.title, ctx)}
+          {guideTitle(hint, ctx)}
         </p>
         <p className="guide__text">{guideBody(hint, ctx)}</p>
       </div>

@@ -245,7 +245,16 @@ export default function TechnicalsTab({
     )
   }
 
-  const feedNote = data?.feed === 'yahoo' ? "Yahoo Finance's tape (Robinhood's feed is down)" : data?.source === 'robinhood' ? "Robinhood's 24/7 tape" : data?.feedLabel ? `${data.feedLabel}'s tape` : 'our own tape'
+  const feedNote =
+    data?.source === 'index'
+      ? 'delayed index data'
+      : data?.feed === 'yahoo'
+        ? "Yahoo Finance's tape (Robinhood's feed is down)"
+        : data?.source === 'robinhood'
+          ? "Robinhood's 24/7 tape"
+          : data?.feedLabel
+            ? `${data.feedLabel}'s tape`
+            : 'our own tape'
 
   return (
     <section className="mx-auto w-full max-w-5xl px-4 pb-10 pt-4" data-technicals={sym} data-tf={tf}>
@@ -322,7 +331,8 @@ export default function TechnicalsTab({
       {/* Fundamentals (DefiLlama) — crypto only: a tokenized stock's chart is
           its tape, not a TVL curve. Independent of the technicals read, so a
           short tape still gets its fundamentals. */}
-      {pair.source !== 'robinhood' && <Fundamentals symbol={sym} />}
+      {/* …and not an index either: it has no protocol to measure. */}
+      {pair.source !== 'robinhood' && pair.source !== 'index' && <Fundamentals symbol={sym} />}
     </section>
   )
 }

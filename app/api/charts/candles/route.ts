@@ -40,6 +40,10 @@ export async function GET(req: NextRequest) {
   if (tf === '1m' && chartPairFor(symbolRaw)?.source === 'robinhood') {
     return NextResponse.json({ symbol: symbolRaw.toUpperCase(), tf, candles: [], error: 'no 1m bars for a stock' }, { status: 400, headers: NO_STORE })
   }
+  // Index data has no minute bar either (the same four frames as a stock).
+  if (tf === '1m' && chartPairFor(symbolRaw)?.source === 'index') {
+    return NextResponse.json({ symbol: symbolRaw.toUpperCase(), tf, candles: [], error: 'no 1m bars for an index' }, { status: 400, headers: NO_STORE })
+  }
   const beforeRaw = req.nextUrl.searchParams.get('before')
   if (beforeRaw !== null) return olderPage(symbolRaw, tf, beforeRaw)
   // The deep read (30s cache, shared with the technicals) runs beside the

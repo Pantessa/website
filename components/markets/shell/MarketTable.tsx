@@ -18,7 +18,8 @@ import { sortMarketRows, type MarketRow, type MarketSortDir, type MarketSortKey 
 import Sparkline from '@/components/markets/viz/Sparkline'
 import { useSparks } from '@/components/markets/shell/useSparks'
 import QuickAct from '@/components/markets/trade/QuickAct'
-import { chartPairFor } from '@/lib/charts'
+import { chartPairFor, type ChartUnit } from '@/lib/charts'
+import { fmtMacroChange, fmtMacroLast, macroChangeOf } from '@/lib/macro'
 
 const HEADS: { key: MarketSortKey; label: string }[] = [
   { key: 'symbol', label: 'Symbol' },
@@ -26,7 +27,35 @@ const HEADS: { key: MarketSortKey; label: string }[] = [
   { key: 'chg', label: '24h' },
 ]
 
-export default function MarketTable({ rows, quotes, section, onAsk }: { rows: readonly MarketRow[]; quotes: QuoteMap; section: string; /** The index's act door — EXEC's QuickAct chips send through it (connect-to-act). */ onAsk?: (ask: string) => void }) {
+/** A row that states its own unit (the Macro board, lib/macro): a yield
+ *  prints in percent and moves in basis points, an index level wears no
+ *  dollar sign. A row without one is a dollar price moved in percent. */
+export type TableRow = MarketRow & { unit?: ChartUnit; dp?: number }
+
+/** A small word beside a row's name ("delayed", "closed", "24/7"). */
+export interface RowTag {
+  text: string
+  tone: 'always' | 'open' | 'closed'
+}
+
+export default function MarketTable({
+  rows,
+  quotes,
+  section,
+  onAsk,
+  changeLabel = '24h',
+  tagFor,
+}: {
+  rows: readonly TableRow[]
+  quotes: QuoteMap
+  section: string
+  /** The index's act door — EXEC's QuickAct chips send through it (connect-to-act). */
+  onAsk?: (ask: string) => void
+  /** The change column's head, when it is not a 24-hour move (the Macro board mixes sessions). */
+  changeLabel?: string
+  /** A tag per row, from its live quote (the Macro board: delayed · closed · 24/7). */
+  tagFor?: (row: TableRow, quote: QuoteMap[string]) => RowTag | null
+}) {
   const [sort, setSort] = useState<{ key: MarketSortKey; dir: MarketSortDir } | null>(null)
   const sorted = useMemo(() => (sort ? sortMarketRows(rows, quotes, sort.key, sort.dir) : [...rows]), [rows, quotes, sort])
   // 7d sparkline closes (VIZ's sparks route); empty until the read lands.
@@ -57,9 +86,9 @@ export default function MarketTable({ rows, quotes, section, onAsk }: { rows: re
               aria-pressed={on}
               data-sort-key={h.key}
               onClick={() => toggle(h.key)}
-              title={`Sort by ${h.label.toLowerCase()}`}
+              title={`Sort by ${(h.key === 'chg' ? changeLabel : h.label).toLowerCase()}`}
             >
-              {h.label}
+              {h.key === 'chg' ? changeLabel : h.label}
               {on ? sort!.dir === 'asc' ? <ArrowUp className="mk-table__arrow" aria-hidden /> : <ArrowDown className="mk-table__arrow" aria-hidden /> : <ArrowUpDown className="mk-table__arrow mk-table__arrow--idle" aria-hidden />}
             </button>
           )
@@ -71,13 +100,24 @@ export default function MarketTable({ rows, quotes, section, onAsk }: { rows: re
           const q = quotes[r.symbol]
           const markWhere = r.source === 'robinhood' ? { chain: 'Robinhood Chain' } : {}
           const pair = onAsk ? chartPairFor(r.symbol) : null
+          const tag = tagFor ? tagFor(r, q) : null
+          // A row with a unit of its own prints through it; every other row is dollars and percent, as before.
+          const unitRow = r.unit ? { unit: r.unit, dp: r.dp } : null
+          const move = unitRow ? macroChangeOf(unitRow, q) : q?.chgPct
           return (
-            <tr key={r.symbol} className="mk-table__row" data-symbol={r.symbol}>
+            <tr key={r.symbol} className="mk-table__row" data-symbol={r.symbol} data-unit={r.unit}>
               <td className="mk-table__id">
                 <Link href={`/t/${r.symbol}`} className="mk-table__link" data-mk-row>
                   <TokenIcon symbol={r.symbol} size={24} {...markWhere} />
                   <span className="mk-table__sym mono">{r.symbol}</span>
-                  <span className="mk-table__name">{r.name}</span>
+                  <span className="mk-table__name">
+                    {r.name}
+                    {tag && (
+                      <span className={`mk-table__tag mk-table__tag--${tag.tone} mono`} data-tag={tag.text}>
+                        {tag.text}
+                      </span>
+                    )}
+                  </span>
                 </Link>
                 {/* EXEC's QuickAct: 2–3 honest chips, revealed on row hover/focus; the chips
                     stopPropagation so the row link stays a link (a MARKETS seat). */}
@@ -90,8 +130,8 @@ export default function MarketTable({ rows, quotes, section, onAsk }: { rows: re
               <td className="mk-table__spark" data-spark={sparks[r.symbol]?.length ?? 0}>
                 {sparks[r.symbol] && sparks[r.symbol]!.length >= 2 ? <Sparkline values={sparks[r.symbol]!} width={64} height={20} title={`${r.symbol} · 7 days`} /> : null}
               </td>
-              <td className="mk-table__num mono">{q ? `$${fmtQuotePrice(q.last)}` : <span className="mk-table__dash">—</span>}</td>
-              <td className={`mk-table__num mono mkt-chg ${chgClass(q?.chgPct)}`}>{q ? fmtPct(q.chgPct) : <span className="mk-table__dash">—</span>}</td>
+              <td className="mk-table__num mono">{q ? unitRow ? fmtMacroLast(unitRow, q.last) : `$${fmtQuotePrice(q.last)}` : <span className="mk-table__dash">—</span>}</td>
+              <td className={`mk-table__num mono mkt-chg ${chgClass(move)}`}>{q ? unitRow ? fmtMacroChange(unitRow, q) : fmtPct(q.chgPct) : <span className="mk-table__dash">—</span>}</td>
             </tr>
           )
         })}

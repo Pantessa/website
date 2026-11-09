@@ -1,0 +1,18 @@
+/* The Macro board (components/markets/shell/MarketsIndex MacroBoard): the
+   terminal table the other boards use, plus what only this board has — a
+   small word beside each name saying what kind of number the row is
+   (delayed index data, a closed session, a market that never closes) and a
+   one-line legend under the table. Sizes and gaps are the shared scale
+   tokens (app/x402-design.css). */
+
+.mk-table__tag { margin-left: var(--sp-2); padding: 0 var(--sp-1); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); vertical-align: baseline; }
+.mk-table__tag--always { color: var(--muted); }
+.mk-table__tag--closed { color: var(--muted-2); border-style: dashed; }
+
+/* A macro row with no order chip keeps its name on hover (the other boards
+   hide the name to seat the chips; an index row has none to seat). */
+.mk-table[data-section='macro'] .mk-table__row:hover:not(:has(.mkt-quick)) .mk-table__name,
+.mk-table[data-section='macro'] .mk-table__row:focus-within:not(:has(.mkt-quick)) .mk-table__name { visibility: visible; }
+
+.mk-macro__legend { margin: var(--sp-2) 0 0; font-size: var(--fs-xs); line-height: 1.5; letter-spacing: 0.02em; color: var(--muted-2); }
+.mk-macro__legend b { font-weight: 600; color: var(--muted); }

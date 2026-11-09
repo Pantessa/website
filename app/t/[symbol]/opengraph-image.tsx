@@ -4,7 +4,9 @@ import { join } from 'node:path'
 import { headers } from 'next/headers'
 import { brandOgPalette } from '@/lib/brand-theme'
 import { gemMarkSvg } from '@/lib/og-marks'
-import { CHART_FEED_LABELS, resolveChartPair, type Candle, type ChartFeed } from '@/lib/charts'
+import { CHART_FEED_LABELS, chartUnitOf, isLookOnlyPair, resolveChartPair, type Candle, type ChartFeed } from '@/lib/charts'
+import { fmtIndexValue } from '@/lib/macro'
+import { READ_INDEX_VENUE_LINE, fmtReadChange } from '@/lib/read'
 import { candleSvg, fmtOgPrice, symbolPageSeo } from '@/lib/markets-seo'
 import { TAPE_FOOTNOTE, sessionKindFor, sessionLine } from '@/lib/markets-copy'
 
@@ -65,8 +67,16 @@ export default async function Image({ params }: Params) {
   // 0.00% — the honest move on a daily tape is last close vs prior close.
   const n = series.candles.length
   const chg = n >= 2 && series.candles[n - 2].c > 0 ? ((series.candles[n - 1].c - series.candles[n - 2].c) / series.candles[n - 2].c) * 100 : null
-  const chgColor = chg == null ? pal.muted : chg >= 0 ? UP : DOWN
-  const chgLabel = chg == null ? '' : `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg).toFixed(2)}% · 1D`
+  // A look-only index (lib/charts): its value in its own unit — a yield in
+  // percent, moved in basis points — and no promise of a trade on the card.
+  const lookOnly = isLookOnlyPair(seo.pair)
+  const unit = chartUnitOf(seo.pair)
+  const bp = unit === 'yield' && n >= 2 ? (series.candles[n - 1].c - series.candles[n - 2].c) * 100 : null
+  const move = unit === 'yield' ? bp : chg
+  const chgColor = move == null ? pal.muted : move >= 0 ? UP : DOWN
+  const arrow = move != null && move >= 0 ? '▲' : '▼'
+  const chgLabel = move == null ? '' : unit === 'yield' ? `${arrow} ${fmtReadChange({ unit }, Math.abs(move))} · 1D` : `${arrow} ${Math.abs(move).toFixed(2)}% · 1D`
+  const lastLabel = series.last == null ? '' : lookOnly && seo.pair ? fmtIndexValue(seo.pair, series.last) : unit === 'level' ? fmtOgPrice(series.last) : `$${fmtOgPrice(series.last)}`
   const feedLabel = series.feed ? CHART_FEED_LABELS[series.feed] : seo.pair ? CHART_FEED_LABELS[seo.pair.source] : ''
   const session = seo.pair ? sessionLine(sessionKindFor(seo.pair.source)) : ''
   const chart = candleSvg(series.candles, { width: 1072, height: 236, up: UP, down: DOWN, grid: 'rgba(255,255,255,0.06)', count: 60 })
@@ -98,12 +108,12 @@ export default async function Image({ params }: Params) {
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ color: pal.ink, fontSize: 72, fontWeight: 600, letterSpacing: -3, lineHeight: 1 }}>{seo.symbol}</span>
             <span style={{ color: pal.muted, fontSize: 24, marginTop: 10 }}>
-              {seo.pair ? `${seo.name} · ${seo.pair.label}` : `${seo.name} · no live chart yet`}
+              {seo.pair ? (lookOnly ? `${seo.name} · index data` : `${seo.name} · ${seo.pair.label}`) : `${seo.name} · no live chart yet`}
             </span>
           </div>
           {series.last != null && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-              <span style={{ color: pal.ink, fontSize: 64, fontWeight: 600, letterSpacing: -2.5, lineHeight: 1 }}>${fmtOgPrice(series.last)}</span>
+              <span style={{ color: pal.ink, fontSize: 64, fontWeight: 600, letterSpacing: -2.5, lineHeight: 1 }}>{lastLabel}</span>
               {chgLabel && <span style={{ color: chgColor, fontSize: 24, fontWeight: 600, marginTop: 10 }}>{chgLabel}</span>}
             </div>
           )}
@@ -115,7 +125,7 @@ export default async function Image({ params }: Params) {
           <img src={toDataUri(chart)} width={1072} height={236} alt="" />
           {series.candles.length < 2 && (
             <div style={{ position: 'absolute', top: 0, left: 0, width: 1072, height: 236, display: 'flex', alignItems: 'center', justifyContent: 'center', color: pal.muted, fontSize: 24 }}>
-              {seo.pair ? 'Live chart · feed warming up' : 'No live chart yet — tradable in chat'}
+              {seo.pair ? (lookOnly ? 'Index data did not answer just now' : 'Live chart · feed warming up') : 'No live chart yet — tradable in chat'}
             </div>
           )}
         </div>
@@ -125,18 +135,18 @@ export default async function Image({ params }: Params) {
           <div style={{ display: 'flex', gap: 12 }}>
             {/* What the link does, said first and in the accent: the card is a
                 chart in a feed full of charts, and this one takes the order. */}
-            {seo.pair && (
+            {seo.pair && !lookOnly && (
               <div style={{ display: 'flex', padding: '8px 16px', borderRadius: 999, border: `1.5px solid ${UP}`, color: UP, fontSize: 16, letterSpacing: 1.5, whiteSpace: 'nowrap' }}>
                 <span>Trade from this chart</span>
               </div>
             )}
-            {[feedLabel ? `Feed · ${feedLabel}` : 'Guarded build', 'Your wallet signs'].map((label) => (
+            {(lookOnly ? ['Full chart', 'Here to read'] : [feedLabel ? `Feed · ${feedLabel}` : 'Guarded build', 'Your wallet signs']).map((label) => (
               <div key={label} style={{ display: 'flex', padding: '8px 16px', borderRadius: 999, border: '1.5px solid rgba(255,255,255,0.12)', color: pal.muted, fontSize: 16, letterSpacing: 1.5, whiteSpace: 'nowrap' }}>
                 <span>{label}</span>
               </div>
             ))}
           </div>
-          <span style={{ color: pal.muted, fontSize: 14, letterSpacing: 1.2, whiteSpace: 'nowrap', flexShrink: 0 }}>{TAPE_FOOTNOTE.toUpperCase()}</span>
+          <span style={{ color: pal.muted, fontSize: 14, letterSpacing: 1.2, whiteSpace: 'nowrap', flexShrink: 0 }}>{(lookOnly ? READ_INDEX_VENUE_LINE.split('.')[0] : TAPE_FOOTNOTE).toUpperCase()}</span>
         </div>
       </div>
     ),

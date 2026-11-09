@@ -1,0 +1,55 @@
+/* The look-only card (components/markets/shell/LookOnlyCard): what an index
+   page shows where the order ticket would be. Sizes, radii and gaps are the
+   shared scale tokens (app/x402-design.css). Two seats: the right column on
+   a desktop, the main column on a phone — one shows per posture. */
+
+.mk-look { min-width: 0; padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surf-1); }
+.mk-look--rail { flex: 0 0 auto; margin: var(--sp-3) var(--sp-3) 0; }
+.mk-look--page { margin-top: var(--sp-3); }
+
+.mk-look__head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.mk-look__k { font-size: var(--fs-xs); letter-spacing: 0.14em; color: var(--fg); white-space: nowrap; }
+.mk-look__sub { font-size: var(--fs-xs); letter-spacing: 0.14em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+.mk-look__line { margin: var(--sp-2) 0 0; font-size: var(--fs-md); line-height: 1.45; color: var(--fg); }
+.mk-look__source { margin: var(--sp-1) 0 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--muted); }
+.mk-look__lab { margin: var(--sp-3) 0 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+
+.mk-look__chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
+.mk-look__chip { min-height: 36px; padding: 0 var(--sp-4); border: 1px solid var(--accent); border-radius: var(--r-pill); background: var(--accent); color: var(--ink, var(--bg)); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; white-space: nowrap; cursor: pointer; outline: none; transition: filter var(--dur-1) ease; }
+.mk-look__chip:hover { filter: brightness(1.08); }
+.mk-look__chip:focus-visible { box-shadow: 0 0 0 2px var(--fg); }
+.mk-look__sentence { margin: var(--sp-2) 0 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--muted-2); }
+.mk-look__sentence q { color: var(--fg); quotes: '“' '”'; }
+
+.mk-look__doors { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); margin-top: var(--sp-3); }
+.mk-look__door { font-size: var(--fs-md); font-weight: 500; color: var(--muted); text-decoration: none; }
+.mk-look__door span { color: var(--accent); }
+.mk-look__door:hover, .mk-look__door:focus-visible { color: var(--fg); outline: none; }
+
+.mk-look__say { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.mk-look__in { flex: 1 1 auto; min-width: 0; height: 36px; padding: 0 var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--bg); color: var(--fg); font-size: var(--fs-md); outline: 0; }
+.mk-look__in::placeholder { color: var(--muted-2); }
+.mk-look__in:focus { border-color: var(--accent); }
+.mk-look__go { width: 36px; height: 36px; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--muted); cursor: pointer; flex: 0 0 auto; }
+.mk-look__go:hover:not(:disabled) { color: var(--fg); border-color: var(--fg); }
+.mk-look__go:disabled { opacity: 0.45; cursor: default; }
+
+/* One seat per posture: the rail docks from 1024px (markets.css), so the
+   page copy steps aside there; below it the rail's copy is out. */
+@media (min-width: 1024px) {
+  .mk-look--page { display: none; }
+}
+@media (max-width: 1023.98px) {
+  .mk-look--rail { display: none; }
+  /* Touch targets on a phone. */
+  .mk-look__chip { min-height: 44px; }
+  .mk-look__door { min-height: 44px; display: inline-flex; align-items: center; gap: var(--sp-1); }
+  /* 16px keeps iOS from zooming the page when the field takes focus. */
+  .mk-look__in { height: 44px; font-size: var(--fs-input); }
+  .mk-look__go { width: 44px; height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-look__chip { transition: none; }
+}

@@ -39,10 +39,12 @@
 //    spokes + the stETH contract) — one chain, said out loud;
 //  • a limit row and a stake row need a PRICE to size honestly (units, not
 //    dollars, are what those grammars read) — pass `last` from the live
-//    quote; without it those rows are omitted rather than guessed.
+//    quote; without it those rows are omitted rather than guessed;
+//  • a look-only index (US10Y, VIX, NDX… lib/charts isLookOnlyPair) has NO
+//    venue: the map is empty for it, and the note says it is here to read.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { isHip3Pair, type ChartPair } from '@/lib/charts'
+import { isHip3Pair, lookOnlyRefusal, type ChartPair } from '@/lib/charts'
 import { spotChainsFor, tokenHome } from '@/lib/token-home'
 import { fmtAskPrice, fmtAskUnits } from '@/lib/chart-actions'
 import { ONRAMP_DEFAULT_NETWORK } from '@/lib/onramp'
@@ -187,7 +189,7 @@ export function cardBuyAsk(symbol: string, pair: ChartPair, usd: number): string
  *  stock (4663, named by inference) and for a page with no spot buy. */
 export function cardBuyChain(symbol: string, pair: ChartPair): (typeof SPOT_CHAINS)[number] | null {
   const sym = (pair?.symbol ?? symbol).toUpperCase()
-  if (pair.source === 'robinhood' || pair.source === 'hyperliquid' || tokenHome(sym)) return null
+  if (pair.source === 'robinhood' || pair.source === 'hyperliquid' || pair.source === 'index' || tokenHome(sym)) return null
   return SPOT_CHAINS.find((c) => c.id === (sym === 'ETH' ? CARD_LANE_CHAIN_ID : fundDestChainFor(sym))) ?? null
 }
 
@@ -230,6 +232,9 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
   const lev = opts.leverage && opts.leverage > 1 ? `${opts.leverage}x ` : ''
   const last = opts.last && Number.isFinite(opts.last) && opts.last > 0 ? opts.last : null
   const out: VenueRoute[] = []
+
+  // ── A look-only index: nothing listed here trades it — no row of any kind ──
+  if (pair.source === 'index') return out
 
   // ── Tokenized stocks: Robinhood Chain only ──
   if (pair.source === 'robinhood') {
@@ -363,6 +368,10 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
 export function missingVenueNotes(symbol: string, pair: ChartPair): string[] {
   const sym = (pair?.symbol ?? symbol).toUpperCase()
   const notes: string[] = []
+  if (pair.source === 'index') {
+    notes.push(lookOnlyRefusal(sym))
+    return notes
+  }
   if (pair.source === 'robinhood') {
     notes.push('No perp, lending or resting book for a tokenized stock — buys and sells fill at market on Robinhood Chain.')
     return notes
@@ -570,6 +579,8 @@ const SPOT_CHAIN_OF = (sym: string): number => spotChainsOf(sym)[0]
 /** Which leg kinds a pair can chain, in the order they may appear. */
 export function compoundLegKindsFor(symbol: string, pair: ChartPair): CompoundLegKind[] {
   const sym = (pair?.symbol ?? symbol).toUpperCase()
+  // A look-only index chains nothing.
+  if (pair.source === 'index') return []
   if (pair.source === 'robinhood') return ['fund', 'buy']
   const home = tokenHome(sym)
   const perp = (pair.source === 'hyperliquid' && !isHip3Pair(pair)) || hasPerpCold(sym)
@@ -620,6 +631,9 @@ export function composeCompound(symbol: string, pair: ChartPair, kinds: Compound
   const lev = opts.leverage && opts.leverage > 1 ? `${opts.leverage}x ` : ''
   const want = new Set(kinds)
   const legs: CompoundLeg[] = []
+
+  // A look-only index has no leg, whatever was asked for.
+  if (pair.source === 'index') return finish(legs)
 
   if (pair.source === 'robinhood') {
     // A stock chains fund → buy only. The buy is the order size and the fund

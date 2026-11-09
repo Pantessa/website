@@ -90,8 +90,11 @@ export function readPins(check: Check): void {
       READ_DEFAULT_ID === 'spx' && parseReadId('gold') === 'gold' && parseReadId('nope') === null && parseReadId(null) === null,
   )
   check(
-    'read: an app instrument has a symbol page and an index has none; every stand-in a look-only market offers a chip for is a stock listed here (SPY · QQQ · SHY · GLD · USO resolve to the stock tape), so the sentence it offers is one the app builds',
-    readPageHref(readInstrument('spx')) === '/t/SP500' && readPageHref(readInstrument('btc')) === '/t/BTC' && readPageHref(readInstrument('us10y')) === null && readPageHref(readInstrument('vix')) === null &&
+    // RE-PINNED 2026-11-09 (macro board): an index has a look-only chart page of its own now (lib/charts CHART_INDEXES) — the tile's door opens it; it used to have none.
+    'read: every instrument has a chart page — an app instrument its symbol page, an index its look-only page under the symbol a trader types (^TNX → /t/US10Y, DX-Y.NYB → /t/DXY), and each of those resolves to a look-only pair on the same data symbol; every stand-in a look-only market offers a chip for is a stock listed here (SPY · QQQ · SHY · GLD · USO resolve to the stock tape), so the sentence it offers is one the app builds',
+    readPageHref(readInstrument('spx')) === '/t/SP500' && readPageHref(readInstrument('btc')) === '/t/BTC' && readPageHref(readInstrument('us10y')) === '/t/US10Y' && readPageHref(readInstrument('vix')) === '/t/VIX' &&
+      readPageHref(readInstrument('ndx')) === '/t/NDX' && readPageHref(readInstrument('dxy')) === '/t/DXY' &&
+      READ_INSTRUMENTS.filter((i) => i.source === 'index').every((i) => { const p = chartPairFor((readPageHref(i) ?? '').slice(3)); return p?.source === 'index' && p.pair === i.symbol && p.label === i.name }) &&
       ['SPY', 'QQQ', 'SHY', 'GLD', 'USO'].every((s) => chartPairFor(s)?.source === 'robinhood') &&
       readInstrument('spx').near[0].symbol === 'SPY' && readInstrument('ndx').near[0].symbol === 'QQQ' && readInstrument('us10y').near[0].symbol === 'SHY' && readInstrument('gold').near[0].symbol === 'GLD' && readInstrument('oil').near[0].symbol === 'USO' &&
       readInstrument('vix').near.length === 0 && readInstrument('btc').near.length === 0,

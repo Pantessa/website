@@ -11,6 +11,7 @@ import { chartPairFor, parseChartAsk, type Candle, type ChartPair, type ChartSou
 import { ROBINHOOD_TICKERS, ROBINHOOD_TICKER_NAMES } from '@/lib/robinhood-tickers'
 import { APP_CHAINS } from '@/lib/chains'
 import { writeDepthParams, type DepthSettings } from '@/lib/depth'
+import { LOOK_ONLY_VENUE, lookOnlySessionLine, macroName } from '@/lib/macro'
 
 // ── Sections ────────────────────────────────────────────────────────────────
 
@@ -140,11 +141,12 @@ export function marketSections(): MarketSection[] {
   ]
 }
 
-/** Display name for any charted symbol (company for stocks, coin otherwise). */
+/** Display name for any charted symbol (company for stocks, the index's or
+ *  the macro market's own name, coin otherwise). */
 export function symbolName(symbol: string): string {
   const pair = chartPairFor(symbol)
   const sym = pair?.symbol ?? symbol.toUpperCase()
-  return ROBINHOOD_TICKER_NAMES[sym] ?? COIN_NAMES[sym] ?? sym
+  return ROBINHOOD_TICKER_NAMES[sym] ?? COIN_NAMES[sym] ?? macroName(sym) ?? sym
 }
 
 /** What /t/<symbol> can honestly say about a symbol with no chart.
@@ -174,6 +176,8 @@ export function venueLabel(pair: ChartPair | null): string {
   if (!pair) return 'Not charted yet'
   if (pair.source === 'robinhood') return 'Robinhood Chain · 24/7'
   if (pair.source === 'hyperliquid') return 'Hyperliquid perps'
+  // A look-only index is not a venue: the chip says whose number it is.
+  if (pair.source === 'index') return LOOK_ONLY_VENUE
   return 'Coinbase spot'
 }
 
@@ -235,6 +239,12 @@ export function sessionState(pair: ChartPair | null, now: Date = new Date()): Se
     return { token: '24/7', tape, line }
   }
   if (pair?.source === 'hyperliquid') return { token: '24/7', tape: null, line: 'Perp trades 24/7 on Hyperliquid' }
+  // A look-only index keeps its own exchange's hours, and each one's differ
+  // (the dollar index trades nearly round the clock, the 10-year closes at
+  // 14:00 Chicago), so the CLOCK says nothing here: the page reads the
+  // session off the quote's own print (lib/macro lookOnlySessionLine) and
+  // hands it in. With no quote yet, the neutral words and no open/closed dot.
+  if (pair?.source === 'index') return { token: '24/7', tape: null, line: lookOnlySessionLine(null) }
   if (pair) return { token: '24/7', tape: null, line: 'Spot trades 24/7' }
   return { token: '24/7', tape: null, line: 'No candle feed yet — still tradable in chat' }
 }
@@ -355,6 +365,28 @@ export function stats24h(candles: Candle[], nowSec = Math.floor(Date.now() / 100
   }
   if (!Number.isFinite(high) || !Number.isFinite(low)) return null
   return { high, low, volume }
+}
+
+/** The series' LATEST SESSION — the range of the bars inside the 20 hours
+ *  that end on its last bar. For a market that closes (a look-only index),
+ *  "the last 24 hours" is mostly shut and blank all weekend; this is the
+ *  session a reader means, whenever they look. Twenty hours holds any one
+ *  exchange session (the longest here, the VIX's, runs about thirteen) and
+ *  never reaches back into the session before it; a market that barely
+ *  closes (the dollar index) reads as its last 20 hours. Null under two bars. */
+export const SESSION_WINDOW_SEC = 20 * 3600
+export function lastSessionStats(candles: Candle[]): { high: number; low: number } | null {
+  if (candles.length === 0) return null
+  const end = candles.reduce((m, c) => (c.t > m ? c.t : m), -Infinity)
+  const window = candles.filter((c) => c.t > end - SESSION_WINDOW_SEC)
+  if (window.length < 2) return null
+  let high = -Infinity
+  let low = Infinity
+  for (const c of window) {
+    if (c.h > high) high = c.h
+    if (c.l < low) low = c.l
+  }
+  return Number.isFinite(high) && Number.isFinite(low) ? { high, low } : null
 }
 
 // ── Search + the chat/voice door ────────────────────────────────────────────

@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation'
 import { Search } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import { resolveTickerQuery, type MarketRow } from '@/lib/markets'
+import { macroRow, macroRowMatches } from '@/lib/macro'
 
 export default function TickerSearch({ rows, autoFocus = false }: { rows: MarketRow[]; autoFocus?: boolean }) {
   const router = useRouter()
@@ -18,9 +19,20 @@ export default function TickerSearch({ rows, autoFocus = false }: { rows: Market
   const suggestions = useMemo(() => {
     const needle = q.trim().toLowerCase()
     if (!needle) return []
+    // A macro row is found by the words a desk uses for it too ("treasury",
+    // "dow", "crude", "10 year"): its symbol alone says little (lib/macro).
     return rows
-      .filter((r) => r.symbol.toLowerCase().startsWith(needle) || r.name.toLowerCase().includes(needle))
+      .filter((r) => {
+        const macro = macroRow(r.symbol)
+        return r.symbol.toLowerCase().startsWith(needle) || r.name.toLowerCase().includes(needle) || (!!macro && macroRowMatches(macro, needle))
+      })
       .slice(0, 6)
+  }, [q, rows])
+  // A row whose SYMBOL is exactly what was typed wins Enter: "sp500" opens
+  // the S&P 500's own chart, though the name resolver reads it as the fund.
+  const exact = useMemo(() => {
+    const needle = q.trim().replace(/^\$/, '').toUpperCase()
+    return needle ? (rows.find((r) => r.symbol === needle)?.symbol ?? null) : null
   }, [q, rows])
 
   const go = (symbol: string) => {
@@ -34,7 +46,7 @@ export default function TickerSearch({ rows, autoFocus = false }: { rows: Market
       role="search"
       onSubmit={(e) => {
         e.preventDefault()
-        const target = resolved?.symbol ?? suggestions[0]?.symbol
+        const target = exact ?? resolved?.symbol ?? suggestions[0]?.symbol
         if (target) go(target)
       }}
     >

@@ -70,7 +70,7 @@ export const FEED_NOTE =
 // Robinhood-Chain stocks trade 24/7 on-chain while the underlying tape
 // closes — every stock header shows BOTH, never just one.
 
-export type SessionKind = 'stock' | 'spot' | 'perp'
+export type SessionKind = 'stock' | 'spot' | 'perp' | 'index'
 
 /** NYSE regular session in ET, weekdays — good enough for a header line;
  *  the venue's own `session` from /api/quotes wins when present. */
@@ -89,13 +89,15 @@ export function sessionLine(kind: SessionKind, opts: { exchangeOpen?: boolean; n
     return `Token trades 24/7 · NYSE ${open ? 'open' : 'closed'}`
   }
   if (kind === 'perp') return '24/7 · Hyperliquid perps'
+  if (kind === 'index') return 'Index data · delayed'
   return '24/7 · Coinbase spot'
 }
 
 /** Which session kind a chart source implies. */
-export function sessionKindFor(source: 'coinbase' | 'hyperliquid' | 'robinhood' | null | undefined): SessionKind {
+export function sessionKindFor(source: 'coinbase' | 'hyperliquid' | 'robinhood' | 'index' | null | undefined): SessionKind {
   if (source === 'robinhood') return 'stock'
   if (source === 'hyperliquid') return 'perp'
+  if (source === 'index') return 'index'
   return 'spot'
 }
 

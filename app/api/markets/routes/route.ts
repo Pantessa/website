@@ -432,6 +432,11 @@ export async function GET(req: NextRequest) {
   if (!pair) return NextResponse.json({ error: `${symbolRaw.toUpperCase()} has no venue map — not a charted symbol.` }, { status: 404 })
   const amountRaw = Number(sp.get('amount') ?? DEFAULT_ROUTE_USD)
   const amount = Number.isFinite(amountRaw) && amountRaw >= 1 && amountRaw <= 100_000 ? Math.round(amountRaw * 100) / 100 : DEFAULT_ROUTE_USD
+  // A look-only index has no venue: the empty map and its one note, no provider asked.
+  if (pair.source === 'index') {
+    const body: RoutesResponse = { symbol: pair.symbol, source: pair.source, amountUsd: amount, last: null, leverage: null, routes: [], notes: missingVenueNotes(pair.symbol, pair), failed: [], updatedAt: new Date().toISOString() }
+    return NextResponse.json({ ...body, cached: false }, { headers: { 'cache-control': 'no-store' } })
+  }
   const lastRaw = Number(sp.get('last') ?? NaN)
   const last = Number.isFinite(lastRaw) && lastRaw > 0 ? lastRaw : null
   const levRaw = Number(sp.get('leverage') ?? NaN)

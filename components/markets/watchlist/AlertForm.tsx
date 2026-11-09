@@ -15,7 +15,7 @@ import { useMemo, useState } from 'react'
 import { Bell } from 'lucide-react'
 import Sheet from '@/components/mobile/Sheet'
 import { chartPairFor } from '@/lib/charts'
-import { alertActionChips, alertLabel, fmtQuotePrice, type AlertCondition, type AlertRule } from '@/lib/watchlists'
+import { alertActionChips, alertLabel, fmtQuotePrice, fmtSymbolPrice, type AlertCondition, type AlertRule } from '@/lib/watchlists'
 
 export default function AlertForm({
   open,
@@ -89,7 +89,7 @@ export default function AlertForm({
           </span>
           <span className="wl__sheetTitleText">
             <span className="wl__modalTitle">Alert on {symbol}</span>
-            <span className="wl__modalSub mono">{last ? `last $${fmtQuotePrice(last)} · ` : ''}unlimited alerts · free</span>
+            <span className="wl__modalSub mono">{last ? `last ${fmtSymbolPrice(symbol, last)} · ` : ''}unlimited alerts · free</span>
           </span>
         </span>
       }
@@ -107,11 +107,12 @@ export default function AlertForm({
             {condition === 'pct_move' ? (
               <div className="wl__inputWrap">
                 <input className="wl__input" inputMode="decimal" value={pct} onChange={(e) => setPct(e.target.value)} aria-label="Percent move" />
-                <span className="wl__unit">% from {last ? `$${fmtQuotePrice(last)}` : 'now'}</span>
+                <span className="wl__unit">% from {last ? fmtSymbolPrice(symbol, last) : 'now'}</span>
               </div>
             ) : (
               <div className="wl__inputWrap">
-                <span className="wl__unit">$</span>
+                {/* The sign the symbol's price wears: none for an index level or a yield. */}
+                {fmtSymbolPrice(symbol, 1).startsWith('$') && <span className="wl__unit">$</span>}
                 <input className="wl__input" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} aria-label="Price" />
               </div>
             )}

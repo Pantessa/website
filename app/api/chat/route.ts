@@ -71,6 +71,7 @@ import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 import { hlPerpUniverse } from '@/lib/hl-universe'
 import { rescueIntent } from '@/lib/intent-rescue'
 import { starterDoor } from '@/lib/starter-door'
+import { lookOnlyDoor } from '@/lib/look-only-door'
 import { HOUSE_UNAVAILABLE_REPLY } from '@/lib/fetch-words'
 import { buildFailedTurn, HOUSE_DOWN_CHIPS, leaksBuildPlumbing, swapAskSentence } from '@/lib/build-failure'
 import { buildsNatively } from '@/scripts/ask-ladder'
@@ -1036,11 +1037,34 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
         priceUsd: 0,
         reason: 'native chart read — the overlay opens in-chat instead of the planner narrating a price',
       })
+      // A look-only index (US10Y, VIX… lib/charts): the chart opens the same
+      // way, and the reply never promises an order on it.
+      if (pair.source === 'index') {
+        return NextResponse.json({
+          reply: `📈 Here's the ${pair.label} chart (${pair.symbol}, index data delayed up to 15 minutes). It is here to read: nothing listed here places an order on an index.`,
+          chart: { symbol: pair.symbol, label: pair.label, source: pair.source, url: `/t/${pair.symbol}` },
+          buildPath: 'native-chart',
+        })
+      }
       return NextResponse.json({
         reply: `📈 Here's the live ${pair.label} chart (${pair.source === 'coinbase' ? 'Coinbase spot' : pair.source === 'hyperliquid' ? 'Hyperliquid perp' : 'Robinhood 24/7 stock'} candles). Tap an order on it and I'll build the transaction — your wallet signs.`,
         chart: { symbol: pair.symbol, label: pair.label, source: pair.source, url: `/t/${pair.symbol}` },
         buildPath: 'native-chart',
       })
+    }
+
+    // ── An ORDER on a look-only index (2026-11-09). "Buy $25 of NDX", "long
+    //    the VIX on Hyperliquid": nothing listed here trades an index, so
+    //    every layer below would refuse it by its own words ("unknown token",
+    //    "not a Hyperliquid perp"). Answer here instead, with no model and
+    //    no venue read: it is an index, and here is the closest thing that IS
+    //    listed (lib/look-only-door — the chip gate's own sentence rule).
+    {
+      const indexDoor = lookOnlyDoor(message)
+      if (indexDoor) {
+        nativeTrace({ type: 'status', label: `look-only door: ${indexDoor.symbol} is an index — answered with what is listed, no build` })
+        return NextResponse.json({ reply: indexDoor.reply, clarify: indexDoor.clarify, buildPath: indexDoor.buildPath })
+      }
     }
 
     // ── Native market READ (POLISH/DEADENDS 2026-10-13). "Why is ETH moving?"

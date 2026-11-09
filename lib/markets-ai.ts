@@ -31,6 +31,7 @@ import { alertLabel, alertRuleProblem, type AlertCondition, type AlertRule } fro
 import type { NewsItem } from './news-shared'
 import { tokenHome } from './token-home'
 import { missingVenueNotes, venuesFor, type VenueRoute } from './symbol-venues'
+import { lookOnlyUnitNote } from './macro'
 
 // ── Wire ────────────────────────────────────────────────────────────────────
 
@@ -1048,5 +1049,9 @@ export function venueWordsFor(pair: ChartPair, last: number | null = null): stri
   if (rows.some((r) => r.kind === 'spot' || r.kind === 'stock')) words.push(`funding from the wallet's other chains (${pair.source === 'robinhood' ? 'LiFi' : 'NEAR Intents'}) or a card`)
   words.push('price alerts')
   for (const n of missingVenueNotes(pair.symbol, pair)) words.push(`not here: ${n}`)
+  // A look-only index is not priced in dollars: the prompt is told the unit,
+  // so an answer never writes "$4.84" for a 4.84% yield.
+  const unitNote = lookOnlyUnitNote(pair)
+  if (unitNote) words.push(unitNote)
   return words
 }

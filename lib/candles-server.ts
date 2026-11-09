@@ -17,8 +17,18 @@
 // that feed is down the loader falls back to Yahoo Finance's chart API (the
 // exchange tape, extended hours included) and reports which one answered in
 // `feed`, so the chart's eyebrow never claims a source it didn't use.
+//
+// Look-only indexes (source 'index', 2026-11-09) read that same chart host
+// directly: the 10-year yield, the VIX, the dollar index, the Nasdaq 100, the
+// Dow, the Russell 2000. It is an UNOFFICIAL, delayed feed, so this path
+// fails soft where the others fail loud: a longer cache (delayed data does
+// not move faster than that), the last good series served while the host
+// errors, and a short memory of a failure so a down host is not hammered by
+// every poll. The payload's meaning (the exchange's own bar grid, the
+// trailing price point, the daily re-stamp) is lib/index-data — pure, pinned.
 
 import { aggregateCandles, resolveChartPair, type Candle, type ChartFeed, type ChartPair, type ChartSource, type ChartTf } from '@/lib/charts'
+import { indexCandlesOf, type IndexChartPayload } from '@/lib/index-data'
 
 const TTL_MS = 5_000
 /** Deep series (the technicals + the chart's warm-up) change slowly and cost
@@ -44,6 +54,15 @@ const PAGE_COINBASE_CALLS = 6
 const PAGE_TTL_MS = 10 * 60_000
 const PAGE_CACHE_MAX = 200
 const UPSTREAM_TIMEOUT_MS = 8_000
+/** Index data is delayed up to 15 minutes: a 20s window and a 2-minute deep
+ *  series lose nothing a reader could see, and keep an unofficial host's
+ *  load at a few reads a minute per symbol however many charts are open. */
+const INDEX_TTL_MS = 20_000
+const INDEX_DEEP_TTL_MS = 120_000
+/** After the index host fails, wait this long before asking it again. */
+const INDEX_FAIL_BACKOFF_MS = 15_000
+/** How old a last-good index series may be served while the host errors. */
+const INDEX_STALE_MAX_MS = 30 * 60_000
 
 const UA = 'Mozilla/5.0 (compatible; Pantessa/1.0; +https://www.pantessa.com)'
 
@@ -90,6 +109,29 @@ const YF_TFS: Record<ChartTf, { interval: string; range: string; native: number;
 /** Yahoo's deep ranges (measured 2026-09-14 on ADBE): 15m/1mo 1,409 bars,
  *  1h/3mo 1,072, 1h/6mo 508 4h buckets, 1d/2y 501. */
 const YF_DEEP_RANGE: Record<ChartTf, string> = { '10s': '1d', '1m': '5d', '15m': '1mo', '1h': '3mo', '4h': '6mo', '1d': '2y' }
+
+/** The index host's frames — every one native, on the exchange's own grid
+ *  (a 4-hour bar opens at 09:30 and 13:30 New York for the Nasdaq 100), so
+ *  nothing is bucketed here. Ranges measured 2026-11-09 to hold MAX_CANDLES
+ *  for the thinnest session (the Nasdaq 100 and the 10-year: ~26 fifteen-
+ *  minute bars a day): 15m/10d 231 bars · 1h/2mo 302 · 4h/6mo 254 · 1d/1y
+ *  251. The dollar index trades nearly round the clock and returns 3–4× as
+ *  many (15m/10d: 671 bars, 68KB). No minute bar and no print frame: the
+ *  route refuses those by name (lib/charts tfsForSource). */
+const IX_TFS: Record<ChartTf, { interval: string; range: string; sec: number }> = {
+  '10s': { interval: '15m', range: '10d', sec: 900 },
+  '1m': { interval: '15m', range: '10d', sec: 900 },
+  '15m': { interval: '15m', range: '10d', sec: 900 },
+  '1h': { interval: '1h', range: '2mo', sec: 3600 },
+  '4h': { interval: '4h', range: '6mo', sec: 14400 },
+  '1d': { interval: '1d', range: '1y', sec: 86400 },
+}
+
+/** The index host's deep ranges (measured the same day on the Nasdaq 100):
+ *  15m/60d 1,531 bars — the host keeps 60 days of 15-minute bars and refuses
+ *  more; 1h/1y 1,745; 4h/2y 1,000; 1d/10y 2,513. The older pages a zoom-out
+ *  asks for are slices of these. */
+const IX_DEEP_RANGE: Record<ChartTf, string> = { '10s': '10d', '1m': '10d', '15m': '60d', '1h': '1y', '4h': '2y', '1d': '10y' }
 
 export interface Series {
   feed: ChartFeed
@@ -281,21 +323,66 @@ async function fetchStock(symbol: string, tf: ChartTf, deep = false): Promise<Se
   }
 }
 
+/** A look-only index's series from the chart host (lib/index-data reads the
+ *  payload). `host` is the table's own symbol for it ('^TNX'), never a
+ *  visitor's string. Throws when the host does not answer with bars. */
+async function fetchIndex(host: string, tf: ChartTf, deep = false): Promise<Candle[]> {
+  const { interval, sec } = IX_TFS[tf]
+  const range = deep ? IX_DEEP_RANGE[tf] : IX_TFS[tf].range
+  const res = await fetchWithTimeout(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(host)}?interval=${interval}&range=${range}&includePrePost=false`,
+    { headers: { 'user-agent': UA, accept: 'application/json' } },
+  )
+  if (!res.ok) throw new Error(`index ${res.status}`)
+  const raw = (await res.json()) as { chart?: { result?: IndexChartPayload[] } }
+  const result = raw.chart?.result?.[0]
+  if (!result?.timestamp) throw new Error('index shape')
+  const candles = indexCandlesOf(result, sec)
+  if (candles.length === 0) throw new Error('index empty')
+  return candles
+}
+
 function fetchSeries(source: ChartSource, pair: string, tf: ChartTf, deep: boolean): Promise<Series> {
   if (source === 'coinbase') return fetchCoinbase(pair, tf, deep).then((candles) => ({ feed: 'coinbase', candles }))
   if (source === 'hyperliquid') return fetchHyperliquid(pair, tf, deep).then((candles) => ({ feed: 'hyperliquid', candles }))
+  if (source === 'index') return fetchIndex(pair, tf, deep).then((candles) => ({ feed: 'index', candles }))
   return fetchStock(pair, tf, deep)
 }
 
+/** How long a series is served from memory. */
+function ttlFor(source: ChartSource, deep: boolean): number {
+  if (source === 'index') return deep ? INDEX_DEEP_TTL_MS : INDEX_TTL_MS
+  return deep ? DEEP_TTL_MS : TTL_MS
+}
+
+/** When each index series last failed (a down host is asked again only after the backoff). */
+const indexFailedAt = new Map<string, number>()
+
 function loadCandles(pairKey: string, source: ChartSource, pair: string, tf: ChartTf, deep: boolean): Promise<Series> {
   const hit = cache.get(pairKey)
-  if (hit && Date.now() - hit.at < (deep ? DEEP_TTL_MS : TTL_MS)) return Promise.resolve(hit.series)
+  if (hit && Date.now() - hit.at < ttlFor(source, deep)) return Promise.resolve(hit.series)
   const running = inflight.get(pairKey)
   if (running) return running
+  // The index host is unofficial: while it errors, the last good series
+  // keeps the chart drawn (it simply stops advancing), and a failure is
+  // remembered for a moment so every poll does not become an upstream call.
+  const soft = source === 'index'
+  const stale = soft && hit && Date.now() - hit.at < INDEX_STALE_MAX_MS ? hit.series : null
+  if (soft && Date.now() - (indexFailedAt.get(pairKey) ?? 0) < INDEX_FAIL_BACKOFF_MS) {
+    return stale ? Promise.resolve(stale) : Promise.reject(new Error('index backing off'))
+  }
   const p = fetchSeries(source, pair, tf, deep)
     .then((series) => {
       cache.set(pairKey, { at: Date.now(), series })
+      if (soft) indexFailedAt.delete(pairKey)
       return series
+    })
+    .catch((err) => {
+      if (!soft) throw err
+      indexFailedAt.set(pairKey, Date.now())
+      console.warn(`[charts] index data did not answer for ${pair} ${tf}${deep ? ' (deep)' : ''}: ${err instanceof Error ? err.message : String(err)}${stale ? ' — serving the last good series' : ''}`)
+      if (stale) return stale
+      throw err
     })
     .finally(() => inflight.delete(pairKey))
   inflight.set(pairKey, p)
@@ -390,7 +477,9 @@ const asPage = (feed: ChartFeed, older: Candle[]): OlderPage => ({ feed, older: 
 export async function loadCandlesBefore(symbolRaw: string, tf: ChartTf, before: number): Promise<{ pair: ChartPair; page: OlderPage } | null> {
   const pair = await resolveChartPair(symbolRaw)
   if (!pair) return null
-  if (pair.source === 'robinhood') {
+  // The stock venues and the index host serve fixed spans, not time windows:
+  // an older page is a slice of the deep series.
+  if (pair.source === 'robinhood' || pair.source === 'index') {
     const deep = await loadCandleSeries(symbolRaw, tf, { deep: true })
     if (!deep) return null
     const older = deep.series.candles.filter((c) => c.t < before)

@@ -384,6 +384,7 @@ import { depthPins } from './depth-pins'
 import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
 import { readPins, readRedirectPins, readServedPins } from './read-pins'
+import { macroLivePins, macroPins, macroServedPins } from './macro-pins'
 import { homeAppsPins } from './home-apps-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
@@ -35480,6 +35481,10 @@ async function main() {
   readPins(check)
   await readRedirectPins(check)
   await readServedPins(check, BASE)
+  // MACRO (2026-11-09): the look-only index pages (/t/US10Y · VIX · DXY · NDX · DJI · RUT — a full chart, no order anywhere) and the Macro board beside the Hyperliquid macro markets: the table, the "no side" rule on every surface, the chip gate and the door, the index host's payload, a yield in basis points, the static board.
+  macroPins(check)
+  await macroLivePins(check)
+  await macroServedPins(check, BASE)
   // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
   // sign-in door, never a planner promise to "fetch your tokens".
   {

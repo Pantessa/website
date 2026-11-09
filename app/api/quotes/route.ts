@@ -16,8 +16,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ quotes: {}, missing: [], junk, max: QUOTES_MAX_SYMBOLS }, { headers: { 'cache-control': 'no-store' } })
   }
   try {
-    const { quotes, missing } = await readQuotes(symbols)
-    return NextResponse.json({ quotes, missing, junk, asOf: Date.now() }, { headers: { 'cache-control': 'no-store' } })
+    // `unlisted` ⊆ `missing`: names no market answers to (the venue's live
+    // universe was in hand and did not list them) — a board drops those rows.
+    const { quotes, missing, unlisted } = await readQuotes(symbols)
+    return NextResponse.json({ quotes, missing, unlisted, junk, asOf: Date.now() }, { headers: { 'cache-control': 'no-store' } })
   } catch (err) {
     // The reader already swallows per-feed failures; this is the belt.
     console.warn(`[quotes] reader threw: ${err instanceof Error ? err.message : String(err)}`)

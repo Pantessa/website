@@ -31,11 +31,18 @@
 //
 //  It fails OPEN: only a MEASURED, recent refusal hides anything
 //  (lib/tradability canFill). A symbol nobody has read yet keeps its chips.
+//
+//  One thing is STRUCTURAL, not measured: an order that names a look-only
+//  index (US10Y, VIX, NDX… lib/charts isLookOnlySymbol). Nothing listed here
+//  trades an index, so no verdict can open it — a buy, a sell, a perp, a
+//  stop or a supply on one is refused here, for every surface at once
+//  (2026-11-09).
 // ─────────────────────────────────────────────────────────────────────────
 
+import { isLookOnlySymbol, lookOnlyRefusal } from '@/lib/charts'
 import { chainNamedInAsk, isSellAsk } from '@/lib/sell-gate'
 import { canFill, fillRefusal, type SymbolTradability, type TradabilityMap, type TradeSideKey } from '@/lib/tradability'
-import { canRunVenueAsk, venueAskRefusal } from '@/lib/venue-capability'
+import { canRunVenueAsk, capabilityTarget, venueAskRefusal } from '@/lib/venue-capability'
 import { normalizeWatchSymbol } from '@/lib/watchlists'
 
 const SYM = String.raw`\$?([A-Za-z][A-Za-z0-9]{0,11})\b`
@@ -107,6 +114,19 @@ function sellSymbol(ask: string): string | null {
 }
 
 /**
+ * The look-only index a sentence would trade — "Buy $25 of NDX", "Long $25
+ * of VIX on Hyperliquid", "Protect my DXY long…", "Supply $50 of US10Y to
+ * Aave" — or null. Read off the same two sentence rules every other verdict
+ * uses, so it covers each shape the app composes and nothing else: a
+ * sentence that merely mentions an index ("Buy $25 of SPY when the VIX is
+ * over 20") names SPY as its target and is left alone.
+ */
+export function lookOnlyTarget(ask: string): string | null {
+  const symbol = tradeTarget(ask)?.symbol ?? capabilityTarget(ask)?.symbol ?? null
+  return symbol && isLookOnlySymbol(symbol) ? symbol : null
+}
+
+/**
  * Show this chip? A buy or a sell: unless every venue that could fill it has
  * been measured refusing, recently. A supply or a perp: unless its venue has
  * been measured not listing the token (lib/venue-capability). Anything else:
@@ -114,6 +134,7 @@ function sellSymbol(ask: string): string | null {
  * a yes.
  */
 export function canTradeAsk(ask: string, tradable: TradabilityMap | null | undefined, now = Date.now()): boolean {
+  if (lookOnlyTarget(ask)) return false
   if (!canRunVenueAsk(ask, tradable, now)) return false
   const t = tradeTarget(ask)
   if (!t || !tradable) return true
@@ -124,6 +145,8 @@ export function canTradeAsk(ask: string, tradable: TradabilityMap | null | undef
 /** The cascade's own words for why a chip is missing, or null when nothing
  *  is known to refuse. What a surface says in place of the button. */
 export function tradeRefusal(ask: string, tradable: TradabilityMap | null | undefined, now = Date.now()): string | null {
+  const index = lookOnlyTarget(ask)
+  if (index) return lookOnlyRefusal(index)
   const listing = venueAskRefusal(ask, tradable, now)
   if (listing) return listing
   const t = tradeTarget(ask)

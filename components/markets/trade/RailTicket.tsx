@@ -29,7 +29,8 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ChevronDown, ChevronUp, CornerDownLeft } from 'lucide-react'
-import { isHip3Pair, type ChartPair } from '@/lib/charts'
+import { isHip3Pair, isLookOnlyPair, type ChartPair } from '@/lib/charts'
+import LookOnlyCard from '@/components/markets/shell/LookOnlyCard'
 import OrderTicket from '@/components/markets/trade/OrderTicket'
 import { execAsks } from '@/lib/trade-asks'
 import { canSellAsk } from '@/lib/sell-gate'
@@ -123,6 +124,10 @@ export default function RailTicket({
     onSay(text)
     setSay('')
   }
+
+  // A look-only index (lib/charts isLookOnlyPair): no ticket and no "ACT ON".
+  // The seat says it is here to read and names the closest thing listed.
+  if (isLookOnlyPair(pair)) return <LookOnlyCard pair={pair} seat="rail" onAsk={onBuild} onSay={onSay} />
 
   return (
     <section className="mkt-railticket" data-slot="order-ticket" data-open={open ? '1' : '0'} data-side={shown ?? undefined} data-acts={asks.length} aria-label={`Act on ${pair.symbol}`}>

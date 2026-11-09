@@ -31,8 +31,10 @@ import {
   type MarketSectionId,
   type MarketsView,
 } from '@/lib/markets'
-import { chgClass, fmtPct, fmtQuotePrice, useQuotes } from '@/lib/markets-quotes'
-import MarketTable from '@/components/markets/shell/MarketTable'
+import { chgClass, fmtPct, fmtQuotePrice, useQuotes, type QuoteMap } from '@/lib/markets-quotes'
+import { MACRO_ROWS, MACRO_SECTION, MACRO_SYMBOLS, macroBoardRows, macroRow, macroRowTag } from '@/lib/macro'
+import MarketTable, { type TableRow } from '@/components/markets/shell/MarketTable'
+import './macro.css'
 import TickerSearch from '@/components/markets/shell/TickerSearch'
 import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
@@ -79,6 +81,46 @@ function Board({ section, onAsk }: { section: MarketSection; onAsk?: (ask: strin
   )
 }
 
+/**
+ * THE MACRO BOARD (2026-11-09, Nate: "lacking view of many other stocks and
+ * indexes like the US10Y"): the look-only indexes (the 10-year yield, the
+ * VIX, the dollar index, the Nasdaq 100, the Dow, the Russell 2000) beside
+ * the Hyperliquid macro markets the app already charted and listed nowhere
+ * (the S&P 500, long Treasuries, the euro, the yen, gold, silver, crude,
+ * natural gas). The same terminal table as the other boards, each row in its
+ * own unit (a yield in percent, moved in basis points; a level with no
+ * dollar sign), a word beside the name for what kind of number it is, and
+ * every row the link to its full chart. The rows are static (lib/macro), so
+ * the server and the browser render the same fourteen; a market the venue
+ * stops listing leaves once the quotes read says so. Renders in both views:
+ * the heat map sizes by liquidity, and an index has none.
+ */
+function MacroBoard({ onAsk }: { onAsk?: (ask: string) => void }) {
+  const { quotes, unlisted } = useQuotes(MACRO_SYMBOLS)
+  const rows = useMemo(() => macroBoardRows(unlisted), [unlisted])
+  const tagFor = useCallback((row: TableRow, quote: QuoteMap[string]) => {
+    const macro = macroRow(row.symbol)
+    return macro ? macroRowTag(macro, quote?.session) : null
+  }, [])
+  return (
+    <section className="mkt-sec" id={MACRO_SECTION.id} aria-label={MACRO_SECTION.title} data-board="macro">
+      <header className="mkt-sec__head">
+        <div>
+          <h2 className="mkt-sec__title">{MACRO_SECTION.title}</h2>
+          <p className="mkt-sec__blurb">{MACRO_SECTION.blurb}</p>
+        </div>
+        <span className="mkt-sec__count mono">{rows.length} LISTED</span>
+      </header>
+      <div className="mk-board">
+        <MarketTable rows={rows} quotes={quotes} section={MACRO_SECTION.id} onAsk={onAsk} changeLabel="Change" tagFor={tagFor} />
+      </div>
+      <p className="mk-macro__legend mono">
+        <b>Change</b>: over 24 hours for a market that never closes; since the last close for an index, or over its last session once it has closed. A yield moves in basis points.
+      </p>
+    </section>
+  )
+}
+
 /** "Trending on Pantessa" — most-asked symbols this week, fenced upstream. */
 function Trending({ rows }: { rows: TrendingRow[] }) {
   const { quotes } = useQuotes(rows.map((r) => r.symbol))
@@ -116,8 +158,8 @@ function Trending({ rows }: { rows: TrendingRow[] }) {
 }
 
 /** The board under the tool strip — its tab lights as the data scrolls. */
-/** A board the tab strip can light: the three market sections + the Earn board. */
-type BoardId = MarketSectionId | 'earn'
+/** A board the tab strip can light: the three market sections, the Macro board and the Earn board. */
+type BoardId = MarketSectionId | 'macro' | 'earn'
 
 function useActiveBoard(ids: readonly BoardId[]) {
   const [active, setActive] = useState<BoardId | null>(ids[0] ?? null)
@@ -238,8 +280,10 @@ export default function MarketsIndex({
   const pathname = usePathname()
   const sections = useMemo(() => marketSections(), [])
   const ids = useMemo(() => sections.map((s) => s.id), [sections])
-  const allRows = useMemo(() => sections.flatMap((s) => s.rows), [sections])
-  const boardIds = useMemo<readonly BoardId[]>(() => [...ids, 'earn'], [ids])
+  // The search box finds the macro rows too (by symbol, name or a word a
+  // desk uses: "treasury", "dow", "crude"); the boards' own rows stay first.
+  const allRows = useMemo(() => [...sections.flatMap((s) => s.rows), ...MACRO_ROWS], [sections])
+  const boardIds = useMemo<readonly BoardId[]>(() => [...ids, 'macro', 'earn'], [ids])
   const [active, setActive] = useActiveBoard(boardIds)
   const [view, setView] = useMarketsView()
   const phone = usePhone()
@@ -300,6 +344,11 @@ export default function MarketsIndex({
                 <span className="mkt-frame__tabcount mono">{s.rows.length}</span>
               </a>
             ))}
+            {/* Macro (2026-11-09): the indexes, the 10-year, the dollar and commodities. Its board renders in both views. */}
+            <a href="#macro" className={`mkt-frame__tab${active === 'macro' ? ' is-on' : ''}`} aria-current={active === 'macro' ? 'location' : undefined} onClick={() => setActive('macro')} data-tab="macro">
+              Macro
+              <span className="mkt-frame__tabcount mono">{MACRO_ROWS.length}</span>
+            </a>
             <a href="#earn" className={`mkt-frame__tab${active === 'earn' ? ' is-on' : ''}`} aria-current={active === 'earn' ? 'location' : undefined} onClick={() => setActive('earn')} data-tab="earn">
               Earn
               <span className="mkt-frame__tabcount mono">3</span>
@@ -336,6 +385,8 @@ export default function MarketsIndex({
             </section>
           )}
           {showList && sections.map((s) => <Board key={s.id} section={s} onAsk={indexAct} />)}
+          {/* MACRO — under the tradable boards, in BOTH views (the map sizes by liquidity; an index has none). */}
+          <MacroBoard onAsk={indexAct} />
           {/* ── The guide seat (the apps row on the splash): under the markets,
               above the yield board — the markets lead, the apps follow (2026-11-09). ── */}
           {guide && (
