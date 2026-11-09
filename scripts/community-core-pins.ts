@@ -16,7 +16,8 @@ import { cleanText } from '../lib/chart-posts'
 import { additiveRefusal } from './run-ddl'
 import { DISCORD_CHANNEL_FALLBACK_TITLE, discordChannelTitle, HOT_SCAN, HOT_TOP_SCAN, rankHot } from '../lib/community/rules'
 import { checkName, checkSlug, checkSymbols, decodeCursor, encodeCursor, higherRole, memberLabel, parseVote, voteDelta } from '../lib/community/rules'
-import { clampProofSize, decideProof, explorerTxFor, fillLabel, flowShape, locateTx, proofSide, readOnChain, REFUSE_CHAIN_UNREAD, REFUSE_NOTHING_MOVED, REFUSE_ONE_WAY } from '../lib/community/proof'
+import { keccak256, toHex } from 'viem'
+import { clampProofSize, decideProof, explorerTxFor, fillLabel, flowShape, locateTx, proofSide, readOnChain, REFUSE_CHAIN_UNREAD, REFUSE_NOTHING_MOVED, REFUSE_ONE_WAY, TRANSFER_TOPIC, WITHDRAWAL_TOPIC } from '../lib/community/proof'
 import { proofFactLine, proofTagLine } from '../lib/community/proof-words'
 import { shouldAnnounce, storedProof } from '../lib/community/store'
 
@@ -94,7 +95,11 @@ export function communityCorePins(check: Check): void {
     const good = passed.filter((x) => !checkSlug(x).ok)
     check('S5 slugs: a slug CONTAINING a brand word, or an authority word as a whole segment / glued to one end, is refused by name; ordinary words that contain "mod" / "team" / "admin" in the middle pass', bad.length === 0 && good.length === 0 && /reads as an official or brand account/.test((checkSlug('pantessahq') as { reason: string }).reason ?? ''), `let through: ${bad.join(',')} | refused: ${good.join(',')}`)
     const names = ['Pantessa Official', 'Pantessa Support \u2705', 'P\u0430ntessa', 'PANTESSA', 'Pan Tessa', '\u200b\u200b', 'ETH desk \u2714', 'ETH calls \u{1F6E1}', 'Yeetful team', 'MetaMask Help', 'x\u200b']
-    const okNames = ['ETH Swing Traders', 'Modern charts', 'Teamwork FX', 'Uni desk']
+    // RE-PINNED 2026-11-09 (coordinator, QA-SECURITY-4 product costs): ordinary trading and community names pass; a venue name passes unless it poses as the venue.
+    const okNames = ['ETH Swing Traders', 'Modern charts', 'Teamwork FX', 'Uni desk', 'Support and resistance', 'Dream team', 'Staff picks', 'Security tokens', 'Uniswap LPs', 'Hyperliquid whales', 'Coinbase listings watch', 'Diamond hands \u{1F48E}']
+    const poses = ['Uniswap', 'Uniswap Support', 'Hyperliquid Team', 'Coinbase Help', 'MetaMask Security', 'Support', 'Team', 'Support desk', 'Security alerts', 'Staff help', 'Verified alpha', 'Official ETH room', 'Telegram VIP']
+    const posesThrough = poses.filter((x) => checkName(x).ok)
+    check('Q names: a room ABOUT a venue or using ordinary words (support, team, staff, security) passes; a room that poses AS a venue or a service desk, or wears a hard authority word, is refused', posesThrough.length === 0 && okNames.every((x) => checkName(x).ok), `let through: ${posesThrough.join(' | ')} · refused: ${okNames.filter((x) => !checkName(x).ok).join(' | ')}`)
     const badN = names.filter((x) => checkName(x).ok)
     const goodN = okNames.filter((x) => !checkName(x).ok)
     check('S5 names: NFKC-folded, bidi / zero-width / C1 stripped (a right-to-left override name is stored as its plain letters); brand words (also in Cyrillic lookalikes, also spelled apart), authority words, check marks and badges refused; 2 visible characters required; ordinary names pass', badN.length === 0 && goodN.length === 0 && (checkName('\u202eassetnap ab') as { value?: string }).value === 'assetnap ab', `let through: ${badN.map((x) => JSON.stringify(x)).join(',')} | refused: ${goodN.join(',')}`)
@@ -163,30 +168,59 @@ export function secfixProofPins(check: Check): void {
     'S1 / R2 size clamp: the shown size is min(recorded, on-chain) and NEVER above what the chain shows — a recorded 999,999,999 on a $10 transaction shows $10.00, a $100 one $100.00 (not $105); a smaller recorded value stands; cents round DOWN; hidden = null; no recorded value = the chain figure',
     clampProofSize(999_999_999, 10, true) === 10 && clampProofSize(105, 100, true) === 100 && clampProofSize(25, 24.9, true) === 24.9 && clampProofSize(25, 100, true) === 25 && clampProofSize(25, 10, false) === null && clampProofSize(null, 12.349, true) === 12.34 && clampProofSize(0, 7, true) === 7,
   )
-  // ── R1: a trade moves value both ways ──
+  // ── R1 / Q1 / Q2 / Q3: a trade moves value both ways, and the size is the NET ──
+  check(
+    // The hash is RECOMPUTED here, never shared with the code: the first cut copied a literal two hex characters short, and a pin that shared it was green while no real Transfer matched.
+    'Q1 topics: the Transfer and Withdrawal topics the proof reader matches ARE keccak256 of their signatures (recomputed), 66 characters each',
+    TRANSFER_TOPIC === keccak256(toHex('Transfer(address,address,uint256)')) && WITHDRAWAL_TOPIC === keccak256(toHex('Withdrawal(address,uint256)')) && TRANSFER_TOPIC.length === 66,
+    TRANSFER_TOPIC,
+  )
   const W = '0x' + 'a1'.repeat(20)
   const OTHER = '0x' + 'b2'.repeat(20)
   const ROUTER = '0x' + 'c3'.repeat(20)
   const USDC = '0x' + '11'.repeat(20)
   const UNI = '0x' + '22'.repeat(20)
+  const JUNK = '0x' + '99'.repeat(20)
   const WETH = '0x4200000000000000000000000000000000000006'
-  const T = '0xddf252ad1be2c89b69c2b0fc378daa952ba7f163c4a11628f55a4df523b3ef'
-  const WD = '0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65'
+  const T = keccak256(toHex('Transfer(address,address,uint256)'))
+  const WD = keccak256(toHex('Withdrawal(address,uint256)'))
   const pad = (a: string) => `0x${'0'.repeat(24)}${a.slice(2)}`
-  const xfer = (token: string, from: string, to: string) => ({ address: token, topics: [T, pad(from), pad(to)] })
-  const shape = (logs: { address: string; topics: string[] }[], txValue = BigInt(0)) => flowShape({ wallet: W, txValue, wrappedNative: WETH, logs })
+  const amt = (n: bigint) => `0x${n.toString(16).padStart(64, '0')}`
+  const usdc = (n: number) => BigInt(Math.round(n * 1e6))
+  const E18 = BigInt(10) ** BigInt(18)
+  const xfer = (token: string, from: string, to: string, value: bigint) => ({ address: token, topics: [T, pad(from), pad(to)], data: amt(value) })
+  const unwrap = (src: string, wad: bigint) => ({ address: WETH, topics: [WD, pad(src)], data: amt(wad) })
+  const shape = (logs: { address: string; topics: string[]; data?: string }[], txValue = BigInt(0), txTo: string | null = ROUTER) => flowShape({ wallet: W, txTo, txValue, wrappedNative: WETH, stables: { [USDC]: 6 }, logs })
+  const buy = shape([xfer(USDC, W, ROUTER, usdc(25)), xfer(UNI, ROUTER, W, E18 * BigInt(3))])
+  const ethIn = shape([xfer(UNI, ROUTER, W, E18)], E18 / BigInt(100))
+  const toNative = shape([xfer(USDC, W, ROUTER, usdc(40)), unwrap(ROUTER, E18 / BigInt(50))])
   check(
-    'R1 two-sided: a swap is (stable out, token in), (native out, token in) or (token out, the wrapped token unwrapped); a plain transfer, a self-send, an airdrop received, a wrap, the same token out and back (a round trip) and an NFT transfer are NOT two-sided',
-    shape([xfer(USDC, W, ROUTER), xfer(UNI, ROUTER, W)]).twoSided &&
-      shape([xfer(UNI, ROUTER, W)], BigInt(10) ** BigInt(16)).twoSided &&
-      shape([xfer(USDC, W, ROUTER), { address: WETH, topics: [WD, pad(ROUTER)] }]).twoSided &&
-      !shape([xfer(USDC, W, OTHER)]).twoSided &&
-      !shape([xfer(USDC, W, W)]).twoSided &&
-      !shape([xfer(USDC, OTHER, W)]).twoSided &&
-      !shape([xfer(WETH, ROUTER, W)], BigInt(10) ** BigInt(16)).twoSided &&
-      !shape([xfer(USDC, W, ROUTER), xfer(USDC, ROUTER, W)]).twoSided &&
+    'R1 two-sided: a swap is (stable out, token in), (native out, token in) or (token out, the wrapped token unwrapped BY THE CALLED CONTRACT); the size is read from the priced side ($25 stable; 0.01 native)',
+    buy.twoSided && buy.stableUsd === 25 && ethIn.twoSided && ethIn.nativeAtoms === E18 / BigInt(100) && toNative.twoSided && toNative.stableUsd === 40,
+    JSON.stringify({ buy: buy.stableUsd, ethIn: String(ethIn.nativeAtoms), toNative: toNative.stableUsd }),
+  )
+  check(
+    'R1 one-way: a plain transfer, a self-send, an airdrop received, a wrap (native out, the wrapped token in), an NFT transfer, a Transfer with no readable amount and an empty receipt are NOT two-sided',
+    !shape([xfer(USDC, W, OTHER, usdc(500))]).twoSided &&
+      !shape([xfer(USDC, W, W, usdc(500))]).twoSided &&
+      !shape([xfer(USDC, OTHER, W, usdc(500))]).twoSided &&
+      !shape([xfer(WETH, ROUTER, W, E18)], E18).twoSided &&
       !shape([{ address: UNI, topics: [T, pad(W), pad(OTHER), pad(W)] }]).twoSided &&
+      !shape([{ address: USDC, topics: [T, pad(W), pad(ROUTER)] }, xfer(UNI, ROUTER, W, E18)]).twoSided &&
       !shape([]).twoSided,
+  )
+  const flash = shape([xfer(USDC, OTHER, W, usdc(10_000_000)), xfer(USDC, W, OTHER, usdc(10_000_000)), xfer(JUNK, ROUTER, W, E18), xfer(USDC, W, ROUTER, usdc(1))])
+  const roundTrip = shape([xfer(USDC, W, ROUTER, usdc(900)), xfer(USDC, ROUTER, W, usdc(900))])
+  check(
+    'Q2 net, not the largest leg: ten million of a stable routed THROUGH the wallet and back nets to zero — beside a real $1 swap the size reads $1, never $10,000,000; the same token out and back is no trade at all',
+    flash.twoSided && flash.stableUsd === 1 && !roundTrip.twoSided && roundTrip.stableUsd === 0,
+    `flash=${flash.stableUsd} roundTrip=${roundTrip.stableUsd}`,
+  )
+  check(
+    'Q3 unwrap: native counts as paid out only when the contract the wallet CALLED unwrapped it — an unwrap by any other contract in the transaction, an unwrap with no callee, and the wallet sending the wrapped token itself (an unwrap, not a trade) do not complete a trade',
+    !shape([xfer(USDC, W, OTHER, usdc(40)), unwrap(OTHER, E18)]).twoSided &&
+      !shape([xfer(USDC, W, ROUTER, usdc(40)), unwrap(ROUTER, E18)], BigInt(0), null).twoSided &&
+      !shape([xfer(WETH, W, ROUTER, E18), unwrap(ROUTER, E18)]).twoSided,
   )
   const oneWay = decideProof(row(), { usd: 500, twoSided: false }, true)
   const untold = decideProof(row(), { usd: 500 }, true)
@@ -849,7 +883,8 @@ function polishCorePins(check: Check): void {
     )
   }
   {
-    const bad = ['Coinbase Announcements', 'Pantessa Official', 'MetaMask Support', 'ETH calls \u2705', 'Verified \u2714 desk', 'Team \u202Eesuoh', 'x', '', null, 42]
+    // RE-PINNED 2026-11-09 (coordinator): 'Team <bidi>esuoh' left this list — 'team' is ordinary vocabulary now; a venue + 'Announcements' still poses as the venue.
+    const bad = ['Coinbase Announcements', 'Pantessa Official', 'MetaMask Support', 'ETH calls \u2705', 'Verified \u2714 desk', 'Admin \u202Eesuoh', 'x', '', null, 42]
     const fell = bad.map((n) => discordChannelTitle(n))
     const route = readFileSync(join(process.cwd(), 'app/api/communities/[slug]/discord/route.ts'), 'utf8')
     check(

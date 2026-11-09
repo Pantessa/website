@@ -401,7 +401,8 @@ export function communityFeedPins(check: Check): void {
         /are the author&apos;s own tag/.test(docs) &&
         /never under\s+the verified mark/.test(docs) &&
         /Hyperliquid fills cannot be posted as proof yet/.test(docs) &&
-        /it swapped one\s+asset for another/.test(docs) &&
+        /balance of one asset went down and its balance of another went up/.test(docs.replace(/\s+/g, ' ')) && // RE-PINNED 2026-11-09 (coordinator, QA-SECURITY-4 Q4): the page says what the code checks
+        
         /cross-chain swaps and bridges/.test(docs) &&
         /sent funds one way only/.test(docs),
     )
@@ -532,7 +533,7 @@ export async function communityFeedPinsServed(check: Check, base: string): Promi
     check(
       'community share (served): /docs/community answers 200 in the docs layout, listed in the sidebar; it says what verified means (this wallet moved $X on a chain) and what it does not (the tag is the author\'s, no Hyperliquid proof yet); under 700 words',
       dres.status === 200 && /<h1 class="docs__h1">Community and rooms<\/h1>/.test(d) && /href="\/docs\/community"/.test(d) && /Verified on-chain: this wallet moved \$25\.00 on Base/.test(d) && /Tagged by the author/.test(d) &&
-        /Hyperliquid fills cannot be posted as proof yet/.test(d) && /swapped one asset for another/.test(d) && /cross-chain swaps and bridges/.test(d) && /not set up on this deployment/.test(d) && words > 300 && words < 700,
+        /Hyperliquid fills cannot be posted as proof yet/.test(d) && /balance of one asset went down and its balance of another went up/.test(d.replace(/\s+/g, ' ')) && /cross-chain swaps and bridges/.test(d) && /not set up on this deployment/.test(d) && words > 300 && words < 700,
       `status=${dres.status} words=${words}`,
     )
     const sm2 = await (await fetch(`${base}/sitemap.xml`, { cache: 'no-store' })).text()

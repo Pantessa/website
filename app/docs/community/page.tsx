@@ -65,8 +65,8 @@ export default function CommunityDocsPage() {
         <h2 id="verified">What &ldquo;verified on-chain&rdquo; means</h2>
         <p>
           A trade post carries one line under the verified mark, for example: &ldquo;Verified on-chain: this wallet moved $25.00 on Base&rdquo;. When you post,
-          Pantessa reads that transaction from the chain. The line says three things and no more: the author&apos;s wallet sent the transaction, it swapped one
-          asset for another, and it moved that many dollars.
+          Pantessa reads that transaction from the chain. The line says three things and no more: the author&apos;s wallet sent the transaction; in it the wallet&apos;s
+          balance of one asset went down and its balance of another went up; and the dollar figure is the net change in a dollar stablecoin or in ETH.
         </p>
         <p>What it does not mean:</p>
         <ul>
@@ -76,8 +76,9 @@ export default function CommunityDocsPage() {
           </li>
           <li>The title is the author&apos;s words, shown in quotes.</li>
           <li>It says nothing about profit, or whether the position is still open.</li>
+          <li>It does not say what the other asset is worth, or who was on the other side. A swap against a pool the author controls reads the same.</li>
           <li>
-            Hyperliquid fills cannot be posted as proof yet. Neither can cross-chain swaps and bridges (one-way on each chain), or anything we cannot price.
+            Hyperliquid fills cannot be posted as proof yet. Neither can cross-chain swaps and bridges (one-way on each chain), or a swap between two tokens with no stablecoin or ETH on either side (we cannot price it).
           </li>
         </ul>
         <p>

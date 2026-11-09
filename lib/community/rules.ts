@@ -19,14 +19,30 @@ export type Verdict<T> = { ok: true; value: T } | { ok: false; reason: string }
 
 // ── S5: names and addresses that pose as ours ─────────────────────────────
 
-/** Brand names: refused ANYWHERE inside a slug or a name (askpantessa, pantessahq). */
-export const BRAND_WORDS = ['pantessa', 'yeetful', 'metamask', 'coinbase', 'uniswap', 'hyperliquid', 'telegram', 'discord'] as const
-/** Authority words: refused as a whole word, or glued to the front or back of one
- *  (supportdesk, verified, helpdesk-pro), never in the middle (badminton). */
-export const AUTHORITY_WORDS = ['official', 'support', 'helpdesk', 'security', 'verif', 'admin', 'staff'] as const
-/** Short authority words: refused only as a WHOLE word, so ordinary words that
- *  contain them pass (modern, teamwork). */
-export const AUTHORITY_EXACT = ['mod', 'mods', 'team', 'staff', 'admin', 'owner', 'moderator', 'moderators'] as const
+/** OUR names and the two chat platforms a room bridges to: refused ANYWHERE
+ *  inside a slug or a name (askpantessa, pantessahq, telegram-vip). */
+export const OWN_BRANDS = ['pantessa', 'yeetful', 'telegram', 'discord'] as const
+/** Venues and wallets people trade on. A room ABOUT one is ordinary ("Uniswap
+ *  LPs", "Hyperliquid whales"); a room that poses AS one is not: refused when
+ *  the name is the brand alone, or wears an authority or help-desk word with it
+ *  ("Uniswap Support", "MetaMask Help"). (QA-SECURITY-4: the first rule refused
+ *  every room that named a venue.) */
+export const VENUE_BRANDS = ['metamask', 'coinbase', 'uniswap', 'hyperliquid'] as const
+/** Every brand word, for callers that only need the list. */
+export const BRAND_WORDS = [...OWN_BRANDS, ...VENUE_BRANDS] as const
+/** HARD authority words: a claim to be in charge. Refused as a whole word, or
+ *  glued to the front or back of one (verified, adminteam), never in the
+ *  middle (badminton). */
+export const AUTHORITY_WORDS = ['official', 'helpdesk', 'verif', 'admin'] as const
+/** HARD, whole word only, so ordinary words that contain them pass (modern). */
+export const AUTHORITY_EXACT = ['mod', 'mods', 'admin', 'owner', 'moderator', 'moderators'] as const
+/** SOFT words: ordinary trading and community vocabulary ("Support and
+ *  resistance", "Dream team", "Security tokens", "Staff picks"). Refused only
+ *  when the word is the WHOLE name, sits with a help-desk word ("support
+ *  desk", "security alerts"), or sits with a venue brand. */
+export const SOFT_AUTHORITY = ['support', 'security', 'staff', 'team'] as const
+/** Help-desk words that turn a soft word or a venue name into a service desk. */
+export const DESK_WORDS = ['help', 'desk', 'center', 'centre', 'service', 'services', 'care', 'agent', 'agents', 'alert', 'alerts', 'ticket', 'tickets', 'recovery', 'refund', 'refunds', 'hotline', 'announcement', 'announcements', 'news', 'updates'] as const
 /** R5: authority phrases refused anywhere once separators are dropped ("help-desk", "Customer Service"). */
 export const AUTHORITY_SQUASHED = ['helpdesk', 'customerservice', 'customersupport', 'customercare'] as const
 /** R5: leet digits, for the comparison only. "1" reads as both i and l. */
@@ -65,13 +81,18 @@ export function brandReadings(raw: string): string[] {
 export function impostorWord(text: string): string | null {
   for (const t of brandReadings(text)) {
     const squashed = t.replace(/[^a-z0-9]/g, '')
-    for (const b of BRAND_WORDS) if (squashed.includes(b)) return b
+    for (const b of OWN_BRANDS) if (squashed.includes(b)) return b
     for (const a of AUTHORITY_SQUASHED) if (squashed.includes(a)) return a
     const words = t.split(/[^a-z0-9]+/).filter(Boolean)
     for (const w of words) {
       for (const a of AUTHORITY_EXACT) if (w === a) return a
       for (const a of AUTHORITY_WORDS) if (w.startsWith(a) || w.endsWith(a)) return a
     }
+    const soft = SOFT_AUTHORITY.find((a) => words.some((w) => w === a || w.startsWith(a) || w.endsWith(a))) ?? null
+    const desk = words.some((w) => DESK_WORDS.some((d) => w === d || (w.length > d.length && w.endsWith(d) && SOFT_AUTHORITY.some((a) => w.startsWith(a)))))
+    const venue = VENUE_BRANDS.find((b) => squashed.includes(b)) ?? null
+    if (venue && (squashed === venue || soft || desk)) return venue
+    if (soft && (desk || words.length === 1)) return soft
   }
   return null
 }
@@ -91,7 +112,7 @@ export function checkSlug(raw: unknown): Verdict<string> {
 /** Check marks and badge glyphs a name could wear to look verified. */
 // R5: + the coloured circles / diamonds / stars a verified look borrows (🔵 🟢 💠 ⭐ 🌟 💎 ✪ 🗸).
 // Tested on the RAW name too: NFKC turns ™ and Ⓜ into letters before the cleaned test.
-const BADGE_RE = /[\u2611\u2705\u2713\u2714\u2611\u{1F6E1}\u{1F396}\u{1F3C5}\u{1F530}\u{1F4DB}\u269C\u{1F947}-\u{1F949}\u2122\u00ae\u24c2\u{1F512}\u{1F510}\u{1F534}\u{1F535}\u{1F7E0}-\u{1F7E2}\u{1F7E3}\u{1F7E4}\u{1F4A0}\u{1F48E}\u2B50\u{1F31F}\u272A\u{1F5F8}\u2606\u2605]/u
+const BADGE_RE = /[\u2611\u2705\u2713\u2714\u2611\u{1F6E1}\u{1F396}\u{1F3C5}\u{1F530}\u{1F4DB}\u269C\u{1F947}-\u{1F949}\u2122\u00ae\u24c2\u{1F512}\u{1F510}\u{1F534}\u{1F535}\u{1F7E0}-\u{1F7E2}\u{1F7E3}\u{1F7E4}\u{1F4A0}\u2B50\u{1F31F}\u272A\u{1F5F8}\u2606\u2605]/u
 
 export function checkName(raw: unknown): Verdict<string> {
   if (typeof raw !== 'string') return { ok: false, reason: `name is required (2 to ${COMMUNITY_NAME_MAX} characters).` }

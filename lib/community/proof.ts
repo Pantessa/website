@@ -5,16 +5,22 @@
 // transaction HASH and the CHAIN it lives on, from a row whose verdict is
 // 'verified' (the chain confirmed the tx, its sender = this wallet, and its
 // target). Everything a stranger reads as a fact is then READ FROM THE CHAIN
-// at post time (`onChainNotionalUsd`): the dollars this wallet moved in that
-// transaction. A transaction that moved nothing we can price (an approve, a
+// at post time: the dollars this wallet moved, net, in that transaction. A transaction that moved nothing we can price (an approve, a
 // self-send of nothing) is not a trade, and an RPC that cannot answer in ~6s
 // is a refusal, never a pass (fail closed).
 //
-// A TRADE MOVES VALUE BOTH WAYS (QA-SECURITY-3 R1). The dollar read alone is
-// the largest single transfer leg, in or out, so a self-send, a plain
-// transfer to a friend or a deposit read as "size". The post therefore also
-// needs the transaction to be TWO-SIDED for this wallet (`flowShape`): value
-// left it in one asset and value reached it in another. One-way is refused.
+// A TRADE MOVES VALUE BOTH WAYS, AND THE SIZE IS THE NET (QA-SECURITY-3 R1,
+// QA-SECURITY-4 Q1–Q3). The reader here is this file's own (`flowShape`): it
+// nets every ERC-20 Transfer that names the wallet, per token, and needs the
+// transaction to be TWO-SIDED (something out, something else in). The size is
+// the net of a priced asset, never one leg, so a stable routed through the
+// wallet and back is zero. A transfer, a deposit, a wrap, a round trip: refused.
+// What the sentence "this wallet moved $X on <chain>" is then true of: in one
+// transaction the wallet's balance of a stable (or native) changed by $X net
+// while its balance of another asset changed the other way. It does NOT say
+// the other asset is worth anything or that the counterparty was a stranger
+// (a swap against a pool the author owns reads the same): the page says
+// "moved", never "bought" or "sold", under the verified mark.
 //
 // The row's own words are never emitted as fact:
 //   · `value_usd` is only an upper bound on the size: the printed figure is
@@ -103,71 +109,135 @@ export const REFUSE_ONE_WAY = 'That transaction sent funds one way only (a trans
 export const REFUSE_CHAIN_UNREAD = 'Could not read that transaction from the chain just now. Try again in a minute.'
 export const REFUSE_NOT_YOURS = 'That is not one of your verified trades. Pick a fill from your list.'
 
-const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b0fc378daa952ba7f163c4a11628f55a4df523b3ef'
-/** WETH9 `Withdrawal(address indexed src, uint256 wad)`: a router unwrapping, i.e. native paid out by an internal call (no Transfer log names the wallet). */
-const WITHDRAWAL_TOPIC = '0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65'
-const topicAddr = (t: string | undefined) => (t && t.length === 66 ? `0x${t.slice(26)}`.toLowerCase() : '')
+/** keccak256("Transfer(address,address,uint256)"). The pins RECOMPUTE this
+ *  hash (QA-SECURITY-4 Q1: the first cut copied a literal from
+ *  lib/earned-answers that is two hex characters short, so no real Transfer
+ *  ever matched and every real trade post was refused). */
+export const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+/** keccak256("Withdrawal(address,uint256)") — WETH9 unwrapping: native paid
+ *  out by an internal call (no Transfer log names the receiver). */
+export const WITHDRAWAL_TOPIC = '0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65'
+const topicAddr = (t: string | undefined) => (t && /^0x[0-9a-fA-F]{64}$/.test(t) ? `0x${t.slice(26)}`.toLowerCase() : '')
+const wordOf = (data: string | undefined): bigint | null => {
+  if (!data || !/^0x[0-9a-fA-F]{64}$/.test(data)) return null
+  try {
+    return BigInt(data)
+  } catch {
+    return null
+  }
+}
 
+export interface FlowLog {
+  address: string
+  topics: readonly string[]
+  data?: string
+}
 export interface FlowInput {
   wallet: string
+  /** The contract the transaction called. */
+  txTo: string | null
   /** Native value sent with the call (wei). */
   txValue: bigint
   /** The chain's wrapped-native token (WETH on Base, …). */
   wrappedNative: string
-  logs: { address: string; topics: readonly string[] }[]
+  /** USD-pegged tokens on this chain (lowercase address → decimals), from the chain registry. */
+  stables: Record<string, number>
+  logs: FlowLog[]
+}
+export interface FlowRead {
+  out: boolean
+  in: boolean
+  twoSided: boolean
+  /** NET stable dollars the wallet sent or received (the larger side), or 0. */
+  stableUsd: number
+  /** NET native-equivalent atoms (18 decimals): value sent with the call, or the wallet's net wrapped-native change. */
+  nativeAtoms: bigint
 }
 
 /**
- * Pure: did value LEAVE this wallet in one asset and REACH it in another?
- *   out  = an ERC-20 Transfer FROM the wallet (to someone else), or native
- *          value sent with the call
- *   in   = an ERC-20 Transfer TO the wallet (from someone else) of a token it
- *          did not also send; or, when the wallet sent a token and nothing
- *          came back as a token, the wrapped-native token being UNWRAPPED in
- *          the same transaction (the swap paid out native by an internal call)
- * A self-transfer is neither. The same token out and back (a round trip, a
- * refund, a flash loan) is not two-sided. Pinned.
+ * Pure: what did this transaction do to this wallet, NET, per asset?
+ *
+ * Every ERC-20 Transfer that names the wallet moves that token's NET balance
+ * (in minus out). NET, not the largest leg (QA-SECURITY-4 Q2): a stable that
+ * passes THROUGH the wallet and back out (a flash loan routed through it) is
+ * zero, however large each leg was.
+ *   out  = a token whose net is negative, or native value sent with the call
+ *   in   = a token whose net is positive (not the wrapped token when the
+ *          wallet sent native: that is a wrap); or native paid out — the
+ *          wrapped token being UNWRAPPED BY THE CONTRACT THE WALLET CALLED
+ *          (Q3: `Withdrawal.src` must be `tx.to`), counted only when the
+ *          wallet sent a token that is not the wrapped one and no native
+ * A trade is two-sided: something out AND something else in. A transfer, a
+ * self-send, a deposit, a wrap, an unwrap and a round trip are not.
+ * The dollars are read from the NET of a priced asset (a registry stable, or
+ * native / wrapped-native), never from a single leg. Pinned.
  */
-export function flowShape(i: FlowInput): { out: boolean; in: boolean; twoSided: boolean } {
+export function flowShape(i: FlowInput): FlowRead {
   const who = i.wallet.toLowerCase()
   const wrapped = i.wrappedNative.toLowerCase()
-  const sent = new Set<string>()
-  const got = new Set<string>()
-  let unwrapped = false
+  const callee = (i.txTo ?? '').toLowerCase()
+  const net = new Map<string, bigint>()
+  let unwrappedByCallee = false
   for (const log of i.logs) {
     const t0 = log.topics[0]?.toLowerCase()
     const token = log.address.toLowerCase()
-    if (t0 === WITHDRAWAL_TOPIC && token === wrapped) unwrapped = true
+    if (t0 === WITHDRAWAL_TOPIC && token === wrapped && log.topics.length === 2 && callee && topicAddr(log.topics[1]) === callee) unwrappedByCallee = true
     if (t0 !== TRANSFER_TOPIC || log.topics.length !== 3) continue // 3 topics = ERC-20 (an NFT transfer has 4)
     const from = topicAddr(log.topics[1])
     const to = topicAddr(log.topics[2])
-    if (from === to) continue
-    if (from === who) sent.add(token)
-    if (to === who) got.add(token)
+    if (!from || !to || from === to) continue
+    if (from !== who && to !== who) continue
+    const value = wordOf(log.data)
+    if (value === null || value <= BigInt(0)) continue // no readable amount = no evidence
+    net.set(token, (net.get(token) ?? BigInt(0)) + (to === who ? value : -value))
   }
   const nativeOut = i.txValue > BigInt(0)
-  const out = nativeOut || sent.size > 0
-  // An asset that came back AND went out is not an inflow (a round trip).
-  const tokenIn = [...got].some((t) => !sent.has(t) && !(nativeOut && t === wrapped))
-  // Native paid out: only when the wallet sent a TOKEN (not native) and the wrapped token was unwrapped.
-  const nativeIn = !nativeOut && sent.size > 0 && unwrapped && !sent.has(wrapped)
+  const sentTokens = [...net].filter(([, v]) => v < BigInt(0)).map(([t]) => t)
+  const gotTokens = [...net].filter(([, v]) => v > BigInt(0)).map(([t]) => t)
+  const out = nativeOut || sentTokens.length > 0
+  const tokenIn = gotTokens.some((t) => !(nativeOut && t === wrapped))
+  const nativeIn = !nativeOut && unwrappedByCallee && sentTokens.some((t) => t !== wrapped)
   const inn = tokenIn || nativeIn
-  return { out, in: inn, twoSided: out && inn }
+  let stableUsd = 0
+  for (const [token, v] of net) {
+    const dec = i.stables[token]
+    if (dec === undefined || v === BigInt(0)) continue
+    const abs = v < BigInt(0) ? -v : v
+    stableUsd = Math.max(stableUsd, Number(abs) / 10 ** dec)
+  }
+  const wrappedNet = net.get(wrapped) ?? BigInt(0)
+  const wrappedAbs = wrappedNet < BigInt(0) ? -wrappedNet : wrappedNet
+  const nativeAtoms = nativeOut ? i.txValue : wrappedAbs
+  return { out, in: inn, twoSided: out && inn, stableUsd, nativeAtoms }
 }
 
-const defaultReader: NotionalReader = async (chainId, txHash, wallet) => {
-  const [{ onChainNotionalUsd }, { receiptClientFor }, { chainById }] = await Promise.all([import('@/lib/earned-answers'), import('@/lib/link-receipt-verify'), import('@/lib/chains')])
+/** The default reader: the transaction and its receipt from the chain, the
+ *  flow above, and a price for the native leg only when no stable leg exists. */
+export const readTradeOnChain: NotionalReader = async (chainId, txHash, wallet) => {
+  const [{ receiptClientFor }, { chainById, gasIsStable }] = await Promise.all([import('@/lib/link-receipt-verify'), import('@/lib/chains')])
   const chain = chainById(chainId)
   const client = receiptClientFor(chainId)
   if (!chain || !client) return { usd: null, twoSided: false }
-  const [r, tx, receipt] = await Promise.all([
-    onChainNotionalUsd(chainId, txHash, wallet),
-    client.getTransaction({ hash: txHash as `0x${string}` }),
-    client.getTransactionReceipt({ hash: txHash as `0x${string}` }),
-  ])
-  if (!tx || !receipt || receipt.status !== 'success' || tx.from.toLowerCase() !== wallet.toLowerCase()) return { usd: null, twoSided: false }
-  const shape = flowShape({ wallet, txValue: tx.value, wrappedNative: chain.wrappedNative, logs: receipt.logs.map((l) => ({ address: l.address, topics: l.topics as readonly string[] })) })
-  return { usd: r.usd, twoSided: shape.twoSided }
+  const [tx, receipt] = await Promise.all([client.getTransaction({ hash: txHash as `0x${string}` }), client.getTransactionReceipt({ hash: txHash as `0x${string}` })])
+  if (!tx || !receipt || receipt.status !== 'success' || tx.from.toLowerCase() !== wallet.toLowerCase() || receipt.transactionHash.toLowerCase() !== txHash.toLowerCase()) return { usd: null, twoSided: false }
+  const flow = flowShape({
+    wallet,
+    txTo: tx.to ?? null,
+    txValue: tx.value,
+    wrappedNative: chain.wrappedNative,
+    stables: chain.stables,
+    logs: receipt.logs.map((l) => ({ address: l.address, topics: l.topics as readonly string[], data: l.data })),
+  })
+  if (!flow.twoSided) return { usd: flow.stableUsd > 0 ? flow.stableUsd : null, twoSided: false }
+  if (flow.stableUsd > 0) return { usd: flow.stableUsd, twoSided: true }
+  if (flow.nativeAtoms > BigInt(0)) {
+    const units = Number(flow.nativeAtoms) / 1e18
+    if (gasIsStable(chain)) return { usd: units, twoSided: true }
+    const { usdPerToken } = await import('@/lib/usd-probe')
+    const px = (await usdPerToken(chainId, 'ETH').catch(() => null))?.usd ?? null
+    return { usd: px ? units * px : null, twoSided: true }
+  }
+  return { usd: null, twoSided: true }
 }
 
 /** The chain's answer with a hard timeout. 'gone' = the chain does not know
@@ -269,6 +339,6 @@ export async function resolveTradeProof(
   if (!row) return { ok: false, status: 400, reason: REFUSE_NOT_YOURS }
   const where = locateTx(row)
   if (!where) return { ok: false, status: 400, reason: REFUSE_NOT_YOURS }
-  const onChain = await readOnChain(opts.readNotional ?? defaultReader, where.chainId, where.txHash, author.toLowerCase(), opts.timeoutMs)
+  const onChain = await readOnChain(opts.readNotional ?? readTradeOnChain, where.chainId, where.txHash, author.toLowerCase(), opts.timeoutMs)
   return decideProof(row, onChain, opts.showSize)
 }
