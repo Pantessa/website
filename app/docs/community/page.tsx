@@ -38,13 +38,12 @@ export default function CommunityDocsPage() {
         <h2>Rooms</h2>
         <p>
           A room lives at <code>/g/your-room</code>. It has a feed, a members board and the markets it follows. To start one, sign in and open{' '}
-          <Link href="/g/new">Start a room</Link>: pick a name and an address. You are its owner.
+          <Link href="/g/new">Start a room</Link>. You are its owner.
         </p>
 
         <h2>Joining</h2>
         <p>
-          Joining is one tap and never needs a wallet. A member is a proven identity: a sign-in (wallet, Google or email), or a Telegram account that Telegram
-          itself vouches for. Nothing is signed and nothing is paid. Voting needs an identity but not a seat in the room. Posting in a room needs a seat.
+          Joining is one tap and never needs a wallet. A member is a proven identity: a sign-in (wallet, Google or email), or a Telegram account, proven by Telegram. Nothing is signed and nothing is paid. Voting needs an identity, not a seat. Posting in a room needs a seat.
         </p>
 
         <h2>The four kinds of post</h2>
@@ -62,13 +61,12 @@ export default function CommunityDocsPage() {
             <strong>{COMPOSER_KINDS[3].label}.</strong> One of your own confirmed transactions, picked from a list. <Link href={composeHref('trade')}>Post one</Link>.
           </li>
         </ul>
-        <p>Posts are plain text. Posting asks you to sign in.</p>
 
         <h2 id="verified">What &ldquo;verified on-chain&rdquo; means</h2>
         <p>
           A trade post carries one line under the verified mark, for example: &ldquo;Verified on-chain: this wallet moved $25.00 on Base&rdquo;. When you post,
           Pantessa reads that transaction from the chain. The line says three things and no more: the author&apos;s wallet sent the transaction, the transaction
-          succeeded, and it moved that many dollars. The link beside it opens the transaction on the chain&apos;s explorer.
+          succeeded, and it moved that many dollars.
         </p>
         <p>What it does not mean:</p>
         <ul>
@@ -104,10 +102,7 @@ export default function CommunityDocsPage() {
             </li>
           ))}
         </ul>
-        <p>
-          The bot has to exist first. Until the owner of this deployment has created it, the room page says Telegram is &ldquo;not set up on this deployment&rdquo;
-          and there is nothing to connect.
-        </p>
+        <p>Until the owner of this deployment has created the bot, the room page says Telegram is &ldquo;not set up on this deployment&rdquo;.</p>
 
         <h2>Connect a Discord channel</h2>
         <p>
@@ -124,7 +119,7 @@ export default function CommunityDocsPage() {
         <h2>Removing a post or a member</h2>
         <p>
           A post can be removed by its author, or by the room&apos;s owner or a mod. A member can be removed by the owner or a mod; the owner&apos;s seat cannot be.
-          The room page has no button for either yet: both are requests to the API, made while signed in as that wallet (<code>DELETE /api/posts/&lt;id&gt;</code>,{' '}
+          The room page has no button for either yet; both are API requests (<code>DELETE /api/posts/&lt;id&gt;</code>,{' '}
           <code>POST /api/communities/&lt;room&gt;/members/remove</code>).
         </p>
       </div>
