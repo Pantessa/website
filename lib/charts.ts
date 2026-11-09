@@ -40,6 +40,7 @@ export const CHART_FEED_LABELS: Record<ChartFeed, string> = {
 
 import { ROBINHOOD_TICKER_SET } from '@/lib/robinhood-tickers'
 import { hlPerpUniverseCached, hlPerpUniverseFresh, hlUniverses, primeHlUniverse, type HlDex } from '@/lib/hl-universe'
+import { hlDexOf, isOrderableHlCoin } from '@/lib/hl-dex'
 
 export type ChartTf = '10s' | '1m' | '15m' | '1h' | '4h' | '1d'
 
@@ -216,14 +217,33 @@ export function isLiveOnlyHlPair(pair: ChartPair | null | undefined): boolean {
 
 /**
  * A perp whose market is on a builder-deployed (HIP-3) dex — `/t/SP500`
- * charts `xyz:SP500`, `/t/GOLD` `xyz:GOLD`. The chart, the quote and the
- * alerts read it; the ORDER layer (lib/hyperliquid-exec fetchHlSnapshot)
- * reads the main book only and answers "SP500 isn't a Hyperliquid perp"
- * (measured 2026-11-09), so no surface may offer an order on one until that
- * layer builds there. Null / a spot pair / a main-book perp → false.
+ * charts `xyz:SP500`, `/t/GOLD` `xyz:GOLD`. Null / a spot pair / a main-book
+ * perp → false. Being one says WHERE the market trades, not whether an order
+ * builds there: isChartOnlyPair is that question.
  */
 export function isHip3Pair(pair: ChartPair | null | undefined): boolean {
   return !!pair && pair.source === 'hyperliquid' && pair.pair.includes(':')
+}
+
+/**
+ * A builder-dex perp the ORDER layer does not build on: the chart, the quote
+ * and the alerts are live, and no surface may offer an order.
+ *
+ * Until 2026-11-09 that was every builder-dex pair — the order layer read the
+ * main book only and answered "SP500 isn't a Hyperliquid perp". It now builds
+ * on the dexes in lib/hl-dex HL_BUILDER_DEXES (`xyz`: asset ids, collateral,
+ * margin modes and the fee path measured against the venue, and an order of
+ * ours filled there), so a pair is chart-only exactly when its dex is NOT in
+ * that registry. Adding a dex to the chart table therefore never grows a
+ * button on its own: the registry is the gate.
+ */
+export function isChartOnlyPair(pair: ChartPair | null | undefined): boolean {
+  return isHip3Pair(pair) && !isOrderableHlCoin(pair!.pair)
+}
+
+/** The builder dex a pair trades on (`xyz`), or null for anything else. */
+export function builderDexOfPair(pair: ChartPair | null | undefined): string | null {
+  return isHip3Pair(pair) ? hlDexOf(pair!.pair) : null
 }
 
 /** Has a live universe read landed in this process (the table is more than

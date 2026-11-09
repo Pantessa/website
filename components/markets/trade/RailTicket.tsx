@@ -29,7 +29,7 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ChevronDown, ChevronUp, CornerDownLeft } from 'lucide-react'
-import { isHip3Pair, type ChartPair } from '@/lib/charts'
+import { isChartOnlyPair, type ChartPair } from '@/lib/charts'
 import OrderTicket from '@/components/markets/trade/OrderTicket'
 import { execAsks } from '@/lib/trade-asks'
 import { canSellAsk } from '@/lib/sell-gate'
@@ -138,7 +138,7 @@ export default function RailTicket({
           <OrderTicket key={pair.symbol} symbol={symbol} pair={pair} sides={sides} side={shown} onSide={onSide} last={last} onSend={onBuild} seat="card" />
         ) : (
           <p className="mkt-railticket__shut" data-shut={shut.join('+') || 'none'}>
-            {shut.length > 0 ? noVenueNote(pair.symbol, shut) : isHip3Pair(pair) ? hip3Refusal(pair.symbol) : `Nothing to act on for ${pair.symbol} yet — the ticket comes back when a venue lists it.`}
+            {shut.length > 0 ? noVenueNote(pair.symbol, shut) : isChartOnlyPair(pair) ? hip3Refusal(pair.symbol) : `Nothing to act on for ${pair.symbol} yet — the ticket comes back when a venue lists it.`}
           </p>
         ))}
       <form className="mkt-railticket__say" onSubmit={submit} data-say="">

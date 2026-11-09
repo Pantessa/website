@@ -23,7 +23,8 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
-import type { ChartPair } from '@/lib/charts'
+import { builderDexOfPair, type ChartPair } from '@/lib/charts'
+import { HL_BUILDER_DEXES } from '@/lib/hl-dex'
 import { fmtPrice } from '@/components/CandleChart'
 import { useHeld } from '@/lib/use-held'
 import { useStableBalances } from '@/lib/use-stable-balances'
@@ -46,6 +47,7 @@ import {
   sideTone,
   sizeFromPct,
   ticketAmountKind,
+  ticketOffersStop,
   ticketSideLabel,
   ticketSizes,
   ticketTypesFor,
@@ -193,6 +195,8 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
   const amountKind = ticketAmountKind(side)
   const tone = sideTone(side)
   const isPerp = isPerpSide(side)
+  // A builder-dex perp takes the order and no Guardian stop (lib/order-ticket).
+  const offersStop = ticketOffersStop(pair)
   const isSell = side === 'sell'
 
   // Published when the AMOUNT or the UNIT changes by a hand here (a units
@@ -380,7 +384,10 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
         ? 'The Guardian watches the venue every minute and closes the position at your stop — delegated, never custodial.'
         : 'A one-shot Spend Permission on Base: the Guardian sells only if your line breaks. Signed once.'
       : isPerp
-        ? 'Market (IOC) on Hyperliquid. A stop arms the Guardian, which watches every minute and closes at your line.'
+        ? offersStop
+          ? 'Market (IOC) on Hyperliquid. A stop arms the Guardian, which watches every minute and closes at your line.'
+          : // A builder-dex market: where it trades, the one extra signature a standard account sees, and no stop promised.
+            `Market (IOC) on Hyperliquid’s ${HL_BUILDER_DEXES[builderDexOfPair(pair) ?? '']?.label ?? 'builder'} dex. If your collateral sits in the main perp balance, the card moves it into the dex first (its own signature). No Guardian stop here yet.`
         : st.type === 'limit'
           ? 'A CoW limit order: rests gasless, fills at-or-better when the market gets there, cancel any time.'
           : side === 'sell'
@@ -530,11 +537,13 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
               </button>
             ))}
           </div>
-          <label className="mkt-ticket__check">
-            <input type="checkbox" checked={st.withStop} onChange={(e) => patch({ withStop: e.target.checked })} />
-            protect it with a stop
-          </label>
-          {st.withStop && (
+          {offersStop && (
+            <label className="mkt-ticket__check">
+              <input type="checkbox" checked={st.withStop} onChange={(e) => patch({ withStop: e.target.checked })} />
+              protect it with a stop
+            </label>
+          )}
+          {offersStop && st.withStop && (
             <div className="mkt-ticket__presets" role="group" aria-label="Stop distance">
               {TICKET_STOP_PRESETS.map((p) => (
                 <button key={p} type="button" className={`mkt-ticket__preset ${st.stopPct === p ? 'is-on' : ''}`} onClick={() => patch({ stopPct: p })}>

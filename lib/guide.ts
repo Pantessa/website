@@ -79,9 +79,11 @@ export interface GuideCtx {
    *  sentence the ladder builds. */
   ask?: string | null
   connected?: boolean
-  /** The page's chart takes no order here (a Hyperliquid builder market,
-   *  lib/charts isHip3Pair): the chart hint teaches the question, and never
-   *  quotes an order the page cannot build (2026-11-09). */
+  /** The page's chart takes no order here (a Hyperliquid builder-dex market
+   *  the order layer does not build on — lib/charts isChartOnlyPair): the
+   *  chart hint teaches the question, and never quotes an order the page
+   *  cannot build. A builder-dex market that DOES take orders (`xyz:SP500`)
+   *  is an ordinary page: it quotes its own long sentence. */
   chartOnly?: boolean
 }
 

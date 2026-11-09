@@ -30,7 +30,7 @@ import ShareActions from '@/components/ShareActions'
 import { readPost } from '@/lib/share-posts'
 import { useAskDoor } from '@/lib/ask-door'
 import { askAppSlugs } from '@/lib/ask-apps'
-import { chartPairFor, isHip3Pair } from '@/lib/charts'
+import { chartPairFor, isChartOnlyPair } from '@/lib/charts'
 import { fmtCountdown, sessionStripFor } from '@/lib/markets'
 import { quickActs } from '@/lib/symbol-venues'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
@@ -54,6 +54,7 @@ import {
   readHeadlineText,
   readInstrument,
   readNoActLine,
+  readOwnPair,
   readPageHref,
   readPointAt,
   readSeriesChange,
@@ -192,23 +193,33 @@ export default function TheRead({ initial }: { initial: ReadSnapshot }) {
   const run = useCallback((ask: string) => openDoor(ask, { send: true, mcps: askAppSlugs(ask) }), [openDoor])
   const promptHref = useCallback((ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`, [])
   const { act, door } = useConnectToAct({ run, redirectFor: promptHref })
+  // The server's own quote for the pick: the venue lists it right now.
+  const hasQuote = !!snap.quotes[inst.id]
   const { chips, charts } = useMemo(() => {
     const outChips: ReadActChip[] = []
     const outCharts: { symbol: string; as: string }[] = []
-    const targets = inst.direct ? [{ symbol: inst.symbol, as: '' }] : inst.near
+    // Its OWN market first when orders build on it (a coin, or a builder-dex perp the order layer builds on —
+    // the S&P 500, gold and oil), then the nearest listed thing: one chip each, and a door to its chart.
+    const targets = inst.direct ? [{ symbol: inst.symbol, as: '' }, ...inst.near] : inst.near
     for (const n of targets) {
-      const pair = chartPairFor(n.symbol)
-      // A builder-market perp (lib/charts isHip3Pair) has no order this app builds; it is a chart to open.
-      const acts = pair && !isHip3Pair(pair) ? quickActs(n.symbol, pair).filter((a) => canTradeAsk(a.ask, tradable)) : []
+      const own = inst.direct && n.symbol === inst.symbol
+      // A Hyperliquid builder-dex instrument states its own market (lib/read readOwnPair): the browser on `/` holds no
+      // live perp table, so chartPairFor would know `SP500` on the server and not here — and the chips the server
+      // rendered would vanish at hydration. It is offered only while the server holds a live quote for it.
+      const stated = own ? readOwnPair(inst) : null
+      const pair = stated ? (hasQuote ? stated : null) : chartPairFor(n.symbol)
+      // A builder-dex perp the order layer does not build on (lib/charts isChartOnlyPair) is a chart to open; one it
+      // does build on (`xyz:SP500`, `xyz:GOLD`, `xyz:CL` — the macro line) wears its own Long / Short.
+      const acts = pair && !isChartOnlyPair(pair) ? quickActs(n.symbol, pair).filter((a) => canTradeAsk(a.ask, tradable)) : []
       if (acts.length === 0) {
-        if (!inst.direct) outCharts.push(n)
+        if (!own) outCharts.push(n)
         continue
       }
-      for (const a of inst.direct ? acts : acts.slice(0, 1)) outChips.push({ label: inst.direct ? a.label : `${a.label} of ${n.symbol}`, ask: a.ask, tone: a.tone })
-      if (!inst.direct) outCharts.push(n)
+      for (const a of own ? acts : acts.slice(0, 1)) outChips.push({ label: own ? a.label : `${a.label} of ${n.symbol}`, ask: a.ask, tone: a.tone })
+      if (!own) outCharts.push(n)
     }
     return { chips: outChips, charts: outCharts }
-  }, [inst, tradable])
+  }, [inst, tradable, hasQuote])
   const page = readPageHref(inst)
 
   const session = now ? sessionStripFor(now) : null
