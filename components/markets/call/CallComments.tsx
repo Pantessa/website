@@ -37,7 +37,7 @@ export default function CallComments({ postId, initial }: { postId: string; init
   }
 
   return (
-    <section className="callpg__thread" aria-label="Replies">
+    <section className="callpg__thread" id="replies" aria-label="Replies">
       <h2 className="mono">
         {comments.length} repl{comments.length === 1 ? 'y' : 'ies'}
       </h2>

@@ -15,6 +15,15 @@
 //     (rule 6), and "attach my current chart" which takes the page's
 //     ChartState (SHELL/CHART pass it; null hides the checkbox)
 // Every author is a wallet or a claimed @handle; every string is a text node.
+//
+// THE FEED JOINED THE TAB (squad community, lane FEED, 2026-11-09): the list
+// reads GET /api/feed?symbol= and sorts Hot / New / Top (votes), with "Most
+// executed" kept on the forum's own read. A chart idea keeps THIS card (fork,
+// "copy these lines to my chart", inline replies, mint) and gains the vote
+// and the share sheet; a video or a trade with proof on the symbol renders
+// as the feed's card (components/community/PostCard). Link posts stay the
+// News tab's pins, as before. The composer is the feed's (four kinds), with
+// the page's chart to attach.
 
 import { shownError } from '@/lib/fetch-words'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -25,10 +34,16 @@ import CreateAccountButton from '@/components/CreateAccountButton'
 import { useSession } from '@/lib/session'
 import type { ChartPair } from '@/lib/charts'
 import type { ChartState } from '@/lib/chart-state'
-import type { PublicComment, PublicPost, PostSort } from '@/lib/chart-posts'
+import type { PublicComment, PublicPost } from '@/lib/chart-posts'
 import { ageLabel } from '@/lib/news-shared'
 import { callPath, callTweetHref } from '@/lib/chart-calls'
 import ChartSketch from './ChartSketch'
+import FeedComposer from '@/components/community/Composer'
+import FeedPostCard from '@/components/community/PostCard'
+import ShareSheet from '@/components/community/ShareSheet'
+import VoteButtons from '@/components/community/VoteButtons'
+import { FEED_SORT_LABEL, feedHref, postShareText } from '@/components/community/feed-rules'
+import { FEED_SORTS, type FeedPost, type FeedSort } from '@/lib/community/spec'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import '../comm.css'
@@ -61,15 +76,17 @@ export default function CommunityTab({ symbol, pair, chartState = null, onAsk, o
   const pathname = usePathname()
   const search = useSearchParams()
   const here = useMemo(() => `${pathname}${search?.toString() ? `?${search.toString()}` : ''}`, [pathname, search])
-  const [sort, setSort] = useState<PostSort>('new')
-  const [posts, setPosts] = useState<PublicPost[] | null>(null)
+  // Hot / New / Top are the feed's (votes); Most executed is the forum's own read.
+  const [sort, setSort] = useState<TabSort>('hot')
+  const [posts, setPosts] = useState<TabPost[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setErr(null)
     try {
-      const r = await fetch(`/api/posts?symbol=${encodeURIComponent(sym)}&sort=${sort}&limit=30`, { cache: 'no-store' })
-      const d = (await r.json().catch(() => ({}))) as { posts?: PublicPost[]; error?: string }
+      const src = sort === 'executed' ? `/api/posts?symbol=${encodeURIComponent(sym)}&sort=executed&limit=30` : feedHref({ symbol: sym, sort, window: 'all', limit: 30 })
+      const r = await fetch(src, { cache: 'no-store' })
+      const d = (await r.json().catch(() => ({}))) as { posts?: TabPost[]; error?: string }
       if (!r.ok) throw new Error(d.error ?? 'The ideas board is not answering right now. The chart and the other tabs still work.')
       setPosts(d.posts ?? [])
     } catch (e) {
@@ -81,28 +98,24 @@ export default function CommunityTab({ symbol, pair, chartState = null, onAsk, o
     void load()
   }, [load])
 
-  const ideas = posts?.filter((p) => p.kind === 'idea') ?? []
+  // Link posts are the News tab's pins; everything else about the symbol shows here.
+  const ideas = posts?.filter((p) => p.kind !== 'link') ?? []
 
   return (
     <div className="flex flex-col gap-4">
-      {session.address ? (
-        <Composer symbol={sym} chartState={chartState} onPosted={load} />
-      ) : (
-        <div className="mkp__door">
-          <span>Post an idea on {sym} — lines, levels, and the trade they carry. One free signature, no account form.</span>
-          {/* Rule 6: the unified door, redirect back to this tab. */}
-          <CreateAccountButton className="mkc__cta" label="Sign in to post" redirectTo={here} />
-        </div>
-      )}
+      {/* The feed's composer: a chart idea (this page's chart attaches), a link, a video, or a trade with proof. A signed-out press on Post opens the unified door in place (rule 6) and holds the post. */}
+      <FeedComposer symbol={sym} chartState={chartState} onPosted={() => void load()} />
 
       <div className="mkc__head">
         <span className="mkc__eyebrow">
-          {ideas.length} idea{ideas.length === 1 ? '' : 's'} on {sym}
+          {ideas.length} post{ideas.length === 1 ? '' : 's'} on {sym}
         </span>
         <div className="mkp__sort" role="tablist" aria-label="Sort posts">
-          <button type="button" role="tab" aria-selected={sort === 'new'} className={sort === 'new' ? 'mkp__sortbtn is-active' : 'mkp__sortbtn'} onClick={() => setSort('new')}>
-            Newest
-          </button>
+          {FEED_SORTS.map((s) => (
+            <button key={s} type="button" role="tab" aria-selected={sort === s} className={sort === s ? 'mkp__sortbtn is-active' : 'mkp__sortbtn'} onClick={() => setSort(s)}>
+              {FEED_SORT_LABEL[s]}
+            </button>
+          ))}
           <button type="button" role="tab" aria-selected={sort === 'executed'} className={sort === 'executed' ? 'mkp__sortbtn is-active' : 'mkp__sortbtn'} onClick={() => setSort('executed')}>
             Most executed
           </button>
@@ -119,94 +132,27 @@ export default function CommunityTab({ symbol, pair, chartState = null, onAsk, o
       )}
       {posts && ideas.length === 0 && !err && (
         <div className="mkc__empty">
-          No ideas on {sym} yet. The first post here is a chart with a line on it — and a line can carry the trade.
+          Nothing posted on {sym} yet. The first post here can be a chart with a line on it, a video, or a trade the chain confirmed.
         </div>
       )}
       <div className="mkp__feed">
-        {ideas.map((p) => (
-          <PostCard key={p.id} post={p} sessionAddress={session.address} here={here} onAsk={onAsk} onLoadChart={onLoadChart} onChanged={load} />
-        ))}
+        {ideas.map((p) =>
+          p.kind === 'idea' ? (
+            <PostCard key={p.id} post={p} sessionAddress={session.address} here={here} onAsk={onAsk} onLoadChart={onLoadChart} onChanged={load} />
+          ) : isFeedPost(p) ? (
+            <FeedPostCard key={p.id} post={p} showCommunity onAsk={onAsk} />
+          ) : null,
+        )}
       </div>
     </div>
   )
 }
 
-// ── composer ────────────────────────────────────────────────────────────────
-
-function Composer({ symbol, chartState, onPosted }: { symbol: string; chartState: ChartState | null; onPosted: () => Promise<void> }) {
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
-  const attachable = !!chartState && chartState.symbol === symbol && chartState.lines.length > 0
-  const [attach, setAttach] = useState(true)
-  const [mint, setMint] = useState(true)
-  const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState<string | null>(null)
-  const hasAction = attachable && chartState!.lines.some((l) => (l.kind === 'h' || l.kind === 'zone') && l.action)
-
-  const submit = async () => {
-    setBusy(true)
-    setMsg(null)
-    try {
-      const r = await fetch('/api/posts', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          symbol,
-          kind: 'idea',
-          title: title.trim(),
-          body,
-          ...(attachable && attach ? { chartState, mint: mint && hasAction } : {}),
-        }),
-      })
-      const d = (await r.json().catch(() => ({}))) as { error?: string; mintError?: string; link?: { url: string } }
-      if (!r.ok) throw new Error(d.error ?? 'That did not post. Nothing was lost: try again in a moment.')
-      setTitle('')
-      setBody('')
-      setMsg(d.link ? `Posted — and minted as ${d.link.url}.` : d.mintError ? `Posted. Link not minted: ${d.mintError}` : 'Posted.')
-      await onPosted()
-    } catch (e) {
-      setMsg(shownError(e, 'The ideas board'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <form
-      className="mkp__composer"
-      aria-label={`Post an idea on ${symbol}`}
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (!busy && title.trim().length >= 3) void submit()
-      }}
-    >
-      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={`Your call on ${symbol} — one line`} maxLength={120} aria-label="Title" />
-      <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Why. Plain text, up to 2,000 characters." maxLength={2000} aria-label="Body" />
-      <div className="mkp__crow">
-        <div className="flex flex-wrap items-center gap-4">
-          {attachable ? (
-            <label className="mkp__check">
-              <input type="checkbox" checked={attach} onChange={(e) => setAttach(e.target.checked)} />
-              Attach my current chart ({chartState!.lines.length} line{chartState!.lines.length === 1 ? '' : 's'})
-            </label>
-          ) : (
-            <span className="mkc__note">Draw a line on the chart to attach it — a line can carry the trade.</span>
-          )}
-          {attachable && attach && hasAction && (
-            <label className="mkp__check">
-              <input type="checkbox" checked={mint} onChange={(e) => setMint(e.target.checked)} />
-              Mint the first action as a link (readers execute it; you earn the creator share)
-            </label>
-          )}
-        </div>
-        <button type="submit" className="mkc__cta" disabled={busy || title.trim().length < 3}>
-          {busy ? 'Posting…' : 'Post'}
-        </button>
-      </div>
-      {msg && <span className={/^Posted/.test(msg) ? 'mkc__note' : 'mkc__err'}>{msg}</span>}
-    </form>
-  )
-}
+// A row from either read: the feed's (score, the reader's vote, room, video,
+// proof) or the forum's "most executed" list (the PublicPost fields only).
+type TabSort = FeedSort | 'executed'
+type TabPost = (PublicPost | FeedPost) & { score?: number; myVote?: 1 | 0 | -1; community?: FeedPost['community'] }
+const isFeedPost = (p: TabPost): p is FeedPost => typeof (p as FeedPost).score === 'number' && 'proof' in p
 
 // ── post card ───────────────────────────────────────────────────────────────
 
@@ -218,7 +164,7 @@ function PostCard({
   onLoadChart,
   onChanged,
 }: {
-  post: PublicPost
+  post: TabPost
   sessionAddress: string | null
   here: string
   onAsk?: (ask: string) => void
@@ -239,6 +185,7 @@ function PostCard({
     const d = (await r.json().catch(() => ({}))) as { post?: PublicPost & { commentList: PublicComment[] } }
     setComments(d.post?.commentList ?? [])
   }, [post.id])
+  const ideaPost = { ...post, kind: 'idea' as const, proof: null }
 
   const toggleComments = () => {
     const next = !open
@@ -362,6 +309,8 @@ function PostCard({
         )}
 
         <div className="mkp__foot">
+          {/* The feed's vote (an identity, never a signature) and its share sheet. */}
+          <VoteButtons postId={post.id} score={typeof post.score === 'number' ? post.score : null} myVote={post.myVote ?? 0} layout="row" />
           <button type="button" onClick={toggleComments} aria-expanded={open}>
             <MessageSquare className="inline h-3 w-3" aria-hidden /> {post.comments} comment{post.comments === 1 ? '' : 's'}
           </button>
@@ -386,6 +335,7 @@ function PostCard({
               <Link2 className="inline h-3 w-3" aria-hidden /> {busy === 'mint' ? 'Minting…' : 'Mint as link'}
             </button>
           )}
+          <ShareSheet url={callPath(post.id)} text={postShareText(ideaPost)} what="post" />
           {post.forkOf && (
             <span className="mkp__lineage">
               forked from <a href={`#post-${post.forkOf}`}>{post.forkOf}</a>

@@ -56,7 +56,7 @@
 .cmy-card__out { display: inline; width: 12px; height: 12px; opacity: .55; vertical-align: -1px; }
 .cmy-card__host { margin-left: 8px; font-family: var(--cmy-mono); font-size: 11px; font-weight: 400; color: var(--muted-2); white-space: nowrap; }
 .cmy-card__body { margin-top: 5px; font-size: 13.5px; line-height: 1.55; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
-.cmy-card__body--clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+.cmy-card__body--clamp { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
 .cmy-card__noproof { margin-top: 8px; font-size: 12.5px; line-height: 1.5; color: var(--muted-2); }
 
 .cmy-card__act { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 8px; border-radius: 8px; font-size: 12px; color: var(--muted); transition: color .12s ease, background .12s ease; white-space: nowrap; }
@@ -75,7 +75,8 @@
 .cmy-fact__tx:hover { color: var(--fg); border-color: var(--line-2); }
 
 /* ── a video: a poster until the tap ─────────────────────────────────────── */
-.cmy-video { position: relative; display: block; width: 100%; max-width: 560px; aspect-ratio: 16 / 9; margin-top: 10px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); padding: 0; text-align: left; }
+.cmy-video { position: relative; display: block; width: 100%; max-width: 440px; aspect-ratio: 16 / 9; margin-top: 10px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); padding: 0; text-align: left; }
+.cmy-video[data-playing] { max-width: 640px; }
 .cmy-video img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .cmy-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .cmy-video__tile { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--cmy-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); background: repeating-linear-gradient(135deg, transparent 0 14px, color-mix(in srgb, var(--fg) 3%, transparent) 14px 15px); }

@@ -57,12 +57,6 @@ interface Draft {
   room: string
 }
 
-/** The market a fill names ("buy:ETH" → ETH), for a trade post's symbol. */
-const fillMarket = (f: MyFill): string => {
-  const tagged = f.symbols.find((s) => s.includes(':'))
-  return (tagged ? tagged.split(':').slice(1).join(':') : (f.symbols[0] ?? '')).toUpperCase()
-}
-
 export default function Composer({ community, symbol, chartState = null, onPosted }: ComposerProps) {
   const { address } = useSession()
   const scope = `${community ?? ''}|${symbol ?? ''}`
@@ -126,9 +120,6 @@ export default function Composer({ community, symbol, chartState = null, onPoste
   const fill = fills?.find((f) => f.turnId === picked) ?? null
   // A link or a video inside a room may stand without a market; an idea and a trade never do.
   const marketOptional = (kind === 'link' || kind === 'video') && !!room
-  // A trade's market is the receipt's own; the field shows only when that one is not charted here.
-  const fillSym = fill ? (resolveTickerQuery(fillMarket(fill))?.symbol ?? '') : ''
-  const tradeSym = kind === 'trade' && fill ? fillSym || sym : ''
   const roomName = rooms.find((r) => r.slug === room)?.name ?? null
 
   // ── the caller's rooms (the "Post in" picker on a page that is not a room) ──
@@ -171,10 +162,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
   const missing = ((): string | null => {
     if (kind === 'trade') {
       if (!address) return null
-      if (!fill) return 'Pick the trade to post.'
-      if (!tradeSym) return 'Name the market this trade is on.'
-      if (title.trim().length < 3) return 'Add one line about the trade.'
-      return null
+      return fill ? null : 'Pick the trade to post.'
     }
     if (!marketOptional && !sym) return market.trim() ? 'That is not a market we chart yet.' : 'Name the market (UNI, ETH, AAPL).'
     if (kind === 'idea') return title.trim().length < 3 ? 'Add your call in one line.' : null
@@ -197,8 +185,8 @@ export default function Composer({ community, symbol, chartState = null, onPoste
           }
         }
         const payload: Record<string, unknown> = { kind, title: title.trim(), body }
-        const postSym = kind === 'trade' ? tradeSym : sym
-        if (postSym) payload.symbol = postSym
+        // A trade's market, and its title when none is typed, come from the receipt (the route reads them).
+        if (kind !== 'trade' && sym) payload.symbol = sym
         if (room) payload.community = room
         if (kind === 'idea' && attachable && attach) {
           payload.chartState = chartState
@@ -241,7 +229,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
         setBusy(false)
       }
     },
-    [kind, title, body, sym, tradeSym, room, roomName, attachable, attach, chartState, mint, hasAction, url, video, picked, showSize, hold, onPosted],
+    [kind, title, body, sym, room, roomName, attachable, attach, chartState, mint, hasAction, url, video, picked, showSize, hold, onPosted],
   )
 
   // The held post runs the LATEST send (the session it waited for changes nothing in the draft).
@@ -287,7 +275,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
   }
 
   const titlePlaceholder =
-    kind === 'idea' ? (sym ? `Your call on ${sym}, in one line` : 'Your call, in one line') : kind === 'link' ? 'Title (leave empty to use the page title)' : kind === 'video' ? 'What the video is, in one line' : 'Your read on this trade, in one line'
+    kind === 'idea' ? (sym ? `Your call on ${sym}, in one line` : 'Your call, in one line') : kind === 'link' ? 'Title (leave empty to use the page title)' : kind === 'video' ? 'What the video is, in one line' : 'Why you took it, in one line'
 
   return (
     <form
@@ -349,10 +337,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
                     role="radio"
                     aria-checked={picked === f.turnId}
                     className="cmy-compose__fill"
-                    onClick={() => {
-                      setPicked(f.turnId)
-                      if (!title.trim()) setTitle(f.label.slice(0, COMPOSER_TITLE_MAX))
-                    }}
+                    onClick={() => setPicked(f.turnId)}
                   >
                     <span className="cmy-compose__dot" aria-hidden />
                     <span>{f.label}</span>
@@ -404,7 +389,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
           ))}
 
         <div className="cmy-compose__row">
-          {!symbol && !(kind === 'trade' && (!fill || !!fillSym)) && (
+          {!symbol && kind !== 'trade' && (
             <label className="cmy-compose__field cmy-compose__field--sym">
               <span className="cmy-compose__label">{marketOptional ? 'Market (optional)' : 'Market'}</span>
               <input type="text" value={market} onChange={(e) => setMarket(e.target.value)} placeholder="UNI, ETH, Apple" maxLength={40} autoComplete="off" autoCapitalize="characters" spellCheck={false} aria-invalid={!!market.trim() && !pair ? true : undefined} />
@@ -412,7 +397,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
             </label>
           )}
           <label className="cmy-compose__field">
-            <span className="cmy-compose__label">{kind === 'link' ? 'Title (optional)' : 'In one line'}</span>
+            <span className="cmy-compose__label">{kind === 'link' ? 'Title (optional)' : kind === 'trade' ? 'Your read (optional)' : 'In one line'}</span>
             <input ref={titleRef} type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={titlePlaceholder} maxLength={COMPOSER_TITLE_MAX} />
           </label>
         </div>
