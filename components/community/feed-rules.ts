@@ -358,3 +358,27 @@ export function jobStepTxs(steps: readonly { status?: string; result?: Record<st
   }
   return out
 }
+
+// ── the feed by address, and the chart's next step (lane SHARE) ────────────
+
+/** The sort a `/community?sort=` address asks for (null = none named: Hot). */
+export function readFeedSort(search: string): FeedSort | null {
+  const s = new URLSearchParams(search).get('sort')
+  return s === 'hot' || s === 'new' || s === 'top' ? s : null
+}
+
+/** Where a just-published call is on top: the feed, newest first. */
+export const COMMUNITY_NEW_HREF = '/community?sort=new'
+export const CALL_NEXT_LABEL = 'See it in the community'
+
+// ── rooms on the symbol page (lane SHARE) ──────────────────────────────────
+
+export const SYMBOL_ROOMS_LIMIT = 3
+/** The strip's one read: the rooms that follow a market, most members first. */
+export function symbolRoomsHref(symbol: string, limit = SYMBOL_ROOMS_LIMIT): string {
+  return `/api/communities?${new URLSearchParams({ symbol, limit: String(limit) }).toString()}`
+}
+/** The strip's quiet line when no room follows the market. */
+export function noRoomLine(symbol: string): string {
+  return `No room follows ${symbol} yet.`
+}

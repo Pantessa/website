@@ -38,6 +38,7 @@ import type { PublicComment, PublicPost } from '@/lib/chart-posts'
 import { ageLabel } from '@/lib/news-shared'
 import { callPath, callTweetHref } from '@/lib/chart-calls'
 import ChartSketch from './ChartSketch'
+import RoomsStrip from './RoomsStrip'
 import FeedComposer from '@/components/community/Composer'
 import FeedPostCard from '@/components/community/PostCard'
 import ShareSheet from '@/components/community/ShareSheet'
@@ -104,6 +105,8 @@ export default function CommunityTab({ symbol, pair, chartState = null, onAsk, o
   return (
     <div className="flex flex-col gap-4">
       {/* The feed's composer: a chart idea (this page's chart attaches), a link, a video, or a trade with proof. A signed-out press on Post opens the unified door in place (rule 6) and holds the post. */}
+      {/* The rooms that follow this market, one line (lane SHARE). */}
+      <RoomsStrip symbol={sym} />
       <FeedComposer symbol={sym} chartState={chartState} onPosted={() => void load()} />
 
       <div className="mkc__head">
