@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 import { inTelegramApp } from '../lib/telegram/container'
 import { TG_MINI_APP_MAX_AGE_SEC, initDataHash, verifyInitData } from '../lib/telegram/verify'
 import { additiveRefusal } from './run-ddl'
+import { sameOrigin, sameOriginJson } from '../lib/community/origin'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -67,6 +68,26 @@ export function communityCoordPins(check: Check): void {
   check(
     "invite vs arrival: ?via= on a room page (/g, /g/<slug>) or the Telegram entry (/tg) never sets the site-wide yf_via cookie — a room's invite code credits a member inside the room, not a sharer in wallet_arrivals",
     /if \(pathname === '\/g' \|\| pathname\.startsWith\('\/g\/'\) \|\| pathname === '\/tg'\) return/.test(via),
+  )
+  // ── T15 + S7: the same-origin check ──
+  const h = (o: Record<string, string>) => new Headers(o)
+  check(
+    "T15 origin: a request is ours when Origin names the host it was sent to (or the canonical site); X-Forwarded-Host is ignored (a caller can write it); a cross-site Sec-Fetch-Site is refused; a server-to-server call with neither header passes; a write with a body must also be JSON",
+    sameOrigin(h({ host: 'localhost:4500', origin: 'http://localhost:4500' })) &&
+      sameOrigin(h({ host: 'internal.vercel', origin: 'https://www.pantessa.com' })) &&
+      !sameOrigin(h({ host: 'www.pantessa.com', origin: 'https://evil.example' })) &&
+      !sameOrigin(h({ host: 'www.pantessa.com', 'x-forwarded-host': 'evil.example', origin: 'https://evil.example' })) &&
+      !sameOrigin(h({ host: 'www.pantessa.com', 'sec-fetch-site': 'cross-site' })) &&
+      !sameOrigin(h({ host: 'www.pantessa.com', origin: 'null' })) &&
+      sameOrigin(h({ host: 'www.pantessa.com' })) &&
+      sameOriginJson(h({ host: 'www.pantessa.com', 'content-type': 'application/json; charset=utf-8' })) &&
+      !sameOriginJson(h({ host: 'www.pantessa.com', 'content-type': 'text/plain' })) &&
+      !sameOriginJson(h({ host: 'www.pantessa.com' })),
+  )
+  // ── S21: a wallet session is never a token minted for another audience ──
+  check(
+    'S21 session: the wallet-session verifier refuses any token that carries an audience (the identity cookie has one), before it reads the address claim',
+    /if \(payload\.aud !== undefined\) return null\s*return typeof payload\.address === 'string'/.test(code('lib/auth.ts')),
   )
   // ── S11: the DDL runner's additive fence reads every clause ──
   const refused = [
