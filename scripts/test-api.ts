@@ -368,6 +368,7 @@ import { buildAutoBuy } from '../lib/dca-auto-exec'
 import { ADDRESS_THIS, NoV3PoolError, SWAP_ROUTER_02_ABI, guardUniswapV3Build, type V3GuardExpectations } from '../lib/uniswap-venue'
 import { creatorSplitPins } from './creator-split-pins'
 import { actionGateLivePins, actionGatePins } from './action-gate-pins'
+import { hlHip3LivePins, hlHip3Pins, hlHip3ServedPins, hlHip3SignPins } from './hl-hip3-pins'
 import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
@@ -35444,6 +35445,26 @@ async function main() {
   creatorSplitPins(check)
   actionGatePins(check)
   await actionGateLivePins(check)
+  // Orders on Hyperliquid's builder-deployed (HIP-3) dexes (2026-11-09): "Long $25 of SP500 on Hyperliquid"
+  // builds a guarded order on `xyz:SP500`. Pure pins over the venue's own answers (asset ids, the market
+  // lookup, the order / leverage / move guards, the collateral rule), the typed data round trip, the rules
+  // against the venue read-only, and the served half — the sentence through /api/chat (with the harness
+  // wallet when .env.local carries one: a funded Hyperliquid account gets the order, any other the funding
+  // path) and the chips back on /t/SP500, /t/GOLD and /t/CL.
+  hlHip3Pins(check)
+  await hlHip3SignPins(check)
+  await hlHip3LivePins(check)
+  {
+    const fsMod = await import('node:fs')
+    const pk = (() => {
+      try {
+        return fsMod.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+      } catch {
+        return null
+      }
+    })()
+    await hlHip3ServedPins(check, BASE, pk ? privateKeyToAccount((pk.startsWith('0x') ? pk : `0x${pk}`) as `0x${string}`).address : undefined)
+  }
   // Drawing gestures, the share picture's words, a stamped call (pure).
   chartCallsPins(check)
   battlefieldPins(check)

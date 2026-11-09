@@ -12,7 +12,9 @@
 import { readFileSync } from 'node:fs'
 import nextConfig from '../next.config'
 import { LIVE_VIEWS, liveTabsFor } from '../lib/battle'
-import { chartPairFor } from '../lib/charts'
+import { chartPairFor, isChartOnlyPair } from '../lib/charts'
+import { quickActs } from '../lib/symbol-venues'
+import { canTradeAsk } from '../lib/trade-venue-gate'
 import { pickSheetBlurb } from '../lib/arena'
 import {
   EMPTY_READ,
@@ -42,6 +44,7 @@ import {
   readHeadlineText,
   readInstrument,
   readNoActLine,
+  readOwnPair,
   readPageHref,
   readPointAt,
   readQuoteOf,
@@ -80,12 +83,23 @@ const snap = (quotes: Partial<Record<ReadId, ReadQuote>>, movers: ReadSnapshot['
 export function readPins(check: Check): void {
   // ── The instruments ───────────────────────────────────────────────────
   check(
-    'read: nine instruments in tile order (S&P 500 · Nasdaq 100 · 10-yr yield · VIX · Dollar · Gold · Oil · Bitcoin · Ether); the app quotes five of them (SP500, GOLD, CL, BTC, ETH) and four are look-only index data; six can be a headline subject; only bitcoin and ether take orders on themselves',
+    // RE-PINNED 2026-11-09 (hip3 orders): was "only bitcoin and ether take orders on themselves". The S&P 500, gold and oil are Hyperliquid `xyz:` builder-dex perps
+    // and the order layer builds there now (lib/hl-dex), so the card offers their own Long / Short first — and still names the nearest fund (`near`) beside it.
+    'read: nine instruments in tile order (S&P 500 · Nasdaq 100 · 10-yr yield · VIX · Dollar · Gold · Oil · Bitcoin · Ether); the app quotes five of them (SP500, GOLD, CL, BTC, ETH) and four are look-only index data; six can be a headline subject; the five the app quotes take orders on themselves (the three Hyperliquid builder-dex perps since the order layer builds there), and each of those three still names its nearest fund',
     READ_IDS.join() === 'spx,ndx,us10y,vix,dxy,gold,oil,btc,eth' &&
       READ_APP_SYMBOLS.join() === 'SP500,GOLD,CL,BTC,ETH' &&
       READ_INSTRUMENTS.filter((i) => i.source === 'index').map((i) => i.symbol).join() === '^NDX,^TNX,^VIX,DX-Y.NYB' &&
       READ_INSTRUMENTS.filter((i) => i.subject !== null).map((i) => `${i.id}:${i.subject}`).join() === 'spx:Stocks,us10y:Yields,dxy:The dollar,gold:Gold,oil:Oil,btc:Bitcoin' &&
-      READ_INSTRUMENTS.filter((i) => i.direct).map((i) => i.id).join() === 'btc,eth' &&
+      READ_INSTRUMENTS.filter((i) => i.direct).map((i) => i.id).join() === 'spx,gold,oil,btc,eth' &&
+      READ_INSTRUMENTS.filter((i) => i.direct).map((i) => i.symbol).join() === READ_APP_SYMBOLS.join() &&
+      READ_INSTRUMENTS.filter((i) => i.direct && i.near.length > 0).map((i) => `${i.id}:${i.near[0].symbol}`).join() === 'spx:SPY,gold:GLD,oil:USO' &&
+      // The three state their own market, so the chips are composed from static facts: the browser on `/` holds no
+      // live perp table (the server does), and chips the server rendered from it vanished at hydration.
+      READ_INSTRUMENTS.filter((i) => i.coin).map((i) => `${i.id}:${i.coin}`).join() === 'spx:xyz:SP500,gold:xyz:GOLD,oil:xyz:CL' &&
+      readOwnPair(readInstrument('spx'))?.pair === 'xyz:SP500' && readOwnPair(readInstrument('spx'))?.source === 'hyperliquid' && readOwnPair(readInstrument('btc')) === null && readOwnPair(readInstrument('vix')) === null &&
+      !isChartOnlyPair(readOwnPair(readInstrument('gold'))) &&
+      quickActs('SP500', readOwnPair(readInstrument('spx'))!).map((a) => a.ask).join('|') === '2x Long $25 of SP500 on Hyperliquid|2x Short $25 of SP500 on Hyperliquid' &&
+      quickActs('CL', readOwnPair(readInstrument('oil'))!).every((a) => canTradeAsk(a.ask, {})) &&
       READ_INSTRUMENTS.every((i) => i.typical > 0 && i.label.length > 0 && i.name.length > 0) &&
       READ_DEFAULT_ID === 'spx' && parseReadId('gold') === 'gold' && parseReadId('nope') === null && parseReadId(null) === null,
   )
@@ -245,7 +259,11 @@ export function readPins(check: Check): void {
     !/WebSocket|EventSource|connectTape|openDuneTape|openHlTape/.test(card) && !/fetch\(['"`]\/api\/chat/.test(card) &&
       /if \(document\.visibilityState !== 'visible'\) return/.test(card) && /fetch\('\/api\/markets\/read', \{ cache: 'no-store' \}\)/.test(card) &&
       /canTradeAsk\(a\.ask, tradable\)/.test(card) && /useConnectToAct\(\{ run, redirectFor: promptHref \}\)/.test(card) && /openDoor\(ask, \{ send: true, mcps: askAppSlugs\(ask\) \}\)/.test(card) &&
-      /pair && !isHip3Pair\(pair\) \? quickActs\(n\.symbol, pair\)\.filter\(\(a\) => canTradeAsk\(a\.ask, tradable\)\) : \[\]/.test(card) &&
+      // RE-PINNED 2026-11-09 (hip3 orders): the bar is lib/charts isChartOnlyPair (a builder dex the order layer does NOT build on), and an instrument that takes
+      // orders on itself is offered FIRST with every one of its chips, the nearest listed thing after it with one.
+      /pair && !isChartOnlyPair\(pair\) \? quickActs\(n\.symbol, pair\)\.filter\(\(a\) => canTradeAsk\(a\.ask, tradable\)\) : \[\]/.test(card) &&
+      /const targets = inst\.direct \? \[\{ symbol: inst\.symbol, as: '' \}, \.\.\.inst\.near\] : inst\.near/.test(card) && /for \(const a of own \? acts : acts\.slice\(0, 1\)\)/.test(card) &&
+      /const stated = own \? readOwnPair\(inst\) : null/.test(card) && /const pair = stated \? \(hasQuote \? stated : null\) : chartPairFor\(n\.symbol\)/.test(card) && /const hasQuote = !!snap\.quotes\[inst\.id\]/.test(card) &&
       /<SpineLink /.test(card) && !/<Link[\s>]/.test(card) && /\{door\}/.test(card),
   )
   check(
