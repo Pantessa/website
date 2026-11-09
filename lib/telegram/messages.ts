@@ -55,7 +55,7 @@ export function escapeHtml(s: string): string {
 export function tidy(raw: unknown, max: number): string {
   if (typeof raw !== 'string') return ''
   const s = raw
-    .replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩﻿]/g, ' ')
+    .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
   return s.length > max ? `${s.slice(0, Math.max(1, max - 1)).trimEnd()}…` : s

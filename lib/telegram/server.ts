@@ -1,9 +1,8 @@
 // THE BOT, WIRED — the real dependencies behind lib/telegram/handler (lane
-// TELEGRAM, 2026-11-09). Server-only: prisma, the store, the quote feeds.
+// TELEGRAM, 2026-11-09). Server-only: the store, the quote feeds.
 // The routes import from here; the pins import the pure modules and hand
 // the handler fakes.
 
-import prisma from '@/lib/db'
 import { chartPairFor, resolveChartPair } from '@/lib/charts'
 import { readQuotes } from '@/lib/quotes'
 import { SITE_URL } from '@/lib/site-url'
@@ -53,9 +52,8 @@ export function botDeps(opts: { isInternal: boolean; cfg?: TelegramConfig; call?
   return { links, store, call: opts.call === undefined ? telegramCaller(cfg.token) : opts.call, quote: quoteLine, market, actorFor: actorForTelegramUser, isInternal: opts.isInternal }
 }
 
-/** A room's linked Telegram chats: ids for the server's own use (unlinking),
- *  titles for the page. The ids never leave the server. */
-export async function telegramChatsOf(slug: string): Promise<{ externalId: string; title: string | null }[]> {
-  const rows = await prisma.communityChannel.findMany({ where: { communitySlug: slug, platform: 'telegram' }, select: { externalId: true, title: true }, orderBy: { createdAt: 'asc' } })
-  return rows
+/** A room's linked Telegram chat ids, for the server's own use (unlinking).
+ *  They never leave the server: a page gets titles only. */
+export async function telegramChatsOf(slug: string): Promise<{ externalId: string }[]> {
+  return (await store.channelsOf(slug)).filter((c) => c.platform === 'telegram').map((c) => ({ externalId: c.externalId }))
 }
