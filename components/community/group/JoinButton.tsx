@@ -4,8 +4,9 @@
 //   · a proven identity (a wallet session, or a Telegram / Discord identity
 //     the provider signed) joins on the tap, shown at once and corrected if
 //     the server says no
-//   · a stranger gets a small chooser: Telegram (once its lane's bot is
-//     live) or the unified sign-in door. The join is HELD in this tab
+//   · a stranger gets a small chooser: Telegram (the Telegram lane's own
+//     door, through the seam in join-lanes.tsx, once it is in the tree and
+//     a bot is configured) or the unified sign-in door. The join is HELD in this tab
 //     (room-logic heldJoinRecord, 30 minutes) and runs by itself the moment
 //     an identity lands, whichever lane brought it: the email lane in place,
 //     the Google lane after its redirect, Telegram on the way back
@@ -23,6 +24,7 @@ import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import type { MyMembership } from '@/lib/community/spec'
 import { signInLandingHere, useSession } from '@/lib/session'
+import { TelegramJoin } from './join-lanes'
 import { HELD_JOIN_KEY, VIA_KEY, heldJoinRecord, readHeldJoin, readVia, telegramJoinHref, type TelegramDoor } from './room-logic'
 import { useRoomStore, useStanding } from './room-store'
 import './group.css'
@@ -35,8 +37,9 @@ export interface JoinButtonProps {
   /** Called with the new state after a join or a leave. */
   onChange?: (member: boolean) => void
   size?: 'sm' | 'md'
-  /** Offer "Continue with Telegram" in the chooser. Off until the Telegram
-   *  lane's bot is configured; needs `telegram` too. */
+  /** Offer a plain "Continue with Telegram" link in the chooser. Only used
+   *  while the Telegram lane's own door (join-lanes.tsx) is not in the tree;
+   *  off by default, needs `telegram` too. */
   telegramReady?: boolean
   /** The bot that joins people from Telegram (the room page reads it from env). */
   telegram?: TelegramDoor | null
@@ -144,6 +147,15 @@ export default function JoinButton({ slug, name, via = null, onChange, size = 'm
     }
     store.set(HELD_JOIN_KEY, heldJoinRecord(slug, code, Date.now()))
     setChooser({ via: code })
+  }
+
+  // The Telegram lane's door signed this tab in and joined the room itself:
+  // read who is acting again, drop the held join, tell the page.
+  const loadIdentity = useRoomStore((s) => s.loadIdentity)
+  const onTelegram = () => {
+    store.set(HELD_JOIN_KEY, null)
+    setChooser(null)
+    void loadIdentity(sessionAddress, true).then(() => onChangeRef.current?.(true))
   }
 
   // Closing the chooser is a no: the held join goes with it.
@@ -257,12 +269,16 @@ export default function JoinButton({ slug, name, via = null, onChange, size = 'm
               <h2 className="grp-choose__title">Join {name}</h2>
               <p className="grp-choose__sub">Sign in once and you are in. Joining is free and never moves money.</p>
               <div className="grp-choose__lanes">
-                {telegramReady && telegram && (
+                {TelegramJoin ? (
+                  <div className="grp-choose__seat" data-lane="telegram">
+                    <TelegramJoin slug={slug} via={chooser.via} onSignedIn={onTelegram} />
+                  </div>
+                ) : telegramReady && telegram ? (
                   <a className="grp-choose__lane" href={telegramJoinHref(telegram, slug, chooser.via)} target="_blank" rel="noopener noreferrer" data-lane="telegram" data-journey="Room: join with Telegram">
                     <Send width={16} height={16} aria-hidden />
                     Continue with Telegram
                   </a>
-                )}
+                ) : null}
                 {standing.walletWaiting ? (
                   <button type="button" className="grp-choose__lane is-lead" disabled={signingIn} onClick={() => void signIn(signInLandingHere())} data-lane="wallet-session" data-journey="Room: join, sign in with connected wallet">
                     {signingIn ? 'Check your wallet…' : `Sign in as ${short(standing.walletWaiting)}`}

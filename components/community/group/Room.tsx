@@ -47,6 +47,8 @@ interface RoomState {
   boards: Partial<Record<BoardSort, PublicMember[] | 'error'>>
   loadBoard: (sort: BoardSort, force?: boolean) => void
   refresh: () => void
+  /** A join or a leave the server just confirmed: the head count moves now, the re-read follows. */
+  seatChanged: (member: boolean) => void
   /** Bumped when a post lands, so the feed re-reads. */
   feedKey: number
   bumpFeed: () => void
@@ -84,6 +86,7 @@ export function RoomProvider({
   slug,
   initial,
   via: viaFromServer,
+  invitedBy: invitedByFromServer = null,
   telegram,
   children,
 }: {
@@ -92,6 +95,8 @@ export function RoomProvider({
   initial: PublicCommunity | null
   /** The `via` the request carried, already shape-checked by the server. */
   via: string | null
+  /** The inviter's label for that code, as the server read it. */
+  invitedBy?: string | null
   telegram: TelegramDoor | null
   children: ReactNode
 }) {
@@ -105,7 +110,7 @@ export function RoomProvider({
   const [room, setRoom] = useState<PublicCommunity | null>(initial)
   const [state, setState] = useState<RoomState['state']>(initial ? 'ok' : 'loading')
   const [via, setVia] = useState<string | null>(viaFromServer)
-  const [invitedBy, setInvitedBy] = useState<string | null>(null)
+  const [invitedBy, setInvitedBy] = useState<string | null>(invitedByFromServer)
   const [boards, setBoards] = useState<RoomState['boards']>({})
   const [feedKey, setFeedKey] = useState(0)
   const [focused, setFocused] = useState<string | null>(null)
@@ -153,7 +158,7 @@ export function RoomProvider({
           if (!initial) setState('missing')
           return
         }
-        const d = r.ok ? ((await r.json().catch(() => null)) as { community?: PublicCommunity; me?: MyMembership | null; invitedBy?: { label?: string } | string | null } | null) : null
+        const d = r.ok ? ((await r.json().catch(() => null)) as { community?: PublicCommunity; me?: MyMembership | null; invitedBy?: string | null } | null) : null
         if (dead) return
         if (!d?.community) {
           if (!initial) setState('error')
@@ -162,8 +167,9 @@ export function RoomProvider({
         setRoom(d.community)
         setState('ok')
         if (settled) setSeat(slug, d.me ?? null, sessionAddress)
-        const by = typeof d.invitedBy === 'string' ? d.invitedBy : d.invitedBy?.label
-        setInvitedBy(typeof by === 'string' && by.trim() ? by.trim().slice(0, 64) : null)
+        // Only a read that carried the code can name the inviter; one that
+        // did not leaves the server's answer standing.
+        if (q) setInvitedBy(typeof d.invitedBy === 'string' && d.invitedBy.trim() ? d.invitedBy.trim().slice(0, 64) : null)
       })
       .catch(() => {
         if (!dead && !initial) setState('error')
@@ -174,6 +180,10 @@ export function RoomProvider({
   }, [slug, initial, settled, sessionAddress, setSeat, tick])
 
   const refresh = useCallback(() => setTick((t) => t + 1), [])
+  const seatChanged = useCallback((member: boolean) => {
+    setRoom((r) => (r ? { ...r, members: Math.max(0, r.members + (member ? 1 : -1)) } : r))
+    setTick((t) => t + 1)
+  }, [])
 
   // Back from another tab or app (the owner just added the bot to a group):
   // read the room again, at most every ten seconds.
@@ -244,22 +254,24 @@ export function RoomProvider({
       boards,
       loadBoard,
       refresh,
+      seatChanged,
       feedKey,
       bumpFeed: () => setFeedKey((k) => k + 1),
       focus,
       focused,
     }),
-    [slug, room, state, me, standing.member, via, invitedBy, telegram, boards, loadBoard, refresh, feedKey, focus, focused],
+    [slug, room, state, me, standing.member, via, invitedBy, telegram, boards, loadBoard, refresh, seatChanged, feedKey, focus, focused],
   )
   return <RoomContext.Provider value={value}>{children}</RoomContext.Provider>
 }
 
 // ── the main column ────────────────────────────────────────────────────────
 
-const since = (ms: number) => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+/** The API stamps rooms in unix seconds (as posts are); a millisecond stamp reads the same. */
+const since = (at: number) => new Date(at < 1e12 ? at * 1000 : at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
 export function RoomMain() {
-  const { slug, room, state, me, member, via, invitedBy, telegram, refresh, feedKey, bumpFeed } = useRoom()
+  const { slug, room, state, me, member, via, invitedBy, telegram, refresh, seatChanged, feedKey, bumpFeed } = useRoom()
   // The absolute link is built after mount: the origin is the browser's.
   const [origin, setOrigin] = useState('')
   useEffect(() => setOrigin(window.location.origin), [])
@@ -298,7 +310,6 @@ export function RoomMain() {
   const telegramChat = room.channels.find((c) => c.platform === 'telegram')
   const discordChat = room.channels.find((c) => c.platform === 'discord')
   const shareUrl = member && me ? inviteUrl(slug, me.invite, origin) : `${origin}${communityPath(slug)}`
-  const onChange = () => refresh()
 
   return (
     <div className="grp-room" data-room={slug} data-room-state="ok">
@@ -324,7 +335,7 @@ export function RoomMain() {
           <p className="grp-head__about">{room.about || ROOM_DEFAULT_ABOUT}</p>
         </div>
         <div className="grp-head__act">
-          <JoinButton slug={slug} name={room.name} via={via} onChange={onChange} telegram={telegram} telegramReady={!!telegram} />
+          <JoinButton slug={slug} name={room.name} via={via} onChange={seatChanged} telegram={telegram} telegramReady={!!telegram} />
           <span className="grp-head__share">
             <ShareSheet url={shareUrl} text={inviteLine(room.name)} what={member ? 'invite' : 'room'} label={member ? 'Share your invite' : 'Share'} />
           </span>
@@ -394,7 +405,7 @@ export function RoomMain() {
             <span>
               <strong>Join to post.</strong> Members share chart ideas, links, videos and trades with proof.
             </span>
-            <JoinButton slug={slug} name={room.name} via={via} onChange={onChange} size="sm" telegram={telegram} telegramReady={!!telegram} />
+            <JoinButton slug={slug} name={room.name} via={via} onChange={seatChanged} size="sm" telegram={telegram} telegramReady={!!telegram} />
           </div>
         )}
         <FeedList community={slug} refreshKey={feedKey} emptyLine={`No posts in ${room.name} yet. ${member ? 'Post the first idea.' : 'Join and post the first idea.'}`} />

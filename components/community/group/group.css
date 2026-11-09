@@ -105,6 +105,7 @@ html[data-theme='light'] .grp-choose__veil { background: rgba(16, 21, 18, .38); 
 .grp-choose__lane.is-lead { background: var(--accent); border-color: transparent; color: var(--grp-ink); }
 .grp-choose__lane.is-lead:hover:not(:disabled) { background: var(--accent); filter: brightness(1.06); }
 .grp-choose__lane:disabled { opacity: 0.6; cursor: default; }
+.grp-choose__seat { display: grid; gap: 6px; min-width: 0; }
 .grp-choose__note { font-size: 11.5px; line-height: 1.45; color: var(--muted-2); margin: 12px 0 0; text-align: center; }
 
 /* ── Cards on the room: the invite, the owner's checklist ─────────────── */
@@ -162,6 +163,7 @@ html[data-theme='light'] .grp-choose__veil { background: rgba(16, 21, 18, .38); 
 .grp-chan__item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grp-chan__item svg { color: var(--muted-2); flex-shrink: 0; }
 .grp-chan__seat { border: 1px solid var(--line); border-radius: 12px; background: var(--surf-1); padding: 12px; display: grid; gap: 8px; min-width: 0; transition: border-color .2s ease, box-shadow .2s ease; }
+.grp-chan__seat--bare { border: 0; background: transparent; padding: 0; border-radius: 14px; }
 .grp-chan__k { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 13px; font-weight: 600; color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grp-chan__k svg { color: var(--muted-2); flex-shrink: 0; }
 .grp-chan__wait { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted-2); }
@@ -235,6 +237,7 @@ html[data-theme='light'] .grp-choose__veil { background: rgba(16, 21, 18, .38); 
   .grp-check__x { width: 44px; height: 44px; margin: -10px -12px -10px 0; }
   .grp-choose__x { width: 44px; height: 44px; top: 6px; right: 6px; }
   .grp-link { display: inline-flex; align-items: center; min-height: 44px; }
+  .grp-head__share > button:not([class]) { min-height: 44px; }
 }
 @media (max-width: 639px) {
   .grp-head { grid-template-columns: minmax(0, 1fr); grid-template-areas: "id" "act" "stats" "tags"; gap: 12px; }

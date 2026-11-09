@@ -7,6 +7,7 @@ import { GROUP_SURFACE } from '@/components/community/group/GroupFrame'
 import { RoomMain, RoomProvider, RoomSide } from '@/components/community/group/Room'
 import { cleanVia, roomMeta, telegramDoor } from '@/components/community/group/room-logic'
 import { communityPath } from '@/lib/community/spec'
+import { inviterLabel } from '@/lib/community/store'
 import { readRoom } from './room-read'
 
 // /g/<slug> — a ROOM (squad community, lane GROUP). Public, in the markets
@@ -45,10 +46,13 @@ export default async function RoomPage({ params, searchParams }: Props) {
   // The bot that joins people from Telegram, when the Telegram lane's env
   // names one. Absent (today): the chooser offers the sign-in door alone.
   const telegram = telegramDoor(process.env.TELEGRAM_BOT_NAME, process.env.TELEGRAM_APP_NAME)
+  // Who the invite belongs to, when the code is a real invite of this room.
+  const via = cleanVia(query.via)
+  const invitedBy = via && room ? await inviterLabel(slug, via).catch(() => null) : null
 
   return (
     <MarketsShell surface={GROUP_SURFACE}>
-      <RoomProvider slug={slug} initial={room} via={cleanVia(query.via)} telegram={telegram}>
+      <RoomProvider slug={slug} initial={room} via={via} invitedBy={invitedBy} telegram={telegram}>
         <main className="mkt-frame__main grp" data-group-page="room">
           <RoomMain />
         </main>

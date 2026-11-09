@@ -120,7 +120,7 @@ export function communityGroupPins(check: Check): void {
   check('group door: the held join runs once an identity is proven, for this room only, and is cleared first', /if \(!standing\.ready \|\| !standing\.proven\) return/.test(join_) && /held\.slug !== slug/.test(join_) && /store\.set\(HELD_JOIN_KEY, null\)\s*\n\s*setChooser\(null\)\s*\n\s*if \(standing\.member \|\| autoRan\.current\) return/.test(join_))
   check('group door: the join request carries the invite code and nothing else (who is acting is the server\'s read)', /body: JSON\.stringify\(code \? \{ via: code \} : \{\}\)/.test(join_) && !/wallet|address/i.test((join_.match(/method: 'POST'[\s\S]{0,260}/) ?? [''])[0]))
   check('group door: leaving is behind the Joined menu, never the first tap', /aria-haspopup="menu"/.test(join_) && /role="menuitem"[^>]*onClick=\{leave\}/.test(join_) && !/is-member[^>]*onClick=\{leave\}/.test(join_))
-  check('group door: Telegram is offered only when the page was handed a bot AND telegramReady (default off)', /telegramReady = false/.test(join_) && /\{telegramReady && telegram && \(/.test(join_))
+  check('group door: Telegram is the Telegram lane\'s own door through the seam (it hides itself with no bot); the plain link is the stand-in, only with a bot AND telegramReady (default off)', /telegramReady = false/.test(join_) && /\{TelegramJoin \? \(/.test(join_) && /<TelegramJoin slug=\{slug\} via=\{chooser\.via\} onSignedIn=\{onTelegram\} \/>/.test(join_) && /\) : telegramReady && telegram \? \(/.test(join_))
   const newForm = groupSrc['NewRoomForm.tsx'] ?? ''
   check('group new: a signed-out visitor keeps the whole form; the send becomes the unified door and the draft stays in this tab', /<CreateAccountButton [^>]*label="Sign in to start the room"/.test(newForm) && /sessionStorage\.setItem\(ROOM_DRAFT_KEY/.test(newForm) && /if \(problem \|\| !authed \|\| sending\) return/.test(newForm))
 
@@ -185,10 +185,11 @@ export function communityGroupPins(check: Check): void {
 
   // ── the seam to the bot lanes ───────────────────────────────────────────
   const seam = read('components', 'community', 'group', 'channel-panels.tsx')
-  for (const [lane, file, name] of [['telegram', 'TelegramPanel.tsx', 'TelegramPanel'], ['discord', 'DiscordPanel.tsx', 'DiscordPanel']] as const) {
+  const joinSeam = read('components', 'community', 'group', 'join-lanes.tsx')
+  for (const [lane, file, name, src] of [['telegram', 'TelegramPanel.tsx', 'TelegramPanel', seam], ['discord', 'DiscordPanel.tsx', 'DiscordPanel', seam], ['telegram', 'TelegramJoin.tsx', 'TelegramJoin', joinSeam]] as const) {
     const exists = existsSync(join(ROOT, 'components', 'community', lane, file))
-    const imported = new RegExp(`from '@/components/community/${lane}/${name}'`).test(code(seam))
-    const empty = new RegExp(`export const ${name}: PanelSeat = null`).test(code(seam))
+    const imported = new RegExp(`from '@/components/community/${lane}/${name}'`).test(code(src))
+    const empty = new RegExp(`export const ${name}: \\w+ = null`).test(code(src))
     check(`group seam: ${name} is ${exists ? 'WIRED now that the ' + lane + " lane's panel exists" : 'an empty seat while the ' + lane + " lane's panel is not in this tree (no import of a missing module)"}`, exists ? imported && !empty : !imported && empty)
   }
 
@@ -286,7 +287,11 @@ export async function communityGroupPinsServed(check: Check, base: string): Prom
     const page = await get(`/g/${slug}?via=${code_}`)
     const html = flat(await page.text())
     check('group served: the room page carries the name, the member count and the join in its HTML', page.status === 200 && html.includes(name) && /data-room-members[^>]*>1</.test(html) && /data-join-state="join"/.test(html), `status ${page.status}`)
-    check('group served: opened with ?via= it says the visitor was invited', /data-invited/.test(html) && html.includes('You were invited'))
+    const byLine = (html.match(/data-invited[^>]*>([\s\S]*?)<\/p>/) ?? [])[1]?.replace(/<[^>]+>/g, '') ?? ''
+    check('group served: opened with ?via= it says WHO invited the visitor (the inviter\'s label, server-rendered)', /^You were invited by .+\. Joining takes one tap\.$/.test(byLine.trim()), byLine)
+    const bogus = flat(await (await get(`/g/${slug}?via=zzzzzzzz`)).text())
+    const bogusLine = (bogus.match(/data-invited[^>]*>([\s\S]*?)<\/p>/) ?? [])[1]?.replace(/<[^>]+>/g, '') ?? ''
+    check('group served: a code that is not an invite of this room names nobody ("You were invited to <room>"), and a bare visit shows no invite line', bogusLine.trim() === `You were invited to ${name}. Joining takes one tap.` && !/data-invited/.test(flat(await (await get(`/g/${slug}`)).text())), bogusLine)
     const ogUrl = (html.match(/<meta property="og:image" content="([^"]+)"/) ?? [])[1] ?? ''
     check('group served: the page names its own og:image and twitter:image (the room card), titled "<Name> on Pantessa", never indexed for a t- room', ogUrl.includes(`/g/${slug}/opengraph-image`) && /<meta name="twitter:image" content="[^"]*\/g\/[^"]*twitter-image/.test(html) && html.includes(`<title>${name} on Pantessa</title>`) && /<meta name="robots" content="noindex/.test(html), ogUrl)
     const ogRes = await get(`/g/${slug}/opengraph-image`)
@@ -329,6 +334,18 @@ if (process.argv[1]?.endsWith('community-group-pins.ts')) {
     if (!ok) failed++
   }
   const served = process.argv.includes('--served')
+  // `--cleanup`: delete the lane's test rooms and nothing else (the drive calls it).
+  if (process.argv.includes('--cleanup')) {
+    cleanup()
+      .then((n) => {
+        console.log(n === -1 ? 'cleanup: DATABASE_URL is not set, nothing deleted' : `cleanup: ${n} t-group-* room(s) deleted`)
+        process.exit(n === -1 ? 1 : 0)
+      })
+      .catch((e) => {
+        console.error(e)
+        process.exit(1)
+      })
+  } else
   Promise.resolve()
     .then(() => communityGroupPins(check))
     .then(() => (served ? communityGroupPinsServed(check, process.env.BASE ?? 'http://localhost:3000') : undefined))
