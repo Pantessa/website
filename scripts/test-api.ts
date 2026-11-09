@@ -24455,7 +24455,9 @@ async function main() {
           (spineS.match(/if \(!isPublicAppPath\(href\) && openDoorFor\(href\)\) return/g) ?? []).length === 1 &&
           (spineS.match(/if \(!isPublicAppPath\(action\.href\) && openDoorFor\(action\.href\)\) return/g) ?? []).length === 1 &&
           /\{doorTo && <span hidden data-spine-door-to=\{doorTo\} \/>\}/.test(spineS) &&
-          (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
+          // RE-PINNED 2026-11-09 (logo-home): 5 → 4. The brand seat links to
+          // the public `/` now, so it is a plain Link, not a SpineLink.
+          (spineS.match(/<SpineLink\b/g) ?? []).length === 4 &&
           // MORE's Settings: the menu unmounts as it closes, so its door is the spine's
           /if \(plain && openDoorFor\('\/dashboard'\)\) e\.preventDefault\(\)/.test(spineS) &&
           /<CreateAccountModal onClose=\{\(\) => setDoorTo\(null\)\} redirectTo=\{doorTo\} \/>/.test(spineS) &&
