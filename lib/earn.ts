@@ -257,12 +257,16 @@ export function filterEarnRows(rows: readonly EarnRow[], cls: EarnClass | 'all',
   return rows.filter((r) => (cls === 'all' || earnClassOf(r.asset) === cls) && (venue === 'all' || r.venue === venue))
 }
 
-/** The yield ladder — one bar per asset (its best row), familiar assets
- *  first then by rate, top N — the same order the board opens on. */
+/** The yield ladder — one bar per asset (its best row). WHICH assets get a
+ *  bar is familiar-first (the board's opening order), top N; the bars are
+ *  then DRAWN highest rate first, so the chart reads as a ranking. Drawn in
+ *  the familiar-first order, the bars shrank to ETH and jumped back to full
+ *  width for the long-tail stables, and read like a list of holdings. */
 /** A best rate under this isn't a yield worth a bar (WBTC 0.00% on Aave). */
 export const LADDER_MIN_APY_PCT = 0.1
 export function yieldLadder(rows: readonly EarnRow[], n = 8): EarnRow[] {
-  return featuredFirst(rankEarnRows(rows).filter((r) => r.best && r.apyPct != null && r.apyPct >= LADDER_MIN_APY_PCT)).slice(0, n)
+  const picked = featuredFirst(rankEarnRows(rows).filter((r) => r.best && r.apyPct != null && r.apyPct >= LADDER_MIN_APY_PCT)).slice(0, n)
+  return picked.sort((a, b) => (b.apyPct ?? 0) - (a.apyPct ?? 0) || a.asset.localeCompare(b.asset))
 }
 
 /** Wire → rows (the client re-attaches `askFor` from the template). */

@@ -24262,7 +24262,7 @@ async function main() {
       // signed-out visitor home, except on a public app page (the markets
       // surface), where looking needs no wallet.
       check(
-        'spine: no NEW seat in either posture (the brand seat opens a fresh /chat; CHATS leads with New Chat), and the spine sends a settled signed-out visitor home with replace, except on a public app page',
+        'spine: no NEW seat in either posture (CHATS leads with New Chat), and the spine sends a settled signed-out visitor home with replace, except on a public app page',
         !/>NEW</.test(spineSrc) && !/Start a new chat/.test(spineSrc) &&
           !chatHtml.includes('Start a new chat') && !mkHtml.includes('Start a new chat') &&
           /const \{ walletAddress, signedOut, connectAndSignIn \} = useSession\(\)/.test(spineSrc) &&
@@ -24275,11 +24275,26 @@ async function main() {
       )
       // 2026-10-06, Nate: a stranger on /t/<sym> clicked the logo to go home
       // and got the sign-in door — the brand seat pointed at /chat. Signed out,
-      // the logo goes to the public home; signed in, it still opens a chat.
-      check(
-        'spine: the brand seat (logo) sends a signed-out visitor home to the public `/`, never into the sign-in door; signed in it opens a fresh /chat',
-        /href=\{signedOut \? '\/' : '\/chat'\}/.test(spineSrc) && (await import('../lib/app-entry')).isPublicAppPath('/'),
-      )
+      // the logo goes to the public home.
+      // RE-PINNED 2026-11-09 (logo-home): signed in, the logo goes home too
+      // (Nate: "it should go back to the main market home page, not the apps
+      // page"). Every logo that links somewhere links to `/`, never /chat or
+      // /dashboard: the spine's brand seat, the brochure nav, the docs rail.
+      {
+        const navSrcL = readFileSync('components/Navigation.tsx', 'utf8')
+        const shellSrcL = readFileSync('components/AppShell.tsx', 'utf8')
+        const brand = spineSrc.match(/\{\/\* Brand seat[\s\S]*?\*\/\}\s*(<[\s\S]*?<YeetfulMark size=\{25\} \/>)/)?.[1] ?? ''
+        check(
+          'logo goes home: the spine\'s brand seat, the brochure nav\'s logo and the docs rail\'s mark all link to the market home `/` signed in or out (never /chat, which opens on APPS, nor /dashboard); `/` is public, so the logo is never a sign-in wall',
+          /<Link\s+href="\/"\s+title="Pantessa — home"\s+aria-label="Pantessa home"/.test(brand) &&
+            !/\/chat|signedOut|SpineLink|onClick/.test(brand) &&
+            /<Link className="logo" href="\/">/.test(navSrcL) && !/className="logo" href=\{/.test(navSrcL) &&
+            /<Link href="\/" className="apprail__home" aria-label="Pantessa home">/.test(shellSrcL) &&
+            /<Link href="\/" className="apprail__homeicon" aria-label="Pantessa home">/.test(shellSrcL) &&
+            !/href="\/dashboard" className="apprail__home/.test(shellSrcL) &&
+            (await import('../lib/app-entry')).isPublicAppPath('/'),
+        )
+      }
       check(
         "SpineLink: a plain click by a settled signed-out visitor opens the sign-in door aimed at the link's own target; modified clicks, everyone else, and every link to a public app page (the markets surface) get the plain link",
         /if \(e\.defaultPrevented \|\| !signedOut \|\| isPublicAppPath\(href\)\) return/.test(spineLinkS) &&
@@ -24441,7 +24456,9 @@ async function main() {
           (spineS.match(/if \(!isPublicAppPath\(href\) && openDoorFor\(href\)\) return/g) ?? []).length === 1 &&
           (spineS.match(/if \(!isPublicAppPath\(action\.href\) && openDoorFor\(action\.href\)\) return/g) ?? []).length === 1 &&
           /\{doorTo && <span hidden data-spine-door-to=\{doorTo\} \/>\}/.test(spineS) &&
-          (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
+          // RE-PINNED 2026-11-09 (logo-home): 5 → 4. The brand seat links to
+          // the public `/` now, so it is a plain Link, not a SpineLink.
+          (spineS.match(/<SpineLink\b/g) ?? []).length === 4 &&
           // MORE's Settings: the menu unmounts as it closes, so its door is the spine's
           /if \(plain && openDoorFor\('\/dashboard'\)\) e\.preventDefault\(\)/.test(spineS) &&
           /<CreateAccountModal onClose=\{\(\) => setDoorTo\(null\)\} redirectTo=\{doorTo\} \/>/.test(spineS) &&
@@ -28506,6 +28523,17 @@ async function main() {
       fam[0].asset === 'USDC' && fam[fam.length - 1].asset === 'MXNB' && earnSort([...ranked, exotic], 'apy', 'desc')[0].asset === 'MXNB' && earnSort([...ranked, exotic], 'featured', 'desc')[0].asset === 'USDC',
       fam.map((r) => `${r.asset}:${r.apyPct}`).join(' '),
     )
+    // The ladder (2026-11-09, Nate: "is it my portfolio? what are the bars?"):
+    // WHICH assets get a bar stays familiar-first, but the bars are DRAWN
+    // highest rate first, so they read as a ranking, never a zig-zag.
+    const ladder2 = earnLadder([...ranked, exotic], 2)
+    const ladder3 = earnLadder([...ranked, exotic], 3)
+    check(
+      'earn (ladder): the bars are picked familiar-first (at 2 slots the 17.6% peso coin is left out for USDC + ETH) and drawn highest rate first (at 3 slots: MXNB 17.6 · USDC 11.38 · ETH 2.27)',
+      ladder2.map((r) => r.asset).join(',') === 'USDC,ETH' && ladder3.map((r) => r.asset).join(',') === 'MXNB,USDC,ETH' &&
+        ladder3.every((r, i, a) => i === 0 || (a[i - 1].apyPct ?? 0) >= (r.apyPct ?? 0)),
+      ladder3.map((r) => `${r.asset}:${r.apyPct}`).join(' '),
+    )
     const wire = earnToWire(ranked, 2500)
     const back = earnFromWire(wire)
     check(
@@ -28539,6 +28567,15 @@ async function main() {
     check(
       'earn (SSR): /markets carries the Earn tab in the board strip and the EarnBoard seat (section#earn) in the server render, after the three market boards',
       /data-tab="earn"/.test(earnHtml) && /data-seat="EarnBoard"/.test(earnHtml) && /id="earn"/.test(earnHtml) && earnHtml.indexOf('id="perps"') < earnHtml.indexOf('id="earn"'),
+    )
+    // Not a portfolio (2026-11-09): the served blurb says these are the
+    // venues' rates and not the visitor's holdings; the ladder's head says
+    // what a bar is and its order; the TVL column says "Deposited".
+    const earnSrc = readFileSync(pathJoin(process.cwd(), 'components/markets/earn/EarnBoard.tsx'), 'utf8')
+    check(
+      'earn (copy): the served blurb says "not your holdings" (the old "Where your assets earn" is gone), the ladder head reads "BEST RATE PER ASSET · yearly, highest first", and the TVL column is "Deposited"',
+      /not your holdings/.test(earnHtml) && !/Where your assets earn/.test(earnHtml) &&
+        earnSrc.includes('BEST RATE PER ASSET · yearly, highest first') && earnSrc.includes("['tvl', 'Deposited']") && !earnSrc.includes('Earning there'),
     )
     // Map: unquoted cells draw small, still listed; wide screens open on the map.
     const secs = earnSections()

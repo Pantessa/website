@@ -8,8 +8,8 @@
 //    height layout, no top-nav gap) and html[data-rail-collapsed], and renders
 //    the floating reopen toggle when the rail is collapsed.
 //  • AppRailHeader — the ChatGPT-style header pinned to the TOP of a collapsible
-//    rail (dashboard/docs): a collapse toggle + the yeetful mark linking home to
-//    the dashboard.
+//    rail (dashboard/docs): a collapse toggle + the mark linking home to the
+//    market home `/` (2026-11-09: the logo always goes home, never /dashboard).
 //
 // Collapse applies to dashboard + docs (their rails share useAppSidebar). Chat
 // manages its own conversation sidebar, so it only gets the top-nav removal and
@@ -55,7 +55,7 @@ export function AppRailHeader() {
       <button className="apprail__toggle" onClick={toggle} aria-label="Collapse sidebar" title="Collapse sidebar">
         <PanelLeftClose width={17} height={17} />
       </button>
-      <Link href="/dashboard" className="apprail__home" aria-label="Dashboard home">
+      <Link href="/" className="apprail__home" aria-label="Pantessa home">
         <YeetfulMark size={25} />
         <span className="apprail__word">pantessa</span>
       </Link>
@@ -71,7 +71,7 @@ function AppRailReopen() {
       <button className="apprail__toggle" onClick={toggle} aria-label="Open sidebar" title="Open sidebar">
         <PanelLeft width={17} height={17} />
       </button>
-      <Link href="/dashboard" className="apprail__homeicon" aria-label="Dashboard home">
+      <Link href="/" className="apprail__homeicon" aria-label="Pantessa home">
         <YeetfulMark size={25} />
       </Link>
     </div>
