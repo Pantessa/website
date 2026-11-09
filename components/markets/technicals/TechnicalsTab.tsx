@@ -333,7 +333,7 @@ export default function TechnicalsTab({
           its tape, not a TVL curve. Independent of the technicals read, so a
           short tape still gets its fundamentals. */}
       {/* …and not an index either: it has no protocol to measure. */}
-      {pair.source !== 'robinhood' && pair.source !== 'index' && <Fundamentals symbol={sym} />}
+      {pair.source !== 'index' && pair.source !== 'robinhood' && <Fundamentals symbol={sym} />}
     </section>
   )
 }

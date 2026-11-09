@@ -128,7 +128,7 @@ export default function SymbolPage({
   // index with yesterday's same minute, which is not how one is quoted.
   const lookOnly = isLookOnlyPair(pair)
   const unit = chartUnitOf(pair)
-  const { quotes: ixQuotes, failed: ixFailed } = useQuotes(lookOnly ? [sym] : [])
+  const { quotes: ixQuotes, failed: ixFailed, live: ixRead } = useQuotes(lookOnly ? [sym] : [])
   const ix = lookOnly ? (ixQuotes[sym] ?? null) : null
   // The chart's header numbers, keyed to the symbol they were read for: a
   // new symbol starts with none, so the strip and the tab never wear the
@@ -153,7 +153,7 @@ export default function SymbolPage({
   const liveLast = stats?.last ?? null
   // An index or a level (the S&P 500 in points, an FX rate) is not a dollar
   // price: its tab reads the value as its header prints it (`4.837% · US10Y`).
-  const unitTitle = !pair || unit === 'usd' ? null : lookOnly ? (ix ? fmtIndexValue(pair, ix.last) : null) : liveLast != null && liveLast > 0 ? fmtLivePrice(liveLast) : null
+  const unitTitle = !pair || unit === 'usd' ? null : lookOnly ? (ix ? fmtIndexValue(pair, ix.last) : liveLast != null && liveLast > 0 ? fmtIndexValue(pair, liveLast) : null) : liveLast != null && liveLast > 0 ? fmtLivePrice(liveLast) : null
   // The page's own (SEO) title, whatever React's metadata last wrote: on a
   // soft navigation that write can land AFTER the first live price, so the
   // head is watched and a live title re-asserted over it (React writes its
@@ -512,6 +512,13 @@ export default function SymbolPage({
                     </span>
                     <span className="sym__feed mono">delayed</span>
                   </>
+                ) : (ixRead || ixFailed) && stats?.last != null ? (
+                  // The quote did not come (the host stated no previous close, or did not answer) but the
+                  // chart has bars: the last bar's value alone — a change that cannot be stated is not shown.
+                  <>
+                    <span className="sym__last mono" data-unit={unit}>{fmtIndexValue(pair, stats.last)}</span>
+                    <span className="sym__feed mono">delayed</span>
+                  </>
                 ) : (
                   <span className="sym__feed mono">{ixFailed || statsLate ? 'Index data didn’t answer · retrying' : 'loading index data…'}</span>
                 )
@@ -744,7 +751,7 @@ export default function SymbolPage({
           <div className="sym__body" data-tab={tab}>
             {pair ? (
               tab === 'overview' ? (
-                <OverviewTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} last={(lookOnly ? ix?.last : stats?.last) ?? null} />
+                <OverviewTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} last={stats?.last ?? null} />
               ) : tab === 'news' ? (
                 <NewsTab symbol={sym} pair={pair} />
               ) : tab === 'community' ? (

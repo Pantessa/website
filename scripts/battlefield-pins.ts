@@ -184,8 +184,11 @@ export function battlefieldPins(check: Check): void {
   // Wiring: the candles are the view a chart opens on, and only the symbol page offers the switch.
   const chart = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
   const page = readFileSync('components/markets/shell/SymbolPage.tsx', 'utf8')
-  check('battlefield: MarketChart opens on candles (the view is never remembered), offers the switch only when asked, and hides the drawing tools on the field',
-    /useState<ChartView>\('candles'\)/.test(chart) && /battlefield = false/.test(chart) && /\{battlefield && \(\s*<div className="mkt-view"/.test(chart) && /tools && !altOn &&/.test(chart) && !/localStorage/.test(chart) && /<ChartMount[^>]*\bbattlefield\b/.test(page))
+  // RE-PINNED 2026-11-09 (macro board): the prop is still off by default and the switch still shows only when asked — and a
+  // look-only index (lib/charts isLookOnlyPair: no book, no prints, no positions) never gets it, whatever the page asks:
+  // the engine reads `battlefield: battlefieldProp = false` and derives `battlefield = battlefieldProp && !lookOnly`.
+  check('battlefield: MarketChart opens on candles (the view is never remembered), offers the switch only when asked (never on a look-only index), and hides the drawing tools on the field',
+    /useState<ChartView>\('candles'\)/.test(chart) && /battlefield: battlefieldProp = false/.test(chart) && /const battlefield = battlefieldProp && !lookOnly/.test(chart) && /\{battlefield && \(\s*<div className="mkt-view"/.test(chart) && /tools && !altOn &&/.test(chart) && !/localStorage/.test(chart) && /<ChartMount[^>]*\bbattlefield\b/.test(page))
 
   // ── The Wall (lib/wall): every dollar at its price, kinds kept apart ────
   const wallBars = [bar(1, 100, 101, 99, 100.5, 10), bar(2, 100.5, 102, 100, 101.2, 20), bar(3, 101.2, 103, 98, 99.4, 5)]

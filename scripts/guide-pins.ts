@@ -468,7 +468,8 @@ export function guidePins(check: Check): void {
       /guide=\{<AppsRow \/>\}/.test(home) &&
       /noteGuideEvent\('visited:home'\)/.test(src('components/home/AppsRow.tsx')) &&
       // RE-PINNED 2026-11-09 (builder market): a chart that takes no order here (lib/charts isHip3Pair) hands the seat no order to quote and says so (chartOnly); every other page still quotes its own buy sentence.
-      /\{pair && <GuideSeat surface="symbol" symbol=\{sym\} ask=\{isHip3Pair\(pair\) \? null : composeAsk\(pair, 'buy', \{ usd: 25 \}\)\} chartOnly=\{isHip3Pair\(pair\)\} \/>\}/.test(symbol) &&
+      // RE-PINNED 2026-11-09 (macro board): a look-only index (lib/charts isLookOnlyPair — US10Y, VIX…) hands it no order either and says so in its own words (lookOnly).
+      /\{pair && <GuideSeat surface="symbol" symbol=\{sym\} ask=\{isHip3Pair\(pair\) \|\| lookOnly \? null : composeAsk\(pair, 'buy', \{ usd: 25 \}\)\} chartOnly=\{isHip3Pair\(pair\)\} lookOnly=\{lookOnly\} \/>\}/.test(symbol) &&
       symbol.indexOf('data-seat="ExecStrip"') < symbol.indexOf('<GuideSeat surface="symbol"') &&
       count(live, '<GuideSeat surface="live" posture="phone" />') === 1 &&
       count(live, '<GuideSeat surface="live" posture="desktop" />') === 1 &&

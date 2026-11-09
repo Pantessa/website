@@ -64,7 +64,7 @@ export const TAPE_FOOTNOTE = 'Computed from our own tape · not advice'
 
 /** Where the candles come from, said honestly on every chart. */
 export const FEED_NOTE =
-  'Stocks: Robinhood’s 24/7 market-data tape (the print the on-chain token tracks; Yahoo Finance when it’s down, and the chart says so). Crypto: Coinbase spot. Perps: Hyperliquid.'
+  'Stocks: Robinhood’s 24/7 market-data tape (the print the on-chain token tracks; Yahoo Finance when it’s down, and the chart says so). Crypto: Coinbase spot. Perps: Hyperliquid. Indexes (the 10-year yield, the VIX, the dollar index, the Nasdaq 100, the Dow, the Russell 2000): index data from that same fallback feed, delayed up to 15 minutes — charts to read, with no order on them.'
 
 // ── Session lines ─────────────────────────────────────────────────────────
 // Robinhood-Chain stocks trade 24/7 on-chain while the underlying tape

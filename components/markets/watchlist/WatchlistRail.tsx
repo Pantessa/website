@@ -31,7 +31,8 @@ import CreateAccountButton from '@/components/CreateAccountButton'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import { PantessaMark } from '@/components/Logo'
-import { chartPairFor } from '@/lib/charts'
+import { chartPairFor, chartUnitOf } from '@/lib/charts'
+import { fmtReadChange } from '@/lib/read'
 import { venuesFor } from '@/lib/symbol-venues'
 import { useToast } from '@/lib/toast'
 import { DEFAULT_LIST_NAME, RAIL_BREW_COPY, fmtQuotePrice, heldAutofillNote, heldPosition, heldTitle, quoteCellState, railBrewPhase, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
@@ -484,6 +485,8 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                 group.symbols.map((sym) => {
                   const q: Quote | undefined = quotes[sym]
                   const pair = chartPairFor(sym)
+                  // A yield (the 10-year) prints in percent and moves in basis points, here as on its page and the board.
+                  const yieldRow = chartUnitOf(pair) === 'yield'
                   const cell = quoteCellState({ hasQuote: !!q, charted: !!pair, missing: missing.includes(sym) })
                   const up = q ? q.chgPct > 0 : false
                   const down = q ? q.chgPct < 0 : false
@@ -521,10 +524,17 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                         <span className="wl__rowQuote mono" style={priceCell}>
                           {q ? (
                             <>
-                              <span className="wl__rowLast">{fmtQuotePrice(q.last)}</span>
+                              <span className="wl__rowLast">{yieldRow ? `${fmtQuotePrice(q.last)}%` : fmtQuotePrice(q.last)}</span>
                               <span className={`wl__rowChg${up ? ' wl__rowChg--up' : down ? ' wl__rowChg--down' : ''}`}>
-                                {q.chgPct > 0 ? '+' : ''}
-                                {q.chgPct.toFixed(2)}%
+                                {yieldRow ? (
+                                  // A yield moves in basis points (its quote's `chg` is in percentage points).
+                                  fmtReadChange({ unit: 'yield' }, q.chg * 100)
+                                ) : (
+                                  <>
+                                    {q.chgPct > 0 ? '+' : ''}
+                                    {q.chgPct.toFixed(2)}%
+                                  </>
+                                )}
                               </span>
                             </>
                           ) : cell === 'pending' ? (

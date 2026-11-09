@@ -29,6 +29,7 @@ import { parseHlIntent } from '../lib/hyperliquid-exec'
 import { parseRobinhoodBridge } from '../lib/robinhood-bridge'
 import { parseChartAsk } from '../lib/charts'
 import { marketReadAsk } from '../lib/market-read'
+import { lookOnlyDoor } from '../lib/look-only-door'
 import { mentionsNft, parseNftAsk, parseNftListAsk, parseNftMarketAsk } from '../lib/nft-layer'
 import { parseTransferSegment } from '../lib/transfer-exec'
 import { parseSwapIntent, detectCrossChain } from '../lib/swap-intent'
@@ -103,6 +104,13 @@ function simulateLadderInner(message: string): Outcome {
   // money verb makes the parser refuse so those layers keep their asks.
   const chart = parseChartAsk(message)
   if (chart) return chart.pair ? { gate: 'chart', kind: 'action', note: `${chart.pair.label} overlay` } : { gate: 'chart', kind: 'clarify', note: `${chart.symbol} chartless — refused by name` }
+
+  // The look-only door (2026-11-09) sits right after the chart gate in the
+  // route: an ORDER on an index (US10Y, VIX, NDX… — nothing listed here
+  // trades one) is answered with the closest thing that is listed, as chips,
+  // before any money layer can refuse it by its own words (lib/look-only-door).
+  const indexDoor = lookOnlyDoor(message)
+  if (indexDoor) return { gate: 'look-only', kind: 'clarify', chips: true, note: indexDoor.clarify.options.map((c) => c.resume).join(' | ') }
 
   // The market READ door (POLISH/DEADENDS 2026-10-13) sits right after the
   // chart gate in the route: "Why is ETH moving?" answers from our own tape +

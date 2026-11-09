@@ -545,7 +545,7 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
   for (const ix of indexes) {
     const held = cache.get(ix.symbol)
     const standIn = () => (held && Date.now() - held.at < INDEX_QUOTE_STALE_MS ? held.quote : null)
-    let fresh = true
+    let answered = true
     const backingOff = Date.now() - (indexFailedAt.get(ix.symbol) ?? 0) < INDEX_QUOTE_BACKOFF_MS
     const read = backingOff
       ? Promise.reject(new Error('backing off'))
@@ -556,7 +556,7 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
     settle(
       ix.symbol,
       read.catch((err) => {
-        fresh = false
+        answered = false
         if (!backingOff) {
           indexFailedAt.set(ix.symbol, Date.now())
           console.warn(`[quotes] index data did not answer for ${ix.symbol} (${err instanceof Error ? err.message : String(err)})`)
@@ -564,7 +564,7 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
         return standIn()
       }),
       INDEX_QUOTE_TTL_MS,
-      () => fresh,
+      () => answered,
     )
   }
   // Coinbase is per-product; a bounded worker pool keeps a 40-coin list under

@@ -6,7 +6,7 @@ import { brandOgPalette } from '@/lib/brand-theme'
 import { gemMarkSvg } from '@/lib/og-marks'
 import { CHART_FEED_LABELS, chartUnitOf, isLookOnlyPair, resolveChartPair, type Candle, type ChartFeed } from '@/lib/charts'
 import { fmtIndexValue } from '@/lib/macro'
-import { READ_INDEX_VENUE_LINE, fmtReadChange } from '@/lib/read'
+import { READ_INDEX_VENUE_LINE, fmtReadAmount } from '@/lib/read'
 import { candleSvg, fmtOgPrice, symbolPageSeo } from '@/lib/markets-seo'
 import { TAPE_FOOTNOTE, sessionKindFor, sessionLine } from '@/lib/markets-copy'
 
@@ -75,7 +75,8 @@ export default async function Image({ params }: Params) {
   const move = unit === 'yield' ? bp : chg
   const chgColor = move == null ? pal.muted : move >= 0 ? UP : DOWN
   const arrow = move != null && move >= 0 ? '▲' : '▼'
-  const chgLabel = move == null ? '' : unit === 'yield' ? `${arrow} ${fmtReadChange({ unit }, Math.abs(move))} · 1D` : `${arrow} ${Math.abs(move).toFixed(2)}% · 1D`
+  // The arrow is the sign: the amount beside it is unsigned ("▲ 0.5 bp", "▼ 1.23%").
+  const chgLabel = move == null ? '' : unit === 'yield' ? `${arrow} ${fmtReadAmount({ unit }, move)} · 1D` : `${arrow} ${Math.abs(move).toFixed(2)}% · 1D`
   const lastLabel = series.last == null ? '' : lookOnly && seo.pair ? fmtIndexValue(seo.pair, series.last) : unit === 'level' ? fmtOgPrice(series.last) : `$${fmtOgPrice(series.last)}`
   const feedLabel = series.feed ? CHART_FEED_LABELS[series.feed] : seo.pair ? CHART_FEED_LABELS[seo.pair.source] : ''
   const session = seo.pair ? sessionLine(sessionKindFor(seo.pair.source)) : ''
