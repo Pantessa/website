@@ -87,3 +87,6 @@ CREATE TABLE IF NOT EXISTS identity_links (
   PRIMARY KEY (provider, external_id)
 );
 CREATE INDEX IF NOT EXISTS identity_links_wallet_idx ON identity_links (wallet);
+
+-- Whose posts reach the linked chats (QA-SECURITY S10): owner + mods by default.
+ALTER TABLE communities ADD COLUMN IF NOT EXISTS announce_from text NOT NULL DEFAULT 'mods';

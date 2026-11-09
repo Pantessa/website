@@ -1660,14 +1660,16 @@ model ChartPostComment {
 // is_internal fences harness rows out of every public list and count.
 
 model Community {
-  slug        String   @id // /g/<slug> — lowercase [a-z0-9-]{3,32}
-  name        String
-  about       String   @default("")
-  owner       String // lowercased SIWE wallet
-  symbols     String[] @default([]) // tickers the room follows
-  memberCount Int      @default(0) @map("member_count") // denormalized, proven members
-  isInternal  Boolean  @default(false) @map("is_internal")
-  createdAt   DateTime @default(now()) @map("created_at")
+  slug         String   @id // /g/<slug> — lowercase [a-z0-9-]{3,32}
+  name         String
+  about        String   @default("")
+  owner        String // lowercased SIWE wallet
+  symbols      String[] @default([]) // tickers the room follows
+  memberCount  Int      @default(0) @map("member_count") // denormalized, proven members
+  /// Whose posts are announced to the linked chats: 'mods' (owner + mods, the default — a seat is one free tap, so a stranger must not be able to post into the owner's Telegram or Discord) or 'members'.
+  announceFrom String   @default("mods") @map("announce_from")
+  isInternal   Boolean  @default(false) @map("is_internal")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([isInternal, memberCount])
   @@map("communities")
