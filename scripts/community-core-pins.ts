@@ -14,7 +14,7 @@ import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '../lib/community
 import { impostorWord, labelWithSource } from '../lib/community/rules'
 import { cleanText } from '../lib/chart-posts'
 import { additiveRefusal } from './run-ddl'
-import { HOT_SCAN, HOT_TOP_SCAN, rankHot } from '../lib/community/rules'
+import { DISCORD_CHANNEL_FALLBACK_TITLE, discordChannelTitle, HOT_SCAN, HOT_TOP_SCAN, rankHot } from '../lib/community/rules'
 import { checkName, checkSlug, checkSymbols, decodeCursor, encodeCursor, higherRole, memberLabel, parseVote, voteDelta } from '../lib/community/rules'
 import { clampProofSize, decideProof, explorerTxFor, fillLabel, locateTx, proofSide, readOnChain, REFUSE_CHAIN_UNREAD, REFUSE_NOTHING_MOVED } from '../lib/community/proof'
 import { proofFactLine, proofTagLine } from '../lib/community/proof-words'
@@ -791,6 +791,17 @@ export const S12_FORGED_CURSORS: string[] = [
 ]
 
 function polishCorePins(check: Check): void {
+  {
+    const bad = ['Coinbase Announcements', 'Pantessa Official', 'MetaMask Support', 'ETH calls \u2705', 'Verified \u2714 desk', 'Team \u202Eesuoh', 'x', '', null, 42]
+    const fell = bad.map((n) => discordChannelTitle(n))
+    const route = readFileSync(join(process.cwd(), 'app/api/communities/[slug]/discord/route.ts'), 'utf8')
+    check(
+      'community core: S17 — a Discord webhook\'s name passes the room-name rule (brand / authority words, badge glyphs, bidi) or the channel is stored as "Discord channel"; a plain name is kept; the link route stores and answers that title, never obj.name',
+      fell.every((t) => t === DISCORD_CHANNEL_FALLBACK_TITLE) && DISCORD_CHANNEL_FALLBACK_TITLE === 'Discord channel' && discordChannelTitle('  ETH  swing\n desk ') === 'ETH swing desk' &&
+        /const title = discordChannelTitle\(obj\.name\)/.test(route) && /title, secret: hook\.url/.test(route) && !/title: obj\.name/.test(route),
+      fell.join(' | '),
+    )
+  }
   {
     // S13: 400 fresh zero-score posts in the last hours, and one 3-day-old post at score 100.
     const now = Date.now()

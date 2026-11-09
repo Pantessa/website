@@ -17,6 +17,7 @@ import { clientIpFrom } from '@/lib/turn-limits'
 import { LINK_HOURLY_CAP, linkTripped } from '@/lib/community/limits'
 import { COMMUNITY_SLUG_RE, walletKey, type MemberKey } from '@/lib/community/spec'
 import { linkChannel, mintLinkCode, roleOf, unlinkChannel } from '@/lib/community/store'
+import { discordChannelTitle } from '@/lib/community/rules'
 import { parseDiscordWebhookUrl, readWebhookObject } from '@/lib/discord/webhook'
 import { roomDiscordChannels } from '@/lib/discord/channels'
 import { pickChannelToUnlink } from '@/lib/discord/pick'
@@ -105,10 +106,12 @@ export async function POST(req: Request, ctx: Ctx) {
   const obj = readWebhookObject(await res.json().catch(() => null), hook.id)
   if (!obj) return refuse(400, 'That webhook does not post to a channel Pantessa can use.')
 
-  const linked = await linkChannel(slug, actor.key, 'discord', { externalId: obj.channelId, title: obj.name, secret: hook.url }).catch(() => null)
+  // S17: the webhook's name passes the room-name rule, or the channel is the neutral "Discord channel".
+  const title = discordChannelTitle(obj.name)
+  const linked = await linkChannel(slug, actor.key, 'discord', { externalId: obj.channelId, title, secret: hook.url }).catch(() => null)
   if (!linked) return refuse(503, 'Could not save the link right now.')
   if (!linked.ok) return refuse(linked.status, linked.reason)
-  return NextResponse.json({ linked: true, title: obj.name })
+  return NextResponse.json({ linked: true, title })
 }
 
 export async function DELETE(req: Request, ctx: Ctx) {

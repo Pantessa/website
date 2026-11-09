@@ -79,6 +79,17 @@ export function checkName(raw: unknown): Verdict<string> {
   return { ok: true, value: s }
 }
 
+/** S17: the neutral title a linked Discord channel wears when its webhook's name fails the room-name rule. */
+export const DISCORD_CHANNEL_FALLBACK_TITLE = 'Discord channel'
+
+/** S17 (pure): a Discord webhook's `name` is whatever its creator typed, and it
+ *  shows on the room. It passes the room-name rule (brand / authority words,
+ *  badge glyphs, bidi and invisibles) or it is stored as the neutral title. */
+export function discordChannelTitle(raw: unknown): string {
+  const v = checkName(raw)
+  return v.ok ? v.value : DISCORD_CHANNEL_FALLBACK_TITLE
+}
+
 export function checkAbout(raw: unknown): Verdict<string> {
   if (raw === undefined || raw === null) return { ok: true, value: '' }
   if (typeof raw !== 'string') return { ok: false, reason: 'about must be plain text.' }
