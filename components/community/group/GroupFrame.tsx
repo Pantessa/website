@@ -11,9 +11,9 @@ import './group.css'
 // watchlist: on a phone the frame stacks its rail under (or above) the main
 // column, and a room page's first screen belongs to the room.
 //
-// SURFACE names the spine seat that lights. The COMMUNITY seat is lane
-// FEED's (components/AppSpine); until it merges these pages ride the markets
-// seat. COORDINATOR, AT MERGE: change the one word below.
+// The spine's COMMUNITY seat (lane FEED) lights by PATH (lib/app-entry
+// isCommunityPath covers /g and /g/*), whatever surface the frame names, so
+// these pages mount the shell with its default.
 export const GROUP_SURFACE = 'markets' as const
 
 export function GroupFrame({ children, side, sideLabel, page }: { children: ReactNode; side: ReactNode; sideLabel: string; page: 'directory' | 'new' }) {

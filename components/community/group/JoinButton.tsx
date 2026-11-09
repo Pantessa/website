@@ -169,7 +169,7 @@ export default function JoinButton({ slug, name, via = null, onChange, size = 'm
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch(`/api/communities/${encodeURIComponent(slug)}/join`, { method: 'DELETE' })
+      const res = await fetch(`/api/communities/${encodeURIComponent(slug)}/join`, { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: '{}' })
       const data = (await res.json().catch(() => null)) as { left?: boolean; error?: string } | null
       if (!res.ok) {
         setError(data?.error ?? 'Could not leave. Try again.')

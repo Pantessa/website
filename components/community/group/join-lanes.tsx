@@ -5,20 +5,16 @@
 // The Telegram lane owns components/community/telegram/TelegramJoin.tsx:
 // "Continue with Telegram" for a room, props { slug, via, onSignedIn, size }.
 // It reads its own status and renders nothing while no bot is configured.
-// Lane GROUP creates nothing at that path, and a missing module fails the
-// build, so the seat is empty until that lane's file is in the tree. It
-// lives apart from channel-panels.tsx so a Join button in the directory
-// never pulls the owner's settings panels into its bundle.
-//
-// COORDINATOR, WHEN THE TELEGRAM LANE MERGES (two lines, nothing else changes):
-//
-//   import TelegramJoinImpl from '@/components/community/telegram/TelegramJoin'
-//   export const TelegramJoin: TelegramJoinSeat = TelegramJoinImpl
-//
-// The pin `group seam` in scripts/community-group-pins.ts goes red the moment
-// the file exists and this seat is still empty.
+// Lane GROUP creates nothing at that path; this file is the one place the
+// chooser reaches it. It lives apart from channel-panels.tsx so a Join
+// button in the directory never pulls the owner's settings panels into its
+// bundle. Wired 2026-11-09 (the Telegram lane merged). A seat set to null
+// falls back to the chooser's plain link, and the pin `group seam` in
+// scripts/community-group-pins.ts goes red when the file exists and the seat
+// is empty.
 
 import type { ComponentType } from 'react'
+import TelegramJoinImpl from '@/components/community/telegram/TelegramJoin'
 
 export interface TelegramJoinProps {
   slug: string
@@ -31,4 +27,4 @@ export interface TelegramJoinProps {
 
 export type TelegramJoinSeat = ComponentType<TelegramJoinProps> | null
 
-export const TelegramJoin: TelegramJoinSeat = null
+export const TelegramJoin: TelegramJoinSeat = TelegramJoinImpl

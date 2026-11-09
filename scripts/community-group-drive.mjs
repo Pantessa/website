@@ -28,6 +28,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { createSiweMessage } from 'viem/siwe'
+import { SignJWT } from 'jose'
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const PORT = Number(process.env.CDP_PORT ?? 9453)
@@ -65,7 +66,8 @@ async function signIn(account) {
   return session
 }
 const api = async (pathname, { session, method = 'GET', body } = {}) => {
-  const r = await fetch(`${BASE}${pathname}`, { method, headers: { ...HDR, ...(body ? { 'content-type': 'application/json' } : {}), ...(session ? { cookie: `yf_session=${session}` } : {}) }, body: body ? JSON.stringify(body) : undefined })
+  const write = method !== 'GET'
+  const r = await fetch(`${BASE}${pathname}`, { method, headers: { ...HDR, ...(write ? { 'content-type': 'application/json', origin: BASE } : {}), ...(session ? { cookie: `yf_session=${session}` } : {}) }, body: write ? JSON.stringify(body ?? {}) : undefined })
   return { status: r.status, json: await r.json().catch(() => null) }
 }
 // A watch-only wallet on the session's address: wagmi reconnects to it, so
@@ -191,9 +193,9 @@ async function tab(person, { w = 1440, h = 900, scheme = 'dark', session = null,
   }
   /** Sideways scroll anywhere on the page: the document and the phone frame's one scroller. */
   const overflow = () => ev(`(() => { const d = document.documentElement; const s = document.querySelector('[data-app-scroll]'); return Math.max(d.scrollWidth - d.clientWidth, s ? s.scrollWidth - s.clientWidth : 0) })()`)
-  /** Controls under 44px tall that a thumb is meant to hit, inside the lane's own markup. */
+  /** The lane's OWN controls (grp-* classes) under 44px tall. Other lanes' controls inside the page are theirs to hold. */
   const smallTargets = () =>
-    ev(`[...document.querySelectorAll('.grp button, .grp a.grp-btn, .grp-side button, .grp-choose button, .grp-choose a, .grp-join')].filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.height < 43.5 && el.tagName !== 'SPAN' }).map((el) => (el.className || el.tagName) + ':' + Math.round(el.getBoundingClientRect().height)).slice(0, 6).join(' | ')`)
+    ev(`[...document.querySelectorAll('.grp-btn, button.grp-join, .grp-board__tab, .grp-sorts__tab, .grp-choose__lane, .grp-choose__x, .grp-check__x, .grp-join__leave, a.grp-link, button.grp-link')].filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.height < 43.5 }).map((el) => el.className + ':' + Math.round(el.getBoundingClientRect().height)).slice(0, 6).join(' | ')`)
   const mine = (method) => events.filter((e) => e.sessionId === sessionId && e.method === method)
   const errors = () => mine('Runtime.exceptionThrown').map((e) => e.params.exceptionDetails.exception?.description ?? e.params.exceptionDetails.text)
   return { ev, go, reload, until, shot, type, fulfil, overflow, smallTargets, errors, signInAs, sessionId }
@@ -286,6 +288,24 @@ try {
   await s.ev(`document.querySelector('.grp-head [data-join-state="join"]').click()`)
   const rejoin = await s.until(`document.querySelector('.grp-head [data-join-state="member"]') ? 'member' : null`, 8000)
   check('a signed-in visitor joins on one tap with no chooser', rejoin === 'member' && !(await s.ev(`!!document.querySelector('[data-join-chooser]')`)))
+
+  // ── 5b. a Telegram member: proven by the platform, no wallet ──────────
+  // The identity cookie the Telegram lane's auth route mints after checking
+  // Telegram's signature, minted here with the TEST secret for a made-up id.
+  const secret = (fs.readFileSync('.env.local', 'utf8').match(/^SESSION_SECRET=(.*)$/m)?.[1] ?? '').trim().replace(/^"|"$/g, '')
+  const tgToken = await new SignJWT({ p: 'tg', id: String(7_000_000_000 + Math.floor(Math.random() * 1e9)), name: 'Mika from the group', username: null }).setProtectedHeader({ alg: 'HS256' }).setAudience('pantessa:ident').setIssuedAt().setExpirationTime('1h').sign(new TextEncoder().encode(secret))
+  const tg = await tab(await newPerson())
+  await send('Network.setCookie', { name: 'pt_ident', value: tgToken, url: BASE, httpOnly: true }, tg.sessionId)
+  await tg.go(`/g/${slug}?via=${ownerCode}`)
+  await tg.until(`document.querySelector('[data-room-state="ok"] .grp-head [data-join-state="join"]')`)
+  await sleep(3500)
+  check('a Telegram member with no wallet stays on the room (never sent home)', (await tg.ev(`location.pathname`)) === `/g/${slug}`, await tg.ev(`location.pathname`))
+  await tg.ev(`document.querySelector('.grp-head [data-join-state="join"]').click()`)
+  const tgJoined = await tg.until(`document.querySelector('.grp-head [data-join-state="member"]') && document.querySelector('[data-invite-url]')?.value ? 'member' : null`, 10000)
+  check('…and joins on ONE tap: no chooser, no wallet, no signature', tgJoined === 'member' && !(await tg.ev(`!!document.querySelector('[data-join-chooser]')`)) && !(await tg.ev(`!!document.querySelector('[data-sheet="door"]')`)), String(await tg.ev(`document.querySelector('.grp-head [data-join-state]')?.getAttribute('data-join-state')`)))
+  const tgView = await tg.ev(`(() => ({ url: document.querySelector('[data-invite-url]')?.value ?? '', compose: !!document.querySelector('#room-compose'), invited: !!document.querySelector('[data-invited]') }))()`)
+  check('the room renders whole for a wallet-less member: their own invite link, the composer seat, no invite line', /\?via=[a-z0-9]{6,12}$/.test(tgView.url) && !tgView.url.endsWith(ownerCode) && tgView.compose && !tgView.invited, JSON.stringify(tgView))
+  await tg.shot('room-telegram-member-1440-dark')
 
   // ── 8a. phones: the room ──────────────────────────────────────────────
   const phoneStranger = await newPerson()
@@ -410,7 +430,7 @@ try {
   fs.writeFileSync(path.join(SHOTS, 'group-og-card.png'), Buffer.from(await og.arrayBuffer()))
   check('the room card renders as a PNG', og.status === 200 && (og.headers.get('content-type') ?? '').includes('image/png'))
 
-  for (const [where_, t] of [['stranger', s], ['owner', o], ['owner light', ol], ['phone stranger', ps], ['phone member', pm], ['phone owner', po], ['new', n], ['new phone', pn], ['create', c], ['directory', d], ['directory fixture', df], ['directory phone', dp]]) allErrors.push(...t.errors().map((e) => `[${where_}] ${String(e).split('\n')[0]}`))
+  for (const [where_, t] of [['stranger', s], ['telegram member', tg], ['owner', o], ['owner light', ol], ['phone stranger', ps], ['phone member', pm], ['phone owner', po], ['new', n], ['new phone', pn], ['create', c], ['directory', d], ['directory fixture', df], ['directory phone', dp]]) allErrors.push(...t.errors().map((e) => `[${where_}] ${String(e).split('\n')[0]}`))
   check('no page exception on any page of the drive', allErrors.length === 0, allErrors.slice(0, 4).join(' | '))
 } catch (e) {
   check('the drive ran to the end', false, String(e?.stack ?? e))

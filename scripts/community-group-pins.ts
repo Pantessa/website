@@ -119,6 +119,9 @@ export function communityGroupPins(check: Check): void {
   check('group door: a stranger\'s tap HOLDS the join before the chooser opens, and closing the chooser drops it', /store\.set\(HELD_JOIN_KEY, heldJoinRecord\(slug, code, Date\.now\(\)\)\)\s*\n\s*setChooser\(/.test(join_) && /const closeChooser = \(\) => \{\s*\n\s*store\.set\(HELD_JOIN_KEY, null\)/.test(join_))
   check('group door: the held join runs once an identity is proven, for this room only, and is cleared first', /if \(!standing\.ready \|\| !standing\.proven\) return/.test(join_) && /held\.slug !== slug/.test(join_) && /store\.set\(HELD_JOIN_KEY, null\)\s*\n\s*setChooser\(null\)\s*\n\s*if \(standing\.member \|\| autoRan\.current\) return/.test(join_))
   check('group door: the join request carries the invite code and nothing else (who is acting is the server\'s read)', /body: JSON\.stringify\(code \? \{ via: code \} : \{\}\)/.test(join_) && !/wallet|address/i.test((join_.match(/method: 'POST'[\s\S]{0,260}/) ?? [''])[0]))
+  const writes = [...allSrc.matchAll(/method: '(POST|PATCH|DELETE)'[\s\S]{0,240}/g)].map((m) => m[0])
+  const notJson = writes.filter((w) => !/'content-type': 'application\/json'/.test(w) || !/body:/.test(w))
+  check('group door: every write the lane sends is JSON (content-type: application/json and a body), the shape the community routes require', writes.length >= 3 && notJson.length === 0, `${writes.length} writes · ${notJson.map((w) => w.slice(0, 50)).join(' | ')}`)
   check('group door: leaving is behind the Joined menu, never the first tap', /aria-haspopup="menu"/.test(join_) && /role="menuitem"[^>]*onClick=\{leave\}/.test(join_) && !/is-member[^>]*onClick=\{leave\}/.test(join_))
   check('group door: Telegram is the Telegram lane\'s own door through the seam (it hides itself with no bot); the plain link is the stand-in, only with a bot AND telegramReady (default off)', /telegramReady = false/.test(join_) && /\{TelegramJoin \? \(/.test(join_) && /<TelegramJoin slug=\{slug\} via=\{chooser\.via\} onSignedIn=\{onTelegram\} \/>/.test(join_) && /\) : telegramReady && telegram \? \(/.test(join_))
   const newForm = groupSrc['NewRoomForm.tsx'] ?? ''
@@ -315,8 +318,8 @@ export async function communityGroupPinsServed(check: Check, base: string): Prom
     check('group served: GET /api/me/identity lists the room for the new member (one read lights every Join button on a page)', typeof idn.key === 'string' && idn.communities.some((c) => c.slug === slug))
     const memberPage = flat(await (await get(`/g/${slug}`, { cookie: guestCookie })).text())
     check('group served: the room page now counts two members', /data-room-members[^>]*>2</.test(memberPage))
-    const left = await fetch(`${base}/api/communities/${slug}/join`, { method: 'DELETE', headers: { cookie: guestCookie, ...INTERNAL } })
-    const ownerLeft = await fetch(`${base}/api/communities/${slug}/join`, { method: 'DELETE', headers: { cookie: ownerCookie, ...INTERNAL } })
+    const left = await fetch(`${base}/api/communities/${slug}/join`, { method: 'DELETE', headers: { 'content-type': 'application/json', cookie: guestCookie, ...INTERNAL }, body: '{}' })
+    const ownerLeft = await fetch(`${base}/api/communities/${slug}/join`, { method: 'DELETE', headers: { 'content-type': 'application/json', cookie: ownerCookie, ...INTERNAL }, body: '{}' })
     check('group served: a member can leave; the owner cannot (the button shows Owner, no leave menu)', left.status === 200 && ownerLeft.status >= 400, `member ${left.status} · owner ${ownerLeft.status}`)
   } finally {
     const removed = await cleanup().catch((e) => {
