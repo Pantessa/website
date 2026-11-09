@@ -7,8 +7,8 @@
 // bottom. Below lg the SAME destinations render as a fixed bottom TAB BAR —
 // the phone-native shape of the same spine. One component, one badge poll,
 // two postures. There is no new-chat seat (2026-09-11, Nate: adding fresh
-// MCPs is not a big thing anymore): the brand seat opens a fresh /chat, and
-// the CHATS drawer leads with New Chat.
+// MCPs is not a big thing anymore): the CHATS drawer leads with New Chat.
+// The brand seat goes home to the market home `/` (2026-11-09).
 //
 // It is also the app's door: a signed-out visitor on a surface that mounts
 // it is sent home, except on the public markets surface, where looking needs
@@ -480,28 +480,19 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         )}
         aria-label="Workspace"
       >
-        {/* Brand seat — signed in, it opens a fresh chat. Signed out, the
-            logo goes home: `/` is public (the markets splash), and a logo
-            must never be a sign-in wall (2026-10-06, Nate: "only ask them
-            to sign in if a transaction is needed or deeper bits"). */}
-        <SpineLink
-          href={signedOut ? '/' : '/chat'}
-          title={signedOut ? 'Pantessa — home' : 'Pantessa — chat'}
-          aria-label={signedOut ? 'Pantessa home' : 'Pantessa chat'}
-          // Inside the chat the URL is already /chat, so the link alone did
-          // nothing on /chat?tab=links|jobs|… (the mirror wrote the tab
-          // straight back). The home mark means "back to the chat": drop the
-          // destination and hand the main screen to the conversation, then
-          // let the link navigate as before (pre-gtm FINISH).
-          onClick={signedOut || offChat ? undefined : (e: MouseEvent<HTMLAnchorElement>) => {
-            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-            setRailTab(DEFAULT_TAB)
-            setMainView('chat')
-          }}
+        {/* Brand seat — the logo goes home, signed in or out: `/` is the
+            market home (2026-11-09, Nate: "when signed in, if the user
+            clicks the logo it should go back to the main market home page,
+            not the apps page"; it used to open /chat, which lands on APPS).
+            `/` is public, so a logo is never a sign-in wall (2026-10-06). */}
+        <Link
+          href="/"
+          title="Pantessa — home"
+          aria-label="Pantessa home"
           className="grid place-items-center w-full h-14 flex-shrink-0 border-b border-[var(--line)] text-white hover:bg-[var(--surf-2)] transition-colors"
         >
           <YeetfulMark size={25} />
-        </SpineLink>
+        </Link>
 
         <div className="flex flex-col items-center gap-1 pt-2 w-full px-1">
           {/* MARKETS is a destination PAGE (/markets → /t/<symbol>), not a
