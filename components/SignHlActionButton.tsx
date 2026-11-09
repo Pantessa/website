@@ -23,14 +23,16 @@
 // refusal (which never showed the user anything) switches to delegated in
 // the SAME gesture. Still one signature per action.
 //
-// Up to three signatures ride one card, each behind its OWN user gesture (a
+// Up to four signatures ride one card, each behind its OWN user gesture (a
 // popup fired after an awaited submit is the known Coinbase second-signature
 // breaker): 1) the one-time builder-fee cap approval (user-signed, built
 // CLIENT-side because its EIP-712 domain carries the wallet's chainId),
-// 2) the guarded leverage set on explicit-leverage asks, 3) the order.
-// The card self-advances as each lands.
+// 2) on a builder-dex market, the move of the wallet's own USDC from its main
+// perp balance into that dex (user-signed the same way — a standard account
+// keeps a separate balance per dex), 3) the guarded leverage set on
+// explicit-leverage asks, 4) the order. The card self-advances as each lands.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAccount, useChainId, useSignMessage, useSignTypedData } from 'wagmi'
 import { CheckCircle2, ExternalLink, Loader2, PenLine, ShieldCheck } from 'lucide-react'
 import type { Eip712OrderRequest } from '@/lib/transaction-layer'
@@ -39,10 +41,13 @@ import {
   classifyHlSignFailure,
   hlActionSummary,
   hlConsentMessage,
+  hlDexTransferArtifacts,
+  hlFreshNonce,
   hlNonceStale,
   isUserRejectedSignError,
   type HlWireAction,
 } from '@/lib/hyperliquid-exec'
+import { HL_BUILDER_DEXES, hlTickerOf } from '@/lib/hl-dex'
 import { reportWalletRefusal, walletErrorWords, type WalletArtifact } from '@/lib/wallet-refusal'
 import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 import { oneMethodPerTap } from '@/lib/sign-round-trip'
@@ -86,6 +91,7 @@ export default function SignHlActionButton({
   const [fill, setFill] = useState<{ totalSz: string; avgPx: string } | null>(null)
   const [explorerUrl, setExplorerUrl] = useState('')
   const [feeDone, setFeeDone] = useState(false)
+  const [moveDone, setMoveDone] = useState(false)
   const [preDone, setPreDone] = useState(false)
   const [delegation, setDelegation] = useState<Delegation>('unknown')
   // The wallet needs the one-time agent approval before it can act — set
@@ -99,6 +105,8 @@ export default function SignHlActionButton({
   // an enable on a phone the card stops, says so, and the next tap signs.
   const platform = usePlatform()
   const [enabledNote, setEnabledNote] = useState('')
+  // Nonces this card minted at tap time (see freshNonce).
+  const tapNonces = useRef<number[]>([])
 
   const isTestnet = order.hl?.isTestnet === true
 
@@ -126,17 +134,34 @@ export default function SignHlActionButton({
     setStatus((s) => (s === 'error' || s === 'refreshing' ? 'idle' : s))
     setError('')
     setPreDone(false)
+    // A move that already landed is NOT cleared here on purpose: a rebuilt
+    // order re-reads the dex's balance and simply stops carrying the step.
   }, [artifactNonce])
 
   if (order.protocol !== 'hyperliquid' || !order.hl) return null
   const hl = order.hl
   const feeStep = hl.feeApproval && !feeDone ? hl.feeApproval : null
-  const pre = !feeStep && hl.pre && !preDone ? hl.pre : null
+  // The move into a builder dex: after the fee cap (no money), before the
+  // leverage set and the order (which need the collateral in the dex).
+  const moveStep = !feeStep && hl.dexTransfer && !moveDone ? hl.dexTransfer : null
+  const pre = !feeStep && !moveStep && hl.pre && !preDone ? hl.pre : null
+  const dexName = hl.dexTransfer ? (HL_BUILDER_DEXES[hl.dexTransfer.dex]?.label ?? hl.dexTransfer.dex) : ''
+  /** What a person reads for the market: `xyz:SP500` → `SP500`. */
+  const coinLabel = hlTickerOf(hl.expected.coin)
   // Step numbering over whichever extras this build carries.
-  const totalSteps = 1 + (hl.feeApproval ? 1 : 0) + (hl.pre ? 1 : 0)
-  const currentStep = feeStep ? 1 : pre ? 1 + (hl.feeApproval ? 1 : 0) : totalSteps
+  const totalSteps = 1 + (hl.feeApproval ? 1 : 0) + (hl.dexTransfer ? 1 : 0) + (hl.pre ? 1 : 0)
+  const currentStep = feeStep ? 1 : moveStep ? 1 + (hl.feeApproval ? 1 : 0) : pre ? 1 + (hl.feeApproval ? 1 : 0) + (hl.dexTransfer ? 1 : 0) : totalSteps
 
   const walletMeta = () => ({ wallet: address, connector: connector?.id ?? connector?.name, chainId })
+
+  /** A nonce for a step signed at tap time (the fee cap, the move): never
+   *  one another action on this card already carries — the venue refuses a
+   *  repeated nonce and the order behind it would be dead (hlFreshNonce). */
+  const freshNonce = (): number => {
+    const nonce = hlFreshNonce([hl.nonce, hl.pre?.nonce, ...tapNonces.current])
+    tapNonces.current.push(nonce)
+    return nonce
+  }
 
   /** Run a wallet prompt; an error thrown by the WALLET is tagged so `fail`
    *  reports it as a wallet refusal (relay/venue errors are not the wallet). */
@@ -191,7 +216,7 @@ export default function SignHlActionButton({
       // Built HERE because the user-signed domain pins the wallet's chainId;
       // the relay re-derives the same payload from the action and re-guards
       // recipient + rate before the venue sees it.
-      const { action, typedData } = approveBuilderFeeArtifacts({ nonce: Date.now(), signatureChainId: chainId, isTestnet: hl.isTestnet })
+      const { action, typedData } = approveBuilderFeeArtifacts({ nonce: freshNonce(), signatureChainId: chainId, isTestnet: hl.isTestnet })
       const message = { ...typedData.message, nonce: BigInt(action.nonce) }
       const signature = await walletSign(() => signTypedDataAsync({ ...typedData, message } as Parameters<typeof signTypedDataAsync>[0]))
       setStatus('submitting')
@@ -206,6 +231,44 @@ export default function SignHlActionButton({
       setStatus('idle')
     } catch (e) {
       fail(e, 'Fee approval failed.', 'hl-order', `approve the ${hl.feeApproval.maxFeeRate} builder-fee cap`)
+    }
+  }
+
+  /** Move the wallet's own USDC from its main perp balance into the builder
+   *  dex the order trades on. Built HERE (the user-signed domain pins the
+   *  wallet's chainId, so every wallet signs it); the relay re-derives the
+   *  payload and refuses anything but the signer's own account, a dex we
+   *  place orders on, and USDC. */
+  const signMove = async () => {
+    if (!address || !hl.dexTransfer) {
+      setError(address ? 'Missing transfer step.' : 'Connect your wallet first — it is your Hyperliquid account.')
+      return
+    }
+    setError('')
+    setStatus('signing')
+    try {
+      const { action, typedData } = hlDexTransferArtifacts({
+        from: address,
+        dex: hl.dexTransfer.dex,
+        amount: hl.dexTransfer.amount,
+        nonce: freshNonce(),
+        signatureChainId: chainId,
+        isTestnet: hl.isTestnet,
+      })
+      const message = { ...typedData.message, nonce: BigInt(action.nonce) }
+      const signature = await walletSign(() => signTypedDataAsync({ ...typedData, message } as Parameters<typeof signTypedDataAsync>[0]))
+      setStatus('submitting')
+      const res = await fetch('/api/hl/submit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action, nonce: action.nonce, isTestnet: hl.isTestnet, signature, from: address }),
+      })
+      const data = (await res.json()) as { status?: string; error?: string }
+      if (!res.ok) throw new Error(data.error || 'Transfer failed.')
+      setMoveDone(true)
+      setStatus('idle')
+    } catch (e) {
+      fail(e, 'Transfer failed.', 'hl-order', `move $${hl.dexTransfer.amount} USDC into the ${dexName} dex`)
     }
   }
 
@@ -394,7 +457,7 @@ export default function SignHlActionButton({
       setStatus('filled')
       onPlaced?.({
         explorerUrl: data.explorerUrl,
-        detail: data.filled ? `${hl.expected.kind} ${hl.expected.coin} filled ${data.filled.totalSz} @ ${data.filled.avgPx}` : `${hl.expected.kind} ${hl.expected.coin}`,
+        detail: data.filled ? `${hl.expected.kind} ${coinLabel} filled ${data.filled.totalSz} @ ${data.filled.avgPx}` : `${hl.expected.kind} ${coinLabel}`,
         valueUsd: data.valueUsd ?? null,
       })
     } catch (e) {
@@ -415,14 +478,18 @@ export default function SignHlActionButton({
         ? 'Confirm in your wallet…'
         : feeStep
           ? 'Approving fee cap…'
-          : pre
-            ? 'Setting leverage…'
-            : 'Executing…'
+          : moveStep
+            ? `Moving USDC into the ${dexName} dex…`
+            : pre
+              ? 'Setting leverage…'
+              : 'Executing…'
     : needsEnable
-      ? `Enable trading — one-time approval, then ${feeStep ? 'approve the fee cap' : pre ? `set ${pre.expected.leverage}x leverage` : 'sign & execute'}`
+      ? `Enable trading — one-time approval, then ${feeStep ? 'approve the fee cap' : moveStep ? `move $${moveStep.amount} into the ${dexName} dex` : pre ? `set ${pre.expected.leverage}x leverage` : 'sign & execute'}`
       : feeStep
         ? `${retry}${stepTag} approve the ${feeStep.maxFeeRate} fee cap (one-time)`
-        : pre
+        : moveStep
+          ? `${retry}${stepTag} move $${moveStep.amount} USDC into the ${dexName} dex`
+          : pre
           ? `${retry}${stepTag} set ${pre.expected.leverage}x leverage`
           : totalSteps > 1
             ? `${retry}${stepTag} place the order`
@@ -434,7 +501,9 @@ export default function SignHlActionButton({
     ? 'Hyperliquid needs a one-time approval of a trade-only Pantessa agent on your account (it can never withdraw) — the same "enable trading" step the Hyperliquid app asks for. After that, one signature per action.'
     : feeStep
       ? `One-time approval capping the builder fee at ${feeStep.maxFeeRate} for Pantessa — after this, orders carry it with no extra signature`
-      : pre
+      : moveStep
+        ? `Moves $${moveStep.amount} of your own USDC from your Hyperliquid perp balance into the ${dexName} dex, where this market trades — a builder dex keeps its own balance. It stays in your account.`
+        : pre
         ? `Sign the ${pre.expected.leverage}x leverage update first, then the order`
         : delegation === 'active'
           ? 'Sign the consent for exactly this action; your approved Pantessa agent submits it to Hyperliquid'
@@ -446,7 +515,7 @@ export default function SignHlActionButton({
         <div className="flex items-center gap-2 text-[length:var(--fs-sm)]">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
           <span className="text-emerald-400 font-medium">
-            {fill ? `Filled ${fill.totalSz} ${hl.expected.coin} @ ${fill.avgPx}` : 'Order accepted (unfilled — IOC expired)'}
+            {fill ? `Filled ${fill.totalSz} ${coinLabel} @ ${fill.avgPx}` : 'Order accepted (unfilled — IOC expired)'}
           </span>
           {viaAgent && (
             <span className="inline-flex items-center gap-1 text-[length:var(--fs-xs)] text-[color:var(--muted)]" title="Your consent signature authorized this exact action; your approved Pantessa agent submitted it.">
@@ -467,13 +536,18 @@ export default function SignHlActionButton({
               <CheckCircle2 className="w-3.5 h-3.5" /> {hl.feeApproval.maxFeeRate} fee cap approved
             </span>
           )}
+          {hl.dexTransfer && moveDone && (
+            <span className="inline-flex items-center gap-1 text-[length:var(--fs-sm)] text-emerald-400" data-hl-moved={hl.dexTransfer.dex}>
+              <CheckCircle2 className="w-3.5 h-3.5" /> ${hl.dexTransfer.amount} moved into the {dexName} dex
+            </span>
+          )}
           {hl.pre && preDone && (
             <span className="inline-flex items-center gap-1 text-[length:var(--fs-sm)] text-emerald-400">
               <CheckCircle2 className="w-3.5 h-3.5" /> {hl.pre.expected.leverage}x leverage set
             </span>
           )}
           <button
-            onClick={() => void (feeStep ? signFee() : pre ? signPre() : sign())}
+            onClick={() => void (feeStep ? signFee() : moveStep ? signMove() : pre ? signPre() : sign())}
             disabled={inFlight}
             data-hl-path={delegation === 'active' ? 'delegated' : needsEnable ? 'enable' : 'direct'}
             className={SIGN_CTA_CLASS}
