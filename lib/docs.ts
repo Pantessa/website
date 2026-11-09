@@ -73,7 +73,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Community and rooms',
     seoTitle: 'Community: rooms, posts and trades with proof',
     description:
-      'Start a room, join one with Telegram or a sign-in, post a chart idea, a link, a video or a trade. What "verified on-chain" means on a trade post, and what it does not.',
+      'Start a room, join with Telegram or a sign-in, post an idea, a link, a video or a trade. What "verified on-chain" means on a trade post, and what it does not.',
     ready: true,
     door: 'creator',
   },
