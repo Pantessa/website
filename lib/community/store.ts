@@ -368,6 +368,22 @@ export async function listMembers(slug: string, opts: { sort?: 'invites' | 'trad
   return out.slice(0, limit)
 }
 
+/** Who an invite code belongs to, as the room page may print it ("You were
+ *  invited by @handle"). The code must be a real invite of THIS room whose
+ *  owner still sits in it; anything else is null (the page then says only
+ *  "You were invited to <room>"). Never a raw provider id (memberLabel). */
+export async function inviterLabel(slug: string, code: unknown): Promise<string | null> {
+  const s = normSlug(slug)
+  if (!COMMUNITY_SLUG_RE.test(s) || typeof code !== 'string' || !INVITE_CODE_RE.test(code)) return null
+  const invite = await prisma.communityInvite.findUnique({ where: { code } }).catch(() => null)
+  if (!invite || invite.communitySlug !== s) return null
+  const seat = await prisma.communityMember.findUnique({ where: { communitySlug_memberKey: { communitySlug: s, memberKey: invite.inviterKey } } }).catch(() => null)
+  if (!seat) return null
+  const wallet = seat.wallet ?? walletOfKey(seat.memberKey)
+  const handles = wallet ? await handlesFor([wallet]) : new Map<string, string>()
+  return memberLabel({ wallet, handle: wallet ? handles.get(wallet) : null, displayName: seat.displayName, source: seat.source })
+}
+
 /** When a provider identity is linked to a wallet, its seats move to the wallet key (one seat per person). */
 export async function mergeSeats(from: MemberKey, toWallet: string): Promise<number> {
   const w = toWallet.toLowerCase()
