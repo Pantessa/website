@@ -15,7 +15,7 @@ import { impostorWord, labelWithSource } from '../lib/community/rules'
 import { cleanText } from '../lib/chart-posts'
 import { additiveRefusal } from './run-ddl'
 import { checkName, checkSlug, checkSymbols, decodeCursor, encodeCursor, higherRole, memberLabel, parseVote, voteDelta } from '../lib/community/rules'
-import { clampProofSize, decideProof, explorerTxFor, fillLabel, locateTx, proofSide, readOnChain, REFUSE_CHAIN_UNREAD, REFUSE_NOTHING_MOVED } from '../lib/community/proof'
+import { clampProofSize, decideProof, explorerTxFor, fillLabel, flowShape, locateTx, proofSide, readOnChain, REFUSE_CHAIN_UNREAD, REFUSE_NOTHING_MOVED, REFUSE_ONE_WAY } from '../lib/community/proof'
 import { proofFactLine, proofTagLine } from '../lib/community/proof-words'
 import { shouldAnnounce, storedProof } from '../lib/community/store'
 
@@ -157,8 +157,40 @@ export function secfixProofPins(check: Check): void {
     id: 'turnfixture01', symbols: ['buy:ETH'], valueUsd: 25, chain: 'base', txUrl: `https://basescan.org/tx/${H}`, buildPath: 'native-swap-uniswap', createdAt: new Date(1_762_000_000_000), ...o,
   })
   check(
-    'S1 size clamp: the shown size is min(recorded, on-chain × 1.05); a recorded 999,999,999 on a $10 transaction shows $10.50; hidden = null; no recorded value = the chain figure',
-    clampProofSize(999_999_999, 10, true) === 10.5 && clampProofSize(25, 24.9, true) === 25 && clampProofSize(25, 100, true) === 25 && clampProofSize(25, 10, false) === null && clampProofSize(null, 12.345, true) === 12.35 && clampProofSize(0, 7, true) === 7,
+    // RE-PINNED 2026-11-09 (coordinator, QA-SECURITY-3 R2): the pin used to ASSERT the defect ($10 on-chain printed $10.50).
+    'S1 / R2 size clamp: the shown size is min(recorded, on-chain) and NEVER above what the chain shows — a recorded 999,999,999 on a $10 transaction shows $10.00, a $100 one $100.00 (not $105); a smaller recorded value stands; cents round DOWN; hidden = null; no recorded value = the chain figure',
+    clampProofSize(999_999_999, 10, true) === 10 && clampProofSize(105, 100, true) === 100 && clampProofSize(25, 24.9, true) === 24.9 && clampProofSize(25, 100, true) === 25 && clampProofSize(25, 10, false) === null && clampProofSize(null, 12.349, true) === 12.34 && clampProofSize(0, 7, true) === 7,
+  )
+  // ── R1: a trade moves value both ways ──
+  const W = '0x' + 'a1'.repeat(20)
+  const OTHER = '0x' + 'b2'.repeat(20)
+  const ROUTER = '0x' + 'c3'.repeat(20)
+  const USDC = '0x' + '11'.repeat(20)
+  const UNI = '0x' + '22'.repeat(20)
+  const WETH = '0x4200000000000000000000000000000000000006'
+  const T = '0xddf252ad1be2c89b69c2b0fc378daa952ba7f163c4a11628f55a4df523b3ef'
+  const WD = '0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65'
+  const pad = (a: string) => `0x${'0'.repeat(24)}${a.slice(2)}`
+  const xfer = (token: string, from: string, to: string) => ({ address: token, topics: [T, pad(from), pad(to)] })
+  const shape = (logs: { address: string; topics: string[] }[], txValue = BigInt(0)) => flowShape({ wallet: W, txValue, wrappedNative: WETH, logs })
+  check(
+    'R1 two-sided: a swap is (stable out, token in), (native out, token in) or (token out, the wrapped token unwrapped); a plain transfer, a self-send, an airdrop received, a wrap, the same token out and back (a round trip) and an NFT transfer are NOT two-sided',
+    shape([xfer(USDC, W, ROUTER), xfer(UNI, ROUTER, W)]).twoSided &&
+      shape([xfer(UNI, ROUTER, W)], BigInt(10) ** BigInt(16)).twoSided &&
+      shape([xfer(USDC, W, ROUTER), { address: WETH, topics: [WD, pad(ROUTER)] }]).twoSided &&
+      !shape([xfer(USDC, W, OTHER)]).twoSided &&
+      !shape([xfer(USDC, W, W)]).twoSided &&
+      !shape([xfer(USDC, OTHER, W)]).twoSided &&
+      !shape([xfer(WETH, ROUTER, W)], BigInt(10) ** BigInt(16)).twoSided &&
+      !shape([xfer(USDC, W, ROUTER), xfer(USDC, ROUTER, W)]).twoSided &&
+      !shape([{ address: UNI, topics: [T, pad(W), pad(OTHER), pad(W)] }]).twoSided &&
+      !shape([]).twoSided,
+  )
+  const oneWay = decideProof(row(), { usd: 500, twoSided: false }, true)
+  const untold = decideProof(row(), { usd: 500 }, true)
+  check(
+    'R1 refusal: a priced but ONE-WAY transaction (a transfer, a deposit) is refused by name, and a reader that does not say "two-sided" proves nothing (fail closed)',
+    !oneWay.ok && oneWay.status === 400 && oneWay.reason === REFUSE_ONE_WAY && !untold.ok && untold.reason === REFUSE_ONE_WAY,
   )
   const nothing = decideProof(row(), { usd: null }, true)
   const zero = decideProof(row(), { usd: 0 }, true)
@@ -168,13 +200,13 @@ export function secfixProofPins(check: Check): void {
     'S1 refusal: a null or zero on-chain read (the approve-only trick) is refused by name; no RPC answer refuses (fail closed, 503); a hash the chain does not know is refused',
     !nothing.ok && nothing.reason === REFUSE_NOTHING_MOVED && !zero.ok && zero.reason === REFUSE_NOTHING_MOVED && !unread.ok && unread.status === 503 && unread.reason === REFUSE_CHAIN_UNREAD && !gone.ok && /not on Base/.test(gone.reason),
   )
-  const ok = decideProof(row({ valueUsd: 999_999_999, chain: '8453' }), { usd: 20 }, true)
+  const ok = decideProof(row({ valueUsd: 999_999_999, chain: '8453' }), { usd: 20, twoSided: true }, true)
   check(
     'S1 chain from the id: the chain NAME comes from the registry for the chain id (a stored "8453" reads Base), the hash from the link; the size is clamped to the chain',
-    ok.ok && ok.proof.chainId === 8453 && ok.proof.chain === 'Base' && ok.proof.txHash === H && ok.proof.sizeUsd === 21 && ok.proof.verification === 'verified',
+    ok.ok && ok.proof.chainId === 8453 && ok.proof.chain === 'Base' && ok.proof.txHash === H && ok.proof.sizeUsd === 20 && ok.proof.verification === 'verified',
     ok.ok ? JSON.stringify(ok.proof) : ok.reason,
   )
-  const evil = decideProof(row({ txUrl: `https://evil.example/claim?tx=${H}` }), { usd: 20 }, true)
+  const evil = decideProof(row({ txUrl: `https://evil.example/claim?tx=${H}` }), { usd: 20, twoSided: true }, true)
   const noChain = decideProof(row({ chain: 'narnia', txUrl: `https://evil.example/claim?tx=${H}` }), { usd: 20 }, true)
   const noHash = decideProof(row({ txUrl: 'https://basescan.org/tx/0x1' }), { usd: 20 }, true)
   check(
@@ -447,7 +479,7 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
       const seen: string[] = []
       const reader = async (chainId: number, h: string, w: string) => {
         seen.push(`${chainId}:${h}:${w}`)
-        return { usd: 20 }
+        return { usd: 20, twoSided: true }
       }
       const pos = await resolveTradeProof(a, evilRow, { showSize: true, includeInternal: true, readNotional: reader })
       const hidden = await resolveTradeProof(a, mine, { showSize: false, includeInternal: true, readNotional: reader })
@@ -455,8 +487,8 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
       const hang = await resolveTradeProof(a, mine, { showSize: true, includeInternal: true, readNotional: () => new Promise(() => {}), timeoutMs: 80 })
       const other = await resolveTradeProof(a, theirs, { showSize: true, includeInternal: true, readNotional: reader })
       check(
-        'S1 (DB, injected chain reader): the positive path reads the chain for (8453, the row\'s hash, the author); a recorded $999,999,999 shows $21 (on-chain $20 × 1.05); the evil link becomes basescan; hidden size = null; a null read and a hung read are refused; another wallet\'s row never reaches the reader',
-        pos.ok && pos.proof.sizeUsd === 21 && pos.proof.txUrl === tx && pos.proof.chain === 'Base' && seen[0] === `8453:${hash}:${a}` &&
+        'S1 (DB, injected chain reader): the positive path reads the chain for (8453, the row\'s hash, the author); a recorded $999,999,999 shows $20 (never above the $20 the chain shows); the evil link becomes basescan; hidden size = null; a null read and a hung read are refused; another wallet\'s row never reaches the reader',
+        pos.ok && pos.proof.sizeUsd === 20 && pos.proof.txUrl === tx && pos.proof.chain === 'Base' && seen[0] === `8453:${hash}:${a}` &&
           hidden.ok && hidden.proof.sizeUsd === null && !zero.ok && /moved nothing/.test(zero.reason) && !hang.ok && hang.status === 503 && !other.ok && seen.length === 2,
         pos.ok ? JSON.stringify(pos.proof).slice(0, 200) : pos.reason,
       )
