@@ -112,7 +112,7 @@ export default function CommunityDocsPage() {
         <h2>Connect a Discord channel</h2>
         <p>
           In Discord, create a webhook for the channel and paste its URL on the room page. New posts are announced there. The{' '}
-          <code>/pantessa</code> slash commands need a Discord app: until the owner of this deployment has created it they answer &ldquo;not set up on this deployment&rdquo;.
+          <code>/pantessa</code>{' '}slash commands need a Discord app: until the owner of this deployment has created it they answer &ldquo;not set up on this deployment&rdquo;.
         </p>
 
         <h2>Who gets announced</h2>

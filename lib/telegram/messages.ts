@@ -279,7 +279,7 @@ export function topMessage(ctx: LinkCtx, room: RoomRef, byInvites: readonly Publ
   const inv = byInvites.filter((m) => m.invited > 0).slice(0, 5)
   const trd = byTrades.filter((m) => m.verifiedTrades > 0).slice(0, 5)
   const lines = [`${roomName(room)} <b>board</b>`]
-  if (!inv.length && !trd.length) lines.push('Nobody has brought a member or traded with proof yet.', 'Send /invite for your own link.')
+  if (!inv.length && !trd.length) lines.push('Nobody has brought a member or has a verified receipt yet.', 'Send /invite for your own link.')
   if (inv.length) lines.push('Brought the most members', ...inv.map((m, i) => `${i + 1}. ${labelText(m.label)} · ${Math.trunc(m.invited)}`))
   if (trd.length) lines.push('Verified receipts', ...trd.map((m, i) => `${i + 1}. ${labelText(m.label)} · ${Math.trunc(m.verifiedTrades)} verified`))
   return { text: fit(lines), buttons: [[joinButton(ctx, room)]] }

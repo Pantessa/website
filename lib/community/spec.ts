@@ -225,7 +225,7 @@ export function parseVideoUrl(raw: unknown): VideoRef | null {
 export const BOT_COMMANDS = [
   { name: 'chart', args: '<symbol>', does: 'The chart, the price and the chips for one market' },
   { name: 'calls', args: '', does: "The room's newest stamped calls" },
-  { name: 'top', args: '', does: 'Who brought the most members and who traded with proof' },
+  { name: 'top', args: '', does: 'Who brought the most members and who has verified receipts' },
   { name: 'invite', args: '', does: 'Your own invite link to this room' },
   { name: 'join', args: '', does: 'Join this room on Pantessa in one tap' },
   { name: 'link', args: '<code>', does: 'Admins: link this chat to a room (the code comes from the room page)' },
