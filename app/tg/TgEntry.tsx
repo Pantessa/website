@@ -108,7 +108,10 @@ export default function TgEntry() {
       setState({ s: 'working', line: 'Joining the room.' })
       try {
         const res = await fetch(`/api/communities/${dest.slug}/join`, { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ via: dest.invite }) })
-        if (res.status === 404) return setState({ s: 'error', line: 'That room does not exist on Pantessa.' })
+        if (res.status === 404) {
+          setTarget(null)
+          return setState({ s: 'error', line: 'That room does not exist on Pantessa.' })
+        }
       } catch {
         // The room page has its own join button: land there either way.
       }
