@@ -24,7 +24,7 @@
 
 import { useEffect, useState } from 'react'
 import { useAskDoor } from '@/lib/ask-door'
-import { guideCta, guideIndexOf, GUIDE_TOTAL, renderGuideText, type GuideCta, type GuideCtx, type GuideHint } from '@/lib/guide'
+import { guideBody, guideCta, guideIndexOf, GUIDE_TOTAL, renderGuideText, type GuideCta, type GuideCtx, type GuideHint } from '@/lib/guide'
 import { PantessaMark } from '@/components/Logo'
 import SpineLink from '@/components/SpineLink'
 import './guide.css'
@@ -157,7 +157,7 @@ export default function GuideCard({ hint, ctx, onCta, onDismiss, onOff, onAsk, c
           </span>
           {renderGuideText(hint.title, ctx)}
         </p>
-        <p className="guide__text">{renderGuideText(hint.body, ctx)}</p>
+        <p className="guide__text">{guideBody(hint, ctx)}</p>
       </div>
       <div className="guide__acts">
         {action}
