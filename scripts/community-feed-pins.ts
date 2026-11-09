@@ -86,7 +86,7 @@ export function communityFeedPins(check: Check): void {
     const tg = new URL(telegramShareHref(postShareText(trade), shareUrl('/c/abc123def')))
     check(
       'community feed: the Telegram share is t.me/share/url with the link in `url` and the line in `text`; Discord has no share URL (the sheet copies the link and says so)',
-      tg.origin === 'https://t.me' && tg.pathname === '/share/url' && tg.searchParams.get('url') === `${SITE_URL}/c/abc123def` && /verified on-chain/.test(tg.searchParams.get('text') ?? '') &&
+      tg.origin === 'https://t.me' && tg.pathname === '/share/url' && tg.searchParams.get('url') === `${SITE_URL}/c/abc123def` && /Verified on-chain: this wallet moved/.test(tg.searchParams.get('text') ?? '') &&
         /Pastes into Discord and anywhere else/.test(src('components/community/ShareSheet.tsx')) && /navigator\.share/.test(code('components/community/ShareSheet.tsx')),
     )
     check(
@@ -95,12 +95,13 @@ export function communityFeedPins(check: Check): void {
       asciiLine('“a” — b… c’s d 🚀'),
     )
     check(
-      'community feed: a share line leads with the cashtag once, keeps the author\'s title, and says what stands behind it ("Time and price stamped" for an idea, "Transaction verified on-chain" ONLY for a verified trade)',
+      'T4 share line: an idea leads with the cashtag once and is "Time and price stamped"; a TRADE leads with what the chain confirmed and quotes the typed title as the author\'s words (never "$BTC: Bought $5,000,000…" as the lead); a trade with no proof says so',
       postShareText(idea) === '$UNI 1D: reclaim of 7.10 holds, target the September high. Time and price stamped.' &&
-        postShareText(trade) === '$ETH: Added on the sweep of the range low. Transaction verified on-chain.' &&
-        postShareText(noProof) === '$BTC: Bought the dip, trust me.' && !/verified/i.test(postShareText(noProof)) &&
+        postShareText(trade) === 'Verified on-chain: this wallet moved $2,500.00 on Base. The author says: "Added on the sweep of the range low"' &&
+        postShareText({ ...trade, title: 'Bought $5,000,000 of BTC at the low' }).startsWith('Verified on-chain: this wallet moved $2,500.00 on Base. The author says:') &&
+        postShareText(noProof) === 'A trade post with no proof on record. The author says: "Bought the dip, trust me"' &&
         postShareText(xVideo) === 'Clip from the Fed presser, the one line that moved the two-year.',
-      `${postShareText(idea)} | ${postShareText(noProof)}`,
+      `${postShareText(trade)} | ${postShareText(noProof)}`,
     )
     check(
       'community feed: a room link is recognised only as /g/<slug> with no invite on it, and the member\'s invite code rides as ?via= (a malformed code is dropped)',
@@ -160,6 +161,11 @@ export function communityFeedPins(check: Check): void {
         tradeFact({ ...trade.proof!, side: null, symbols: [], sizeUsd: null }, '').tag === null &&
         /<\/div>\s*\{fact\.tag && <p className="cmy-fact-tag" data-unverified="">\{fact\.tag\}<\/p>\}/.test(card) && /\{fact\.fact\}/.test(card),
       `${f1.fact} | ${f1.tag} | ${f2.fact}`,
+    )
+    check(
+      'T4 card: a trade card\'s <h3> headline and aria-label are the proof\'s headline (tradeHeadline), the typed title follows as the author\'s words',
+      /const trade = post\.kind === 'trade' \? tradeHeadline\(\{ title: post\.title, proof \}\) : null/.test(card) && /const headText = trade \? trade\.headline : post\.title/.test(card) &&
+        /aria-label=\{headText\}/.test(card) && /\{trade\?\.authorWords && <p className="cmy-card__said"/.test(card) && !/aria-label=\{post\.title\}/.test(card),
     )
     const s1 = sameTradeAsk(trade.proof!, trade.symbol)
     const s2 = sameTradeAsk(hidden.proof!, hidden.symbol)

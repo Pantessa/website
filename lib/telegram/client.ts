@@ -61,9 +61,13 @@ export function chatIsGone(r: TgResult): boolean {
   return r.errorCode === 400 && (d.includes('chat not found') || d.includes('group chat was upgraded') || d.includes('chat was deactivated') || d.includes('bot was kicked'))
 }
 
-/** getChatMember → may this user link the chat? creator or administrator only. */
+/** getChatMember → may this user link the chat? The creator, or an
+ *  administrator who may change the group's info or pin messages
+ *  (QA-SECURITY-2 T2: an admin who can only delete messages may not point the
+ *  group at a room). */
 export function isChatAdmin(r: TgResult): boolean {
   if (!r.ok || !r.result || typeof r.result !== 'object') return false
-  const status = (r.result as { status?: unknown }).status
-  return status === 'creator' || status === 'administrator'
+  const m = r.result as { status?: unknown; can_change_info?: unknown; can_pin_messages?: unknown }
+  if (m.status === 'creator') return true
+  return m.status === 'administrator' && (m.can_change_info === true || m.can_pin_messages === true)
 }

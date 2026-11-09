@@ -4,7 +4,7 @@
 //   npx tsx scripts/community-core-pins.ts            (npm run pins:community-core)
 //   BASE=http://localhost:PORT npx tsx scripts/community-core-pins.ts --served
 
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createSiweMessage } from 'viem/siwe'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
@@ -483,19 +483,25 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
         !JSON.stringify(tgMembers.json).includes(tgId) && ((tgMembers.json.members ?? []) as { label: string }[]).some((m) => m.label === 'Core Pin') && tgVote?.json.score === 3,
       `${tgMe.json.key} ${tgJoin.status} ${tgVote?.json.score}`,
     )
-    const linkNoIdent = await call('POST', '/api/me/identity/link', { cookie: sa })
-    const linkNoWallet = await call('POST', '/api/me/identity/link', { cookie: tg })
-    const linked = await call('POST', '/api/me/identity/link', { cookie: `${sa}; ${tg}` })
-    const afterLink = await call('GET', `/api/communities/${slug}`, { cookie: tg })
-    const tgAfter = await call('GET', '/api/me/identity', { cookie: tg })
-    const scoreAfter = lpId(link) ? await call('GET', `/api/posts/${lpId(link)}`) : null
-    check(
-      "community core (served): link — needs BOTH proofs (401 without either); then the identity acts as the wallet and its seat merges into the owner's (members 1, role owner); its vote merges too (score 2)",
-      linkNoIdent.status === 401 && linkNoWallet.status === 401 && linked.status === 200 && linked.json.linked === true && linked.json.wallet === a && linked.json.moved === 1 &&
-        tgAfter.json.key === `w:${a}` && (afterLink.json.community as { members: number })?.members === 1 && (afterLink.json.me as { role: string } | null)?.role === 'owner' &&
-        (scoreAfter?.json.post as { score: number } | undefined)?.score === 2,
-      `${linkNoIdent.status}/${linkNoWallet.status}/${linked.status} moved=${linked.json.moved} members=${(afterLink.json.community as { members: number })?.members}`,
-    )
+    // ── T7: the link route is gone; nothing writes identity_links ──
+    {
+      const gone1 = await call('POST', '/api/me/identity/link', { cookie: `${sa}; ${tg}` })
+      const routeFiles = (function walk(dir: string): string[] {
+        return readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? walk(join(dir, f)) : /route\.tsx?$/.test(f) ? [join(dir, f)] : []))
+      })(join(process.cwd(), 'app'))
+      const importers = routeFiles.filter((f) => /linkIdentityToWallet|mergeSeats/.test(readFileSync(f, 'utf8')))
+      // A link written as a fixture (as an old row would be): the provider cookie alone must not read the full wallet.
+      await prisma.identityLink.create({ data: { provider: 'tg', externalId: tgId, wallet: a } })
+      const tgOnly = await call('GET', '/api/me/identity', { cookie: tg })
+      const both = await call('GET', '/api/me/identity', { cookie: `${sa}; ${tg}` })
+      check(
+        'T7 (served): POST /api/me/identity/link is gone (404) and no route file imports linkIdentityToWallet / mergeSeats; a provider cookie alone (even linked) reads the SHORT wallet and no key, the full one only with the wallet session',
+        gone1.status === 404 && importers.length === 0 && routeFiles.length > 50 &&
+          tgOnly.json.wallet === `${a.slice(0, 6)}…${a.slice(-4)}` && tgOnly.json.key === null && !JSON.stringify(tgOnly.json).includes(a) &&
+          both.json.wallet === a && both.json.key === `w:${a}`,
+        `${gone1.status} importers=${importers.join(',')} ${tgOnly.json.wallet}/${tgOnly.json.key}`,
+      )
+    }
     // ── S7: cross-site writes and who manages ──
     {
       const EVIL = { origin: 'https://evil.example' }
@@ -507,14 +513,13 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
       const xPost = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'link', title: 'x-site', linkUrl: 'https://example.com/x' }, headers: EVIL })
       const xRoom = await call('POST', '/api/communities', { cookie: sa, raw: JSON.stringify({ slug: `${slug}-x`, name: 'Cross' }), headers: { 'content-type': 'text/plain' } })
       const xPatch = await call('PATCH', `/api/communities/${slug}`, { cookie: sa, body: { about: 'x' }, headers: EVIL })
-      const xLink = await call('POST', '/api/me/identity/link', { cookie: `${sa}; ${tg}`, headers: EVIL })
       const xComment = postId ? await call('POST', `/api/posts/${postId}/comments`, { cookie: sa, body: { body: 'x-site' }, headers: EVIL }) : null
       const sameSite = postId ? await call('POST', `/api/posts/${postId}/vote`, { cookie: sb, body: { value: 1 }, headers: { origin: base, 'sec-fetch-site': 'same-origin' } }) : null
       const refused = (r: { status: number; json: Json } | null) => !!r && r.status === 403 && r.json.error === 'This request did not come from Pantessa.'
       check(
-        'S7 (served): every community write refuses a cross-site request (Origin of another host, Sec-Fetch-Site cross-site, or a non-JSON body) with 403 by name — vote, join, leave, post, open a room, PATCH, link, comment; our own page (same Origin) passes',
-        refused(xVote) && refused(plainVote) && refused(xJoin) && refused(xLeave) && refused(xPost) && refused(xRoom) && refused(xPatch) && refused(xLink) && refused(xComment) && sameSite?.status === 200,
-        [xVote, plainVote, xJoin, xLeave, xPost, xRoom, xPatch, xLink, xComment, sameSite].map((r) => r?.status).join('/'),
+        'S7 (served): every community write refuses a cross-site request (Origin of another host, Sec-Fetch-Site cross-site, or a non-JSON body) with 403 by name — vote, join, leave, post, open a room, PATCH, comment; our own page (same Origin) passes',
+        refused(xVote) && refused(plainVote) && refused(xJoin) && refused(xLeave) && refused(xPost) && refused(xRoom) && refused(xPatch) && refused(xComment) && sameSite?.status === 200,
+        [xVote, plainVote, xJoin, xLeave, xPost, xRoom, xPatch, xComment, sameSite].map((r) => r?.status).join('/'),
       )
       // The Telegram identity is now LINKED to A (the owner). Its cookie alone must not manage the room.
       const tgDiscord = await call('POST', `/api/communities/${slug}/discord`, { cookie: tg, body: { mintCode: true } })
@@ -631,8 +636,8 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
       }
       const th = pages.trade.html
       check(
-        'bug (b) (served): /c/<id> answers 200 for one post of each kind (idea, link, video, trade) — the announcements\' Open link never 404s; the trade page prints the chain-confirmed line, the author\'s tag apart, the rebuilt basescan link',
-        Object.values(pages).every((p) => p.status === 200) && th.includes('Verified on-chain: this wallet moved $25.00 on Base') && th.includes('Tagged by the author: bought ETH') && th.includes(`https://basescan.org/tx/${H}`),
+        'bug (b) + T4 (served): /c/<id> answers 200 for one post of each kind (idea, link, video, trade) — the announcements\' Open link never 404s; the trade page\'s og:title is the chain-confirmed line (never the typed $5,000,000 title), it prints that line, the author\'s tag apart, the rebuilt basescan link',
+        Object.values(pages).every((p) => p.status === 200) && /<meta property="og:title" content="Verified on-chain: this wallet moved \$25.00 on Base · Pantessa"/.test(th) && !/og:title" content="[^"]*5,000,000/.test(th) && th.includes('Verified on-chain: this wallet moved $25.00 on Base') && th.includes('Tagged by the author: bought ETH') && th.includes(`https://basescan.org/tx/${H}`),
         Object.entries(pages).map(([k, p]) => `${k}=${p.status}`).join(' '),
       )
       if (ids.link) await call('POST', `/api/posts/${ids.link}/comments`, { cookie: sa, body: { body: 'an internal reply' } })
@@ -715,6 +720,25 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
         'S8 (DB): a room links at most 5 chats — the sixth is refused by name (link and code alike), re-linking one it has is fine; minting a code deletes expired ones',
         !sixth.ok && sixth.status === 409 && /at most 5/.test(sixth.reason) && again.ok && !!redeemed && !redeemed.ok && redeemed.status === 409 && stale === 0,
         `${sixth.ok ? 'ok' : sixth.status} ${again.ok} ${redeemed && !redeemed.ok ? redeemed.status : 'ok'} stale=${stale}`,
+      )
+    }
+    // ── T2: a linked chat is not re-pointed ──
+    {
+      const store = await import('../lib/community/store')
+      const room2 = `${slug}-t2`
+      await store.createCommunity(a, { slug: room2, name: 'Second pin room' }, true)
+      const key = `w:${a}` as `w:${string}`
+      const code2 = await store.mintLinkCode(room2, key, 'discord')
+      const moved = code2.ok ? await store.redeemLinkCode(code2.code, 'discord', { externalId: '900000000000000003', title: 'hijack' }) : null
+      const unspent = code2.ok ? await prisma.channelLinkCode.count({ where: { code: code2.code } }) : -1
+      const direct = await store.linkChannel(room2, key, 'discord', { externalId: '900000000000000003', title: 'hijack' })
+      const stillA = await prisma.communityChannel.findUnique({ where: { platform_externalId: { platform: 'discord', externalId: '900000000000000003' } }, select: { communitySlug: true } })
+      const codeSame = await store.mintLinkCode(slug, key, 'discord')
+      const same = codeSame.ok ? await store.redeemLinkCode(codeSame.code, 'discord', { externalId: '900000000000000003', title: 'again' }) : null
+      check(
+        'T2 (DB): a chat linked to room A is never re-pointed to room B — by code (409 by name, the code NOT spent) or directly; the row stays on A; re-linking the same chat to the same room stays fine',
+        !!moved && !moved.ok && moved.status === 409 && /already linked to the room/.test(moved.reason) && unspent === 1 && !direct.ok && direct.status === 409 && stillA?.communitySlug === slug && !!same && same.ok,
+        `${moved && !moved.ok ? moved.status : 'moved'} unspent=${unspent} direct=${direct.ok ? 'ok' : direct.status} on=${stillA?.communitySlug} same=${same?.ok}`,
       )
     }
   } catch (e) {

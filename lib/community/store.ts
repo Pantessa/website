@@ -398,7 +398,8 @@ export async function inviterLabel(slug: string, code: unknown): Promise<string 
   return labelWithSource(label, { wallet, source: seat.source })
 }
 
-/** When a provider identity is linked to a wallet, its seats move to the wallet key (one seat per person). */
+/** NOT REACHABLE — see QA-SECURITY-2 T7 (its only caller, the link route, was removed).
+ *  When a provider identity is linked to a wallet, its seats move to the wallet key (one seat per person). */
 export async function mergeSeats(from: MemberKey, toWallet: string): Promise<number> {
   const w = toWallet.toLowerCase()
   const to = walletKey(w)
@@ -672,6 +673,14 @@ async function channelCapReached(slug: string, platform: ChannelPlatform, extern
   return rows.length >= ROOM_CHANNELS_MAX
 }
 
+/** T2: the refusal when this chat is already linked to a DIFFERENT room (null = free, or the same room).
+ *  Names the room by its slug only ([a-z0-9-]: nothing a chat client would link). */
+async function linkedElsewhere(slug: string, platform: ChannelPlatform, externalId: string): Promise<string | null> {
+  const row = await prisma.communityChannel.findUnique({ where: { platform_externalId: { platform, externalId } }, select: { communitySlug: true } })
+  if (!row || row.communitySlug === slug) return null
+  return `This chat is already linked to the room "${row.communitySlug}". Unlink it on that room's page, or remove the bot and add it again.`
+}
+
 async function upsertChannel(slug: string, platform: ChannelPlatform, linkedBy: string, chat: { externalId: string; title?: string | null; secret?: string | null }) {
   const externalId = String(chat.externalId).slice(0, 128)
   await prisma.communityChannel.upsert({
@@ -688,10 +697,16 @@ export async function redeemLinkCode(code: string, platform: ChannelPlatform, ch
   if (!chat || !String(chat.externalId ?? '')) return refuse(400, 'No chat to link.')
   const row = await prisma.channelLinkCode.findUnique({ where: { code: c } })
   if (!row || row.platform !== platform) return refuse(404, 'That link code is not known. Mint a new one on the room page.')
+  if (Date.now() - row.createdAt.getTime() > LINK_CODE_TTL_MS) {
+    await prisma.channelLinkCode.deleteMany({ where: { code: c } }).catch(() => null)
+    return refuse(410, 'That link code expired. Mint a new one on the room page.')
+  }
+  // T2: a chat linked to ANOTHER room is never re-pointed (the code is not spent).
+  const elsewhere = await linkedElsewhere(row.communitySlug, platform, String(chat.externalId).slice(0, 128))
+  if (elsewhere) return refuse(409, elsewhere)
   // Single use: whoever deletes the row spends it.
   const spent = await prisma.channelLinkCode.deleteMany({ where: { code: c } })
   if (!spent.count) return refuse(404, 'That link code was already used.')
-  if (Date.now() - row.createdAt.getTime() > LINK_CODE_TTL_MS) return refuse(410, 'That link code expired. Mint a new one on the room page.')
   const community = await getCommunity(row.communitySlug)
   if (!community) return refuse(404, 'That room no longer exists.')
   if (await channelCapReached(row.communitySlug, platform, String(chat.externalId).slice(0, 128))) return refuse(409, TOO_MANY_CHANNELS)
@@ -706,6 +721,8 @@ export async function linkChannel(slug: string, by: MemberKey, platform: Channel
   if (!(await prisma.community.findUnique({ where: { slug: COMMUNITY_SLUG_RE.test(s) ? s : '-' }, select: { slug: true } }))) return refuse(404, 'No such room.')
   if (!canManage(await roleOf(s, by))) return refuse(403, 'Only the owner or a mod can link a chat.')
   if (!chat || !String(chat.externalId ?? '')) return refuse(400, 'No chat to link.')
+  const elsewhere = await linkedElsewhere(s, platform, String(chat.externalId).slice(0, 128))
+  if (elsewhere) return refuse(409, elsewhere)
   if (await channelCapReached(s, platform, String(chat.externalId).slice(0, 128))) return refuse(409, TOO_MANY_CHANNELS)
   await upsertChannel(s, platform, by, chat)
   return { ok: true }

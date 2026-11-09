@@ -15,7 +15,7 @@ import { chartPairFor } from '@/lib/charts'
 import { composeExecAsk } from '@/lib/trade-asks'
 import { X_MENTION } from '@/lib/social'
 import { absoluteUrl } from '@/lib/site-url'
-import { fmtProofDollars, proofFactLine, proofTagLine } from '@/lib/community/proof-words'
+import { fmtProofDollars, proofFactLine, proofTagLine, tradeHeadline } from '@/lib/community/proof-words'
 import { callPath } from '@/lib/chart-calls'
 import { COMMUNITY_SLUG_RE, INVITE_CODE_RE, invitePath, type FeedKind, type FeedPost, type FeedSort, type FeedWindow, type TradeProof, type VideoHost } from '@/lib/community/spec'
 
@@ -245,12 +245,17 @@ export function roomInviteUrl(slug: string, code: string | null | undefined): st
 /** One line that reads on its own in a chat, for a post. Ticker first as a
  *  cashtag (once), the author's own title, then what stands behind it. */
 export function postShareText(post: Pick<FeedPost, 'kind' | 'symbol' | 'title' | 'proof'>): string {
+  if (post.kind === 'trade') {
+    // T4: a trade leads with what the chain confirmed; the typed title is the author's words.
+    const h = tradeHeadline({ title: asciiLine(post.title), proof: post.proof })
+    return `${h.headline}.${h.authorWords ? ` ${h.authorWords}` : ''}`
+  }
   const title = asciiLine(post.title)
   const sym = post.symbol ? `$${post.symbol}` : ''
   const opens = !!post.symbol && new RegExp(`^\\$?${post.symbol.replace(/[^A-Za-z0-9]/g, '')}\\b`, 'i').test(title)
-  const fallback = post.kind === 'trade' ? 'A trade with proof' : post.kind === 'video' ? 'A video' : post.kind === 'link' ? 'A link' : 'A chart idea'
+  const fallback = post.kind === 'video' ? 'A video' : post.kind === 'link' ? 'A link' : 'A chart idea'
   const said = title.length >= 3 ? title : fallback
   const lead = !sym ? said : opens ? `$${said.replace(/^\$/, '')}` : `${sym}: ${said}`
-  const stands = post.kind === 'trade' && isVerified(post) ? ' Transaction verified on-chain.' : post.kind === 'idea' ? ' Time and price stamped.' : ''
+  const stands = post.kind === 'idea' ? ' Time and price stamped.' : ''
   return `${lead}${/[.!?]$/.test(lead) ? '' : '.'}${stands}`
 }

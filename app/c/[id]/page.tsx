@@ -1,3 +1,4 @@
+import { tradeHeadline } from '@/lib/community/proof-words'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -67,8 +68,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     const fp = await readFeedPost(id)
     if (!fp || fp.kind === 'idea') return { title: 'Call · Pantessa', robots: { index: false, follow: false } }
     const where = fp.community ? ` in ${fp.community.name}` : ''
-    const t = `${fp.symbol ? `${fp.symbol}: ` : ''}${fp.title} · Pantessa`
-    const d = `A ${KIND_NOUN[fp.kind]} by ${fp.authorLabel}${where}.${fp.kind === 'trade' && fp.proof?.verification === 'verified' ? ' The transaction is verified on-chain.' : ''}`
+    // T4: a trade's og:title is what the chain confirmed; the typed title is quoted as the author's.
+    const th = fp.kind === 'trade' ? tradeHeadline({ title: fp.title, proof: fp.proof }) : null
+    const t = th ? `${th.headline} · Pantessa` : `${fp.symbol ? `${fp.symbol}: ` : ''}${fp.title} · Pantessa`
+    const d = th ? `A trade post by ${fp.authorLabel}${where}.${th.authorWords ? ` ${th.authorWords}` : ''}` : `A ${KIND_NOUN[fp.kind]} by ${fp.authorLabel}${where}.`
     return {
       title: t,
       description: d,

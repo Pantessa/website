@@ -73,3 +73,14 @@ export function defaultTradeTitle(p: Pick<TradeProof, 'symbols' | 'side' | 'size
   const tag = proofTagLine(p)
   return `${tag ? `${tag}. ` : ''}${proofFactLine(p)}.`.slice(0, 120)
 }
+
+/** QA-SECURITY S9 / T4: ONE rule for every place a trade post is headed (the
+ *  card's headline and aria-label, the share line, og:title, both bots): the
+ *  HEADLINE is what the chain confirmed; the typed title follows as the
+ *  author's words, quoted. A trade with no verified proof says so. */
+export const NO_PROOF_HEADLINE = 'A trade post with no proof on record'
+export function tradeHeadline(post: { title: string; proof: TradeProof | null | undefined }): { headline: string; authorWords: string | null } {
+  const verified = !!post.proof && post.proof.verification === 'verified'
+  const typed = (post.title ?? '').trim()
+  return { headline: verified ? proofFactLine(post.proof!) : NO_PROOF_HEADLINE, authorWords: typed ? `The author says: "${typed}"` : null }
+}

@@ -20,6 +20,7 @@ import { createSiweMessage } from 'viem/siwe'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { deliverTelegramWith } from '../lib/community/deliver-telegram'
 import { BOT_COMMANDS, joinPayload, parseJoinPayload, type Actor, type FeedPost, type MyMembership, type PublicCommunity, type PublicMember, type TradeProof } from '../lib/community/spec'
+import { isLinkish } from '../lib/telegram/messages'
 import { chatIsGone, isChatAdmin, telegramCaller, type TgCall, type TgResult } from '../lib/telegram/client'
 import { ALLOWED_UPDATES, groupCommands, privateCommands } from '../lib/telegram/commands'
 import { missingEnv, telegramConfig, telegramStatus } from '../lib/telegram/config'
@@ -350,7 +351,7 @@ export function communityTelegramPins(check: Check): void {
     chartMsg.text.includes('$3,412.10') && chartMsg.text.includes('+1.23% 24h') && chartMsg.text.includes('Coinbase') && chartMsg.text.includes(`href="${SITE}/t/ETH"`) && flatButtons(chartMsg).length === 2 && flatButtons(chartMsg)[0].url === `${SITE}/t/ETH` &&
       flatButtons(chartBare).length === 1 && /No price right now/.test(chartBare.text) &&
       (calls.text.match(/href="/g) ?? []).length === 3 && calls.text.includes(`href="${SITE}/c/cmh1abcd2efgh3ijkl"`) && !calls.text.includes('cmh4') &&
-      top.text.includes('@bob · 12') && !top.text.includes('@zero') && !/Verified receipts/.test(top.text),
+      top.text.includes('<code>@bob</code> · 12') && !top.text.includes('@zero') && !/Verified receipts/.test(top.text),
   )
   const idea = announcementMessage(CTX, ROOM, post({ linkSlug: 'abc123' })) as TgMessage
   const tradeVerified = announcementMessage(CTX, ROOM, post({ kind: 'trade', proof: PROOF })) as TgMessage
@@ -361,7 +362,7 @@ export function communityTelegramPins(check: Check): void {
   check(
     'community telegram: an announcement says "verified on-chain" ONLY for a trade whose proof is literally verified; "Trade this" only with a link slug; a post URL never becomes a button; an unlinkable id sends nothing',
     /Chart idea/.test(idea.text) && !/verified/i.test(idea.text) && flatButtons(idea).map((b) => b.text).join('|') === 'Open|Trade this|Join ETH Traders' && flatButtons(idea)[1].url === `${SITE}/i/abc123` && flatButtons(idea)[0].url === `${SITE}/c/cmh1abcd2efgh3ijkl` &&
-      /<b>Trade, transaction verified on-chain<\/b>/.test(tradeVerified.text) && tradeVerified.text.includes('Verified on-chain: this wallet moved $25.00 on Base') &&
+      tradeVerified.text.split('\n')[0] === '<b>Verified on-chain: this wallet moved $25.00 on Base</b>' &&
       !/verified/i.test(tradeNoProof.text) && !/verified/i.test(tradeBadProof.text) && !/verified on-chain/.test(ideaWithProof.text) &&
       flatButtons(noLink).map((b) => b.text).join('|') === 'Open|Join ETH Traders' && !JSON.stringify(noLink).includes('evil.example') &&
       announcementMessage(CTX, ROOM, post({ id: '../../x y' })) === null && announcementMessage(CTX, ROOM, post({ linkSlug: 'a/b?x' }))?.buttons[0].length === 1,
@@ -371,10 +372,31 @@ export function communityTelegramPins(check: Check): void {
     const lines = typed.text.split('\n')
     const forged = announcementMessage(CTX, ROOM, post({ kind: 'trade', proof: { ...PROOF, txUrl: 'https://evil.example/claim?tx=0xabababababababababababababababababababababababababababababababab' } })) as TgMessage
     check(
-      'S9 telegram: a trade announcement\'s headline is the chain-confirmed line ("Verified on-chain: this wallet moved funds on Base"), the market is the author\'s tag, and the typed title is QUOTED as the author\'s words below; the tx button is the rebuilt explorer link, a forged link is never a button',
-      lines[1] === '<b>Verified on-chain: this wallet moved funds on Base</b>' && lines[2] === 'Tagged by the author: bought ETH' && lines[3] === 'The author wrote: "Bought $5,000,000 of BTC at the low"' &&
+      'S9 + T4 telegram: a trade announcement\'s FIRST line is the chain-confirmed line ("Verified on-chain: this wallet moved funds on Base"), the market is the author\'s tag, and the typed title is QUOTED as the author\'s words below; the tx button is the rebuilt explorer link, a forged link is never a button',
+      lines[0] === '<b>Verified on-chain: this wallet moved funds on Base</b>' && lines[1] === 'Tagged by the author: bought ETH' && lines[2] === 'The author says: <code>Bought $5,000,000 of BTC at the low</code>' &&
         flatButtons(tradeVerified).some((b) => b.text === 'The transaction' && b.url === PROOF.txUrl) && !JSON.stringify(forged).includes('evil.example') && !flatButtons(forged).some((b) => b.text === 'The transaction'),
-      lines.slice(0, 4).join(' | '),
+      lines.slice(0, 3).join(' | '),
+    )
+  }
+  {
+    // Text OUTSIDE <code> must carry no link-shaped token from a member.
+    const outside = (m: TgMessage) => m.text.replace(/<code>[\s\S]*?<\/code>/g, '').replace(/<a href="[^"]*">/g, '')
+    const scam = 'Free ETH: evil.example/claim'
+    const inv = inviteMessage(CTX, ROOM, { name: scam }, 'abc12345')
+    const room = { ...ROOM, name: 'Claim at evil.example @scambot' }
+    const wel = welcomeMessage(CTX, room)
+    const ann = announcementMessage(CTX, ROOM, post({ title: 'Claim at evil.example @scambot #free $SCAM', authorLabel: '@nate' })) as TgMessage
+    const tp = topMessage(CTX, ROOM, [{ label: 't.me/scam_support', role: 'member', source: 'telegram', invited: 3, verifiedTrades: 0, joinedAt: 0 }], [])
+    const unk = unknownSymbolMessage('bit.ly/3xYz12')
+    const names = ['Free ETH: evil.example/claim', 'https://x.y', '@scambot', '/start', 't.me/x', '$SCAM airdrop', '#claim', 'go to bit.ly']
+    check(
+      'T3 telegram: a display name with a link, an @, a leading /, a word.tld, t.me, a $TICKER or a #tag becomes "A member"; titles and room names ride inside <code> (Telegram links nothing there); a board label with an @ is code-wrapped; /chart never echoes what was typed',
+      names.every((n) => isLinkish(n)) && !isLinkish('Ana K') && !isLinkish('Bob') &&
+        /<b>A member<\/b> is inviting you/.test(inv.text) && !inv.text.includes('evil.example') &&
+        !/evil\.example|@scambot/.test(outside(wel)) && wel.text.includes('<code>Claim at evil.example @scambot</code>') &&
+        !/evil\.example|@scambot|#free|\$SCAM|@nate/.test(outside(ann)) && ann.text.includes('<code>@nate</code>') &&
+        !/t\.me\/scam/.test(outside(tp)) && !unk.text.includes('bit.ly') && /I do not have a chart for that/.test(unk.text),
+      `${inv.text.split('\n')[0]} | ${outside(ann).replace(/\n/g, ' / ')}`,
     )
   }
   const wire = webhookReply('-100123', welcome, { replyTo: 7, threadId: 9 })
@@ -419,7 +441,7 @@ export function communityTelegramPins(check: Check): void {
   check(
     'community telegram: the outbound caller refuses an unknown method before a socket opens; 403 / "chat not found" mean the chat is gone; only creator or administrator may link',
     chatIsGone({ ok: false, errorCode: 403, description: 'Forbidden: bot was kicked from the supergroup chat' }) && chatIsGone({ ok: false, errorCode: 400, description: 'Bad Request: chat not found' }) && !chatIsGone({ ok: false, errorCode: 429, description: 'Too Many Requests' }) && !chatIsGone({ ok: false, errorCode: 0, description: 'network' }) && !chatIsGone({ ok: true }) &&
-      isChatAdmin({ ok: true, result: { status: 'creator' } }) && isChatAdmin({ ok: true, result: { status: 'administrator' } }) && !isChatAdmin({ ok: true, result: { status: 'member' } }) && !isChatAdmin({ ok: true, result: { status: 'restricted' } }) && !isChatAdmin({ ok: false, result: { status: 'creator' } }) && !isChatAdmin({ ok: true }),
+      isChatAdmin({ ok: true, result: { status: 'creator' } }) && isChatAdmin({ ok: true, result: { status: 'administrator', can_pin_messages: true } }) && isChatAdmin({ ok: true, result: { status: 'administrator', can_change_info: true } }) && !isChatAdmin({ ok: true, result: { status: 'administrator', can_delete_messages: true } }) && !isChatAdmin({ ok: true, result: { status: 'member' } }) && !isChatAdmin({ ok: true, result: { status: 'restricted' } }) && !isChatAdmin({ ok: false, result: { status: 'creator' } }) && !isChatAdmin({ ok: true }),
   )
   const src = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
   const code = (p: string) => src(p).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
@@ -456,7 +478,7 @@ export async function communityTelegramBotPins(check: Check): Promise<void> {
   {
     const w = fakeWorld()
     w.codes.set(CODE, ROOM.slug)
-    const api = fakeCall({ getChatMember: { ok: true, result: { status: 'administrator' } }, sendMessage: { ok: true, result: { message_id: 555 } }, pinChatMessage: { ok: true, result: true } })
+    const api = fakeCall({ getChatMember: { ok: true, result: { status: 'administrator', can_pin_messages: true } }, sendMessage: { ok: true, result: { message_id: 555 } }, pinChatMessage: { ok: true, result: true } })
     const out = await handleUpdate(msg(GROUP, from(42), `/start@${BOT} ${CODE}`), deps(w, api.call))
     const sent = api.calls[1]?.params as { text?: string; reply_markup?: { inline_keyboard: { text: string; url: string }[][] } }
     check(
@@ -519,7 +541,7 @@ export async function communityTelegramBotPins(check: Check): Promise<void> {
     const missing = await handleUpdate(msg(priv(778), from(778), '/start g_no-such-room'), d)
     check(
       'community telegram (bot): a private /start g_<slug>__<invite> seats exactly from.id (never an id in the text), credits the invite, replies "You are in" with the room button, and is idempotent',
-      joined.action === 'start' && real.action === 'joined' && /You are in <b>ETH Traders<\/b>/.test(textOf(real.reply)) && again.action === 'already-in' && /already in/.test(textOf(again.reply)) &&
+      joined.action === 'start' && real.action === 'joined' && /You are in <code>ETH Traders<\/code>/.test(textOf(real.reply)) && again.action === 'already-in' && /already in/.test(textOf(again.reply)) &&
         w.seats.size === 1 && seat?.via === 'abc12345' && seat.source === 'telegram' && seat.displayName === 'Ada L' && seat.internal === true &&
         buttonsOf(real.reply)[0].web_app?.url === `${SITE}/tg?startapp=g_eth-traders` && real.reply?.chat_id === '777' && api.calls.length === 0 &&
         missing.action === 'join-refused' && /no room called/.test(textOf(missing.reply)) && !w.seats.has('eth-traders|tg:1') && !w.seats.has('eth-traders|tg:999'),
@@ -552,7 +574,7 @@ export async function communityTelegramBotPins(check: Check): Promise<void> {
       'community telegram (bot): /chart /calls /top /invite /join /help each answer in the webhook response (no outbound call), under the asking message, escaped, with only our URLs',
       replies.every((r) => r.reply?.method === 'sendMessage' && r.reply.chat_id === '-1001234567890' && r.reply.parse_mode === 'HTML' && !!(r.reply.reply_parameters as { message_id?: number })?.message_id && onlyOurTags(textOf(r.reply)) && buttonsOf(r.reply).every((b) => isOurUrl(b.url ?? '', CTX) && !b.web_app)) && api.calls.length === 0 &&
         chart.action === 'chart' && textOf(chart.reply).includes('$3,412.10') && buttonsOf(chart.reply).length === 2 && chartUnknown.action === 'chart-unknown' &&
-        calls.action === 'calls' && (textOf(calls.reply).match(/<a href="/g) ?? []).length === 2 && top.action === 'top' && textOf(top.reply).includes('@bob · 12') && textOf(top.reply).includes('@ada · 4 verified') && join.action === 'join-prompt' && help.action === 'help',
+        calls.action === 'calls' && (textOf(calls.reply).match(/<a href="/g) ?? []).length === 2 && top.action === 'top' && textOf(top.reply).includes('<code>@bob</code> · 12') && textOf(top.reply).includes('<code>@ada</code> · 4 verified') && join.action === 'join-prompt' && help.action === 'help',
       replies.map((r) => r.action).join('/'),
     )
     const bobCode = w.invites.get('eth-traders|tg:900') ?? ''
@@ -643,7 +665,7 @@ export async function communityTelegramBotPins(check: Check): Promise<void> {
     const boom = await deliverTelegramWith({ links: CTX, call: async () => { throw new Error('boom') }, unlink: async () => {} })(channel, { post: post(), community: ROOM })
     check(
       'community telegram: the deliverer sends one message per post (kind line, title, author, Open / Trade this / Join), resolves false and never throws; an internal post, a wrong platform and a bad chat id send nothing; a kicked bot is unlinked, a rate limit is not',
-      sent === true && api.calls.length === 1 && p.chat_id === '-1001234567890' && p.parse_mode === 'HTML' && /Trade, transaction verified on-chain/.test(p.text) && p.reply_markup.inline_keyboard.flat().map((b) => b.text).join('|') === 'Open|Trade this|The transaction|Join ETH Traders' &&
+      sent === true && api.calls.length === 1 && p.chat_id === '-1001234567890' && p.parse_mode === 'HTML' && /^<b>Verified on-chain: this wallet moved \$25\.00 on Base<\/b>/.test(p.text) && p.reply_markup.inline_keyboard.flat().map((b) => b.text).join('|') === 'Open|Trade this|The transaction|Join ETH Traders' &&
         p.reply_markup.inline_keyboard.flat().every((b) => isOurUrl(b.url, CTX) || b.url === PROOF.txUrl) && internal === false && wrongPlatform === false && badChat === false && unconfigured === false &&
         gone === false && unlinked.join() === '-1001234567890' && flood === false && boom === false,
       `sent=${sent} calls=${api.calls.length} unlinked=${unlinked.join()}`,
