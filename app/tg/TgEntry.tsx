@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { parseJoinPayload } from '@/lib/community/spec'
 import { OUTSIDE_LINE } from '@/lib/telegram/copy'
+import { inTelegramApp } from '@/lib/telegram/container'
 
 // The Mini App entry's one job, in order:
 //   1. load Telegram's own script (this route only) and read `initData`,
@@ -10,8 +11,18 @@ import { OUTSIDE_LINE } from '@/lib/telegram/copy'
 //   2. POST it to /api/telegram/auth, which VERIFIES the signature and sets
 //      the identity cookie (the page never trusts initDataUnsafe for who
 //      the user is; it reads only the room payload from it)
-//   3. join the room the payload names (idempotent), then land on /g/<slug>
+//   3. the SAME request seats that verified account in the room the payload
+//      names (idempotent); then land on /g/<slug>
 // Outside Telegram there is no initData: say so, offer the room and the bot.
+//
+// INSIDE TELEGRAM, OR NOTHING (QA-SECURITY-2 T1). Telegram's script fills
+// `initData` from the URL fragment (#tgWebAppData=…), so a link opened in an
+// ordinary browser could carry SOMEBODY ELSE'S launch data and sign the
+// visitor in as them. The page therefore signs in only inside a container
+// Telegram's own apps provide (`inTelegramApp`): the native webview bridge.
+// A fragment cannot fake that. Telegram Web runs a Mini App in an iframe,
+// where the identity cookie (SameSite=Lax) is not kept: it gets the outside
+// line and the bot's own join door, which needs no cookie.
 
 const TG_SCRIPT = 'https://telegram.org/js/telegram-web-app.js'
 const SCRIPT_WAIT_MS = 4_000
@@ -22,7 +33,7 @@ interface TelegramWebApp {
   ready?: () => void
   expand?: () => void
 }
-type TgWindow = Window & { Telegram?: { WebApp?: TelegramWebApp } }
+type TgWindow = Window & { Telegram?: { WebApp?: TelegramWebApp }; TelegramWebviewProxy?: unknown }
 
 type State = { s: 'checking' } | { s: 'outside' } | { s: 'working'; line: string } | { s: 'error'; line: string }
 
@@ -53,13 +64,15 @@ function loadTelegram(): Promise<TelegramWebApp | null> {
 
 interface SignedIn {
   startParam?: unknown
+  joined?: { slug?: unknown } | null
+  roomMissing?: unknown
   error?: unknown
 }
 
 /** Hand Telegram's signed launch data to the server. It verifies; the page believes only the answer. */
-async function signIn(initData: string): Promise<{ status: number; signed: SignedIn | null }> {
+async function signIn(initData: string, join: string | null): Promise<{ status: number; signed: SignedIn | null }> {
   try {
-    const res = await fetch('/api/telegram/auth', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ initData }) })
+    const res = await fetch('/api/telegram/auth', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(join ? { initData, join } : { initData }) })
     return { status: res.status, signed: (await res.json().catch(() => null)) as SignedIn | null }
   } catch {
     return { status: 0, signed: null }
@@ -87,6 +100,8 @@ export default function TgEntry() {
     }
 
     void (async () => {
+      // Not inside a Telegram app: load nothing, send nothing, say so.
+      if (!inTelegramApp(window as unknown as Parameters<typeof inTelegramApp>[0])) return outside()
       const app = await loadTelegram()
       const initData = app?.initData
       if (!app || !initData) return outside()
@@ -97,24 +112,20 @@ export default function TgEntry() {
         // An old client without these is still a signed launch.
       }
       setState({ s: 'working', line: 'Signing you in with Telegram.' })
-      const { status, signed } = await signIn(initData)
+      const urlPayload = payloadFromUrl()
+      const { status, signed } = await signIn(initData, urlPayload)
       if (status !== 200 || !signed) {
         return setState({ s: 'error', line: typeof signed?.error === 'string' ? signed.error : 'Could not reach Pantessa. Close this and tap the button again.' })
       }
-      // The SIGNED start parameter first (a direct link), then our own button's query.
-      const dest = parseJoinPayload(signed.startParam) ?? parseJoinPayload(app.initDataUnsafe?.start_param) ?? urlTarget
+      if (signed.roomMissing === true) {
+        setTarget(null)
+        return setState({ s: 'error', line: 'That room does not exist on Pantessa.' })
+      }
+      // The server seated the verified account and names the room it used
+      // (Telegram's SIGNED start parameter first, then our own button's query).
+      const dest = parseJoinPayload(signed.startParam) ?? urlTarget
       if (!dest) return window.location.replace('/community')
       setTarget(dest)
-      setState({ s: 'working', line: 'Joining the room.' })
-      try {
-        const res = await fetch(`/api/communities/${dest.slug}/join`, { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ via: dest.invite }) })
-        if (res.status === 404) {
-          setTarget(null)
-          return setState({ s: 'error', line: 'That room does not exist on Pantessa.' })
-        }
-      } catch {
-        // The room page has its own join button: land there either way.
-      }
       window.location.replace(`/g/${dest.slug}`)
     })()
   }, [])

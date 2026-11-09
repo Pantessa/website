@@ -13,17 +13,32 @@
 // Server-to-server callers (the harness, a script) send neither header and
 // pass: they hold no victim's cookie. Pure over web-standard Headers; pinned.
 
+import { SITE_URL } from '@/lib/site-url'
+
+const SITE_HOST = (() => {
+  try {
+    return new URL(SITE_URL).host.toLowerCase()
+  } catch {
+    return ''
+  }
+})()
+
 export function sameOrigin(headers: Headers): boolean {
   const site = headers.get('sec-fetch-site')
   if (site && site !== 'same-origin' && site !== 'none') return false
   const origin = headers.get('origin')
   if (origin) {
-    const host = (headers.get('x-forwarded-host') ?? headers.get('host') ?? '').split(',')[0].trim().toLowerCase()
+    // The host the request was SENT to (`Host`), or this deployment's own
+    // canonical host. Never `X-Forwarded-Host`: it is a header a caller can
+    // write (QA-SECURITY-2 T15), and the platform already rewrites `Host`.
+    const host = (headers.get('host') ?? '').trim().toLowerCase()
+    let got: string
     try {
-      if (!host || new URL(origin).host.toLowerCase() !== host) return false
+      got = new URL(origin).host.toLowerCase()
     } catch {
       return false
     }
+    if (!got || (got !== host && got !== SITE_HOST)) return false
   }
   return true
 }

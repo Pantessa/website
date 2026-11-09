@@ -24,6 +24,10 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 
 export const TG_AUTH_MAX_AGE_SEC = 24 * 60 * 60
+/** A Mini App's launch data is minted at launch and used at once: the auth
+ *  ROUTE accepts it for ten minutes, not a day (QA-SECURITY-2 T1 — a day-old
+ *  launch string is a credential someone can paste into a link). */
+export const TG_MINI_APP_MAX_AGE_SEC = 10 * 60
 export const TG_AUTH_FUTURE_SKEW_SEC = 5 * 60
 /** initData with a photo URL and a long name stays well under this. */
 export const TG_INIT_DATA_MAX = 8 * 1024
@@ -49,10 +53,10 @@ function hexEqual(aHex: string, bHex: string): boolean {
   return a.length === 32 && b.length === 32 && timingSafeEqual(a, b)
 }
 
-function freshness(authDateRaw: string | undefined, nowSec: number): { ok: true; authDate: number } | { ok: false; reason: 'malformed' | 'stale' | 'future' } {
+function freshness(authDateRaw: string | undefined, nowSec: number, maxAgeSec = TG_AUTH_MAX_AGE_SEC): { ok: true; authDate: number } | { ok: false; reason: 'malformed' | 'stale' | 'future' } {
   if (!authDateRaw || !/^\d{9,11}$/.test(authDateRaw)) return { ok: false, reason: 'malformed' }
   const authDate = Number(authDateRaw)
-  if (nowSec - authDate > TG_AUTH_MAX_AGE_SEC) return { ok: false, reason: 'stale' }
+  if (nowSec - authDate > maxAgeSec) return { ok: false, reason: 'stale' }
   if (authDate - nowSec > TG_AUTH_FUTURE_SKEW_SEC) return { ok: false, reason: 'future' }
   return { ok: true, authDate }
 }
@@ -87,8 +91,9 @@ export function loginWidgetHash(pairs: ReadonlyMap<string, string>, botToken: st
   return createHmac('sha256', secret).update(dataCheckString(pairs)).digest('hex')
 }
 
-/** Verify a Mini App's `initData`. `nowSec` is the server's clock. */
-export function verifyInitData(initData: unknown, botToken: string, nowSec: number): TelegramVerdict {
+/** Verify a Mini App's `initData`. `nowSec` is the server's clock; `maxAgeSec`
+ *  is how old the launch may be (the route passes TG_MINI_APP_MAX_AGE_SEC). */
+export function verifyInitData(initData: unknown, botToken: string, nowSec: number, maxAgeSec = TG_AUTH_MAX_AGE_SEC): TelegramVerdict {
   if (typeof initData !== 'string' || !initData || initData.length > TG_INIT_DATA_MAX || !botToken) return { ok: false, reason: 'malformed' }
   const pairs = new Map<string, string>()
   let params: URLSearchParams
@@ -106,7 +111,7 @@ export function verifyInitData(initData: unknown, botToken: string, nowSec: numb
   if (!HEX64.test(hash)) return { ok: false, reason: 'malformed' }
   if (!hexEqual(hash, initDataHash(pairs, botToken))) return { ok: false, reason: 'bad-hash' }
   // Only now is anything inside worth reading.
-  const fresh = freshness(pairs.get('auth_date'), nowSec)
+  const fresh = freshness(pairs.get('auth_date'), nowSec, maxAgeSec)
   if (!fresh.ok) return fresh
   let user: TelegramUser | null = null
   try {
@@ -150,7 +155,7 @@ export function verifyLoginWidget(fields: unknown, botToken: string, nowSec: num
 
 /** The one sentence a refused sign-in is told. Never the reason's internals. */
 export function verifyFailureReply(reason: TelegramVerifyFailure): string {
-  if (reason === 'stale') return 'This Telegram sign-in is more than a day old. Open it again from Telegram.'
+  if (reason === 'stale') return 'This Telegram sign-in has expired. Open it again from Telegram.'
   if (reason === 'future') return 'This Telegram sign-in is dated in the future. Check the clock on this device and try again.'
   return 'Telegram did not sign this. Open it again from Telegram.'
 }

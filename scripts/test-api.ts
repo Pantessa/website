@@ -385,6 +385,7 @@ import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
 import { readPins, readRedirectPins, readServedPins } from './read-pins'
 import { homeAppsPins } from './home-apps-pins'
+import { communityCoordPins, communityCoordPinsServed } from './community-coord-pins'
 import { communityCorePins, communityCorePinsServed } from './community-core-pins'
 import { communityFeedPins, communityFeedPinsServed } from './community-feed-pins'
 import { communityGroupPins, communityGroupPinsServed } from './community-group-pins'
@@ -35524,6 +35525,8 @@ async function main() {
   await readServedPins(check, BASE)
 
   // ── squad community (2026-11-09): one pin file per lane, wired once here ──
+  communityCoordPins(check)
+  await communityCoordPinsServed(check, BASE)
   communityCorePins(check)
   await communityCorePinsServed(check, BASE)
   communityFeedPins(check)
