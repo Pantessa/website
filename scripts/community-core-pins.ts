@@ -14,6 +14,7 @@ import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '../lib/community
 import { impostorWord, labelWithSource } from '../lib/community/rules'
 import { cleanText } from '../lib/chart-posts'
 import { additiveRefusal } from './run-ddl'
+import { DISCORD_CHANNEL_FALLBACK_TITLE, discordChannelTitle, HOT_SCAN, HOT_TOP_SCAN, rankHot } from '../lib/community/rules'
 import { checkName, checkSlug, checkSymbols, decodeCursor, encodeCursor, higherRole, memberLabel, parseVote, voteDelta } from '../lib/community/rules'
 import { clampProofSize, decideProof, explorerTxFor, fillLabel, flowShape, locateTx, proofSide, readOnChain, REFUSE_CHAIN_UNREAD, REFUSE_NOTHING_MOVED, REFUSE_ONE_WAY } from '../lib/community/proof'
 import { proofFactLine, proofTagLine } from '../lib/community/proof-words'
@@ -85,6 +86,7 @@ export function communityCorePins(check: Check): void {
       proofSide(['buy:ETH'], 'native-swap-uniswap') === 'buy' && proofSide(['sell:HYPE'], 'native-hl-exec') === 'short' && proofSide([], null) === null,
   )
   secfixProofPins(check)
+  polishCorePins(check)
   {
     const refused = ['pantessa-official', 'pantessahq', 'askpantessa', 'metamask-support', 'mods', 'pantessa-support', 'official-pantessa', 'yeetful-team', 'admin-team', 'support-desk', 'eth-supportdesk', 'verified-calls', 'coinbase-help', 'uni-swap-help', 'team', 'eth-mods', 'helpdesk-24', 'security-alerts', 'discord-calls', 'telegram-vip']
     const passed = ['uni-desk', 'modern-art', 'teamwork-fx', 'eth-swing', 'badminton-fx', 'model-traders', 'steady-stack', 'moderate-risk']
@@ -226,7 +228,8 @@ export function secfixProofPins(check: Check): void {
     proofFactLine({ sizeUsd: 25, chain: 'Base' }) === 'Verified on-chain: this wallet moved $25.00 on Base' &&
       proofFactLine({ sizeUsd: null, chain: 'Base' }) === 'Verified on-chain: this wallet moved funds on Base' &&
       proofTagLine({ symbols: ['buy:ETH'], side: 'buy' }) === 'Tagged by the author: bought ETH' && proofTagLine({ symbols: [], side: null }) === null &&
-      fillLabel({ symbols: ['buy:ETH'], side: 'buy', sizeUsd: 25, chain: 'Base' }) === 'Tagged by the author: bought ETH. Verified on-chain: this wallet moved $25.00 on Base.' &&
+      // RE-PINNED 2026-11-09 (polish, fix-lane Decision 7): the default title is the tag alone, never the size or "verified".
+      fillLabel({ symbols: ['buy:ETH'], side: 'buy', sizeUsd: 25, chain: 'Base' }) === 'Bought ETH' &&
       !/verified/i.test(proofTagLine({ symbols: ['sell:AAPL'], side: 'sell' }) ?? ''),
   )
 }
@@ -289,6 +292,7 @@ const ORGANIC = { 'x-yf-organic-probe': '1' }
  *  Every row written carries the internal-run header and is cleaned up. */
 export async function communityCorePinsServed(check: Check, base: string): Promise<void> {
   await secfixProofReadPins(check)
+  await polishCorePinsServed(check, base)
   loadEnvLocal()
   const pk = process.env.PRIVATE_KEY
   if (!pk) {
@@ -768,8 +772,9 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
       const codeSame = await store.mintLinkCode(slug, key, 'discord')
       const same = codeSame.ok ? await store.redeemLinkCode(codeSame.code, 'discord', { externalId: '900000000000000003', title: 'again' }) : null
       check(
-        'T2 (DB): a chat linked to room A is never re-pointed to room B — by code (409 by name, the code NOT spent) or directly; the row stays on A; re-linking the same chat to the same room stays fine',
-        !!moved && !moved.ok && moved.status === 409 && /already linked to the room/.test(moved.reason) && unspent === 1 && !direct.ok && direct.status === 409 && stillA?.communitySlug === slug && !!same && same.ok,
+        // RE-PINNED 2026-11-09 (polish, T8): the T2 refusal SPENDS the code (it was posted in that chat).
+        'T2 (DB): a chat linked to room A is never re-pointed to room B — by code (409 by name; T8: the code IS spent, the reason says mint a fresh one) or directly; the row stays on A; re-linking the same chat to the same room stays fine',
+        !!moved && !moved.ok && moved.status === 409 && /already linked to the room/.test(moved.reason) && /mint a fresh one/.test(moved.reason) && unspent === 0 && !direct.ok && direct.status === 409 && stillA?.communitySlug === slug && !!same && same.ok,
         `${moved && !moved.ok ? moved.status : 'moved'} unspent=${unspent} direct=${direct.ok ? 'ok' : direct.status} on=${stillA?.communitySlug} same=${same?.ok}`,
       )
     }
@@ -800,6 +805,92 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
   function lpId(r: { json: Json }): string | null {
     return ((r.json.post as { id?: string } | undefined)?.id as string | undefined) ?? null
   }
+}
+
+// ── lane POLISH (2026-11-09): follow-ups from the security reviews ─────────
+const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64url')
+export const S12_FORGED_CURSORS: string[] = [
+  b64({ t: 1e308, id: 'abc123def0' }),
+  b64({ t: -1, id: 'abc123def0' }),
+  b64({ t: 9e15, id: 'abc123def0' }),
+  b64({ t: Date.now() + 400 * 86_400_000, id: 'abc123def0' }),
+  b64({ t: 1.5, id: 'abc123def0' }),
+  b64({ t: '1762000000000', id: 'abc123def0' }),
+  b64({ t: 1_762_000_000_000, id: 12345678 }),
+  b64({ o: '5' }),
+  b64({ o: -1 }),
+  b64([1, 2]),
+  b64(null),
+]
+
+function polishCorePins(check: Check): void {
+  {
+    const refusedNames = ['Pantessá', 'p4ntessa', 'p-a-n-t-e-s-s-a', 'help-desk', 'Owner', 'Moderator', '\u{1F535} ETH calls', 'Pantessɑ Help', 'Officia1', 'Adm1n', 'Offıcial', 'Customer Service', 'Desk \u24C2']
+    const refusedSlugs = ['p4ntessa', 'pant3ssa', 'un1swap', 'c0inbase', '0fficial', 'supp0rt', 'help-desk', 'moderator', 'owner']
+    const passedNames = ['交易室', 'غرفة التداول', 'Трейдеры', 'ETH swing desk', 'Downers club', 'Moderate risk 2024']
+    const passedSlugs = ['uni-desk', 'modern-art', 'teamwork-fx', 'model-traders', 'moderate-risk', 'eth-2024']
+    const badN = refusedNames.filter((n) => checkName(n).ok)
+    const badS = refusedSlugs.filter((n) => checkSlug(n).ok)
+    const lostN = passedNames.filter((n) => !checkName(n).ok)
+    const lostS = passedSlugs.filter((n) => !checkSlug(n).ok)
+    check(
+      'community core: R5 — the brand / authority fence folds diacritics, leet digits (1 as i and l) and separators: Pantessá, p4ntessa, p-a-n-t-e-s-s-a, help-desk, Owner, Moderator and a blue-circle badge are refused; Chinese, Arabic and Cyrillic names and ordinary words still pass',
+      !badN.length && !badS.length && !lostN.length && !lostS.length,
+      `accepted=${[...badN, ...badS].join(',')} refused=${[...lostN, ...lostS].join(',')}`,
+    )
+  }
+  {
+    const t = (symbols: string[], side: 'buy' | 'sell' | 'long' | 'short' | null, sizeUsd: number | null = 25, chain = 'Base') => fillLabel({ symbols, side, sizeUsd, chain } as Parameters<typeof fillLabel>[0])
+    const all = [t(['buy:ETH'], 'buy'), t(['sell:AAPL'], 'sell', 1250), t(['buy:HYPE'], 'long'), t(['sell:BTC'], 'short'), t(['buy:UNI'], null), t([], null, 99, 'Base'), t([], 'buy', null, 'Ethereum')]
+    check(
+      'community core: Decision 7 — a trade post\'s default title is the author\'s tag alone in plain words ("Bought ETH", "Sold AAPL", "Went long HYPE"), "A trade on Base" with no tag; never a dollar figure, never "verified"',
+      all.join(' | ') === 'Bought ETH | Sold AAPL | Went long HYPE | Went short BTC | Traded UNI | A trade on Base | A trade on Ethereum' && all.every((x) => !/\$|\d|verified/i.test(x)),
+      all.join(' | '),
+    )
+  }
+  {
+    const bad = ['Coinbase Announcements', 'Pantessa Official', 'MetaMask Support', 'ETH calls \u2705', 'Verified \u2714 desk', 'Team \u202Eesuoh', 'x', '', null, 42]
+    const fell = bad.map((n) => discordChannelTitle(n))
+    const route = readFileSync(join(process.cwd(), 'app/api/communities/[slug]/discord/route.ts'), 'utf8')
+    check(
+      'community core: S17 — a Discord webhook\'s name passes the room-name rule (brand / authority words, badge glyphs, bidi) or the channel is stored as "Discord channel"; a plain name is kept; the link route stores and answers that title, never obj.name',
+      fell.every((t) => t === DISCORD_CHANNEL_FALLBACK_TITLE) && DISCORD_CHANNEL_FALLBACK_TITLE === 'Discord channel' && discordChannelTitle('  ETH  swing\n desk ') === 'ETH swing desk' &&
+        /const title = discordChannelTitle\(obj\.name\)/.test(route) && /title, secret: hook\.url/.test(route) && !/title: obj\.name/.test(route),
+      fell.join(' | '),
+    )
+  }
+  {
+    // S13: 400 fresh zero-score posts in the last hours, and one 3-day-old post at score 100.
+    const now = Date.now()
+    const fresh = Array.from({ length: HOT_SCAN }, (_, i) => ({ id: `n${String(i).padStart(5, '0')}`, score: 0, createdAt: new Date(now - i * 30_000) }))
+    const old = { id: 'oldgood01', score: 100, createdAt: new Date(now - 3 * 86_400_000) }
+    const topScored = [old, fresh[0]]
+    const ranked = rankHot(fresh, topScored)
+    check(
+      'community core: S13 — the hot candidates are the newest ∪ the top-scored (deduped by id): a high-score post older than 400 newer posts is still a candidate (absent from the newest-only set), and a post in both lists appears once',
+      HOT_TOP_SCAN >= 100 && ranked.length === HOT_SCAN + 1 && ranked.some((r) => r.id === 'oldgood01') && ranked.filter((r) => r.id === fresh[0].id).length === 1 && rankHot(fresh, []).every((r) => r.id !== 'oldgood01'),
+      `len=${ranked.length}`,
+    )
+    const src = readFileSync(join(process.cwd(), 'lib/community/store.ts'), 'utf8')
+    const hot = src.slice(src.indexOf('// hot: a bounded recent window'), src.indexOf('export async function getFeedPost'))
+    check(
+      'community core: S13 — listFeed\'s hot branch makes two bounded reads (take HOT_SCAN by time, take HOT_TOP_SCAN by score) and ranks with rankHot',
+      /take: HOT_SCAN\b/.test(hot) && /orderBy: \[\{ score: 'desc' \}[^\n]*take: HOT_TOP_SCAN/.test(hot) && /rankHot\(newest, topScored\)/.test(hot),
+    )
+  }
+  check(
+    'community core: S12 — a forged keyset cursor (1e308, negative, past a JS date, a year ahead, fractional, wrong field types, null, an array) decodes to null; a real one still decodes',
+    S12_FORGED_CURSORS.every((c) => decodeCursor(c) === null) && decodeCursor(encodeCursor({ t: Date.now() - 60_000, id: 'abc123def0' })) !== null,
+  )
+}
+
+async function polishCorePinsServed(check: Check, base: string): Promise<void> {
+  const codes: number[] = []
+  for (const c of S12_FORGED_CURSORS.slice(0, 4)) {
+    const r = await fetch(`${base}/api/feed?sort=new&cursor=${encodeURIComponent(c)}`, { headers: INTERNAL, cache: 'no-store' })
+    codes.push(r.status)
+  }
+  check('community core (served): S12 — GET /api/feed?sort=new with a forged cursor answers 200 (its first page), never a 500', codes.every((c) => c === 200), codes.join(','))
 }
 
 if (process.argv[1]?.endsWith('community-core-pins.ts')) {

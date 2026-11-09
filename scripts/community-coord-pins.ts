@@ -8,6 +8,7 @@ import { inTelegramApp } from '../lib/telegram/container'
 import { TG_MINI_APP_MAX_AGE_SEC, initDataHash, verifyInitData } from '../lib/telegram/verify'
 import { additiveRefusal } from './run-ddl'
 import { INVISIBLE_RE, cleanText } from '../lib/chart-posts'
+import { checkName } from '../lib/community/rules'
 import { sameOrigin, sameOriginJson } from '../lib/community/origin'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -96,6 +97,17 @@ export function communityCoordPins(check: Check): void {
   check(
     'R8 text: a title, body or comment keeps U+200C and U+200D (Persian words, emoji sequences) while bidi overrides, isolates, zero-width SPACE and C1 controls are still stripped; the strict strip used for NAMES still removes the joiners',
     cleanText(persian, 80) === persian && cleanText(family, 80) === family && cleanText('a\u202eb\u200bc\u2066d\u0085e\ufeff', 50) === 'abcde' && persian.replace(INVISIBLE_RE, '') !== persian,
+  )
+  const joined = checkName('Swing\u200d\u200cDesk')
+  const ghost = checkName('\u200d\u200c')
+  check(
+    'R8 names: a room NAME loses the joiners too (stored as its plain letters), and a name made only of them is no name',
+    joined.ok && joined.value === 'SwingDesk' && !ghost.ok,
+  )
+  const limits = code('lib/community/limits.ts')
+  check(
+    "daily fences survive the sweep: the room-creation caps and the once-a-day invite credit use `t:`-prefixed keys (lib/turn-limits deletes other rows after 3 hours, which would reset a daily cap by itself)",
+    /`t:cg:w:\$\{/.test(limits) && /`t:cg:i:\$\{/.test(limits) && /`t:ci:i:\$\{/.test(limits) && /key NOT LIKE 't:%'/.test(read('lib/turn-limits.ts')),
   )
   // ── S11: the DDL runner's additive fence reads every clause ──
   const refused = [

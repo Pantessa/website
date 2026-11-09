@@ -69,7 +69,12 @@ const t = (raw: unknown, max: number): string => escapeHtml(tidy(raw, max))
 // $TICKERS in a bot's text. So: a PERSON's name that carries any of those is
 // replaced by the neutral word; a title or a room name is sent inside
 // <code>…</code>, where Telegram detects nothing. Nothing invisible is inserted.
-const LINKISH_RE = /:\/\/|[@＠]|^\s*\/|\bt\.me\b|\b[a-z0-9-]+\.[a-z]{2,}\b|\$[A-Za-z]{2,}|#\w/i
+// QA-SECURITY-3 R4: the rule is SHAPE-based, in any script (Telegram links
+// Unicode labels, underscores, phone numbers and commands): a dot between a
+// letter/digit run and 2+ letters (вход.com, _evil.com, vitalik.eth; "J. Smith"
+// passes: a space follows its dot), 7+ digits in a phone shape, ://, an @, a
+// slash command, t.me, tg:, a $ or # before a letter.
+const LINKISH_RE = /:\/\/|[@＠]|(?:^|\s)\/\p{L}|^\s*\/|t\s*\.\s*me\b|\btg:|[\p{L}\p{N}_-]\.\p{L}{2,}|(?:\+?\(?\d[\s\-()]*){7,}|[$#]\p{L}/iu
 export function isLinkish(raw: unknown): boolean {
   return typeof raw === 'string' && LINKISH_RE.test(raw.normalize('NFKC'))
 }
@@ -129,8 +134,9 @@ export const couldNotPinMessage = (): TgMessage => say('I could not pin the join
 export type LinkRefusal = 'not-admin' | 'cannot-verify' | 'bad-code' | 'private' | 'usage'
 
 export function linkRefusedMessage(why: LinkRefusal, detail?: string | null): TgMessage {
-  if (why === 'not-admin') return say('Only an admin of this group can link it to a room.')
-  if (why === 'cannot-verify') return say('I could not check with Telegram that you are an admin here. Try again in a minute.')
+  // T8: a refused code is spent (it is in the chat for everyone to read), so the reply says to mint a fresh one.
+  if (why === 'not-admin') return say('Only an admin of this group can link it to a room. That code is now spent: mint a fresh one on the room page.')
+  if (why === 'cannot-verify') return say('I could not check with Telegram that you are an admin here. That code is now spent: mint a fresh one on the room page and try again in a minute.')
   if (why === 'private') return say('A link code works inside a group. Add me to your group from the room page, or send /link with the code there.')
   if (why === 'usage') return say('Send /link followed by the code from your room page. The code is 16 characters and lasts 15 minutes.')
   const more = t(detail, 160)

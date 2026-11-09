@@ -167,6 +167,7 @@ function fakeWorld(): FakeWorld {
       channels.set(chat.externalId, slug)
       return { ok: true, community: rooms.get(slug) as PublicCommunity }
     },
+    burnLinkCode: async (code) => codes.delete(code),
     unlinkChannel: async (_p, externalId) => channels.delete(externalId),
     joinCommunity: async (slug, actor: Actor, input = {}) => {
       const room = rooms.get(slug)
@@ -472,6 +473,8 @@ let botPinsRan = false
 export async function communityTelegramBotPins(check: Check): Promise<void> {
   if (botPinsRan) return
   botPinsRan = true
+  await polishFencePins(check)
+  polishLinkishPins(check)
   const CODE = 'abcdef0123456789'
 
   // link by an admin: Telegram is asked first, then the code is spent, then the welcome is sent and pinned.
@@ -492,21 +495,33 @@ export async function communityTelegramBotPins(check: Check): Promise<void> {
     check('community telegram (bot): a spent code is refused in the store\'s own words, escaped', again.action === 'link-refused' && /did not work/.test(textOf(again.reply)) && textOf(again.reply).includes('&lt;Mint&gt;') && onlyOurTags(textOf(again.reply)))
   }
 
-  // link refused: not an admin, Telegram unreachable, no caller at all. The code survives every one.
+  // link refused: not an admin, Telegram unreachable, no caller at all.
+  // RE-PINNED 2026-11-09 (polish, T8): every refusal SPENDS the code (it sits in the chat), and says to mint a fresh one.
   {
     const w = fakeWorld()
     w.codes.set(CODE, ROOM.slug)
     const member = fakeCall({ getChatMember: { ok: true, result: { status: 'member' } } })
     const notAdmin = await handleUpdate(msg(GROUP, from(43), `/link ${CODE}`), deps(w, member.call))
+    const spentByNotAdmin = !w.codes.has(CODE)
+    w.codes.set(CODE, ROOM.slug)
     const down = fakeCall({})
     const unreachable = await handleUpdate(msg(GROUP, from(43), `/link ${CODE}`), deps(w, down.call))
-    const noCaller = await handleUpdate(msg(GROUP, from(43), `/link ${CODE}`), deps(w, null))
+    const spentByUnreachable = !w.codes.has(CODE)
+    w.codes.set(CODE, ROOM.slug)
+    const noCaller = await handleUpdate(msg(GROUP, from(43), `/start ${CODE}`), deps(w, null))
+    const spentByNoCaller = !w.codes.has(CODE)
+    w.codes.set(CODE, ROOM.slug)
+    check(
+      'community telegram (bot): T8 — a refused /link or /start <code> in a group (not an admin, Telegram unreachable, no caller) SPENDS the code, and the reply says to mint a fresh one on the room page',
+      spentByNotAdmin && spentByUnreachable && spentByNoCaller && [notAdmin, unreachable, noCaller].every((o) => o.action === 'link-refused' && /mint a fresh one on the room page/.test(textOf(o.reply))),
+      `${spentByNotAdmin}/${spentByUnreachable}/${spentByNoCaller}`,
+    )
     const viaBot = await handleUpdate(msg(GROUP, from(44, { is_bot: true }), `/link ${CODE}`), deps(w, member.call))
     const viaChannel = await handleUpdate(msg(GROUP, { id: 136817688, is_bot: true, first_name: 'Channel' }, `/link ${CODE}`, { sender_chat: { id: -1009999, type: 'channel' } }), deps(w, member.call))
     const inPrivate = await handleUpdate(msg(priv(43), from(43), `/start ${CODE}`), deps(w, member.call))
     const edited = await handleUpdate({ update_id: 9, edited_message: { message_id: 1, chat: GROUP, from: from(42), text: `/link ${CODE}` } }, deps(w, member.call))
     check(
-      'community telegram (bot): no link without Telegram\'s word — a non-admin, an unreachable Telegram and a missing caller are refused; a bot, a channel, a private chat and an edit never link; the code is never spent',
+      'community telegram (bot): no link without Telegram\'s word — a non-admin, an unreachable Telegram and a missing caller are refused; a bot, a channel, a private chat and an edit never link (and spend nothing)',
       notAdmin.action === 'link-refused' && /Only an admin/.test(textOf(notAdmin.reply)) && unreachable.action === 'link-refused' && /could not check/.test(textOf(unreachable.reply)) && noCaller.action === 'link-refused' &&
         viaBot.action === 'ignored-sender' && viaBot.reply === null && viaChannel.action === 'ignored-sender' && inPrivate.action === 'link-refused' && /inside a group/.test(textOf(inPrivate.reply)) && edited.action === 'ignored' &&
         w.codes.has(CODE) && w.channels.size === 0 && member.calls.every((c) => c.method === 'getChatMember'),
@@ -738,6 +753,75 @@ async function http(base: string, method: string, path: string, opts: { headers?
   return { status: res.status, json, text, res }
 }
 
+// ── lane POLISH (2026-11-09): R4 — the display-name defang is shape-based, any script ──
+function polishLinkishPins(check: Check): void {
+  const bypasses = ['вход.com', 'кто.com', 'пример.рф', 'a_b.com', '_evil.com', '+1 415 555 0100', '(415) 555-0100', 'tap /link now', '$X', '#крипто', 'vitalik.eth', 'tg:resolve', 't.me/x']
+  const ordinary = ['Мария', '李雷', 'J. Smith', 'Ana K', 'Bob', 'ETH desk 2024', 'نور']
+  const missed = bypasses.filter((n) => !isLinkish(n))
+  const lost = ordinary.filter((n) => isLinkish(n))
+  check(
+    'community telegram: R4 — an IDN domain (вход.com), a leading-underscore domain (_evil.com), a phone number, a mid-text /command, $X, #крипто and vitalik.eth read as linkish; "Мария", "李雷" and "J. Smith" pass',
+    !missed.length && !lost.length,
+    `missed=${missed.join(',')} lost=${lost.join(',')}`,
+  )
+}
+
+// ── lane POLISH (2026-11-09): T9 / T10 over an injected memory ─────────────
+function mapFence(): { fence: NonNullable<BotDeps['fence']>; keys: string[] } {
+  const seen = new Set<string>()
+  const keys: string[] = []
+  const first = (k: string) => {
+    keys.push(k)
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  }
+  return { keys, fence: { updateFresh: async (id) => first(`u:${id}`), commandFresh: async (chat, cmd) => first(`c:${chat}:${cmd}`) } }
+}
+
+async function polishFencePins(check: Check): Promise<void> {
+  const CODE = 'abcdef0123456789'
+  {
+    const w = fakeWorld()
+    const { fence } = mapFence()
+    const u = msg(GROUP, from(42), '/help')
+    const one = await handleUpdate(u, deps(w, null, { fence }))
+    const two = await handleUpdate(u, deps(w, null, { fence }))
+    const broken = await handleUpdate(msg(GROUP, from(42), '/top'), deps(w, null, { fence: { updateFresh: async () => { throw new Error('db down') }, commandFresh: async () => { throw new Error('db down') } } }))
+    check(
+      'community telegram (bot): T10 — an update_id already handled is a "duplicate" with no reply; a memory that throws answers anyway (fail open)',
+      one.action === 'help' && two.action === 'duplicate' && two.reply === null && broken.action === 'not-linked' && !!broken.reply,
+      `${one.action}/${two.action}/${broken.action}`,
+    )
+  }
+  {
+    const w = fakeWorld()
+    w.channels.set(String(GROUP.id), ROOM.slug)
+    const { fence } = mapFence()
+    const d = deps(w, null, { fence })
+    const cooled: string[] = []
+    for (const c of ['/join', '/invite', '/top', '/calls', '/help', '/chart ETH']) {
+      const a = await handleUpdate(msg(GROUP, from(42), c), d)
+      const b = await handleUpdate(msg(GROUP, from(42), c), d)
+      if (a.action !== 'cooldown' && b.action === 'cooldown' && b.reply === null) cooled.push(c)
+    }
+    const p1 = await handleUpdate(msg(priv(42), from(42), '/help'), d)
+    const p2 = await handleUpdate(msg(priv(42), from(42), '/help'), d)
+    w.codes.set(CODE, ROOM.slug)
+    const l1 = await handleUpdate(msg(GROUP, null, '/link nope', anonAdmin(GROUP)), d)
+    const l2 = await handleUpdate(msg(GROUP, null, '/link nope', anonAdmin(GROUP)), d)
+    const s1 = await handleUpdate(msg(GROUP, from(42), '/start'), d)
+    const s2 = await handleUpdate(msg(GROUP, from(42), '/start'), d)
+    const other = { ...GROUP, id: -1009876543210 }
+    const elsewhere = await handleUpdate(msg(other, from(42), '/help'), d)
+    check(
+      'community telegram (bot): T9 — /join /invite /top /calls /help /chart answer once per group per window (the second is "cooldown", no reply); private chats, /link and /start are never cooled; another group has its own window',
+      cooled.length === 6 && p2.action === p1.action && p2.action === 'help' && l1.action === 'link-refused' && l2.action === 'link-refused' && s1.action === s2.action && s2.action !== 'cooldown' && elsewhere.action === 'help',
+      `cooled=${cooled.join(' ')} ${p2.action}/${l2.action}/${s2.action}/${elsewhere.action}`,
+    )
+  }
+}
+
 /** Served pins: against a running `next start` (BASE) on the standard harness belt + the TEST DB.
  *  Every row written carries the internal-run header and is cleaned up. */
 export async function communityTelegramPinsServed(check: Check, base: string): Promise<void> {
@@ -797,6 +881,8 @@ export async function communityTelegramPinsServed(check: Check, base: string): P
   const vid = uid + 1
   const chat = { id: -1_000_000_000_000 - Math.floor(Math.random() * 900_000_000), type: 'supergroup', title: 'TG pin <group>' }
   const slug = `t-tgpins-${Date.now().toString(36)}` // S5: a slug may not carry "telegram"
+  // T10: the server remembers update ids for a day; each run starts its own range.
+  seq = Date.now() * 100 + Math.floor(Math.random() * 100)
 
   // webhook authentication
   const noHeader = await hook(msg(priv(uid), from(uid), '/help'), {})
@@ -870,18 +956,20 @@ export async function communityTelegramPinsServed(check: Check, base: string): P
       `${created.status}/${mintAnon.status}/${mintB.status}/${mintCross.status}/${mint.status}`,
     )
 
-    // linking: a person cannot be verified (Telegram refuses the fake token) → refused, the code survives.
+    // linking: a person cannot be verified (Telegram refuses the fake token) → refused.
+    // RE-PINNED 2026-11-09 (polish, T8): the refused code is SPENT (it sits in the chat); the anonymous admin links with a fresh one.
     const byPerson = await hook(msg(chat, from(uid), `/start@${bot} ${code}`))
     const stillThere = await prisma.channelLinkCode.count({ where: { code } })
-    const inPrivate = await hook(msg(priv(uid), from(uid), `/start ${code}`))
+    const code2 = String((await http(base, 'POST', `/api/communities/${slug}/telegram`, { headers: { cookie: sa }, body: {} })).json.code ?? '')
+    const inPrivate = await hook(msg(priv(uid), from(uid), `/start ${code2}`))
     // the group's own anonymous admin: proven by Telegram's update shape, no lookup → linked. The welcome cannot be sent out (fake token) → it rides the response.
-    const byAnon = await hook(msg(chat, null, `/link ${code}`, anonAdmin(chat)))
+    const byAnon = await hook(msg(chat, null, `/link ${code2}`, anonAdmin(chat)))
     const linkedRow = await prisma.communityChannel.findFirst({ where: { communitySlug: slug, platform: 'telegram' } })
-    const reuse = await hook(msg(chat, null, `/link ${code}`, anonAdmin(chat)))
+    const reuse = await hook(msg(chat, null, `/link ${code2}`, anonAdmin(chat)))
     const roomRead = await http(base, 'GET', `/api/communities/${slug}/telegram`)
     check(
-      'community telegram (served, fake env): with no word from Telegram a person\'s /start <code> links NOTHING and the code survives; a private chat is refused; the group\'s anonymous admin links it, and the welcome (one join button) rides the response',
-      byPerson.res.headers.get('x-pt-action') === 'link-refused' && /could not check/.test(String(byPerson.json.text)) && stillThere === 1 && inPrivate.res.headers.get('x-pt-action') === 'link-refused' &&
+      'community telegram (served, fake env): T8 — with no word from Telegram a person\'s /start <code> links NOTHING and SPENDS the code (the reply says mint a fresh one); a private chat is refused; the group\'s anonymous admin links with a fresh code, and the welcome (one join button) rides the response',
+      byPerson.res.headers.get('x-pt-action') === 'link-refused' && /could not check/.test(String(byPerson.json.text)) && /mint a fresh one/.test(String(byPerson.json.text)) && stillThere === 0 && /^[a-f0-9]{16}$/.test(code2) && inPrivate.res.headers.get('x-pt-action') === 'link-refused' &&
         byAnon.res.headers.get('x-pt-action') === 'linked' && byAnon.json.method === 'sendMessage' && /TG &lt;pin&gt; room/.test(String(byAnon.json.text)) && buttonsOf(byAnon.json).length === 1 && buttonsOf(byAnon.json)[0].url === `https://t.me/${bot}?start=g_${slug}` &&
         linkedRow?.externalId === String(chat.id) && linkedRow.title === 'TG pin <group>' && reuse.res.headers.get('x-pt-action') === 'link-refused',
       `${byPerson.res.headers.get('x-pt-action')}/${inPrivate.res.headers.get('x-pt-action')}/${byAnon.res.headers.get('x-pt-action')}/${reuse.res.headers.get('x-pt-action')} codes=${stillThere}`,
@@ -935,11 +1023,35 @@ export async function communityTelegramPinsServed(check: Check, base: string): P
       group.map((r) => r.res.headers.get('x-pt-action')).join('/'),
     )
 
+    // T9 / T10 (polish): a cooled command inside 20 s answers nothing; a redelivered update runs once; private chats are exempt; /link is never cooled.
+    {
+      const again = await hook(msg(chat, from(uid), '/top'))
+      const dupUpdate = msg(chat, from(uid), '/help')
+      const first = await hook(dupUpdate)
+      const second = await hook(dupUpdate)
+      const p1 = await hook(msg(priv(uid), from(uid), '/help'))
+      const p2 = await hook(msg(priv(uid), from(uid), '/help'))
+      const l1 = await hook(msg(chat, null, '/link nope', anonAdmin(chat)))
+      const l2 = await hook(msg(chat, null, '/link nope', anonAdmin(chat)))
+      check(
+        'community telegram (served, fake env): T9 — a second /top in the same group inside 20 s is a 200 with x-pt-action cooldown and no message; /help twice in a PRIVATE chat answers both; /link is never cooled',
+        again.status === 200 && again.res.headers.get('x-pt-action') === 'cooldown' && again.json.method === undefined &&
+          p1.res.headers.get('x-pt-action') === 'help' && p2.res.headers.get('x-pt-action') === 'help' && l1.res.headers.get('x-pt-action') === 'link-refused' && l2.res.headers.get('x-pt-action') === 'link-refused',
+        [again, p1, p2, l1, l2].map((r) => r.res.headers.get('x-pt-action')).join('/'),
+      )
+      check(
+        'community telegram (served, fake env): T10 — the SAME update posted twice: the first answers, the second is a plain 200 with x-pt-action duplicate and does nothing',
+        first.res.headers.get('x-pt-action') === 'help' && first.json.method === 'sendMessage' && second.status === 200 && second.res.headers.get('x-pt-action') === 'duplicate' && second.json.method === undefined,
+        `${first.res.headers.get('x-pt-action')}/${second.res.headers.get('x-pt-action')}`,
+      )
+    }
+
     // unlinking: the owner from the site, then the bot being removed
     const delB = await http(base, 'DELETE', `/api/communities/${slug}/telegram`, { headers: { cookie: sb } })
     const delA = await http(base, 'DELETE', `/api/communities/${slug}/telegram`, { headers: { cookie: sa } })
     const afterDelete = await prisma.communityChannel.count({ where: { communitySlug: slug } })
-    const unlinkedCalls = await hook(msg(chat, from(uid), '/calls'))
+    // RE-PINNED 2026-11-09 (polish, T9): /calls answered in this chat seconds ago (cooled), so the "not linked" read uses /start (never cooled).
+    const unlinkedCalls = await hook(msg(chat, from(uid), '/start'))
     const mint2 = String((await http(base, 'POST', `/api/communities/${slug}/telegram`, { headers: { cookie: sa }, body: {} })).json.code ?? '')
     await hook(msg(chat, null, `/link ${mint2}`, anonAdmin(chat)))
     const relinked = await prisma.communityChannel.count({ where: { communitySlug: slug } })
