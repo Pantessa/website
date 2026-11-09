@@ -367,7 +367,11 @@ async function decorate(rows: Row[]): Promise<PublicPost[]> {
     handlesFor(rows.map((r) => r.author)),
     executedBySlug(rows.map((r) => r.linkSlug).filter((s): s is string => !!s)),
     rows.length
-      ? prisma.chartPostComment.groupBy({ by: ['postId'], where: { postId: { in: rows.map((r) => r.id) }, isInternal: false }, _count: { _all: true } }).catch(() => [])
+      ? // An internal post counts its own (internal) replies, exactly as
+        // readComments shows them; a public post never counts internal ones.
+        prisma.chartPostComment
+          .groupBy({ by: ['postId'], where: { postId: { in: rows.map((r) => r.id) }, OR: [{ isInternal: false }, { postId: { in: rows.filter((r) => r.isInternal).map((r) => r.id) } }] }, _count: { _all: true } })
+          .catch(() => [])
       : Promise.resolve([] as { postId: string; _count: { _all: number } }[]),
   ])
   const comments = new Map(commentCounts.map((c) => [c.postId, c._count._all]))

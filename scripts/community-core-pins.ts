@@ -13,6 +13,7 @@ import { hotRank, RESERVED_COMMUNITY_SLUGS } from '../lib/community/spec'
 import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '../lib/community/origin'
 import { impostorWord, labelWithSource } from '../lib/community/rules'
 import { cleanText } from '../lib/chart-posts'
+import { additiveRefusal } from './run-ddl'
 import { checkName, checkSlug, checkSymbols, decodeCursor, encodeCursor, higherRole, memberLabel, parseVote, voteDelta } from '../lib/community/rules'
 import { clampProofSize, decideProof, explorerTxFor, fillLabel, locateTx, proofSide, readOnChain, REFUSE_CHAIN_UNREAD, REFUSE_NOTHING_MOVED } from '../lib/community/proof'
 import { proofFactLine, proofTagLine } from '../lib/community/proof-words'
@@ -119,6 +120,25 @@ export function communityCorePins(check: Check): void {
   {
     const fan = readFileSync(join(process.cwd(), 'lib/community/fanout.ts'), 'utf8')
     check('S8 fan-out: deliveries go three at a time (FANOUT_CONCURRENCY = 3, sliced batches), never all of a room\'s chats at once', /export const FANOUT_CONCURRENCY = 3/.test(fan) && /channels\.slice\(i, i \+ FANOUT_CONCURRENCY\)/.test(fan) && !/channels\.map\(\(c\) => \(c\.platform/.test(fan))
+  }
+  {
+    const bypass = [
+      'ALTER TABLE chart_posts ADD COLUMN IF NOT EXISTS x text, DROP COLUMN title',
+      'ALTER TABLE chart_posts ADD COLUMN IF NOT EXISTS x text, RENAME TO b',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS x text, ALTER COLUMN email DROP NOT NULL, DROP CONSTRAINT users_pkey',
+      'CREATE TABLE IF NOT EXISTS copy AS SELECT * FROM api_keys',
+      "ALTER TABLE chart_posts ADD COLUMN IF NOT EXISTS x text DEFAULT (query_to_xml('delete from api_keys', true, true, ''))",
+      'ALTER TABLE chart_posts ADD COLUMN IF NOT EXISTS x text, ADD COLUMN y text',
+      'TRUNCATE chart_posts',
+    ]
+    const fine = [
+      "ALTER TABLE communities ADD COLUMN IF NOT EXISTS announce_from text NOT NULL DEFAULT 'mods'",
+      'ALTER TABLE chart_posts ADD COLUMN IF NOT EXISTS a text, ADD COLUMN IF NOT EXISTS b integer NOT NULL DEFAULT 0',
+      'CREATE INDEX IF NOT EXISTS community_members_slug ON community_members (community_slug)',
+    ]
+    const through = bypass.filter((x) => additiveRefusal(x) === null)
+    const refusedFine = fine.filter((x) => additiveRefusal(x) !== null)
+    check('S11 run-ddl: every ALTER clause must be ADD COLUMN IF NOT EXISTS; DROP / RENAME / ALTER COLUMN / AS SELECT / TRUNCATE and a DEFAULT that calls something are refused; plain additive DDL passes', through.length === 0 && refusedFine.length === 0, `through: ${through.join(' | ')} refused: ${refusedFine.join(' | ')}`)
   }
   const h = (o: Record<string, string>) => new Headers(o)
   check(
@@ -593,6 +613,44 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
         `${strangerManage.status}/${bManage.status}/${aManage.status} rm ${removeOwner.status}/${removeBogus.status}/${removeKey.status}/${bRemovesOwner.status}/${removeB.status} ${before?.members}->${after?.members}`,
       )
     }
+    // ── bugs (b) + (c): /c/<id> for every kind; an internal post counts its own replies ──
+    {
+      const { createPost } = await import('../lib/chart-posts')
+      const { explorerTxFor } = await import('../lib/community/proof-words')
+      const H = `0x${'d1'.repeat(32)}`
+      const idea = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'idea', symbol: 'ETH', title: 'ETH holds the range low' } })
+      const link2 = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'link', title: 'A read for /c', linkUrl: 'https://example.com/c-read' } })
+      const video2 = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'video', title: 'A walk for /c', mediaUrl: 'https://youtu.be/dQw4w9WgXcQ' } })
+      const proof = { turnId: 'turnpinfix01', chainId: 8453, txHash: H, symbols: ['buy:ETH'], side: 'buy' as const, sizeUsd: 25, chain: 'Base', txUrl: explorerTxFor(8453, H)!, signedAt: Date.now(), verification: 'verified' as const }
+      const trade = await createPost(a, { symbol: 'ETH', kind: 'trade', title: 'Bought $5,000,000 of BTC at the low', body: '', chartState: null, linkUrl: null, forkOf: null, community: slug, mediaUrl: null, proofTurnId: 'turnpinfix01', showSize: true } as never, true, { proof })
+      const ids = { idea: lpId(idea), link: lpId(link2), video: lpId(video2), trade: trade.id }
+      const pages: Record<string, { status: number; html: string }> = {}
+      for (const [k, id] of Object.entries(ids)) {
+        const r = await fetch(`${base}/c/${id}`, { headers: INTERNAL, cache: 'no-store' })
+        pages[k] = { status: r.status, html: await r.text() }
+      }
+      const th = pages.trade.html
+      check(
+        'bug (b) (served): /c/<id> answers 200 for one post of each kind (idea, link, video, trade) — the announcements\' Open link never 404s; the trade page prints the chain-confirmed line, the author\'s tag apart, the rebuilt basescan link',
+        Object.values(pages).every((p) => p.status === 200) && th.includes('Verified on-chain: this wallet moved $25.00 on Base') && th.includes('Tagged by the author: bought ETH') && th.includes(`https://basescan.org/tx/${H}`),
+        Object.entries(pages).map(([k, p]) => `${k}=${p.status}`).join(' '),
+      )
+      if (ids.link) await call('POST', `/api/posts/${ids.link}/comments`, { cookie: sa, body: { body: 'an internal reply' } })
+      const feedNew = await call('GET', `/api/feed?community=${slug}&sort=new&limit=50`, { cookie: sa })
+      const inFeed = ((feedNew.json.posts ?? []) as { id: string; comments: number }[]).find((p) => p.id === ids.link)
+      const pubPost = await prisma.chartPost.create({ data: { id: `pinpub${Date.now().toString(36).slice(-6)}`, symbol: 'ETH', author: a, kind: 'link', title: 'public pin post', body: '', linkUrl: 'https://example.com/p', isInternal: false } })
+      await prisma.chartPostComment.create({ data: { id: `pc${Date.now().toString(36)}`, postId: pubPost.id, author: a, body: 'harness reply', isInternal: true } })
+      const { getFeedPost } = await import('../lib/community/store')
+      const pubRead = await getFeedPost(pubPost.id)
+      await prisma.chartPostComment.deleteMany({ where: { postId: pubPost.id } })
+      await prisma.chartPost.deleteMany({ where: { id: pubPost.id } })
+      check(
+        "bug (c): an internal post's comment count includes its own internal replies (feed says 1, as its page shows); a public post never counts an internal reply (0)",
+        inFeed?.comments === 1 && pubRead?.comments === 0,
+        `internal=${inFeed?.comments} public=${pubRead?.comments}`,
+      )
+    }
+
     // ── S4: a speed bump per machine (a fake client IP: next start trusts x-real-ip locally; loopback is exempt) ──
     {
       const ip = () => ({ 'x-real-ip': `2001:db8::${Math.floor(Math.random() * 0xffffff).toString(16)}:${Date.now().toString(16).slice(-6)}` })
