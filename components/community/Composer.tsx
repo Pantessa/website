@@ -17,9 +17,17 @@
 // draft also rides sessionStorage, so the Google lane's full-page return
 // finds it. A room that needs a seat first answers 403 needsJoin: one button
 // joins and posts.
+//
+// A COMPOSER YOU CAN LINK TO (lane SHARE): `?compose=trade` (idea, link,
+// video; `&symbol=ETH` pre-picks the market) on any page that mounts this
+// opens it on that tab, then the query leaves the address bar so a reload or
+// a copied URL does not re-open it (feed-rules readComposeQuery). A stranger
+// who arrives that way sees it open, with the sign-in on Post: no wall. On
+// the trade tab the one fill that is new since the last look is pre-picked.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { PenLine, X } from 'lucide-react'
 import type { ChartState } from '@/lib/chart-state'
 import { parseVideoUrl, type FeedKind, type FeedPost, type PublicCommunity } from '@/lib/community/spec'
@@ -27,7 +35,7 @@ import type { MyFill } from '@/lib/community/proof'
 import { resolveTickerQuery } from '@/lib/markets'
 import { ageLabel } from '@/lib/news-shared'
 import { useSession } from '@/lib/session'
-import { COMPOSER_FOLDED_LINE, COMPOSER_KINDS, VIDEO_HOSTS_LINE, VIDEO_HOST_NAME, postPath } from './feed-rules'
+import { COMPOSER_FOLDED_LINE, COMPOSER_KINDS, FILLS_SEEN_KEY, VIDEO_HOSTS_LINE, VIDEO_HOST_NAME, fillsSeenMark, postPath, preselectFill, readComposeQuery, stripComposeQuery, type ComposeQuery } from './feed-rules'
 import { useIdentityDoor } from './useIdentityDoor'
 import './community.css'
 
@@ -79,6 +87,20 @@ export default function Composer({ community, symbol, chartState = null, onPoste
   const [needsJoin, setNeedsJoin] = useState(false)
   const { hold, door } = useIdentityDoor()
   const titleRef = useRef<HTMLInputElement>(null)
+  const rootRef = useRef<HTMLElement | null>(null)
+  // A link asked for a tab: it wins over the tab a saved draft remembers.
+  const askedRef = useRef(false)
+  const onComposeQuery = useCallback(
+    (q: ComposeQuery) => {
+      askedRef.current = true
+      setKind(q.kind)
+      if (!symbol && q.symbol) setMarket(q.symbol)
+      setMsg(null)
+      setOpen(true)
+      window.setTimeout(() => rootRef.current?.scrollIntoView({ block: 'nearest' }), 0)
+    },
+    [symbol],
+  )
 
   // ── the draft survives the sign-in (the Google lane reloads the page) ──
   useEffect(() => {
@@ -89,8 +111,8 @@ export default function Composer({ community, symbol, chartState = null, onPoste
       if (d.scope !== scope || typeof d.at !== 'number' || Date.now() - d.at > DRAFT_TTL_MS || !d.draft) return
       const k = COMPOSER_KINDS.find((x) => x.kind === d.draft!.kind)
       if (!k) return
-      setKind(k.kind)
-      if (!symbol && typeof d.draft.market === 'string') setMarket(d.draft.market.slice(0, 40))
+      if (!askedRef.current) setKind(k.kind)
+      if (!symbol && !askedRef.current && typeof d.draft.market === 'string') setMarket(d.draft.market.slice(0, 40))
       if (typeof d.draft.title === 'string') setTitle(d.draft.title.slice(0, COMPOSER_TITLE_MAX))
       if (typeof d.draft.body === 'string') setBody(d.draft.body.slice(0, COMPOSER_BODY_MAX))
       if (typeof d.draft.url === 'string') setUrl(d.draft.url.slice(0, 300))
@@ -149,6 +171,23 @@ export default function Composer({ community, symbol, chartState = null, onPoste
       const d = (await r.json().catch(() => ({}))) as { fills?: MyFill[]; error?: string }
       if (!r.ok || !Array.isArray(d.fills)) throw new Error('fills')
       setFills(d.fills)
+      // The one fill that is new since the last look is pre-picked (the trade
+      // just made); none or several new ones leave the list as it was.
+      let seen: number | null = null
+      try {
+        const raw = Number(window.localStorage.getItem(FILLS_SEEN_KEY))
+        seen = Number.isFinite(raw) && raw > 0 ? raw : null
+      } catch {
+        // storage blocked: every listed fill reads as new
+      }
+      const pre = preselectFill(d.fills, seen)
+      if (pre) setPicked((cur) => cur ?? pre)
+      try {
+        const mark = fillsSeenMark(d.fills, seen)
+        if (mark != null) window.localStorage.setItem(FILLS_SEEN_KEY, String(mark))
+      } catch {
+        // nothing remembered: the next look pre-picks by the same rule
+      }
     } catch {
       setFills(null)
       setFillsErr('Your trades are not answering right now. Try again in a moment.')
@@ -258,7 +297,10 @@ export default function Composer({ community, symbol, chartState = null, onPoste
 
   if (!open) {
     return (
-      <div className="cmy-compose" id="share-here" data-composer="" data-open="false">
+      <div className="cmy-compose" id="share-here" data-composer="" data-open="false" ref={(el) => void (rootRef.current = el)}>
+        <Suspense fallback={null}>
+          <ComposeQueryReader onQuery={onComposeQuery} />
+        </Suspense>
         <button type="button" className="cmy-compose__fold" onClick={() => openAs(kind)} aria-expanded="false" data-journey="Open composer">
           <PenLine aria-hidden />
           <span className="cmy-compose__foldline">{COMPOSER_FOLDED_LINE}</span>
@@ -285,11 +327,15 @@ export default function Composer({ community, symbol, chartState = null, onPoste
       data-open="true"
       data-kind={kind}
       aria-label="Write a post"
+      ref={(el) => void (rootRef.current = el)}
       onSubmit={(e) => {
         e.preventDefault()
         submit()
       }}
     >
+      <Suspense fallback={null}>
+        <ComposeQueryReader onQuery={onComposeQuery} />
+      </Suspense>
       <div className="cmy-compose__open">
         <div className="cmy-compose__head">
           <div className="cmy-compose__kinds" role="tablist" aria-label="What are you posting">
@@ -336,6 +382,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
                     type="button"
                     role="radio"
                     aria-checked={picked === f.turnId}
+                    data-fill-picked={picked === f.turnId || undefined}
                     className="cmy-compose__fill"
                     onClick={() => setPicked(f.turnId)}
                   >
@@ -461,4 +508,26 @@ export default function Composer({ community, symbol, chartState = null, onPoste
       {door}
     </form>
   )
+}
+
+/** Reads `?compose=` once it is in the address, hands it up, and takes it out
+ *  of the address bar (the page's other query and its hash stay). It renders
+ *  nothing; it sits in its own Suspense so a static page stays static. */
+function ComposeQueryReader({ onQuery }: { onQuery: (q: ComposeQuery) => void }) {
+  const pathname = usePathname()
+  const raw = useSearchParams()?.toString() ?? ''
+  useEffect(() => {
+    // The address bar is the truth (the router's copy can trail a rewrite):
+    // once the query is stripped, a re-mount of this reader finds nothing.
+    const live = window.location.search
+    const q = readComposeQuery(live)
+    if (!q) return
+    onQuery(q)
+    try {
+      window.history.replaceState(window.history.state, '', stripComposeQuery(window.location.pathname, live, window.location.hash))
+    } catch {
+      // an address bar we cannot rewrite: the composer is open all the same
+    }
+  }, [raw, pathname, onQuery])
+  return null
 }

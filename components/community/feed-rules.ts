@@ -15,7 +15,7 @@ import { chartPairFor } from '@/lib/charts'
 import { composeExecAsk } from '@/lib/trade-asks'
 import { X_MENTION } from '@/lib/social'
 import { absoluteUrl } from '@/lib/site-url'
-import { fmtProofDollars, proofFactLine, proofTagLine, tradeHeadline } from '@/lib/community/proof-words'
+import { explorerTxFor, fmtProofDollars, proofFactLine, proofTagLine, tradeHeadline } from '@/lib/community/proof-words'
 import { callPath } from '@/lib/chart-calls'
 import { COMMUNITY_SLUG_RE, INVITE_CODE_RE, invitePath, type FeedKind, type FeedPost, type FeedSort, type FeedWindow, type TradeProof, type VideoHost } from '@/lib/community/spec'
 
@@ -258,4 +258,103 @@ export function postShareText(post: Pick<FeedPost, 'kind' | 'symbol' | 'title' |
   const lead = !sym ? said : opens ? `$${said.replace(/^\$/, '')}` : `${sym}: ${said}`
   const stands = post.kind === 'idea' ? ' Time and price stamped.' : ''
   return `${lead}${/[.!?]$/.test(lead) ? '' : '.'}${stands}`
+}
+
+// ── a composer you can link to (lane SHARE) ────────────────────────────────
+//
+// `/community?compose=trade` (also idea, link, video; `&symbol=ETH` pre-picks
+// the market) opens the composer on that tab. The same query on a room page
+// or a symbol page opens the composer there. The query is read once and then
+// stripped from the address bar, so a reload or a copied URL never re-opens it.
+
+export const COMPOSE_PARAM = 'compose'
+export const COMPOSE_SYMBOL_PARAM = 'symbol'
+const COMPOSE_SYMBOL_RE = /^[A-Za-z0-9.:]{1,24}$/
+
+export interface ComposeQuery {
+  kind: FeedKind
+  /** '' when the link names no market (or names something that is not one). */
+  symbol: string
+}
+
+/** The composer a URL asks for, or null. Only the four kinds open it. */
+export function readComposeQuery(search: string): ComposeQuery | null {
+  const p = new URLSearchParams(search)
+  const want = (p.get(COMPOSE_PARAM) ?? '').toLowerCase()
+  const k = COMPOSER_KINDS.find((x) => x.kind === want)
+  if (!k) return null
+  const sym = p.get(COMPOSE_SYMBOL_PARAM) ?? ''
+  return { kind: k.kind, symbol: COMPOSE_SYMBOL_RE.test(sym) ? sym : '' }
+}
+
+/** The same address without the composer's query (everything else is kept, in order). */
+export function stripComposeQuery(pathname: string, search: string, hash = ''): string {
+  const p = new URLSearchParams(search)
+  p.delete(COMPOSE_PARAM)
+  p.delete(COMPOSE_SYMBOL_PARAM)
+  const q = p.toString()
+  return `${pathname}${q ? `?${q}` : ''}${hash}`
+}
+
+/** A link that opens the composer on a tab: the feed's own page, or a room's. */
+export function composeHref(kind: FeedKind, opts: { symbol?: string; room?: string } = {}): string {
+  const base = opts.room && COMMUNITY_SLUG_RE.test(opts.room) ? `/g/${opts.room}` : '/community'
+  const p = new URLSearchParams({ [COMPOSE_PARAM]: kind })
+  if (opts.symbol && COMPOSE_SYMBOL_RE.test(opts.symbol)) p.set(COMPOSE_SYMBOL_PARAM, opts.symbol)
+  return `${base}?${p.toString()}`
+}
+
+/** The trade tab's pre-pick: the ONE fill that is new since the last look
+ *  (`seenAt` = the newest fill time listed then; null = never looked). Zero or
+ *  several new fills pre-pick nothing: the list reads as it always did. */
+export function preselectFill(fills: readonly { turnId: string; signedAt: number }[], seenAt: number | null): string | null {
+  const fresh = fills.filter((f) => seenAt == null || f.signedAt > seenAt)
+  return fresh.length === 1 ? fresh[0].turnId : null
+}
+
+/** The mark the next look compares against: the newest fill time ever listed. */
+export function fillsSeenMark(fills: readonly { signedAt: number }[], prev: number | null): number | null {
+  let m = prev
+  for (const f of fills) if (Number.isFinite(f.signedAt) && (m == null || f.signedAt > m)) m = f.signedAt
+  return m
+}
+
+export const FILLS_SEEN_KEY = 'pantessa.community.fillsSeenAt'
+
+// ── the receipt's door into the feed (lane SHARE) ──────────────────────────
+//
+// Right after a signed transaction settles, the receipt row offers "Post it
+// with proof". It is offered ONLY when the receipt holds a confirmed
+// transaction hash on a chain the proof reader can read (the registry has an
+// explorer for it): never for a Hyperliquid order, a CoW order that has not
+// settled, or a job step with no transaction. The words promise what the
+// proof gives and no more: the post says what the chain confirmed.
+
+export const PROOF_DOOR_LABEL = 'Post it with proof'
+export const PROOF_DOOR_TITLE = 'Opens the community composer on your confirmed trades. The post shows what the chain confirmed.'
+
+/** true = at least one of these is a mined transaction the proof reader can locate. */
+export function hasProvableTx(txs: readonly { hash?: unknown; chainId?: unknown }[] | null | undefined): boolean {
+  return !!txs?.some((t) => typeof t?.hash === 'string' && typeof t?.chainId === 'number' && !!explorerTxFor(t.chainId, t.hash))
+}
+
+/** The door's address, or null when the receipt has nothing the chain can prove. */
+export function proofDoorHref(txs: readonly { hash?: unknown; chainId?: unknown }[] | null | undefined): string | null {
+  return hasProvableTx(txs) ? composeHref('trade') : null
+}
+
+/** A done job's confirmed transactions, from its steps' own results. */
+export function jobStepTxs(steps: readonly { status?: string; result?: Record<string, unknown> | null }[]): { hash: string; chainId: number }[] {
+  const out: { hash: string; chainId: number }[] = []
+  for (const s of steps) {
+    if (s.status !== 'done' || !s.result) continue
+    const txs = (s.result as { txs?: unknown }).txs
+    if (!Array.isArray(txs)) continue
+    for (const t of txs) {
+      const hash = (t as { hash?: unknown } | null)?.hash
+      const chainId = (t as { chainId?: unknown } | null)?.chainId
+      if (typeof hash === 'string' && typeof chainId === 'number') out.push({ hash, chainId })
+    }
+  }
+  return out
 }
