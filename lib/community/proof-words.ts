@@ -67,11 +67,14 @@ export function proofTagLine(p: Pick<TradeProof, 'symbols' | 'side'>, who = 'the
   return tag ? `Tagged by ${who}: ${tag}` : null
 }
 
-/** A trade post's DEFAULT title (the author typed none): built from the proof,
- *  in the same two-part wording. ≤ 120 characters. */
-export function defaultTradeTitle(p: Pick<TradeProof, 'symbols' | 'side' | 'sizeUsd' | 'chain'>): string {
-  const tag = proofTagLine(p)
-  return `${tag ? `${tag}. ` : ''}${proofFactLine(p)}.`.slice(0, 120)
+/** A trade post's DEFAULT title (the author typed none): the author's tag ALONE
+ *  in plain words ("Bought ETH", "Went long HYPE"), or "A trade on Base" when
+ *  there is no tag. Never the dollar figure, never "verified": the proof line
+ *  under the title carries both (Decision 7: the card showed them twice). ≤ 120. */
+export function defaultTradeTitle(p: Pick<TradeProof, 'symbols' | 'side' | 'chain'> & Partial<Pick<TradeProof, 'sizeUsd'>>): string {
+  const tag = proofTag(p)
+  const words = tag ? `${tag.charAt(0).toUpperCase()}${tag.slice(1)}` : `A trade on ${p.chain || 'chain'}`
+  return words.slice(0, 120)
 }
 
 /** QA-SECURITY S9 / T4: ONE rule for every place a trade post is headed (the

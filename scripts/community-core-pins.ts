@@ -196,7 +196,8 @@ export function secfixProofPins(check: Check): void {
     proofFactLine({ sizeUsd: 25, chain: 'Base' }) === 'Verified on-chain: this wallet moved $25.00 on Base' &&
       proofFactLine({ sizeUsd: null, chain: 'Base' }) === 'Verified on-chain: this wallet moved funds on Base' &&
       proofTagLine({ symbols: ['buy:ETH'], side: 'buy' }) === 'Tagged by the author: bought ETH' && proofTagLine({ symbols: [], side: null }) === null &&
-      fillLabel({ symbols: ['buy:ETH'], side: 'buy', sizeUsd: 25, chain: 'Base' }) === 'Tagged by the author: bought ETH. Verified on-chain: this wallet moved $25.00 on Base.' &&
+      // RE-PINNED 2026-11-09 (polish, fix-lane Decision 7): the default title is the tag alone, never the size or "verified".
+      fillLabel({ symbols: ['buy:ETH'], side: 'buy', sizeUsd: 25, chain: 'Base' }) === 'Bought ETH' &&
       !/verified/i.test(proofTagLine({ symbols: ['sell:AAPL'], side: 'sell' }) ?? ''),
   )
 }
@@ -791,6 +792,15 @@ export const S12_FORGED_CURSORS: string[] = [
 ]
 
 function polishCorePins(check: Check): void {
+  {
+    const t = (symbols: string[], side: 'buy' | 'sell' | 'long' | 'short' | null, sizeUsd: number | null = 25, chain = 'Base') => fillLabel({ symbols, side, sizeUsd, chain } as Parameters<typeof fillLabel>[0])
+    const all = [t(['buy:ETH'], 'buy'), t(['sell:AAPL'], 'sell', 1250), t(['buy:HYPE'], 'long'), t(['sell:BTC'], 'short'), t(['buy:UNI'], null), t([], null, 99, 'Base'), t([], 'buy', null, 'Ethereum')]
+    check(
+      'community core: Decision 7 — a trade post\'s default title is the author\'s tag alone in plain words ("Bought ETH", "Sold AAPL", "Went long HYPE"), "A trade on Base" with no tag; never a dollar figure, never "verified"',
+      all.join(' | ') === 'Bought ETH | Sold AAPL | Went long HYPE | Went short BTC | Traded UNI | A trade on Base | A trade on Ethereum' && all.every((x) => !/\$|\d|verified/i.test(x)),
+      all.join(' | '),
+    )
+  }
   {
     const bad = ['Coinbase Announcements', 'Pantessa Official', 'MetaMask Support', 'ETH calls \u2705', 'Verified \u2714 desk', 'Team \u202Eesuoh', 'x', '', null, 42]
     const fell = bad.map((n) => discordChannelTitle(n))
