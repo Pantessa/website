@@ -14,6 +14,7 @@ import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '../lib/community
 import { impostorWord, labelWithSource } from '../lib/community/rules'
 import { cleanText } from '../lib/chart-posts'
 import { additiveRefusal } from './run-ddl'
+import { HOT_SCAN, HOT_TOP_SCAN, rankHot } from '../lib/community/rules'
 import { checkName, checkSlug, checkSymbols, decodeCursor, encodeCursor, higherRole, memberLabel, parseVote, voteDelta } from '../lib/community/rules'
 import { clampProofSize, decideProof, explorerTxFor, fillLabel, locateTx, proofSide, readOnChain, REFUSE_CHAIN_UNREAD, REFUSE_NOTHING_MOVED } from '../lib/community/proof'
 import { proofFactLine, proofTagLine } from '../lib/community/proof-words'
@@ -790,6 +791,25 @@ export const S12_FORGED_CURSORS: string[] = [
 ]
 
 function polishCorePins(check: Check): void {
+  {
+    // S13: 400 fresh zero-score posts in the last hours, and one 3-day-old post at score 100.
+    const now = Date.now()
+    const fresh = Array.from({ length: HOT_SCAN }, (_, i) => ({ id: `n${String(i).padStart(5, '0')}`, score: 0, createdAt: new Date(now - i * 30_000) }))
+    const old = { id: 'oldgood01', score: 100, createdAt: new Date(now - 3 * 86_400_000) }
+    const topScored = [old, fresh[0]]
+    const ranked = rankHot(fresh, topScored)
+    check(
+      'community core: S13 — the hot candidates are the newest ∪ the top-scored (deduped by id): a high-score post older than 400 newer posts is still a candidate (absent from the newest-only set), and a post in both lists appears once',
+      HOT_TOP_SCAN >= 100 && ranked.length === HOT_SCAN + 1 && ranked.some((r) => r.id === 'oldgood01') && ranked.filter((r) => r.id === fresh[0].id).length === 1 && rankHot(fresh, []).every((r) => r.id !== 'oldgood01'),
+      `len=${ranked.length}`,
+    )
+    const src = readFileSync(join(process.cwd(), 'lib/community/store.ts'), 'utf8')
+    const hot = src.slice(src.indexOf('// hot: a bounded recent window'), src.indexOf('export async function getFeedPost'))
+    check(
+      'community core: S13 — listFeed\'s hot branch makes two bounded reads (take HOT_SCAN by time, take HOT_TOP_SCAN by score) and ranks with rankHot',
+      /take: HOT_SCAN\b/.test(hot) && /orderBy: \[\{ score: 'desc' \}[^\n]*take: HOT_TOP_SCAN/.test(hot) && /rankHot\(newest, topScored\)/.test(hot),
+    )
+  }
   check(
     'community core: S12 — a forged keyset cursor (1e308, negative, past a JS date, a year ahead, fractional, wrong field types, null, an array) decodes to null; a real one still decodes',
     S12_FORGED_CURSORS.every((c) => decodeCursor(c) === null) && decodeCursor(encodeCursor({ t: Date.now() - 60_000, id: 'abc123def0' })) !== null,

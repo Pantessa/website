@@ -27,7 +27,6 @@ import {
   INVITE_CODE_RE,
   LINK_CODE_RE,
   LINK_CODE_TTL_MS,
-  hotRank,
   invitePath,
   isMemberKey,
   parseVideoUrl,
@@ -50,6 +49,8 @@ import {
 } from './spec'
 import {
   HOT_SCAN,
+  HOT_TOP_SCAN,
+  rankHot,
   HOT_WINDOW_MS,
   WINDOW_MS,
   asRole,
@@ -582,16 +583,14 @@ export async function listFeed(q: FeedQuery): Promise<{ posts: FeedPost[]; next:
     return { posts: await toFeedPosts(page, q.viewer), next: rows.length > limit ? encodeCursor({ o: offset + limit }) : null }
   }
 
-  // hot: a bounded recent window, ranked in memory.
-  const rows = await prisma.chartPost.findMany({
-    where: { AND: [where, { createdAt: { gte: new Date(now - HOT_WINDOW_MS) } }] },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    take: HOT_SCAN,
-  })
-  const ranked = rows
-    .map((r) => ({ r, h: hotRank(r.score ?? 0, r.createdAt.getTime()) }))
-    .sort((a, b) => b.h - a.h || (a.r.id < b.r.id ? 1 : -1))
-    .map((x) => x.r)
+  // hot: a bounded recent window, ranked in memory. S13: the candidates are the
+  // newest HOT_SCAN AND the top-scored HOT_TOP_SCAN of the window (two bounded reads).
+  const hotWhere: Prisma.ChartPostWhereInput = { AND: [where, { createdAt: { gte: new Date(now - HOT_WINDOW_MS) } }] }
+  const [newest, topScored] = await Promise.all([
+    prisma.chartPost.findMany({ where: hotWhere, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: HOT_SCAN }),
+    prisma.chartPost.findMany({ where: hotWhere, orderBy: [{ score: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }], take: HOT_TOP_SCAN }),
+  ])
+  const ranked = rankHot(newest, topScored)
   const page = ranked.slice(offset, offset + limit)
   return { posts: await toFeedPosts(page, q.viewer), next: ranked.length > offset + limit ? encodeCursor({ o: offset + limit }) : null }
 }

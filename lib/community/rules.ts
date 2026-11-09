@@ -10,6 +10,7 @@ import {
   COMMUNITY_SLUG_RE,
   COMMUNITY_SYMBOLS_MAX,
   RESERVED_COMMUNITY_SLUGS,
+  hotRank,
   type CommunityRole,
   type MemberSource,
 } from './spec'
@@ -178,3 +179,16 @@ export function decodeCursor(raw: unknown): FeedCursor | null {
 export const WINDOW_MS = { day: 86_400_000, week: 7 * 86_400_000, all: null } as const
 export const HOT_WINDOW_MS = 14 * 86_400_000
 export const HOT_SCAN = 400
+/** S13: the top-scored posts in the hot window join the newest ones, so volume cannot evict quality. */
+export const HOT_TOP_SCAN = 200
+
+/** S13 (pure): the hot feed's candidates = the newest ∪ the top-scored (deduped
+ *  by id), ranked by hotRank (ties: the larger id first). */
+export function rankHot<T extends { id: string; score: number | null; createdAt: Date }>(newest: T[], topScored: T[]): T[] {
+  const byId = new Map<string, T>()
+  for (const r of [...newest, ...topScored]) if (!byId.has(r.id)) byId.set(r.id, r)
+  return [...byId.values()]
+    .map((r) => ({ r, h: hotRank(r.score ?? 0, r.createdAt.getTime()) }))
+    .sort((a, b) => b.h - a.h || (a.r.id < b.r.id ? 1 : a.r.id > b.r.id ? -1 : 0))
+    .map((x) => x.r)
+}
