@@ -105,7 +105,7 @@ export default function Navigation() {
   if (isMarketsPath(pathname)) return null
   // The public progress pages (2026-10-15): the spine is their navigation too.
   if (isProgressPath(pathname)) return null
-  // The community surface (/community, /g/* — squad community, 2026-11-09): the spine is its navigation too.
+  // The community surface (/community and every room under /g/ — squad community, 2026-11-09): the spine is its navigation too.
   if (isCommunityPath(pathname)) return null
 
   const inDashboard = pathname.startsWith('/dashboard')
