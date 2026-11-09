@@ -531,9 +531,9 @@ export async function communityFeedPinsServed(check: Check, base: string): Promi
     const prose = at >= 0 ? d.slice(at, d.indexOf('</main>', at) > 0 ? d.indexOf('</main>', at) : undefined) : ''
     const words = prose.replace(/<script[\s\S]*?<\/script>/g, ' ').replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').split(/\s+/).filter(Boolean).length
     check(
-      'community share (served): /docs/community answers 200 in the docs layout, listed in the sidebar; it says what verified means (this wallet moved $X on a chain) and what it does not (the tag is the author\'s, no Hyperliquid proof yet); under 700 words',
+      'community share (served): /docs/community answers 200 in the docs layout, listed in the sidebar; it says what verified means (this wallet moved $X on a chain) and what it does not (the tag is the author\'s, no Hyperliquid proof yet); under 800 words',
       dres.status === 200 && /<h1 class="docs__h1">Community and rooms<\/h1>/.test(d) && /href="\/docs\/community"/.test(d) && /Verified on-chain: this wallet moved \$25\.00 on Base/.test(d) && /Tagged by the author/.test(d) &&
-        /Hyperliquid fills cannot be posted as proof yet/.test(d) && /balance of one asset went down and its balance of another went up/.test(d.replace(/\s+/g, ' ')) && /cross-chain swaps and bridges/.test(d) && /not set up on this deployment/.test(d) && words > 300 && words < 700,
+        /Hyperliquid fills cannot be posted as proof yet/.test(d) && /balance of one asset went down and its balance of another went up/.test(d.replace(/\s+/g, ' ')) && /cross-chain swaps and bridges/.test(d) && /not set up on this deployment/.test(d) && words > 300 && words < 800, // RE-PINNED 2026-11-09 (coordinator): 700 → 800; review 4 added what the verified line does NOT say (Q4)
       `status=${dres.status} words=${words}`,
     )
     const sm2 = await (await fetch(`${base}/sitemap.xml`, { cache: 'no-store' })).text()
