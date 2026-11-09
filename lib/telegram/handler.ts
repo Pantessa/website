@@ -52,7 +52,20 @@ import {
 import { parseCommand, readUpdate, senderOf, type InMembership, type InMessage, type InUser, type ParsedCommand } from './update'
 
 /** The store functions the bot calls (lib/community/store, lane CORE's bodies). */
-export type BotStore = Pick<typeof Store, 'communityOfChannel' | 'redeemLinkCode' | 'unlinkChannel' | 'joinCommunity' | 'listFeed' | 'listMembers'>
+export type BotStore = Pick<typeof Store, 'communityOfChannel' | 'redeemLinkCode' | 'burnLinkCode' | 'unlinkChannel' | 'joinCommunity' | 'listFeed' | 'listMembers'>
+
+/** The bot's memory (lib/community/limits over unsigned_turn_windows). Each
+ *  answers true = go; the real one fails OPEN on a DB error. Absent = no memory. */
+export interface BotFence {
+  /** T10: first sight of this update_id in 24 hours. */
+  updateFresh: (updateId: number) => Promise<boolean>
+  /** T9: this chat's first answer to this command in the cooldown window. */
+  commandFresh: (chatId: string, command: string) => Promise<boolean>
+}
+
+/** T9: the commands that make the bot post in a GROUP, one answer per chat per window.
+ *  /link and /start are never cooled (an admin linking must always get an answer). */
+export const COOLED_COMMANDS: ReadonlySet<string> = new Set(['join', 'invite', 'top', 'calls', 'help', 'chart'])
 
 export interface BotDeps {
   links: LinkCtx
@@ -67,6 +80,8 @@ export interface BotDeps {
   actorFor: (user: InUser) => Promise<Actor>
   /** The request declared itself an internal run (lib/internal-run). */
   isInternal: boolean
+  /** T9 / T10: update and command memory. */
+  fence?: BotFence
 }
 
 export interface BotOutcome {
@@ -80,6 +95,16 @@ export const QUOTE_BUDGET_MS = 3_000
 
 const done = (action: string, reply: Record<string, unknown> | null = null): BotOutcome => ({ action, reply })
 const isGroup = (m: InMessage): boolean => m.chat.type === 'group' || m.chat.type === 'supergroup'
+
+/** A fence answer that never throws: an error means go (fail open). */
+async function fenceSays(f: (() => Promise<boolean>) | null): Promise<boolean> {
+  if (!f) return true
+  try {
+    return await f()
+  } catch {
+    return true
+  }
+}
 
 function race<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise((resolve) => {
@@ -100,6 +125,9 @@ function race<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
 export async function handleUpdate(raw: unknown, deps: BotDeps): Promise<BotOutcome> {
   const inb = readUpdate(raw)
   if (!inb) return done('ignored')
+  // T10: Telegram redelivers an update it thinks we missed; a handled one runs once.
+  const fence = deps.fence
+  if (fence && inb.updateId !== null && !(await fenceSays(() => fence.updateFresh(inb.updateId as number)))) return done('duplicate')
   if (inb.kind === 'callback') return done('callback', { method: 'answerCallbackQuery', callback_query_id: inb.id })
   if (inb.kind === 'my_chat_member') {
     try {
@@ -197,6 +225,9 @@ const displayName = (user: InUser): string | null => tidy(user.name ?? user.user
 // ── a group ────────────────────────────────────────────────────────────────
 
 async function onGroup(m: InMessage, cmd: ParsedCommand, person: InUser | null, deps: BotDeps): Promise<BotOutcome> {
+  // T9: a member cannot make the bot post on demand (its per-group send budget feeds the room's announcements).
+  const fence = deps.fence
+  if (fence && COOLED_COMMANDS.has(cmd.name) && !(await fenceSays(() => fence.commandFresh(m.chat.id, cmd.name)))) return done('cooldown')
   switch (cmd.name) {
     case 'start': {
       const code = cmd.arg.toLowerCase()
@@ -253,10 +284,15 @@ async function onGroup(m: InMessage, cmd: ParsedCommand, person: InUser | null, 
  */
 async function link(m: InMessage, code: string, person: InUser | null, deps: BotDeps): Promise<BotOutcome> {
   if (person) {
-    if (!deps.call) return done('link-refused', answer(m, linkRefusedMessage('cannot-verify')))
+    // T8: a refused code is spent anyway: it sits in this chat for every member to read.
+    const refuse = async (why: 'cannot-verify' | 'not-admin'): Promise<BotOutcome> => {
+      await deps.store.burnLinkCode(code).catch(() => false)
+      return done('link-refused', answer(m, linkRefusedMessage(why)))
+    }
+    if (!deps.call) return refuse('cannot-verify')
     const member = await deps.call('getChatMember', { chat_id: m.chat.id, user_id: Number(person.id) })
-    if (!member.ok) return done('link-refused', answer(m, linkRefusedMessage('cannot-verify')))
-    if (!isChatAdmin(member)) return done('link-refused', answer(m, linkRefusedMessage('not-admin')))
+    if (!member.ok) return refuse('cannot-verify')
+    if (!isChatAdmin(member)) return refuse('not-admin')
   }
   // person === null here means senderOf() saw the group's own anonymous admin.
   const r = await deps.store.redeemLinkCode(code, 'telegram', { externalId: m.chat.id, title: m.chat.title ? tidy(m.chat.title, 128) : null })

@@ -701,17 +701,27 @@ export async function redeemLinkCode(code: string, platform: ChannelPlatform, ch
     await prisma.channelLinkCode.deleteMany({ where: { code: c } }).catch(() => null)
     return refuse(410, 'That link code expired. Mint a new one on the room page.')
   }
-  // T2: a chat linked to ANOTHER room is never re-pointed (the code is not spent).
-  const elsewhere = await linkedElsewhere(row.communitySlug, platform, String(chat.externalId).slice(0, 128))
-  if (elsewhere) return refuse(409, elsewhere)
   // Single use: whoever deletes the row spends it.
   const spent = await prisma.channelLinkCode.deleteMany({ where: { code: c } })
   if (!spent.count) return refuse(404, 'That link code was already used.')
+  // T2: a chat linked to ANOTHER room is never re-pointed. T8: the code is
+  // spent anyway (it sits in that chat for every member to read).
+  const elsewhere = await linkedElsewhere(row.communitySlug, platform, String(chat.externalId).slice(0, 128))
+  if (elsewhere) return refuse(409, `${elsewhere} That code is now spent: mint a fresh one on the room page.`)
   const community = await getCommunity(row.communitySlug)
   if (!community) return refuse(404, 'That room no longer exists.')
   if (await channelCapReached(row.communitySlug, platform, String(chat.externalId).slice(0, 128))) return refuse(409, TOO_MANY_CHANNELS)
   await upsertChannel(row.communitySlug, platform, row.createdBy, chat)
   return { ok: true, community: (await getCommunity(row.communitySlug)) ?? community }
+}
+
+/** T8: spend a link code without linking anything (a refused /link in a group:
+ *  the string stays in the chat, so it must be dead). true = a row was deleted. */
+export async function burnLinkCode(code: string): Promise<boolean> {
+  const c = typeof code === 'string' ? code.trim().toLowerCase() : ''
+  if (!LINK_CODE_RE.test(c)) return false
+  const r = await prisma.channelLinkCode.deleteMany({ where: { code: c } }).catch(() => ({ count: 0 }))
+  return r.count > 0
 }
 
 /** Link directly (the owner pasted a Discord webhook URL on the room page). */

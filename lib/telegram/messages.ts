@@ -129,8 +129,9 @@ export const couldNotPinMessage = (): TgMessage => say('I could not pin the join
 export type LinkRefusal = 'not-admin' | 'cannot-verify' | 'bad-code' | 'private' | 'usage'
 
 export function linkRefusedMessage(why: LinkRefusal, detail?: string | null): TgMessage {
-  if (why === 'not-admin') return say('Only an admin of this group can link it to a room.')
-  if (why === 'cannot-verify') return say('I could not check with Telegram that you are an admin here. Try again in a minute.')
+  // T8: a refused code is spent (it is in the chat for everyone to read), so the reply says to mint a fresh one.
+  if (why === 'not-admin') return say('Only an admin of this group can link it to a room. That code is now spent: mint a fresh one on the room page.')
+  if (why === 'cannot-verify') return say('I could not check with Telegram that you are an admin here. That code is now spent: mint a fresh one on the room page and try again in a minute.')
   if (why === 'private') return say('A link code works inside a group. Add me to your group from the room page, or send /link with the code there.')
   if (why === 'usage') return say('Send /link followed by the code from your room page. The code is 16 characters and lasts 15 minutes.')
   const more = t(detail, 160)

@@ -86,3 +86,46 @@ export async function linkTripped(ip: string | null, actorKey: string, platform:
   if ((counts.get(actor) ?? 0) > LINK_HOURLY_CAP) return 'actor'
   return null
 }
+
+// ── the Telegram bot's memory (lane POLISH, T9 / T10) ────────────────────────
+// Same table, first writer wins on (key, window). Keyed by update / chat, never
+// by IP (the caller is Telegram), so loopback does NOT skip here. A DB error
+// answers "go": an outage of ours must never drop a real update.
+
+/** T10: how long a handled update_id is remembered. */
+export const TG_UPDATE_MEMORY_MS = 86_400_000
+/** T9: one answer per chat per command per window, in groups. */
+export const TG_COMMAND_COOLDOWN_MS = 20_000
+
+/** The bucket a cooldown key falls in (pure). */
+export function cooldownWindowStart(nowMs: number, windowMs = TG_COMMAND_COOLDOWN_MS): Date {
+  return new Date(Math.floor(nowMs / windowMs) * windowMs)
+}
+
+/** T10: true = first sight of this update (handle it); false = a redelivery.
+ *  The `t:` prefix keeps the row past the sweep's 3-hour cut (lib/turn-limits
+ *  keeps `t:` rows 3 days); a day bucket + yesterday's look cover 24 hours. */
+export async function telegramUpdateFresh(bot: string, updateId: number, now = new Date()): Promise<boolean> {
+  if (!Number.isSafeInteger(updateId)) return true
+  const key = `t:tgu:${bot.toLowerCase().slice(0, 64)}:${updateId}`
+  const today = dayStartUTC(now)
+  const counts = await bump([key], today)
+  if (!counts) return true
+  if ((counts.get(key) ?? 1) > 1) return false
+  try {
+    const yesterday = new Date(today.getTime() - 86_400_000)
+    const prior = await prisma.$queryRaw<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM unsigned_turn_windows WHERE key = ${key} AND window_start = ${yesterday}`
+    return !(Number(prior[0]?.n ?? 0) > 0)
+  } catch {
+    return true
+  }
+}
+
+/** T9: true = answer; false = this chat had this command's answer in the current window. */
+export async function telegramCommandFresh(chatId: string, command: string, now = Date.now()): Promise<boolean> {
+  const key = `tgc:${String(chatId).slice(0, 32)}:${command.slice(0, 16)}`
+  const counts = await bump([key], cooldownWindowStart(now))
+  if (!counts) return true
+  return (counts.get(key) ?? 1) <= 1
+}

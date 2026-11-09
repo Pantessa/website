@@ -738,8 +738,9 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
       const codeSame = await store.mintLinkCode(slug, key, 'discord')
       const same = codeSame.ok ? await store.redeemLinkCode(codeSame.code, 'discord', { externalId: '900000000000000003', title: 'again' }) : null
       check(
-        'T2 (DB): a chat linked to room A is never re-pointed to room B — by code (409 by name, the code NOT spent) or directly; the row stays on A; re-linking the same chat to the same room stays fine',
-        !!moved && !moved.ok && moved.status === 409 && /already linked to the room/.test(moved.reason) && unspent === 1 && !direct.ok && direct.status === 409 && stillA?.communitySlug === slug && !!same && same.ok,
+        // RE-PINNED 2026-11-09 (polish, T8): the T2 refusal SPENDS the code (it was posted in that chat).
+        'T2 (DB): a chat linked to room A is never re-pointed to room B — by code (409 by name; T8: the code IS spent, the reason says mint a fresh one) or directly; the row stays on A; re-linking the same chat to the same room stays fine',
+        !!moved && !moved.ok && moved.status === 409 && /already linked to the room/.test(moved.reason) && /mint a fresh one/.test(moved.reason) && unspent === 0 && !direct.ok && direct.status === 409 && stillA?.communitySlug === slug && !!same && same.ok,
         `${moved && !moved.ok ? moved.status : 'moved'} unspent=${unspent} direct=${direct.ok ? 'ok' : direct.status} on=${stillA?.communitySlug} same=${same?.ok}`,
       )
     }

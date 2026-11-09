@@ -9,6 +9,7 @@ import { SITE_URL } from '@/lib/site-url'
 import { linkedWallet, normalizeIdentity } from '@/lib/community/identity'
 import { providerKey, walletKey, type Actor } from '@/lib/community/spec'
 import * as store from '@/lib/community/store'
+import { telegramCommandFresh, telegramUpdateFresh } from '@/lib/community/limits'
 import { telegramCaller, type TgCall } from './client'
 import { telegramConfig, type TelegramConfig } from './config'
 import type { BotDeps } from './handler'
@@ -49,7 +50,17 @@ export function botDeps(opts: { isInternal: boolean; cfg?: TelegramConfig; call?
   const cfg = opts.cfg ?? telegramConfig()
   const links = linkCtx(cfg)
   if (!links || !cfg.token) return null
-  return { links, store, call: opts.call === undefined ? telegramCaller(cfg.token) : opts.call, quote: quoteLine, market, actorFor: actorForTelegramUser, isInternal: opts.isInternal }
+  const bot = links.bot
+  return {
+    links,
+    store,
+    call: opts.call === undefined ? telegramCaller(cfg.token) : opts.call,
+    quote: quoteLine,
+    market,
+    actorFor: actorForTelegramUser,
+    isInternal: opts.isInternal,
+    fence: { updateFresh: (id) => telegramUpdateFresh(bot, id), commandFresh: (chat, cmd) => telegramCommandFresh(chat, cmd) },
+  }
 }
 
 /** A room's linked Telegram chat ids, for the server's own use (unlinking).
