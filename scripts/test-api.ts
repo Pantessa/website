@@ -28505,6 +28505,17 @@ async function main() {
       fam[0].asset === 'USDC' && fam[fam.length - 1].asset === 'MXNB' && earnSort([...ranked, exotic], 'apy', 'desc')[0].asset === 'MXNB' && earnSort([...ranked, exotic], 'featured', 'desc')[0].asset === 'USDC',
       fam.map((r) => `${r.asset}:${r.apyPct}`).join(' '),
     )
+    // The ladder (2026-11-09, Nate: "is it my portfolio? what are the bars?"):
+    // WHICH assets get a bar stays familiar-first, but the bars are DRAWN
+    // highest rate first, so they read as a ranking, never a zig-zag.
+    const ladder2 = earnLadder([...ranked, exotic], 2)
+    const ladder3 = earnLadder([...ranked, exotic], 3)
+    check(
+      'earn (ladder): the bars are picked familiar-first (at 2 slots the 17.6% peso coin is left out for USDC + ETH) and drawn highest rate first (at 3 slots: MXNB 17.6 · USDC 11.38 · ETH 2.27)',
+      ladder2.map((r) => r.asset).join(',') === 'USDC,ETH' && ladder3.map((r) => r.asset).join(',') === 'MXNB,USDC,ETH' &&
+        ladder3.every((r, i, a) => i === 0 || (a[i - 1].apyPct ?? 0) >= (r.apyPct ?? 0)),
+      ladder3.map((r) => `${r.asset}:${r.apyPct}`).join(' '),
+    )
     const wire = earnToWire(ranked, 2500)
     const back = earnFromWire(wire)
     check(
@@ -28538,6 +28549,15 @@ async function main() {
     check(
       'earn (SSR): /markets carries the Earn tab in the board strip and the EarnBoard seat (section#earn) in the server render, after the three market boards',
       /data-tab="earn"/.test(earnHtml) && /data-seat="EarnBoard"/.test(earnHtml) && /id="earn"/.test(earnHtml) && earnHtml.indexOf('id="perps"') < earnHtml.indexOf('id="earn"'),
+    )
+    // Not a portfolio (2026-11-09): the served blurb says these are the
+    // venues' rates and not the visitor's holdings; the ladder's head says
+    // what a bar is and its order; the TVL column says "Deposited".
+    const earnSrc = readFileSync(pathJoin(process.cwd(), 'components/markets/earn/EarnBoard.tsx'), 'utf8')
+    check(
+      'earn (copy): the served blurb says "not your holdings" (the old "Where your assets earn" is gone), the ladder head reads "BEST RATE PER ASSET · yearly, highest first", and the TVL column is "Deposited"',
+      /not your holdings/.test(earnHtml) && !/Where your assets earn/.test(earnHtml) &&
+        earnSrc.includes('BEST RATE PER ASSET · yearly, highest first') && earnSrc.includes("['tvl', 'Deposited']") && !earnSrc.includes('Earning there'),
     )
     // Map: unquoted cells draw small, still listed; wide screens open on the map.
     const secs = earnSections()
