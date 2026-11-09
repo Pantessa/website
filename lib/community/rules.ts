@@ -154,12 +154,21 @@ export type FeedCursor = { o: number } | { t: number; id: string }
 export function encodeCursor(c: FeedCursor): string {
   return Buffer.from(JSON.stringify(c), 'utf8').toString('base64url')
 }
+/** S12: how far past now a keyset cursor's time may sit (clock skew). */
+export const CURSOR_FUTURE_SLACK_MS = 86_400_000
+
 export function decodeCursor(raw: unknown): FeedCursor | null {
   if (typeof raw !== 'string' || !raw || raw.length > 200) return null
   try {
     const v = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as Record<string, unknown>
     if (typeof v.o === 'number' && Number.isInteger(v.o) && v.o >= 0 && v.o <= 10_000) return { o: v.o }
-    if (typeof v.t === 'number' && Number.isFinite(v.t) && typeof v.id === 'string' && /^[a-z0-9]{6,16}$/.test(v.id)) return { t: v.t, id: v.id }
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+    // S12: a keyset time must be a real date: integer ms, not before the
+    // epoch, not past a day from now (a JS Date's range is ±8.64e15; 1e308 threw in Prisma).
+    if (
+      typeof v.t === 'number' && Number.isInteger(v.t) && v.t >= 0 && v.t <= Date.now() + CURSOR_FUTURE_SLACK_MS &&
+      typeof v.id === 'string' && /^[a-z0-9]{6,16}$/.test(v.id)
+    ) return { t: v.t, id: v.id }
     return null
   } catch {
     return null

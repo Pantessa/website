@@ -85,6 +85,7 @@ export function communityCorePins(check: Check): void {
       proofSide(['buy:ETH'], 'native-swap-uniswap') === 'buy' && proofSide(['sell:HYPE'], 'native-hl-exec') === 'short' && proofSide([], null) === null,
   )
   secfixProofPins(check)
+  polishCorePins(check)
   {
     const refused = ['pantessa-official', 'pantessahq', 'askpantessa', 'metamask-support', 'mods', 'pantessa-support', 'official-pantessa', 'yeetful-team', 'admin-team', 'support-desk', 'eth-supportdesk', 'verified-calls', 'coinbase-help', 'uni-swap-help', 'team', 'eth-mods', 'helpdesk-24', 'security-alerts', 'discord-calls', 'telegram-vip']
     const passed = ['uni-desk', 'modern-art', 'teamwork-fx', 'eth-swing', 'badminton-fx', 'model-traders', 'steady-stack', 'moderate-risk']
@@ -257,6 +258,7 @@ const ORGANIC = { 'x-yf-organic-probe': '1' }
  *  Every row written carries the internal-run header and is cleaned up. */
 export async function communityCorePinsServed(check: Check, base: string): Promise<void> {
   await secfixProofReadPins(check)
+  await polishCorePinsServed(check, base)
   loadEnvLocal()
   const pk = process.env.PRIVATE_KEY
   if (!pk) {
@@ -768,6 +770,38 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
   function lpId(r: { json: Json }): string | null {
     return ((r.json.post as { id?: string } | undefined)?.id as string | undefined) ?? null
   }
+}
+
+// ── lane POLISH (2026-11-09): follow-ups from the security reviews ─────────
+const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64url')
+export const S12_FORGED_CURSORS: string[] = [
+  b64({ t: 1e308, id: 'abc123def0' }),
+  b64({ t: -1, id: 'abc123def0' }),
+  b64({ t: 9e15, id: 'abc123def0' }),
+  b64({ t: Date.now() + 400 * 86_400_000, id: 'abc123def0' }),
+  b64({ t: 1.5, id: 'abc123def0' }),
+  b64({ t: '1762000000000', id: 'abc123def0' }),
+  b64({ t: 1_762_000_000_000, id: 12345678 }),
+  b64({ o: '5' }),
+  b64({ o: -1 }),
+  b64([1, 2]),
+  b64(null),
+]
+
+function polishCorePins(check: Check): void {
+  check(
+    'community core: S12 — a forged keyset cursor (1e308, negative, past a JS date, a year ahead, fractional, wrong field types, null, an array) decodes to null; a real one still decodes',
+    S12_FORGED_CURSORS.every((c) => decodeCursor(c) === null) && decodeCursor(encodeCursor({ t: Date.now() - 60_000, id: 'abc123def0' })) !== null,
+  )
+}
+
+async function polishCorePinsServed(check: Check, base: string): Promise<void> {
+  const codes: number[] = []
+  for (const c of S12_FORGED_CURSORS.slice(0, 4)) {
+    const r = await fetch(`${base}/api/feed?sort=new&cursor=${encodeURIComponent(c)}`, { headers: INTERNAL, cache: 'no-store' })
+    codes.push(r.status)
+  }
+  check('community core (served): S12 — GET /api/feed?sort=new with a forged cursor answers 200 (its first page), never a 500', codes.every((c) => c === 200), codes.join(','))
 }
 
 if (process.argv[1]?.endsWith('community-core-pins.ts')) {
