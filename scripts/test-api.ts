@@ -371,6 +371,7 @@ import { actionGateLivePins, actionGatePins } from './action-gate-pins'
 import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
+import { botUaPins, CRAWL_UAS, PERSON_UA } from './bot-ua-pins'
 import { venueManifestLivePins, venueManifestPins } from './venue-manifest-pins'
 import { execStripLivePins, execStripPins } from './exec-strip-pins'
 import { policyPoolBuilderPins } from './policy-pool-builder-pins'
@@ -27588,12 +27589,32 @@ async function main() {
       // on the shared TEST DB, and another lane's run of this very pin would
       // otherwise have filled it already.
       const fenceIp = `203.0.113.${1 + Math.floor(Math.random() * 250)}`
+      // RE-PINNED 2026-11-09 (bot fence): a platform caller now wears a
+      // person's browser (PERSON_UA). Node's own UA ("node") from a platform
+      // IP reads as automated and gets the bot wall before the IP counter.
       const fenced: string[] = []
       for (let i = 0; i < 5; i++) {
-        const r = await askRoute({ symbol: 'ETH', tf: '1h', question: `what happened on screen ${i}?` }, { 'x-forwarded-for': fenceIp })
+        const r = await askRoute({ symbol: 'ETH', tf: '1h', question: `what happened on screen ${i}?` }, { 'x-forwarded-for': fenceIp, 'user-agent': PERSON_UA })
         fenced.push(String(r.j.model))
       }
       check('ai fence: a platform IP trips the per-IP model cap (MARKETS_AI_IP_HOURLY_CAP=3 on the server under test) with a polite answer, never a 429; the deterministic doors never count', fenced.slice(0, 3).every((m) => m === 'mock') && fenced.slice(3).every((m) => m === 'wall'), fenced.join(','))
+      // The bot fence (2026-11-09): a signed-out platform caller whose user
+      // agent reads as automated (the November crawl's own list) is walled
+      // before the per-IP counter, so its calls never fill that bucket; a
+      // person on the same IP right after still reaches the model.
+      {
+        const botIp = `198.51.100.${1 + Math.floor(Math.random() * 250)}`
+        const botModels: string[] = []
+        for (const ua of [CRAWL_UAS[0], CRAWL_UAS[7], 'Lightpanda/1.0', CRAWL_UAS[5]]) {
+          const r = await askRoute({ symbol: 'ETH', tf: '1h', question: `what happened on screen ${Math.random().toString(36).slice(2, 8)}?` }, { 'x-forwarded-for': botIp, 'user-agent': ua })
+          botModels.push(String(r.j.model))
+        }
+        const person = await askRoute({ symbol: 'ETH', tf: '1h', question: `what happened on screen ${Math.random().toString(36).slice(2, 8)}?` }, { 'x-forwarded-for': botIp, 'user-agent': PERSON_UA })
+        check('ai bot fence: a platform caller wearing the crawl\'s user agents (Chrome 118, Firefox 120, Lightpanda, Edge 119) is walled every time, and four walled calls leave the IP\'s bucket untouched — a person on it next still gets the model', botModels.every((m) => m === 'wall') && String(person.j.model) === 'mock', `${botModels.join(',')} → ${person.j.model}`)
+        const replay = await fetch(`${BASE}/api/markets/brief`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': botIp, 'user-agent': 'Lightpanda/1.0' }, body: JSON.stringify({ symbol: 'ETH', tf: '1h' }) })
+        const replayEv = (await replay.text()).split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l) as Ev)
+        check('ai bot fence: a cached brief still replays to an automated caller (it costs nothing); only a new write is walled', replay.status === 200 && replayEv.find((e) => e.type === 'meta')?.cached === true && replayEv.some((e) => e.type === 'text'), replayEv.map((e) => e.type).join(','))
+      }
       const pos = await fetch(`${BASE}/api/markets/brief`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ symbol: 'ETH', tf: '1h', part: 'position', address: '0x000000000000000000000000000000000000dEaD' }) })
       const posJ = (await pos.json().catch(() => ({}))) as { text?: string; held?: boolean }
       check('ai brief position: the address-keyed paragraph is its own uncached JSON call (an unfunded address reads as not held, no address in the text)', pos.status === 200 && typeof posJ.text === 'string' && !/0x[0-9a-fA-F]{6,}/.test(posJ.text) && pos.headers.get('cache-control') === 'no-store', `held=${posJ.held} text=${posJ.text?.slice(0, 60)}`)
@@ -35426,6 +35447,7 @@ async function main() {
   battlefieldPins(check)
   // The live tape (2026-10-06): the venue row parse, flow classes, buckets, tiles, follow asks, triggers, the page's door.
   tapePins(check)
+  botUaPins(check)
   // The venue manifest (2026-11-02): pinned contracts, selectors, guards and bounds per venue, read from the builders' own constants; the served route + page agree.
   venueManifestPins(check)
   await venueManifestLivePins(check, BASE)
