@@ -14,6 +14,7 @@ import { shownError } from '@/lib/fetch-words'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, Sparkles } from 'lucide-react'
 import { useSession } from '@/lib/session'
+import { useHumanInput } from '@/lib/human-input'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import { useAskDoor } from '@/lib/ask-door'
@@ -41,6 +42,7 @@ export function modelLabel(id: string): string {
 
 export default function AiBrief({ symbol, pair, tf = '1h', onAsk }: AiBriefProps) {
   const { walletAddress } = useSession()
+  const human = useHumanInput()
   const [phase, setPhase] = useState<Phase>('idle')
   const [text, setText] = useState('')
   const [chips, setChips] = useState<AiChip[]>([])
@@ -109,13 +111,17 @@ export default function AiBrief({ symbol, pair, tf = '1h', onAsk }: AiBriefProps
     [pair.symbol, tf],
   )
 
+  // The model writes for a person: nothing is asked until a hand touches the
+  // page (lib/human-input), so a crawler that loads /t/<sym> and leaves
+  // costs no brief. Inside the app a hand has always touched it already.
   useEffect(() => {
+    if (!human) return
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
     void load(ctrl.signal)
     return () => ctrl.abort()
-  }, [load, nonce])
+  }, [load, nonce, human])
 
   // The position paragraph: only with a wallet, only after the shared brief
   // has landed (one call, uncached, address-keyed on the server).

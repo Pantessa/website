@@ -8,6 +8,7 @@
 
 import { clientIpFrom, hashIp, hourStartUTC } from './turn-limits'
 import { isInternalRun } from './internal-run'
+import { isAutomatedUa } from './bot-ua'
 
 /** Pricing v2: 60 → 30. A person reading symbol pages makes a handful of
  *  uncached model calls an hour (the brief is shared per symbol for ten
@@ -61,8 +62,12 @@ export interface MarketsAdmission {
  *   1. a viewer with their own key (BYOK) runs on it — no fence, no fuse, no
  *      cost to us;
  *   2. a Plus account skips the per-IP fence (they pay for the model);
- *   3. everyone else passes the per-IP hourly fence;
- *   4. every house-paid call draws on its surface's DAILY fuse — the bound on
+ *   3. a signed-out browser that reads as automated (lib/bot-ua) gets the
+ *      bot wall before it touches any counter — a crawl on residential
+ *      proxies brings a fresh IP per page, so the per-IP fence never sees
+ *      it (2026-11-06: ~250 house briefs a day, one per page it loaded);
+ *   4. everyone else passes the per-IP hourly fence;
+ *   5. every house-paid call draws on its surface's DAILY fuse — the bound on
  *      what a proxy pool can do to the uncached surfaces (the position
  *      paragraph is keyed to any address a caller names).
  * The scripted mock (harness) never touches a fuse: a shared test DB would
@@ -84,6 +89,7 @@ export async function admitMarketsAi(headers: Headers, body: unknown, surface: M
   } catch {
     // identity is a courtesy here — an auth hiccup falls through to the fence
   }
+  if (!owner && automatedCaller(headers)) return { wall: MARKETS_AI_BOT_WALL, owner }
   if (!plus && (await bumpAndCheckMarketsAi(headers, body))) return { wall: MARKETS_AI_WALL, owner }
   if (process.env.MK2_AI_MOCK !== '1') {
     const { bumpFuse } = await import('./inference-fuse')
@@ -91,6 +97,18 @@ export async function admitMarketsAi(headers: Headers, body: unknown, surface: M
   }
   return { wall: null, owner }
 }
+
+/** Pure: a platform caller whose user agent reads as automated. Loopback
+ *  (no platform IP) is exempt exactly like the per-IP fence, so local
+ *  servers and the harness's own calls are never judged by their UA. */
+export function automatedCaller(headers: Headers, now: Date = new Date()): boolean {
+  if (!clientIpFrom(headers)) return false
+  return isAutomatedUa(headers.get('user-agent'), now)
+}
+
+/** The bot wall's words. A person on a very old browser can read it too, so
+ *  it names the two ways back. */
+export const MARKETS_AI_BOT_WALL = 'The model writes for people, and this browser reads as automated. The chart, the tape and every action still work. Sign in, or update your browser, and the brief comes back.'
 
 /** The daily fuse's words — the feature is resting, the page is not broken. */
 export const MARKETS_AI_FUSE_WALL = 'The model has written its share for today and is back at midnight UTC. The chart, the tape and every action still work — or add your own API key in Settings and it never rests.'
