@@ -166,7 +166,32 @@ export function isPublicAppPath(href: string): boolean {
   const path = href.split(/[?#]/)[0]
   // …and the public progress pages (/leaderboard, /analytics — 2026-10-15).
   // …and the policy pool's public ledger (/policy-pool — squad policy-pool, 2026-11-02).
-  return isMarketsPath(path) || isProgressPath(path) || path === '/chat' || path === '/chat/' || path === '/policy-pool' || path === '/policy-pool/'
+  // …and the community: the feed, every room, and Telegram's Mini App entry (squad community, 2026-11-09).
+  return isMarketsPath(path) || isProgressPath(path) || isCommunityPath(path) || isTelegramEntryPath(path) || path === '/chat' || path === '/chat/' || path === '/policy-pool' || path === '/policy-pool/'
+}
+
+// ── The community surface (squad community, 2026-11-09) ─────────────────
+// The feed (/community) and the rooms (/g, /g/<slug>, /g/new) are public to
+// LOOK at, like the markets pages: reading needs no wallet, joining needs a
+// proven identity (never a wallet), and an action asks at the action. The
+// spine is their navigation (the COMMUNITY seat lights by this path, whatever
+// frame mounts it) and the brochure nav hides (components/Navigation).
+// /tg is Telegram's Mini App entry: a member arriving from a group has
+// Telegram's signature and no wallet, so the spine's gate must never send
+// them home. Pure; pinned in scripts/community-feed-pins.ts.
+
+export const COMMUNITY_HREF = '/community'
+
+/** /community (+ anything under it) and every room path: /g, /g/<slug>, /g/new. */
+export function isCommunityPath(pathname: string): boolean {
+  const path = pathname.split(/[?#]/)[0]
+  return path === COMMUNITY_HREF || path.startsWith(`${COMMUNITY_HREF}/`) || path === '/g' || path.startsWith('/g/')
+}
+
+/** Telegram's Mini App entry (/tg, with its start parameter in the query). */
+export function isTelegramEntryPath(pathname: string): boolean {
+  const path = pathname.split(/[?#]/)[0]
+  return path === '/tg' || path.startsWith('/tg/')
 }
 
 export type SessionStatus = 'loading' | 'authed' | 'guest'
