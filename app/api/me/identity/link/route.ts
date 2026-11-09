@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '@/lib/community/origin'
 import { getSessionAddress } from '@/lib/auth'
 import { getProviderIdentity, linkIdentityToWallet } from '@/lib/community/identity'
 import { mergeSeats } from '@/lib/community/store'
@@ -12,7 +13,9 @@ import { providerKey } from '@/lib/community/spec'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function POST() {
+export async function POST(req: Request) {
+  // S7: our own page made this request (the identity cookie can be SameSite=None).
+  if (!sameOrigin(req.headers)) return NextResponse.json(CROSS_SITE_REFUSAL, { status: 403 })
   const [wallet, identity] = await Promise.all([getSessionAddress().catch(() => null), getProviderIdentity().catch(() => null)])
   if (!wallet) return NextResponse.json({ error: 'Sign in with your wallet to link it.' }, { status: 401 })
   if (!identity) return NextResponse.json({ error: 'Open this from Telegram or Discord first, so they can prove who you are.' }, { status: 401 })

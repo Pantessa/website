@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '@/lib/community/origin'
 import { isInternalRun } from '@/lib/internal-run'
 import { getActor } from '@/lib/community/identity'
 import { joinCommunity, leaveCommunity } from '@/lib/community/store'
@@ -14,6 +15,8 @@ export const dynamic = 'force-dynamic'
 type Ctx = { params: Promise<{ slug: string }> }
 
 export async function POST(req: NextRequest, ctx: Ctx) {
+  // S7: our own page made this request (the identity cookie can be SameSite=None).
+  if (!sameOriginJson(req.headers)) return NextResponse.json(CROSS_SITE_REFUSAL, { status: 403 })
   const { slug } = await ctx.params
   const actor = await getActor().catch(() => null)
   if (!actor) return NextResponse.json({ error: 'Sign in, or open this from Telegram or Discord, to join.', needsIdentity: true }, { status: 401 })
@@ -30,7 +33,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   return NextResponse.json({ joined: r.joined, community: r.community, me: r.me }, { headers: { 'cache-control': 'no-store' } })
 }
 
-export async function DELETE(_req: NextRequest, ctx: Ctx) {
+export async function DELETE(req: NextRequest, ctx: Ctx) {
+  // S7: our own page made this request (the identity cookie can be SameSite=None).
+  if (!sameOrigin(req.headers)) return NextResponse.json(CROSS_SITE_REFUSAL, { status: 403 })
   const { slug } = await ctx.params
   const actor = await getActor().catch(() => null)
   if (!actor) return NextResponse.json({ error: 'You are not signed in.', needsIdentity: true }, { status: 401 })

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '@/lib/community/origin'
 import { isInternalRun } from '@/lib/internal-run'
 import { clientIpFrom } from '@/lib/turn-limits'
 import { getActor } from '@/lib/community/identity'
@@ -14,6 +15,8 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  // S7: our own page made this request (the identity cookie can be SameSite=None).
+  if (!sameOriginJson(req.headers)) return NextResponse.json(CROSS_SITE_REFUSAL, { status: 403 })
   const { id } = await ctx.params
   const actor = await getActor().catch(() => null)
   if (!actor) return NextResponse.json({ error: 'Sign in, or open this from Telegram or Discord, to vote.', needsIdentity: true }, { status: 401 })

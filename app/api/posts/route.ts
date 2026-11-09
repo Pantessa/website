@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from 'next/server'
+import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '@/lib/community/origin'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
 import { isInternalRun } from '@/lib/internal-run'
@@ -65,6 +66,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // S7: our own page made this request (the identity cookie can be SameSite=None).
+  if (!sameOriginJson(req.headers)) return NextResponse.json(CROSS_SITE_REFUSAL, { status: 403 })
   const author = await getSessionAddress().catch(() => null)
   if (!author) return NextResponse.json({ error: 'Sign in to post — one free signature.' }, { status: 401 })
 

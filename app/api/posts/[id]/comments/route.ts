@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '@/lib/community/origin'
 import { getSessionAddress } from '@/lib/auth'
 import { isInternalRun } from '@/lib/internal-run'
 import { clientIpFrom } from '@/lib/turn-limits'
@@ -12,6 +13,8 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  // S7: our own page made this request (the identity cookie can be SameSite=None).
+  if (!sameOriginJson(req.headers)) return NextResponse.json(CROSS_SITE_REFUSAL, { status: 403 })
   const author = await getSessionAddress().catch(() => null)
   if (!author) return NextResponse.json({ error: 'Sign in to comment — one free signature.' }, { status: 401 })
   const { id } = await ctx.params

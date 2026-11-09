@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '@/lib/community/origin'
 import { getSessionAddress } from '@/lib/auth'
 import { isInternalRun } from '@/lib/internal-run'
 import { clientIpFrom } from '@/lib/turn-limits'
@@ -22,6 +23,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // S7: our own page made this request (the identity cookie can be SameSite=None).
+  if (!sameOriginJson(req.headers)) return NextResponse.json(CROSS_SITE_REFUSAL, { status: 403 })
   const owner = await getSessionAddress().catch(() => null)
   if (!owner) return NextResponse.json({ error: 'Sign in to start a room. One free signature.' }, { status: 401 })
   let body: unknown

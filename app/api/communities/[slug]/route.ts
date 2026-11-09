@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '@/lib/community/origin'
 import { getSessionAddress } from '@/lib/auth'
 import { getActor } from '@/lib/community/identity'
 import { getCommunity, inviterLabel, membershipOf, updateCommunity } from '@/lib/community/store'
@@ -25,6 +26,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 }
 
 export async function PATCH(req: NextRequest, ctx: Ctx) {
+  // S7: our own page made this request (the identity cookie can be SameSite=None).
+  if (!sameOriginJson(req.headers)) return NextResponse.json(CROSS_SITE_REFUSAL, { status: 403 })
   const { slug } = await ctx.params
   const wallet = await getSessionAddress().catch(() => null)
   if (!wallet) return NextResponse.json({ error: 'Sign in to edit this room.' }, { status: 401 })

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getActor } from '@/lib/community/identity'
-import { COMMUNITY_SLUG_RE } from '@/lib/community/spec'
+import { getSessionAddress } from '@/lib/auth'
+import { COMMUNITY_SLUG_RE, walletKey } from '@/lib/community/spec'
 import { getCommunity, mintLinkCode, roleOf, unlinkChannel } from '@/lib/community/store'
 import { missingEnv, telegramConfig, telegramStatus, unconfiguredBody } from '@/lib/telegram/config'
 import { addToGroupAsAdminUrl, addToGroupUrl, joinUrlFor } from '@/lib/telegram/links'
-import { sameOrigin } from '@/lib/telegram/request'
+import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '@/lib/community/origin'
 import { telegramChatsOf } from '@/lib/telegram/server'
 
 export const runtime = 'nodejs'
@@ -46,9 +46,12 @@ async function manager(req: NextRequest, slug: string) {
   if (missing || !cfg.bot) return { refusal: NextResponse.json(unconfiguredBody(missing ?? 'TELEGRAM_BOT_NAME'), { status: 503 }) }
   if (!COMMUNITY_SLUG_RE.test(slug)) return { refusal: refuse('No such room.', 404) }
   // The identity cookie can be SameSite=None (a Mini App in an iframe): a write names its own origin.
-  if (!sameOrigin(req.headers)) return { refusal: refuse('This must come from the Pantessa page itself.', 403) }
-  const actor = await getActor()
-  if (!actor) return { refusal: NextResponse.json({ error: 'Sign in to manage this room.', needsIdentity: true }, { status: 401 }) }
+  if (req.method === 'DELETE' ? !sameOrigin(req.headers) : !sameOriginJson(req.headers)) return { refusal: NextResponse.json(CROSS_SITE_REFUSAL, { status: 403 }) }
+  // S7: managing a room needs the WALLET session; a Telegram identity cookie
+  // alone (even one linked to the owner's wallet) never manages a room.
+  const wallet = await getSessionAddress().catch(() => null)
+  if (!wallet) return { refusal: NextResponse.json({ error: 'Sign in with your wallet to manage this room.', needsIdentity: true }, { status: 401 }) }
+  const actor = { key: walletKey(wallet) }
   const role = await roleOf(slug, actor.key)
   if (role !== 'owner' && role !== 'mod') return { refusal: refuse('Only the room owner or a mod can link a chat.', 403) }
   return { actor, bot: cfg.bot, app: cfg.app }

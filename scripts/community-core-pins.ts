@@ -10,6 +10,7 @@ import { createSiweMessage } from 'viem/siwe'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { validatePostDraft } from '../lib/chart-posts'
 import { hotRank, RESERVED_COMMUNITY_SLUGS } from '../lib/community/spec'
+import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '../lib/community/origin'
 import { checkName, checkSlug, checkSymbols, decodeCursor, encodeCursor, higherRole, memberLabel, parseVote, voteDelta } from '../lib/community/rules'
 import { clampProofSize, decideProof, explorerTxFor, fillLabel, locateTx, proofSide, readOnChain, REFUSE_CHAIN_UNREAD, REFUSE_NOTHING_MOVED } from '../lib/community/proof'
 import { proofFactLine, proofTagLine } from '../lib/community/proof-words'
@@ -81,6 +82,14 @@ export function communityCorePins(check: Check): void {
       proofSide(['buy:ETH'], 'native-swap-uniswap') === 'buy' && proofSide(['sell:HYPE'], 'native-hl-exec') === 'short' && proofSide([], null) === null,
   )
   secfixProofPins(check)
+  const h = (o: Record<string, string>) => new Headers(o)
+  check(
+    'S7 origin rule: no Origin / same host passes; another host, a cross-site Sec-Fetch-Site, a malformed Origin refuse; a body write also needs application/json; one refusal text',
+    sameOrigin(h({})) && sameOrigin(h({ origin: 'https://www.pantessa.com', host: 'www.pantessa.com' })) && sameOrigin(h({ 'sec-fetch-site': 'same-origin' })) &&
+      !sameOrigin(h({ origin: 'https://evil.example', host: 'www.pantessa.com' })) && !sameOrigin(h({ 'sec-fetch-site': 'cross-site' })) && !sameOrigin(h({ 'sec-fetch-site': 'same-site' })) && !sameOrigin(h({ origin: 'null', host: 'www.pantessa.com' })) &&
+      sameOriginJson(h({ 'content-type': 'application/json; charset=utf-8' })) && !sameOriginJson(h({ 'content-type': 'text/plain' })) && !sameOriginJson(h({})) &&
+      CROSS_SITE_REFUSAL.error === 'This request did not come from Pantessa.',
+  )
 }
 
 /** QA-SECURITY S1 + S2 (lane SECFIX): what a trade proof may show. Pure. */
@@ -208,9 +217,9 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
   const J = (cookie?: string | null, extra: Record<string, string> = {}) => ({ 'content-type': 'application/json', ...INTERNAL, ...(cookie ? { cookie } : {}), ...extra })
 
   type Json = Record<string, unknown> & { error?: string }
-  const call = async (method: string, path: string, opts: { cookie?: string | null; body?: unknown; organic?: boolean } = {}) => {
-    const headers: Record<string, string> = opts.organic ? { 'content-type': 'application/json', ...ORGANIC, ...(opts.cookie ? { cookie: opts.cookie } : {}) } : J(opts.cookie)
-    const res = await fetch(`${base}${path}`, { method, headers, body: opts.body === undefined ? undefined : JSON.stringify(opts.body), cache: 'no-store' })
+  const call = async (method: string, path: string, opts: { cookie?: string | null; body?: unknown; organic?: boolean; headers?: Record<string, string>; raw?: string } = {}) => {
+    const headers: Record<string, string> = { ...(opts.organic ? { 'content-type': 'application/json', ...ORGANIC, ...(opts.cookie ? { cookie: opts.cookie } : {}) } : J(opts.cookie)), ...(opts.headers ?? {}) }
+    const res = await fetch(`${base}${path}`, { method, headers, body: opts.raw ?? (opts.body === undefined ? undefined : JSON.stringify(opts.body)), cache: 'no-store' })
     let json: Json = {}
     try {
       json = (await res.json()) as Json
@@ -427,6 +436,37 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
         (scoreAfter?.json.post as { score: number } | undefined)?.score === 2,
       `${linkNoIdent.status}/${linkNoWallet.status}/${linked.status} moved=${linked.json.moved} members=${(afterLink.json.community as { members: number })?.members}`,
     )
+    // ── S7: cross-site writes and who manages ──
+    {
+      const EVIL = { origin: 'https://evil.example' }
+      const postId = lpId(link)
+      const xVote = postId ? await call('POST', `/api/posts/${postId}/vote`, { cookie: sb, body: { value: -1 }, headers: EVIL }) : null
+      const plainVote = postId ? await call('POST', `/api/posts/${postId}/vote`, { cookie: sb, raw: '{"value":-1}', headers: { 'content-type': 'text/plain' } }) : null
+      const xJoin = await call('POST', `/api/communities/${slug}/join`, { cookie: sb, body: {}, headers: { 'sec-fetch-site': 'cross-site' } })
+      const xLeave = await call('DELETE', `/api/communities/${slug}/join`, { cookie: sa, headers: EVIL })
+      const xPost = await call('POST', '/api/posts', { cookie: sa, body: { community: slug, kind: 'link', title: 'x-site', linkUrl: 'https://example.com/x' }, headers: EVIL })
+      const xRoom = await call('POST', '/api/communities', { cookie: sa, raw: JSON.stringify({ slug: `${slug}-x`, name: 'Cross' }), headers: { 'content-type': 'text/plain' } })
+      const xPatch = await call('PATCH', `/api/communities/${slug}`, { cookie: sa, body: { about: 'x' }, headers: EVIL })
+      const xLink = await call('POST', '/api/me/identity/link', { cookie: `${sa}; ${tg}`, headers: EVIL })
+      const xComment = postId ? await call('POST', `/api/posts/${postId}/comments`, { cookie: sa, body: { body: 'x-site' }, headers: EVIL }) : null
+      const sameSite = postId ? await call('POST', `/api/posts/${postId}/vote`, { cookie: sb, body: { value: 1 }, headers: { origin: base, 'sec-fetch-site': 'same-origin' } }) : null
+      const refused = (r: { status: number; json: Json } | null) => !!r && r.status === 403 && r.json.error === 'This request did not come from Pantessa.'
+      check(
+        'S7 (served): every community write refuses a cross-site request (Origin of another host, Sec-Fetch-Site cross-site, or a non-JSON body) with 403 by name — vote, join, leave, post, open a room, PATCH, link, comment; our own page (same Origin) passes',
+        refused(xVote) && refused(plainVote) && refused(xJoin) && refused(xLeave) && refused(xPost) && refused(xRoom) && refused(xPatch) && refused(xLink) && refused(xComment) && sameSite?.status === 200,
+        [xVote, plainVote, xJoin, xLeave, xPost, xRoom, xPatch, xLink, xComment, sameSite].map((r) => r?.status).join('/'),
+      )
+      // The Telegram identity is now LINKED to A (the owner). Its cookie alone must not manage the room.
+      const tgDiscord = await call('POST', `/api/communities/${slug}/discord`, { cookie: tg, body: { mintCode: true } })
+      const tgDiscordDel = await call('DELETE', `/api/communities/${slug}/discord`, { cookie: tg })
+      const tgTelegram = await call('POST', `/api/communities/${slug}/telegram`, { cookie: tg, body: {} })
+      const ownerDel = await call('DELETE', `/api/communities/${slug}/discord`, { cookie: sa })
+      check(
+        "S7 (served): a provider identity cookie linked to the owner's wallet never manages the room — Discord link / unlink answer 401 (wallet session needed); Telegram mint is 401 when configured (503 by name while unset); the owner's wallet session gets past the check (404 no channel)",
+        tgDiscord.status === 401 && tgDiscordDel.status === 401 && (tgTelegram.status === 401 || (tgTelegram.status === 503 && !!tgTelegram.json.unconfigured)) && ownerDel.status === 404,
+        `${tgDiscord.status}/${tgDiscordDel.status}/${tgTelegram.status}/${ownerDel.status}`,
+      )
+    }
   } catch (e) {
     check('community core (served): ran to the end', false, e instanceof Error ? e.message : String(e))
   } finally {
