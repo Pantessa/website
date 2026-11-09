@@ -61,6 +61,12 @@ const CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g
  *  and zero-width characters — invisible in a title, a room name, an about
  *  text or a comment, and the tools of a lookalike name. */
 export const INVISIBLE_RE = /[\u0080-\u009f\u00ad\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g
+/** The same strip for RUNNING TEXT (titles, bodies, comments, about): it keeps
+ *  the two joiners real writing needs — U+200C (zero-width non-joiner: Persian
+ *  and other scripts) and U+200D (zero-width joiner: emoji sequences, Indic
+ *  conjuncts). QA-SECURITY-3 R8: stripping them site-wide broke that text. A
+ *  NAME still loses them (lib/community/rules strips with INVISIBLE_RE). */
+export const TEXT_INVISIBLE_RE = /[\u0080-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g
 
 // ── pure helpers (harness-pinned) ────────────────────────────────────────────
 
@@ -72,7 +78,7 @@ export function cleanText(raw: unknown, max: number): string {
   return raw
     .replace(/\r\n?/g, '\n')
     .replace(CONTROL_RE, '')
-    .replace(INVISIBLE_RE, '')
+    .replace(TEXT_INVISIBLE_RE, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()

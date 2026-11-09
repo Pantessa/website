@@ -10,9 +10,16 @@
 // self-send of nothing) is not a trade, and an RPC that cannot answer in ~6s
 // is a refusal, never a pass (fail closed).
 //
+// A TRADE MOVES VALUE BOTH WAYS (QA-SECURITY-3 R1). The dollar read alone is
+// the largest single transfer leg, in or out, so a self-send, a plain
+// transfer to a friend or a deposit read as "size". The post therefore also
+// needs the transaction to be TWO-SIDED for this wallet (`flowShape`): value
+// left it in one asset and value reached it in another. One-way is refused.
+//
 // The row's own words are never emitted as fact:
-//   · `value_usd` is only an upper bound on the size (min with the chain's
-//     figure × 1.05, the earned-answers grace);
+//   · `value_usd` is only an upper bound on the size: the printed figure is
+//     min(recorded, the chain's) and NEVER above the chain's (R2: the first
+//     cut allowed 5% over, so a $100 transaction could print $105);
 //   · `chain` / `tx_url` only locate the hash; the explorer link is REBUILT
 //     from the chain registry + the hash (a stored `https://evil.example/…`
 //     never reaches a page);
@@ -83,21 +90,89 @@ export { defaultTradeTitle as fillLabel } from './proof-words'
 // ── the chain read ───────────────────────────────────────────────────────
 
 export const PROOF_READ_TIMEOUT_MS = 6_000
-export type NotionalReader = (chainId: number, txHash: string, wallet: string) => Promise<{ usd: number | null }>
+/** What the chain says about one transaction for one wallet. `twoSided` is
+ *  REQUIRED to be true for a proof; a reader that cannot tell answers false. */
+export interface OnChainRead {
+  usd: number | null
+  twoSided?: boolean
+}
+export type NotionalReader = (chainId: number, txHash: string, wallet: string) => Promise<OnChainRead>
 
 export const REFUSE_NOTHING_MOVED = 'That transaction moved nothing we can price, so it is not a trade to post.'
+export const REFUSE_ONE_WAY = 'That transaction sent funds one way only (a transfer or a deposit), so it is not a trade to post.'
 export const REFUSE_CHAIN_UNREAD = 'Could not read that transaction from the chain just now. Try again in a minute.'
 export const REFUSE_NOT_YOURS = 'That is not one of your verified trades. Pick a fill from your list.'
 
+const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b0fc378daa952ba7f163c4a11628f55a4df523b3ef'
+/** WETH9 `Withdrawal(address indexed src, uint256 wad)`: a router unwrapping, i.e. native paid out by an internal call (no Transfer log names the wallet). */
+const WITHDRAWAL_TOPIC = '0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65'
+const topicAddr = (t: string | undefined) => (t && t.length === 66 ? `0x${t.slice(26)}`.toLowerCase() : '')
+
+export interface FlowInput {
+  wallet: string
+  /** Native value sent with the call (wei). */
+  txValue: bigint
+  /** The chain's wrapped-native token (WETH on Base, …). */
+  wrappedNative: string
+  logs: { address: string; topics: readonly string[] }[]
+}
+
+/**
+ * Pure: did value LEAVE this wallet in one asset and REACH it in another?
+ *   out  = an ERC-20 Transfer FROM the wallet (to someone else), or native
+ *          value sent with the call
+ *   in   = an ERC-20 Transfer TO the wallet (from someone else) of a token it
+ *          did not also send; or, when the wallet sent a token and nothing
+ *          came back as a token, the wrapped-native token being UNWRAPPED in
+ *          the same transaction (the swap paid out native by an internal call)
+ * A self-transfer is neither. The same token out and back (a round trip, a
+ * refund, a flash loan) is not two-sided. Pinned.
+ */
+export function flowShape(i: FlowInput): { out: boolean; in: boolean; twoSided: boolean } {
+  const who = i.wallet.toLowerCase()
+  const wrapped = i.wrappedNative.toLowerCase()
+  const sent = new Set<string>()
+  const got = new Set<string>()
+  let unwrapped = false
+  for (const log of i.logs) {
+    const t0 = log.topics[0]?.toLowerCase()
+    const token = log.address.toLowerCase()
+    if (t0 === WITHDRAWAL_TOPIC && token === wrapped) unwrapped = true
+    if (t0 !== TRANSFER_TOPIC || log.topics.length !== 3) continue // 3 topics = ERC-20 (an NFT transfer has 4)
+    const from = topicAddr(log.topics[1])
+    const to = topicAddr(log.topics[2])
+    if (from === to) continue
+    if (from === who) sent.add(token)
+    if (to === who) got.add(token)
+  }
+  const nativeOut = i.txValue > BigInt(0)
+  const out = nativeOut || sent.size > 0
+  // An asset that came back AND went out is not an inflow (a round trip).
+  const tokenIn = [...got].some((t) => !sent.has(t) && !(nativeOut && t === wrapped))
+  // Native paid out: only when the wallet sent a TOKEN (not native) and the wrapped token was unwrapped.
+  const nativeIn = !nativeOut && sent.size > 0 && unwrapped && !sent.has(wrapped)
+  const inn = tokenIn || nativeIn
+  return { out, in: inn, twoSided: out && inn }
+}
+
 const defaultReader: NotionalReader = async (chainId, txHash, wallet) => {
-  const { onChainNotionalUsd } = await import('@/lib/earned-answers')
-  const r = await onChainNotionalUsd(chainId, txHash, wallet)
-  return { usd: r.usd }
+  const [{ onChainNotionalUsd }, { receiptClientFor }, { chainById }] = await Promise.all([import('@/lib/earned-answers'), import('@/lib/link-receipt-verify'), import('@/lib/chains')])
+  const chain = chainById(chainId)
+  const client = receiptClientFor(chainId)
+  if (!chain || !client) return { usd: null, twoSided: false }
+  const [r, tx, receipt] = await Promise.all([
+    onChainNotionalUsd(chainId, txHash, wallet),
+    client.getTransaction({ hash: txHash as `0x${string}` }),
+    client.getTransactionReceipt({ hash: txHash as `0x${string}` }),
+  ])
+  if (!tx || !receipt || receipt.status !== 'success' || tx.from.toLowerCase() !== wallet.toLowerCase()) return { usd: null, twoSided: false }
+  const shape = flowShape({ wallet, txValue: tx.value, wrappedNative: chain.wrappedNative, logs: receipt.logs.map((l) => ({ address: l.address, topics: l.topics as readonly string[] })) })
+  return { usd: r.usd, twoSided: shape.twoSided }
 }
 
 /** The chain's answer with a hard timeout. 'gone' = the chain does not know
  *  the transaction; 'error' = no answer (timeout / RPC). */
-export async function readOnChain(read: NotionalReader, chainId: number, txHash: string, wallet: string, timeoutMs = PROOF_READ_TIMEOUT_MS): Promise<{ usd: number | null } | 'gone' | 'error'> {
+export async function readOnChain(read: NotionalReader, chainId: number, txHash: string, wallet: string, timeoutMs = PROOF_READ_TIMEOUT_MS): Promise<OnChainRead | 'gone' | 'error'> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
@@ -115,14 +190,14 @@ export async function readOnChain(read: NotionalReader, chainId: number, txHash:
 }
 
 /** Pure: the size a stranger may read. The recorded value is an upper bound
- *  only; the chain's figure (+5% grace for price drift between build and
- *  read) caps it. Hidden size → null. */
+ *  only, and the printed figure is NEVER above what the chain shows (R2).
+ *  Hidden size → null. */
 export function clampProofSize(recordedUsd: number | null | undefined, onChainUsd: number, showSize: boolean): number | null {
   if (!showSize) return null
-  const cap = onChainUsd * 1.05
   const rec = typeof recordedUsd === 'number' && Number.isFinite(recordedUsd) && recordedUsd > 0 ? recordedUsd : null
-  const v = rec != null ? Math.min(rec, cap) : onChainUsd
-  return Math.round(v * 100) / 100
+  const v = rec != null ? Math.min(rec, onChainUsd) : onChainUsd
+  // Round DOWN to the cent: rounding up would print a cent the chain did not show.
+  return Math.floor(v * 100 + 1e-9) / 100
 }
 
 export type ProofResult = { ok: true; proof: TradeProof } | { ok: false; status: number; reason: string }
@@ -131,13 +206,15 @@ type TurnRow = { id: string; symbols: string[]; valueUsd: number | null; chain: 
 const SELECT = { id: true, symbols: true, valueUsd: true, chain: true, txUrl: true, buildPath: true, createdAt: true } as const
 
 /** Pure: a located row + the chain's answer → the proof, or why not. */
-export function decideProof(row: TurnRow, onChain: { usd: number | null } | 'gone' | 'error', showSize: boolean): ProofResult {
+export function decideProof(row: TurnRow, onChain: OnChainRead | 'gone' | 'error', showSize: boolean): ProofResult {
   const where = locateTx(row)
   if (!where) return { ok: false, status: 400, reason: REFUSE_NOT_YOURS }
   if (onChain === 'error') return { ok: false, status: 503, reason: REFUSE_CHAIN_UNREAD }
   if (onChain === 'gone') return { ok: false, status: 400, reason: `That transaction is not on ${where.chain}, so it is not a trade to post.` }
   const usd = onChain.usd
   if (usd == null || !Number.isFinite(usd) || !(usd > 0)) return { ok: false, status: 400, reason: REFUSE_NOTHING_MOVED }
+  // Fail closed: a reader that did not say "two-sided" did not prove a trade.
+  if (onChain.twoSided !== true) return { ok: false, status: 400, reason: REFUSE_ONE_WAY }
   return {
     ok: true,
     proof: {

@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 import { inTelegramApp } from '../lib/telegram/container'
 import { TG_MINI_APP_MAX_AGE_SEC, initDataHash, verifyInitData } from '../lib/telegram/verify'
 import { additiveRefusal } from './run-ddl'
+import { INVISIBLE_RE, cleanText } from '../lib/chart-posts'
 import { sameOrigin, sameOriginJson } from '../lib/community/origin'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -88,6 +89,13 @@ export function communityCoordPins(check: Check): void {
   check(
     'S21 session: the wallet-session verifier refuses any token that carries an audience (the identity cookie has one), before it reads the address claim',
     /if \(payload\.aud !== undefined\) return null\s*return typeof payload\.address === 'string'/.test(code('lib/auth.ts')),
+  )
+  // ── R8: running text keeps the joiners real writing needs ──
+  const persian = '\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645' // "mi-khaham" with its ZWNJ
+  const family = '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}' // an emoji ZWJ sequence
+  check(
+    'R8 text: a title, body or comment keeps U+200C and U+200D (Persian words, emoji sequences) while bidi overrides, isolates, zero-width SPACE and C1 controls are still stripped; the strict strip used for NAMES still removes the joiners',
+    cleanText(persian, 80) === persian && cleanText(family, 80) === family && cleanText('a\u202eb\u200bc\u2066d\u0085e\ufeff', 50) === 'abcde' && persian.replace(INVISIBLE_RE, '') !== persian,
   )
   // ── S11: the DDL runner's additive fence reads every clause ──
   const refused = [
