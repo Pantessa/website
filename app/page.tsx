@@ -8,6 +8,7 @@ import { LINK_FEE_PCT } from '@/lib/fees'
 import { HOME_DESCRIPTION, HOME_TITLE } from '@/lib/markets-copy'
 import { readTradability } from '@/lib/tradability-store'
 import { readTrending } from '@/app/markets/trending'
+import { readSnapshotForRender } from '@/lib/read-server'
 
 // `/` — THE FRONT DOOR IS THE APP (squad front-door, 2026-10-06, Nate: "the
 // landing page falls a bit flat and our new live page feels more alive …
@@ -15,11 +16,11 @@ import { readTrending } from '@/app/markets/trending'
 // combine the live feed with the markets page as the splash page").
 //
 // The splash is the markets index in the app shell (the spine on the left,
-// the watchlist rail on the right, the phone frame below lg) with the live
-// pulse on top of the main column — the venue's fills aggregated into a
-// calm band, every number a button (components/home/PulseSlot) — and the
-// guide that teaches links, jobs, the wallet and the AI door as the visitor
-// moves (components/guide/GuideSeat). Looking needs no wallet (lib/app-entry
+// the watchlist rail on the right, the phone frame below lg) with THE READ
+// on top of the main column (2026-11-09, components/home/TheRead + lib/read):
+// the market as one sentence whose clauses are buttons, a macro line of nine
+// tiles and the chart of the pick. The snapshot behind it is read HERE, so
+// the headline is in the server HTML. Looking needs no wallet (lib/app-entry
 // isPublicAppPath: `/` is a markets path); the wallet is asked for at the
 // action (lib/use-connect-to-act). /markets redirects here (next.config);
 // the brochure that used to be `/` is /story.
@@ -91,12 +92,16 @@ export default async function HomePage() {
   // Both reads are fail-soft and cached per server: the strip, and which
   // rows can actually be acted on (lib/tradability-store — an empty answer
   // offers everything).
-  const [trending, tradable] = await Promise.all([readTrending(), readTradability()])
+  // …and the read's snapshot (lib/read-server readSnapshotForRender: through
+  // the data cache so this page stays ISR, fail-soft per feed, capped in
+  // time, never a throw — an empty one renders "Reading the markets" and the
+  // browser fills it).
+  const [trending, tradable, read] = await Promise.all([readTrending(), readTradability(), readSnapshotForRender()])
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
       <MarketsShell>
-        <HomeSurface trending={trending} tradable={tradable} />
+        <HomeSurface trending={trending} tradable={tradable} read={read} />
         <div className="mkt-frame__foot">
           <Footer />
         </div>

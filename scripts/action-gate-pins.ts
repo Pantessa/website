@@ -9,15 +9,18 @@
 //   npx tsx scripts/action-gate-pins.ts --live   + the venues' own lists
 //                                                 (read-only: Aave reserves,
 //                                                 the Hyperliquid universe)
-import { chartPairFor } from '../lib/charts'
+import { chartPairFor, isHip3Pair, primeHlPerps, type ChartPair } from '../lib/charts'
+import { resetHlUniverse } from '../lib/hl-universe'
+import { askChartSuggestions } from '../lib/markets-ai-suggestions'
+import { GUIDE_CHART_ONLY_BODY, GUIDE_HINTS, guideBody } from '../lib/guide'
 import { aaveRows } from '../lib/earn'
 import { marketSections } from '../lib/markets'
 import { canSellAsk, spotStopTarget } from '../lib/sell-gate'
-import { COLD_AAVE_SUPPLY, COLD_HL_PERPS, compoundLegKindsFor, venuesFor } from '../lib/symbol-venues'
-import { execAsks } from '../lib/trade-asks'
+import { COLD_AAVE_SUPPLY, COLD_HL_PERPS, compoundLegKindsFor, missingVenueNotes, quickActs, venuesFor } from '../lib/symbol-venues'
+import { execAsks, execSidesFor, sidesFor } from '../lib/trade-asks'
 import { canTradeAsk, tradeRefusal } from '../lib/trade-venue-gate'
 import { TRADABILITY_MAX_AGE_MS, type SymbolTradability, type TradabilityMap } from '../lib/tradability'
-import { aaveCapability, aaveRefusal, canRunVenueAsk, capabilityLegsFor, capabilityTarget, perpCapability, perpRefusal, type ReserveListing } from '../lib/venue-capability'
+import { aaveCapability, aaveRefusal, canRunVenueAsk, capabilityLegsFor, capabilityTarget, hip3Refusal, perpCapability, perpRefusal, venueAskRefusal, type ReserveListing } from '../lib/venue-capability'
 import { markGuardable } from '../lib/watchlist-holdings'
 import { compileJobAsk } from '../lib/jobs'
 import { aaveReserveSymbolFor, buildWethWrapTx, guardWethWrap, planWethWrap, WETH_DEPOSIT_SELECTOR, wrapGasReserveWei } from '../lib/weth-wrap'
@@ -190,6 +193,55 @@ export function actionGatePins(check: Check): void {
     !canSellAsk(spot, null) && !canSellAsk(spot, undefined) && !canSellAsk(spot, []) && !canSellAsk(spot, eoa) && canSellAsk(spot, smart) &&
       !canSellAsk('Protect my LINK in my wallet with a 5% stop', smart) && !canSellAsk('Protect my AERO in my wallet with a 5% stop', smart) && !canSellAsk('Protect my BTC in my wallet with a 5% stop', smart) &&
       canSellAsk('Protect my HYPE long with a 5% stop', null) && canSellAsk('Buy $50 of UNI', null),
+  )
+
+  // ── A Hyperliquid builder market charts here and takes no order (2026-11-09) ──
+  // /t/SP500, /t/GOLD, /t/CL … chart `xyz:` perps since the live universe landed, and every one offered
+  // "Long $25 of SP500 on Hyperliquid" — which the order layer (main book only) answered with
+  // "SP500 isn't a Hyperliquid perp". Measured on a local build: 4 chips on each of those pages, 0 buildable.
+  const sp500: ChartPair = { symbol: 'SP500', source: 'hyperliquid', pair: 'xyz:SP500', label: 'SP500 / USD' }
+  const hype: ChartPair = { symbol: 'HYPE', source: 'hyperliquid', pair: 'HYPE', label: 'HYPE / USD' }
+  const btc = chartPairFor('BTC')
+  check(
+    'action gate (builder market): a perp on a builder-deployed dex (`xyz:SP500`) is told apart from a main-book perp, a spot pair and nothing — and the page\'s own grammar offers it NO side: no strip, no ticket, no venue row, no chain, no quick chip, no suggested order',
+    isHip3Pair(sp500) && !isHip3Pair(hype) && !isHip3Pair(btc) && !isHip3Pair(null) && !isHip3Pair(undefined) &&
+      sidesFor(sp500).length === 0 && execSidesFor(sp500).length === 0 && execAsks(sp500, { usd: 25 }).length === 0 &&
+      venuesFor('SP500', sp500).length === 0 && compoundLegKindsFor('SP500', sp500).length === 0 && quickActs('SP500', sp500).length === 0 &&
+      askChartSuggestions('SP500', sp500).every((x) => x.kind === 'question') && askChartSuggestions('SP500', sp500).length === 3,
+  )
+  check(
+    'action gate (builder market): a main-book perp keeps every side it had (long · short · protect, the venue rows, the chain legs, the suggested long) — the rule removes nothing that builds',
+    execSidesFor(hype).join() === 'long,short,protect' && execAsks(hype, { usd: 25 }).some((a) => a.ask === 'Long $25 of HYPE on Hyperliquid') &&
+      venuesFor('HYPE', hype).filter((r) => r.kind === 'perp').length === 2 && compoundLegKindsFor('HYPE', hype).join() === 'deposit,long,short,protect' &&
+      askChartSuggestions('HYPE', hype).some((x) => x.kind === 'act' && x.ask === 'Long $25 of HYPE on Hyperliquid'),
+  )
+  const chartHint = GUIDE_HINTS.find((h) => h.id === 'chart')!
+  check(
+    'action gate (builder market): the page SAYS why — the venue note names the builder market, the empty ticket uses the same words, and the guide\'s chart hint teaches the question without quoting an order on a chart-only page (an ordinary page still quotes its own buy sentence)',
+    missingVenueNotes('SP500', sp500).length === 1 && /builder market/.test(missingVenueNotes('SP500', sp500)[0]) && hip3Refusal('sp500') === missingVenueNotes('SP500', sp500)[0] &&
+      guideBody(chartHint, { symbol: 'SP500', chartOnly: true }) === GUIDE_CHART_ONLY_BODY && !/Long|Buy|\$/.test(GUIDE_CHART_ONLY_BODY) &&
+      guideBody(chartHint, { symbol: 'AAPL', ask: 'Buy $25 of AAPL' }).includes('“Buy $25 of AAPL”'),
+  )
+  // The gate itself reads the live perp table (the server, a symbol page): a fixture table in, then out.
+  resetHlUniverse()
+  const pad = Array.from({ length: 20 }, (_, i) => `FIXT${i}`)
+  primeHlPerps({ main: ['HYPE', 'ZK', ...pad], xyz: ['xyz:SP500', 'xyz:GOLD', ...pad.map((n) => `xyz:${n}`)] })
+  const gated = {
+    sp: canRunVenueAsk('Long $25 of SP500 on Hyperliquid', null),
+    spShort: canTradeAsk('2x Short $50 of SP500 on Hyperliquid', {}),
+    gold: canTradeAsk('Protect my GOLD long with a 5% stop', null),
+    hype: canTradeAsk('Long $25 of HYPE on Hyperliquid', null),
+    zk: canRunVenueAsk('Short $25 of ZK on Hyperliquid', {}),
+    why: venueAskRefusal('Long $25 of SP500 on Hyperliquid', null),
+    whyGate: tradeRefusal('Long $25 of SP500 on Hyperliquid', {}),
+  }
+  resetHlUniverse()
+  check(
+    'action gate (builder market): with the venue\'s table known, "Long $25 of SP500 on Hyperliquid" is refused by EVERY chip surface\'s one gate whatever the verdict store says (structural, not measured), in the page\'s words; a main-book perp is untouched; with the table unknown the old measured rule decides',
+    gated.sp === false && gated.spShort === false && gated.gold === false && gated.hype === true && gated.zk === true &&
+      gated.why === hip3Refusal('SP500') && gated.whyGate === hip3Refusal('SP500') &&
+      canRunVenueAsk('Long $25 of SP500 on Hyperliquid', null) === true,
+    JSON.stringify(gated),
   )
 }
 

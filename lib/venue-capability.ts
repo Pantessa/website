@@ -25,7 +25,7 @@
 //  they are held to the live lists by a harness pin.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { ChartPair } from '@/lib/charts'
+import { chartPairFor, isHip3Pair, type ChartPair } from '@/lib/charts'
 import { AAVE_CHAIN_ID, HL_SIGNING_CHAIN_ID, venuesFor } from '@/lib/symbol-venues'
 import { canFill, fillRefusal, type CapabilitySideKey, type TradabilityMap } from '@/lib/tradability'
 import { normalizeWatchSymbol } from '@/lib/watchlists'
@@ -140,14 +140,32 @@ export function capabilityTarget(ask: string): CapabilityTarget | null {
  */
 export function canRunVenueAsk(ask: string, tradable: TradabilityMap | null | undefined, now = Date.now()): boolean {
   const t = capabilityTarget(ask)
-  if (!t || !tradable) return true
+  if (!t) return true
+  if (hip3Perp(t)) return false
+  if (!tradable) return true
   return canFill(tradable[t.symbol], t.side, t.chainId, now)
 }
+
+/**
+ * A perp ask on a market that only a builder-deployed (HIP-3) dex lists —
+ * "Long $25 of SP500 on Hyperliquid" on /t/SP500 (2026-11-09). Structural,
+ * not measured: the order layer builds on the main book only (lib/charts
+ * isHip3Pair has the measurement), so no verdict can open it. Known only
+ * where the live perp table is (the server, a symbol page); elsewhere the
+ * pair is unknown and the measured verdict decides as before.
+ */
+function hip3Perp(t: CapabilityTarget): boolean {
+  return t.side === 'perp' && isHip3Pair(chartPairFor(t.symbol))
+}
+
+/** The page's words for a chart whose market the order layer cannot reach yet. */
+export const hip3Refusal = (coin: string): string => `${coin.toUpperCase()} is a Hyperliquid builder market: the chart is live, and Pantessa does not place orders there yet.`
 
 /** The venue's words for why a chip is missing, or null when nothing is
  *  known to refuse. */
 export function venueAskRefusal(ask: string, tradable: TradabilityMap | null | undefined, now = Date.now()): string | null {
   const t = capabilityTarget(ask)
+  if (t && hip3Perp(t)) return hip3Refusal(t.symbol)
   if (!t || !tradable) return null
   return fillRefusal(tradable[t.symbol], t.side, t.chainId, now)
 }

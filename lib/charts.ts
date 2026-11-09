@@ -214,6 +214,18 @@ export function isLiveOnlyHlPair(pair: ChartPair | null | undefined): boolean {
   return !!pair && pair.source === 'hyperliquid' && !HYPERLIQUID_PERPS.has(pair.symbol)
 }
 
+/**
+ * A perp whose market is on a builder-deployed (HIP-3) dex — `/t/SP500`
+ * charts `xyz:SP500`, `/t/GOLD` `xyz:GOLD`. The chart, the quote and the
+ * alerts read it; the ORDER layer (lib/hyperliquid-exec fetchHlSnapshot)
+ * reads the main book only and answers "SP500 isn't a Hyperliquid perp"
+ * (measured 2026-11-09), so no surface may offer an order on one until that
+ * layer builds there. Null / a spot pair / a main-book perp → false.
+ */
+export function isHip3Pair(pair: ChartPair | null | undefined): boolean {
+  return !!pair && pair.source === 'hyperliquid' && pair.pair.includes(':')
+}
+
 /** Has a live universe read landed in this process (the table is more than
  *  the static set)? Sync. */
 export function hlPerpsWarm(): boolean {

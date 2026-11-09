@@ -42,7 +42,7 @@
 //    quote; without it those rows are omitted rather than guessed.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { ChartPair } from '@/lib/charts'
+import { isHip3Pair, type ChartPair } from '@/lib/charts'
 import { spotChainsFor, tokenHome } from '@/lib/token-home'
 import { fmtAskPrice, fmtAskUnits } from '@/lib/chart-actions'
 import { ONRAMP_DEFAULT_NETWORK } from '@/lib/onramp'
@@ -294,8 +294,9 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
     }
   }
 
-  // ── Perps (Hyperliquid) ──
-  if (isPerpChart || hasPerpCold(sym)) {
+  // ── Perps (Hyperliquid) ── never for a builder-market perp: the chart is
+  // live there and the order layer is not (lib/charts isHip3Pair).
+  if ((isPerpChart && !isHip3Pair(pair)) || hasPerpCold(sym)) {
     out.push({
       id: `perp:hyperliquid:long`, kind: 'perp', venue: 'hyperliquid', chainId: HL_SIGNING_CHAIN_ID, side: 'buy', fee: 'hl',
       label: `${lev ? `${lev}long` : 'Long'} ${sym}`, ask: `${lev}Long ${usdWord(usd)} of ${sym} on Hyperliquid`, mcp: 'hyperliquid-free',
@@ -364,6 +365,10 @@ export function missingVenueNotes(symbol: string, pair: ChartPair): string[] {
   const notes: string[] = []
   if (pair.source === 'robinhood') {
     notes.push('No perp, lending or resting book for a tokenized stock — buys and sells fill at market on Robinhood Chain.')
+    return notes
+  }
+  if (isHip3Pair(pair)) {
+    notes.push(`${sym} is a Hyperliquid builder market: the chart is live, and Pantessa does not place orders there yet.`)
     return notes
   }
   const home = tokenHome(sym)
@@ -567,7 +572,7 @@ export function compoundLegKindsFor(symbol: string, pair: ChartPair): CompoundLe
   const sym = (pair?.symbol ?? symbol).toUpperCase()
   if (pair.source === 'robinhood') return ['fund', 'buy']
   const home = tokenHome(sym)
-  const perp = pair.source === 'hyperliquid' || hasPerpCold(sym)
+  const perp = (pair.source === 'hyperliquid' && !isHip3Pair(pair)) || hasPerpCold(sym)
   if (home || pair.source === 'hyperliquid') return perp ? ['deposit', 'long', 'short', 'protect'] : []
   const out: CompoundLegKind[] = ['fund', 'buy']
   if (sym === 'ETH') out.push('stake')

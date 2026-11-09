@@ -327,12 +327,12 @@ export function deckPins(check: Check): void {
       !/fetch\(['"`]\/api\/chat/.test(deck + ladder + tape),
   )
   check(
-    'deck: the stage mounts the band in its stage seat (the band draws its own head and foot only in its band seat), the tape stage, and the battle views keyed by view in their stage seat; the ladder only while the switch is on; HomeSurface seats the deck right after the sent-home notice',
+    'deck: the stage mounts the band in its stage seat (the band draws its own head and foot only in its band seat), the tape stage, and the battle views keyed by view in their stage seat; the ladder only while the switch is on; the deck is NOT mounted on the splash since 2026-11-09 (HomeSurface seats THE READ after the sent-home notice — scripts/read-pins.ts; the deck files stay, unmounted)',
     /<PulseSlot seat="stage" onReport=\{setReport\} onFills=\{onFills\} onBookMarket=\{setHot\} onPick=\{setPick\} \/>/.test(deck) &&
       /<TapeStage onReport=\{setReport\} onFills=\{onFills\} onBookMarket=\{setHot\} \/>/.test(deck) &&
       /<Battle key=\{ch\} view=\{ch\} tradable=\{tradable\} seat="stage" url onReport=\{setReport\} onFills=\{onFills\} onLeader=\{setHot\} \/>/.test(deck) /* RE-PINNED 2026-10-20 (deck urls) */ &&
       /\{book && <BookLadder market=\{bookMarket\} fillsRef=\{fillsRef\} source=\{report\.source\} \/>\}/.test(deck) &&
-      /<SentHomeNotice \/>\s*<Deck \/>/.test(home) &&
+      /<SentHomeNotice \/>\s*<TheRead initial=\{read\} \/>/.test(home) && !/<Deck/.test(home) /* RE-PINNED 2026-11-09 (the read) */ &&
       (pulse.match(/\{seat === 'band' && \(/g) ?? []).length === 2 &&
       /data-seat=\{seat\}/.test(pulse) &&
       /export default function PulseSlot\(\{ seat = 'band', onReport, onFills, onBookMarket, onPick \}: PulseSlotProps = \{\}\)/.test(pulse),

@@ -79,6 +79,10 @@ export interface GuideCtx {
    *  sentence the ladder builds. */
   ask?: string | null
   connected?: boolean
+  /** The page's chart takes no order here (a Hyperliquid builder market,
+   *  lib/charts isHip3Pair): the chart hint teaches the question, and never
+   *  quotes an order the page cannot build (2026-11-09). */
+  chartOnly?: boolean
 }
 
 /** What the card's one action does. `href` is a plain link (a public page);
@@ -224,6 +228,15 @@ export function renderGuideText(text: string, ctx: GuideCtx = {}): string {
   const sym = ctx.symbol || 'it'
   const ask = ctx.ask || `Buy $25 of ${ctx.symbol || 'ETH'}`
   return text.replace(/\{SYM\}/g, sym).replace(/\{ASK\}/g, ask)
+}
+
+/** The chart hint's body on a chart that takes no order here. */
+export const GUIDE_CHART_ONLY_BODY = 'Type “why is it moving?” or “draw support and resistance” — the answer lands on the chart. Orders on this market are not built here yet.'
+
+/** A hint's body for this ctx, text filled: the chart hint never quotes an
+ *  order on a chart-only page. */
+export function guideBody(hint: GuideHint, ctx: GuideCtx = {}): string {
+  return renderGuideText(hint.id === 'chart' && ctx.chartOnly ? GUIDE_CHART_ONLY_BODY : hint.body, ctx)
 }
 
 /** The hint's action for this ctx, text filled. */
