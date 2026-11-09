@@ -313,17 +313,17 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
       strangerId.json.wallet === null && strangerId.json.provider === null && strangerId.json.key === null && Array.isArray(strangerId.json.communities) && (strangerId.json.communities as unknown[]).length === 0 &&
         meId.json.wallet === a && meId.json.key === `w:${a}` && ((meId.json.communities ?? []) as { slug: string }[]).some((x) => x.slug === slug),
     )
-    const token = await signIdentity({ p: 'tg', id: tgId, name: tgId, username: null })
+    const token = await signIdentity({ p: 'tg', id: tgId, name: 'Core Pin', username: null })
     const tg = `pt_ident=${token}`
     const tgMe = await call('GET', '/api/me/identity', { cookie: tg })
     const tgJoin = await call('POST', `/api/communities/${slug}/join`, { cookie: tg, body: {} })
     const tgMembers = await call('GET', `/api/communities/${slug}/members?sort=new`)
     const tgVote = lpId(link) ? await call('POST', `/api/posts/${lpId(link)}/vote`, { cookie: tg, body: { value: 1 } }) : null
     check(
-      'community core (served): a Telegram identity (pt_ident) acts with no wallet — key tg:…, provider without the id, joins (members 2), votes; the board label never shows the raw id',
+      'community core (served): a Telegram identity (pt_ident) acts with no wallet — key tg:…, provider without the id, joins (members 2), votes; the board labels it by its Telegram name and never shows the raw id',
       tgMe.json.key === `tg:${tgId}` && tgMe.json.wallet === null && (tgMe.json.provider as { p: string } | null)?.p === 'tg' && !JSON.stringify(tgMe.json.provider).includes(tgId) &&
         tgJoin.json.joined === true && (tgJoin.json.community as { members: number })?.members === 2 &&
-        !JSON.stringify(tgMembers.json).includes(tgId) && ((tgMembers.json.members ?? []) as { label: string }[]).some((m) => m.label === 'A Telegram member') && tgVote?.json.score === 3,
+        !JSON.stringify(tgMembers.json).includes(tgId) && ((tgMembers.json.members ?? []) as { label: string }[]).some((m) => m.label === 'Core Pin') && tgVote?.json.score === 3,
       `${tgMe.json.key} ${tgJoin.status} ${tgVote?.json.score}`,
     )
     const linkNoIdent = await call('POST', '/api/me/identity/link', { cookie: sa })
