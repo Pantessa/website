@@ -45,6 +45,8 @@ import {
   PROOF_DOOR_TITLE,
   composeHref,
   fillsSeenMark,
+  PROVABLE_BUILD_PATHS,
+  jobProofDoorHref,
   jobStepTxs,
   noRoomLine,
   preselectFill,
@@ -235,9 +237,9 @@ export function communityFeedPins(check: Check): void {
         /export const COMPOSER_TITLE_MAX = 120/.test(comp) && /export const POST_TITLE_MAX = 120/.test(posts) && /export const COMPOSER_BODY_MAX = 2000/.test(comp) && /export const POST_BODY_MAX = 2_000/.test(posts),
     )
     check(
-      'community feed: a trade post types nothing about the trade — it lists GET /api/me/fills, sends proofTurnId + showSize (default on) and no symbol; the composer says only chain-confirmed trades appear',
+      'community feed: a trade post types nothing about the trade — it lists GET /api/me/fills, sends proofTurnId + showSize (default on) and no symbol; the composer says only chain-confirmed trades appear, and that a post needs a swap (RE-PINNED 2026-11-09, lane SHARE: the proof reader refuses a one-way transfer or deposit)',
       /fetch\(`\/api\/me\/fills\?/.test(comp) && /payload\.proofTurnId = picked/.test(comp) && /payload\.showSize = showSize/.test(comp) && /useState\(true\)\s*\n\s*const \[fills/.test(comp.replace(/const \[showSize, setShowSize\] = /, '')) &&
-        /if \(kind !== 'trade' && sym\) payload\.symbol = sym/.test(comp) && /Only transactions the chain confirmed from your wallet appear here\. The market is your own tag/.test(comp) && /data-fills-empty/.test(comp),
+        /if \(kind !== 'trade' && sym\) payload\.symbol = sym/.test(comp) && /Only transactions the chain confirmed from your wallet appear here\. A post needs a swap, one asset for another: a transfer or a deposit is refused\. The market is your own tag/.test(comp) && /data-fills-empty/.test(comp),
     )
     check(
       'community feed: posting signed out HOLDS the post behind the unified door (no redirectTo) and keeps the draft (sessionStorage); a 403 needsJoin offers "Join … and post" (the join route, then the post again)',
@@ -348,33 +350,41 @@ export function communityFeedPins(check: Check): void {
     const door = code('components/community/PostProofDoor.tsx')
     const chat = code('components/ChatInterface.tsx')
     const job = code('components/JobCard.tsx')
+    const SW = 'native-swap-uniswap'
     check(
-      'community share: "Post it with proof" is offered ONLY for a receipt holding a mined tx hash on a registry chain (Base, Ethereum) — never for no txs, an unknown chain (a Hyperliquid order has no registry chain), an order uid, or a malformed hash; the door goes to /community?compose=trade',
-      proofDoorHref([{ hash: H, chainId: 8453 }]) === '/community?compose=trade' &&
-        proofDoorHref([{ hash: H, chainId: 1 }]) === '/community?compose=trade' &&
-        proofDoorHref([{ hash: '0x1234', chainId: 8453 }, { hash: H, chainId: 8453 }]) === '/community?compose=trade' &&
-        proofDoorHref([]) === null &&
-        proofDoorHref(null) === null &&
-        proofDoorHref([{ hash: H, chainId: 1337 }]) === null &&
-        proofDoorHref([{ hash: H, chainId: 999_999_999 }]) === null &&
-        proofDoorHref([{ hash: `0x${'ab'.repeat(56)}`, chainId: 8453 }]) === null &&
-        proofDoorHref([{ hash: H }]) === null &&
-        proofDoorHref([{ chainId: 8453 }]) === null,
+      'community share: "Post it with proof" is offered ONLY when the turn built a same-chain swap (Uniswap v3 / v4, LiFi) AND the receipt holds its mined tx hash on a registry chain — never for a CoW order, a cross-chain deposit, a Hyperliquid order, a send or an unknown build (the proof reader refuses a one-way transaction), no txs, an unknown chain, an order uid or a malformed hash; the door goes to /community?compose=trade',
+      proofDoorHref([{ hash: H, chainId: 8453 }], SW) === '/community?compose=trade' &&
+        proofDoorHref([{ hash: H, chainId: 1 }], 'native-swap-uniswap-v4') === '/community?compose=trade' &&
+        proofDoorHref([{ hash: H, chainId: 4663 }], 'native-swap-lifi') === '/community?compose=trade' &&
+        proofDoorHref([{ hash: '0x1234', chainId: 8453 }, { hash: H, chainId: 8453 }], SW) === '/community?compose=trade' &&
+        ['native-swap-cow', 'native-cross-chain', 'native-hl-exec', 'native-send', 'native-lido-stake', '', undefined, null].every((bp) => proofDoorHref([{ hash: H, chainId: 8453 }], bp) === null) &&
+        [...PROVABLE_BUILD_PATHS].sort().join(',') === 'native-swap-lifi,native-swap-uniswap,native-swap-uniswap-v4' &&
+        proofDoorHref([], SW) === null &&
+        proofDoorHref(null, SW) === null &&
+        proofDoorHref([{ hash: H, chainId: 1337 }], SW) === null &&
+        proofDoorHref([{ hash: H, chainId: 999_999_999 }], SW) === null &&
+        proofDoorHref([{ hash: `0x${'ab'.repeat(56)}`, chainId: 8453 }], SW) === null &&
+        proofDoorHref([{ hash: H }], SW) === null &&
+        proofDoorHref([{ chainId: 8453 }], SW) === null,
+    )
+    const swapStep = { status: 'done', builder: 'swap', result: { txHash: H, txs: [{ hash: H, chainId: 8453, title: 'Swap' }] } }
+    const pathOf = (s: { builder?: string }) => (s.builder === 'swap' ? SW : s.builder === 'bridge' ? 'native-cross-chain' : undefined)
+    check(
+      'community share: a done job offers the door only from a step that built a same-chain swap and left a confirmed tx (a bridge step with a tx, an order step with no txs, a step of unknown build, a failed step and a pending step contribute nothing)',
+      jobProofDoorHref([swapStep], pathOf) === '/community?compose=trade' &&
+        jobProofDoorHref([{ ...swapStep, builder: 'bridge' }], pathOf) === null &&
+        jobProofDoorHref([{ ...swapStep, builder: 'mystery' }], pathOf) === null &&
+        jobProofDoorHref([{ status: 'done', builder: 'swap', result: { status: 'filled', oid: 123 } }], pathOf) === null &&
+        jobProofDoorHref([{ ...swapStep, status: 'failed' }], pathOf) === null &&
+        jobProofDoorHref([{ status: 'pending', builder: 'swap', result: null }], pathOf) === null &&
+        jobStepTxs([{ status: 'done', builder: 'swap', result: { txs: 'nope' } }], pathOf).length === 0,
     )
     check(
-      'community share: a done job offers the door only from steps that left a confirmed tx (an order step with no txs, a failed step and a pending step contribute nothing)',
-      proofDoorHref(jobStepTxs([{ status: 'done', result: { txHash: H, txs: [{ hash: H, chainId: 8453, title: 'Swap' }] } }])) === '/community?compose=trade' &&
-        proofDoorHref(jobStepTxs([{ status: 'done', result: { status: 'filled', oid: 123 } }])) === null &&
-        proofDoorHref(jobStepTxs([{ status: 'failed', result: { txs: [{ hash: H, chainId: 8453 }] } }])) === null &&
-        proofDoorHref(jobStepTxs([{ status: 'pending', result: null }])) === null &&
-        jobStepTxs([{ status: 'done', result: { txs: 'nope' } }]).length === 0,
-    )
-    check(
-      'community share: the door is mounted beside the receipt share — in the chat only inside the signed + settled row (signedTxsOf + claimsSettled), never in the embed, fed the receipt\'s own txs; on a done job fed its steps\' txs; it renders nothing without a provable tx and opens a new tab (rel="noopener") so the thread stays mounted',
-      /<ShareReceiptButton kind="tx" chatId=\{currentChatId\} messageId=\{msg\.dbId\} \/>\s*\{!embedded && <PostProofDoor txs=\{signedTxsOf\(msg\.meta\)\} \/>\}/.test(chat) &&
+      'community share: the door is mounted beside the receipt share — in the chat only inside the signed + settled row (signedTxsOf + claimsSettled), never in the embed, fed the receipt\'s own txs and the turn\'s own build path; on a done job fed its steps and what each BUILT (jobStepBuildPath); it renders nothing on a null href and opens a new tab (rel="noopener") so the thread stays mounted',
+      /<ShareReceiptButton kind="tx" chatId=\{currentChatId\} messageId=\{msg\.dbId\} \/>\s*\{!embedded && <PostProofDoor href=\{proofDoorHref\(signedTxsOf\(msg\.meta\), buildPathOf\(msg\.meta\)\)\} \/>\}/.test(chat) &&
         /signedTxsOf\(msg\.meta\)\.length > 0 &&\s*claimsSettled\(msg\.meta\) &&\s*currentChatId &&\s*msg\.dbId && \(/.test(chat) &&
-        /<ShareReceiptButton kind="job" refId=\{jobId\} \/>\s*<PostProofDoor txs=\{jobStepTxs\(job\.steps\)\} \/>/.test(job) &&
-        /const href = proofDoorHref\(txs\)\s*if \(!href\) return null/.test(door) &&
+        /<ShareReceiptButton kind="job" refId=\{jobId\} \/>\s*<PostProofDoor href=\{jobProofDoorHref\(job\.steps, \(s\) => jobStepBuildPath\(s\.builder, s\.artifact\)\)\} \/>/.test(job) &&
+        /if \(!href\) return null/.test(door) &&
         /target="_blank" rel="noopener"/.test(door) &&
         !/redirectTo/.test(door),
     )
@@ -390,7 +400,10 @@ export function communityFeedPins(check: Check): void {
         /id: 'proof'[\s\S]*?body: 'A trade post shows what the chain confirmed, and a reader can do the same trade from the card\.'/.test(guide) &&
         /are the author&apos;s own tag/.test(docs) &&
         /never under\s+the verified mark/.test(docs) &&
-        /Hyperliquid fills cannot be posted as proof yet/.test(docs),
+        /Hyperliquid fills cannot be posted as proof yet/.test(docs) &&
+        /it swapped one\s+asset for another/.test(docs) &&
+        /cross-chain swaps and bridges/.test(docs) &&
+        /sent funds one way only/.test(docs),
     )
 
     // the chart's next step, and the feed by address
@@ -519,7 +532,7 @@ export async function communityFeedPinsServed(check: Check, base: string): Promi
     check(
       'community share (served): /docs/community answers 200 in the docs layout, listed in the sidebar; it says what verified means (this wallet moved $X on a chain) and what it does not (the tag is the author\'s, no Hyperliquid proof yet); under 700 words',
       dres.status === 200 && /<h1 class="docs__h1">Community and rooms<\/h1>/.test(d) && /href="\/docs\/community"/.test(d) && /Verified on-chain: this wallet moved \$25\.00 on Base/.test(d) && /Tagged by the author/.test(d) &&
-        /Hyperliquid fills cannot be posted as proof yet/.test(d) && /not set up on this deployment/.test(d) && words > 300 && words < 700,
+        /Hyperliquid fills cannot be posted as proof yet/.test(d) && /swapped one asset for another/.test(d) && /cross-chain swaps and bridges/.test(d) && /not set up on this deployment/.test(d) && words > 300 && words < 700,
       `status=${dres.status} words=${words}`,
     )
     const sm2 = await (await fetch(`${base}/sitemap.xml`, { cache: 'no-store' })).text()

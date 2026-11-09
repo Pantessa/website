@@ -324,11 +324,17 @@ export const FILLS_SEEN_KEY = 'pantessa.community.fillsSeenAt'
 // ── the receipt's door into the feed (lane SHARE) ──────────────────────────
 //
 // Right after a signed transaction settles, the receipt row offers "Post it
-// with proof". It is offered ONLY when the receipt holds a confirmed
-// transaction hash on a chain the proof reader can read (the registry has an
-// explorer for it): never for a Hyperliquid order, a CoW order that has not
-// settled, or a job step with no transaction. The words promise what the
-// proof gives and no more: the post says what the chain confirmed.
+// with proof". It is offered ONLY when BOTH hold:
+//   · the receipt holds a confirmed transaction hash on a chain the proof
+//     reader can read (the registry has an explorer for it);
+//   · the turn BUILT a same-chain swap from the wallet (PROVABLE_BUILD_PATHS).
+//     The proof reader takes only a transaction that is two-sided for the
+//     wallet (one asset out, another in: lib/community/proof REFUSE_ONE_WAY),
+//     so a send, a deposit, a bridge and a cross-chain swap (one-way on each
+//     chain) would be refused at the post. Unknown build path = no door.
+// Never for a Hyperliquid order, a CoW order (no transaction of the wallet's
+// own), or a job step with no transaction. The words promise what the proof
+// gives and no more: the post says what the chain confirmed.
 
 export const PROOF_DOOR_LABEL = 'Post it with proof'
 export const PROOF_DOOR_TITLE = 'Opens the community composer on your confirmed trades. The post shows what the chain confirmed.'
@@ -338,16 +344,32 @@ export function hasProvableTx(txs: readonly { hash?: unknown; chainId?: unknown 
   return !!txs?.some((t) => typeof t?.hash === 'string' && typeof t?.chainId === 'number' && !!explorerTxFor(t.chainId, t.hash))
 }
 
-/** The door's address, or null when the receipt has nothing the chain can prove. */
-export function proofDoorHref(txs: readonly { hash?: unknown; chainId?: unknown }[] | null | undefined): string | null {
-  return hasProvableTx(txs) ? composeHref('trade') : null
+/** The builds whose transaction is a swap the wallet itself sent on one chain
+ *  (value out in one asset, value in as another). Everything else is absent
+ *  on purpose: CoW (an order, settled by a solver), cross-chain (a deposit),
+ *  Hyperliquid (no EVM transaction), sends, stakes, bridges, lending. */
+export const PROVABLE_BUILD_PATHS: ReadonlySet<string> = new Set(['native-swap-uniswap', 'native-swap-uniswap-v4', 'native-swap-lifi'])
+
+export function isProvableBuild(buildPath: string | null | undefined): boolean {
+  return typeof buildPath === 'string' && PROVABLE_BUILD_PATHS.has(buildPath)
 }
 
-/** A done job's confirmed transactions, from its steps' own results. */
-export function jobStepTxs(steps: readonly { status?: string; result?: Record<string, unknown> | null }[]): { hash: string; chainId: number }[] {
+/** The door's address, or null when the receipt has nothing the proof reader would take. */
+export function proofDoorHref(txs: readonly { hash?: unknown; chainId?: unknown }[] | null | undefined, buildPath: string | null | undefined): string | null {
+  return isProvableBuild(buildPath) && hasProvableTx(txs) ? composeHref('trade') : null
+}
+
+/** A done job's door: the same rule, over its steps. */
+export function jobProofDoorHref<S extends { status?: string; result?: Record<string, unknown> | null }>(steps: readonly S[], pathOf: (step: S) => string | null | undefined): string | null {
+  return hasProvableTx(jobStepTxs(steps, pathOf)) ? composeHref('trade') : null
+}
+
+/** A done job's confirmed SWAP transactions: only steps that are done, built a
+ *  provable swap (`pathOf`), and left transactions in their own result. */
+export function jobStepTxs<S extends { status?: string; result?: Record<string, unknown> | null }>(steps: readonly S[], pathOf: (step: S) => string | null | undefined): { hash: string; chainId: number }[] {
   const out: { hash: string; chainId: number }[] = []
   for (const s of steps) {
-    if (s.status !== 'done' || !s.result) continue
+    if (s.status !== 'done' || !s.result || !isProvableBuild(pathOf(s))) continue
     const txs = (s.result as { txs?: unknown }).txs
     if (!Array.isArray(txs)) continue
     for (const t of txs) {

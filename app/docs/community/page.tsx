@@ -37,7 +37,7 @@ export default function CommunityDocsPage() {
       <div className="docs__prose">
         <h2>Rooms</h2>
         <p>
-          A room lives at <code>/g/your-room</code>. It has a feed, a members board and the markets it follows. To start one, sign in and open{' '}
+          A room lives at <code>/g/your-room</code>. To start one, sign in and open{' '}
           <Link href="/g/new">Start a room</Link>. You are its owner.
         </p>
 
@@ -55,18 +55,18 @@ export default function CommunityDocsPage() {
             <strong>{COMPOSER_KINDS[1].label}.</strong> An https link with a title.
           </li>
           <li>
-            <strong>{COMPOSER_KINDS[2].label}.</strong> {VIDEO_HOSTS_LINE} It plays in the post after a tap.
+            <strong>{COMPOSER_KINDS[2].label}.</strong> {VIDEO_HOSTS_LINE}
           </li>
           <li>
-            <strong>{COMPOSER_KINDS[3].label}.</strong> One of your own confirmed transactions, picked from a list. <Link href={composeHref('trade')}>Post one</Link>.
+            <strong>{COMPOSER_KINDS[3].label}.</strong> One of your own confirmed swaps, picked from a list. <Link href={composeHref('trade')}>Post one</Link>.
           </li>
         </ul>
 
         <h2 id="verified">What &ldquo;verified on-chain&rdquo; means</h2>
         <p>
           A trade post carries one line under the verified mark, for example: &ldquo;Verified on-chain: this wallet moved $25.00 on Base&rdquo;. When you post,
-          Pantessa reads that transaction from the chain. The line says three things and no more: the author&apos;s wallet sent the transaction, the transaction
-          succeeded, and it moved that many dollars.
+          Pantessa reads that transaction from the chain. The line says three things and no more: the author&apos;s wallet sent the transaction, it swapped one
+          asset for another, and it moved that many dollars.
         </p>
         <p>What it does not mean:</p>
         <ul>
@@ -76,9 +76,14 @@ export default function CommunityDocsPage() {
           </li>
           <li>The title is the author&apos;s words, shown in quotes.</li>
           <li>It says nothing about profit, or whether the position is still open.</li>
-          <li>Hyperliquid fills cannot be posted as proof yet. There is no chain transaction to read.</li>
+          <li>
+            Hyperliquid fills cannot be posted as proof yet. Neither can cross-chain swaps and bridges (one-way on each chain), or anything we cannot price.
+          </li>
         </ul>
-        <p>A transaction that moved nothing we can price, such as an approval, is refused. The author can hide the size; the line then says &ldquo;moved funds&rdquo;.</p>
+        <p>
+          A transaction that sent funds one way only, such as a transfer or a deposit, is refused: it is not a trade. The author can hide the size; the line then
+          says &ldquo;moved funds&rdquo;.
+        </p>
 
         <h2>Invites</h2>
         <p>

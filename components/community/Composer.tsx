@@ -393,7 +393,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
                 ))}
               </div>
             )}
-            <p className="cmy-compose__hint">Only transactions the chain confirmed from your wallet appear here. The market is your own tag, and the post shows it as yours.</p>
+            <p className="cmy-compose__hint">Only transactions the chain confirmed from your wallet appear here. A post needs a swap, one asset for another: a transfer or a deposit is refused. The market is your own tag, and the post shows it as yours.</p>
             {fill && (
               <label className="cmy-compose__check">
                 <input type="checkbox" checked={showSize} onChange={(e) => setShowSize(e.target.checked)} />
