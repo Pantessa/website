@@ -10,13 +10,61 @@
 //   · a secret (a Discord webhook URL) never leaves this module's write path
 //   · join is idempotent; member_count moves only on a real insert/delete
 
-import type { ChannelPlatform, CommunityRole, FeedPost, FeedSort, FeedWindow, MemberKey, MemberSource, MyMembership, PublicCommunity, PublicMember, Actor } from './spec'
-
-const TODO = (fn: string): never => {
-  throw new Error(`lib/community/store ${fn}: lane CORE lands this`)
-}
+import { randomBytes } from 'node:crypto'
+import { Prisma } from '@prisma/client'
+import prisma from '@/lib/db'
+import { authorLabel, decoratePosts, handlesFor, type PostRow } from '@/lib/chart-posts'
+import { chartPairFor } from '@/lib/charts'
+import { mintSlug } from '@/lib/intent-links'
+import { absoluteUrl } from '@/lib/site-url'
+import { hourStartUTC } from '@/lib/turn-limits'
+import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
+import {
+  ANNOUNCE_HOURLY_CAP,
+  COMMUNITY_SLUG_RE,
+  FEED_PAGE,
+  INVITE_CODE_RE,
+  LINK_CODE_RE,
+  LINK_CODE_TTL_MS,
+  hotRank,
+  invitePath,
+  isMemberKey,
+  parseVideoUrl,
+  walletKey,
+  walletOfKey,
+  type Actor,
+  type ChannelPlatform,
+  type CommunityRole,
+  type FeedKind,
+  type FeedPost,
+  type FeedSort,
+  type FeedWindow,
+  type MemberKey,
+  type MemberSource,
+  type MyMembership,
+  type PublicCommunity,
+  type PublicMember,
+  type TradeProof,
+} from './spec'
+import {
+  HOT_SCAN,
+  HOT_WINDOW_MS,
+  WINDOW_MS,
+  asRole,
+  asSource,
+  canManage,
+  checkAbout,
+  checkName,
+  checkSlug,
+  checkSymbols,
+  decodeCursor,
+  encodeCursor,
+  higherRole,
+  memberLabel,
+} from './rules'
 
 export type StoreRefusal = { ok: false; status: number; reason: string }
+const refuse = (status: number, reason: string): StoreRefusal => ({ ok: false, status, reason })
 
 export interface CommunityDraft {
   slug: string
@@ -25,17 +73,132 @@ export interface CommunityDraft {
   symbols?: string[]
 }
 
-export async function createCommunity(_owner: string, _draft: CommunityDraft, _isInternal: boolean): Promise<{ ok: true; community: PublicCommunity } | StoreRefusal> {
-  return TODO('createCommunity')
+type CommunityRow = { slug: string; name: string; about: string; owner: string; symbols: string[]; memberCount: number; isInternal: boolean; createdAt: Date }
+
+const WEEK_MS = 7 * 86_400_000
+const isUnique = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002'
+
+/** Rows → PublicCommunity in three batched reads (posts this week, channels, owner handles). */
+async function decorateCommunities(rows: CommunityRow[]): Promise<PublicCommunity[]> {
+  if (rows.length === 0) return []
+  const slugs = rows.map((r) => r.slug)
+  const since = new Date(Date.now() - WEEK_MS)
+  const [weekly, channels, handles] = await Promise.all([
+    prisma.chartPost
+      .groupBy({ by: ['communitySlug'], where: { communitySlug: { in: slugs }, isInternal: false, createdAt: { gte: since } }, _count: { _all: true } })
+      .catch(() => [] as { communitySlug: string | null; _count: { _all: number } }[]),
+    prisma.communityChannel.findMany({ where: { communitySlug: { in: slugs } }, select: { communitySlug: true, platform: true, title: true }, orderBy: { createdAt: 'asc' } }).catch(() => []),
+    handlesFor(rows.map((r) => r.owner)),
+  ])
+  const week = new Map(weekly.map((w) => [w.communitySlug ?? '', w._count._all]))
+  const chans = new Map<string, PublicCommunity['channels']>()
+  for (const c of channels) {
+    const list = chans.get(c.communitySlug) ?? []
+    list.push({ platform: c.platform === 'discord' ? 'discord' : 'telegram', title: c.title ?? null })
+    chans.set(c.communitySlug, list)
+  }
+  return rows.map((r) => ({
+    slug: r.slug,
+    name: r.name,
+    about: r.about,
+    symbols: r.symbols,
+    members: r.memberCount,
+    postsWeek: week.get(r.slug) ?? 0,
+    channels: chans.get(r.slug) ?? [],
+    ownerLabel: authorLabel(r.owner, handles.get(r.owner.toLowerCase())),
+    createdAt: Math.floor(r.createdAt.getTime() / 1000),
+  }))
+}
+
+const normSlug = (s: string) => (typeof s === 'string' ? s.trim().toLowerCase() : '')
+
+export async function createCommunity(owner: string, draft: CommunityDraft, isInternal: boolean): Promise<{ ok: true; community: PublicCommunity } | StoreRefusal> {
+  const slug = checkSlug(draft.slug)
+  if (!slug.ok) return refuse(400, slug.reason)
+  const name = checkName(draft.name)
+  if (!name.ok) return refuse(400, name.reason)
+  const about = checkAbout(draft.about)
+  if (!about.ok) return refuse(400, about.reason)
+  const symbols = checkSymbols(draft.symbols)
+  if (!symbols.ok) return refuse(400, symbols.reason)
+  const o = owner.toLowerCase()
+  try {
+    await prisma.$transaction([
+      prisma.community.create({ data: { slug: slug.value, name: name.value, about: about.value, owner: o, symbols: symbols.value, memberCount: 1, isInternal } }),
+      prisma.communityMember.create({ data: { communitySlug: slug.value, memberKey: walletKey(o), wallet: o, role: 'owner', source: 'site', isInternal } }),
+    ])
+  } catch (e) {
+    if (isUnique(e)) return refuse(409, `/g/${slug.value} is taken. Pick another slug.`)
+    throw e
+  }
+  const community = await getCommunity(slug.value)
+  return community ? { ok: true, community } : refuse(500, 'The room was created but could not be read back.')
 }
 
 /** By slug — the one unfenced read. null = no such room. */
-export async function getCommunity(_slug: string): Promise<PublicCommunity | null> {
-  return TODO('getCommunity')
+export async function getCommunity(slug: string): Promise<PublicCommunity | null> {
+  const s = normSlug(slug)
+  if (!COMMUNITY_SLUG_RE.test(s)) return null
+  const row = await prisma.community.findUnique({ where: { slug: s } })
+  if (!row) return null
+  const [c] = await decorateCommunities([row])
+  return c
 }
 
-export async function listCommunities(_opts?: { sort?: 'members' | 'new' | 'active'; limit?: number; symbol?: string }): Promise<PublicCommunity[]> {
-  return TODO('listCommunities')
+/** Internal flag of a room (null = no such room). Server-side callers only. */
+export async function communityIsInternal(slug: string): Promise<boolean | null> {
+  const s = normSlug(slug)
+  if (!COMMUNITY_SLUG_RE.test(s)) return null
+  const row = await prisma.community.findUnique({ where: { slug: s }, select: { isInternal: true } })
+  return row ? row.isInternal : null
+}
+
+export async function listCommunities(opts: { sort?: 'members' | 'new' | 'active'; limit?: number; symbol?: string } = {}): Promise<PublicCommunity[]> {
+  const limit = Math.max(1, Math.min(100, Math.floor(opts.limit ?? 30) || 30))
+  const sym = opts.symbol ? chartPairFor(opts.symbol)?.symbol ?? null : null
+  if (opts.symbol && !sym) return []
+  const where: Prisma.CommunityWhereInput = { isInternal: false, ...(sym ? { symbols: { has: sym } } : {}) }
+  if (opts.sort === 'active') {
+    // Active = posts this week; ranked in memory over a bounded set.
+    const rows = await prisma.community.findMany({ where, orderBy: [{ memberCount: 'desc' }, { createdAt: 'desc' }], take: 300 })
+    const all = await decorateCommunities(rows)
+    return all.sort((a, b) => b.postsWeek - a.postsWeek || b.members - a.members || b.createdAt - a.createdAt).slice(0, limit)
+  }
+  const orderBy: Prisma.CommunityOrderByWithRelationInput[] = opts.sort === 'new' ? [{ createdAt: 'desc' }] : [{ memberCount: 'desc' }, { createdAt: 'desc' }]
+  return decorateCommunities(await prisma.community.findMany({ where, orderBy, take: limit }))
+}
+
+export interface CommunityPatch {
+  name?: unknown
+  about?: unknown
+  symbols?: unknown
+}
+
+/** Owner only. Fields not sent are left alone. */
+export async function updateCommunity(slug: string, by: MemberKey, patch: CommunityPatch): Promise<{ ok: true; community: PublicCommunity } | StoreRefusal> {
+  const s = normSlug(slug)
+  const row = COMMUNITY_SLUG_RE.test(s) ? await prisma.community.findUnique({ where: { slug: s } }) : null
+  if (!row) return refuse(404, 'No such room.')
+  if ((await roleOf(s, by)) !== 'owner') return refuse(403, 'Only the owner can edit this room.')
+  const data: Prisma.CommunityUpdateInput = {}
+  if (patch.name !== undefined) {
+    const v = checkName(patch.name)
+    if (!v.ok) return refuse(400, v.reason)
+    data.name = v.value
+  }
+  if (patch.about !== undefined) {
+    const v = checkAbout(patch.about)
+    if (!v.ok) return refuse(400, v.reason)
+    data.about = v.value
+  }
+  if (patch.symbols !== undefined) {
+    const v = checkSymbols(patch.symbols)
+    if (!v.ok) return refuse(400, v.reason)
+    data.symbols = v.value
+  }
+  if (Object.keys(data).length) await prisma.community.update({ where: { slug: s }, data })
+  const community = await getCommunity(s)
+  return community ? { ok: true, community } : refuse(404, 'No such room.')
 }
 
 export interface JoinInput {
@@ -47,37 +210,218 @@ export interface JoinInput {
   isInternal?: boolean
 }
 
+/** A seat moves the room's count when it is a real person in a real room, or
+ *  anyone in an internal room (so a harness room still counts its own). */
+const counts = (memberInternal: boolean, roomInternal: boolean) => !memberInternal || roomInternal
+
 /** Idempotent. `joined` is true only when this call created the seat. */
-export async function joinCommunity(_slug: string, _actor: Actor, _input?: JoinInput): Promise<{ ok: true; joined: boolean; community: PublicCommunity; me: MyMembership } | StoreRefusal> {
-  return TODO('joinCommunity')
+export async function joinCommunity(slug: string, actor: Actor, input: JoinInput = {}): Promise<{ ok: true; joined: boolean; community: PublicCommunity; me: MyMembership } | StoreRefusal> {
+  const s = normSlug(slug)
+  if (!isMemberKey(actor.key)) return refuse(401, 'Sign in or open this from Telegram or Discord to join.')
+  const room = COMMUNITY_SLUG_RE.test(s) ? await prisma.community.findUnique({ where: { slug: s }, select: { slug: true, isInternal: true } }) : null
+  if (!room) return refuse(404, 'No such room.')
+  const existing = await prisma.communityMember.findUnique({ where: { communitySlug_memberKey: { communitySlug: s, memberKey: actor.key } }, select: { id: true } })
+  let joined = false
+  if (!existing) {
+    // Credit an inviter only for a real code of THIS room that is not the joiner's own.
+    let via: string | null = null
+    const code = typeof input.via === 'string' ? input.via.trim().toLowerCase() : ''
+    if (INVITE_CODE_RE.test(code)) {
+      const inv = await prisma.communityInvite.findUnique({ where: { code } }).catch(() => null)
+      if (inv && inv.communitySlug === s && inv.inviterKey !== actor.key) via = code
+    }
+    const memberInternal = input.isInternal === true
+    const display = actor.wallet ? null : (input.displayName ?? actor.provider?.name ?? actor.provider?.username ?? null)
+    const source: MemberSource = input.source ?? (actor.wallet ? 'site' : actor.provider?.p === 'dc' ? 'discord' : 'telegram')
+    try {
+      await prisma.$transaction([
+        prisma.communityMember.create({
+          data: {
+            communitySlug: s,
+            memberKey: actor.key,
+            wallet: actor.wallet ? actor.wallet.toLowerCase() : null,
+            displayName: display ? display.slice(0, 64) : null,
+            role: 'member',
+            via,
+            source,
+            isInternal: memberInternal,
+          },
+        }),
+        ...(counts(memberInternal, room.isInternal) ? [prisma.community.update({ where: { slug: s }, data: { memberCount: { increment: 1 } } })] : []),
+      ])
+      joined = true
+    } catch (e) {
+      if (!isUnique(e)) throw e // a concurrent join won the race: the seat exists
+    }
+  }
+  const [community, me] = await Promise.all([getCommunity(s), membershipOf(s, actor.key)])
+  if (!community || !me) return refuse(500, 'Joined, but the room could not be read back.')
+  return { ok: true, joined, community, me }
 }
 
 /** The owner cannot leave (they hand the room over or keep it). */
-export async function leaveCommunity(_slug: string, _key: MemberKey): Promise<{ ok: true; left: boolean } | StoreRefusal> {
-  return TODO('leaveCommunity')
+export async function leaveCommunity(slug: string, key: MemberKey): Promise<{ ok: true; left: boolean } | StoreRefusal> {
+  const s = normSlug(slug)
+  const room = COMMUNITY_SLUG_RE.test(s) ? await prisma.community.findUnique({ where: { slug: s }, select: { isInternal: true } }) : null
+  if (!room) return refuse(404, 'No such room.')
+  const seat = await prisma.communityMember.findUnique({ where: { communitySlug_memberKey: { communitySlug: s, memberKey: key } } })
+  if (!seat) return { ok: true, left: false }
+  if (seat.role === 'owner') return refuse(409, 'The owner cannot leave the room.')
+  const left = await prisma.$transaction(async (tx) => {
+    const del = await tx.communityMember.deleteMany({ where: { id: seat.id } })
+    if (del.count && counts(seat.isInternal, room.isInternal)) await tx.community.update({ where: { slug: s }, data: { memberCount: { decrement: 1 } } })
+    return del.count > 0
+  })
+  return { ok: true, left }
 }
 
-export async function membershipOf(_slug: string, _key: MemberKey): Promise<MyMembership | null> {
-  return TODO('membershipOf')
+/** The member's own invite code for a room, minted lazily (one per member per room). */
+async function inviteFor(slug: string, key: MemberKey): Promise<string> {
+  const found = await prisma.communityInvite.findUnique({ where: { communitySlug_inviterKey: { communitySlug: slug, inviterKey: key } } })
+  if (found) return found.code
+  for (let i = 0; i < 3; i++) {
+    try {
+      const row = await prisma.communityInvite.create({ data: { code: mintSlug(8), communitySlug: slug, inviterKey: key } })
+      return row.code
+    } catch (e) {
+      if (!isUnique(e)) throw e
+      const raced = await prisma.communityInvite.findUnique({ where: { communitySlug_inviterKey: { communitySlug: slug, inviterKey: key } } })
+      if (raced) return raced.code
+    }
+  }
+  throw new Error('Could not mint an invite code.')
 }
 
-export async function roleOf(_slug: string, _key: MemberKey): Promise<CommunityRole | null> {
-  return TODO('roleOf')
+export async function membershipOf(slug: string, key: MemberKey): Promise<MyMembership | null> {
+  const s = normSlug(slug)
+  if (!COMMUNITY_SLUG_RE.test(s) || !isMemberKey(key)) return null
+  const seat = await prisma.communityMember.findUnique({ where: { communitySlug_memberKey: { communitySlug: s, memberKey: key } }, select: { role: true } })
+  if (!seat) return null
+  const code = await inviteFor(s, key)
+  const uses = await prisma.communityMember.count({ where: { communitySlug: s, via: code } })
+  return { key, role: asRole(seat.role), invite: { code, url: absoluteUrl(invitePath(s, code)), uses } }
 }
 
-/** The rooms an identity sits in, newest first. */
-export async function communitiesOf(_key: MemberKey): Promise<PublicCommunity[]> {
-  return TODO('communitiesOf')
+export async function roleOf(slug: string, key: MemberKey): Promise<CommunityRole | null> {
+  const s = normSlug(slug)
+  if (!COMMUNITY_SLUG_RE.test(s) || !isMemberKey(key)) return null
+  const seat = await prisma.communityMember.findUnique({ where: { communitySlug_memberKey: { communitySlug: s, memberKey: key } }, select: { role: true } })
+  return seat ? asRole(seat.role) : null
 }
 
-export async function listMembers(_slug: string, _opts?: { sort?: 'invites' | 'trades' | 'new'; limit?: number }): Promise<PublicMember[]> {
-  return TODO('listMembers')
+/** The rooms an identity sits in, newest first. (The identity's own list: unfenced.) */
+export async function communitiesOf(key: MemberKey): Promise<PublicCommunity[]> {
+  if (!isMemberKey(key)) return []
+  const seats = await prisma.communityMember.findMany({ where: { memberKey: key }, orderBy: { createdAt: 'desc' }, take: 100, select: { communitySlug: true } })
+  if (!seats.length) return []
+  const rows = await prisma.community.findMany({ where: { slug: { in: seats.map((x) => x.communitySlug) } } })
+  const order = new Map(seats.map((x, i) => [x.communitySlug, i]))
+  rows.sort((a, b) => (order.get(a.slug) ?? 0) - (order.get(b.slug) ?? 0))
+  return decorateCommunities(rows)
+}
+
+const TRADES_WINDOW_MS = 30 * 86_400_000
+const MEMBERS_SCAN = 1000
+
+export async function listMembers(slug: string, opts: { sort?: 'invites' | 'trades' | 'new'; limit?: number } = {}): Promise<PublicMember[]> {
+  const s = normSlug(slug)
+  const room = COMMUNITY_SLUG_RE.test(s) ? await prisma.community.findUnique({ where: { slug: s }, select: { isInternal: true } }) : null
+  if (!room) return []
+  const limit = Math.max(1, Math.min(100, Math.floor(opts.limit ?? 50) || 50))
+  const sort = opts.sort ?? 'invites'
+  // An internal room lists its own (harness) seats; a public room never does.
+  const where: Prisma.CommunityMemberWhereInput = { communitySlug: s, ...(room.isInternal ? {} : { isInternal: false }) }
+  const seats = await prisma.communityMember.findMany({ where, orderBy: { createdAt: sort === 'new' ? 'desc' : 'asc' }, take: sort === 'new' ? limit : MEMBERS_SCAN })
+  if (!seats.length) return []
+  const keys = seats.map((m) => m.memberKey)
+  const wallets = [...new Set(seats.map((m) => m.wallet ?? walletOfKey(m.memberKey)).filter((w): w is string => !!w))]
+  const since = new Date(Date.now() - TRADES_WINDOW_MS)
+  const [invites, viaCounts, trades, handles] = await Promise.all([
+    prisma.communityInvite.findMany({ where: { communitySlug: s, inviterKey: { in: keys } }, select: { code: true, inviterKey: true } }),
+    prisma.communityMember.groupBy({ by: ['via'], where: { ...where, via: { not: null } }, _count: { _all: true } }),
+    wallets.length
+      ? prisma.embedTurn.groupBy({
+          by: ['walletAddress'],
+          where: { AND: [{ walletAddress: { in: wallets }, outcome: 'signed', verification: 'verified', createdAt: { gte: since } }, REAL_TRAFFIC_WHERE] },
+          _count: { _all: true },
+        })
+      : Promise.resolve([] as { walletAddress: string | null; _count: { _all: number } }[]),
+    handlesFor(wallets),
+  ])
+  const codeOf = new Map(invites.map((i) => [i.inviterKey, i.code]))
+  const usesOf = new Map(viaCounts.map((v) => [v.via ?? '', v._count._all]))
+  const tradesOf = new Map(trades.map((t) => [t.walletAddress ?? '', t._count._all]))
+  const out: PublicMember[] = seats.map((m) => {
+    const wallet = m.wallet ?? walletOfKey(m.memberKey)
+    const code = codeOf.get(m.memberKey)
+    return {
+      label: memberLabel({ wallet, handle: wallet ? handles.get(wallet) : null, displayName: m.displayName, source: m.source }),
+      role: asRole(m.role),
+      source: asSource(m.source),
+      invited: code ? usesOf.get(code) ?? 0 : 0,
+      verifiedTrades: wallet ? tradesOf.get(wallet) ?? 0 : 0,
+      joinedAt: Math.floor(m.createdAt.getTime() / 1000),
+    }
+  })
+  if (sort === 'invites') out.sort((a, b) => b.invited - a.invited || b.verifiedTrades - a.verifiedTrades || a.joinedAt - b.joinedAt)
+  else if (sort === 'trades') out.sort((a, b) => b.verifiedTrades - a.verifiedTrades || b.invited - a.invited || a.joinedAt - b.joinedAt)
+  return out.slice(0, limit)
 }
 
 /** When a provider identity is linked to a wallet, its seats move to the wallet key (one seat per person). */
-export async function mergeSeats(_from: MemberKey, _toWallet: string): Promise<number> {
-  return TODO('mergeSeats')
+export async function mergeSeats(from: MemberKey, toWallet: string): Promise<number> {
+  const w = toWallet.toLowerCase()
+  const to = walletKey(w)
+  if (!isMemberKey(from) || !isMemberKey(to) || from === to) return 0
+  const seats = await prisma.communityMember.findMany({ where: { memberKey: from } })
+  let moved = 0
+  for (const seat of seats) {
+    await prisma.$transaction(async (tx) => {
+      const mine = await tx.communityMember.findUnique({ where: { communitySlug_memberKey: { communitySlug: seat.communitySlug, memberKey: to } } })
+      if (mine) {
+        // Two seats, one person: keep the earlier join, the higher role, a via.
+        await tx.communityMember.update({
+          where: { id: mine.id },
+          data: {
+            createdAt: seat.createdAt < mine.createdAt ? seat.createdAt : mine.createdAt,
+            role: higherRole(mine.role, seat.role),
+            via: mine.via ?? seat.via,
+          },
+        })
+        await tx.communityMember.delete({ where: { id: seat.id } })
+        const room = await tx.community.findUnique({ where: { slug: seat.communitySlug }, select: { isInternal: true } })
+        if (room && counts(seat.isInternal, room.isInternal)) await tx.community.update({ where: { slug: seat.communitySlug }, data: { memberCount: { decrement: 1 } } })
+      } else {
+        await tx.communityMember.update({ where: { id: seat.id }, data: { memberKey: to, wallet: w } })
+      }
+      // The provider's invite code follows the person: adopted when the wallet
+      // has none in that room, else the joins it brought re-credit the wallet's code.
+      const theirs = await tx.communityInvite.findUnique({ where: { communitySlug_inviterKey: { communitySlug: seat.communitySlug, inviterKey: from } } })
+      if (theirs) {
+        const walletInv = await tx.communityInvite.findUnique({ where: { communitySlug_inviterKey: { communitySlug: seat.communitySlug, inviterKey: to } } })
+        if (!walletInv) await tx.communityInvite.update({ where: { code: theirs.code }, data: { inviterKey: to } })
+        else {
+          await tx.communityMember.updateMany({ where: { communitySlug: seat.communitySlug, via: theirs.code }, data: { via: walletInv.code } })
+          await tx.communityInvite.delete({ where: { code: theirs.code } })
+        }
+      }
+    })
+    moved++
+  }
+  // Votes follow too; where both keys voted the same post, the provider's vote goes and the score is recomputed.
+  const votes = await prisma.postVote.findMany({ where: { voterKey: from } })
+  for (const v of votes) {
+    await prisma.$transaction(async (tx) => {
+      const dup = await tx.postVote.findUnique({ where: { postId_voterKey: { postId: v.postId, voterKey: to } } })
+      if (dup) await tx.postVote.delete({ where: { postId_voterKey: { postId: v.postId, voterKey: from } } })
+      else await tx.postVote.update({ where: { postId_voterKey: { postId: v.postId, voterKey: from } }, data: { voterKey: to } })
+      await recomputeScore(tx, v.postId)
+    })
+  }
+  return moved
 }
+
+// ── feed ───────────────────────────────────────────────────────────────────
 
 export interface FeedQuery {
   community?: string | null
@@ -94,43 +438,232 @@ export interface FeedQuery {
   includeInternal?: boolean
 }
 
-export async function listFeed(_q: FeedQuery): Promise<{ posts: FeedPost[]; next: string | null }> {
-  return TODO('listFeed')
+const FEED_KINDS: FeedKind[] = ['idea', 'link', 'video', 'trade']
+
+/** Only a proof the server wrote parses back; anything else reads as none. */
+function storedProof(raw: unknown): TradeProof | null {
+  if (!raw || typeof raw !== 'object') return null
+  const p = raw as Record<string, unknown>
+  if (p.verification !== 'verified' || typeof p.turnId !== 'string' || typeof p.signedAt !== 'number' || !Array.isArray(p.symbols)) return null
+  const side = p.side === 'buy' || p.side === 'sell' || p.side === 'long' || p.side === 'short' ? p.side : null
+  return {
+    turnId: p.turnId,
+    symbols: p.symbols.filter((x): x is string => typeof x === 'string').slice(0, 8),
+    side,
+    sizeUsd: typeof p.sizeUsd === 'number' && Number.isFinite(p.sizeUsd) ? p.sizeUsd : null,
+    chain: typeof p.chain === 'string' ? p.chain : null,
+    txUrl: typeof p.txUrl === 'string' && p.txUrl.startsWith('https://') ? p.txUrl : null,
+    signedAt: p.signedAt,
+    verification: 'verified',
+  }
 }
 
-export async function getFeedPost(_id: string, _viewer?: MemberKey | null): Promise<FeedPost | null> {
-  return TODO('getFeedPost')
+/** Rows → FeedPost: the forum's decoration plus room, video, proof, score, myVote. */
+async function toFeedPosts(rows: PostRow[], viewer: MemberKey | null | undefined): Promise<FeedPost[]> {
+  if (!rows.length) return []
+  const slugs = [...new Set(rows.map((r) => r.communitySlug).filter((s): s is string => !!s))]
+  const [base, rooms, votes] = await Promise.all([
+    decoratePosts(rows),
+    slugs.length ? prisma.community.findMany({ where: { slug: { in: slugs } }, select: { slug: true, name: true } }) : Promise.resolve([] as { slug: string; name: string }[]),
+    viewer && isMemberKey(viewer)
+      ? prisma.postVote.findMany({ where: { voterKey: viewer, postId: { in: rows.map((r) => r.id) } }, select: { postId: true, value: true } })
+      : Promise.resolve([] as { postId: string; value: number }[]),
+  ])
+  const roomName = new Map(rooms.map((r) => [r.slug, r.name]))
+  const myVote = new Map(votes.map((v) => [v.postId, v.value]))
+  return rows.map((r, i) => {
+    const kind: FeedKind = (FEED_KINDS as string[]).includes(r.kind) ? (r.kind as FeedKind) : 'idea'
+    const video = kind === 'video' ? parseVideoUrl(r.mediaUrl) : null
+    const mv = myVote.get(r.id)
+    return {
+      ...base[i],
+      kind,
+      community: r.communitySlug && roomName.has(r.communitySlug) ? { slug: r.communitySlug, name: roomName.get(r.communitySlug)! } : null,
+      mediaUrl: video ? video.url : null,
+      video,
+      proof: kind === 'trade' ? storedProof(r.proof) : null,
+      score: r.score ?? 0,
+      myVote: mv === 1 ? 1 : mv === -1 ? -1 : 0,
+    }
+  })
 }
 
-/** value 0 clears the vote. Returns the post's new score. */
-export async function castVote(_postId: string, _voter: MemberKey, _value: 1 | 0 | -1): Promise<{ ok: true; score: number; myVote: 1 | 0 | -1 } | StoreRefusal> {
-  return TODO('castVote')
+export async function listFeed(q: FeedQuery): Promise<{ posts: FeedPost[]; next: string | null }> {
+  const limit = Math.max(1, Math.min(100, Math.floor(q.limit ?? FEED_PAGE) || FEED_PAGE))
+  const sort: FeedSort = q.sort === 'new' || q.sort === 'top' ? q.sort : 'hot'
+  const where: Prisma.ChartPostWhereInput = {}
+  if (q.community) {
+    const s = normSlug(q.community)
+    if (!COMMUNITY_SLUG_RE.test(s)) return { posts: [], next: null }
+    where.communitySlug = s
+  }
+  if (q.symbol) {
+    const pair = chartPairFor(q.symbol)
+    if (!pair) return { posts: [], next: null }
+    where.symbol = pair.symbol
+  }
+  if (q.kind) {
+    if (!(FEED_KINDS as string[]).includes(q.kind)) return { posts: [], next: null }
+    where.kind = q.kind
+  }
+  if (q.author) {
+    if (!/^0x[a-fA-F0-9]{40}$/.test(q.author)) return { posts: [], next: null }
+    where.author = q.author.toLowerCase()
+  }
+  if (!q.includeInternal) where.isInternal = false
+  const cursor = decodeCursor(q.cursor)
+  const now = Date.now()
+
+  if (sort === 'new') {
+    const keyset = cursor && 't' in cursor ? cursor : null
+    const rows = await prisma.chartPost.findMany({
+      where: keyset
+        ? { AND: [where, { OR: [{ createdAt: { lt: new Date(keyset.t) } }, { createdAt: new Date(keyset.t), id: { lt: keyset.id } }] }] }
+        : where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+    })
+    const page = rows.slice(0, limit)
+    const last = page[page.length - 1]
+    return { posts: await toFeedPosts(page, q.viewer), next: rows.length > limit && last ? encodeCursor({ t: last.createdAt.getTime(), id: last.id }) : null }
+  }
+
+  const offset = cursor && 'o' in cursor ? cursor.o : 0
+  if (sort === 'top') {
+    const span = WINDOW_MS[q.window ?? 'week'] ?? null
+    const rows = await prisma.chartPost.findMany({
+      where: span ? { AND: [where, { createdAt: { gte: new Date(now - span) } }] } : where,
+      orderBy: [{ score: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+      skip: offset,
+      take: limit + 1,
+    })
+    const page = rows.slice(0, limit)
+    return { posts: await toFeedPosts(page, q.viewer), next: rows.length > limit ? encodeCursor({ o: offset + limit }) : null }
+  }
+
+  // hot: a bounded recent window, ranked in memory.
+  const rows = await prisma.chartPost.findMany({
+    where: { AND: [where, { createdAt: { gte: new Date(now - HOT_WINDOW_MS) } }] },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: HOT_SCAN,
+  })
+  const ranked = rows
+    .map((r) => ({ r, h: hotRank(r.score ?? 0, r.createdAt.getTime()) }))
+    .sort((a, b) => b.h - a.h || (a.r.id < b.r.id ? 1 : -1))
+    .map((x) => x.r)
+  const page = ranked.slice(offset, offset + limit)
+  return { posts: await toFeedPosts(page, q.viewer), next: ranked.length > offset + limit ? encodeCursor({ o: offset + limit }) : null }
+}
+
+export async function getFeedPost(id: string, viewer?: MemberKey | null): Promise<FeedPost | null> {
+  if (typeof id !== 'string' || !/^[a-z0-9]{6,16}$/.test(id)) return null
+  const row = await prisma.chartPost.findUnique({ where: { id } })
+  if (!row) return null
+  const [post] = await toFeedPosts([row], viewer)
+  return post ?? null
+}
+
+/** score = the sum of the post's votes, recomputed inside the vote's transaction (self-healing under races). */
+async function recomputeScore(tx: Prisma.TransactionClient, postId: string): Promise<number> {
+  const rows = await tx.$queryRaw<{ score: number }[]>`
+    UPDATE chart_posts SET score = COALESCE((SELECT SUM(value) FROM post_votes WHERE post_id = ${postId}), 0)::int
+    WHERE id = ${postId}
+    RETURNING score
+  `
+  return Number(rows[0]?.score ?? 0)
+}
+
+/** value 0 clears the vote. Returns the post's new score.
+ *  `opts.isInternal`: the caller is an internal run (only it may vote on an internal post). */
+export async function castVote(postId: string, voter: MemberKey, value: 1 | 0 | -1, opts: { isInternal?: boolean } = {}): Promise<{ ok: true; score: number; myVote: 1 | 0 | -1 } | StoreRefusal> {
+  if (!isMemberKey(voter)) return refuse(401, 'Sign in or open this from Telegram or Discord to vote.')
+  if (value !== 1 && value !== 0 && value !== -1) return refuse(400, 'value must be 1, 0 or -1.')
+  if (typeof postId !== 'string' || !/^[a-z0-9]{6,16}$/.test(postId)) return refuse(404, 'No such post.')
+  const post = await prisma.chartPost.findUnique({ where: { id: postId }, select: { id: true, isInternal: true } })
+  if (!post || (post.isInternal && !opts.isInternal)) return refuse(404, 'No such post.')
+  const score = await prisma.$transaction(async (tx) => {
+    if (value === 0) await tx.postVote.deleteMany({ where: { postId, voterKey: voter } })
+    else
+      await tx.postVote.upsert({
+        where: { postId_voterKey: { postId, voterKey: voter } },
+        create: { postId, voterKey: voter, value },
+        update: { value },
+      })
+    return recomputeScore(tx, postId)
+  })
+  return { ok: true, score, myVote: value }
 }
 
 // ── linked chats ─────────────────────────────────────────────────────────
 
 /** Owner / mod only. Single use, 15 minutes (spec LINK_CODE_TTL_MS). */
-export async function mintLinkCode(_slug: string, _by: MemberKey, _platform: ChannelPlatform): Promise<{ ok: true; code: string; expiresAt: number } | StoreRefusal> {
-  return TODO('mintLinkCode')
+export async function mintLinkCode(slug: string, by: MemberKey, platform: ChannelPlatform): Promise<{ ok: true; code: string; expiresAt: number } | StoreRefusal> {
+  const s = normSlug(slug)
+  if (platform !== 'telegram' && platform !== 'discord') return refuse(400, 'platform must be telegram or discord.')
+  if (!(await prisma.community.findUnique({ where: { slug: COMMUNITY_SLUG_RE.test(s) ? s : '-' }, select: { slug: true } }))) return refuse(404, 'No such room.')
+  if (!canManage(await roleOf(s, by))) return refuse(403, 'Only the owner or a mod can link a chat.')
+  const code = randomBytes(8).toString('hex')
+  const row = await prisma.channelLinkCode.create({ data: { code, communitySlug: s, platform, createdBy: by } })
+  return { ok: true, code, expiresAt: row.createdAt.getTime() + LINK_CODE_TTL_MS }
+}
+
+const cleanTitle = (t: string | null | undefined) => (typeof t === 'string' ? t.replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 128) || null : null)
+
+async function upsertChannel(slug: string, platform: ChannelPlatform, linkedBy: string, chat: { externalId: string; title?: string | null; secret?: string | null }) {
+  const externalId = String(chat.externalId).slice(0, 128)
+  await prisma.communityChannel.upsert({
+    where: { platform_externalId: { platform, externalId } },
+    create: { communitySlug: slug, platform, externalId, title: cleanTitle(chat.title), secret: chat.secret ?? null, linkedBy },
+    update: { communitySlug: slug, title: cleanTitle(chat.title), secret: chat.secret ?? null, linkedBy, announce: true },
+  })
 }
 
 /** Spend a link code from inside the chat. The CALLER has already proved the sender administers that chat. */
-export async function redeemLinkCode(_code: string, _platform: ChannelPlatform, _chat: { externalId: string; title?: string | null; secret?: string | null }): Promise<{ ok: true; community: PublicCommunity } | StoreRefusal> {
-  return TODO('redeemLinkCode')
+export async function redeemLinkCode(code: string, platform: ChannelPlatform, chat: { externalId: string; title?: string | null; secret?: string | null }): Promise<{ ok: true; community: PublicCommunity } | StoreRefusal> {
+  const c = typeof code === 'string' ? code.trim().toLowerCase() : ''
+  if (!LINK_CODE_RE.test(c)) return refuse(400, 'That is not a link code. Copy it from the room page.')
+  if (!chat || !String(chat.externalId ?? '')) return refuse(400, 'No chat to link.')
+  const row = await prisma.channelLinkCode.findUnique({ where: { code: c } })
+  if (!row || row.platform !== platform) return refuse(404, 'That link code is not known. Mint a new one on the room page.')
+  // Single use: whoever deletes the row spends it.
+  const spent = await prisma.channelLinkCode.deleteMany({ where: { code: c } })
+  if (!spent.count) return refuse(404, 'That link code was already used.')
+  if (Date.now() - row.createdAt.getTime() > LINK_CODE_TTL_MS) return refuse(410, 'That link code expired. Mint a new one on the room page.')
+  const community = await getCommunity(row.communitySlug)
+  if (!community) return refuse(404, 'That room no longer exists.')
+  await upsertChannel(row.communitySlug, platform, row.createdBy, chat)
+  return { ok: true, community: (await getCommunity(row.communitySlug)) ?? community }
 }
 
 /** Link directly (the owner pasted a Discord webhook URL on the room page). */
-export async function linkChannel(_slug: string, _by: MemberKey, _platform: ChannelPlatform, _chat: { externalId: string; title?: string | null; secret?: string | null }): Promise<{ ok: true } | StoreRefusal> {
-  return TODO('linkChannel')
+export async function linkChannel(slug: string, by: MemberKey, platform: ChannelPlatform, chat: { externalId: string; title?: string | null; secret?: string | null }): Promise<{ ok: true } | StoreRefusal> {
+  const s = normSlug(slug)
+  if (platform !== 'telegram' && platform !== 'discord') return refuse(400, 'platform must be telegram or discord.')
+  if (!(await prisma.community.findUnique({ where: { slug: COMMUNITY_SLUG_RE.test(s) ? s : '-' }, select: { slug: true } }))) return refuse(404, 'No such room.')
+  if (!canManage(await roleOf(s, by))) return refuse(403, 'Only the owner or a mod can link a chat.')
+  if (!chat || !String(chat.externalId ?? '')) return refuse(400, 'No chat to link.')
+  await upsertChannel(s, platform, by, chat)
+  return { ok: true }
 }
 
-export async function unlinkChannel(_platform: ChannelPlatform, _externalId: string, _by?: MemberKey): Promise<boolean> {
-  return TODO('unlinkChannel')
+export async function unlinkChannel(platform: ChannelPlatform, externalId: string, by?: MemberKey): Promise<boolean> {
+  const row = await prisma.communityChannel.findUnique({ where: { platform_externalId: { platform, externalId: String(externalId) } } })
+  if (!row) return false
+  if (by !== undefined && !canManage(await roleOf(row.communitySlug, by))) return false
+  const del = await prisma.communityChannel.deleteMany({ where: { id: row.id } })
+  return del.count > 0
+}
+
+/** The room's linked chats (server-only, for an owner's unlink-all / settings). */
+export async function channelsOf(slug: string): Promise<DeliveryChannel[]> {
+  const rows = await prisma.communityChannel.findMany({ where: { communitySlug: normSlug(slug) } })
+  return rows.map((r) => ({ id: r.id, platform: r.platform === 'discord' ? 'discord' : 'telegram', externalId: r.externalId, secret: r.secret }))
 }
 
 /** The room a chat is linked to (the bots' first read on every command). */
-export async function communityOfChannel(_platform: ChannelPlatform, _externalId: string): Promise<PublicCommunity | null> {
-  return TODO('communityOfChannel')
+export async function communityOfChannel(platform: ChannelPlatform, externalId: string): Promise<PublicCommunity | null> {
+  const row = await prisma.communityChannel.findUnique({ where: { platform_externalId: { platform, externalId: String(externalId) } }, select: { communitySlug: true } }).catch(() => null)
+  return row ? getCommunity(row.communitySlug) : null
 }
 
 /** Server-only rows for delivery: ids and secrets included. Never serialize. */
@@ -141,6 +674,25 @@ export interface DeliveryChannel {
   secret: string | null
 }
 /** The channels that should hear a post now (announce on, under ANNOUNCE_HOURLY_CAP); stamps last_post_at. */
-export async function channelsToAnnounce(_slug: string): Promise<DeliveryChannel[]> {
-  return TODO('channelsToAnnounce')
+export async function channelsToAnnounce(slug: string): Promise<DeliveryChannel[]> {
+  const rows = await prisma.communityChannel.findMany({ where: { communitySlug: normSlug(slug), announce: true } })
+  if (!rows.length) return []
+  let counts: Map<string, number>
+  try {
+    const keys = rows.map((r) => `ch:${r.id}`)
+    const windowStart = hourStartUTC()
+    const bumped = await prisma.$queryRaw<{ key: string; count: number }[]>`
+      INSERT INTO unsigned_turn_windows (key, window_start, count)
+      SELECT unnest(${keys}::text[]), ${windowStart}, 1
+      ON CONFLICT (key, window_start)
+      DO UPDATE SET count = unsigned_turn_windows.count + 1
+      RETURNING key, count
+    `
+    counts = new Map(bumped.map((b) => [b.key, Number(b.count)]))
+  } catch {
+    counts = new Map() // fail open, like every other window
+  }
+  const out = rows.filter((r) => (counts.get(`ch:${r.id}`) ?? 1) <= ANNOUNCE_HOURLY_CAP)
+  if (out.length) await prisma.communityChannel.updateMany({ where: { id: { in: out.map((r) => r.id) } }, data: { lastPostAt: new Date() } }).catch(() => null)
+  return out.map((r) => ({ id: r.id, platform: r.platform === 'discord' ? 'discord' : 'telegram', externalId: r.externalId, secret: r.secret }))
 }
