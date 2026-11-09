@@ -11,6 +11,7 @@
 //                    verified that proof; a JWT under SESSION_SECRET with
 //                    its own audience so it can never be read as a wallet
 //                    session (and a wallet session never as this).
+//                    SameSite=Lax, like the wallet session: never None.
 //
 //  A wallet session wins: when both cookies are present the actor is the
 //  wallet, and the provider identity rides along (that request is the only
@@ -79,16 +80,25 @@ export async function verifyIdentityToken(token: string): Promise<ProviderIdenti
   }
 }
 
-/** Set the identity cookie. `embedded` = the page runs inside Telegram's
- *  in-app webview / an iframe, where a Lax cookie is dropped: SameSite=None
- *  (Secure) is the only one that survives there. */
-export async function setIdentityCookie(identity: ProviderIdentity, opts: { embedded?: boolean } = {}): Promise<void> {
+/** Set the identity cookie. ALWAYS SameSite=Lax (QA-SECURITY-2 T1 / T5).
+ *
+ *  The first cut set SameSite=None for a Mini App so the cookie would survive
+ *  inside Telegram WEB (where a Mini App is an iframe). That one setting made
+ *  every room page signed-in inside ANY site's frame (a one-tap join and the
+ *  vote arrows became clickjackable) and let a hidden frame plant an identity
+ *  with no click. Lax closes all of it at once: in a cross-site frame the
+ *  cookie is neither stored nor sent, exactly like the wallet session.
+ *  The cost: a Mini App opened in Telegram Web cannot keep an identity (the
+ *  entry page says so and offers the bot's own join door, which joins through
+ *  the webhook and needs no cookie). Telegram's phone and desktop apps open a
+ *  Mini App as a top-level webview, where Lax works.
+ *  `opts.embedded` is accepted and ignored so a caller cannot ask for None. */
+export async function setIdentityCookie(identity: ProviderIdentity, _opts: { embedded?: boolean } = {}): Promise<void> {
   const token = await signIdentity(identity)
-  const prod = process.env.NODE_ENV === 'production'
   ;(await cookies()).set(IDENT_COOKIE, token, {
     httpOnly: true,
-    secure: prod,
-    sameSite: opts.embedded && prod ? 'none' : 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
     path: '/',
     maxAge: IDENT_MAX_AGE,
   })

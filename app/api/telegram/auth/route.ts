@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { normalizeIdentity, setIdentityCookie } from '@/lib/community/identity'
-import { COMMUNITY_SLUG_RE, INVITE_CODE_RE } from '@/lib/community/spec'
+import { COMMUNITY_SLUG_RE, INVITE_CODE_RE, parseJoinPayload, providerKey } from '@/lib/community/spec'
+import { joinCommunity } from '@/lib/community/store'
+import { isInternalRun } from '@/lib/internal-run'
 import { missingEnv, telegramConfig, telegramStatus, unconfiguredBody } from '@/lib/telegram/config'
 import { joinUrlFor } from '@/lib/telegram/links'
 import { AUTH_BODY_MAX, parseJsonObject, readCapped, sameOriginJson } from '@/lib/telegram/request'
-import { verifyFailureReply, verifyInitData, verifyLoginWidget } from '@/lib/telegram/verify'
+import { TG_MINI_APP_MAX_AGE_SEC, verifyFailureReply, verifyInitData, verifyLoginWidget } from '@/lib/telegram/verify'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -17,13 +19,21 @@ export const dynamic = 'force-dynamic'
 //   GET ?start=<slug>&via=   → 302 to the room's join door in Telegram (the
 //                              zero-setup "Continue with Telegram": Telegram
 //                              itself proves the account, no widget, no domain).
-//   POST { initData }        → a Mini App's signed launch data
+//   POST { initData, join? } → a Mini App's signed launch data (fresh for ten
+//                              minutes). `join` is a room payload (`g_<slug>`,
+//                              spec joinPayload): the route seats the identity
+//                              IT JUST VERIFIED in that room and says so.
 //   POST { id, first_name, …, auth_date, hash }
 //                            → the Login Widget's signed fields
 //
 // The POST verifies Telegram's HMAC (lib/telegram/verify: constant-time,
 // fresh both ways) and ONLY THEN mints the identity cookie. Nothing in the
 // body is trusted before that, and nothing in it is logged.
+//
+// WHO IS SEATED (QA-SECURITY-2 T1). The join here is for `tg:<the verified
+// id>` and nobody else. It never goes through getActor(): a browser that also
+// holds a wallet session is NOT joined as that wallet by opening a link that
+// carries somebody else's launch data.
 
 export async function GET(req: NextRequest) {
   const start = req.nextUrl.searchParams.get('start')
@@ -49,13 +59,26 @@ export async function POST(req: NextRequest) {
 
   const nowSec = Math.floor(Date.now() / 1000)
   const fromMiniApp = typeof body.initData === 'string'
-  const verdict = fromMiniApp ? verifyInitData(body.initData, cfg.token, nowSec) : verifyLoginWidget(body, cfg.token, nowSec)
+  const verdict = fromMiniApp ? verifyInitData(body.initData, cfg.token, nowSec, TG_MINI_APP_MAX_AGE_SEC) : verifyLoginWidget(body, cfg.token, nowSec)
   if (!verdict.ok) return NextResponse.json({ error: verifyFailureReply(verdict.reason) }, { status: 401 })
 
   const identity = normalizeIdentity({ p: 'tg', id: verdict.user.id, name: verdict.user.name, username: verdict.user.username })
   if (!identity) return NextResponse.json({ error: verifyFailureReply('no-user') }, { status: 401 })
 
-  // The proof held. A Mini App runs in Telegram's webview (an iframe on Telegram Web): ask for the cookie that survives there.
-  await setIdentityCookie(identity, { embedded: fromMiniApp })
-  return NextResponse.json({ identity, startParam: verdict.startParam }, { headers: { 'cache-control': 'no-store' } })
+  // The proof held.
+  await setIdentityCookie(identity)
+
+  // The room this launch names: Telegram's SIGNED start parameter first, then
+  // the page's own (`join`, from our button's query). Either way the seat is
+  // the verified Telegram account's.
+  const target = parseJoinPayload(verdict.startParam) ?? parseJoinPayload(body.join)
+  let joined: { slug: string; joined: boolean } | null = null
+  let roomMissing = false
+  if (target) {
+    const actor = { key: providerKey('tg', identity.id), wallet: null, provider: { p: identity.p, id: identity.id, name: identity.name, username: identity.username } }
+    const r = await joinCommunity(target.slug, actor, { via: target.invite, source: 'telegram', displayName: identity.name, isInternal: isInternalRun(req.headers, body) }).catch(() => null)
+    if (r?.ok) joined = { slug: r.community.slug, joined: r.joined }
+    else if (r && r.status === 404) roomMissing = true
+  }
+  return NextResponse.json({ identity, startParam: verdict.startParam, joined, ...(roomMissing ? { roomMissing: true } : {}) }, { headers: { 'cache-control': 'no-store' } })
 }
