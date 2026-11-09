@@ -21,6 +21,7 @@ import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { FEED_PAGE, FEED_SORTS, type FeedPost, type FeedSort, type FeedWindow } from '@/lib/community/spec'
 import { FEED_SORT_LABEL, FEED_WINDOWS, FEED_WINDOW_LABEL, feedHref } from './feed-rules'
 import PostCard from './PostCard'
+import GuideSeat from '@/components/guide/GuideSeat'
 import './community.css'
 
 export interface FeedListProps {
@@ -123,6 +124,8 @@ export default function FeedList({ community, symbol, initialSort = 'hot', refre
 
   return (
     <section className="cmy-feed" data-feed-list="" data-sort={sort} aria-label={`Posts in ${where}`}>
+      {/* The guide's seat for the community feed (/community and a room): one hint, what a trade post proves. The symbol page has its own seat. */}
+      {!symbol && <GuideSeat surface="community" />}
       <div className="cmy-feed__bar">
         <div className="cmy-tabs" role="tablist" aria-label="Sort posts">
           {FEED_SORTS.map((s) => (
