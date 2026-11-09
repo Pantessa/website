@@ -211,9 +211,10 @@ export default function Navigation() {
   return (
     <header className={`nav ${inDashboard ? 'nav--fluid' : ''}`}>
       <div className="nav__inner">
-        {/* Logged in, the logo leads back into the app; otherwise to the
-            brochure. mounted-gated (via showDashboardCta) keeps SSR at "/". */}
-        <Link className="logo" href={showDashboardCta ? '/dashboard' : '/'}>
+        {/* The logo goes to the market home `/`, signed in or out
+            (2026-11-09, Nate: signed in, the logo goes back to the main
+            market home). The Dashboard button on the right is the way in. */}
+        <Link className="logo" href="/">
           {/* The gem's ink box is 112×88 in the 128 grid, so a nominal size
               renders ~0.69× that in visual height — retuned from the pangolin
               era's 34 to keep the same visual weight. */}

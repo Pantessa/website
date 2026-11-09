@@ -24261,7 +24261,7 @@ async function main() {
       // signed-out visitor home, except on a public app page (the markets
       // surface), where looking needs no wallet.
       check(
-        'spine: no NEW seat in either posture (the brand seat opens a fresh /chat; CHATS leads with New Chat), and the spine sends a settled signed-out visitor home with replace, except on a public app page',
+        'spine: no NEW seat in either posture (CHATS leads with New Chat), and the spine sends a settled signed-out visitor home with replace, except on a public app page',
         !/>NEW</.test(spineSrc) && !/Start a new chat/.test(spineSrc) &&
           !chatHtml.includes('Start a new chat') && !mkHtml.includes('Start a new chat') &&
           /const \{ walletAddress, signedOut, connectAndSignIn \} = useSession\(\)/.test(spineSrc) &&
@@ -24274,11 +24274,26 @@ async function main() {
       )
       // 2026-10-06, Nate: a stranger on /t/<sym> clicked the logo to go home
       // and got the sign-in door — the brand seat pointed at /chat. Signed out,
-      // the logo goes to the public home; signed in, it still opens a chat.
-      check(
-        'spine: the brand seat (logo) sends a signed-out visitor home to the public `/`, never into the sign-in door; signed in it opens a fresh /chat',
-        /href=\{signedOut \? '\/' : '\/chat'\}/.test(spineSrc) && (await import('../lib/app-entry')).isPublicAppPath('/'),
-      )
+      // the logo goes to the public home.
+      // RE-PINNED 2026-11-09 (logo-home): signed in, the logo goes home too
+      // (Nate: "it should go back to the main market home page, not the apps
+      // page"). Every logo that links somewhere links to `/`, never /chat or
+      // /dashboard: the spine's brand seat, the brochure nav, the docs rail.
+      {
+        const navSrcL = readFileSync('components/Navigation.tsx', 'utf8')
+        const shellSrcL = readFileSync('components/AppShell.tsx', 'utf8')
+        const brand = spineSrc.match(/\{\/\* Brand seat[\s\S]*?\*\/\}\s*(<[\s\S]*?<YeetfulMark size=\{25\} \/>)/)?.[1] ?? ''
+        check(
+          'logo goes home: the spine\'s brand seat, the brochure nav\'s logo and the docs rail\'s mark all link to the market home `/` signed in or out (never /chat, which opens on APPS, nor /dashboard); `/` is public, so the logo is never a sign-in wall',
+          /<Link\s+href="\/"\s+title="Pantessa — home"\s+aria-label="Pantessa home"/.test(brand) &&
+            !/\/chat|signedOut|SpineLink|onClick/.test(brand) &&
+            /<Link className="logo" href="\/">/.test(navSrcL) && !/className="logo" href=\{/.test(navSrcL) &&
+            /<Link href="\/" className="apprail__home" aria-label="Pantessa home">/.test(shellSrcL) &&
+            /<Link href="\/" className="apprail__homeicon" aria-label="Pantessa home">/.test(shellSrcL) &&
+            !/href="\/dashboard" className="apprail__home/.test(shellSrcL) &&
+            (await import('../lib/app-entry')).isPublicAppPath('/'),
+        )
+      }
       check(
         "SpineLink: a plain click by a settled signed-out visitor opens the sign-in door aimed at the link's own target; modified clicks, everyone else, and every link to a public app page (the markets surface) get the plain link",
         /if \(e\.defaultPrevented \|\| !signedOut \|\| isPublicAppPath\(href\)\) return/.test(spineLinkS) &&
