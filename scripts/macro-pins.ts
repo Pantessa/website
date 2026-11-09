@@ -56,6 +56,7 @@ import { verdictChips, type Rating } from '../lib/technicals'
 import { alertActionChips, alertLabel, firedAlertLines, fmtSymbolPrice, searchTickers, symbolName as watchName } from '../lib/watchlists'
 import { askChartSuggestions } from '../lib/markets-ai-suggestions'
 import { lookOnlyDoor } from '../lib/look-only-door'
+import { askDoorChips, askDoorPlaceholder } from '../lib/ask-door'
 import { starterDoor } from '../lib/starter-door'
 import { lastSessionStats, sessionState, symbolName, symbolStanding, venueLabel } from '../lib/markets'
 import { symbolName as seoName, symbolPageSeo } from '../lib/markets-seo'
@@ -188,6 +189,13 @@ export function macroPins(check: Check): void {
       sidesFor(chartPairFor('AAPL')!).join() === 'buy,sell' && execSidesFor(chartPairFor('HYPE')!).join() === 'long,short,protect' && execSidesFor(chartPairFor('ETH')!).includes('stake') &&
       venuesFor('AAPL', chartPairFor('AAPL')!).length === 2 && quickActs('ETH', chartPairFor('ETH')!).length >= 1 && actionKindsFor('ETH', 'coinbase').has('limit') &&
       verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'buy' }).length >= 1 && alertActionChips({ symbol: 'ETH', condition: 'below', value: 2000 }, chartPairFor('ETH')).length >= 3,
+  )
+
+  check(
+    'macro (no side): the app-wide ask bar on an index page suggests no order either — its placeholder names a question (never "buy it"), and its chips are the why-is-it-moving read alone; a tradable symbol\'s bar is unchanged',
+    SIX.every((s) => !/buy|sell|protect|long|short/i.test(askDoorPlaceholder(`/t/${s}`)) && askDoorPlaceholder(`/t/${s}`).includes(s) && askDoorChips(`/t/${s}`).length === 1 && askDoorChips(`/t/${s}`)[0].label === `Why is ${s} moving?`) &&
+      askDoorPlaceholder('/t/tnx').includes('US10Y') && askDoorPlaceholder('/t/weth') === 'Ask anything about ETH — buy it, protect it, chart it…' && askDoorChips('/t/AAPL')[0].ask === 'Buy $50 of AAPL',
+    askDoorPlaceholder('/t/VIX'),
   )
 
   // ── The chip gate + the door ──────────────────────────────────────────
