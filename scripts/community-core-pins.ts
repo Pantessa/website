@@ -11,6 +11,8 @@ import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 
 import { validatePostDraft } from '../lib/chart-posts'
 import { hotRank, RESERVED_COMMUNITY_SLUGS } from '../lib/community/spec'
 import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '../lib/community/origin'
+import { impostorWord, labelWithSource } from '../lib/community/rules'
+import { cleanText } from '../lib/chart-posts'
 import { checkName, checkSlug, checkSymbols, decodeCursor, encodeCursor, higherRole, memberLabel, parseVote, voteDelta } from '../lib/community/rules'
 import { clampProofSize, decideProof, explorerTxFor, fillLabel, locateTx, proofSide, readOnChain, REFUSE_CHAIN_UNREAD, REFUSE_NOTHING_MOVED } from '../lib/community/proof'
 import { proofFactLine, proofTagLine } from '../lib/community/proof-words'
@@ -65,8 +67,8 @@ export function communityCorePins(check: Check): void {
     memberLabel({ wallet: '0x' + 'ab'.repeat(20), handle: 'nate', source: 'site' }) === '@nate' &&
       memberLabel({ wallet: '0x' + 'ab'.repeat(20), source: 'site' }) === '0xabab…abab' &&
       memberLabel({ wallet: null, displayName: 'Ana\u0007 K', source: 'telegram' }) === 'Ana K' &&
-      memberLabel({ wallet: null, displayName: tgId, source: 'telegram' }) === 'A Telegram member' &&
-      memberLabel({ wallet: null, displayName: null, source: 'discord' }) === 'A Discord member' &&
+      memberLabel({ wallet: null, displayName: tgId, source: 'telegram' }) === 'Telegram member' &&
+      memberLabel({ wallet: null, displayName: null, source: 'discord' }) === 'Discord member' &&
       !memberLabel({ wallet: null, displayName: null, source: 'telegram' }).includes(tgId),
   )
   const off = encodeCursor({ o: 25 })
@@ -82,6 +84,30 @@ export function communityCorePins(check: Check): void {
       proofSide(['buy:ETH'], 'native-swap-uniswap') === 'buy' && proofSide(['sell:HYPE'], 'native-hl-exec') === 'short' && proofSide([], null) === null,
   )
   secfixProofPins(check)
+  {
+    const refused = ['pantessa-official', 'pantessahq', 'askpantessa', 'metamask-support', 'mods', 'pantessa-support', 'official-pantessa', 'yeetful-team', 'admin-team', 'support-desk', 'eth-supportdesk', 'verified-calls', 'coinbase-help', 'uni-swap-help', 'team', 'eth-mods', 'helpdesk-24', 'security-alerts', 'discord-calls', 'telegram-vip']
+    const passed = ['uni-desk', 'modern-art', 'teamwork-fx', 'eth-swing', 'badminton-fx', 'model-traders', 'steady-stack', 'moderate-risk']
+    const bad = refused.filter((x) => checkSlug(x).ok)
+    const good = passed.filter((x) => !checkSlug(x).ok)
+    check('S5 slugs: a slug CONTAINING a brand word, or an authority word as a whole segment / glued to one end, is refused by name; ordinary words that contain "mod" / "team" / "admin" in the middle pass', bad.length === 0 && good.length === 0 && /reads as an official or brand account/.test((checkSlug('pantessahq') as { reason: string }).reason ?? ''), `let through: ${bad.join(',')} | refused: ${good.join(',')}`)
+    const names = ['Pantessa Official', 'Pantessa Support \u2705', 'P\u0430ntessa', 'PANTESSA', 'Pan Tessa', '\u200b\u200b', 'ETH desk \u2714', 'ETH calls \u{1F6E1}', 'Yeetful team', 'MetaMask Help', 'x\u200b']
+    const okNames = ['ETH Swing Traders', 'Modern charts', 'Teamwork FX', 'Uni desk']
+    const badN = names.filter((x) => checkName(x).ok)
+    const goodN = okNames.filter((x) => !checkName(x).ok)
+    check('S5 names: NFKC-folded, bidi / zero-width / C1 stripped (a right-to-left override name is stored as its plain letters); brand words (also in Cyrillic lookalikes, also spelled apart), authority words, check marks and badges refused; 2 visible characters required; ordinary names pass', badN.length === 0 && goodN.length === 0 && (checkName('\u202eassetnap ab') as { value?: string }).value === 'assetnap ab', `let through: ${badN.map((x) => JSON.stringify(x)).join(',')} | refused: ${goodN.join(',')}`)
+    check('S5 cleanText: titles, bodies, comments and about text lose bidi overrides, isolates, zero-width characters and C1 controls (newlines kept)', cleanText('a\u202eb\u200bc\u2066d\u0085e\ufeff\nf', 50) === 'abcde\nf' && impostorWord('ok desk') === null)
+    check(
+      'S6 labels: a wallet-less member cannot pose as a claimed @handle, a wallet short form or an official account (generic word instead); leading @ and spaces never survive; alone ("invited by") a provider name carries its source',
+      memberLabel({ wallet: null, displayName: '@pantessa', source: 'telegram' }) === 'Telegram member' &&
+        memberLabel({ wallet: null, displayName: '@nate', source: 'telegram' }) === 'Telegram member' &&
+        memberLabel({ wallet: null, displayName: ' \u200b@nate', source: 'discord' }) === 'Discord member' &&
+        memberLabel({ wallet: null, displayName: '0x71C7…976F', source: 'telegram' }) === 'Telegram member' &&
+        memberLabel({ wallet: null, displayName: 'Pantessa Support', source: 'discord' }) === 'Discord member' &&
+        memberLabel({ wallet: null, displayName: 'Ana K', source: 'telegram' }) === 'Ana K' &&
+        labelWithSource('Ana K', { wallet: null, source: 'telegram' }) === 'Ana K (Telegram)' && labelWithSource('Telegram member', { wallet: null, source: 'telegram' }) === 'Telegram member' &&
+        labelWithSource('@nate', { wallet: '0x' + 'ab'.repeat(20), source: 'site' }) === '@nate',
+    )
+  }
   check(
     "S10 announce rule: a room announces only its owner's and mods' posts by default; 'members' widens it to every seat; no seat never announces",
     !shouldAnnounce('mods', 'member') && shouldAnnounce('mods', 'owner') && shouldAnnounce('mods', 'mod') && shouldAnnounce('members', 'member') && !shouldAnnounce('members', null) && !shouldAnnounce(null, 'member'),
@@ -89,6 +115,10 @@ export function communityCorePins(check: Check): void {
   {
     const route = readFileSync(join(process.cwd(), 'app/api/posts/route.ts'), 'utf8')
     check('S10 announce wiring: the post route gates fanoutPost behind shouldAnnounce(roomAnnounceFrom, the author\'s role) before after()', /&& shouldAnnounce\(await roomAnnounceFrom\(room\.slug\)\.catch\(\(\) => null\), authorRole\)\) \{\s*const r = room\s*after\(\(\) => fanoutPost/.test(route))
+  }
+  {
+    const fan = readFileSync(join(process.cwd(), 'lib/community/fanout.ts'), 'utf8')
+    check('S8 fan-out: deliveries go three at a time (FANOUT_CONCURRENCY = 3, sliced batches), never all of a room\'s chats at once', /export const FANOUT_CONCURRENCY = 3/.test(fan) && /channels\.slice\(i, i \+ FANOUT_CONCURRENCY\)/.test(fan) && !/channels\.map\(\(c\) => \(c\.platform/.test(fan))
   }
   const h = (o: Record<string, string>) => new Headers(o)
   check(
@@ -223,6 +253,7 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
   const tgId = String(9_000_000_000 + Math.floor(Math.random() * 999_999_999))
   const fixtureIds: string[] = []
   const s3Ids: string[] = []
+  const s4Ids: string[] = []
   const J = (cookie?: string | null, extra: Record<string, string> = {}) => ({ 'content-type': 'application/json', ...INTERNAL, ...(cookie ? { cookie } : {}), ...extra })
 
   type Json = Record<string, unknown> & { error?: string }
@@ -562,23 +593,90 @@ export async function communityCorePinsServed(check: Check, base: string): Promi
         `${strangerManage.status}/${bManage.status}/${aManage.status} rm ${removeOwner.status}/${removeBogus.status}/${removeKey.status}/${bRemovesOwner.status}/${removeB.status} ${before?.members}->${after?.members}`,
       )
     }
+    // ── S4: a speed bump per machine (a fake client IP: next start trusts x-real-ip locally; loopback is exempt) ──
+    {
+      const ip = () => ({ 'x-real-ip': `2001:db8::${Math.floor(Math.random() * 0xffffff).toString(16)}:${Date.now().toString(16).slice(-6)}` })
+      const idBase = 9_300_000_000 + Math.floor(Math.random() * 99_999_999)
+      const toks = await Promise.all(Array.from({ length: 33 }, (_, i) => signIdentity({ p: 'tg', id: String(idBase + i), name: `Joiner ${i}`, username: null })))
+      s4Ids.push(...toks.map((_, i) => String(idBase + i)))
+      const code = ((await call('GET', `/api/communities/${slug}`, { cookie: sa })).json.me as { invite: { code: string; uses: number } }).invite
+      const ipCredit = ip()
+      const c1 = await call('POST', `/api/communities/${slug}/join`, { cookie: `pt_ident=${toks[31]}`, body: { via: code.code }, headers: ipCredit })
+      const c2 = await call('POST', `/api/communities/${slug}/join`, { cookie: `pt_ident=${toks[32]}`, body: { via: code.code }, headers: ipCredit })
+      const usesAfter = ((await call('GET', `/api/communities/${slug}`, { cookie: sa })).json.me as { invite: { uses: number } }).invite.uses
+      check(
+        'S4 (served): an invite is credited at most once per IP per room per day — two joins through the same link from one network both get a seat, the inviter is credited once',
+        c1.json.joined === true && c2.json.joined === true && usesAfter === code.uses + 1,
+        `uses ${code.uses} -> ${usesAfter}`,
+      )
+      const ipJoin = ip()
+      const joins = []
+      for (const t of toks.slice(0, 31)) joins.push(await call('POST', `/api/communities/${slug}/join`, { cookie: `pt_ident=${t}`, body: {}, headers: ipJoin }))
+      const okJoins = joins.filter((r) => r.status === 200).length
+      check(
+        'S4 (served): 30 joins an hour per IP — the 31st from one network is 429 by name (cj:i fence)',
+        okJoins === 30 && joins[30].status === 429 && /Too many joins from this network/.test(joins[30].json.error ?? ''),
+        `ok=${okJoins} last=${joins[30]?.status}`,
+      )
+      const ws = [privateKeyToAccount(generatePrivateKey()), privateKeyToAccount(generatePrivateKey()), privateKeyToAccount(generatePrivateKey())]
+      const sess = await Promise.all(ws.map((w) => signIn(base, w)))
+      const ipRoom = ip()
+      const plan = [0, 0, 0, 1, 1, 2]
+      const made = []
+      for (let i = 0; i < plan.length; i++) made.push(await call('POST', '/api/communities', { cookie: sess[plan[i]], body: { slug: `${slug}-r${i}`, name: `Pin room ${i}` }, headers: ipRoom }))
+      const wallet4 = await call('POST', '/api/communities', { cookie: sess[0], body: { slug: `${slug}-rw`, name: 'Pin room w' }, headers: ip() })
+      check(
+        'S4 (served): 5 rooms a day per IP — six fresh wallets-worth of rooms from one network: five 201, the sixth 429 by name; the per-wallet cap (3) still holds from another network',
+        made.slice(0, 5).every((r) => r.status === 201) && made[5].status === 429 && made[5].json.rateGate === 'ip' && wallet4.status === 429 && wallet4.json.rateGate === 'wallet',
+        made.map((r) => r.status).join('/') + ` wallet=${wallet4.status}`,
+      )
+    }
+
+    // ── S8: link fences, the channel cap, stale codes ──
+    {
+      const C = privateKeyToAccount(generatePrivateKey())
+      const sc = await signIn(base, C)
+      const ipL = { 'x-real-ip': `2001:db8:1::${Math.floor(Math.random() * 0xffffff).toString(16)}` }
+      const tries = []
+      for (let i = 0; i < 11; i++) tries.push(await call('POST', `/api/communities/${slug}/discord`, { cookie: sc, body: { mintCode: true }, headers: ipL }))
+      check(
+        'S8 (served): the Discord link route is fenced — 10 an hour per wallet / network, the 11th is 429 before anything reaches Discord',
+        tries.slice(0, 10).every((r) => r.status !== 429) && tries[10].status === 429 && !!tries[10].json.rateGate,
+        tries.map((r) => r.status).join('/'),
+      )
+      const store = await import('../lib/community/store')
+      for (let i = 0; i < 5; i++) await prisma.communityChannel.create({ data: { communitySlug: slug, platform: 'discord', externalId: `90000000000000000${i}`, title: `pin ${i}`, linkedBy: `w:${a}` } })
+      const sixth = await store.linkChannel(slug, `w:${a}` as `w:${string}`, 'discord', { externalId: '900000000000000009', title: 'six' })
+      const again = await store.linkChannel(slug, `w:${a}` as `w:${string}`, 'discord', { externalId: '900000000000000003', title: 'relinked' })
+      const code = await store.mintLinkCode(slug, `w:${a}` as `w:${string}`, 'telegram')
+      const redeemed = code.ok ? await store.redeemLinkCode(code.code, 'telegram', { externalId: '-100999', title: 'six via code' }) : null
+      await prisma.channelLinkCode.create({ data: { code: 'ab'.repeat(8), communitySlug: slug, platform: 'telegram', createdBy: `w:${a}`, createdAt: new Date(Date.now() - 3_600_000) } })
+      await store.mintLinkCode(slug, `w:${a}` as `w:${string}`, 'telegram')
+      const stale = await prisma.channelLinkCode.count({ where: { code: 'ab'.repeat(8) } })
+      check(
+        'S8 (DB): a room links at most 5 chats — the sixth is refused by name (link and code alike), re-linking one it has is fine; minting a code deletes expired ones',
+        !sixth.ok && sixth.status === 409 && /at most 5/.test(sixth.reason) && again.ok && !!redeemed && !redeemed.ok && redeemed.status === 409 && stale === 0,
+        `${sixth.ok ? 'ok' : sixth.status} ${again.ok} ${redeemed && !redeemed.ok ? redeemed.status : 'ok'} stale=${stale}`,
+      )
+    }
   } catch (e) {
     check('community core (served): ran to the end', false, e instanceof Error ? e.message : String(e))
   } finally {
     try {
-      const posts = await prisma.chartPost.findMany({ where: { communitySlug: slug }, select: { id: true } })
+      const posts = await prisma.chartPost.findMany({ where: { communitySlug: { startsWith: slug } }, select: { id: true } })
       const postIds = posts.map((p) => p.id)
       await prisma.postVote.deleteMany({ where: { postId: { in: postIds } } })
       await prisma.chartPost.deleteMany({ where: { id: { in: postIds } } })
-      await prisma.communityMember.deleteMany({ where: { communitySlug: slug } })
-      await prisma.communityInvite.deleteMany({ where: { communitySlug: slug } })
-      await prisma.communityChannel.deleteMany({ where: { communitySlug: slug } })
-      await prisma.channelLinkCode.deleteMany({ where: { communitySlug: slug } })
-      await prisma.community.deleteMany({ where: { slug } })
+      await prisma.communityMember.deleteMany({ where: { communitySlug: { startsWith: slug } } })
+      await prisma.communityInvite.deleteMany({ where: { communitySlug: { startsWith: slug } } })
+      await prisma.communityChannel.deleteMany({ where: { communitySlug: { startsWith: slug } } })
+      await prisma.channelLinkCode.deleteMany({ where: { communitySlug: { startsWith: slug } } })
+      await prisma.community.deleteMany({ where: { slug: { startsWith: slug } } })
       await prisma.identityLink.deleteMany({ where: { provider: 'tg', externalId: tgId } })
+      if (s4Ids.length) await prisma.postVote.deleteMany({ where: { voterKey: { in: s4Ids.map((i) => `tg:${i}`) } } })
       if (s3Ids.length) await prisma.postVote.deleteMany({ where: { voterKey: { in: s3Ids.map((i) => `tg:${i}`) } } })
       if (fixtureIds.length) await prisma.embedTurn.deleteMany({ where: { id: { in: fixtureIds } } })
-      const left = (await prisma.community.count({ where: { slug } })) + (await prisma.communityMember.count({ where: { communitySlug: slug } })) + (await prisma.chartPost.count({ where: { communitySlug: slug } }))
+      const left = (await prisma.community.count({ where: { slug: { startsWith: slug } } })) + (await prisma.communityMember.count({ where: { communitySlug: slug } })) + (await prisma.chartPost.count({ where: { communitySlug: slug } }))
       check('community core (served): cleanup — every row this run wrote is gone', left === 0, `left=${left}`)
     } catch (e) {
       check('community core (served): cleanup', false, e instanceof Error ? e.message : String(e))

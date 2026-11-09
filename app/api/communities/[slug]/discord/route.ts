@@ -13,6 +13,8 @@
 import { NextResponse } from 'next/server'
 import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '@/lib/community/origin'
 import { getSessionAddress } from '@/lib/auth'
+import { clientIpFrom } from '@/lib/turn-limits'
+import { LINK_HOURLY_CAP, linkTripped } from '@/lib/community/limits'
 import { COMMUNITY_SLUG_RE, walletKey, type MemberKey } from '@/lib/community/spec'
 import { linkChannel, mintLinkCode, roleOf, unlinkChannel } from '@/lib/community/store'
 import { parseDiscordWebhookUrl, readWebhookObject } from '@/lib/discord/webhook'
@@ -70,6 +72,9 @@ export async function POST(req: Request, ctx: Ctx) {
   const wallet = await getSessionAddress().catch(() => null)
   if (!wallet) return refuse(401, 'Sign in with your wallet to manage this room.', { needsIdentity: true })
   const actor = { key: walletKey(wallet) }
+  // S8: every POST may send our server to Discord: fenced per wallet + per IP.
+  const tripped = await linkTripped(clientIpFrom(req.headers), actor.key, 'discord')
+  if (tripped) return refuse(429, `Too many Discord link attempts in the last hour (${LINK_HOURLY_CAP} a ${tripped === 'ip' ? 'network' : 'wallet'}). Try again later.`, { rateGate: tripped })
   const body = await readBody(req)
   if (!body) return refuse(400, 'Send JSON: { webhookUrl }.')
 

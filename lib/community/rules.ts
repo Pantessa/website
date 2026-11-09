@@ -3,7 +3,7 @@
 // import, never by behaviour). Pinned by scripts/community-core-pins.ts.
 
 import { chartPairFor } from '@/lib/charts'
-import { authorLabel, cleanText } from '@/lib/chart-posts'
+import { INVISIBLE_RE, authorLabel, cleanText } from '@/lib/chart-posts'
 import {
   COMMUNITY_ABOUT_MAX,
   COMMUNITY_NAME_MAX,
@@ -16,6 +16,42 @@ import {
 
 export type Verdict<T> = { ok: true; value: T } | { ok: false; reason: string }
 
+// ── S5: names and addresses that pose as ours ─────────────────────────────
+
+/** Brand names: refused ANYWHERE inside a slug or a name (askpantessa, pantessahq). */
+export const BRAND_WORDS = ['pantessa', 'yeetful', 'metamask', 'coinbase', 'uniswap', 'hyperliquid', 'telegram', 'discord'] as const
+/** Authority words: refused as a whole word, or glued to the front or back of one
+ *  (supportdesk, verified, helpdesk-pro), never in the middle (badminton). */
+export const AUTHORITY_WORDS = ['official', 'support', 'helpdesk', 'security', 'verif', 'admin', 'staff'] as const
+/** Short authority words: refused only as a WHOLE word, so ordinary words that
+ *  contain them pass (modern, teamwork). */
+export const AUTHORITY_EXACT = ['mod', 'mods', 'team', 'staff', 'admin'] as const
+
+/** Common Cyrillic / Greek lookalikes → Latin, so "Pаntessa" (Cyrillic а) reads as the brand. */
+const CONFUSABLE: Record<string, string> = {
+  'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i', 'ј': 'j', 'ѕ': 's', 'т': 't', 'к': 'k', 'м': 'm', 'н': 'h', 'в': 'b', 'ԁ': 'd', 'ӏ': 'l', 'ո': 'n', 'ս': 'u',
+  'α': 'a', 'ε': 'e', 'ο': 'o', 'ρ': 'p', 'τ': 't', 'υ': 'u', 'ν': 'v', 'κ': 'k', 'ι': 'i', 'χ': 'x', 'η': 'n', 'ѵ': 'v',
+}
+/** NFKC, lowercase, lookalikes folded, invisible characters gone. */
+export function foldForBrand(raw: string): string {
+  return raw.normalize('NFKC').replace(INVISIBLE_RE, '').toLowerCase().replace(/./gu, (c) => CONFUSABLE[c] ?? c)
+}
+
+/** The word in `text` that poses as ours, or null. `text` is folded first;
+ *  words are runs of letters and digits. Also catches a brand spelled out
+ *  across separators ("pan-tessa", "P a n t e s s a"). */
+export function impostorWord(text: string): string | null {
+  const t = foldForBrand(text)
+  const squashed = t.replace(/[^a-z0-9]/g, '')
+  for (const b of BRAND_WORDS) if (squashed.includes(b)) return b
+  const words = t.split(/[^a-z0-9]+/).filter(Boolean)
+  for (const w of words) {
+    for (const a of AUTHORITY_EXACT) if (w === a) return a
+    for (const a of AUTHORITY_WORDS) if (w.startsWith(a) || w.endsWith(a)) return a
+  }
+  return null
+}
+
 /** A slug as typed → the stored slug, or why not. */
 export function checkSlug(raw: unknown): Verdict<string> {
   if (typeof raw !== 'string') return { ok: false, reason: 'slug is required (3 to 32 letters, digits or dashes).' }
@@ -23,14 +59,22 @@ export function checkSlug(raw: unknown): Verdict<string> {
   if (!COMMUNITY_SLUG_RE.test(s)) return { ok: false, reason: 'slug must be 3 to 32 lowercase letters, digits or dashes, starting and ending with a letter or digit.' }
   if (s.includes('--')) return { ok: false, reason: 'slug cannot hold two dashes in a row.' }
   if (RESERVED_COMMUNITY_SLUGS.has(s)) return { ok: false, reason: `"${s}" is reserved. Pick another slug.` }
+  const word = impostorWord(s)
+  if (word) return { ok: false, reason: `A room address cannot use "${word}": it reads as an official or brand account. Pick another slug.` }
   return { ok: true, value: s }
 }
+
+/** Check marks and badge glyphs a name could wear to look verified. */
+const BADGE_RE = /[\u2611\u2705\u2713\u2714\u2611\u{1F6E1}\u{1F396}\u{1F3C5}\u{1F530}\u{1F4DB}\u269C\u{1F947}-\u{1F949}\u2122\u00ae\u24c2\u{1F512}\u{1F510}]/u
 
 export function checkName(raw: unknown): Verdict<string> {
   if (typeof raw !== 'string') return { ok: false, reason: `name is required (2 to ${COMMUNITY_NAME_MAX} characters).` }
   if (raw.length > COMMUNITY_NAME_MAX * 2) return { ok: false, reason: `name is over ${COMMUNITY_NAME_MAX} characters.` }
-  const s = cleanText(raw, COMMUNITY_NAME_MAX).replace(/\s+/g, ' ')
-  if (s.length < 2) return { ok: false, reason: `name is required (2 to ${COMMUNITY_NAME_MAX} characters).` }
+  const s = cleanText(raw.normalize('NFKC'), COMMUNITY_NAME_MAX).replace(/\s+/g, ' ')
+  if ([...s.replace(/\s/g, '')].length < 2) return { ok: false, reason: `name is required (2 to ${COMMUNITY_NAME_MAX} characters).` }
+  if (BADGE_RE.test(s)) return { ok: false, reason: 'A room name cannot wear a check mark or a badge.' }
+  const word = impostorWord(s)
+  if (word) return { ok: false, reason: `A room name cannot use "${word}": it reads as an official or brand account.` }
   return { ok: true, value: s }
 }
 
@@ -65,14 +109,31 @@ export const asRole = (r: string): CommunityRole => (r === 'owner' || r === 'mod
 export const asSource = (s: string): MemberSource => (s === 'telegram' || s === 'discord' ? s : 'site')
 export const canManage = (role: CommunityRole | null): boolean => role === 'owner' || role === 'mod'
 
+/** The generic word for a wallet-less member of a source. */
+export function genericMemberWord(source: string): string {
+  return source === 'telegram' ? 'Telegram member' : source === 'discord' ? 'Discord member' : 'A member'
+}
+
 /** A member's public label: claimed @handle → short wallet → the provider's
- *  display name → a generic word. NEVER a raw Telegram / Discord id. */
+ *  display name → a generic word. NEVER a raw Telegram / Discord id.
+ *  S6: a provider name is the provider's words, not a claim on this site — it
+ *  may not pose as a claimed @handle, a wallet, or an official account. */
 export function memberLabel(m: { wallet: string | null; handle?: string | null; displayName?: string | null; source: string }): string {
   if (m.wallet) return authorLabel(m.wallet, m.handle ?? null)
-  const name = m.displayName ? cleanText(m.displayName, 64).replace(/\s+/g, ' ') : ''
+  const raw = m.displayName ? cleanText(m.displayName, 64).replace(/\s+/g, ' ').trim() : ''
+  const claimsHandle = /^[\s@＠﹫]*[@＠﹫]/.test(raw.normalize('NFKC'))
+  const name = raw.normalize('NFKC').replace(/^[\s@]+/, '').trim()
+  const looksLikeWallet = /^0x[0-9a-f]/i.test(name) || /…|\.\.\./.test(name) && /[0-9a-f]{4}/i.test(name)
   // A provider name that is only digits could be someone's id: never shown.
-  if (name && !/^\d+$/.test(name)) return name
-  return m.source === 'telegram' ? 'A Telegram member' : m.source === 'discord' ? 'A Discord member' : 'A member'
+  if (!name || claimsHandle || looksLikeWallet || /^\d+$/.test(name) || impostorWord(name)) return genericMemberWord(m.source)
+  return name
+}
+
+/** S6: a label printed ALONE (the "invited by" line): a wallet-less member's
+ *  name carries its source so it never reads as a site handle. */
+export function labelWithSource(label: string, m: { wallet: string | null; source: string }): string {
+  if (m.wallet || label === genericMemberWord(m.source)) return label
+  return m.source === 'telegram' ? `${label} (Telegram)` : m.source === 'discord' ? `${label} (Discord)` : label
 }
 
 // ── votes ───────────────────────────────────────────────────────────────────

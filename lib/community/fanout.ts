@@ -16,6 +16,9 @@ export interface Announcement {
   community: PublicCommunity
 }
 
+/** S8: deliveries in flight at once. */
+export const FANOUT_CONCURRENCY = 3
+
 export type Deliverer = (channel: DeliveryChannel, a: Announcement) => Promise<boolean>
 
 export interface FanoutResult {
@@ -29,10 +32,13 @@ export async function fanoutPost(post: FeedPost, community: PublicCommunity | nu
   try {
     const channels = await channelsToAnnounce(community.slug)
     out.attempted = channels.length
-    const results = await Promise.allSettled(
-      channels.map((c) => (c.platform === 'telegram' ? deliverTelegram : deliverDiscord)(c, { post, community })),
-    )
-    out.delivered = results.filter((r) => r.status === 'fulfilled' && r.value === true).length
+    // S8: three at a time, never all of a room's chats at once.
+    for (let i = 0; i < channels.length; i += FANOUT_CONCURRENCY) {
+      const results = await Promise.allSettled(
+        channels.slice(i, i + FANOUT_CONCURRENCY).map((c) => (c.platform === 'telegram' ? deliverTelegram : deliverDiscord)(c, { post, community })),
+      )
+      out.delivered += results.filter((r) => r.status === 'fulfilled' && r.value === true).length
+    }
   } catch (e) {
     console.warn('[community fanout]', e instanceof Error ? e.message : e)
   }

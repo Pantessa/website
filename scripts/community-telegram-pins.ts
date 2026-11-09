@@ -774,7 +774,7 @@ export async function communityTelegramPinsServed(check: Check, base: string): P
   const uid = 7_000_000_000 + Math.floor(Math.random() * 900_000_000)
   const vid = uid + 1
   const chat = { id: -1_000_000_000_000 - Math.floor(Math.random() * 900_000_000), type: 'supergroup', title: 'TG pin <group>' }
-  const slug = `t-telegram-${Date.now().toString(36)}`
+  const slug = `t-tgpins-${Date.now().toString(36)}` // S5: a slug may not carry "telegram"
 
   // webhook authentication
   const noHeader = await hook(msg(priv(uid), from(uid), '/help'), {})

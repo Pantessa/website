@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionAddress } from '@/lib/auth'
+import { clientIpFrom } from '@/lib/turn-limits'
+import { LINK_HOURLY_CAP, linkTripped } from '@/lib/community/limits'
 import { COMMUNITY_SLUG_RE, walletKey } from '@/lib/community/spec'
 import { getCommunity, mintLinkCode, roleOf, unlinkChannel } from '@/lib/community/store'
 import { missingEnv, telegramConfig, telegramStatus, unconfiguredBody } from '@/lib/telegram/config'
@@ -61,6 +63,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const { slug } = await params
   const m = await manager(req, slug)
   if ('refusal' in m) return m.refusal
+  // S8: code mints per wallet + per IP per hour.
+  const tripped = await linkTripped(clientIpFrom(req.headers), m.actor.key, 'telegram')
+  if (tripped) return NextResponse.json({ error: `Too many Telegram link codes in the last hour (${LINK_HOURLY_CAP} a ${tripped === 'ip' ? 'network' : 'wallet'}). Try again later.`, rateGate: tripped }, { status: 429 })
   const minted = await mintLinkCode(slug, m.actor.key, 'telegram')
   if (!minted.ok) return refuse(minted.reason, minted.status)
   return NextResponse.json(

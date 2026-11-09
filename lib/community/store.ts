@@ -62,6 +62,7 @@ import {
   decodeCursor,
   encodeCursor,
   higherRole,
+  labelWithSource,
   memberLabel,
 } from './rules'
 
@@ -216,6 +217,8 @@ export interface JoinInput {
   /** Provider-reported name for a wallet-less member (rendered as text). */
   displayName?: string | null
   isInternal?: boolean
+  /** S4: asked only when this join WOULD credit an inviter; false withholds the credit (the seat is still made). */
+  creditAllowed?: () => Promise<boolean>
 }
 
 /** A seat moves the room's count when it is a real person in a real room, or
@@ -237,6 +240,7 @@ export async function joinCommunity(slug: string, actor: Actor, input: JoinInput
     if (INVITE_CODE_RE.test(code)) {
       const inv = await prisma.communityInvite.findUnique({ where: { code } }).catch(() => null)
       if (inv && inv.communitySlug === s && inv.inviterKey !== actor.key) via = code
+      if (via && input.creditAllowed && !(await input.creditAllowed().catch(() => true))) via = null
     }
     const memberInternal = input.isInternal === true
     const display = actor.wallet ? null : (input.displayName ?? actor.provider?.name ?? actor.provider?.username ?? null)
@@ -390,7 +394,8 @@ export async function inviterLabel(slug: string, code: unknown): Promise<string 
   if (!seat) return null
   const wallet = seat.wallet ?? walletOfKey(seat.memberKey)
   const handles = wallet ? await handlesFor([wallet]) : new Map<string, string>()
-  return memberLabel({ wallet, handle: wallet ? handles.get(wallet) : null, displayName: seat.displayName, source: seat.source })
+  const label = memberLabel({ wallet, handle: wallet ? handles.get(wallet) : null, displayName: seat.displayName, source: seat.source })
+  return labelWithSource(label, { wallet, source: seat.source })
 }
 
 /** When a provider identity is linked to a wallet, its seats move to the wallet key (one seat per person). */
@@ -647,12 +652,25 @@ export async function mintLinkCode(slug: string, by: MemberKey, platform: Channe
   if (platform !== 'telegram' && platform !== 'discord') return refuse(400, 'platform must be telegram or discord.')
   if (!(await prisma.community.findUnique({ where: { slug: COMMUNITY_SLUG_RE.test(s) ? s : '-' }, select: { slug: true } }))) return refuse(404, 'No such room.')
   if (!canManage(await roleOf(s, by))) return refuse(403, 'Only the owner or a mod can link a chat.')
+  // S8: expired codes go when a new one is minted (a spent code is deleted on use).
+  await prisma.channelLinkCode.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - LINK_CODE_TTL_MS) } } }).catch(() => null)
   const code = randomBytes(8).toString('hex')
   const row = await prisma.channelLinkCode.create({ data: { code, communitySlug: s, platform, createdBy: by } })
   return { ok: true, code, expiresAt: row.createdAt.getTime() + LINK_CODE_TTL_MS }
 }
 
 const cleanTitle = (t: string | null | undefined) => (typeof t === 'string' ? t.replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 128) || null : null)
+
+/** S8: at most this many linked chats a room (each one hears every announced post). */
+export const ROOM_CHANNELS_MAX = 5
+const TOO_MANY_CHANNELS = `A room can link at most ${ROOM_CHANNELS_MAX} chats. Unlink one first.`
+
+/** true = linking this chat would be the room's sixth (re-linking one it already has is fine). */
+async function channelCapReached(slug: string, platform: ChannelPlatform, externalId: string): Promise<boolean> {
+  const rows = await prisma.communityChannel.findMany({ where: { communitySlug: slug }, select: { platform: true, externalId: true } })
+  if (rows.some((r) => r.platform === platform && r.externalId === externalId)) return false
+  return rows.length >= ROOM_CHANNELS_MAX
+}
 
 async function upsertChannel(slug: string, platform: ChannelPlatform, linkedBy: string, chat: { externalId: string; title?: string | null; secret?: string | null }) {
   const externalId = String(chat.externalId).slice(0, 128)
@@ -676,6 +694,7 @@ export async function redeemLinkCode(code: string, platform: ChannelPlatform, ch
   if (Date.now() - row.createdAt.getTime() > LINK_CODE_TTL_MS) return refuse(410, 'That link code expired. Mint a new one on the room page.')
   const community = await getCommunity(row.communitySlug)
   if (!community) return refuse(404, 'That room no longer exists.')
+  if (await channelCapReached(row.communitySlug, platform, String(chat.externalId).slice(0, 128))) return refuse(409, TOO_MANY_CHANNELS)
   await upsertChannel(row.communitySlug, platform, row.createdBy, chat)
   return { ok: true, community: (await getCommunity(row.communitySlug)) ?? community }
 }
@@ -687,6 +706,7 @@ export async function linkChannel(slug: string, by: MemberKey, platform: Channel
   if (!(await prisma.community.findUnique({ where: { slug: COMMUNITY_SLUG_RE.test(s) ? s : '-' }, select: { slug: true } }))) return refuse(404, 'No such room.')
   if (!canManage(await roleOf(s, by))) return refuse(403, 'Only the owner or a mod can link a chat.')
   if (!chat || !String(chat.externalId ?? '')) return refuse(400, 'No chat to link.')
+  if (await channelCapReached(s, platform, String(chat.externalId).slice(0, 128))) return refuse(409, TOO_MANY_CHANNELS)
   await upsertChannel(s, platform, by, chat)
   return { ok: true }
 }
