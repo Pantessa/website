@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
 import { isInternalRun } from '@/lib/internal-run'
@@ -17,6 +17,11 @@ import {
   type PostSort,
 } from '@/lib/chart-posts'
 import { mintPostLink } from './mint-link'
+import { chartPairFor } from '@/lib/charts'
+import { getCommunity, getFeedPost, roleOf } from '@/lib/community/store'
+import { fillLabel, resolveTradeProof } from '@/lib/community/proof'
+import { fanoutPost } from '@/lib/community/fanout'
+import { walletKey, type PublicCommunity, type TradeProof } from '@/lib/community/spec'
 
 // /api/posts — the symbol page's forum.
 //
@@ -35,6 +40,12 @@ import { mintPostLink } from './mint-link'
 //      back as `mintError` beside the created row.
 //      `forkOf` copies the parent's chart state when none is supplied
 //      ("Copy these lines to my chart") and records lineage.
+//      Squad community (2026-11-09): `community` puts the post in a room
+//      (the author must already be a MEMBER — 403 `needsJoin`); `kind:
+//      'video'` + `mediaUrl` stores the REBUILT watch URL; `kind: 'trade'` +
+//      `proofTurnId` (+ `showSize`) re-derives the proof from the author's
+//      own receipt-verified fill. The answer is the feed's FeedPost; a room
+//      post is announced to its linked chats after the response.
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -68,6 +79,30 @@ export async function POST(req: NextRequest) {
   const draft = verdict.draft
   const internal = isInternalRun(req.headers, body)
 
+  // A room post: the room must exist and the author must sit in it.
+  let room: PublicCommunity | null = null
+  if (draft.community) {
+    room = await getCommunity(draft.community)
+    if (!room) return NextResponse.json({ error: 'No such room.' }, { status: 404 })
+    if (!(await roleOf(room.slug, walletKey(author)))) return NextResponse.json({ error: `Join /g/${room.slug} to post in it.`, needsJoin: true }, { status: 403 })
+  }
+
+  // A trade post: the proof is re-derived from the author's own verified row.
+  let proof: TradeProof | null = null
+  if (draft.kind === 'trade') {
+    proof = draft.proofTurnId ? await resolveTradeProof(author, draft.proofTurnId, { showSize: draft.showSize, includeInternal: internal }) : null
+    if (!proof) return NextResponse.json({ error: 'That is not one of your verified trades. Pick a fill from your list.' }, { status: 400 })
+    const traded = proof.symbols.map((t) => t.split(':')[1]).filter((x): x is string => !!x)
+    if (!draft.symbol) {
+      const first = traded.map((t) => chartPairFor(t)?.symbol).find((x): x is string => !!x)
+      if (!first) return NextResponse.json({ error: 'That fill names no charted market. Add the symbol.' }, { status: 400 })
+      draft.symbol = first
+    } else if (traded.length && !traded.some((t) => chartPairFor(t)?.symbol === draft.symbol)) {
+      return NextResponse.json({ error: `That fill is a ${traded.join(' / ')} trade, not ${draft.symbol}.` }, { status: 400 })
+    }
+    if (draft.title.length < 3) draft.title = fillLabel(proof)
+  }
+
   // Fork: the parent must exist and be readable by this caller (an internal
   // row is only forkable from an internal run — never a way to surface it).
   if (draft.forkOf) {
@@ -93,19 +128,26 @@ export async function POST(req: NextRequest) {
   const tripped = await bumpAndCheckPostWrite(clientIpFrom(req.headers), author, 'post')
   if (tripped) return NextResponse.json({ error: writeLimitReply(tripped, 'post'), rateGate: tripped }, { status: 429 })
 
-  const post = await createPost(author, draft, internal)
+  const created = await createPost(author, draft, internal, { proof })
 
   // "Post = executable idea": mint the primary action now when asked.
   let mint: { slug: string; url: string } | null = null
   let mintError: string | null = null
-  const ask = primaryAsk(post.chartState)
+  const ask = primaryAsk(created.chartState)
   const wantMint = typeof body === 'object' && body !== null && (body as { mint?: unknown }).mint === true
   if (wantMint && ask) {
-    const r = await mintPostLink(req, post.id, ask)
+    const r = await mintPostLink(req, created.id, ask)
     if (r.ok) mint = { slug: r.slug, url: r.url }
     else mintError = r.error
   } else if (wantMint && !ask) {
     mintError = 'This chart has no action to mint — add a line with a Buy/Sell/Stop/DCA action first.'
+  }
+
+  const feedPost = await getFeedPost(created.id, walletKey(author))
+  const post = feedPost ?? created
+  if (room && feedPost && !internal) {
+    const r = room
+    after(() => fanoutPost(feedPost, r).then(() => undefined))
   }
 
   return NextResponse.json(
