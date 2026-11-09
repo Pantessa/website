@@ -69,10 +69,11 @@ export async function frontDoorPins(check: Check): Promise<void> {
   const toRoot = redirects.find((r) => r.source === '/markets')
   const cards = redirects.find((r) => r.source === '/markets/:card(opengraph-image|twitter-image)')
   check(
-    'front door: next.config 308s /markets → `/` and the old card URLs → the root card (both permanent); /story is never redirected',
+    // RE-PINNED 2026-11-09 (the read): `/` itself is still never redirected — the one rule on it is conditional (a `?view=` that names a /live view, the deck's old addresses; scripts/read-pins.ts pins it).
+    'front door: next.config 308s /markets → `/` and the old card URLs → the root card (both permanent); /story is never redirected, and `/` only on a `?view=` condition',
     !!toRoot && toRoot.destination === '/' && toRoot.permanent === true &&
       !!cards && cards.destination === '/:card' && cards.permanent === true &&
-      !redirects.some((r) => r.source === '/story' || r.source === '/'),
+      !redirects.some((r) => r.source === '/story' || (r.source === '/' && !(r as { has?: unknown[] }).has?.length)),
     JSON.stringify({ toRoot, cards }),
   )
 
@@ -129,8 +130,8 @@ export async function frontDoorPins(check: Check): Promise<void> {
   // RE-PINNED 2026-10-13 (deck): the lead seat holds THE DECK (components/home/Deck), which mounts the pulse band as its first channel;
   // RE-PINNED 2026-10-13 (apps row): the guide seat holds THE APPS ROW (components/home/AppsRow) — the fleet's marks, each a door into the chat's apps drawer.
   check(
-    'front door: HomeSurface mounts the three seats — claim (SplashClaim), lead (SentHomeNotice + Deck, the deck mounting PulseSlot as its first channel), guide (AppsRow, the fleet\'s marks in the guide card\'s old seat) — and MarketsIndex renders the claim FIRST in the main column, standing in for its sr-only "Markets" h1 (one h1 per page)',
-    /claim=\{<SplashClaim \/>\}/.test(home) && /<SentHomeNotice \/>\s*<Deck \/>/.test(home) && /guide=\{<AppsRow \/>\}/.test(home) &&
+    'front door: HomeSurface mounts the three seats — claim (SplashClaim), lead (SentHomeNotice + TheRead, the market as one sentence), guide (AppsRow, the fleet\'s marks, under the boards) — and MarketsIndex renders the claim FIRST in the main column, standing in for its sr-only "Markets" h1 (one h1 per page)',
+    /claim=\{<SplashClaim \/>\}/.test(home) && /<SentHomeNotice \/>\s*<TheRead initial=\{read\} \/>/.test(home) /* RE-PINNED 2026-11-09 (the read): the lead seat holds THE READ; the deck left the splash */ && /guide=\{<AppsRow \/>\}/.test(home) &&
       /\{claim \?\? <h1 className="sr-only">Markets<\/h1>\}/.test(index) &&
       index.indexOf('{claim ?? ') < index.indexOf('className="mkt-frame__bar"') && index.indexOf('className="mkt-frame__bar"') < index.indexOf('className="mk-lead-seat"'),
   )

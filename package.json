@@ -71,6 +71,7 @@
     "pins:depth": "tsx scripts/depth-pins.ts",
     "pins:chart-tape": "tsx scripts/chart-tape-pins.ts",
     "pins:deck": "tsx scripts/deck-pins.ts",
+    "pins:read": "tsx scripts/read-pins.ts",
     "pins:pick": "tsx scripts/pick-pins.ts",
     "pins:card": "tsx scripts/card-pins.ts",
     "pins:arena": "tsx scripts/arena-pins.ts",

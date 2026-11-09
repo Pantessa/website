@@ -1,31 +1,35 @@
 'use client'
 
-// The splash's body (squad front-door, 2026-10-06): the markets index with
-// three seats — the CLAIM at the top of the main column (SPLASH lane,
-// components/home/SplashClaim: HERO_LINE as the visible h1, one sentence,
-// the door to /story), THE DECK above the session strip (2026-10-13,
-// components/home/Deck: the live pulse as the first of four channels — Pulse ·
-// Tape · The Front · The Siege — with the streaming-order-book switch; the
-// band itself is components/home/PulseSlot in its stage seat) and THE APPS
-// ROW under the movers tape (2026-10-13, components/home/AppsRow: the
-// fleet's marks, each a door into the chat's apps drawer with that app on —
-// it took the guide card's seat, whose first lesson the deck now IS; the
-// guide still teaches on /t, /live, /chat and /wallet). The SentHomeNotice
-// rides in the lead seat too: the signed-out gate sends a stranger to `/`
-// from /wallet and the dashboard, and this is `/`.
+// The splash's body (squad front-door, 2026-10-06; the lead re-thought
+// 2026-11-09): the markets index with three seats — the CLAIM at the top of
+// the main column (components/home/SplashClaim: HERO_LINE as the visible h1,
+// one sentence, the door to /story), THE READ under the tool strip
+// (components/home/TheRead, rules in lib/read: the market as one sentence
+// whose clauses are buttons, the macro line of nine tiles — the 10-year
+// yield and the dollar among them — and the chart of the pick with what can
+// be done about it here) and THE APPS ROW under the market boards
+// (components/home/AppsRow: the fleet's marks, each a door into the chat's
+// apps drawer with that app on).
 //
-// SPLASH lane owns this file. The seats are MarketsIndex's `claim` / `lead` /
-// `guide` props; a lane never edits MarketsIndex to place its component.
+// The live deck (components/home/Deck: Pulse · Tape · The Front · The Siege ·
+// The Flyover) held the lead seat from 2026-10-13 until 2026-11-09 — Nate:
+// "the flyover and the front just seem a bit too gimmicky", then "rethink
+// the home page". Its channels are /live's views; the home opens no stream
+// now. The SentHomeNotice rides in the lead seat too: the signed-out gate
+// sends a stranger to `/` from /wallet and the dashboard, and this is `/`.
+//
+// The seats are MarketsIndex's `claim` / `lead` / `guide` props.
 
 import MarketsIndex from '@/components/markets/shell/MarketsIndex'
 import SentHomeNotice from '@/components/SentHomeNotice'
 import SplashClaim from '@/components/home/SplashClaim'
-import Deck from '@/components/home/Deck'
+import TheRead from '@/components/home/TheRead'
 import AppsRow from '@/components/home/AppsRow'
 import type { TrendingRow } from '@/app/markets/trending'
 import type { TradabilityMap } from '@/lib/tradability'
+import { EMPTY_READ, type ReadSnapshot } from '@/lib/read'
 
-export default function HomeSurface({ trending = [], tradable }: { trending?: TrendingRow[]; tradable?: TradabilityMap }) {
+export default function HomeSurface({ trending = [], tradable, read = EMPTY_READ }: { trending?: TrendingRow[]; tradable?: TradabilityMap; read?: ReadSnapshot }) {
   return (
     <MarketsIndex
       trending={trending}
@@ -34,7 +38,7 @@ export default function HomeSurface({ trending = [], tradable }: { trending?: Tr
       lead={
         <div data-home-lead className="min-w-0">
           <SentHomeNotice />
-          <Deck />
+          <TheRead initial={read} />
         </div>
       }
       guide={<AppsRow />}

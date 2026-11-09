@@ -40,6 +40,12 @@ const nextConfig: NextConfig = {
       // /markets/opengraph-image is the root card now, so a client that
       // cached the old image URL still gets a picture.
       { source: '/markets/:card(opengraph-image|twitter-image)', destination: '/:card', permanent: true },
+      // THE DECK left `/` on 2026-11-09 (THE READ leads the splash now), and its
+      // channels were addresses people could share: `/?view=front&t=ZK,OP`.
+      // Each is /live's own URL in the same words, so a deck link already in
+      // the world opens the view it names (Next carries the query through).
+      // Temporary on purpose: `/` may speak `?view=` again one day.
+      { source: '/', has: [{ type: 'query', key: 'view', value: '(?:tape|front|siege|map|flyover)' }], destination: '/live', permanent: false },
     ]
   },
   // Design system lives as static files in public/design-system/. Next doesn't

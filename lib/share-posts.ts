@@ -104,6 +104,16 @@ export function marketsPost(): SharePost {
   }
 }
 
+/** The read (2026-11-09): the home's own sentence about the market (lib/read
+ *  readHeadlineText), ready to post — the line leads, as it was composed. */
+export function readPost(line: string): SharePost {
+  return {
+    url: absoluteUrl(MARKETS_HREF),
+    title: 'The read on Pantessa',
+    text: `${line}\n\nThe market in one sentence, and every word is a button. Via ${X_MENTION}:`,
+  }
+}
+
 /** A public watchlist. Up to four tickers lead as cashtags. */
 export function listPost(list: { slug: string; name: string; symbols: string[] }): SharePost {
   const tags = list.symbols.slice(0, 4).map((s) => `$${s.toUpperCase()}`)

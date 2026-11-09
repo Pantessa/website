@@ -383,6 +383,7 @@ import { orderTicketPins } from './order-ticket-pins'
 import { depthPins } from './depth-pins'
 import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
+import { readPins, readRedirectPins, readServedPins } from './read-pins'
 import { homeAppsPins } from './home-apps-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
@@ -26708,8 +26709,9 @@ async function main() {
       return !!m && m[1].trim().length > 0
     }
     check(
-      'mk2/markets: /markets server-renders the movers tape seat, the Map · List toggle (SSR = list, every row present), the terminal tables with a sort bar (symbol · last · 24h) and j/k row links',
-      seat(mkHtml, 'mk-tape-seat" data-seat="MoversTape') &&
+      // RE-PINNED 2026-11-09 (the read): the movers tape left the index (the lead names the day's movers); the lead seat is filled instead.
+      'mk2/markets: /markets server-renders a filled lead seat (the read), the Map · List toggle (SSR = list, every row present), the terminal tables with a sort bar (symbol · last · 24h) and j/k row links',
+      seat(mkHtml, 'mk-lead-seat" data-seat="Lead') && !mkHtml.includes('data-seat="MoversTape"') &&
         /<main class="mkt-frame__main" data-view="list">/.test(mkHtml) &&
         /class="mk-view__btn is-on" aria-pressed="true"[^>]*title="Terminal list"/.test(mkHtml) &&
         /<table class="mk-table" data-section="equities" data-sort="none">/.test(mkHtml) &&
@@ -26888,10 +26890,10 @@ async function main() {
         mk.fmtCountdown(0) === '1m' && mk.fmtCountdown(360) === '6h' && mk.fmtCountdown(2850) === '1d 23h' && mk.fmtCountdown(95) === '1h 35m',
     )
     check(
-      'mk2/markets: /markets server-renders the session strip (NYSE open|closed · TOKENS 24/7 · HL FUNDING) above the movers seat, and under 640px the map view keeps the map AND renders the ledger under it',
-      /<div class="mk-session" role="status" aria-label="Market sessions" data-nyse="(open|closed)">/.test(mkHtml) &&
-        mkHtml.indexOf('class="mk-session"') < mkHtml.indexOf('class="mk-tape-seat"') &&
-        /NYSE (OPEN|CLOSED)/.test(mkHtml) && mkHtml.includes('TOKENS 24/7') && mkHtml.includes('HL FUNDING') &&
+      // RE-PINNED 2026-11-09 (the read): the session strip left the index — the read's eyebrow says the bell (a browser clock, so it is not in the server HTML) and that tokens and perps trade 24/7.
+      'mk2/markets: /markets no longer server-renders the session strip (the read\'s eyebrow carries the bell and the 24/7 line), and under 640px the map view keeps the map AND renders the ledger under it',
+      !mkHtml.includes('class="mk-session"') && /class="read__eyebrow mono"/.test(mkHtml) && /tokens and perps here trade 24\/7/.test(mkHtml) &&
+        (await readFile('components/home/TheRead.tsx', 'utf8')).includes('sessionStripFor(now)') &&
         (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes("const showList = view === 'list' || phone"),
     )
     const tableSrc = await readFile('components/markets/shell/MarketTable.tsx', 'utf8')
@@ -35474,6 +35476,10 @@ async function main() {
   deckPins(check)
   // THE APPS ROW (2026-10-13): the fleet's marks on the splash in the guide card's old seat, each a door into the chat's apps drawer with that app on — the table, the hrefs, the public chat surface, the wiring.
   homeAppsPins(check)
+  // THE READ (2026-11-09): the home's lead — the market as one sentence, the macro line, the chart of the pick; the deck off `/`, the battle views off the nav, the old deck links forwarded.
+  readPins(check)
+  await readRedirectPins(check)
+  await readServedPins(check, BASE)
   // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
   // sign-in door, never a planner promise to "fetch your tokens".
   {

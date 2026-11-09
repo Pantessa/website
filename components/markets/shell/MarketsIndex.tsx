@@ -36,8 +36,6 @@ import MarketTable from '@/components/markets/shell/MarketTable'
 import TickerSearch from '@/components/markets/shell/TickerSearch'
 import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
-import SessionStrip from '@/components/markets/shell/SessionStrip'
-import MoversTape from '@/components/markets/slots/MoversTape'
 import MarketMap from '@/components/markets/slots/MarketMap'
 import EarnBoard from '@/components/markets/earn/EarnBoard'
 import MorningTape from '@/components/markets/ai/MorningTape'
@@ -220,10 +218,10 @@ export default function MarketsIndex({
   trending?: TrendingRow[]
   /** The measured venue verdicts, read server-side so the index's chips are right on the FIRST paint (lib/tradability-store). */
   tradable?: TradabilityMap
-  /** THE FRONT DOOR's seats (squad front-door, 2026-10-06): `lead` renders
-   *  under the tool strip, above the session clocks (the live pulse on the
-   *  splash); `guide` renders under the movers tape (the guide card). The
-   *  index never decides what fills them. */
+  /** THE FRONT DOOR's seats (squad front-door, 2026-10-06; re-seated
+   *  2026-11-09): `lead` renders under the tool strip (THE READ on the
+   *  splash); `guide` renders under the market boards, above Earn (the apps
+   *  row). The index never decides what fills them. */
   lead?: ReactNode
   guide?: ReactNode
   /** The splash's claim block (SPLASH lane, components/home/SplashClaim):
@@ -321,20 +319,10 @@ export default function MarketsIndex({
           </div>
         )}
 
-        {/* ── The clocks: NYSE bell countdown · tokens 24/7 · HL funding tick ── */}
-        <SessionStrip />
-
-        {/* ── The movers tape (VIZ) in a MARKETS seat ── */}
-        <div className="mk-tape-seat" data-seat="MoversTape">
-          <MoversTape onOpen={open} />
-        </div>
-
-        {/* ── The guide seat: one card that teaches as you go (components/guide) ── */}
-        {guide && (
-          <div className="mk-guide-seat" data-seat="Guide">
-            {guide}
-          </div>
-        )}
+        {/* The session strip and the movers tape rode here until 2026-11-09: the
+            lead (THE READ, components/home/TheRead) now says the bell in its
+            eyebrow and names the day's movers in its own line, so the first
+            screen is the read and then the map. */}
 
         {/* ── The market data ── */}
         <div className="mkt-frame__data">
@@ -348,6 +336,13 @@ export default function MarketsIndex({
             </section>
           )}
           {showList && sections.map((s) => <Board key={s.id} section={s} onAsk={indexAct} />)}
+          {/* ── The guide seat (the apps row on the splash): under the markets,
+              above the yield board — the markets lead, the apps follow (2026-11-09). ── */}
+          {guide && (
+            <div className="mk-guide-seat" data-seat="Guide">
+              {guide}
+            </div>
+          )}
           {/* EARN — the yield board: where an asset earns across dapps, one chip per
               row through the same connect-to-act door as the ledgers. Renders in
               both views (the map has no rates). */}

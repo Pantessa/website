@@ -1,0 +1,155 @@
+/* THE READ — the home's lead (2026-11-09, lib/read): the market as one
+   sentence, the macro line of nine tiles, the chart of the pick and what can
+   be done about it here. Rides the markets look (--mk-*) and the ONE SCALE
+   (--sp-* / --fs-* / --r-* / --dur-*), so light mode comes free and nothing
+   here is a literal colour, a px font or a px radius. The server frame is the
+   final frame: the chart is an SVG in a stretched viewBox inside a box whose
+   height is CSS, so nothing is measured and nothing shifts when a quote
+   lands. Nothing sticky; no layer above the board tabs. */
+
+.read { --read-tone: var(--muted); position: relative; display: flex; flex-direction: column; gap: var(--sp-3); margin: var(--sp-3) 0 0; padding: var(--sp-4) var(--sp-5) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); container-type: inline-size; container-name: read; }
+.mk-lead-seat .read { margin-top: 0; }
+.read .is-up { --read-tone: var(--mk-up, var(--accent)); }
+.read .is-down { --read-tone: var(--mk-down, var(--sell)); }
+.read .is-flat { --read-tone: var(--muted); }
+
+/* ── The eyebrow: whose page this is, the day, the bell ───────────────── */
+.read__eyebrow { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); min-height: 16px; }
+.read__kicker { color: var(--accent); font-weight: 600; }
+.read__session, .read__always { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.read__session[data-nyse="open"] { color: var(--muted); }
+.read__always { margin-left: auto; }
+/* The share door rides the eyebrow's right end; its own caps are the eyebrow's. */
+.read__share { text-transform: none; letter-spacing: 0; }
+
+/* ── The line ─────────────────────────────────────────────────────────── */
+.read__line { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.5rem, 3.5cqi, 2.25rem); line-height: 1.16; letter-spacing: -0.015em; color: var(--fg); text-wrap: balance; }
+.read__waiting { color: var(--muted); }
+/* A clause and its comma are one unbreakable unit; lines break between clauses. */
+.read__clausewrap { white-space: nowrap; }
+.read__clause { display: inline; margin: 0; padding: 0; border: 0; background: none; font: inherit; letter-spacing: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted; text-decoration-thickness: 2px; text-underline-offset: 0.2em; text-decoration-color: color-mix(in srgb, var(--read-tone) 45%, transparent); outline: none; transition: text-decoration-color var(--dur-1) ease; }
+.read__clause:hover, .read__clause:focus-visible { text-decoration-color: var(--read-tone); }
+.read__clause.is-on { text-decoration-style: solid; text-decoration-color: var(--read-tone); }
+.read__clause.is-up .read__verb, .read__clause.is-up .read__amount, .read__clause.is-down .read__verb, .read__clause.is-down .read__amount { color: var(--read-tone); }
+.read__amount { font-variant-numeric: tabular-nums; }
+
+/* ── The movers ───────────────────────────────────────────────────────── */
+.read__movers { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin: 0; }
+.read__moverslab { font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); margin-right: var(--sp-1); }
+.read__mover { display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 10px; border: 1px solid var(--line); border-radius: var(--r-pill); font-size: var(--fs-sm); color: var(--read-tone); text-decoration: none; font-variant-numeric: tabular-nums; transition: border-color var(--dur-1) ease; }
+.read__mover b { color: var(--fg); font-weight: 600; }
+.read__mover:hover, .read__mover:focus-visible { border-color: var(--read-tone); outline: none; }
+
+/* ── The macro line ───────────────────────────────────────────────────── */
+.read__tiles { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: var(--sp-2); }
+.read__tile { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: var(--sp-2) 10px 7px; border: 1px solid var(--line); border-radius: var(--r-md); background: transparent; color: var(--fg); font-family: var(--mk-font-ui); text-align: left; cursor: pointer; outline: none; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
+.read__tile:hover { border-color: color-mix(in srgb, var(--fg) 28%, var(--line)); }
+.read__tile:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.read__tile.is-on { border-color: color-mix(in srgb, var(--read-tone) 70%, var(--line)); background: color-mix(in srgb, var(--read-tone) 9%, var(--surf-1)); }
+.read__tilehead { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.read__tilelabel { font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.01em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.read__tile.is-on .read__tilelabel { color: var(--fg); }
+/* The tag is a dot: lit for a market that never closes, hollow for an index outside its session, absent while an index trades. */
+.read__tag { flex: 0 0 auto; width: 6px; height: 6px; border-radius: var(--r-pill); }
+.read__tag--always { background: var(--mk-up, var(--accent)); }
+.read__tag--closed { box-shadow: inset 0 0 0 1px var(--muted-2); }
+.read__tilelast { font-size: var(--fs-base); font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.read__tilefoot { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.read__tilechg { flex: 0 0 auto; font-size: var(--fs-xs); color: var(--read-tone); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.read__spark { flex: 1 1 auto; min-width: 0; height: 18px; overflow: visible; }
+.read__spark path { fill: none; stroke: var(--read-tone); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; opacity: 0.9; }
+
+/* ── The stage: the chart, and what can be done about it here ─────────── */
+.read__stage { display: grid; grid-template-columns: minmax(0, 1fr) 272px; gap: var(--sp-5); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.read__chart { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.read__charthead { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-3); }
+.read__id { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px var(--sp-3); min-width: 0; }
+.read__name { flex: 0 0 100%; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.read__last { font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.5rem, 3.1cqi, 2rem); line-height: 1.1; letter-spacing: -0.01em; color: var(--fg); font-variant-numeric: tabular-nums; }
+.read__chg { font-size: var(--fs-md); color: var(--read-tone); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.read__basis { color: var(--muted-2); }
+.read__when { font-size: var(--fs-md); color: var(--muted); white-space: nowrap; }
+.read__ranges { flex: 0 0 auto; display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--r-pill); }
+.read__range { min-width: 38px; height: 26px; padding: 0 var(--sp-2); border: 0; border-radius: var(--r-pill); background: transparent; color: var(--muted); font-size: var(--fs-xs); letter-spacing: 0.04em; cursor: pointer; outline: none; transition: color var(--dur-1) ease, background var(--dur-1) ease; }
+.read__range:hover, .read__range:focus-visible { color: var(--fg); }
+.read__range.is-on { background: var(--fg); color: var(--bg); font-weight: 600; }
+
+.read__plot { position: relative; height: clamp(170px, 23cqi, 236px); touch-action: pan-y; cursor: crosshair; }
+.read__plot[data-loading] { opacity: 0.55; }
+.read__svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+.read__path { fill: none; stroke: var(--read-tone); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.read__plot.is-flat .read__path { stroke: var(--fg); }
+.read__stop { stop-color: var(--read-tone); }
+.read__base { stroke: var(--muted-2); stroke-width: 1; stroke-dasharray: 3 5; }
+.read__axis { position: absolute; right: 0; padding: 0 var(--sp-1); font-size: var(--fs-xs); color: var(--muted-2); background: color-mix(in srgb, var(--surf-1) 78%, transparent); border-radius: var(--r-sm); pointer-events: none; font-variant-numeric: tabular-nums; }
+.read__axis--max { top: 0; }
+.read__axis--min { bottom: 0; }
+.read__cursor { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--mk-crosshair, var(--muted)); pointer-events: none; }
+.read__dot { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: var(--r-pill); background: var(--read-tone); box-shadow: 0 0 0 2px var(--surf-1); pointer-events: none; }
+.read__plot.is-flat .read__dot { background: var(--fg); }
+.read__empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; font-size: var(--fs-sm); color: var(--muted-2); text-align: center; }
+
+.read__act { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); padding-left: var(--sp-5); border-left: 1px solid var(--line); }
+.read__venue { margin: 0; font-size: var(--fs-md); line-height: 1.45; color: var(--muted); }
+.read__actlab { margin: var(--sp-1) 0 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.read__chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.read__chip { min-height: 36px; padding: 0 var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--fg); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; white-space: nowrap; cursor: pointer; outline: none; transition: transform var(--dur-1) ease, filter var(--dur-1) ease, border-color var(--dur-1) ease; }
+.read__chip:hover { border-color: var(--accent); transform: translateY(-1px); }
+.read__chip:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.read__chip--buy { background: var(--accent); border-color: var(--accent); color: var(--ink, var(--bg)); }
+.read__chip--buy:hover { filter: brightness(1.08); }
+.read__chip--sell { color: var(--mk-down, var(--sell)); border-color: color-mix(in srgb, var(--mk-down, var(--sell)) 55%, transparent); }
+.read__sentence { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--muted-2); }
+.read__sentence q { color: var(--fg); quotes: '“' '”'; }
+.read__noact { margin: var(--sp-1) 0 0; font-size: var(--fs-md); line-height: 1.45; color: var(--fg); }
+.read__doors { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: auto; padding-top: var(--sp-2); }
+.read__door { font-size: var(--fs-md); font-weight: 600; color: var(--fg); text-decoration: none; }
+.read__door span { color: var(--accent); }
+.read__door:hover, .read__door:focus-visible { color: var(--accent); outline: none; }
+.read__door--near { font-weight: 500; color: var(--muted); }
+
+.read__foot { padding-top: var(--sp-2); border-top: 1px solid var(--line); font-size: var(--fs-xs); line-height: 1.5; color: var(--muted-2); }
+
+/* ── A narrower column: the tiles scroll as one row, the panel drops under the chart ── */
+@container read (max-width: 860px) {
+  .read__tiles { display: flex; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; margin: 0 calc(var(--sp-5) * -1); padding: 0 var(--sp-5); }
+  .read__tiles::-webkit-scrollbar { display: none; }
+  .read__tile { flex: 0 0 104px; scroll-snap-align: start; }
+}
+@container read (max-width: 720px) {
+  .read__stage { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
+  .read__act { padding-left: 0; border-left: 0; padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+  .read__doors { margin-top: 0; flex-direction: row; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
+}
+
+/* ── Phone ────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .read { padding: var(--sp-3) var(--sp-3) var(--sp-2); gap: 10px; border-radius: var(--r-md); }
+  .read__always { display: none; }
+  /* The share door ends the eyebrow's first line; the bell takes the second. */
+  .read__share { order: 1; margin-left: auto; }
+  .read__session { order: 2; flex: 0 0 100%; }
+  /* The movers ride one scrolling row (a wrapped pair of rows cost the first screen 40px). */
+  .read__movers { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 calc(var(--sp-3) * -1); padding: 0 var(--sp-3); }
+  .read__movers::-webkit-scrollbar { display: none; }
+  .read__moverslab, .read__mover { flex: 0 0 auto; white-space: nowrap; }
+  .read__tiles { margin: 0 calc(var(--sp-3) * -1); padding: 0 var(--sp-3); }
+  .read__tile { flex-basis: 100px; }
+  .read__charthead { align-items: flex-start; flex-direction: column; gap: var(--sp-2); }
+  .read__plot { height: 168px; }
+  .read__foot { display: none; }
+  @media (hover: none) {
+    .read__tile { min-height: 64px; }
+    .read__range { height: 36px; min-width: 44px; }
+    .read__chip { min-height: 44px; }
+    .read__mover { min-height: 32px; align-items: center; position: relative; }
+    .read__mover::after { content: ''; position: absolute; inset: -6px 0; }
+    .read__door { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; }
+    .read__clause { text-underline-offset: 0.24em; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .read__clause, .read__tile, .read__range, .read__chip, .read__mover { transition: none; }
+  .read__chip:hover { transform: none; }
+}
