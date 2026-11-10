@@ -80,6 +80,19 @@ export interface TourCommunityPost {
   href: string
 }
 
+/** A market's first frame for the Charts miniature: the last price, the day's
+ *  change and a week of hourly closes, read on the server so the panel's first
+ *  paint is complete (round 3). The panel refreshes it in the browser. */
+export interface TourQuote {
+  /** The symbol as the product spells it (AAPL, ETH, HYPE). */
+  symbol: string
+  last: number | null
+  /** 24-hour change, percent (-0.66 = -0.66%). */
+  changePct: number | null
+  /** Hourly closes, oldest first; empty when the read failed. */
+  closes: number[]
+}
+
 export interface TourCounts {
   /** Tokenized stocks listed (the equities board). */
   stocks: number | null
@@ -123,6 +136,8 @@ export interface TourSnapshot {
   /** Best live rate per asset, highest first. Empty until read. */
   earn: TourEarnRow[]
   community: { rooms: number; postsWeek: number; latest: TourCommunityPost[] }
+  /** First frames for the Charts miniature's markets. Empty until read: the panel then reads in the browser, as before. */
+  quotes: TourQuote[]
 }
 
 /** The shape with nothing read: every panel must render well against this
@@ -134,4 +149,5 @@ export const EMPTY_TOUR: TourSnapshot = {
   chains: [],
   earn: [],
   community: { rooms: 0, postsWeek: 0, latest: [] },
+  quotes: [],
 }
