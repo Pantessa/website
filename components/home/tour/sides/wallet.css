@@ -1,0 +1,40 @@
+/* THE TOUR · WALLET (lane SIDES-B): the chains by their marks, a connected
+   wallet's own holdings, and how a buy is funded from another chain.
+   Tokens only (the chain marks carry their own brand colours, as they do in
+   the chat's chain picker). */
+
+.sb-wl { display: flex; flex-direction: column; min-width: 0; container-type: inline-size; container-name: sbwl; }
+.sb-wl__sec { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: var(--sp-4) 0; border-top: 1px solid var(--line); }
+.sb-wl__sec:first-child { padding-top: 0; border-top: 0; }
+.sb-wl__sec:last-of-type { padding-bottom: 0; }
+.sb-wl__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-1) var(--sp-2); margin: 0; }
+
+/* ── 1 · the chains ───────────────────────────────────────────────────── */
+.sb-wl__chains { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-1); margin: 0; padding: 0; list-style: none; }
+.sb-wl__chain { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-sm); font-family: var(--mk-font-ui); font-size: var(--fs-sm); font-weight: 600; color: var(--fg); }
+.sb-wl__chain span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-wl__chain svg { flex: 0 0 auto; }
+@container sbwl (max-width: 340px) {
+  .sb-wl__chains { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ── 2 · the wallet's own holdings ────────────────────────────────────── */
+.sb-wl__total { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: var(--fs-xl); line-height: 1.2; letter-spacing: -0.01em; color: var(--fg); font-variant-numeric: tabular-nums; }
+.sb-wl__total span { font-size: var(--fs-xs); font-weight: 400; letter-spacing: 0.04em; color: var(--muted-2); }
+.sb-wl__held { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.sb-wl__row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--sp-2); min-height: 32px; border-top: 1px solid var(--line); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.sb-wl__row:first-child { border-top: 0; }
+.sb-wl__sym { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mk-font-ui); font-weight: 600; color: var(--fg); }
+.sb-wl__units { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.sb-wl__on { display: inline-flex; align-items: center; gap: 3px; }
+.sb-wl__usd { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--fg); }
+
+/* ── 3 · funded from another chain ────────────────────────────────────── */
+.sb-wl__from { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.sb-wl__steps { position: relative; display: flex; flex-direction: column; gap: var(--sp-3); margin: 0; padding: 0; list-style: none; }
+.sb-wl__step { position: relative; display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
+/* The line that joins one step to the next. */
+.sb-wl__step:not(:last-child)::before { content: ''; position: absolute; left: 10px; top: 21px; bottom: calc(var(--sp-3) * -1); width: 1px; background: var(--line); }
+.sb-wl__n { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line)); border-radius: var(--r-pill); background: var(--bg); font-size: var(--fs-xs); font-weight: 600; line-height: 1; color: var(--accent); }
+.sb-wl__step p { margin: 0; min-width: 0; font-family: var(--mk-font-ui); font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.sb-wl__step b { font-weight: 600; color: var(--fg); }

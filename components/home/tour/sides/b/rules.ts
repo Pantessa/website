@@ -111,3 +111,13 @@ export function levelChart(points: readonly (readonly [number, number])[], level
   const d = vals.map((v, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)} ${y(v).toFixed(1)}`).join(' ')
   return { d, y }
 }
+
+/** "just now" · "12m ago" · "3h ago" · "2d ago" — a post's age. */
+export function fmtAge(ms: number): string {
+  if (!(ms >= 60_000)) return 'just now'
+  const mins = Math.floor(ms / 60_000)
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}

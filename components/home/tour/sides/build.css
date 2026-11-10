@@ -1,0 +1,43 @@
+/* THE TOUR · BUILD (lane SIDES-B): three tabs of real code with a copy
+   button. Tokens only. A long line scrolls INSIDE its block, never the page. */
+
+.sb-bd { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; container-type: inline-size; container-name: sbbd; }
+
+.sb-bd__tabs { display: flex; gap: var(--sp-1); min-width: 0; border-bottom: 1px solid var(--line); }
+.sb-bd__tab { position: relative; min-height: 36px; padding: 0 var(--sp-3); border: 0; background: transparent; color: var(--muted); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; white-space: nowrap; cursor: pointer; outline: none; transition: color var(--dur-1) ease; }
+.sb-bd__tab::after { content: ''; position: absolute; left: var(--sp-3); right: var(--sp-3); bottom: -1px; height: 2px; background: transparent; }
+.sb-bd__tab:hover { color: var(--fg); }
+.sb-bd__tab.is-on { color: var(--fg); }
+.sb-bd__tab.is-on::after { background: var(--accent); }
+.sb-bd__tab:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); border-radius: var(--r-sm); }
+
+.sb-bd__panel { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.sb-bd__says { margin: 0; font-family: var(--mk-font-ui); font-size: var(--fs-md); line-height: 1.45; color: var(--fg); text-wrap: pretty; }
+
+.sb-bd__block { display: flex; flex-direction: column; min-width: 0; margin: 0; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); overflow: hidden; }
+.sb-bd__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-3); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--fg) 3%, transparent); }
+.sb-bd__where { font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.sb-bd__copy { min-width: 64px; min-height: 32px; padding: 0 var(--sp-2); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--accent); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; text-align: right; white-space: nowrap; cursor: pointer; outline: none; transition: background var(--dur-1) ease; }
+.sb-bd__copy:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.sb-bd__copy:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.sb-bd__code { margin: 0; padding: var(--sp-3); max-height: 21rem; overflow: auto; font-size: var(--fs-sm); line-height: 1.6; color: var(--fg); white-space: pre; tab-size: 2; outline: none; overscroll-behavior-x: contain; }
+.sb-bd__code:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.sb-bd__code code { font: inherit; }
+
+.sb-bd__points { display: flex; flex-direction: column; gap: var(--sp-1); margin: 0; padding: 0; list-style: none; }
+.sb-bd__point { font-family: var(--mk-font-ui); font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.sb-bd__point code { padding: 1px var(--sp-1); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: var(--fs-xs); color: var(--fg); }
+
+.sb-bd__foot { margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--line); font-family: var(--mk-font-ui); font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); }
+.sb-bd__link { color: var(--fg); font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent); text-underline-offset: 0.2em; outline: none; }
+.sb-bd__link:hover, .sb-bd__link:focus-visible { text-decoration-color: var(--accent); }
+.sb-bd__nowrap { white-space: nowrap; }
+.sb-bd__link i { font-style: normal; color: var(--accent); }
+
+@media (pointer: coarse) {
+  .sb-bd__tab, .sb-bd__copy { min-height: 44px; }
+  .sb-bd__link { display: inline-block; padding: var(--sp-3) 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-bd__tab, .sb-bd__copy { transition: none; }
+}
