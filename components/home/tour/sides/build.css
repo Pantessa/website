@@ -20,9 +20,11 @@
 .sb-bd__copy { min-width: 64px; min-height: 32px; padding: 0 var(--sp-2); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--accent); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; text-align: right; white-space: nowrap; cursor: pointer; outline: none; transition: background var(--dur-1) ease; }
 .sb-bd__copy:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .sb-bd__copy:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
-.sb-bd__code { margin: 0; padding: var(--sp-3); max-height: 21rem; overflow: auto; font-size: var(--fs-sm); line-height: 1.6; color: var(--fg); white-space: pre; tab-size: 2; outline: none; overscroll-behavior-x: contain; }
+.sb-bd__code { margin: 0; padding: var(--sp-3); max-height: 24rem; overflow: auto; font-size: var(--fs-sm); line-height: 1.6; color: var(--fg); white-space: pre; tab-size: 2; outline: none; overscroll-behavior-x: contain; }
 .sb-bd__code:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
 .sb-bd__code code { font: inherit; }
+/* A one-line command wraps: its last word (the address) is the point. Copy takes the string, not the layout. */
+.sb-bd__code--line { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .sb-bd__points { display: flex; flex-direction: column; gap: var(--sp-1); margin: 0; padding: 0; list-style: none; }
 .sb-bd__point { font-family: var(--mk-font-ui); font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
@@ -36,7 +38,7 @@
 
 @media (pointer: coarse) {
   .sb-bd__tab, .sb-bd__copy { min-height: 44px; }
-  .sb-bd__link { display: inline-block; padding: var(--sp-3) 0; }
+  .sb-bd__link { display: inline-block; padding: 13px 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sb-bd__tab, .sb-bd__copy { transition: none; }

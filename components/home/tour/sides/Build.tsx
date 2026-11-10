@@ -49,7 +49,7 @@ function CodeBlock({ block, tab }: { block: BuildBlock; tab: BuildTabId }) {
         </button>
       </figcaption>
       {/* Focusable so a keyboard can scroll a long line. */}
-      <pre className="sb-bd__code mono" tabIndex={0} data-build-code={tab}>
+      <pre className={`sb-bd__code mono${block.code.includes('\n') ? '' : ' sb-bd__code--line'}`} tabIndex={0} data-build-code={tab}>
         <code>{block.code}</code>
       </pre>
     </figure>

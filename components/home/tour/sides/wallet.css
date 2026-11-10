@@ -12,7 +12,7 @@
 /* ── 1 · the chains ───────────────────────────────────────────────────── */
 .sb-wl__chains { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-1); margin: 0; padding: 0; list-style: none; }
 .sb-wl__chain { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-sm); font-family: var(--mk-font-ui); font-size: var(--fs-sm); font-weight: 600; color: var(--fg); }
-.sb-wl__chain span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-wl__chain span { min-width: 0; line-height: 1.2; overflow-wrap: anywhere; }
 .sb-wl__chain svg { flex: 0 0 auto; }
 @container sbwl (max-width: 340px) {
   .sb-wl__chains { grid-template-columns: repeat(2, minmax(0, 1fr)); }
