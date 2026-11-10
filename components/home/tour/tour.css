@@ -1,23 +1,165 @@
-/* THE TOUR's shell (squad landing, 2026-11-10; lane STAGE owns this file
-   after the contract). CONTRACT BASELINE: enough to see every panel in
-   place. Tokens only — no literal colour, no px font size, no px radius
-   (see panel.css). */
+/* THE TOUR's shell (squad landing, 2026-11-10; lane STAGE owns this file).
+   The list of the eight sides, the stage that shows the selected side, the
+   phone's accordion and the returning visitor's strip. Rides the markets
+   look (--mk-*) and the ONE SCALE (--sp-* / --fs-* / --r-* / --dur-*) the way
+   components/home/read.css does: NO literal colour, NO px font size, NO px
+   radius, nothing sticky or fixed. Light mode comes free.
 
-.tour { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; padding: var(--sp-5); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); scroll-margin-top: calc(var(--mkt-top-h, 52px) + var(--sp-4)); container-type: inline-size; container-name: tour; }
-.tour__head { display: flex; flex-direction: column; gap: var(--sp-1); }
+   ONE server HTML, folded here:
+     • the POSTURE folds on :root[data-home] (set before first paint): the
+       stranger's tour or the returning visitor's strip, never both;
+     • the LAYOUT folds on the tour's OWN width (the section is the size
+       container), never the viewport: wide · mid · phone. Each block below
+       names itself in --tour-layout; Tour.tsx reads that back, so these
+       three queries are the only place a breakpoint is written.
+
+   The tour sits on the page's ground (no outer card): the head reads as a
+   section of the landing, the stage is the card. */
+
+.tour { display: flex; flex-direction: column; min-width: 0; padding: var(--sp-5) 0 var(--sp-3); scroll-margin-top: calc(var(--mkt-top-h, 52px) + var(--sp-3)); container-type: inline-size; container-name: tour; }
+
+/* ── The posture ──────────────────────────────────────────────────────── */
+:root:not([data-home='return']) .tour__strip, .tour[data-tour-forced] .tour__strip { display: none; }
+:root[data-home='return'] .tour:not([data-tour-forced]) .tour__full { display: none; }
+:root[data-home='return'] .tour:not([data-tour-forced]) { padding: 0; }
+
+/* ── The strip: eight doors, one row ──────────────────────────────────── */
+.tour__strip { min-width: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); overflow: hidden; }
+.tour__striprow { display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-4); overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+.tour__striprow::-webkit-scrollbar { display: none; }
+.tour__striplab { flex: 0 0 auto; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.tour__doors { display: flex; flex: 0 0 auto; align-items: center; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.tour__doors > li { display: flex; }
+.tour__door { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--fg); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; line-height: 1; text-decoration: none; white-space: nowrap; outline: none; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
+.tour__door:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tour__door:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.tour__dooricon { flex: 0 0 auto; width: 14px; height: 14px; color: var(--muted); }
+.tour__door:hover .tour__dooricon { color: var(--accent); }
+.tour__show { flex: 0 0 auto; margin-left: auto; min-height: 32px; padding: 0 var(--sp-2); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--muted); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; cursor: pointer; outline: none; transition: color var(--dur-1) ease; }
+.tour__show:hover { color: var(--fg); }
+.tour__show:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+
+/* A row that scrolls sideways fades only the edge that hides something
+   (Tour.tsx marks it: data-more = start | end | both | none). */
+.tour__striprow[data-more='end'], .tour__list[data-more='end'] { -webkit-mask-image: linear-gradient(to right, black calc(100% - 3rem), transparent); mask-image: linear-gradient(to right, black calc(100% - 3rem), transparent); }
+.tour__striprow[data-more='start'], .tour__list[data-more='start'] { -webkit-mask-image: linear-gradient(to left, black calc(100% - 3rem), transparent); mask-image: linear-gradient(to left, black calc(100% - 3rem), transparent); }
+.tour__striprow[data-more='both'], .tour__list[data-more='both'] { -webkit-mask-image: linear-gradient(to right, transparent, black 3rem, black calc(100% - 3rem), transparent); mask-image: linear-gradient(to right, transparent, black 3rem, black calc(100% - 3rem), transparent); }
+
+/* ── The head ─────────────────────────────────────────────────────────── */
+.tour__full { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; }
+.tour__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); min-width: 0; }
+.tour__headtext { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .tour__eyebrow { margin: 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
-.tour__title { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.5rem, 3.5cqi, 2.25rem); line-height: 1.12; letter-spacing: -0.015em; color: var(--fg); text-wrap: balance; }
-.tour__tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.tour__tab { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 44px; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); background: transparent; color: var(--muted); font-family: var(--mk-font-ui); text-align: left; cursor: pointer; outline: none; scroll-margin-top: calc(var(--mkt-top-h, 52px) + var(--sp-4)); transition: border-color var(--dur-1) ease, background var(--dur-1) ease, color var(--dur-1) ease; }
-.tour__tab:hover { color: var(--fg); }
+.tour__title { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.625rem, 3.6cqi, 2.375rem); line-height: 1.1; letter-spacing: -0.015em; color: var(--fg); text-wrap: balance; }
+.tour__sub { margin: 0; max-width: 60ch; font-family: var(--mk-font-ui); font-size: var(--fs-base); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.tour__hide { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; min-height: 32px; margin-top: -6px; padding: 0 var(--sp-2); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--muted-2); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; outline: none; transition: color var(--dur-1) ease; }
+.tour__hide:hover { color: var(--fg); }
+.tour__hide:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.tour__hideicon { width: 12px; height: 12px; }
+
+/* ── The list and the stage: shared ───────────────────────────────────── */
+.tour__body { min-width: 0; }
+.tour__list { position: relative; min-width: 0; }
+.tour__tab { position: relative; display: grid; align-items: start; border: 0; background: transparent; color: var(--fg); font-family: var(--mk-font-ui); text-align: left; cursor: pointer; outline: none; scroll-margin-top: calc(var(--mkt-top-h, 52px) + var(--sp-3)); transition: background var(--dur-1) ease, border-color var(--dur-1) ease, color var(--dur-1) ease; }
 .tour__tab:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
-.tour__tab.is-on { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--fg); }
-.tour__tablabel { font-size: var(--fs-md); font-weight: 600; line-height: 1.2; }
-.tour__tabline { display: none; }
-.tour__stage { min-width: 0; }
-@media (max-width: 640px) {
-  .tour { padding: var(--sp-4); }
+.tour__idx { font-size: var(--fs-xs); line-height: calc(var(--fs-base) * 1.3); letter-spacing: 0.04em; color: var(--muted-2); font-variant-numeric: tabular-nums; }
+.tour__icon { width: 18px; height: 18px; margin-top: 1px; color: var(--muted); transition: color var(--dur-1) ease; }
+.tour__tabtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tour__tablabel { font-size: var(--fs-base); font-weight: 600; line-height: 1.3; color: var(--fg); }
+.tour__tabline { font-size: var(--fs-sm); line-height: 1.4; color: var(--muted); text-wrap: pretty; }
+.tour__chev { display: none; width: 16px; height: 16px; color: var(--muted-2); transition: transform var(--dur-1) ease, color var(--dur-1) ease; }
+.tour__tab.is-on .tour__icon { color: var(--accent); }
+.tour__tab.is-on .tour__idx { color: var(--accent); }
+
+.tour__stage { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); }
+.tour__panel { flex: 1 0 auto; min-width: 0; min-height: max(var(--tour-floor-base, 0px), var(--tour-floor, 0px)); padding: var(--sp-5); }
+.tour__panel.is-in { animation: tour-in var(--dur-1) ease both; }
+@keyframes tour-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
+
+/* The foot: where you are, and the next side. Its top rule is the progress. */
+.tour__foot { position: relative; display: flex; align-items: center; gap: var(--sp-3); min-height: 56px; padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-5); border-top: 1px solid var(--line); }
+.tour__pips { position: absolute; top: -1px; left: 0; right: 0; display: flex; gap: 3px; height: 1px; pointer-events: none; }
+.tour__pips > i { flex: 1 1 0; background: transparent; transition: background var(--dur-1) ease; }
+.tour__pips > i.is-done { background: var(--accent); }
+.tour__count { flex: 0 0 auto; font-size: var(--fs-xs); letter-spacing: 0.08em; color: var(--muted-2); font-variant-numeric: tabular-nums; }
+.tour__here { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; color: var(--muted); }
+.tour__next { display: inline-flex; flex: 0 0 auto; align-items: center; gap: var(--sp-2); min-height: 40px; margin-left: auto; padding: 0 var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--fg); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; white-space: nowrap; cursor: pointer; outline: none; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
+.tour__next:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tour__next:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.tour__arrow { color: var(--accent); transition: transform var(--dur-1) ease; }
+.tour__next:hover .tour__arrow { transform: translateX(2px); }
+
+/* ── WIDE: the list beside the stage ──────────────────────────────────── */
+@container tour (min-width: 860px) {
+  /* The stage stretches to the list's height: the two share a bottom edge. */
+  .tour__body { --tour-layout: wide; display: grid; grid-template-columns: minmax(0, 17.5rem) minmax(0, 1fr); gap: var(--sp-5); align-items: stretch; }
+  .tour__list { display: flex; flex-direction: column; gap: 2px; align-self: start; }
+  .tour__tab { grid-template-columns: 1.25rem 1.125rem minmax(0, 1fr); column-gap: var(--sp-3); width: 100%; min-height: 64px; padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4); border-radius: var(--r-md); }
+  .tour__tab:hover { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+  .tour__tab.is-on { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+  /* The selected row's mark: a short accent rule on its leading edge. */
+  .tour__tab::before { content: ''; position: absolute; left: 0; top: var(--sp-3); bottom: var(--sp-3); width: 2px; border-radius: var(--r-pill); background: transparent; transition: background var(--dur-1) ease; }
+  .tour__tab.is-on::before { background: var(--accent); }
+  .tour__panel { --tour-floor-base: 26rem; }
+}
+
+/* ── MID: a row of tabs above the stage ───────────────────────────────── */
+@container tour (min-width: 560px) and (max-width: 859.98px) {
+  .tour__body { --tour-layout: mid; display: flex; flex-direction: column; gap: var(--sp-3); }
+  /* The padding gives the focus ring room inside the scroller. */
+  .tour__list { display: flex; gap: var(--sp-2); margin: -3px; padding: 3px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .tour__list::-webkit-scrollbar { display: none; }
+  .tour__tab { flex: 0 0 auto; grid-template-columns: auto auto; align-items: center; column-gap: var(--sp-2); min-height: 40px; padding: 0 var(--sp-3) 0 10px; border: 1px solid var(--line); border-radius: var(--r-pill); }
+  .tour__tab:hover { border-color: color-mix(in srgb, var(--fg) 28%, var(--line)); }
+  .tour__tab.is-on { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+  .tour__idx, .tour__tabline { display: none; }
+  .tour__icon { width: 16px; height: 16px; margin-top: 0; }
+  .tour__tablabel { font-size: var(--fs-md); white-space: nowrap; }
+  .tour__panel { --tour-floor-base: 22rem; }
+}
+
+/* ── PHONE: the eight rows stay a list; the open side sits under its row ──
+   The list dissolves into the body's column and `order` seats the stage
+   right under the selected row (--tour-at, the row's index), so the server's
+   HTML is already the accordion. After mount Tour.tsx moves the stage in the
+   DOM to the same place: nothing shifts, and focus order follows the eye. */
+@container tour (max-width: 559.98px) {
+  .tour__body { --tour-layout: phone; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
+  .tour__list { display: contents; }
+  .tour__tab { order: calc(var(--i, 0) * 2); grid-template-columns: 1.25rem 1.125rem minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3); width: 100%; min-height: 60px; padding: var(--sp-3) var(--sp-1); border-top: 1px solid var(--line); border-radius: 0; }
+  .tour__idx { align-self: center; }
+  .tour__icon { margin-top: 0; }
+  .tour__chev { display: block; }
+  .tour__tab.is-on .tour__chev { transform: rotate(180deg); color: var(--accent); }
+  .tour__tab.is-on .tour__tablabel { color: var(--fg); }
+  .tour__stage { order: calc(var(--tour-at, 0) * 2 + 1); border: 0; border-radius: 0; background: transparent; }
+  .tour__panel { min-height: 0; padding: var(--sp-1) 0 var(--sp-4); }
+  .tour__foot { padding: var(--sp-2) 0 var(--sp-3); }
+}
+
+/* The phone's tool strip keeps the board tabs stuck under the top bar: a row
+   or the section lands below both. */
+@media (max-width: 640px) {
+  .tour, .tour__tab { scroll-margin-top: calc(var(--mkt-top-h, 52px) + 60px); }
+  .tour { padding-top: var(--sp-4); }
+  .tour__full { gap: var(--sp-4); }
+  .tour__striprow { padding: 6px var(--sp-3); gap: var(--sp-2); }
+}
+
+/* A thumb gets 44px on every tappable thing. */
+@media (pointer: coarse) {
+  .tour__door, .tour__show, .tour__hide, .tour__next { min-height: 44px; }
+  .tour__hide { min-width: 44px; justify-content: flex-end; }
+  @container tour (min-width: 560px) and (max-width: 859.98px) {
+    .tour__tab { min-height: 44px; }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .tour__tab { transition: none; }
+  .tour__tab, .tour__tab::before, .tour__icon, .tour__chev, .tour__door, .tour__show, .tour__hide, .tour__next, .tour__arrow, .tour__pips > i { transition: none; }
+  .tour__panel.is-in { animation: none; }
+  .tour__next:hover .tour__arrow { transform: none; }
 }
