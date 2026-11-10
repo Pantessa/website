@@ -160,6 +160,34 @@ export function livePriceStats<S extends { last: number | null; changePct24h: nu
   return { ...prev, last: price, changePct24h }
 }
 
+/** A print this fresh outranks the poll's close in the header (ms). */
+export const LIVE_PRINT_FRESH_MS = 60_000
+
+/** What the header can follow, newest first. */
+export interface LiveSources {
+  /** The venue's book center while its feed is open (null once it drops). */
+  mid: number | null
+  /** The newest print of the chart's own instrument. */
+  print: { price: number; at: number } | null
+}
+
+/**
+ * THE HEADER IS THE BOOK'S CENTER (2026-11-10, Nate: "the big $7.13 and tab
+ * … should be updating to the last bid center in realtime … same for candle
+ * stick mode"). The venue's mid wins while its feed is open, whatever the
+ * frame or view; a print speaks only when no book does (a print can come
+ * from another venue: Dune's UNI prints are Uniswap pools on three chains,
+ * a cent or two off Coinbase's book), and only while it is fresh; otherwise
+ * null and the poll's close stands. A mid is never aged out: a quiet book is
+ * still the book.
+ */
+export function pickLivePrice(src: LiveSources, now: number, freshPrintMs = LIVE_PRINT_FRESH_MS): number | null {
+  if (src.mid != null && src.mid > 0 && Number.isFinite(src.mid)) return src.mid
+  const p = src.print
+  if (p && p.price > 0 && Number.isFinite(p.price) && p.at > now - freshPrintMs) return p.price
+  return null
+}
+
 /** How much of a print frame the BROWSER keeps while you watch: half an
  *  hour of prints (≤ 180 ten-second bars, under the chart's 2,200 cap), so
  *  a tab left open can zoom out past the relay's backfill — which is what a
