@@ -39,6 +39,14 @@
   .closing__label { font-size: var(--fs-base); }
   .closing__quiet { gap: 0 var(--sp-3); }
 }
+/* A phone's column (lane MOBILE): the five quiet links as a tidy 3 + 2 grid,
+   each starting on its column's edge. In a wrapping flex row the centred
+   44px minimum gave "Docs" a lopsided gap and left "The story" alone on a
+   second line. */
+@container closing (max-width: 420px) {
+  .closing__quiet { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 var(--sp-2); }
+  .closing__quietlink { justify-content: flex-start; min-width: 0; }
+}
 @media (pointer: coarse) {
   .closing__quietlink { min-height: 44px; }
 }
