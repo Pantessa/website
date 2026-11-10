@@ -178,10 +178,10 @@ export function landingStagePins(check: Check): void {
   )
   const door = tour.slice(tour.indexOf('function StripDoor'), tour.indexOf('export default function Tour'))
   check(
-    "tour strip: the returning visitor's eight doors come from the TABLE — each side's PRIMARY door (doors[0]), in the table's order — an on-page anchor as a plain link and every other door a SpineLink with no redirectTo; nothing on the strip is typed",
+    "tour strip: the returning visitor's eight doors come from the TABLE — each side's PRIMARY door (doors[0]), in the table's order — an on-page anchor as a plain link and every other door a LandingLink with no redirectTo; nothing on the strip is typed",
     /const door = side\.doors\[0\]/.test(door) &&
       /door\.href\.startsWith\('#'\) \? \(\s*<a href=\{door\.href\}/.test(door) &&
-      /<SpineLink href=\{door\.href\} prefetch=\{false\}/.test(door) &&
+      /<LandingLink href=\{door\.href\} prefetch=\{false\}/.test(door) &&
       /'data-tour-door': side\.id/.test(door) &&
       /\{TOUR_SIDES\.map\(\(s\) => \(\s*<li key=\{s\.id\}>\s*<StripDoor side=\{s\} \/>/.test(tour) &&
       TOUR_SIDES.every((s) => s.doors[0].kind === 'primary') &&
@@ -249,8 +249,8 @@ export function landingStagePins(check: Check): void {
   const classesKept = ['tp-seat', 'tp', 'tp__copy', 'tp__claim', 'tp__body', 'tp__facts', 'tp__fact', 'tp__asks', 'tp__askslab', 'tp__chips', 'tp__chip', 'tp__chip--accent', 'tp__chiplabel', 'tp__chipvia', 'tp__doors', 'tp__door', 'tp__door--primary', 'tp__door--quiet', 'tp__arrow', 'tp__demo', 'tp__stub'].filter((c) => !new RegExp(`\\.${c}(?![\\w-])`).test(pcss))
   check('tour primitives: every export and every class name the panels are built against is still there (the looks are STAGE\'s; the names are a contract with the SIDES lanes)', exportsKept.length === 0 && classesKept.length === 0, [...exportsKept, ...classesKept].join(' ') || 'all kept')
   check(
-    'tour primitives: a panel is a size container and goes to two columns from 600px of ITS OWN seat (the stage beside the list is narrower than a tablet), a chip is offered only when its venue can run it, and a door is a SpineLink or an on-page anchor',
-    /\.tp-seat \{ container-type: inline-size; container-name: tp;/.test(pcss) && /@container tp \(min-width: 600px\) \{\s*\.tp \{ grid-template-columns: minmax\(0, 5fr\) minmax\(0, 6fr\);/.test(pcss) && /if \(!canAct\(ask\.ask\)\) return null/.test(panel) && /d\.href\.startsWith\('#'\) \? \(\s*<a /.test(panel) && /<SpineLink key=\{d\.href\} href=\{d\.href\}/.test(panel),
+    'tour primitives: a panel is a size container and goes to two columns from 600px of ITS OWN seat (the stage beside the list is narrower than a tablet), a chip is offered only when its venue can run it, and a door is a LandingLink or an on-page anchor',
+    /\.tp-seat \{ container-type: inline-size; container-name: tp;/.test(pcss) && /@container tp \(min-width: 600px\) \{\s*\.tp \{ grid-template-columns: minmax\(0, 5fr\) minmax\(0, 6fr\);/.test(pcss) && /if \(!canAct\(ask\.ask\)\) return null/.test(panel) && /d\.href\.startsWith\('#'\) \? \(\s*<a /.test(panel) && /<LandingLink key=\{d\.href\} href=\{d\.href\}/.test(panel),
   )
 }
 

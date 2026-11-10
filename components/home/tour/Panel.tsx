@@ -13,7 +13,7 @@
 // (TourCopy, TourFacts, TourAsks, TourDoors, TourDemo) itself.
 
 import type { ReactNode } from 'react'
-import SpineLink from '@/components/SpineLink'
+import LandingLink from '@/components/home/LandingLink'
 import { tourAnchor, tourBody, tourFacts, tourJourney, type TourAsk, type TourSideMeta } from '@/lib/home-tour'
 import { useTour } from './context'
 import './panel.css'
@@ -91,7 +91,7 @@ export function TourAsks({ side, asks = side.asks }: { side: TourSideMeta; asks?
 }
 
 /** The side's doors: one primary, the rest quiet. An on-page anchor is a
- *  plain link; everything else is a SpineLink (a signed-in page opens the
+ *  plain link; everything else is a LandingLink (a signed-in page opens the
  *  unified door aimed at itself; a public page is a plain link). */
 export function TourDoors({ side }: { side: TourSideMeta }) {
   return (
@@ -108,9 +108,9 @@ export function TourDoors({ side }: { side: TourSideMeta }) {
             {inner}
           </a>
         ) : (
-          <SpineLink key={d.href} href={d.href} className={cls} prefetch={false} data-journey={tourJourney(side.id, d.label)}>
+          <LandingLink key={d.href} href={d.href} className={cls} prefetch={false} data-journey={tourJourney(side.id, d.label)}>
             {inner}
-          </SpineLink>
+          </LandingLink>
         )
       })}
     </div>

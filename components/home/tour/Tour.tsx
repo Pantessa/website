@@ -41,7 +41,7 @@
 
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type RefObject } from 'react'
 import { ChevronDown, X } from 'lucide-react'
-import SpineLink from '@/components/SpineLink'
+import LandingLink from '@/components/home/LandingLink'
 import { HOME_MODE_EVENT, setTourPref } from '@/components/home/HomeModeSync'
 import { HOME_MODE_ATTR, type HomeMode } from '@/lib/home-mode'
 import { TOUR_ANCHOR, TOUR_SIDES, parseTourHash, tourAnchor, tourJourney, tourSide, type TourId, type TourSideMeta, type TourSnapshot } from '@/lib/home-tour'
@@ -124,9 +124,9 @@ function StripDoor({ side }: { side: TourSideMeta }) {
       {inner}
     </a>
   ) : (
-    <SpineLink href={door.href} prefetch={false} {...shared}>
+    <LandingLink href={door.href} prefetch={false} {...shared}>
       {inner}
-    </SpineLink>
+    </LandingLink>
   )
 }
 
