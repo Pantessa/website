@@ -11,6 +11,8 @@ import { readTrending } from '@/app/markets/trending'
 import { readSnapshotForRender } from '@/lib/read-server'
 import { readTourSnapshotForRender } from '@/lib/home-tour-server'
 import { HOME_MODE_BOOTSTRAP } from '@/lib/home-mode'
+import HlPerpsPrime from '@/components/markets/shell/HlPerpsPrime'
+import { HL_PERPS_HANDOFF_GLOBAL, liveHlPerpNames } from '@/lib/charts'
 
 // `/` — THE FRONT DOOR IS THE APP (squad front-door, 2026-10-06, Nate: "the
 // landing page falls a bit flat and our new live page feels more alive …
@@ -102,18 +104,35 @@ export default async function HomePage() {
   // counts and fees from the registries, the live part through the data
   // cache — the same ISR rule as the read's).
   const [trending, tradable, read, tour] = await Promise.all([readTrending(), readTradability(), readSnapshotForRender(), readTourSnapshotForRender()])
+  // THE VENUE'S LIVE TABLE, HANDED DOWN (2026-11-10). The Macro board lists
+  // Hyperliquid builder markets only the venue's live universe knows (SP500,
+  // GOLD, SILVER, CL, NATGAS, EUR, JPY, TLT). A server that has read the
+  // universe once resolves them and draws their Long / Short chips; a browser's
+  // table is cold, so its first render drew none — React threw #418 on `/` and
+  // re-rendered the whole page on the client (measured on prod and on a warm
+  // local server: eight rows' chips in the HTML, none in the browser). The
+  // symbol page already hands the names down (app/t/[symbol]/page.tsx); the
+  // home now does the same: an inline script the browser runs at parse time,
+  // and HlPerpsPrime for a soft navigation. Synchronous (the process's own
+  // table; null on a cold server, where neither side draws the chips), so the
+  // page stays static.
+  const hlPerps = liveHlPerpNames()
+  const hlHandoff = hlPerps ? `window.${HL_PERPS_HANDOFF_GLOBAL}=${JSON.stringify(hlPerps).replace(/</g, '\\u003c')}` : null
   return (
     <>
+      {hlHandoff && <script dangerouslySetInnerHTML={{ __html: hlHandoff }} />}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
       {/* The home's posture, before first paint (lib/home-mode): a returning
           visitor's page is folded by CSS before a pixel is drawn. */}
       <script dangerouslySetInnerHTML={{ __html: HOME_MODE_BOOTSTRAP }} />
-      <MarketsShell>
-        <HomeSurface trending={trending} tradable={tradable} read={read} tour={tour} />
-        <div className="mkt-frame__foot">
-          <Footer />
-        </div>
-      </MarketsShell>
+      <HlPerpsPrime hlPerps={hlPerps}>
+        <MarketsShell>
+          <HomeSurface trending={trending} tradable={tradable} read={read} tour={tour} />
+          <div className="mkt-frame__foot">
+            <Footer />
+          </div>
+        </MarketsShell>
+      </HlPerpsPrime>
     </>
   )
 }

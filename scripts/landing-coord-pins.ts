@@ -212,6 +212,15 @@ export function landingCoordPins(check: Check): void {
       page.indexOf('__html: HOME_MODE_BOOTSTRAP') < page.indexOf('<MarketsShell>'),
   )
 
+  check(
+    "landing page: the home hands the venue's live perp table to the browser the way the symbol page does — an inline script at parse time and HlPerpsPrime around the shell. The Macro board lists builder markets only the live table knows; a warm server drew their Long / Short chips and a cold browser drew none, so React threw #418 on `/` and re-rendered the page (found on prod and locally by the phone drive, 2026-11-10)",
+    /const hlPerps = liveHlPerpNames\(\)/.test(page) &&
+      /window\.\$\{HL_PERPS_HANDOFF_GLOBAL\}=/.test(page) &&
+      /\{hlHandoff && <script dangerouslySetInnerHTML=\{\{ __html: hlHandoff \}\} \/>\}/.test(page) &&
+      /<HlPerpsPrime hlPerps=\{hlPerps\}>\s*<MarketsShell>/.test(page) &&
+      page.indexOf('{hlHandoff &&') < page.indexOf('<MarketsShell>'),
+  )
+
   // ── The posture ──
   const cases: Array<{ pref: string | null; n: number; day: string; wallet: 'on' | 'off' | 'gone' }> = []
   for (const pref of [null, 'open', 'closed', 'junk']) for (const n of [0, 1, HOME_RETURN_DAYS - 1, HOME_RETURN_DAYS, 40]) for (const day of ['', 'today', '2020-01-01']) for (const wallet of ['on', 'off', 'gone'] as const) cases.push({ pref, n, day, wallet })
