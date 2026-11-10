@@ -94,8 +94,9 @@
 
 /* ── WIDE: the list beside the stage ──────────────────────────────────── */
 @container tour (min-width: 860px) {
-  .tour__body { --tour-layout: wide; display: grid; grid-template-columns: minmax(0, 17.5rem) minmax(0, 1fr); gap: var(--sp-5); align-items: start; }
-  .tour__list { display: flex; flex-direction: column; gap: 2px; }
+  /* The stage stretches to the list's height: the two share a bottom edge. */
+  .tour__body { --tour-layout: wide; display: grid; grid-template-columns: minmax(0, 17.5rem) minmax(0, 1fr); gap: var(--sp-5); align-items: stretch; }
+  .tour__list { display: flex; flex-direction: column; gap: 2px; align-self: start; }
   .tour__tab { grid-template-columns: 1.25rem 1.125rem minmax(0, 1fr); column-gap: var(--sp-3); width: 100%; min-height: 64px; padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4); border-radius: var(--r-md); }
   .tour__tab:hover { background: color-mix(in srgb, var(--fg) 4%, transparent); }
   .tour__tab.is-on { background: color-mix(in srgb, var(--accent) 9%, transparent); }
