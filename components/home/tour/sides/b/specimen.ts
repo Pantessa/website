@@ -49,7 +49,7 @@ export interface AnatomyPart {
 export const ANATOMY: readonly AnatomyPart[] = [
   { id: 'proof', name: 'The proof', what: 'Read from the chain when the post is made: the author’s wallet sent this transaction, and this is what it moved, net, in a dollar stablecoin or ETH. Nobody types it.' },
   { id: 'call', name: 'The call', what: 'The market, the side and the title are the author’s own words, printed as theirs. They never sit under the verified mark, and nothing here speaks to profit.' },
-  { id: 'room', name: 'The room', what: 'A feed with members. Joining is one tap and needs no wallet; reading needs no account.' },
+  { id: 'room', name: 'The room', what: 'A feed with members. Joining is one tap once you are signed in; reading needs no account.' },
 ]
 
 /** What cannot carry proof yet (app/docs/community, the same list). */

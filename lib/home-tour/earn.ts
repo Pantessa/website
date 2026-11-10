@@ -12,6 +12,6 @@ export const meta: TourSideMeta = {
   line: 'Lido, Aave and Morpho rates, side by side.',
   body: 'What an asset can earn today: each venue’s own live rate, the same for everyone. Pick an amount and tap a row; the sentence is the order and your wallet signs.',
   facts: ['{earnWays} ways to earn across Lido, Aave and Morpho', 'Rates are the venues’ own, read live', 'Staking and lending carry no Pantessa fee'],
-  doors: [{ label: 'See every rate', href: '#earn', kind: 'primary' }],
+  doors: [{ label: 'See every rate', href: '/#earn', kind: 'primary' }],
   asks: [{ ask: 'Stake 0.05 ETH on Lido', label: 'Stake 0.05 ETH', via: 'Lido' }],
 }
