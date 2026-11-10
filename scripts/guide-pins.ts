@@ -413,13 +413,16 @@ export function guidePins(check: Check): void {
       (card.match(/\{words\}/g) ?? []).length === 5 &&
       !/aria-label=\{cta/.test(card),
   )
+  // RE-PINNED 2026-11-10 (landing): the home's claim no longer reads the guide's record — its one-line version is the posture
+  // attribute now (lib/home-mode + components/home/hero.css, lane HERO), with a visits record of its own. `visited.home` stays a
+  // key of the guide's (the spine's dots and the home seat still use it); what is pinned is that nobody else leans on it.
   check(
-    'guide: the record\'s `visited.home` is a contract — SPLASH\'s claim reads it once at mount through getGuideState() (components/home/SplashClaim.tsx) — so the key stays, round-trips, and is written by the home seat after its pick',
+    'guide: the record\'s `visited.home` stays, round-trips, and is the GUIDE\'s alone — the home\'s claim reads nothing from it (its posture is lib/home-mode\'s, set before first paint)',
     (GUIDE_VISITS as readonly string[]).includes('home') &&
       readGuideState(serializeGuideState(noteEvent(freshGuideState(), 'visited:home', NOW))).visited.home === NOW &&
       (() => {
-        const claim = src('components/home/SplashClaim.tsx')
-        return /import \{ getGuideState \} from '@\/lib\/guide'/.test(claim) && /getGuideState\(\)\.visited\.home/.test(claim)
+        const claim = src('components/home/SplashClaim.tsx').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+        return !/getGuideState|useGuideState|lib\/guide/.test(claim)
       })(),
   )
   check(
