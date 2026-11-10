@@ -19,7 +19,7 @@
 
 import { useId, useState, type FormEvent } from 'react'
 import { ArrowUp } from 'lucide-react'
-import SpineLink from '@/components/SpineLink'
+import LandingLink from '@/components/home/LandingLink'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { askAppSlugs } from '@/lib/ask-apps'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
@@ -114,16 +114,16 @@ export default function AskSide() {
               const Mark = getProtocolMark(app.slug, app.name)
               return (
                 <li key={app.slug}>
-                  <SpineLink href={homeAppHref(app.slug)} className="tk__app" prefetch={false} title={`${app.name}: ${app.does}`} aria-label={`${app.name}: ${app.does}`} data-app={app.slug} data-journey={J(`app ${app.name}`)}>
+                  <LandingLink href={homeAppHref(app.slug)} className="tk__app" prefetch={false} title={`${app.name}: ${app.does}`} aria-label={`${app.name}: ${app.does}`} data-app={app.slug} data-journey={J(`app ${app.name}`)}>
                     {Mark ? <Mark size={20} /> : <span className="mono">{app.name.slice(0, 1)}</span>}
-                  </SpineLink>
+                  </LandingLink>
                 </li>
               )
             })}
             <li>
-              <SpineLink href={HOME_APPS_ALL_HREF} className="tk__app tk__app--all mono" prefetch={false} data-journey={J('all apps')}>
+              <LandingLink href={HOME_APPS_ALL_HREF} className="tk__app tk__app--all mono" prefetch={false} data-journey={J('all apps')}>
                 All
-              </SpineLink>
+              </LandingLink>
             </li>
           </ul>
         </div>

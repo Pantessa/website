@@ -19,7 +19,7 @@
 //     not offered when the venue gate says the sentence cannot run.
 
 import { useId, useMemo, useState } from 'react'
-import SpineLink from '@/components/SpineLink'
+import LandingLink from '@/components/home/LandingLink'
 import { meta } from '@/lib/home-tour/charts'
 import { tourJourney } from '@/lib/home-tour'
 import { fmtQuotePrice } from '@/lib/markets-quotes'
@@ -177,9 +177,9 @@ export default function ChartsSide() {
             ) : (
               ask && <p className="ta-note">No venue is filling this one right now. The chart is still open.</p>
             )}
-            <SpineLink href={`/t/${market.symbol}`} className="ta-door" prefetch={false} data-journey={J(`open ${market.symbol}`)}>
+            <LandingLink href={`/t/${market.symbol}`} className="ta-door" prefetch={false} data-journey={J(`open ${market.symbol}`)}>
               The full {market.symbol} chart <span aria-hidden>→</span>
-            </SpineLink>
+            </LandingLink>
           </div>
         </div>
       </div>

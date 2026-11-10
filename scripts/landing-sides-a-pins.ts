@@ -150,14 +150,14 @@ export function landingSidesAPins(check: Check): void {
   )
   const charts = code(`${SIDES}/Charts.tsx`)
   check(
-    'sides-a charts (source): the sentence comes from miniTicket and nowhere else, the button runs it through act() only when canAct says its venue can, each market reads the candles route through the gated poll (on screen + tab visible), and the door to the full chart is a SpineLink',
+    'sides-a charts (source): the sentence comes from miniTicket and nowhere else, the button runs it through act() only when canAct says its venue can, each market reads the candles route through the gated poll (on screen + tab visible), and the door to the full chart is the one LandingLink',
     /miniTicket\(market\.pair, side, usd, last\)/.test(charts) &&
       /const runnable = ask !== null && canAct\(ask\)/.test(charts) &&
       /onClick=\{\(\) => act\(ask\)\}/.test(charts) &&
       (charts.match(/usePolled\(miniMarketUrl\(/g) ?? []).length === 3 &&
       (charts.match(/active && MARKETS\.length > \d/g) ?? []).length === 3 &&
       /useOnScreen<HTMLDivElement>\(\)/.test(charts) &&
-      /<SpineLink href=\{`\/t\/\$\{market\.symbol\}`\}/.test(charts) &&
+      /<LandingLink href=\{`\/t\/\$\{market\.symbol\}`\}/.test(charts) &&
       !/`(?:Buy|Long|\d+x) \$/.test(charts) &&
       !/['"`](?:Buy|Sell|Long|Short) \$\{?/.test(charts),
   )
@@ -188,13 +188,13 @@ export function landingSidesAPins(check: Check): void {
   )
   const askCss = read(`${SIDES}/ask.css`)
   check(
-    'sides-a ask (source): the input is a real one at 16px (--fs-input; iOS zooms anything smaller), labelled, and marked so the floating Ask pill steps aside while it is in view; the fleet is the apps row\'s own table, each mark a SpineLink into the chat with that app on',
+    'sides-a ask (source): the input is a real one at 16px (--fs-input; iOS zooms anything smaller), labelled, and marked so the floating Ask pill steps aside while it is in view; the fleet is the apps row\'s own table, each mark a LandingLink into the chat with that app on',
     /<input id=\{inputId\}.*type="text".*data-ask-door-yield/.test(ask) &&
       /<label className="sr-only" htmlFor=\{inputId\}>/.test(ask) &&
       /\.tk__input \{[^}]*font-size: var\(--fs-input\)/.test(askCss) &&
       /HOME_APPS\.map\(\(app\)/.test(ask) &&
-      /<SpineLink href=\{homeAppHref\(app\.slug\)\}/.test(ask) &&
-      /<SpineLink href=\{HOME_APPS_ALL_HREF\}/.test(ask) &&
+      /<LandingLink href=\{homeAppHref\(app\.slug\)\}/.test(ask) &&
+      /<LandingLink href=\{HOME_APPS_ALL_HREF\}/.test(ask) &&
       HOME_APPS.length >= 8,
   )
 
