@@ -26,7 +26,13 @@ import { HOME_APPS } from '@/lib/home-apps'
 import { MACRO_ROWS } from '@/lib/macro'
 import { marketSections } from '@/lib/markets'
 import { buildVenueManifest } from '@/lib/venue-manifest'
-import { EMPTY_TOUR, type TourCounts, type TourFees, type TourSnapshot } from '@/lib/home-tour/types'
+import { EMPTY_TOUR, type TourCounts, type TourEarnRow, type TourFees, type TourSnapshot } from '@/lib/home-tour/types'
+import { unstable_cache } from 'next/cache'
+import prisma from '@/lib/db'
+import { listFeed } from '@/lib/community/store'
+import { rowsFromWire, type EarnResponse, type EarnRow } from '@/lib/earn'
+import { GET as readEarnRoute } from '@/app/api/markets/earn/route'
+import { TOUR_FEED_TIMEOUT_MS, TOUR_WEEK_MS, tourEarnOf, tourPostsOf, withTimeout } from '@/lib/home-tour-live'
 
 /** Counts from the registries. Pure; safe at build and at render. */
 export function tourStaticCounts(): TourCounts {
@@ -76,9 +82,85 @@ export function staticTourSnapshot(): TourSnapshot {
   }
 }
 
-/** The snapshot for the page's render. CONTRACT BASELINE: the static part
- *  only. Lane DATA adds the live part (earn, community) behind
- *  `unstable_cache`, fail-soft and time-capped. */
+// ── The live part (lane DATA) ────────────────────────────────────────────────
+
+/** The Earn board's rows, read through the board's OWN route handler (the
+ *  same venues, the same composer, the same 60s memory as GET
+ *  /api/markets/earn), then re-hydrated exactly as the board does
+ *  (rowsFromWire → rankEarnRows → yieldLadder, in lib/home-tour-live). */
+async function readEarnRows(): Promise<EarnRow[]> {
+  const res = await readEarnRoute()
+  const body = (await res.json()) as Partial<EarnResponse>
+  return Array.isArray(body.rows) ? rowsFromWire(body.rows) : []
+}
+
+/** The ladder, cached for the page's minute. An EMPTY read throws on purpose:
+ *  `unstable_cache` keeps no result for a throw, so a cold venue read that
+ *  timed out does not pin an empty ladder for a minute (the read it started
+ *  keeps going and fills the route's memory for the next render). */
+const cachedEarn = unstable_cache(
+  async (): Promise<{ earn: TourEarnRow[]; earnWays: number | null; at: number }> => {
+    const rows = await withTimeout(readEarnRows(), TOUR_FEED_TIMEOUT_MS, [] as EarnRow[])
+    const out = tourEarnOf(rows)
+    if (!out.earn.length) throw new Error('earn: nothing read yet')
+    return { ...out, at: Date.now() }
+  },
+  ['home-tour-v1', 'earn'],
+  { revalidate: 60 },
+)
+
+async function readCommunity(nowMs: number): Promise<TourSnapshot['community']> {
+  const since = new Date(nowMs - TOUR_WEEK_MS)
+  // Internal rooms (the harness's, the team's) are few; their posts never count.
+  const internalRooms = (await prisma.community.findMany({ where: { isInternal: true }, select: { slug: true }, take: 5000 })).map((c) => c.slug)
+  const [rooms, postsWeek, page] = await Promise.all([
+    prisma.community.count({ where: { isInternal: false } }),
+    // Every public post the feed can list this week (the symbol forum's too).
+    prisma.chartPost.count({
+      where: { isInternal: false, createdAt: { gte: since }, ...(internalRooms.length ? { OR: [{ communitySlug: null }, { communitySlug: { notIn: internalRooms } }] } : {}) },
+    }),
+    listFeed({ sort: 'hot', limit: 12 }),
+  ])
+  const internal = new Set(internalRooms)
+  const publicRooms = new Set(page.posts.map((p) => p.community?.slug).filter((s): s is string => !!s && !internal.has(s)))
+  return { rooms, postsWeek, latest: tourPostsOf(page.posts, publicRooms) }
+}
+
+/** The community line, cached for the page's minute. A store that is not
+ *  answering (or the 2.5s cap) reads as the empty line, which the panel
+ *  answers with its specimen. */
+const cachedCommunity = unstable_cache(
+  async (): Promise<TourSnapshot['community']> => withTimeout(readCommunity(Date.now()), TOUR_FEED_TIMEOUT_MS, EMPTY_TOUR.community),
+  ['home-tour-v1', 'community'],
+  { revalidate: 60 },
+)
+
+/** The live part alone. Never throws. */
+export async function readTourLive(): Promise<Pick<TourSnapshot, 'earn' | 'community'> & { earnWays: number | null; at: number }> {
+  const [earn, community] = await Promise.all([
+    cachedEarn().catch(() => ({ earn: [] as TourEarnRow[], earnWays: null, at: 0 })),
+    cachedCommunity().catch(() => EMPTY_TOUR.community),
+  ])
+  return { earn: earn.earn, earnWays: earn.earnWays, community, at: earn.at }
+}
+
+/** The snapshot for the page's render (and GET /api/home/tour): the static
+ *  part plus the live part. `/` is ISR — every read above goes through
+ *  `unstable_cache` (the pattern of lib/read-server readSnapshotForRender),
+ *  each feed is time-capped and fail-soft, and nothing here throws. */
 export async function readTourSnapshotForRender(): Promise<TourSnapshot> {
-  return staticTourSnapshot()
+  const base = staticTourSnapshot()
+  try {
+    const live = await readTourLive()
+    return {
+      ...base,
+      // When the ladder was read (0 = only the static part and the community line).
+      asOf: live.at,
+      counts: { ...base.counts, earnWays: live.earnWays },
+      earn: live.earn,
+      community: live.community,
+    }
+  } catch {
+    return base
+  }
 }
