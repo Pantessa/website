@@ -58,7 +58,7 @@
     "pins:tape": "tsx scripts/tape-pins.ts",
     "pins:bot-ua": "tsx scripts/bot-ua-pins.ts",
     "pins:venues": "tsx scripts/venue-manifest-pins.ts",
-    "pins:exec": "tsx scripts/exec-strip-pins.ts",
+    "pins:heat": "tsx scripts/chart-heat-pins.ts",
     "pins:policy-pool": "tsx scripts/policy-pool-builder-pins.ts",
     "demo:policy-pool": "tsx scripts/policy-pool-demo.ts",
     "drive:policy-pool-try": "node scripts/policy-pool-try-drive.mjs",

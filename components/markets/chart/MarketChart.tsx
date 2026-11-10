@@ -41,8 +41,8 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
-import { ChartCandlestick, ChevronsRight, Layers2, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, RotateCcw, Rows3, Ruler, ScrollText, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, Trash2, TrendingUp, Undo2 } from 'lucide-react'
-import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, chartUnitOf, isLookOnlyPair, isPrintTf, sourceHasTf, tfsForSource, type Candle, type ChartTf } from '@/lib/charts'
+import { ChartCandlestick, ChevronsRight, Layers2, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, RotateCcw, Rows3, Ruler, ScrollText, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, Trash2, TrendingUp, Undo2, Grid3x3 } from 'lucide-react'
+import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, chartUnitOf, isHip3Pair, isLookOnlyPair, isPrintTf, sourceHasTf, tfsForSource, type Candle, type ChartTf } from '@/lib/charts'
 import { PRINT_KEEP_MS, applyPrint, barsFromPrints, chartLiveFeed, livePriceStats, printOf, seedThenPrints, tailIsLive, tailWords, type Print } from '@/lib/chart-live'
 import { syncTfParam } from '@/lib/markets'
 import type { TapeFill } from '@/lib/tape'
@@ -69,8 +69,7 @@ import { VolumeProfile } from './volume-profile'
 import ChartLegend from './ChartLegend'
 import { awayFromLive, chartKey, markPlusHintSeen, plusHintSeen, tidyPrice, zoomedFrom } from '@/lib/chart-legend'
 import FrontBoard from './FrontBoard'
-import PositionHeat from './PositionHeat'
-import ExecutionsStrip from './ExecutionsStrip'
+import HeatView, { useHeatYear } from './PositionHeat'
 import TheWall, { marginBarsFor, type WallStatus } from './TheWall'
 import { rememberWallHidden, wallHiddenHere, withWall } from '@/lib/wall'
 import { parseBoardParam, parseViewParam, syncViewParam, type BoardMode, type ChartView } from '@/lib/markets'
@@ -276,8 +275,8 @@ export default function MarketChart({
   const fill = heightProp === 'fill'
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
   // A look-only index (lib/charts isLookOnlyPair) has no book, no prints and
-  // no positions: the Depth and Tape views, the Wall, the positioning heat
-  // map and the executions strip never mount for it, whatever the page asks.
+  // no positions: the Depth, Tape and Heatmap views and the Wall never mount
+  // for it, whatever the page asks.
   const lookOnly = isLookOnlyPair(pair)
   const battlefield = battlefieldProp && !lookOnly
   // A level's price as the page prints it: dollars for a token, the bare
@@ -1006,13 +1005,17 @@ export default function MarketChart({
   const depthOn = battlefield && view === 'depth'
   const tapeOn = battlefield && view === 'tape'
   // Any other view: the candles' own chrome (tools, legend, drawings) steps aside.
-  const altOn = fieldOn || depthOn || tapeOn
+  const heatOn = battlefield && view === 'heat'
+  const altOn = fieldOn || depthOn || tapeOn || heatOn
+  // The Heatmap (2026-11-10) takes the Tape's seat on the switch wherever the
+  // coin has a year of positioning to show: offered while the year is being
+  // read, withdrawn (the Tape returns) once the read says there is none.
+  const heatCandidate = battlefield && !!pair && pair.source !== 'robinhood' && !isHip3Pair(pair)
+  const heatYear = useHeatYear(pair?.symbol ?? symbol, heatCandidate)
+  const heatTab = heatCandidate && (heatYear.derivs ? heatYear.cells.some((c) => c.long !== null) : !heatYear.failed)
   // The Depth chart and the Tape take the prints off the chart's one relay stream.
   const depthPrintRef = useRef<((fills: readonly TapeFill[]) => void) | null>(null)
   const tapePrintRef = useRef<((fills: readonly TapeFill[]) => void) | null>(null)
-  // The executions strip beside positioning (2026-11-02) takes the same prints.
-  const stripPrintRef = useRef<((fills: readonly TapeFill[]) => void) | null>(null)
-  const stripOn = battlefield && !altOn
   const switchView = useCallback((next: ChartView) => {
     if (next !== 'candles') {
       setTool('none')
@@ -1143,7 +1146,7 @@ export default function MarketChart({
   useEffect(() => {
     // The Depth view and the Tape want the prints on every frame (they land
     // on the book / as rows, not on a bar); the candles only on a live frame.
-    if (!liveFeed || !(tailIsLive(tf, liveFeed) || depthOn || tapeOn || stripOn)) {
+    if (!liveFeed || !(tailIsLive(tf, liveFeed) || depthOn || tapeOn)) {
       setTailStatus('idle')
       return
     }
@@ -1154,8 +1157,6 @@ export default function MarketChart({
     const handle = openDuneTape(liveFeed.markets, {
       onStatus: (s) => setTailStatus(s),
       onBackfill: (fills) => {
-        // The strip opens on what the relay already held (newest first, capped).
-        stripPrintRef.current?.(fills)
         if (!print) return
         // One backfill per venue: merge them (each used to REPLACE the last,
         // so only the final venue's minutes survived), never a print twice.
@@ -1167,7 +1168,6 @@ export default function MarketChart({
       onFills: (batch) => {
         depthPrintRef.current?.(batch)
         tapePrintRef.current?.(batch)
-        stripPrintRef.current?.(batch)
         if (!tailLive) return
         if (print) {
           const floor = Date.now() - PRINT_KEEP_MS
@@ -1199,7 +1199,7 @@ export default function MarketChart({
         if (!printLineRef.current) printLineRef.current = cs.createPriceLine({ price: last, color: alpha(tokens.accent, 0.9), lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'print' })
         else printLineRef.current.applyOptions({ price: last })
       },
-    }, { venues: liveFeed.venues, filter: true, backfill: print || stripOn })
+    }, { venues: liveFeed.venues, filter: true, backfill: print })
     return () => {
       handle.close()
       const cs = candleRef.current
@@ -1213,7 +1213,7 @@ export default function MarketChart({
       printLineRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveFeed, tf, tokens, symbol, depthOn, tapeOn, stripOn])
+  }, [liveFeed, tf, tokens, symbol, depthOn, tapeOn])
 
   // Compare: a second symbol's candles at the chart's frame, drawn as a line
   // on the LEFT scale in percentage mode (indexed to the first bar on screen).
@@ -1666,7 +1666,15 @@ export default function MarketChart({
             </button>
             {/* The Tape (2026-10-20): this instrument's prints as rows, a
                 button on each. A stock has no prints to list. */}
-            {(pair?.source === 'coinbase' || pair?.source === 'hyperliquid' || liveFeed) && (
+            {heatTab && (
+              <button type="button" className={`mkt-view__btn mono${view === 'heat' ? ' is-active' : ''}`} aria-pressed={view === 'heat'} title="Heatmap — a year of longs vs shorts, one cell a day, inked against this coin's own usual day" onClick={() => switchView('heat')}>
+                <Grid3x3 className="h-3.5 w-3.5" />
+                <span>Heatmap</span>
+              </button>
+            )}
+            {/* The Tape keeps its seat where there is no heatmap to take it,
+                and shows while its `?view=tape` link has it open. */}
+            {(!heatTab || view === 'tape') && (pair?.source === 'coinbase' || pair?.source === 'hyperliquid' || liveFeed) && (
               <button type="button" className={`mkt-view__btn mono${view === 'tape' ? ' is-active' : ''}`} aria-pressed={view === 'tape'} title="Tape — this market's trades as they print, newest first, with the sentence that does the same on every row" onClick={() => switchView('tape')}>
                 <ScrollText className="h-3.5 w-3.5" />
                 <span>Tape</span>
@@ -1773,7 +1781,7 @@ export default function MarketChart({
 
       {/* Canvas: the engine owns the bars; the SVG layer owns the drawings. */}
       <div
-        className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fieldOn ? ' is-field' : depthOn ? ' is-depth' : tapeOn ? ' is-tape' : ''}${fill ? ' min-h-0 flex-1' : ''}`}
+        className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fieldOn ? ' is-field' : depthOn ? ' is-depth' : tapeOn ? ' is-tape' : heatOn ? ' is-heat' : ''}${fill ? ' min-h-0 flex-1' : ''}`}
         style={fill ? undefined : { height: heightProp }}
         onPointerEnter={() => {
           overRef.current = true
@@ -1873,6 +1881,7 @@ export default function MarketChart({
         )}
         {fieldOn && tokens && <FrontBoard symbol={pair.symbol} pair={pair} tf={tf} bars={candles} tokens={tokens} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} board={board} onBoard={setBoard} />}
         {depthOn && tokens && <DepthChart symbol={pair.symbol} pair={pair} tokens={tokens} last={last} perpListed={hasPerpCold(pair.symbol)} printSink={depthPrintRef} printStatus={liveFeed ? tailStatus : null} printLabel={liveFeed?.label ?? null} onLevel={onLimit} settings={depthSettings} onSettings={setDepthSettings} />}
+        {heatOn && pair && <HeatView year={heatYear} mark={last} />}
         {tapeOn && <TapeView symbol={pair.symbol} pair={pair} printSink={tapePrintRef} printStatus={liveFeed ? tailStatus : null} printLabel={liveFeed?.label ?? null} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} />}
         {wallOn && tokens && <TheWall geom={geom} bars={bars} symbol={pair.symbol} pair={pair} tf={tf} tokens={tokens} last={last} hostRef={wrapRef} onStatus={setWallStatus} onHide={hideWall} />}
         {!altOn && <DrawingLayer
@@ -1959,14 +1968,6 @@ export default function MarketChart({
             Undo
           </button>
         </p>
-      )}
-      {/* A year of positioning under the candles (the symbol page; coins and perps). */}
-      {battlefield && !altOn && (
-        <div className="poshet-row">
-          <PositionHeat symbol={pair.symbol} pair={pair} mark={last} />
-          {/* Dune's executions for this symbol, off the chart's one relay stream (2026-11-02). */}
-          <ExecutionsStrip symbol={pair.symbol} pair={pair} feed={liveFeed} printSink={stripPrintRef} printStatus={liveFeed ? tailStatus : null} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} />
-        </div>
       )}
 
       {/* Your fills — the glyphs on the bars; the receipt words + explorer link live here. */}

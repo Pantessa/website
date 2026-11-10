@@ -139,43 +139,28 @@ button.bf__chip:hover { border-color: var(--line-2, var(--fg)); }
   .bf__heat { inset: 76px 8px 60px; --hc: 11px; justify-content: flex-start; }
 }
 
-/* Under the candles: the year of positioning (left) and Dune's executions for
-   the symbol (right, components/markets/chart/ExecutionsStrip.tsx) share a row at
-   desktop width; a phone stacks them. */
-.poshet-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; margin-top: 6px; }
-@media (max-width: 900px) { .poshet-row { grid-template-columns: minmax(0, 1fr); } }
-.poshet-row > .poshet { min-width: 0; }
-
-/* The strip under the candles: a year of positioning. */
+/* The Heatmap view (PositionHeat.tsx HeatView, `?view=heat`): a year of
+   positioning filling the chart's plot — a headline row, then the year. */
 .poshet { position: relative; display: grid; gap: 6px; }
-.poshet__head { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 4px 2px; text-align: left; }
+.poshet.heatview { position: absolute; inset: 0; z-index: 6; border-radius: 10px; background: var(--bg); grid-template-rows: auto minmax(0, 1fr); gap: 10px; padding: 10px 12px 12px; }
+.poshet__head { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 4px 2px; text-align: left; container-type: inline-size; }
 .poshet__k { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
-.poshet__v { font-family: 'Fraunces', Georgia, serif; font-size: 14px; font-weight: 600; color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.poshet__v { font-family: 'Fraunces', Georgia, serif; font-size: 16px; font-weight: 600; color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .poshet__v.is-up { color: var(--mk-up, var(--accent)); }
 .poshet__v.is-down { color: var(--mk-down, var(--sell)); }
 .poshet__key { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
 .poshet__key i { width: 9px; height: 9px; border-radius: 2px; margin: 0 1px; }
-.poshet__chev { color: var(--muted-2); transition: transform .15s; flex: 0 0 auto; }
-.poshet__chev.is-open { transform: rotate(180deg); }
-.poshet__body { position: relative; }
-.poshet .bf__heat { position: static; inset: auto; --hc: 11px; justify-content: flex-start; }
-/* The strip shares its row with the executions table, and a year at 11px cells
-   is ~790px wide — wider than a half column on most screens. Left to itself the
-   heat's intrinsic width sized the strip's grid track, so the year ran under the
-   table (seen 2026-11-02). Contain the heat's inline size so the column, not
-   the year, sets the strip's width, and size the cells to the column: the year
-   is 53 weeks at --hc plus 52 gaps of 3px, the day labels, and the scroll
-   padding (194px), so a cell is what is left over, 11px at most, 7px at least,
-   below which the year scrolls sideways as before. */
-.poshet .bf__heat { container-type: inline-size; --hc: clamp(7px, calc((100cqw - 194px) / 53), 11px); }
-/* The head fits its column the same way (its labels never wrap), and the colour
-   key goes where the column is too tight to hold it beside the headline. */
-.poshet__head { container-type: inline-size; }
 @container (max-width: 650px) { .poshet__key { display: none; } }
+.poshet__body { position: relative; display: grid; align-items: center; min-height: 0; }
+/* A cell is what the plot's width leaves: the year is 53 weeks at --hc plus 52
+   gaps of 3px, the day labels and the scroll padding (194px) — 20px at most,
+   7px at least, below which the year scrolls sideways. */
+.poshet .bf__heat { position: static; inset: auto; justify-content: center; container-type: inline-size; --hc: clamp(7px, calc((100cqw - 194px) / 53), 20px); }
+.poshet .bf__empty { position: static; padding: 40px 0; }
 .poshet .bf__tip { position: absolute; }
 @media (max-width: 640px) {
   .poshet__key, .poshet__k { display: none; }
-  .poshet .bf__heat { --hc: 10px; }
+  .poshet .bf__heat { --hc: 10px; justify-content: flex-start; }
 }
 
 /* The Wall (TheWall.tsx): the ladder on the right margin, and its key under the plot. */
