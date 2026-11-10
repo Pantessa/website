@@ -46,6 +46,13 @@
 .tc__est { min-height: 1.45em; }
 .tc__go { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
 
+/* The line under the sentence is two lines long in a frame this narrow once a
+   price is in it: the room is held from the first paint, so nothing moves
+   when the read lands. */
+@container ta (max-width: 440px) {
+  .tc__est { min-height: 2.9em; }
+}
+
 /* A narrow frame (a phone's row): tighter tiles, the controls stack. */
 @container ta (max-width: 360px) {
   .tc__tile { padding: var(--sp-2); }

@@ -10,7 +10,9 @@ import type { ReactNode } from 'react'
 export interface SegOption<T extends string | number> {
   value: T
   label: ReactNode
-  /** What a screen reader says when the label is a bare number. */
+  /** What a screen reader says when the label is a bare number. It must
+   *  CONTAIN the visible label (WCAG 2.5.3: "1,000" reads "1,000 readers");
+   *  a label that reads by itself ("$25") takes none. */
   say?: string
 }
 

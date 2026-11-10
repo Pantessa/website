@@ -11,7 +11,7 @@ export const meta: TourSideMeta = {
   claim: 'Every chart is the order form.',
   line: 'Stocks 24/7, crypto, perps and macro, live.',
   body: 'Pick a size and the sentence under the chart is the order. Pantessa builds the guarded transaction and your own wallet signs it.',
-  facts: ['{stocks} tokenized stocks that trade around the clock', '{crypto} coins, plus Hyperliquid perps and {macro} macro markets', 'Free to look: no account, unlimited watchlists and alerts'],
+  facts: ['{stocks} tokenized stocks, charted around the clock', '{crypto} coins, plus Hyperliquid perps and {macro} macro markets', 'Free to look, no account. Watchlists and alerts are free.'],
   doors: [
     { label: 'Open the AAPL chart', href: '/t/AAPL', kind: 'primary' },
     { label: 'Watch the live tape', href: '/live', kind: 'quiet' },
