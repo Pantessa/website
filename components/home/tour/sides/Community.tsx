@@ -100,7 +100,7 @@ function Anatomy() {
           Example
         </span>
       </p>
-      <div className="sb-cm__card" aria-label="An example trade post">
+      <div className="sb-cm__card" role="group" aria-label="An example trade post">
         <p className="sb-cm__cardmeta mono">
           <span>Trade</span>
           <span className="sb-cm__room">

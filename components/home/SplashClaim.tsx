@@ -97,7 +97,7 @@ export default function SplashClaim() {
             {SPLASH.door} <span aria-hidden>→</span>
           </Link>
         </div>
-        <ul className="mk-claim__proofs" aria-label="What it never asks of you">
+        <ul className="mk-claim__proofs" aria-label="Why it is safe to look">
           {SPLASH.proofs.map((p) => (
             <li key={p.lead} className="mk-claim__proof">
               <b>{p.lead}</b>{' '}

@@ -1,7 +1,8 @@
 // THE TOUR · COMMUNITY (lane SIDES-B owns this file). Rules: lib/home-tour/types.ts.
 //
 // Where each claim is implemented (checked 2026-11-10):
-//   • "one tap and needs no wallet" — app/docs/community "Joining": "Joining
+//   • "one tap once you are signed in" — the join route answers 401 without
+//     a session (QA, 2026-11-10); app/docs/community "Joining": "Joining
 //     is one tap and never needs a wallet. A member is a proven identity: a
 //     sign-in (wallet, Google or email)…"; lib/community/spec.ts header.
 //   • "read from the chain, never typed" — lib/community/proof.ts header:
@@ -18,7 +19,7 @@ export const meta: TourSideMeta = {
   claim: 'Calls with receipts.',
   line: 'Rooms, ideas, and trades proved on-chain.',
   body: 'Join a room and post a chart idea, a link, a video or a trade. A trade post carries a line read from the chain: this wallet moved this much, in this transaction.',
-  facts: ['Joining a room is one tap and needs no wallet', 'A trade’s dollars are read from the chain, never typed', 'Reading needs no wallet and no account'],
+  facts: ['Joining a room is one tap once you are signed in', 'A trade’s dollars are read from the chain, never typed', 'Reading needs no wallet and no account'],
   doors: [
     { label: 'Open the community', href: '/community', kind: 'primary' },
     { label: 'Start a room', href: '/g/new', kind: 'quiet' },
