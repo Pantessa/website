@@ -122,7 +122,7 @@ export default function AskSide() {
               )
             })}
             <li>
-              <LandingLink href={HOME_APPS_ALL_HREF} className="tk__app tk__app--all mono" prefetch={false} data-journey={J('all apps')}>
+              <LandingLink href={HOME_APPS_ALL_HREF} className="tk__app tk__app--all mono" prefetch={false} aria-label="All apps" data-journey={J('all apps')}>
                 All
               </LandingLink>
             </li>

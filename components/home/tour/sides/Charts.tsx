@@ -147,7 +147,7 @@ export default function ChartsSide() {
             )}
             <div className="ta-field">
               <span className="ta-eyebrow mono">Size</span>
-              <Seg label="Size in dollars" value={usd} onChange={setUsd} options={MINI_SIZES.map((n) => ({ value: n, label: `$${n}`, say: `${n} dollars` }))} journey={(n) => J(`size ${n}`)} />
+              <Seg label="Size in dollars" value={usd} onChange={setUsd} options={MINI_SIZES.map((n) => ({ value: n, label: `$${n}` }))} journey={(n) => J(`size ${n}`)} />
             </div>
           </div>
           <div className="tc__order">

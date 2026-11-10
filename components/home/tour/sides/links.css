@@ -29,7 +29,7 @@
 .tlk__math { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .tlk__sums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); margin: 0; }
 .tlk__sum { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.tlk__sum dt { font-size: var(--fs-xs); line-height: 1.3; color: var(--muted); }
+.tlk__sum dt { font-size: var(--fs-sm); line-height: 1.3; color: var(--muted); }
 .tlk__sum dd { margin: 0; font-size: var(--fs-lg); font-weight: 600; line-height: 1.2; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tlk__sum--you dd { color: var(--accent); }
 .tlk__bar { display: flex; gap: 2px; height: 10px; }

@@ -73,7 +73,7 @@ export default function LinksSide() {
               </p>
               <div className="ta-field">
                 <span className="ta-eyebrow mono">Size</span>
-                <Seg label="The size the sentence carries, in dollars" value={usd} onChange={setUsd} options={MINI_SIZES.map((n) => ({ value: n, label: `$${n}`, say: `${n} dollars` }))} journey={(n) => J(`size ${n}`)} />
+                <Seg label="The size the sentence carries, in dollars" value={usd} onChange={setUsd} options={MINI_SIZES.map((n) => ({ value: n, label: `$${n}` }))} journey={(n) => J(`size ${n}`)} />
               </div>
             </div>
           </li>
@@ -102,7 +102,7 @@ export default function LinksSide() {
               <p className="ta-eyebrow mono">A swap pays you</p>
               <div className="ta-field">
                 <span className="ta-eyebrow mono">Readers who sign it</span>
-                <Seg label="Readers who sign it" value={readers} onChange={setReaders} options={LINK_READER_CHOICES.map((n) => ({ value: n, label: n.toLocaleString('en-US'), say: `${n} ${n === 1 ? 'reader' : 'readers'}` }))} journey={(n) => J(`readers ${n}`)} />
+                <Seg label="Readers who sign it" value={readers} onChange={setReaders} options={LINK_READER_CHOICES.map((n) => ({ value: n, label: n.toLocaleString('en-US'), say: `${n.toLocaleString('en-US')} ${n === 1 ? 'reader' : 'readers'}` }))} journey={(n) => J(`readers ${n}`)} />
               </div>
               {split && fees ? (
                 <div className="tlk__math" aria-live="polite" data-fee={split.feeUsd} data-creator={split.creatorUsd}>

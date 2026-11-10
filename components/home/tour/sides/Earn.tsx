@@ -59,7 +59,7 @@ export default function EarnSide() {
           <p className="ta-eyebrow mono">Best yearly rate per asset</p>
           <div className="ta-field">
             <span className="ta-eyebrow mono">Amount</span>
-            <Seg label="Amount in dollars" value={usd} onChange={setUsd} options={LADDER_AMOUNTS.map((n) => ({ value: n, label: `$${n}`, say: `${n} dollars` }))} journey={(n) => J(`amount ${n}`)} />
+            <Seg label="Amount in dollars" value={usd} onChange={setUsd} options={LADDER_AMOUNTS.map((n) => ({ value: n, label: `$${n}` }))} journey={(n) => J(`amount ${n}`)} />
           </div>
         </div>
 
