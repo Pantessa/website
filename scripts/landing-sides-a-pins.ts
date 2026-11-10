@@ -19,11 +19,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { MINI_DEFAULT_USD, MINI_LEVERAGE, MINI_SIZES, MINI_SYMBOLS, acceptMiniMarket, miniMarketUrl, miniMarkets, miniSideLabel, miniTicket, miniUnits, splitAtAmount } from '../components/home/tour/sides/a/mini-market'
-import { LADDER_AMOUNTS, LADDER_DEFAULT_USD, LADDER_PICK, LADDER_ROWS, LADDER_URL, acceptLadder, fmtAsOfUtc, ladderBarPct, ladderFromLive, ladderFromSeed, yearlyUsd } from '../components/home/tour/sides/a/ladder'
+import { LADDER_AMOUNTS, LADDER_DEFAULT_USD, LADDER_ROWS, LADDER_URL, acceptLadder, fmtAsOfUtc, ladderBarPct, ladderFromLive, ladderFromSeed, yearlyUsd } from '../components/home/tour/sides/a/ladder'
 import { LINK_DEFAULT_READERS, LINK_READER_CHOICES, fmtRoundUsd, fmtSplitUsd, linkSplit, shareWords } from '../components/home/tour/sides/a/split'
 import { FIRST_PARTY_APP_SLUGS, askAppSlugs } from '../lib/ask-apps'
 import { moneyShaped } from '../lib/ask-failure-shape'
-import { EARN_AMOUNTS, EARN_DEFAULT_USD, aaveRows, lidoRow, morphoRows, rankEarnRows, rowsFromWire, rowsToWire, yieldLadder } from '../lib/earn'
+import { EARN_AMOUNTS, EARN_DEFAULT_USD, FEATURED_EARN_ASSETS, aaveRows, lidoRow, morphoRows, rankEarnRows, rowsFromWire, rowsToWire, yieldLadder } from '../lib/earn'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { CREATOR_FEE_SPLIT, LINK_SWAP_FEE_BPS, creatorEarningsUsd } from '../lib/fees'
 import { HOME_APPS } from '../lib/home-apps'
@@ -32,7 +32,7 @@ import { meta as askMeta } from '../lib/home-tour/ask'
 import { meta as chartsMeta } from '../lib/home-tour/charts'
 import { meta as earnMeta } from '../lib/home-tour/earn'
 import { meta as linksMeta } from '../lib/home-tour/links'
-import { TOUR_EARN_ROWS } from '../lib/home-tour-live'
+import { TOUR_EARN_ROWS, tourEarnOf } from '../lib/home-tour-live'
 import { tourFees } from '../lib/home-tour-server'
 import { TICKET_DEFAULT_USD, TICKET_LEVERAGE_PRESETS, TICKET_USD_PRESETS, composeTicketAsk, freshTicket, ticketSidesFor } from '../lib/order-ticket'
 import { canTradeAsk } from '../lib/trade-venue-gate'
@@ -278,27 +278,47 @@ export function landingSidesAPins(check: Check): void {
   // ── EARN: the ladder ──
   const wire = earnFixture()
   const live = acceptLadder(wire)
-  const boards = yieldLadder(rankEarnRows(rowsFromWire(wire.rows)), LADDER_PICK)
+  const ranked = rankEarnRows(rowsFromWire(wire.rows))
+  // The board's own ladder at the snapshot's length: every row either source can carry.
+  const boards = yieldLadder(ranked, TOUR_EARN_ROWS)
+  const six = yieldLadder(ranked, LADDER_ROWS)
   const apys = (live?.ladder ?? []).map((r) => r.apyPct ?? 0)
+  const shown = new Set((live?.ladder ?? []).map((r) => r.asset))
+  const familiar = boards.filter((r) => FEATURED_EARN_ASSETS.includes(r.asset))
+  const passedOver = boards.filter((r) => !shown.has(r.asset))
   check(
-    "sides-a earn: the ladder is the Earn board's own (lib/earn yieldLadder over the route's rows: best rate per asset, familiar assets first, drawn highest first) and the miniature shows its SIX highest bars of the board's eight — the same eight the server snapshot carries, so both sources show the same six; one bar per asset, nothing under the board's floor; a body that is not an answer is NULL",
+    "sides-a earn: the ladder is the Earn board's own pick asked for SIX bars (lib/earn yieldLadder, Nate's rule for the board: it PICKS familiar assets first and DRAWS highest rate first) — so ether on Lido is on it, a familiar asset is never passed over for a long-tail coin with a higher rate, the first row is the highest of the six, one bar per asset, nothing under the board's floor; a body that is not an answer is NULL",
     live !== null &&
       LADDER_ROWS === 6 &&
-      LADDER_PICK === TOUR_EARN_ROWS &&
-      boards.length === LADDER_PICK &&
       live.ladder.length === LADDER_ROWS &&
-      live.ladder.map((r) => r.id).join() === boards.slice(0, LADDER_ROWS).map((r) => r.id).join() &&
+      live.ladder.map((r) => r.id).join() === six.map((r) => r.id).join() &&
       apys.every((a, i) => i === 0 || apys[i - 1] >= a) &&
-      boards.slice(LADDER_ROWS).every((r) => (r.apyPct ?? 0) <= apys[apys.length - 1]) &&
-      new Set(live.ladder.map((r) => r.asset)).size === live.ladder.length &&
+      apys[0] === Math.max(...apys) &&
+      familiar.length > 0 &&
+      familiar.length <= LADDER_ROWS &&
+      familiar.every((r) => shown.has(r.asset)) &&
+      live.ladder.find((r) => r.asset === 'ETH')?.venue === 'lido' &&
       live.ladder.find((r) => r.asset === 'USDC')?.venue === 'morpho' &&
+      passedOver.length > 0 &&
+      passedOver.every((r) => !FEATURED_EARN_ASSETS.includes(r.asset)) &&
+      passedOver.some((r) => (r.apyPct ?? 0) > apys[apys.length - 1]) &&
+      new Set(live.ladder.map((r) => r.asset)).size === live.ladder.length &&
       !boards.some((r) => r.asset === 'WBTC' || r.asset === 'DAI' || r.asset === 'FRXUSD') &&
       live.ways === wire.rows.length &&
       acceptLadder(null) === null &&
       acceptLadder({ rows: 'x' }) === null &&
       acceptLadder({}) === null &&
       acceptLadder({ rows: [] })?.ladder.length === 0,
-    `${(live?.ladder ?? []).map((r) => `${r.asset}/${r.venue} ${r.apyPct}`).join(' · ')} | left to the board: ${boards.slice(LADDER_ROWS).map((r) => r.asset).join(', ')}`,
+    `${(live?.ladder ?? []).map((r) => `${r.asset}/${r.venue} ${r.apyPct}`).join(' · ')} | left to the board: ${passedOver.map((r) => `${r.asset} ${r.apyPct}`).join(', ')}`,
+  )
+  // The server snapshot's rows are lane DATA's own shaping of the same board rows (lib/home-tour-live tourEarnOf).
+  const snapshot = tourEarnOf(rowsFromWire(wire.rows)).earn
+  const fromSeed = ladderFromSeed(snapshot, LADDER_DEFAULT_USD)
+  const fromLive = ladderFromLive(live?.ladder ?? [], LADDER_DEFAULT_USD)
+  check(
+    'sides-a earn: ONE pick for both sources — the same board rows through the server snapshot (the first frame) and through the live route give the same six bars in the same order with the same sentences, so nothing changes places when the live read lands',
+    snapshot.length === TOUR_EARN_ROWS && fromSeed.length === LADDER_ROWS && fromSeed.map((r) => r.id).join() === fromLive.map((r) => r.id).join() && fromSeed.every((r, i) => r.ask !== null && r.ask === fromLive[i].ask) && fromSeed[0].apy === Math.max(...fromSeed.map((r) => r.apy)),
+    fromSeed.map((r) => r.asset).join(' · '),
   )
   const earnBad: string[] = []
   for (const usd of LADDER_AMOUNTS) {
@@ -333,7 +353,7 @@ export function landingSidesAPins(check: Check): void {
       seeded[1].ask === seed[1].ask &&
       LADDER_AMOUNTS.filter((a) => a !== LADDER_DEFAULT_USD).every((a) => ladderFromSeed(seed, a).every((r) => r.ask === null) && ladderFromSeed(seed, a).length === 2) &&
       ladderFromSeed([], LADDER_DEFAULT_USD).length === 0 &&
-      ladderFromSeed(Array.from({ length: TOUR_EARN_ROWS }, (_, i) => ({ asset: `A${i}`, venue: 'Aave', chain: 'Ethereum', apy: 9 - i, ask: 'x' })), LADDER_DEFAULT_USD).map((r) => r.asset).join() === 'A0,A1,A2,A3,A4,A5' &&
+      ladderFromSeed(Array.from({ length: TOUR_EARN_ROWS }, (_, i) => ({ asset: i === TOUR_EARN_ROWS - 1 ? 'ETH' : `A${i}`, venue: 'Aave', chain: 'Ethereum', apy: 9 - i, ask: 'x' })), LADDER_DEFAULT_USD).map((r) => r.asset).join() === 'A0,A1,A2,A3,A4,ETH' &&
       ladderFromSeed(EMPTY_TOUR.earn, LADDER_DEFAULT_USD).length === 0 &&
       seeded[0].id === at(25).find((r) => r.asset === 'USDT')?.id &&
       seeded[1].id === at(25).find((r) => r.asset === 'ETH')?.id,

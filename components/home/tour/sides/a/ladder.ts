@@ -1,9 +1,10 @@
 // THE TOUR · EARN — the ladder's rules (squad landing, 2026-11-10; lane
 // SIDES-A). Pure: no React, no fetch. The ladder is the Earn board's own
-// (lib/earn yieldLadder: the best live rate per asset, familiar assets first,
-// drawn highest first); the miniature shows its six highest bars (round 2:
-// the full board is on the same page). A row's sentence is the board's own
-// composer for the amount picked (the row's `askFor`). Two sources, one shape:
+// (lib/earn yieldLadder — Nate's rule for the board, website#1050: it PICKS
+// familiar assets first and DRAWS highest rate first), asked for six bars
+// (round 2: the full board is on the same page), so ether on Lido is on it
+// beside the dollar coins. A row's sentence is the board's own composer for
+// the amount picked (the row's `askFor`). Two sources, one shape, ONE pick:
 //   • the server snapshot's rows (`data.earn`, lane DATA) — the first frame.
 //     Each carries ONE sentence, composed at the board's default amount, so
 //     it can be run at that amount only;
@@ -15,9 +16,7 @@
 import { EARN_AMOUNTS, EARN_DEFAULT_USD, rankEarnRows, rowsFromWire, yieldLadder, type EarnResponse, type EarnRow } from '@/lib/earn'
 import type { TourEarnRow } from '@/lib/home-tour'
 
-/** The board's own ladder holds this many bars (the server snapshot carries the same: lib/home-tour-live TOUR_EARN_ROWS). */
-export const LADDER_PICK = 8
-/** The miniature shows the highest of them: the full board is one door away, on the same page. */
+/** Bars on the miniature's ladder: the board's pick, asked for six (the full board is one door away, on the same page). */
 export const LADDER_ROWS = 6
 export const LADDER_AMOUNTS: readonly number[] = EARN_AMOUNTS
 export const LADDER_DEFAULT_USD: number = EARN_DEFAULT_USD
@@ -55,7 +54,7 @@ export function acceptLadder(body: unknown): LadderLive | null {
   if (!b || typeof b !== 'object' || !Array.isArray(b.rows)) return null
   const all = rankEarnRows(rowsFromWire(b.rows))
   return {
-    ladder: yieldLadder(all, LADDER_PICK).slice(0, LADDER_ROWS),
+    ladder: yieldLadder(all, LADDER_ROWS),
     ways: all.length,
     failed: Array.isArray(b.failed) ? b.failed.filter((v): v is EarnRow['venue'] => typeof v === 'string') : [],
     asOf: typeof b.asOf === 'string' ? b.asOf : null,
@@ -69,13 +68,25 @@ export function ladderFromLive(rows: readonly EarnRow[], usd: number): LadderRow
     .map((r) => ({ id: idOf(r.asset, r.venueLabel, r.chainLabel), asset: r.asset, venue: r.venueLabel, chain: r.chainLabel, apy: r.apyPct, ask: r.askFor(usd) }))
 }
 
+/** The board's own pick (lib/earn yieldLadder: familiar assets first, the
+ *  first `n`, drawn highest rate first) asked of the SNAPSHOT's rows, so the
+ *  first frame shows the same bars the live read will. The pick reads a row's
+ *  asset and rate (and its deposits, to break a tie) and nothing else, so a
+ *  snapshot row is handed over in that much of the board's row shape and
+ *  found again by its place. Nothing is ranked here. Pinned: the same rows
+ *  through both sources give the same bars in the same order. */
+function boardPick(seed: readonly TourEarnRow[], n: number): TourEarnRow[] {
+  const shaped = seed.map((r, i) => ({ id: String(i), asset: r.asset, apyPct: r.apy, tvlUsd: null, best: false }) as unknown as EarnRow)
+  return yieldLadder(shaped, n)
+    .map((r) => seed[Number(r.id)])
+    .filter((r): r is TourEarnRow => r !== undefined)
+}
+
 /** Snapshot rows at an amount: each row's own sentence, which exists at the
  *  board's default amount only (never re-written for another). */
 export function ladderFromSeed(seed: readonly TourEarnRow[], usd: number): LadderRow[] {
-  return seed
-    .filter((r) => r && typeof r.asset === 'string' && Number.isFinite(r.apy) && r.apy > 0)
-    .slice(0, LADDER_ROWS)
-    .map((r) => ({ id: idOf(r.asset, r.venue, r.chain), asset: r.asset, venue: r.venue, chain: r.chain, apy: r.apy, ask: usd === LADDER_DEFAULT_USD && r.ask ? r.ask : null }))
+  const rated = seed.filter((r) => r && typeof r.asset === 'string' && Number.isFinite(r.apy) && r.apy > 0)
+  return boardPick(rated, LADDER_ROWS).map((r) => ({ id: idOf(r.asset, r.venue, r.chain), asset: r.asset, venue: r.venue, chain: r.chain, apy: r.apy, ask: usd === LADDER_DEFAULT_USD && r.ask ? r.ask : null }))
 }
 
 /** A bar's width, percent of the ladder's best rate (a floor keeps a small rate visible). */
