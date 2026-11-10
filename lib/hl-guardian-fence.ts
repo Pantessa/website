@@ -7,6 +7,7 @@
 import type { ClarifyOption } from '@/lib/clarify'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
 import { ROBINHOOD_TICKER_NAMES, ROBINHOOD_TICKER_SET } from '@/lib/robinhood-tickers'
+import { HL_BUILDER_DEXES } from '@/lib/hl-dex'
 
 // ── The coin fence ──────────────────────────────────────────────────────────
 //
@@ -43,7 +44,7 @@ export type GuardianCoinFence =
   | { ok: true; coin: string }
   | {
       ok: false
-      reason: 'stock' | 'not-listed' | 'delisted'
+      reason: 'stock' | 'not-listed' | 'delisted' | 'builder-dex'
       /** The chat reply (markdown). */
       reply: string
       /** The same refusal as one plain sentence — job segments, audit notes. */
@@ -105,6 +106,26 @@ function notListedRefusal(ask: GuardianArmAsk, t: string): GuardianCoinFence {
   }
 }
 
+/** The coin IS a Hyperliquid market — on a builder dex (`xyz:SP500`). The
+ *  order layer places orders there; the Guardian's watcher reads the main
+ *  book's ledger only, so it would never see the position. Say that — not
+ *  "isn't a Hyperliquid market", which is false — and offer the close. */
+function builderDexRefusal(t: string, dexLabel: string): GuardianCoinFence {
+  const problem =
+    `${t} trades on Hyperliquid's ${dexLabel} builder dex. The Guardian watches main-book positions only for now, ` +
+    `so there is no stop it can arm there yet — the position can be closed any time with "close my ${t} position on hyperliquid".`
+  return {
+    ok: false,
+    reason: 'builder-dex',
+    reply:
+      `🛡️ **${t} trades on Hyperliquid's ${dexLabel} builder dex.** The Guardian watches main-book positions only for now, ` +
+      `so there is no stop I can arm on it yet. You can open and close it here, and the close is one signature whenever you want out.`,
+    problem,
+    question: `Close ${t} instead?`,
+    chips: [{ label: `Close my ${t} position`, resume: `close my ${t} position on hyperliquid` }],
+  }
+}
+
 function delistedRefusal(t: string): GuardianCoinFence {
   const problem = `${t} was delisted on Hyperliquid — there's no market left for the Guardian to watch.`
   return { ok: false, reason: 'delisted', reply: `🛡️ **${t} was delisted on Hyperliquid** — there's no market left for the Guardian to watch.`, problem, question: '', chips: [] }
@@ -116,13 +137,27 @@ function delistedRefusal(t: string): GuardianCoinFence {
  * refusal names the coin and says why, with chips that work instead. Pass
  * `universe: null` when no live read is available (see the block comment).
  */
-export function fenceGuardianCoin(ask: GuardianArmAsk, universe: HlUniverse | null): GuardianCoinFence {
+export function fenceGuardianCoin(
+  ask: GuardianArmAsk,
+  universe: HlUniverse | null,
+  /** The builder dexes the order layer places orders on, by name → their
+   *  listed markets (lib/hl-universe hlOrderListings().dexes). A coin the
+   *  main book does not list but one of these does is refused in its own
+   *  words — it IS a Hyperliquid market, just not one the Guardian watches. */
+  builderDexes?: Readonly<Record<string, ReadonlySet<string> | null | undefined>> | null,
+): GuardianCoinFence {
   const t = ask.coin.toUpperCase()
   if (universe) {
     const live = findCi(universe.listed, ask.coin)
     if (live) return { ok: true, coin: live }
     if (findCi(universe.delisted, ask.coin)) return delistedRefusal(t)
-    return ROBINHOOD_TICKER_SET.has(t) ? stockRefusal(t) : notListedRefusal(ask, t)
+    // A Robinhood Chain stock keeps the stock's answer ("protect my NVDA" is
+    // the token in the wallet, and xyz:NVDA is a different thing to hold).
+    if (ROBINHOOD_TICKER_SET.has(t)) return stockRefusal(t)
+    for (const [dex, listed] of Object.entries(builderDexes ?? {})) {
+      if (listed && findCi(listed, `${dex}:${ask.coin}`)) return builderDexRefusal(t, HL_BUILDER_DEXES[dex]?.label ?? dex)
+    }
+    return notListedRefusal(ask, t)
   }
   if (ROBINHOOD_TICKER_SET.has(t) && !HL_STOCK_TICKER_COLLISIONS.has(t)) return stockRefusal(t)
   return { ok: true, coin: ask.coin }

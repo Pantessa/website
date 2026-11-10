@@ -17,6 +17,7 @@ import { alchemyEnabled, getMultichainPortfolio } from '@/lib/alchemy'
 import { chainById } from '@/lib/chains'
 import { cadenceLabel, periodPhrase, type DcaCadence } from '@/lib/dca'
 import type { DcaScheduleView } from '@/lib/dca-exec'
+import { HL_BUILDER_DEXES, HL_BUILDER_DEX_NAMES, hlTickerOf } from '@/lib/hl-dex'
 import type { MorphoPositionRow } from '@/lib/morpho-supply'
 
 export interface JobContextRow {
@@ -84,20 +85,31 @@ async function mcpBaseFor(pattern: RegExp): Promise<string | null> {
 async function hlRows(wallet: string, coins: Set<string>): Promise<JobContextRow[]> {
   const { InfoClient, HttpTransport } = await import('@nktkas/hyperliquid')
   const info = new InfoClient({ transport: new HttpTransport({}) })
-  const state = await info.clearinghouseState({ user: wallet as `0x${string}` })
+  const user = wallet as `0x${string}`
+  const state = await info.clearinghouseState({ user })
   const rows: JobContextRow[] = []
-  const positions = state.assetPositions
-    .map((ap) => ap.position)
-    .filter((p) => Number(p.szi) !== 0)
+  // A job step names its coin as the ask did (`SP500`, `xyz:SP500`); the venue
+  // names a builder-dex position `xyz:SP500`. Compare on the bare ticker.
+  const tickerOf = (coin: string) => hlTickerOf(coin).toUpperCase()
+  const wanted = new Set([...coins].map(tickerOf))
+  const open = (s: typeof state | null) => (s ? s.assetPositions.map((ap) => ap.position).filter((p) => Number(p.szi) !== 0) : [])
+  const onMain = open(state)
+  // A builder dex keeps its own ledger — a position on `xyz:SP500` is not in
+  // the main book's state. Read the dexes we place orders on only when the
+  // job names a coin the main book shows no position for.
+  const missing = [...wanted].some((t) => !onMain.some((p) => tickerOf(p.coin) === t))
+  const dexStates = missing ? await Promise.all(HL_BUILDER_DEX_NAMES.map((dex) => info.clearinghouseState({ user, dex }).catch(() => null))) : []
+  const all = [...onMain, ...dexStates.flatMap((s) => open(s))]
+  const positions = all
     // The job's coins first; if the job named none, show what's open.
-    .sort((a, b) => Number(coins.has(b.coin)) - Number(coins.has(a.coin)))
+    .sort((a, b) => Number(wanted.has(tickerOf(b.coin))) - Number(wanted.has(tickerOf(a.coin))))
     .slice(0, coins.size > 0 ? 4 : 3)
   for (const p of positions) {
     const size = Number(p.szi)
     const pnl = Number(p.unrealizedPnl ?? 0)
     const lev = p.leverage?.value
     rows.push({
-      label: `${p.coin} ${size >= 0 ? 'long' : 'short'}${lev ? ` ${lev}x` : ''}`,
+      label: `${hlTickerOf(p.coin)} ${size >= 0 ? 'long' : 'short'}${lev ? ` ${lev}x` : ''}`,
       value: `${pnl >= 0 ? '+' : '−'}${usd(pnl)} PnL`,
       sub: `entry $${p.entryPx ?? '—'} · size ${Math.abs(size)}${p.liquidationPx ? ` · liq $${p.liquidationPx}` : ''}`,
       tone: pnl >= 0 ? 'pos' : 'neg',
@@ -107,7 +119,11 @@ async function hlRows(wallet: string, coins: Set<string>): Promise<JobContextRow
   if (accountValue > 0) {
     rows.push({ label: 'Hyperliquid account value', value: usd(accountValue) })
   }
-  const named = [...coins].filter((c) => !positions.some((p) => p.coin === c))
+  HL_BUILDER_DEX_NAMES.forEach((dex, i) => {
+    const dexValue = Number(dexStates[i]?.marginSummary?.accountValue ?? 0)
+    if (dexValue > 0) rows.push({ label: `Hyperliquid ${HL_BUILDER_DEXES[dex].label} dex balance`, value: usd(dexValue) })
+  })
+  const named = [...wanted].filter((t) => !positions.some((p) => tickerOf(p.coin) === t))
   for (const c of named) {
     rows.push({ label: `${c} position`, value: 'flat', sub: 'no open position right now' })
   }

@@ -303,6 +303,8 @@ function summaryOf(kind: DeskLegKind, artifact: Record<string, unknown> | null, 
     const hl = obj(obj(artifact?.orderRequest)?.hl)
     if (hl?.pre) extras.push('a guarded leverage update signs first, then the order')
     if (hl?.feeApproval) extras.push('a one-time builder-fee approval signs first')
+    const move = obj(hl?.dexTransfer)
+    if (move) extras.push(`a move of $${str(move.amount) ?? '?'} USDC from the main perp balance into the ${str(move.dex) ?? 'builder'} dex signs before the order (a user-signed sendAsset to the wallet's own account — a builder dex keeps its own balance)`)
     if (kind === 'hlBatch') {
       const members = hlBatchOf(obj(artifact?.orderRequest))
       const named = members.map((m) => str(m.kind) ?? 'action').join(' → ')

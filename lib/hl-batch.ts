@@ -73,6 +73,7 @@ type OrderRequestLike = {
     expected?: { coin?: unknown; kind?: unknown; isBuy?: unknown }
     pre?: { action?: unknown; nonce?: unknown; typedData?: unknown; expected?: { coin?: unknown; leverage?: unknown } }
     feeApproval?: unknown
+    dexTransfer?: unknown
   }
   batch?: unknown
 }
@@ -89,6 +90,11 @@ export function composeHlBatch(orderRequest: unknown): HlBatchMember[] | null {
   const hl = o.hl
   if (!hl || typeof hl !== 'object' || !hl.action || typeof hl.nonce !== 'number' || !o.typedData) return null
   if (hl.feeApproval) return null
+  // A builder-dex order whose collateral still has to MOVE into the dex
+  // carries a user-signed `sendAsset` (lib/hyperliquid-exec dexTransfer) —
+  // like the fee approval it is a wallet-chain signature, not an L1 action,
+  // and the order behind it has no margin until it lands. Never batchable.
+  if (hl.dexTransfer) return null
   const kind = hl.expected?.kind
   if (kind !== 'open' && kind !== 'close' || typeof hl.expected?.coin !== 'string') return null
   const members: HlBatchMember[] = []

@@ -58,6 +58,7 @@ import {
 } from '@/lib/hyperliquid-exec'
 import { HL_BATCH_MAX_MEMBERS } from '@/lib/hl-batch'
 import { HL_DOMAIN_CHAIN_ID } from '@/lib/desk-wire'
+import { HL_BUILDER_ASSET_BASE, HL_BUILDER_ASSET_SPAN, HL_BUILDER_DEXES, HL_BUILDER_DEX_NAMES, HL_USDC_TOKEN } from '@/lib/hl-dex'
 import { CONFIDENTIAL_LEVEL, ORIGIN_CHAIN_IDS, VENUE_SHARE_MAX_BPS } from '@/lib/cross-chain-swap'
 import { LIFI_MAX_QUOTE_SHORTFALL_BPS, LIFI_POLICY_HOST, LIFI_QUOTE_TTL_SEC, lifiRoutersFor } from '@/lib/lifi-venue'
 import { LIFI_LEG_FLAT_USD, lifiBridgeRoutersFor } from '@/lib/lifi-bridge'
@@ -477,18 +478,28 @@ function hyperliquidVenue(): ManifestVenue {
       { name: 'markets · books · funding · portfolio · fills', shape: 'read', description: 'The public info API through the free MCP (read-only).' },
       { name: 'open · close · stop', shape: 'hlAction', description: 'An L1 order action the wallet signs; the relay (/api/hl/submit) re-derives the typed data from the raw action and nonce, recovers the signer, re-guards against the live market, then forwards.' },
       { name: 'batch', shape: 'hlAction', description: `Up to ${HL_BATCH_MAX_MEMBERS} members in one signature (guardHlBatch).` },
-      { name: 'set leverage', shape: 'hlAction', description: 'Cross-mode leverage within the coin’s venue range, guarded.' },
+      { name: 'set leverage', shape: 'hlAction', description: 'Leverage within the coin’s venue range, guarded: cross mode, or isolated on a market the venue marks isolated-only (read live from the market’s own row).' },
+      { name: 'builder-dex markets', shape: 'hlAction', description: `Orders, leverage and closes on the builder-deployed (HIP-3) dexes in the registry (${HL_BUILDER_DEX_NAMES.join(', ')}) — a market’s asset id is ${HL_BUILDER_ASSET_BASE} + dex slot × ${HL_BUILDER_ASSET_SPAN} + its row, the slot read live from the venue and held to the registry’s on mainnet. Any other builder dex is charted and never traded.` },
+      { name: 'move collateral into a builder dex', shape: 'hlAction', description: 'A user-signed sendAsset of the wallet’s own USDC from its main perp balance into a registry dex (a standard account keeps a separate balance per dex). The destination is always the signer’s own address.' },
       { name: 'approve builder fee', shape: 'hlAction', description: 'Approves EXACTLY the fee charged (HL_BUILDER_MAX_FEE_RATE), never a looser cap.' },
       { name: 'deposit', shape: 'tx', description: 'A USDC transfer on Arbitrum to Bridge2, minimum HL_MIN_DEPOSIT_USDC.' },
     ],
     guards: [
       { module: 'lib/hyperliquid-exec.ts', function: 'guardHlExecBuild · guardHlLeverageBuild · guardHlBuilderFeeApproval', refuses: ['an order whose coin, side, size or reduce-only flag differs from the intent', `a limit price further than ${HL_EXEC_SLIPPAGE_BPS} bps from the live mark`, 'leverage outside the coin’s 1–max range', 'a builder field naming any address but the treasury or any fee but the configured one', `an order under $${HL_MIN_ORDER_USD}`] },
+      { module: 'lib/hyperliquid-exec.ts', function: 'hlAssetIdentity · pickHlMarket', refuses: ['an asset id that is not the live id of the market the ask named', 'a builder-dex asset id for a main-book market, and a main-book id for a builder-dex market', 'a builder dex outside the registry', 'a registry dex that answers at another mainnet slot, under another deployer, or with collateral that is not USDC', 'a cross leverage update on an isolated-only market'] },
+      { module: 'lib/hyperliquid-exec.ts', function: 'guardHlDexTransfer', refuses: ['a destination that is not the signing wallet', 'a source other than the main perp balance', 'a destination dex outside the registry', 'any token but USDC', 'a sub-account source', 'an amount that is not a whole-cent figure or exceeds the free main balance'] },
       { module: 'lib/hl-batch.ts', function: 'guardHlBatch', refuses: [`more than ${HL_BATCH_MAX_MEMBERS} members`, 'a member whose nonce or shape is not the composed one'] },
       { module: 'app/api/hl/submit/route.ts', function: 'POST (relay)', refuses: ['a signature that does not recover to the account the action names', 'an action that fails the live re-guard'] },
       KILL_SWITCH,
     ],
-    bounds: { signingDomainChainId: HL_DOMAIN_CHAIN_ID, execSlippageBps: HL_EXEC_SLIPPAGE_BPS, minOrderUsd: HL_MIN_ORDER_USD, minDepositUsdc: HL_MIN_DEPOSIT_USDC, batchMaxMembers: HL_BATCH_MAX_MEMBERS, builderFeeTenthBps: HL_BUILDER_FEE_TENTH_BPS, builderMinAccountUsd: HL_BUILDER_MIN_ACCOUNT_USD },
-    policy: { defaultAllowed: true, notes: ['The builder fee (tenths of a bp) pays the treasury and is approved exactly once at exactly that rate.', 'Guardians (standing stop-loss / take-profit) run under a delegated agent key that the venue bars from withdrawing.'] },
+    bounds: {
+      signingDomainChainId: HL_DOMAIN_CHAIN_ID, execSlippageBps: HL_EXEC_SLIPPAGE_BPS, minOrderUsd: HL_MIN_ORDER_USD, minDepositUsdc: HL_MIN_DEPOSIT_USDC, batchMaxMembers: HL_BATCH_MAX_MEMBERS, builderFeeTenthBps: HL_BUILDER_FEE_TENTH_BPS, builderMinAccountUsd: HL_BUILDER_MIN_ACCOUNT_USD,
+      builderDexes: HL_BUILDER_DEX_NAMES.join(','),
+      builderDexMainnetSlots: HL_BUILDER_DEX_NAMES.map((d) => HL_BUILDER_DEXES[d].mainnetIndex),
+      builderDexDeployers: HL_BUILDER_DEX_NAMES.map((d) => `${d}:${HL_BUILDER_DEXES[d].mainnetDeployer}`).join(','),
+      builderAssetBase: HL_BUILDER_ASSET_BASE, builderAssetSpan: HL_BUILDER_ASSET_SPAN, dexTransferToken: HL_USDC_TOKEN.mainnet,
+    },
+    policy: { defaultAllowed: true, notes: ['The builder fee (tenths of a bp) pays the treasury and is approved exactly once at exactly that rate.', 'Guardians (standing stop-loss / take-profit) run under a delegated agent key that the venue bars from withdrawing; they watch main-book positions only — no stop is armed on a builder-dex position.'] },
     custody: 'UNMEASURED through custody. The fixed 1337 signing domain, the approveAgent delegation for standing intents and the builder-fee approval are the most custody friction of any venue here; measure a custody signer before promising perps.',
   }
 }

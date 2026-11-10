@@ -33,7 +33,7 @@ import { ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import ChartMount, { type ChartStats } from '@/components/markets/chart/ChartMount'
 import type { ChartState } from '@/lib/chart-state'
-import { CHART_FEED_LABELS, chartPairFor, chartUnitOf, isHip3Pair, isLookOnlyPair, type ChartFeed, type ChartTf } from '@/lib/charts'
+import { CHART_FEED_LABELS, chartPairFor, chartUnitOf, isChartOnlyPair, isLookOnlyPair, type ChartFeed, type ChartTf } from '@/lib/charts'
 import { fmtIndexStat, fmtIndexValue, lookOnlyBasis, lookOnlySessionLine, macroChangeOf } from '@/lib/macro'
 import { fmtReadChange } from '@/lib/read'
 import {
@@ -664,7 +664,7 @@ export default function SymbolPage({
         )}
         {/* The guide's one hint card: under the chips on a phone, right under
             the tabs on a desktop (where the chips hide). */}
-        {pair && <GuideSeat surface="symbol" symbol={sym} ask={isHip3Pair(pair) || lookOnly ? null : composeAsk(pair, 'buy', { usd: 25 })} chartOnly={isHip3Pair(pair)} lookOnly={lookOnly} />}
+        {pair && <GuideSeat surface="symbol" symbol={sym} ask={isChartOnlyPair(pair) || lookOnly ? null : composeAsk(pair, 'buy', { usd: 25 })} chartOnly={isChartOnlyPair(pair)} lookOnly={lookOnly} />}
 
         {/* ── Chart: always mounted; shown on Overview + Chart, parked elsewhere ── */}
         <div ref={shellRef} className={`tchart sym__chart${expanded ? ' tchart--expanded' : ''}${showChart ? '' : ' is-parked'}`} data-chart-tab={tab} aria-hidden={showChart ? undefined : true}>

@@ -64,11 +64,12 @@ import { INTENT_SLUG_RE, mintSlug } from '@/lib/intent-links'
 import prismaDb from '@/lib/db'
 import { fiatClause, fiatInAsk, mentionsFiat, prettyChainWord } from '@/lib/chain-lexicon'
 import { warmFiatRates } from '@/lib/ecb-fx'
-import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlCanonicalAsk, hlOpenCollateralShortfall, hlUnsizedChips, nearestHlCoins, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
+import { arbitrumUsdcBalance, buildHlExecTurn, fetchHlSnapshot, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlCanonicalAsk, hlMinOpenUsd, hlOpenCollateralShortfall, hlUnsizedChips, nearestHlCoins, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
 import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 
-import { hlPerpUniverse } from '@/lib/hl-universe'
+import { hlOrderListings, hlPerpUniverse } from '@/lib/hl-universe'
+import { HL_BUILDER_DEXES, HL_BUILDER_DEX_NAMES, hlDexOf, hlTickerOf, isOrderableHlDex, orderableHlTickers, resolveHlCoin } from '@/lib/hl-dex'
 import { rescueIntent } from '@/lib/intent-rescue'
 import { starterDoor } from '@/lib/starter-door'
 import { lookOnlyDoor } from '@/lib/look-only-door'
@@ -1354,7 +1355,10 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
     // Guardian-worded asks warm the live perp universe first, so a compound
     // "…, then protect my X …" meets the same coin fence the lone ask does
     // (compileJobAsk is sync and reads the cache; cold = the static fence).
-    if (/\b(protect|stop[- ]?loss|take[- ]?profit)\b/i.test(message)) await hlPerpUniverse()
+    // (hlOrderListings warms the main book AND the builder dexes orders are
+    // placed on, so a stop on a builder-dex market is refused in its own
+    // words — lib/hl-guardian-fence builderDexRefusal.)
+    if (/\b(protect|stop[- ]?loss|take[- ]?profit)\b/i.test(message)) await hlOrderListings().catch(() => null)
     const jobAsk = compileJobAsk(message)
 
     if (jobAsk && 'clarify' in jobAsk) {
@@ -1702,7 +1706,7 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
     // the guardian for a Robinhood Chain stock). Only guardian-worded asks
     // pay the (cached) universe read.
     const parsedArm = parseGuardianArm(message)
-    const armFence = parsedArm ? fenceGuardianCoin(parsedArm, await hlPerpUniverse()) : null
+    const armFence = parsedArm ? fenceGuardianCoin(parsedArm, await hlPerpUniverse(), (await hlOrderListings().catch(() => null))?.dexes) : null
     if (parsedArm && armFence && !armFence.ok) {
       nativeTrace({ type: 'note', level: 'warn', label: `guardian layer: ${parsedArm.coin} refused by the coin fence (${armFence.reason}) — answered by name, nothing armed` })
       return NextResponse.json({
@@ -1816,10 +1820,26 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
         // the turn at "HYP is not a Hyperliquid perp". The live universe
         // knows what they meant: offer the same ask with the listed coin.
         // A failed universe read falls through — the build refuses by name.
+        let hlOnBuilderDex = false
         if (hlIntent.kind !== 'deposit') {
-          const universe = await hlPerpUniverse().catch(() => null)
-          if (universe && !universe.listed.has(hlIntent.coin)) {
-            const near = nearestHlCoins(hlIntent.coin, universe.listed)
+          // The coin resolves on the MAIN book first, then on the builder
+          // dexes the order layer places orders on (lib/hl-dex — `SP500` is
+          // `xyz:SP500`). "Isn't a Hyperliquid perp" is said only when every
+          // one of those listings was read and none carries it; a dex that
+          // did not answer falls through to the build, which reads it live.
+          const listings = await hlOrderListings().catch(() => null)
+          const named = hlDexOf(hlIntent.coin)
+          if (named && !isOrderableHlDex(named)) {
+            nativeTrace({ type: 'status', label: `native hl layer claimed the turn: ${hlIntent.coin} names the ${named} builder dex — no order is built there, refusing by name` })
+            return NextResponse.json({
+              reply: `📈 **${hlTickerOf(hlIntent.coin)}** is on Hyperliquid's **${named}** builder dex. Pantessa places orders on the main book and the ${HL_BUILDER_DEX_NAMES.map((d) => HL_BUILDER_DEXES[d].label).join(', ')} builder dex only, so there is no order to build there yet.`,
+              buildPath: 'native-hl-exec',
+            })
+          }
+          const resolved = listings ? resolveHlCoin(hlIntent.coin, listings) : null
+          hlOnBuilderDex = !!resolved?.dex
+          if (listings?.complete && !resolved) {
+            const near = nearestHlCoins(hlTickerOf(hlIntent.coin), orderableHlTickers(listings))
             nativeTrace({ type: 'status', label: `native hl layer claimed the turn: ${hlIntent.coin} isn't a listed perp — ${near.length ? `offering ${near.join(', ')}` : 'no near match, refusing by name'}` })
             if (near.length) {
               return NextResponse.json({
@@ -1836,7 +1856,14 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
         // are the ask; the size is the one missing input. Chips, not prose —
         // every resume round-trips parseHlIntent into a full order.
         if (hlIntent.kind === 'open-unsized') {
-          const chips = hlUnsizedChips(hlIntent)
+          // A builder-dex market can trade in steps dollars wide (xyz:SP500:
+          // 0.001 ≈ $7.46), where the usual $12 chip rounds under the venue's
+          // minimum. Size the chips to what the market takes; a failed read
+          // keeps the presets and the build refuses by name with its own chip.
+          const smallest = hlOnBuilderDex
+            ? await fetchHlSnapshot(hlIntent.coin, undefined).then((s) => hlMinOpenUsd(s.markPx, s.szDecimals), () => undefined)
+            : undefined
+          const chips = hlUnsizedChips(hlIntent, smallest)
           nativeTrace({ type: 'status', label: `native hl layer claimed the turn: unsized ${hlIntent.isBuy ? 'long' : 'short'} on ${hlIntent.coin}${hlIntent.leverage ? ` at ${hlIntent.leverage}x` : ''} — asking for the size with chips` })
           return NextResponse.json({
             reply: `📈 ${hlIntent.leverage ? `${hlIntent.leverage}x ` : ''}${hlIntent.isBuy ? 'long' : 'short'} on **${hlIntent.coin}** — how much? Pick a size and I'll build the guarded Hyperliquid order (you sign it; funds never leave your wallet).`,

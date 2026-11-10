@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
-import { resolveChartPair } from '@/lib/charts'
+import { builderDexOfPair, resolveChartPair } from '@/lib/charts'
 import { getWalletViewCached } from '@/lib/wallet-view'
 import { fetchPositions } from '@/lib/hl-guardian-store'
 import { callMcpTool } from '@/lib/mcp-call'
@@ -62,6 +62,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(empty, { headers: { 'cache-control': 'no-store' } })
   }
   const sym = pair.symbol
+  // The dex a perp page's own market trades on (`xyz` for /t/SP500); null for the main book and every spot page.
+  const builderDex = builderDexOfPair(pair)
   const aliases = new Set(positionAliases(sym))
   const wallet = address.toLowerCase()
   const failed: string[] = []
@@ -75,7 +77,8 @@ export async function GET(req: NextRequest) {
 
   const [viewR, perpR, aaveR, lidoR, dcaR, guardR, spotGuardR] = await Promise.allSettled([
     withTimeout(getWalletViewCached(address as `0x${string}`)),
-    isPerpCandidate ? withTimeout(fetchPositions(address)) : Promise.resolve([]),
+    // A builder-dex perp page (`/t/SP500` charts `xyz:SP500`) reads that dex's own ledger.
+    isPerpCandidate ? withTimeout(fetchPositions(address, builderDex)) : Promise.resolve([]),
     wantLend ? withTimeout(callMcpTool(AAVE_MCP, 'portfolio', { user: address }, { timeoutMs: PROVIDER_TIMEOUT_MS })) : Promise.resolve(null),
     wantStake ? withTimeout(callMcpTool(LIDO_MCP, 'position', { user: address }, { timeoutMs: PROVIDER_TIMEOUT_MS })) : Promise.resolve(null),
     own ? withTimeout(listDcaSchedules(wallet)) : Promise.resolve([]),
@@ -111,7 +114,8 @@ export async function GET(req: NextRequest) {
   // ── Perp ──
   let perp: SymbolPosition['perp'] = null
   if (perpR.status === 'fulfilled') {
-    const p = perpR.value.find((x) => x.coin === sym)
+    // The venue names a builder-dex position with its prefix (`xyz:SP500`); a main-book one by its coin.
+    const p = perpR.value.find((x) => x.coin === (builderDex ? pair.pair : sym))
     if (p) {
       perp = {
         side: p.side,
