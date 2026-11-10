@@ -1,0 +1,59 @@
+/* THE TOUR's panel primitives (squad landing, 2026-11-10; lane STAGE owns
+   this file after the contract). One panel shape for all eight sides: words
+   on the left, a live miniature on the right; one column when the seat is
+   narrow. Rides the markets look (--mk-*) and the ONE SCALE (--sp-* / --fs-*
+   / --r-* / --dur-*) exactly as components/home/read.css does: NO literal
+   colour, NO px font size, NO px radius anywhere in the landing's CSS (the
+   consistency fence counts them, and light mode comes free).
+
+   The seat is the size container, so a panel answers to the width it is
+   given (the stage beside the tab list, a phone's full row, /story's
+   column) and never to the viewport. */
+
+.tp-seat { container-type: inline-size; container-name: tp; min-width: 0; }
+.tp { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); min-width: 0; }
+@container tp (min-width: 680px) {
+  .tp { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--sp-5); align-items: start; }
+}
+
+/* ── The words ────────────────────────────────────────────────────────── */
+.tp__copy { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.tp__claim { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.375rem, 4.2cqi, 1.875rem); line-height: 1.12; letter-spacing: -0.015em; color: var(--fg); text-wrap: balance; }
+.tp__body { margin: 0; max-width: 56ch; font-family: var(--mk-font-ui); font-size: var(--fs-base); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.tp__facts { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.tp__fact { position: relative; padding-left: var(--sp-4); font-family: var(--mk-font-ui); font-size: var(--fs-md); line-height: 1.4; color: var(--fg); }
+.tp__fact::before { content: ''; position: absolute; left: 0; top: 0.55em; width: 6px; height: 6px; border-radius: var(--r-pill); background: var(--accent); }
+
+/* ── The sentences ────────────────────────────────────────────────────── */
+.tp__asks { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.tp__askslab { margin: 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.tp__chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.tp__chip { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 36px; max-width: 100%; padding: 0 var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--fg); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; line-height: 1.2; text-align: left; cursor: pointer; outline: none; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
+.tp__chip:hover, .tp__chip:focus-visible { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tp__chip--accent { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.tp__chiplabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp__chipvia { flex: 0 0 auto; font-size: var(--fs-xs); font-weight: 400; letter-spacing: 0.04em; color: var(--muted-2); white-space: nowrap; }
+
+/* ── The doors ────────────────────────────────────────────────────────── */
+.tp__doors { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); margin-top: var(--sp-1); }
+.tp__door { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 36px; font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; color: var(--fg); text-decoration: none; outline: none; white-space: nowrap; transition: color var(--dur-1) ease, background var(--dur-1) ease, border-color var(--dur-1) ease; }
+.tp__door--primary { min-height: 44px; padding: 0 var(--sp-4); border: 1px solid var(--accent); border-radius: var(--r-pill); background: var(--accent); color: var(--bg); }
+.tp__door--primary:hover, .tp__door--primary:focus-visible { background: color-mix(in srgb, var(--accent) 86%, var(--fg)); }
+.tp__door--quiet { color: var(--muted); }
+.tp__door--quiet:hover, .tp__door--quiet:focus-visible { color: var(--fg); }
+.tp__arrow { color: var(--accent); transition: transform var(--dur-1) ease; }
+.tp__door--primary .tp__arrow { color: inherit; }
+.tp__door:hover .tp__arrow { transform: translateX(2px); }
+.tp__door:focus-visible, .tp__chip:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+
+/* ── The miniature ────────────────────────────────────────────────────── */
+.tp__demo { position: relative; display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; min-height: 220px; padding: var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-lg); background: color-mix(in srgb, var(--fg) 2%, var(--bg)); }
+.tp__stub { margin: auto; font-size: var(--fs-sm); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); }
+
+/* A thumb gets 44px on every tappable thing. */
+@media (pointer: coarse) {
+  .tp__chip, .tp__door { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tp__chip, .tp__door, .tp__arrow { transition: none; }
+}

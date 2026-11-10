@@ -9,6 +9,8 @@ import { HOME_DESCRIPTION, HOME_TITLE } from '@/lib/markets-copy'
 import { readTradability } from '@/lib/tradability-store'
 import { readTrending } from '@/app/markets/trending'
 import { readSnapshotForRender } from '@/lib/read-server'
+import { readTourSnapshotForRender } from '@/lib/home-tour-server'
+import { HOME_MODE_BOOTSTRAP } from '@/lib/home-mode'
 
 // `/` — THE FRONT DOOR IS THE APP (squad front-door, 2026-10-06, Nate: "the
 // landing page falls a bit flat and our new live page feels more alive …
@@ -96,12 +98,18 @@ export default async function HomePage() {
   // the data cache so this page stays ISR, fail-soft per feed, capped in
   // time, never a throw — an empty one renders "Reading the markets" and the
   // browser fills it).
-  const [trending, tradable, read] = await Promise.all([readTrending(), readTradability(), readSnapshotForRender()])
+  // …and THE TOUR's snapshot (squad landing, 2026-11-10; lib/home-tour-server:
+  // counts and fees from the registries, the live part through the data
+  // cache — the same ISR rule as the read's).
+  const [trending, tradable, read, tour] = await Promise.all([readTrending(), readTradability(), readSnapshotForRender(), readTourSnapshotForRender()])
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
+      {/* The home's posture, before first paint (lib/home-mode): a returning
+          visitor's page is folded by CSS before a pixel is drawn. */}
+      <script dangerouslySetInnerHTML={{ __html: HOME_MODE_BOOTSTRAP }} />
       <MarketsShell>
-        <HomeSurface trending={trending} tradable={tradable} read={read} />
+        <HomeSurface trending={trending} tradable={tradable} read={read} tour={tour} />
         <div className="mkt-frame__foot">
           <Footer />
         </div>

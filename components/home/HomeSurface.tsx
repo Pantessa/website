@@ -25,23 +25,42 @@ import SentHomeNotice from '@/components/SentHomeNotice'
 import SplashClaim from '@/components/home/SplashClaim'
 import TheRead from '@/components/home/TheRead'
 import AppsRow from '@/components/home/AppsRow'
+import Tour from '@/components/home/tour/Tour'
+import HowItWorks from '@/components/home/HowItWorks'
+import ClosingDoors from '@/components/home/ClosingDoors'
+import HomeModeSync from '@/components/home/HomeModeSync'
 import type { TrendingRow } from '@/app/markets/trending'
 import type { TradabilityMap } from '@/lib/tradability'
 import { EMPTY_READ, type ReadSnapshot } from '@/lib/read'
+import { EMPTY_TOUR, type TourSnapshot } from '@/lib/home-tour'
 
-export default function HomeSurface({ trending = [], tradable, read = EMPTY_READ }: { trending?: TrendingRow[]; tradable?: TradabilityMap; read?: ReadSnapshot }) {
+// THE LANDING (squad landing, 2026-11-10): three more seats. THE TOUR under
+// the read (components/home/tour — eight sides of the product, a door into
+// each), the trust section in the small "how" card's place
+// (components/home/HowItWorks) and the closing doors last
+// (components/home/ClosingDoors). `tour` is the server's TourSnapshot
+// (lib/home-tour-server), a prop so the first paint is the server's.
+// HomeModeSync keeps the stranger / returning posture (lib/home-mode).
+
+export default function HomeSurface({ trending = [], tradable, read = EMPTY_READ, tour = EMPTY_TOUR }: { trending?: TrendingRow[]; tradable?: TradabilityMap; read?: ReadSnapshot; tour?: TourSnapshot }) {
   return (
-    <MarketsIndex
-      trending={trending}
-      tradable={tradable}
-      claim={<SplashClaim />}
-      lead={
-        <div data-home-lead className="min-w-0">
-          <SentHomeNotice />
-          <TheRead initial={read} />
-        </div>
-      }
-      guide={<AppsRow />}
-    />
+    <>
+      <HomeModeSync />
+      <MarketsIndex
+        trending={trending}
+        tradable={tradable}
+        claim={<SplashClaim />}
+        lead={
+          <div data-home-lead className="min-w-0">
+            <SentHomeNotice />
+            <TheRead initial={read} />
+          </div>
+        }
+        guide={<AppsRow />}
+        tour={<Tour data={tour} read={read} />}
+        how={<HowItWorks data={tour} />}
+        close={<ClosingDoors data={tour} />}
+      />
+    </>
   )
 }

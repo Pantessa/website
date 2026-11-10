@@ -1,0 +1,17 @@
+/* HOW IT WORKS on the landing (squad landing, 2026-11-10; lane CLOSE owns
+   this file). CONTRACT BASELINE. Tokens only — no literal colour, no px
+   font size, no px radius (see components/home/tour/panel.css). */
+
+.how { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); container-type: inline-size; container-name: how; }
+.how__title { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: var(--fs-xl); line-height: 1.2; color: var(--fg); }
+.how__steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3) var(--sp-5); margin: 0; padding: 0; list-style: none; counter-reset: how-step; }
+.how__steps li { counter-increment: how-step; font-size: var(--fs-md); line-height: 1.5; color: var(--muted); }
+.how__steps li::before { content: counter(how-step, decimal-leading-zero); display: block; margin-bottom: var(--sp-1); font-family: var(--mk-font-mono); font-size: var(--fs-xs); color: var(--accent); }
+@container how (min-width: 560px) { .how__steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container how (min-width: 880px) { .how__steps { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.how__note { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--muted-2); }
+.how__link { color: var(--fg); text-decoration: underline; text-underline-offset: 0.2em; text-decoration-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.how__link:hover, .how__link:focus-visible { text-decoration-color: var(--accent); outline: none; }
+@media (prefers-reduced-motion: reduce) {
+  .how__link { transition: none; }
+}

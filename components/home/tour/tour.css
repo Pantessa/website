@@ -1,0 +1,23 @@
+/* THE TOUR's shell (squad landing, 2026-11-10; lane STAGE owns this file
+   after the contract). CONTRACT BASELINE: enough to see every panel in
+   place. Tokens only — no literal colour, no px font size, no px radius
+   (see panel.css). */
+
+.tour { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; padding: var(--sp-5); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); scroll-margin-top: calc(var(--mkt-top-h, 52px) + var(--sp-4)); container-type: inline-size; container-name: tour; }
+.tour__head { display: flex; flex-direction: column; gap: var(--sp-1); }
+.tour__eyebrow { margin: 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.tour__title { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.5rem, 3.5cqi, 2.25rem); line-height: 1.12; letter-spacing: -0.015em; color: var(--fg); text-wrap: balance; }
+.tour__tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.tour__tab { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 44px; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); background: transparent; color: var(--muted); font-family: var(--mk-font-ui); text-align: left; cursor: pointer; outline: none; scroll-margin-top: calc(var(--mkt-top-h, 52px) + var(--sp-4)); transition: border-color var(--dur-1) ease, background var(--dur-1) ease, color var(--dur-1) ease; }
+.tour__tab:hover { color: var(--fg); }
+.tour__tab:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.tour__tab.is-on { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--fg); }
+.tour__tablabel { font-size: var(--fs-md); font-weight: 600; line-height: 1.2; }
+.tour__tabline { display: none; }
+.tour__stage { min-width: 0; }
+@media (max-width: 640px) {
+  .tour { padding: var(--sp-4); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour__tab { transition: none; }
+}

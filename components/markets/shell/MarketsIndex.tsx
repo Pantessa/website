@@ -256,6 +256,9 @@ export default function MarketsIndex({
   lead,
   guide,
   claim,
+  tour,
+  how,
+  close,
 }: {
   trending?: TrendingRow[]
   /** The measured venue verdicts, read server-side so the index's chips are right on the FIRST paint (lib/tradability-store). */
@@ -271,6 +274,14 @@ export default function MarketsIndex({
    *  carries the page's visible h1 — so when it is given, the index's own
    *  sr-only "Markets" h1 steps aside (one h1 per page). */
   claim?: ReactNode
+  /** THE LANDING's seats (squad landing, 2026-11-10): `tour` renders under
+   *  the lead and above the market data (components/home/tour/Tour — the
+   *  eight sides of the product); `how` REPLACES the small "How a chart
+   *  executes" card under the boards (components/home/HowItWorks); `close`
+   *  renders last in the data column (components/home/ClosingDoors). */
+  tour?: ReactNode
+  how?: ReactNode
+  close?: ReactNode
 }) {
   // Idempotent, and deliberately during render: QuickAct reads the shared
   // store synchronously, so seeding in an effect would flash a chip the
@@ -368,6 +379,13 @@ export default function MarketsIndex({
           </div>
         )}
 
+        {/* ── The tour seat: everything it does, a door into each side (components/home/tour) ── */}
+        {tour && (
+          <div className="mk-tour-seat" data-seat="Tour">
+            {tour}
+          </div>
+        )}
+
         {/* The session strip and the movers tape rode here until 2026-11-09: the
             lead (THE READ, components/home/TheRead) now says the bell in its
             eyebrow and names the day's movers in its own line, so the first
@@ -398,24 +416,37 @@ export default function MarketsIndex({
               row through the same connect-to-act door as the ledgers. Renders in
               both views (the map has no rates). */}
           <EarnBoard onAsk={indexAct} />
-          <section className="mkt-card mkt-frame__how" aria-labelledby="mkt-how">
-            <h2 id="mkt-how" className="mkt-card__title">
-              How a chart executes
-            </h2>
-            <ol className="mkt-frame__steps">
-              <li>Pick a symbol. The candles are live and keyless.</li>
-              <li>Tap a chip or write the sentence — “Buy $10 of AAPL”.</li>
-              <li>Pantessa builds the guarded transaction. No model writes calldata.</li>
-              <li>Your wallet signs. That signature is the only gate.</li>
-            </ol>
-            <p className="mkt-card__note">
-              Non-custodial. No broker account, no KYC to look. <Link href="/docs" className="mkt-link">How it works →</Link>
-            </p>
-            <p className="mk-keys mono" aria-label="Keyboard">
-              <kbd>j</kbd>
-              <kbd>k</kbd> move · <kbd>↵</kbd> open · <kbd>⌘K</kbd> ask
-            </p>
-          </section>
+          {/* ── The how seat (the landing's trust section) or the index's own small card ── */}
+          {how ? (
+            <div className="mk-how-seat" data-seat="How">
+              {how}
+            </div>
+          ) : (
+            <section className="mkt-card mkt-frame__how" aria-labelledby="mkt-how">
+              <h2 id="mkt-how" className="mkt-card__title">
+                How a chart executes
+              </h2>
+              <ol className="mkt-frame__steps">
+                <li>Pick a symbol. The candles are live and keyless.</li>
+                <li>Tap a chip or write the sentence — “Buy $10 of AAPL”.</li>
+                <li>Pantessa builds the guarded transaction. No model writes calldata.</li>
+                <li>Your wallet signs. That signature is the only gate.</li>
+              </ol>
+              <p className="mkt-card__note">
+                Non-custodial. No broker account, no KYC to look. <Link href="/docs" className="mkt-link">How it works →</Link>
+              </p>
+            </section>
+          )}
+          {/* ── The close seat: the ways in, once more (components/home/ClosingDoors) ── */}
+          {close && (
+            <div className="mk-close-seat" data-seat="Close">
+              {close}
+            </div>
+          )}
+          <p className="mk-keys mono" aria-label="Keyboard">
+            <kbd>j</kbd>
+            <kbd>k</kbd> move · <kbd>↵</kbd> open · <kbd>⌘K</kbd> ask
+          </p>
         </div>
       </main>
 

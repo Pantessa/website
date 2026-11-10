@@ -1,0 +1,14 @@
+/* THE CLOSING DOORS (squad landing, 2026-11-10; lane CLOSE owns this file).
+   CONTRACT BASELINE. Tokens only — no literal colour, no px font size, no
+   px radius (see components/home/tour/panel.css). */
+
+.closing { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); min-width: 0; padding: var(--sp-5); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); }
+.closing__title { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: var(--fs-2xl); line-height: 1.15; letter-spacing: -0.015em; color: var(--fg); }
+.closing__doors { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.closing__door { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-pill); color: var(--fg); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; text-decoration: none; outline: none; white-space: nowrap; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
+.closing__door:hover, .closing__door:focus-visible { border-color: var(--accent); }
+.closing__door--primary { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+.closing__door--quiet { border-color: transparent; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) {
+  .closing__door { transition: none; }
+}
