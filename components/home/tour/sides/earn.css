@@ -32,6 +32,11 @@
 .te__go { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); margin-top: var(--sp-1); }
 .te__foot { margin: 0; padding-top: var(--sp-2); border-top: 1px solid var(--line); font-size: var(--fs-xs); line-height: 1.5; color: var(--muted-2); }
 
+/* A narrow frame: the venue stays and the chain gives way (a Morpho sentence names it). */
+@container ta (max-width: 360px) {
+  .te__chain { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .te__row { transition: none; }
 }

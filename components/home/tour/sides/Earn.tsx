@@ -56,7 +56,7 @@ export default function EarnSide() {
     <TourPanel side={COPY} demoLabel="The best live rate per asset">
       <div className="ta te" ref={root} data-tour-mini="earn" data-state={state} data-source={fromLive ? 'live' : 'snapshot'} data-usd={usd}>
         <div className="te__head">
-          <p className="ta-eyebrow mono">Best rate per asset · yearly, highest first</p>
+          <p className="ta-eyebrow mono">Best yearly rate per asset</p>
           <div className="ta-field">
             <span className="ta-eyebrow mono">Amount</span>
             <Seg label="Amount in dollars" value={usd} onChange={setUsd} options={LADDER_AMOUNTS.map((n) => ({ value: n, label: `$${n}`, say: `${n} dollars` }))} journey={(n) => J(`amount ${n}`)} />
@@ -77,7 +77,8 @@ export default function EarnSide() {
                     <span className="te__id">
                       <span className="te__asset">{r.asset}</span>
                       <span className="te__where mono">
-                        {r.venue} · {r.chain}
+                        {r.venue}
+                        <span className="te__chain"> · {r.chain}</span>
                       </span>
                     </span>
                     <span className="te__rate mono">{fmtRate(r.apy)}</span>

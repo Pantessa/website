@@ -38,7 +38,7 @@ const QUESTION = EXAMPLE_PROMPTS.find((p) => p.prompt.endsWith('?') && !/\bmy\b/
 const J = (what: string) => tourJourney(meta.id, what)
 
 export default function AskSide() {
-  const { act, fill, canAct } = useTour()
+  const { data, act, fill, canAct } = useTour()
   const [text, setText] = useState('')
   const inputId = useId()
   const rows = meta.asks.filter((a) => canAct(a.ask))
@@ -67,7 +67,7 @@ export default function AskSide() {
         <p className="ta-note">Your words open in Ask, ready to send. A question needs no wallet; an order asks for one when it is time to sign.</p>
 
         <div className="tk__examples">
-          <p className="ta-eyebrow mono">Or run one. Each names what catches it.</p>
+          <p className="ta-eyebrow mono">Or run one of these</p>
           <ul className="tk__rows">
             {rows.map((a) => {
               const Mark = getProtocolMark(askAppSlugs(a.ask)[0] ?? a.via)
@@ -108,7 +108,7 @@ export default function AskSide() {
         </div>
 
         <div className="tk__fleet">
-          <p className="ta-eyebrow mono">The apps behind it. Pick one and the chat opens with it on.</p>
+          <p className="ta-eyebrow mono">{data.counts.apps != null ? `${data.counts.apps} apps behind it` : 'The apps behind it'}</p>
           <ul className="tk__apps">
             {HOME_APPS.map((app) => {
               const Mark = getProtocolMark(app.slug, app.name)
