@@ -18,7 +18,7 @@
 //     polls and when, what it shows with nothing read.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { MINI_DEFAULT_USD, MINI_LEVERAGE, MINI_SIZES, MINI_SYMBOLS, acceptMiniMarket, miniMarketUrl, miniMarkets, miniSideLabel, miniTicket, miniUnits, splitAtAmount } from '../components/home/tour/sides/a/mini-market'
+import { LINK_SWAP, MINI_DEFAULT_USD, MINI_LEVERAGE, MINI_SIZES, MINI_SYMBOLS, acceptMiniMarket, linkSwapAsk, miniMarketUrl, miniMarkets, miniMarketsOfQuotes, miniSideLabel, miniTicket, miniUnits, splitAtAmount } from '../components/home/tour/sides/a/mini-market'
 import { LADDER_AMOUNTS, LADDER_DEFAULT_USD, LADDER_ROWS, LADDER_URL, acceptLadder, fmtAsOfUtc, ladderBarPct, ladderFromLive, ladderFromSeed, yearlyUsd } from '../components/home/tour/sides/a/ladder'
 import { LINK_DEFAULT_READERS, LINK_READER_CHOICES, fmtRoundUsd, fmtSplitUsd, linkSplit, shareWords } from '../components/home/tour/sides/a/split'
 import { FIRST_PARTY_APP_SLUGS, askAppSlugs } from '../lib/ask-apps'
@@ -35,7 +35,9 @@ import { meta as linksMeta } from '../lib/home-tour/links'
 import { TOUR_EARN_ROWS, tourEarnOf } from '../lib/home-tour-live'
 import { tourFees } from '../lib/home-tour-server'
 import { TICKET_DEFAULT_USD, TICKET_LEVERAGE_PRESETS, TICKET_USD_PRESETS, composeTicketAsk, freshTicket, ticketSidesFor } from '../lib/order-ticket'
+import { readChart } from '../lib/read'
 import { canTradeAsk } from '../lib/trade-venue-gate'
+import { simulateLadder } from './ask-ladder'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -182,6 +184,36 @@ export function landingSidesAPins(check: Check): void {
       /lastOf\(m\.symbol\) == null \? '—'/.test(charts) &&
       /chgOf\(m\.symbol\) == null \? '—'/.test(charts),
   )
+  // The first frame: the server snapshot's quotes (round 3).
+  const frame = miniMarketsOfQuotes([
+    { symbol: 'AAPL', last: 348.63, changePct: -0.66, closes: [344.5, 346.1, 348.63] },
+    { symbol: 'ETH', last: null, changePct: null, closes: [2100, 2057.81] },
+    { symbol: 'HYPE', last: 72.3, changePct: 1.2, closes: [72.3] },
+    { symbol: 'JUNK', last: 5, changePct: 0, closes: [0, -1, Number.NaN] },
+  ])
+  check(
+    "sides-a charts: the server snapshot's quotes become the miniature's first frame — price, change and the week's line by symbol; a missing `last` is the newest close and a missing change stays unstated; a quote with fewer than two real closes is left out (that tile shows its dash and is read in the browser); nothing read is an empty frame, never a throw",
+    frame.AAPL?.last === 348.63 &&
+      frame.AAPL.chg === -0.66 &&
+      frame.AAPL.points.length === 3 &&
+      frame.AAPL.points[2][1] === 348.63 &&
+      frame.ETH?.last === 2057.81 &&
+      frame.ETH.chg === null &&
+      !('HYPE' in frame) &&
+      !('JUNK' in frame) &&
+      Object.keys(miniMarketsOfQuotes([])).length === 0 &&
+      Object.keys(miniMarketsOfQuotes(EMPTY_TOUR.quotes)).length === 0 &&
+      Object.keys(miniMarketsOfQuotes(null)).length === 0 &&
+      readChart(frame.AAPL.points, null) !== null,
+  )
+  check(
+    "sides-a charts (source): the panel's first state IS the snapshot (data.quotes) and nothing a server cannot know — a market shows the server's frame until its own read lands, then the read; with no frame it falls back to the browser's read (and THE READ's ether) as before; the render reads no clock, no window and no storage, so the first client render equals the server HTML",
+    /const first = useMemo\(\(\) => miniMarketsOfQuotes\(data\.quotes\), \[data\.quotes\]\)/.test(charts) &&
+      /live\[s\]\?\.data \?\? first\[s\] \?\? null/.test(charts) &&
+      /const points = live\[sym\]\?\.data\?\.points \?\? first\[sym\]\?\.points/.test(charts) &&
+      /s === 'ETH' \? \(seedEth\?\.last \?\? null\) : null/.test(charts) &&
+      !/Date\.now\(|new Date\(|typeof window|\bwindow\.|\bdocument\.|localStorage|sessionStorage|Math\.random\(/.test(charts),
+  )
 
   // ── ASK: the composer ──
   const askBad = askMeta.asks.filter((a) => !canTradeAsk(a.ask, null) || !moneyShaped(a.ask) || !FIRST_PARTY_APP_SLUGS.has(askAppSlugs(a.ask)[0] ?? ''))
@@ -261,18 +293,34 @@ export function landingSidesAPins(check: Check): void {
   )
   const links = code(`${SIDES}/Links.tsx`)
   check(
-    "sides-a links (source): no rate is typed — the panel reads the snapshot's linkBps, creatorSplit and linkPct, computes through linkSplit, and with no fee line draws no number; the sentence is the ticket's own (a stock buy); the link card is a specimen tagged Example and is never an anchor",
+    "sides-a links (source): no rate is typed — the panel reads the snapshot's linkBps, creatorSplit and linkPct, computes through linkSplit, and with no fee line draws no number; the sentence is the swap with a dollar side (linkSwapAsk); the link card is a specimen tagged Example and is never an anchor",
     /linkSplit\(\{ usd, readers, linkBps: fees\.linkBps, creatorSplit: fees\.creatorSplit \}\)/.test(links) &&
       /const split = fees \? linkSplit/.test(links) &&
       /\{split && fees \? \(/.test(links) &&
       /\{fees\.linkPct\}/.test(links) &&
       !/\d+(?:\.\d+)?\s*%/.test(links) &&
       !/\bbps\s*[:=]\s*\d|0\.\d+/.test(links) &&
-      /miniTicket\(STOCK\.pair, 'buy', usd, null\)/.test(links) &&
+      /const ask = linkSwapAsk\(usd\)/.test(links) &&
+      !/miniTicket|AAPL/.test(links) &&
       /data-specimen/.test(links) &&
       /<span className="ta-tag mono">Example<\/span>/.test(links) &&
       !/href=/.test(links) &&
       !/<a[\s>]/.test(links),
+  )
+  // The example a link carries: a swap that pays for certain (round 3).
+  const swapBad: string[] = []
+  for (const usd of MINI_SIZES) {
+    const s = linkSwapAsk(usd)
+    const o = simulateLadder(s)
+    const parts = splitAtAmount(s, usd)
+    if (o.kind !== 'action' || !canTradeAsk(s, null) || !canTradeAsk(s, {}) || !moneyShaped(s) || /[^\x20-\x7e]/.test(s) || askAppSlugs(s)[0] !== 'uniswap-free' || !parts || parts.amount !== `$${usd}`) swapBad.push(`${s} → ${o.gate}/${o.kind}`)
+  }
+  const askSwap = askMeta.asks.find((a) => /^Swap \$\d+ of /.test(a.ask))
+  const askSwapUsd = askSwap ? Number(/\$(\d+)/.exec(askSwap.ask)?.[1]) : Number.NaN
+  check(
+    "sides-a links: the example a link carries is a SWAP WITH A DOLLAR SIDE on Base (a Uniswap swap: the link fee and the creator's half inside the reader's transaction are certain; a stock buy could settle through the fallback venue at the ordinary fee) — at every size it parses to an action in the chat ladder the sentence audit runs, passes the venue gate with no verdicts, composes Uniswap first, and is the Ask side's own audited sentence with only the dollars changed",
+    swapBad.length === 0 && LINK_SWAP.buy === 'USDC' && LINK_SWAP.chain === 'Base' && linkSwapAsk(50) === 'Swap $50 of ETH to USDC on Base' && !!askSwap && linkSwapAsk(askSwapUsd) === askSwap.ask && new Set(MINI_SIZES.map(linkSwapAsk)).size === MINI_SIZES.length,
+    swapBad.join(' | ') || MINI_SIZES.map(linkSwapAsk).join(' · '),
   )
 
   // ── EARN: the ladder ──
@@ -409,6 +457,20 @@ export async function landingSidesAPinsServed(check: Check, base: string): Promi
     "sides-a (served): the Charts miniature is in the home's server HTML — three market tiles, the default sentence composed with no price, and the button that runs it",
     html.includes('data-tour-mini="charts"') && MINI_SYMBOLS.every((s) => html.includes(`data-mini-tile="${s}"`)) && want.length > 0 && html.includes(`data-mini-ask="${want}"`) && html.includes(`data-ask="${want}"`),
     want,
+  )
+  // The first frame is the server's (round 3): the default tile's price is in the HTML, a digit where the dash was,
+  // and the picked market's week is drawn. Only a market the snapshot could not read may still show its dash.
+  // Which markets THIS page's own snapshot carries (its serialized props, in the same HTML: no second cache to race).
+  const read = new Set(MINI_SYMBOLS.filter((s) => new RegExp(`symbol\\\\?":\\\\?"${s}\\\\?",\\\\?"last\\\\?":\\\\?[\\d.]`).test(html)))
+  const tileOf = (s: string) => new RegExp(`data-mini-tile="${s}"[\\s\\S]{0,900}?class="tc__tilelast mono">([^<]*)<`).exec(html)?.[1] ?? null
+  const priced = (s: string) => /^\$\d[\d,]*(\.\d+)?$/.test(tileOf(s) ?? '')
+  const lead = MINI_SYMBOLS[0]
+  const drawn = /class="tc__plot[^"]*" data-points="(\d+)"/.exec(html)
+  const stale = MINI_SYMBOLS.filter((s) => read.has(s) && !priced(s))
+  check(
+    "sides-a (served): the Charts miniature's FIRST FRAME is in the server HTML — every market the snapshot read shows its price in its tile (a digit where the dash was), the default tile among them, and the picked market's week is drawn before any browser read; a market the snapshot could not read keeps its dash",
+    stale.length === 0 && (priced(lead) ? Number(drawn?.[1] ?? 0) >= 2 && /class="tc__path"/.test(html) : !read.has(lead)),
+    `${MINI_SYMBOLS.map((s) => `${s} ${tileOf(s) ?? '(no tile)'}`).join(' · ')} · line of ${drawn?.[1] ?? 0} points · snapshot read: ${[...read].join(',') || 'none'}`,
   )
   // The reads behind the miniatures answer in the shape the panels accept (a feed miss is a dash, never a crash).
   const shapes: string[] = []

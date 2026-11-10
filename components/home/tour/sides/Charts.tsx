@@ -9,9 +9,15 @@
 //
 // Real in every part:
 //   • the price, the 24h change and the line are the symbol page's own
-//     hourly candles route, read once a minute and only while this panel is
-//     on screen and the tab is in view (./a/useLive); ether's price is on
-//     the first frame from THE READ's snapshot, which the page already holds;
+//     hourly candles. The FIRST FRAME is the server's (`data.quotes`, read by
+//     lib/home-tour-server through the same loader that route serves): the
+//     server HTML and the first paint already hold every price and the
+//     picked market's week. The browser then refreshes it from the candles
+//     route once a minute, only while this panel is on screen and the tab is
+//     in view (./a/useLive). With no server frame the panel reads in the
+//     browser as before (ether's price then comes from THE READ's snapshot);
+//   • the first client render equals the server HTML: its state is the
+//     snapshot prop and nothing else (no clock, no window, no storage);
 //   • the sides are the ones that market's own order ticket offers, and the
 //     sentence is composed by the ticket's composer (./a/mini-market over
 //     lib/order-ticket) — never by hand;
@@ -28,7 +34,7 @@ import { fmtReadPct, readChart, readTone } from '@/lib/read'
 import { useTour } from '../context'
 import { TourPanel } from '../Panel'
 import { Seg } from './a/Seg'
-import { MINI_DEFAULT_USD, MINI_SIZES, acceptMiniMarket, miniMarketUrl, miniMarkets, miniSideLabel, miniTicket, miniUnits, splitAtAmount, type MiniMarket, type MiniSide } from './a/mini-market'
+import { MINI_DEFAULT_USD, MINI_SIZES, acceptMiniMarket, miniMarketUrl, miniMarkets, miniMarketsOfQuotes, miniSideLabel, miniTicket, miniUnits, splitAtAmount, type MiniMarket, type MiniSide } from './a/mini-market'
 import { useOnScreen, usePolled } from './a/useLive'
 import './a/kit.css'
 import './charts.css'
@@ -40,7 +46,7 @@ const REFRESH_MS = 60_000
 const J = (what: string) => tourJourney(meta.id, what)
 
 export default function ChartsSide() {
-  const { read, act, canAct } = useTour()
+  const { data, read, act, canAct } = useTour()
   const [sym, setSym] = useState(MARKETS[0]?.symbol ?? '')
   const [wantSide, setWantSide] = useState<MiniSide>('buy')
   const [usd, setUsd] = useState(MINI_DEFAULT_USD)
@@ -59,13 +65,20 @@ export default function ChartsSide() {
     })
     return out
   }, [a, b, c])
-  // Ether's price is already on the page (THE READ): the first frame shows it.
+  // The first frame is the server's (data.quotes): a market shows it until its own read lands.
+  const first = useMemo(() => miniMarketsOfQuotes(data.quotes), [data.quotes])
+  const marketOf = (s: string): MiniMarket | null => live[s]?.data ?? first[s] ?? null
+  // With no server frame, ether's price is still on the page (THE READ).
   const seedEth = read.quotes.eth
-  const lastOf = (s: string): number | null => live[s]?.data?.last ?? (s === 'ETH' ? (seedEth?.last ?? null) : null)
-  const chgOf = (s: string): number | null => live[s]?.data?.chg ?? (s === 'ETH' ? (seedEth?.chg ?? null) : null)
+  const lastOf = (s: string): number | null => marketOf(s)?.last ?? (s === 'ETH' ? (seedEth?.last ?? null) : null)
+  const chgOf = (s: string): number | null => {
+    const m = marketOf(s)
+    return m ? m.chg : s === 'ETH' ? (seedEth?.chg ?? null) : null
+  }
 
   const market = MARKETS.find((m) => m.symbol === sym) ?? MARKETS[0]
-  const chart = useMemo(() => readChart(live[sym]?.data?.points ?? [], null), [live, sym])
+  const points = live[sym]?.data?.points ?? first[sym]?.points
+  const chart = useMemo(() => readChart(points ?? [], null), [points])
   if (!market) return <TourPanel side={COPY} />
 
   const side: MiniSide = market.sides.includes(wantSide) ? wantSide : market.sides[0]
@@ -77,7 +90,7 @@ export default function ChartsSide() {
   const parts = ask ? splitAtAmount(ask, usd) : null
   const units = miniUnits(side, usd, last)
   const runnable = ask !== null && canAct(ask)
-  const failed = !live[market.symbol]?.data && live[market.symbol]?.failed
+  const failed = !marketOf(market.symbol) && live[market.symbol]?.failed
 
   return (
     <TourPanel side={COPY} demoLabel="The order form in miniature">
@@ -113,7 +126,7 @@ export default function ChartsSide() {
               </span>
             )}
           </p>
-          <div className={`tc__plot is-${tone}`} data-points={live[market.symbol]?.data?.points.length ?? 0}>
+          <div className={`tc__plot is-${tone}`} data-points={points?.length ?? 0}>
             {chart ? (
               <>
                 <svg className="tc__svg" viewBox="0 0 1000 300" preserveAspectRatio="none" role="img" aria-label={`${market.symbol}, the past week of hourly closes`}>

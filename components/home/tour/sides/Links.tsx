@@ -3,8 +3,11 @@
 // THE TOUR · LINKS — the split, worked out (squad landing, 2026-11-10; lane
 // SIDES-A). Three steps in one frame, joined by real arithmetic:
 //
-//   1. one sentence, with a size the visitor picks (the order ticket's own
-//      composer writes it: ./a/mini-market over lib/order-ticket);
+//   1. one sentence, with a size the visitor picks: a swap with a dollar
+//      side on Base (./a/mini-market linkSwapAsk — a Uniswap swap, where the
+//      link fee and the creator's half inside the reader's own transaction
+//      are certain; round 3: a stock buy could settle through the fallback
+//      venue at the ordinary fee, which the calculator did not say);
 //   2. the link it becomes — a SPECIMEN card, tagged EXAMPLE, never a live
 //      address and never a link;
 //   3. who gets what when readers sign it: the link fee on what they signed
@@ -27,14 +30,11 @@ import { tourJourney } from '@/lib/home-tour'
 import { useTour } from '../context'
 import { TourPanel } from '../Panel'
 import { Seg } from './a/Seg'
-import { MINI_SIZES, miniMarkets, miniTicket, splitAtAmount } from './a/mini-market'
+import { MINI_SIZES, linkSwapAsk, splitAtAmount } from './a/mini-market'
 import { LINK_DEFAULT_READERS, LINK_READER_CHOICES, fmtRoundUsd, fmtSplitUsd, linkSplit, shareWords } from './a/split'
 import './a/kit.css'
 import './links.css'
 
-/** The sentence the specimen link carries: a stock buy, the first worked
- *  example on /docs/creator-earnings. */
-const STOCK = miniMarkets(['AAPL'])[0]
 const DEFAULT_USD = MINI_SIZES[1] ?? MINI_SIZES[0]
 const J = (what: string) => tourJourney(meta.id, what)
 
@@ -43,9 +43,8 @@ export default function LinksSide() {
   const [usd, setUsd] = useState(DEFAULT_USD)
   const [readers, setReaders] = useState(LINK_DEFAULT_READERS)
   const fees = data.fees
-  const ticket = STOCK ? miniTicket(STOCK.pair, 'buy', usd, null) : null
-  const ask = ticket?.ok ? ticket.ask : null
-  if (!STOCK || !ask) return <TourPanel side={meta} />
+  // The sentence the specimen link carries: a swap with a dollar side (./a/mini-market).
+  const ask = linkSwapAsk(usd)
   const parts = splitAtAmount(ask, usd)
   const split = fees ? linkSplit({ usd, readers, linkBps: fees.linkBps, creatorSplit: fees.creatorSplit }) : null
   const share = split ? shareWords(split.creatorShare) : ''

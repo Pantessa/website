@@ -26,13 +26,16 @@ import { HOME_APPS } from '@/lib/home-apps'
 import { MACRO_ROWS } from '@/lib/macro'
 import { marketSections } from '@/lib/markets'
 import { buildVenueManifest } from '@/lib/venue-manifest'
-import { EMPTY_TOUR, type TourCounts, type TourEarnRow, type TourFees, type TourSnapshot } from '@/lib/home-tour/types'
+import { EMPTY_TOUR, type TourCounts, type TourEarnRow, type TourFees, type TourQuote, type TourSnapshot } from '@/lib/home-tour/types'
 import { unstable_cache } from 'next/cache'
 import prisma from '@/lib/db'
 import { listFeed } from '@/lib/community/store'
 import { rowsFromWire, type EarnResponse, type EarnRow } from '@/lib/earn'
 import { GET as readEarnRoute } from '@/app/api/markets/earn/route'
-import { TOUR_FEED_TIMEOUT_MS, TOUR_WEEK_MS, tourEarnOf, tourPostsOf, withTimeout } from '@/lib/home-tour-live'
+import { TOUR_FEED_TIMEOUT_MS, TOUR_QUOTE_CLOSES, TOUR_WEEK_MS, tourEarnOf, tourPostsOf, tourQuoteOf, withTimeout } from '@/lib/home-tour-live'
+import { loadCandleSeries } from '@/lib/candles-server'
+import { changePct24h } from '@/lib/charts'
+import { MINI_SYMBOLS } from '@/components/home/tour/sides/a/mini-market'
 
 /** Counts from the registries. Pure; safe at build and at render. */
 export function tourStaticCounts(): TourCounts {
@@ -136,13 +139,58 @@ const cachedCommunity = unstable_cache(
   { revalidate: 60 },
 )
 
+// ── The Charts miniature's first frame (round 3, lane SIDES-A) ───────────────
+
+/** One market's first frame, read through the SAME loader the candles route
+ *  serves the panel's own poll from (lib/candles-server loadCandleSeries, the
+ *  hourly window; the route is a thin face over it) and shaped the way that
+ *  route answers (the window, the newest close, lib/charts changePct24h). */
+async function readQuote(symbol: string): Promise<TourQuote | null> {
+  const loaded = await loadCandleSeries(symbol, '1h')
+  if (!loaded) return null
+  const candles = loaded.series.candles.slice(-TOUR_QUOTE_CLOSES)
+  return tourQuoteOf(loaded.pair.symbol, candles, changePct24h(candles))
+}
+
+/** A market's first frame, cached for the page's minute under its own key.
+ *  A read that missed (the 2.5s cap, a feed that did not answer, fewer than
+ *  two bars) THROWS on purpose, as `cachedEarn` does: `unstable_cache` keeps
+ *  no result for a throw, so a cold feed never pins "no price" for a minute. */
+const quoteReaders = new Map<string, () => Promise<TourQuote>>()
+function cachedQuote(symbol: string): Promise<TourQuote> {
+  let read = quoteReaders.get(symbol)
+  if (!read) {
+    read = unstable_cache(
+      async (): Promise<TourQuote> => {
+        const quote = await withTimeout(readQuote(symbol), TOUR_FEED_TIMEOUT_MS, null)
+        if (!quote) throw new Error(`quote ${symbol}: nothing read yet`)
+        return quote
+      },
+      ['home-tour-v1', 'quote', symbol],
+      { revalidate: 60 },
+    )
+    quoteReaders.set(symbol, read)
+  }
+  return read()
+}
+
+/** The first frames for the miniature's own markets (its symbol list is the
+ *  one source: components/home/tour/sides/a/mini-market MINI_SYMBOLS), read
+ *  side by side. A market that did not answer is simply not in the list: the
+ *  panel shows its dash and reads it in the browser, as before. Never throws. */
+export async function readTourQuotes(symbols: readonly string[] = MINI_SYMBOLS): Promise<TourQuote[]> {
+  const read = await Promise.all(symbols.map((s) => cachedQuote(s).catch(() => null)))
+  return read.filter((q): q is TourQuote => q !== null)
+}
+
 /** The live part alone. Never throws. */
-export async function readTourLive(): Promise<Pick<TourSnapshot, 'earn' | 'community'> & { earnWays: number | null; at: number }> {
-  const [earn, community] = await Promise.all([
+export async function readTourLive(): Promise<Pick<TourSnapshot, 'earn' | 'community' | 'quotes'> & { earnWays: number | null; at: number }> {
+  const [earn, community, quotes] = await Promise.all([
     cachedEarn().catch(() => ({ earn: [] as TourEarnRow[], earnWays: null, at: 0 })),
     cachedCommunity().catch(() => EMPTY_TOUR.community),
+    readTourQuotes().catch(() => [] as TourQuote[]),
   ])
-  return { earn: earn.earn, earnWays: earn.earnWays, community, at: earn.at }
+  return { earn: earn.earn, earnWays: earn.earnWays, community, quotes, at: earn.at }
 }
 
 /** The snapshot for the page's render (and GET /api/home/tour): the static
@@ -160,6 +208,7 @@ export async function readTourSnapshotForRender(): Promise<TourSnapshot> {
       counts: { ...base.counts, earnWays: live.earnWays },
       earn: live.earn,
       community: live.community,
+      quotes: live.quotes,
     }
   } catch {
     return base

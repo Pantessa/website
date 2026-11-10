@@ -20,7 +20,34 @@
 import { EARN_DEFAULT_USD, rankEarnRows, yieldLadder, type EarnRow } from '@/lib/earn'
 import { callPath } from '@/lib/chart-calls'
 import type { FeedPost } from '@/lib/community/spec'
-import type { TourCommunityPost, TourEarnRow } from '@/lib/home-tour/types'
+import type { TourCommunityPost, TourEarnRow, TourQuote } from '@/lib/home-tour/types'
+
+/** Hourly closes a first frame carries at most: the chart window's own length (lib/candles-server MAX_CANDLES, a week and a half of hours). */
+export const TOUR_QUOTE_CLOSES = 180
+
+/**
+ * A market's hourly candles → the Charts miniature's first frame (round 3,
+ * lane SIDES-A). The same three numbers the candles route answers with
+ * (app/api/charts/candles: the window's closes, `last` = the newest close,
+ * the route's own 24-hour change), so the server's first paint and the
+ * browser's first read say the same thing. Closes keep six significant
+ * figures (the page carries them twice: the HTML and the payload). Fewer
+ * than two real closes is NULL: the market is left out of the list and the
+ * panel reads it in the browser, as before.
+ */
+export function tourQuoteOf(symbol: string, candles: readonly { c: number }[], changePct: number | null): TourQuote | null {
+  const closes: number[] = []
+  for (const c of candles.slice(-TOUR_QUOTE_CLOSES)) {
+    if (c && typeof c.c === 'number' && Number.isFinite(c.c) && c.c > 0) closes.push(Number(c.c.toPrecision(6)))
+  }
+  if (!symbol || closes.length < 2) return null
+  return {
+    symbol,
+    last: closes[closes.length - 1],
+    changePct: changePct != null && Number.isFinite(changePct) ? Math.round(changePct * 10_000) / 10_000 : null,
+    closes,
+  }
+}
 
 /** Bars on the tour's ladder: the board's own ladder length. */
 export const TOUR_EARN_ROWS = 8

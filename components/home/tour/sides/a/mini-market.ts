@@ -8,6 +8,7 @@
 
 import { chartPairFor, type ChartPair } from '@/lib/charts'
 import { TICKET_DEFAULT_USD, TICKET_LEVERAGE_PRESETS, TICKET_USD_PRESETS, composeTicketAsk, fmtTicketUnits, freshTicket, ticketSidesFor, usdWord, type TicketCompose } from '@/lib/order-ticket'
+import type { TourQuote } from '@/lib/home-tour/types'
 import type { ReadPoint } from '@/lib/read'
 
 /** A stock, a coin and a perp: one of each kind of market the app charts. */
@@ -117,4 +118,48 @@ export function acceptMiniMarket(body: unknown): MiniMarket | null {
   const last = typeof b.last === 'number' && Number.isFinite(b.last) && b.last > 0 ? b.last : points[points.length - 1][1]
   const chg = typeof b.changePct24h === 'number' && Number.isFinite(b.changePct24h) ? b.changePct24h : null
   return { last, chg, points }
+}
+
+// ── The first frame: the server's snapshot (round 3) ─────────────────────────
+
+/** The server snapshot's quotes (lib/home-tour TourQuote: the same loader the
+ *  candles route serves, read at render) → the miniature's markets by symbol,
+ *  so the first paint is complete before any browser read. A quote with no
+ *  price or fewer than two closes is left out (that market shows its dash and
+ *  is read in the browser, as before). The line is drawn by ORDER (lib/read
+ *  readChart), so a close's place stands in for its hour. */
+export function miniMarketsOfQuotes(quotes: readonly TourQuote[] | null | undefined): Record<string, MiniMarket> {
+  const out: Record<string, MiniMarket> = {}
+  if (!Array.isArray(quotes)) return out
+  for (const q of quotes) {
+    const closes: readonly unknown[] = q && Array.isArray(q.closes) ? q.closes : []
+    if (!q || typeof q.symbol !== 'string') continue
+    const points: ReadPoint[] = []
+    closes.forEach((c, i) => {
+      if (typeof c === 'number' && Number.isFinite(c) && c > 0) points.push([i, c])
+    })
+    if (points.length < 2) continue
+    const last = typeof q.last === 'number' && Number.isFinite(q.last) && q.last > 0 ? q.last : points[points.length - 1][1]
+    out[q.symbol] = { last, chg: typeof q.changePct === 'number' && Number.isFinite(q.changePct) ? q.changePct : null, points }
+  }
+  return out
+}
+
+// ── The sentence a link carries (../Links.tsx) ───────────────────────────────
+
+/** The Links example is a swap with a dollar side on Base: a Uniswap swap,
+ *  where the link fee and the creator's half inside the reader's transaction
+ *  are certain (lib/fees `native-swap-uniswap`; /docs/creator-earnings "Paid
+ *  inside the swap"). A stock buy was the first example, but a stock that
+ *  settles through the fallback venue carries the ordinary swap fee. */
+export const LINK_SWAP = { sell: 'ETH', buy: 'USDC', chain: 'Base' } as const
+
+/** That sentence for a size. NOTE: no composer in the product writes a swap
+ *  sentence (the order ticket writes Buy / Sell / Long), so this is the swap
+ *  layer's own example phrasing — the sentence the Ask side offers
+ *  (lib/home-tour/ask.ts, served-audited) — with the ticket's dollar word.
+ *  Pinned at every size through the chat ladder the sentence audit runs
+ *  (scripts/ask-ladder simulateLadder) and against the Ask side's sentence. */
+export function linkSwapAsk(usd: number): string {
+  return `Swap ${usdWord(usd)} of ${LINK_SWAP.sell} to ${LINK_SWAP.buy} on ${LINK_SWAP.chain}`
 }
