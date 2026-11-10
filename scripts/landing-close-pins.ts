@@ -64,11 +64,11 @@ export function landingClosePins(check: Check): void {
   const quiet = [...close.matchAll(/href: '([^']+)'/g)].map((m) => m[1])
   check('close: the quiet row is Leaderboard · Analytics · Pricing · Docs · The story', JSON.stringify(quiet) === JSON.stringify(QUIET), quiet.join(','))
 
-  // ── Doors (rule 3): SpineLink or a plain on-page anchor, journey-labelled ──
+  // ── Doors (rule 3): LandingLink or a plain on-page anchor, journey-labelled ──
   for (const [name, src, prefix] of [['how', how, 'How: '], ['closing', close, 'Closing: ']] as const) {
     check(`close: ${name} uses no next/link and no redirectTo`, !/from 'next\/link'/.test(src) && !/redirectTo/.test(src))
-    const spine = [...src.matchAll(/<SpineLink\b[^>]*>/g)].map((m) => m[0])
-    check(`close: every ${name} SpineLink has prefetch={false} and a "${prefix}" journey`, spine.length > 0 && spine.every((t) => /prefetch=\{false\}/.test(t) && (t.includes(`data-journey="${prefix}`) || /data-journey=\{(journey|`Closing: )/.test(t))), `${spine.length} links`)
+    const spine = [...src.matchAll(/<LandingLink\b[^>]*>/g)].map((m) => m[0])
+    check(`close: every ${name} LandingLink has prefetch={false} and a "${prefix}" journey`, spine.length > 0 && spine.every((t) => /prefetch=\{false\}/.test(t) && (t.includes(`data-journey="${prefix}`) || /data-journey=\{(journey|`Closing: )/.test(t))), `${spine.length} links`)
     const anchors = [...src.matchAll(/<a\b[^>]*>/g)].map((m) => m[0])
     check(`close: every ${name} <a> is an on-page anchor with a journey`, anchors.every((t) => /href=\{door\.href\}/.test(t) && /data-journey=/.test(t)) && (name === 'how' ? anchors.length === 0 : /door\.href\.startsWith\('#'\) \?/.test(src)))
     check(`close: ${name} never prints the old name`, !/yeetful/i.test(read(name === 'how' ? 'components/home/HowItWorks.tsx' : 'components/home/ClosingDoors.tsx')))

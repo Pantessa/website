@@ -312,7 +312,7 @@ export function landingSidesBPins(check: Check): void {
     const src = code(read(f))
     return /from 'next\/link'|redirectTo|\/chat\?prompt=|window\.scrollTo|router\.(push|replace)/.test(src)
   })
-  check('sides-b (doors): every link in the four panels is a SpineLink with a journey label; none imports next/link, passes redirectTo or writes a prompt link', doorsBad.length === 0 && LANE_TSX.every((f) => (code(read(f)).match(/<SpineLink\b[^>]*>/g) ?? []).every((tag) => /data-journey=\{tourJourney\(meta\.id,/.test(tag))), doorsBad.join(', '))
+  check('sides-b (doors): every link in the four panels is a LandingLink with a journey label; none imports next/link, passes redirectTo or writes a prompt link', doorsBad.length === 0 && LANE_TSX.every((f) => (code(read(f)).match(/<LandingLink\b[^>]*>/g) ?? []).every((tag) => /data-journey=\{tourJourney\(meta\.id,/.test(tag))), doorsBad.join(', '))
   const cssBad = LANE_CSS.filter((f) => {
     const src = read(f).replace(/\/\*[\s\S]*?\*\//g, '')
     const motion = /transition|animation/.test(src)

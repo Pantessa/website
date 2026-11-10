@@ -17,6 +17,7 @@ import { HOME_MODE_ATTR, HOME_MODE_BOOTSTRAP, HOME_RETURN_DAYS, HOME_TOUR_PREF_K
 import { EMPTY_TOUR, TOUR_ANCHOR, TOUR_IDS, TOUR_SIDES, fillSlots, isTourId, parseTourHash, tourAnchor, tourBody, tourFacts, tourJourney, tourSide, type TourSnapshot } from '../lib/home-tour'
 import { staticTourSnapshot, tourFees, tourStaticCounts } from '../lib/home-tour-server'
 import { marketSections } from '../lib/markets'
+import { isSignedInAppHref } from '../lib/home-doors'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -148,6 +149,16 @@ export function landingCoordPins(check: Check): void {
       TOUR_SIDES.every((s) => tourFacts(s, EMPTY_TOUR).every((f) => !/[{}]/.test(f)) && !/[{}]/.test(tourBody(s, EMPTY_TOUR)) && !/[{}]/.test(tourBody(s, FULL)) && !/\s{2,}/.test(tourBody(s, EMPTY_TOUR))),
   )
   check('tour journey: one spelling for every door and chip — "Tour <Side>: <what>" — so the flows page can say which side pulled a visitor in', tourJourney('links', 'Mint a link') === `Tour ${tourSide('links').label}: Mint a link`)
+
+  // ── Which door a landing link is (lib/home-doors, components/home/LandingLink) ──
+  const plain = ['/', '/t/AAPL', '/live', '/chat', '/chat?tab=links', '/chat?tab=mcps&mcps=aave', '/community', '/community?compose=trade', '/g/new', '/leaderboard', '/analytics', '/docs', '/docs/embed', '/pricing', '/story', '/links', '//evil.example/wallet', 'https://example.com/wallet', 'wallet']
+  const gatedDoors = TOUR_SIDES.flatMap((s) => s.doors.map((d) => d.href)).filter(isSignedInAppHref)
+  const landingLink = code('components/home/LandingLink.tsx')
+  check(
+    'landing doors: only a page of the SIGNED-IN app gets the sign-in door (the wallet, the dashboard, an open chat); a chart, the chat and its tabs, the community, a docs page, pricing, the story and the links board are plain links — a stranger who taps "Read the docs" goes to the docs. On the tour that is exactly one door: the wallet',
+    ['/wallet', '/wallet?x=1', '/dashboard', '/dashboard/links', '/chat/abc123', '/inbox'].every(isSignedInAppHref) && plain.every((h) => !isSignedInAppHref(h)) && gatedDoors.join() === '/wallet' && /isSignedInAppHref\(href\) \? <SpineLink href=\{href\} \{\.\.\.rest\} \/> : <Link href=\{href\} \{\.\.\.rest\} \/>/.test(landingLink),
+    gatedDoors.join(' ') || 'none gated',
+  )
 
   // ── The static part of the snapshot comes from the registries ──
   const counts = tourStaticCounts()

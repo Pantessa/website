@@ -8,11 +8,11 @@
 // from the tour. The index numbers are a CSS counter (closing.css).
 //
 // Doors (standing rule 6): an on-page anchor (`#earn`) is a plain <a>;
-// everything else is a SpineLink (a public page is a plain link, a
+// everything else is a LandingLink (a public page is a plain link, a
 // signed-in page opens the unified door aimed at itself). No `redirectTo`.
 // Every link carries `data-journey="Closing: <label>"`.
 
-import SpineLink from '@/components/SpineLink'
+import LandingLink from '@/components/home/LandingLink'
 import { TOUR_SIDES, type TourDoor, type TourSnapshot } from '@/lib/home-tour'
 import './closing.css'
 
@@ -64,9 +64,9 @@ export default function ClosingDoors(_props: { data?: TourSnapshot }) {
                   {inner}
                 </a>
               ) : (
-                <SpineLink href={door.href} className="closing__door" prefetch={false} data-journey={journey}>
+                <LandingLink href={door.href} className="closing__door" prefetch={false} data-journey={journey}>
                   {inner}
-                </SpineLink>
+                </LandingLink>
               )}
             </li>
           )
@@ -75,9 +75,9 @@ export default function ClosingDoors(_props: { data?: TourSnapshot }) {
 
       <nav className="closing__quiet" aria-label="More of Pantessa">
         {CLOSING_QUIET.map((q) => (
-          <SpineLink key={q.href} href={q.href} className="closing__quietlink" prefetch={false} data-journey={`Closing: ${q.label}`}>
+          <LandingLink key={q.href} href={q.href} className="closing__quietlink" prefetch={false} data-journey={`Closing: ${q.label}`}>
             {q.label}
-          </SpineLink>
+          </LandingLink>
         ))}
       </nav>
     </section>

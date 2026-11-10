@@ -34,7 +34,7 @@
 // Nothing here moves on its own: the clock only re-reads the minute.
 
 import { useEffect, useState } from 'react'
-import SpineLink from '@/components/SpineLink'
+import LandingLink from '@/components/home/LandingLink'
 import { cadenceLabel, periodKeyFor } from '@/lib/dca'
 import { tourJourney } from '@/lib/home-tour'
 import { meta } from '@/lib/home-tour/autopilots'
@@ -190,9 +190,9 @@ export default function AutopilotsSide() {
             ) : null}
             It comes back to the bell with the order attached and never sends it: you do.
           </p>
-          <SpineLink href="/t/ETH" prefetch={false} className="sb-run sb-run--quiet" data-journey={tourJourney(meta.id, 'Set an alert on ETH')}>
+          <LandingLink href="/t/ETH" prefetch={false} className="sb-run sb-run--quiet" data-journey={tourJourney(meta.id, 'Set an alert on ETH')}>
             Set one from ETH’s chart <span aria-hidden>→</span>
-          </SpineLink>
+          </LandingLink>
         </li>
 
         {/* ── 4 · a job ── */}

@@ -13,7 +13,7 @@
 // panel labelled by its tab. Nothing types itself, nothing animates.
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import SpineLink from '@/components/SpineLink'
+import LandingLink from '@/components/home/LandingLink'
 import { tourJourney } from '@/lib/home-tour'
 import { meta } from '@/lib/home-tour/build'
 import { TourPanel } from '../Panel'
@@ -124,12 +124,12 @@ export default function BuildSide() {
         {venues != null && pinnedAddresses != null && (
           <p className="sb-bd__foot">
             Every contract a builder may touch is published:{' '}
-            <SpineLink href="/docs/venues" prefetch={false} className="sb-bd__link" data-journey={tourJourney(meta.id, 'Venue manifest')}>
+            <LandingLink href="/docs/venues" prefetch={false} className="sb-bd__link" data-journey={tourJourney(meta.id, 'Venue manifest')}>
               {venues.toLocaleString('en-US')} venues, {pinnedAddresses.toLocaleString('en-US')} pinned{' '}
               <span className="sb-bd__nowrap">
                 addresses <i aria-hidden>→</i>
               </span>
-            </SpineLink>
+            </LandingLink>
           </p>
         )}
       </div>

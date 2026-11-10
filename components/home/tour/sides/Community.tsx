@@ -22,7 +22,7 @@
 
 import { useEffect, useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
-import SpineLink from '@/components/SpineLink'
+import LandingLink from '@/components/home/LandingLink'
 import { fmtProofDollars } from '@/lib/community/proof-words'
 import { tourJourney, type TourCommunityPost } from '@/lib/home-tour'
 import { meta } from '@/lib/home-tour/community'
@@ -59,7 +59,7 @@ export default function CommunitySide() {
           <ul className="sb-cm__posts">
             {posts.map((p) => (
               <li key={p.href}>
-                <SpineLink href={p.href} prefetch={false} className="sb-cm__post" data-journey={tourJourney(meta.id, `post ${p.kind}`)}>
+                <LandingLink href={p.href} prefetch={false} className="sb-cm__post" data-journey={tourJourney(meta.id, `post ${p.kind}`)}>
                   <span className="sb-cm__postmeta mono">
                     {KIND_WORD[p.kind]}
                     {p.symbol ? ` · ${p.symbol}` : ''}
@@ -76,7 +76,7 @@ export default function CommunitySide() {
                     {p.score.toLocaleString('en-US')} {p.score === 1 ? 'point' : 'points'}
                     {now != null ? ` · ${fmtAge(now - p.at)}` : ''}
                   </span>
-                </SpineLink>
+                </LandingLink>
               </li>
             ))}
           </ul>
