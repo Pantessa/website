@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { unstable_cache } from 'next/cache'
 import Link from 'next/link'
 import { SITE } from '@/lib/docs'
 import { MARKETS_HREF } from '@/lib/markets'
@@ -19,6 +20,9 @@ import StayUpToDate from '@/components/StayUpToDate'
 import MobileCtaBar from '@/components/MobileCtaBar'
 import Footer from '@/components/Footer'
 import { SPLASH } from '@/lib/markets-copy'
+import StoryTour from '@/components/story/StoryTour'
+import { readTourSnapshotForRender } from '@/lib/home-tour-server'
+import { readSnapshotForRender } from '@/lib/read-server'
 
 /** /story — THE BROCHURE (squad front-door, 2026-10-06). Until today this was
  * `/`; now `/` is the app's own splash (the markets index with the live pulse
@@ -106,10 +110,28 @@ const JSON_LD = JSON.stringify([
   },
 ])
 
-export default function StoryPage() {
+/** THE TOUR's two snapshots (squad landing, 2026-11-10): the tour's own
+ *  (lib/home-tour-server) and THE READ's nine quotes (lib/read-server). Both
+ *  readers already go through unstable_cache with the HOME's minute and never
+ *  throw; called bare here, Next would take that minute as this page's window
+ *  (it takes the smaller) and `/story` would re-render every 60s. Wrapped in
+ *  the page's own five minutes, the route table keeps `○ /story 5m` — never a
+ *  no-store fetch at render. The panels refresh themselves while on screen. */
+const storySnapshots = unstable_cache(
+  async () => {
+    const [tour, read] = await Promise.all([readTourSnapshotForRender(), readSnapshotForRender()])
+    return { tour, read }
+  },
+  ['story-tour-v1'],
+  { revalidate: 300 },
+)
+
+export default async function StoryPage() {
   // Dark until the tripwire: the Roster front door renders ONLY on the flag;
   // the flag-off return below is the shipped homepage, untouched.
   if (ROSTER_HOME) return <RosterHome />
+  // THE TOUR's two snapshots (squad landing, 2026-11-10): see storySnapshots.
+  const { tour, read } = await storySnapshots()
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
@@ -146,6 +168,12 @@ export default function StoryPage() {
 
         {/* Their meters vs ours + the six lines they cannot sell */}
         <MarketsBand />
+
+        {/* THE TOUR, STACKED (squad landing, 2026-11-10): the home's eight
+            sides all at once, one under another, live — the product's whole
+            story in eight parts. Both snapshots are read at render through
+            their cached readers, so the page stays ISR. */}
+        <StoryTour data={tour} read={read} />
 
         {/* BELOW THE FOLD — distribution: share a trade (links), embed the
             chart (hosts). Trimmed, not deleted: the explainer band rides in

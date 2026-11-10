@@ -184,11 +184,12 @@ export async function frontDoorPins(check: Check): Promise<void> {
 
   // ── /story, the sitemap, the cards, the crawl ────────────────────────
   const story = code('app/story/page.tsx')
+  // RE-PINNED 2026-11-10 (landing): the brochure's order gains THE TOUR, stacked (<StoryTour />), between the markets band and the share band.
   check(
-    'front door: /story reads its title + description from SPLASH, keeps the VideoObject and its own canonical, carries the slim top line back to the app (MARKETS_HREF) above the movers tape, and still mounts the brochure in order (hero · venue band · map · honesty · band · share · links · embed) + the phone CTA bar',
+    'front door: /story reads its title + description from SPLASH, keeps the VideoObject and its own canonical, carries the slim top line back to the app (MARKETS_HREF) above the movers tape, and still mounts the brochure in order (hero · venue band · map · honesty · band · the tour stacked · share · links · embed) + the phone CTA bar',
     /const TITLE = SPLASH\.storyTitle/.test(story) && /const DESCRIPTION = SPLASH\.storyDescription/.test(story) && /'@type': 'VideoObject'/.test(story) && /const CANONICAL = `\$\{SITE\}\/story`/.test(story) &&
       /data-story-top/.test(story) && /<Link href=\{MARKETS_HREF\}/.test(story) && story.indexOf('data-story-top') < story.indexOf('<MoversStrip />') &&
-      ['<LinksHero />', '<VenueBand />', '<MarketMapTeaser />', '<HonestyStrip />', '<MarketsBand />', '<ShareBand />', '<LinkEconomy />', '<EmbedAnywhere />', '<MobileCtaBar />'].every((k, i, all) => story.includes(k) && (i === 0 || story.indexOf(all[i - 1]) < story.indexOf(k))),
+      ['<LinksHero />', '<VenueBand />', '<MarketMapTeaser />', '<HonestyStrip />', '<MarketsBand />', '<StoryTour data={tour} read={read} />', '<ShareBand />', '<LinkEconomy />', '<EmbedAnywhere />', '<MobileCtaBar />'].every((k, i, all) => story.includes(k) && (i === 0 || story.indexOf(all[i - 1]) < story.indexOf(k))),
   )
   const sitemap = code('app/sitemap.ts')
   check(

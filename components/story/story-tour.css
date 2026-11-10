@@ -1,0 +1,86 @@
+/* THE TOUR, STACKED — /story's section of all eight sides (squad landing,
+   2026-11-10, lane STORY). Tokens only (README rule 8): no literal colour,
+   no px font size, no px radius; light mode comes from the tokens. Sized by
+   the section's own container, never the viewport: the brochure's column
+   is ~1220 px at most and ~342 px on a 390 phone. Nothing sticky, nothing
+   fixed. The panels inside carry their own sheet (components/home/tour/
+   panel.css) and their own container (`tp`), so any panel height fits. */
+
+.stour {
+  counter-reset: stour;
+  container-type: inline-size;
+  container-name: stour;
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: clamp(4rem, 9vh, 7rem) 0 clamp(2.5rem, 6vh, 4rem);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  min-width: 0;
+  scroll-margin-top: calc(var(--sp-6) * 2.5);
+}
+
+/* ── The head: the brochure's centred rhythm ─────────────────────────── */
+.stour__head { max-width: 760px; margin: 0 auto; text-align: center; display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); }
+.stour__eyebrow { margin: 0; font-size: var(--fs-sm); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted-2); }
+.stour__title { margin: 0; font-family: var(--font-serif, var(--mk-font-display)); font-weight: 500; font-size: clamp(1.875rem, 4.2cqi, 3rem); line-height: 1.05; letter-spacing: -0.025em; color: var(--fg); text-wrap: balance; }
+.stour__line { margin: 0; max-width: 62ch; font-size: var(--fs-base); line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+
+/* ── The index: eight anchors, one skim ──────────────────────────────── */
+.stour__index { min-width: 0; }
+.stour__indexlist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.stour__indexitem { min-width: 0; }
+.stour__indexlink { display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); color: var(--fg); text-decoration: none; font-size: var(--fs-md); font-weight: 600; outline: none; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
+.stour__indexlink:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.stour__indexlink:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.stour__indexnum { font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.04em; color: var(--accent); font-variant-numeric: tabular-nums; }
+.stour__indexlabel { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@container stour (min-width: 560px) {
+  .stour__indexlist { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container stour (min-width: 1000px) {
+  .stour__indexlist { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+}
+
+/* ── The eight blocks ────────────────────────────────────────────────── */
+.stour__sides { display: flex; flex-direction: column; gap: var(--sp-4); margin: 0; padding: 0; list-style: none; }
+.stour__side {
+  counter-increment: stour;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+  padding: var(--sp-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surf-1);
+  scroll-margin-top: calc(var(--sp-6) * 2.5);
+}
+.stour__side:target { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.stour__sidehead { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); padding-bottom: var(--sp-3); border-bottom: 1px solid var(--line); }
+.stour__num::before { content: counter(stour, decimal-leading-zero); font-size: var(--fs-sm); letter-spacing: 0.04em; color: var(--accent); font-variant-numeric: tabular-nums; }
+.stour__label { font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg); }
+.stour__sideline { flex: 1 1 16rem; min-width: 0; font-size: var(--fs-md); color: var(--muted); }
+.stour__panel { min-width: 0; }
+
+/* CLASS COLLISION GUARD (found 2026-11-10): the tape view's sheet
+   (components/markets/chart/tape-view.css, loaded on /story by the brochure's
+   chart) owns `.tp` (absolute, inset 0, overflow hidden — it collapsed every
+   panel here to 0 px) and `.tp__chip` (22 px tall, tiny caps). The panels'
+   own sheet uses the same names. Until one side is renamed (ASK COORDINATOR
+   in STORY.md), the stack undoes exactly what the tape view sets. */
+.stour__panel .tp { position: static; inset: auto; z-index: auto; overflow: visible; border-radius: 0; background: none; }
+.stour__panel .tp__chip { height: auto; font-size: var(--fs-md); letter-spacing: normal; gap: var(--sp-2); }
+
+@container stour (max-width: 559px) {
+  .stour__side { padding: var(--sp-4); gap: var(--sp-3); }
+  .stour__sideline { flex-basis: 100%; }
+}
+
+@media (pointer: coarse) {
+  .stour__indexlink { min-height: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stour__indexlink { transition: none; }
+}
