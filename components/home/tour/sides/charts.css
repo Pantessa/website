@@ -1,0 +1,58 @@
+/* THE TOUR · CHARTS — the order form in miniature (squad landing, 2026-11-10;
+   lane SIDES-A). Three market tiles, the picked market's price and week, and
+   the ticket: a side, a size, the sentence. Shared pieces: ./a/kit.css. Sized
+   by its own container (`ta`), tokens only, nothing moves by itself. The plot
+   is an SVG in a stretched viewBox inside a box whose height is CSS, so the
+   frame is the same before and after the read lands. */
+
+/* ── The three markets ────────────────────────────────────────────────── */
+.tc__tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); }
+.tc__tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 64px; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); background: transparent; color: var(--fg); font-family: var(--mk-font-ui); text-align: left; cursor: pointer; outline: none; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
+.tc__tile:hover { border-color: color-mix(in srgb, var(--fg) 28%, var(--line)); }
+.tc__tile:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.tc__tile.is-on { border-color: color-mix(in srgb, var(--accent) 65%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tc__tilehead { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); min-width: 0; }
+.tc__sym { font-size: var(--fs-md); font-weight: 600; line-height: 1.2; }
+.tc__kind { font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.tc__tilelast { font-size: var(--fs-md); font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tc__tilechg { font-size: var(--fs-xs); color: var(--ta-tone, var(--muted)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ── The picked market ────────────────────────────────────────────────── */
+.tc__market { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.tc__quote { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px var(--sp-3); margin: 0; }
+.tc__last { font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.5rem, 7cqi, 2rem); line-height: 1.1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.tc__chg { font-size: var(--fs-md); color: var(--ta-tone, var(--muted)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tc__basis { color: var(--muted-2); }
+.tc__plot { position: relative; height: clamp(84px, 22cqi, 132px); margin-top: var(--sp-1); }
+.tc__svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+.tc__path { fill: none; stroke: var(--ta-tone, var(--fg)); stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; }
+.tc__plot.is-flat .tc__path { stroke: var(--fg); }
+.tc__stop { stop-color: var(--ta-tone, var(--fg)); }
+.tc__axis, .tc__span { position: absolute; padding: 0 var(--sp-1); font-size: var(--fs-xs); color: var(--muted-2); background: color-mix(in srgb, var(--bg) 70%, transparent); border-radius: var(--r-sm); pointer-events: none; font-variant-numeric: tabular-nums; }
+.tc__axis { right: 0; }
+.tc__axis--max { top: 0; }
+.tc__axis--min { bottom: 0; }
+.tc__span { left: 0; bottom: 0; letter-spacing: 0.04em; }
+.tc__empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 0 var(--sp-3); font-size: var(--fs-sm); color: var(--muted-2); text-align: center; }
+
+/* ── The ticket ───────────────────────────────────────────────────────── */
+.tc__ticket { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--line); min-width: 0; }
+.tc__controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-5); }
+.tc__order { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.tc__sentence { margin: 0; min-height: 1.25em; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.125rem, 5.4cqi, 1.5rem); line-height: 1.25; letter-spacing: -0.01em; color: var(--fg); text-wrap: balance; overflow-wrap: anywhere; }
+.tc__sentence q { quotes: '“' '”'; }
+.tc__amt { font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+.tc__problem { font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 400; color: var(--muted); }
+.tc__est { min-height: 1.45em; }
+.tc__go { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
+
+/* A narrow frame (a phone's row): tighter tiles, the controls stack. */
+@container ta (max-width: 360px) {
+  .tc__tile { padding: var(--sp-2); }
+  .tc__kind { display: none; }
+  .tc__controls { gap: var(--sp-2) var(--sp-3); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tc__tile { transition: none; }
+}

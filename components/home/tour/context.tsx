@@ -14,8 +14,14 @@
 //               is held) into the Ask door (lib/ask-door), which SENDS it.
 //               Standing rule 6: never a raw wallet modal, never a
 //               `/chat?prompt=` link in the HTML.
-//   • `fill`  — open the Ask door with a draft in it, NOT sent: for "type
-//               your own" and for a question (a read needs no wallet).
+//   • `fill`  — open the Ask door with a draft in it, NOT sent.
+//   • `say`   — send TYPED words the way the top strip's Ask does: straight
+//               into the Ask door, sent, with no connect step first. A
+//               question is answered with no wallet; a money ask meets the
+//               chat's own wall, which opens the connect door and holds the
+//               ask. For free text only — a chip or a composed sentence uses
+//               `act` (a job sentence must: the jobs layer's guest wall has
+//               no door).
 //   • `canAct`— whether a sentence's venue can run it right now
 //               (lib/trade-venue-gate over the measured verdicts). A chip
 //               that cannot run is not offered.
@@ -36,6 +42,7 @@ export interface TourHands {
   read: ReadSnapshot
   act: (ask: string) => void
   fill: (draft: string) => void
+  say: (text: string) => void
   canAct: (ask: string) => boolean
 }
 
@@ -44,6 +51,7 @@ const Ctx = createContext<TourHands>({
   read: EMPTY_READ,
   act: () => {},
   fill: () => {},
+  say: () => {},
   canAct: () => true,
 })
 
@@ -54,8 +62,9 @@ export function TourProvider({ data = EMPTY_TOUR, read = EMPTY_READ, children }:
   const promptHref = useCallback((ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`, [])
   const { act, door } = useConnectToAct({ run, redirectFor: promptHref })
   const fill = useCallback((draft: string) => openDoor(draft, { mcps: askAppSlugs(draft) }), [openDoor])
+  const say = useCallback((text: string) => openDoor(text, { send: true, mcps: askAppSlugs(text) }), [openDoor])
   const canAct = useCallback((ask: string) => canTradeAsk(ask, tradable), [tradable])
-  const hands = useMemo<TourHands>(() => ({ data, read, act, fill, canAct }), [data, read, act, fill, canAct])
+  const hands = useMemo<TourHands>(() => ({ data, read, act, fill, say, canAct }), [data, read, act, fill, say, canAct])
   return (
     <Ctx.Provider value={hands}>
       {children}

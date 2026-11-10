@@ -8,11 +8,6 @@
 //                     in lib/home-tour/autopilots (sign, then auto).
 // Pure and client-safe.
 
-import type { Cadence } from './rules'
-
-/** The recurring buy on the panel is weekly (its sentence says "every week"). */
-export const DCA_CADENCE: Cadence = 'week'
-
 /** The alert on the panel: a move of this many percent, either way. */
 export const ALERT_PCT = 5
 
@@ -36,5 +31,5 @@ export interface JobStepWords {
 /** The two steps of the panel's job, in order, in plain words. */
 export const JOB_STEPS: readonly JobStepWords[] = [
   { kind: 'sign', what: 'Open the long', who: 'your wallet signs' },
-  { kind: 'auto', what: 'Arm the stop once it fills', who: 'the runner, under your consent' },
+  { kind: 'auto', what: 'Arm the stop', who: 'runs on the fill' },
 ]

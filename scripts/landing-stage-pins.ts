@@ -269,7 +269,8 @@ export async function landingStagePinsServed(check: Check, base: string): Promis
       tabs.every((t) => t.includes(`id="${tourAnchor(idOf(t) as TourId)}"`) && /role="tab"/.test(t) && /aria-controls="tour-stage"/.test(t)) &&
       tabs.filter((t) => /aria-selected="true"/.test(t)).map(idOf).join() === TOUR_IDS[0] &&
       tabs.filter((t) => /tabindex="0"/.test(t)).map(idOf).join() === TOUR_IDS[0] &&
-      (tourHtml.match(/role="tablist"/g) ?? []).length === 1 &&
+      // The tour's OWN tablist, once. A panel may hold a tablist of its own (Charts switches three markets, Build three snippets): that is a nested widget inside the tabpanel, not a second list of sides. (Coordinator, after SIDES-A merged.)
+      (tourHtml.match(/class="tour__list" role="tablist"/g) ?? []).length === 1 &&
       TOUR_SIDES.every((s) => tourHtml.includes(`>${esc(s.label)}</span>`) && tourHtml.includes(esc(s.line))),
     tabs.map(idOf).join(',') || `status ${res.status}`,
   )

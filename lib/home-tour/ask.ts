@@ -1,5 +1,8 @@
-// THE TOUR · ASK (lane SIDES-A owns this file). First-draft words from the
-// contract; the lane refines them. Rules: lib/home-tour/types.ts.
+// THE TOUR · ASK (lane SIDES-A owns this file). Rules: lib/home-tour/types.ts.
+// The four sentences are the composer's example rows (components/home/tour/
+// sides/Ask.tsx draws them beside the app that catches each); every one is a
+// native layer's own phrasing and passes lane DATA's served sentence audit
+// ("Stake 0.05 ETH" alone only reached the intent net: the venue word stays).
 import type { TourSideMeta } from './types'
 
 export const meta: TourSideMeta = {
@@ -16,7 +19,7 @@ export const meta: TourSideMeta = {
   asks: [
     { ask: 'Swap $20 of ETH to USDC on Base', label: 'Swap $20 of ETH to USDC', via: 'Uniswap' },
     { ask: 'Buy $25 of AAPL', label: 'Buy $25 of AAPL', via: 'Robinhood Chain' },
-    { ask: 'Stake 0.05 ETH', label: 'Stake 0.05 ETH', via: 'Lido' },
+    { ask: 'Stake 0.05 ETH on Lido', label: 'Stake 0.05 ETH', via: 'Lido' },
     { ask: '2x Long $25 of UNI on Hyperliquid, then protect my UNI long with a 10% stop', label: 'Long UNI 2x with a stop', via: 'a two-step job' },
   ],
 }
