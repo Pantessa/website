@@ -1,14 +1,47 @@
 /* THE CLOSING DOORS (squad landing, 2026-11-10; lane CLOSE owns this file).
-   CONTRACT BASELINE. Tokens only — no literal colour, no px font size, no
-   px radius (see components/home/tour/panel.css). */
+   Rides the markets look (--mk-*) and the ONE SCALE exactly as read.css
+   does: no literal colour, no px font size, no px radius. The section is its
+   own size container: a 4 × 2 grid when wide, 2 × 4 when narrow. Nothing
+   moves; nothing sticky. */
 
-.closing { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); min-width: 0; padding: var(--sp-5); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); }
-.closing__title { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: var(--fs-2xl); line-height: 1.15; letter-spacing: -0.015em; color: var(--fg); }
-.closing__doors { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.closing__door { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-pill); color: var(--fg); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; text-decoration: none; outline: none; white-space: nowrap; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
-.closing__door:hover, .closing__door:focus-visible { border-color: var(--accent); }
-.closing__door--primary { border-color: var(--accent); background: var(--accent); color: var(--bg); }
-.closing__door--quiet { border-color: transparent; color: var(--muted); }
+.closing { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; padding: clamp(var(--sp-4), 3cqi, var(--sp-5)); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); container-type: inline-size; container-name: closing; }
+
+/* ── The head ─────────────────────────────────────────────────────────── */
+.closing__head { display: flex; flex-direction: column; gap: var(--sp-2); }
+.closing__eyebrow { margin: 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.closing__title { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.5rem, 4cqi, 2.25rem); line-height: 1.1; letter-spacing: -0.015em; color: var(--fg); }
+.closing__lede { margin: 0; max-width: 60ch; font-family: var(--mk-font-ui); font-size: var(--fs-base); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+
+/* ── The grid of eight ────────────────────────────────────────────────── */
+.closing__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); margin: 0; padding: 0; list-style: none; counter-reset: closing-side; }
+@container closing (min-width: 720px) {
+  .closing__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); }
+}
+.closing__cell { display: flex; min-width: 0; counter-increment: closing-side; }
+.closing__door { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; min-width: 0; min-height: 56px; padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); background: transparent; color: var(--fg); text-decoration: none; outline: none; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
+.closing__door:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.closing__door:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.closing__num::before { content: counter(closing-side, decimal-leading-zero); }
+.closing__num { font-size: var(--fs-xs); color: var(--muted-2); font-variant-numeric: tabular-nums; }
+.closing__label { font-family: var(--mk-font-display); font-weight: 600; font-size: var(--fs-lg); line-height: 1.2; letter-spacing: -0.01em; color: var(--fg); }
+.closing__line { flex: 1 1 auto; font-family: var(--mk-font-ui); font-size: var(--fs-sm); line-height: 1.45; color: var(--muted); text-wrap: pretty; }
+.closing__go { margin-top: var(--sp-1); font-size: var(--fs-xs); line-height: 1.4; color: var(--accent); overflow-wrap: anywhere; }
+.closing__door:hover .closing__go, .closing__door:focus-visible .closing__go { text-decoration: underline; text-underline-offset: 0.2em; }
+
+/* ── The quiet row ────────────────────────────────────────────────────── */
+.closing__quiet { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.closing__quietlink { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 36px; font-family: var(--mk-font-ui); font-size: var(--fs-md); color: var(--muted); text-decoration: none; outline: none; transition: color var(--dur-1) ease; }
+.closing__quietlink:hover, .closing__quietlink:focus-visible { color: var(--fg); text-decoration: underline; text-underline-offset: 0.25em; text-decoration-color: var(--accent); }
+
+/* Narrow seat: the one-line descriptions sit a step smaller. */
+@container closing (max-width: 520px) {
+  .closing__door { padding: var(--sp-3) 10px; }
+  .closing__label { font-size: var(--fs-base); }
+  .closing__quiet { gap: 0 var(--sp-3); }
+}
+@media (pointer: coarse) {
+  .closing__quietlink { min-height: 44px; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .closing__door { transition: none; }
+  .closing__door, .closing__quietlink { transition: none; }
 }
