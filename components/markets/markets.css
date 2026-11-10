@@ -402,7 +402,10 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym .mkt-perf:not(.mkt-perf--compact) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .sym .mkt-perf:not(.mkt-perf--compact) .mkt-perf__note { grid-column: 1 / -1; }
   .sym .tchart:not(.tchart--expanded) { height: auto; }
-  .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas { flex: 0 0 auto; height: 260px; }
+  /* 260 → 320 (2026-11-10): the strips under the plot are gone; the candles take the room. */
+  .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas { flex: 0 0 auto; height: 320px; }
+  /* The heatmap: a headline and seven rows of days. */
+  .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas.is-heat { height: 220px; }
   /* The battlefield carries a sky and a two-row strip: it needs the height. */
   .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas.is-field { height: 460px; }
   /* The depth chart carries its chips, a print strip and a foot: the same room. */
@@ -504,8 +507,12 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym .tchart:not(.tchart--expanded):has(.mkt-chart__canvas.is-field) { height: clamp(600px, 74dvh, 780px); }
   .sym .tchart:not(.tchart--expanded):has(.mkt-chart__canvas.is-depth) { height: clamp(560px, 70dvh, 720px); }
   .sym .tchart:not(.tchart--expanded):has(.mkt-chart__canvas.is-tape) { height: clamp(560px, 70dvh, 720px); }
-  /* The positioning strip under the candles needs its own rows. */
-  .sym .tchart:not(.tchart--expanded):has(.poshet.is-open) { height: clamp(560px, 76dvh, 820px); }
+  /* The candles (2026-11-10): the positioning strip and the executions table
+     left the card, so the plot takes their rows — the card is as tall as it
+     was with them, and all of it is chart. Outranks the base 58dvh rule. */
+  .sym .tchart:not(.tchart--expanded) { height: clamp(520px, 76dvh, 820px); }
+  /* The heatmap is a headline and seven rows: a shorter card, not an empty one. */
+  .sym .tchart:not(.tchart--expanded):has(.mkt-chart__canvas.is-heat) { height: clamp(340px, 44dvh, 440px); }
 }
 
 /* ── THE SPLASH CLAIM (squad front-door, 2026-10-06; SPLASH lane) ──────────

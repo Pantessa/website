@@ -1,20 +1,21 @@
 'use client'
 
-// PositionHeat — a year of positioning under the candles, the contribution-
-// graph way (Nate, 2026-10-06: "I love the heatmap, let's put that under the
-// main candle chart"). One cell per UTC day of the long/short account share
-// (lib/derivs heatCells), inked against the coin's own typical day: a coin's
-// crowd is structurally one-sided, so 50/50 would paint the whole year one
-// colour. The Battlefield's Heatmap board renders the same grid.
+// The Heatmap — a year of positioning, the contribution-graph way: one cell
+// per UTC day of the long/short account share (lib/derivs heatCells), inked
+// against the coin's own typical day (a coin's crowd is structurally
+// one-sided, so 50/50 would paint the whole year one colour).
+//
+// 2026-11-10 (Nate: "remove the dune tape and make the graph higher … replace
+// the Tape bar with heatmap"): it was a strip under the candles beside Dune's
+// executions table; the table is gone and the year is a chart VIEW now
+// (`?view=heat`, the Tape's seat on the switch), so the candles keep the whole
+// card. The Battlefield's Heatmap board renders the same grid.
 
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
-import type { Candle, ChartPair } from '@/lib/charts'
+import type { Candle } from '@/lib/charts'
 import { fieldDate } from '@/lib/battlefield'
 import { DAY_SEC, fmtUsdShort, heatCells, heatMedian, heatSummary, heatTone, type DerivsBody, type HeatCell } from '@/lib/derivs'
 import './battlefield.css'
-
-const OPEN_KEY = 'pantessa.heat.open.v1'
 
 /** The daily series for a symbol: positioning (the derivs route on 1D) and
  *  the daily bars for each day's price move. Fetched while `enabled`. */
@@ -61,63 +62,41 @@ export function useHeatYear(symbol: string, enabled: boolean) {
   return { derivs, cells, summary, failed }
 }
 
-export interface PositionHeatProps {
-  symbol: string
-  pair: ChartPair
+export type HeatYear = ReturnType<typeof useHeatYear>
+
+export interface HeatViewProps {
+  /** The year the chart already read (it decides whether the view is offered). */
+  year: HeatYear
   /** The last price, to put a dollar figure on a day's open interest. */
   mark: number | null
 }
 
-/** The strip under the candles: a header line, the grid, a day's report on hover. */
-export default function PositionHeat({ symbol, pair, mark }: PositionHeatProps) {
-  const [open, setOpen] = useState(true)
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem(OPEN_KEY)
-      if (v === '0' || v === '1') setOpen(v === '1')
-    } catch {
-      /* default open */
-    }
-  }, [])
-  const toggle = () => {
-    setOpen((o) => {
-      try {
-        localStorage.setItem(OPEN_KEY, o ? '0' : '1')
-      } catch {
-        /* this visit only */
-      }
-      return !o
-    })
-  }
-  const noMarket = pair.source === 'robinhood'
-  const { derivs, cells, summary, failed } = useHeatYear(symbol, open && !noMarket)
+/** The view: a headline, the key, the grid, a day's report on hover. */
+export default function HeatView({ year, mark }: HeatViewProps) {
+  const { derivs, cells, summary, failed } = year
   const [hover, setHover] = useState<{ cell: HeatCell; x: number; y: number } | null>(null)
-  if (noMarket) return null
   const lean = summary?.streak && summary.streak.days >= 3 ? summary.streak.side : null
   return (
-    <section className={`poshet${open ? ' is-open' : ''}`} aria-label="Positioning by day">
-      <button type="button" className="poshet__head" onClick={toggle} aria-expanded={open}>
+    <section className="poshet heatview" aria-label="Positioning by day">
+      <header className="poshet__head">
         <span className="poshet__k mono">Positioning by day{derivs?.source ? ` · ${derivs.source} accounts` : ''}</span>
-        <span className={`poshet__v${lean === 'long' ? ' is-up' : lean === 'short' ? ' is-down' : ''}`}>{summary ? summary.headline : open ? (derivs ? 'No daily read for this coin' : failed ? 'Couldn’t read the year · retrying' : 'Reading the year…') : 'A year of longs vs shorts, one cell a day'}</span>
+        <span className={`poshet__v${lean === 'long' ? ' is-up' : lean === 'short' ? ' is-down' : ''}`}>{summary ? summary.headline : derivs ? 'No daily read for this coin' : failed ? 'Couldn’t read the year · retrying' : 'Reading the year…'}</span>
         <span className="poshet__key mono">
           short <i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 100%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 55%, var(--surf-1))' }} /><i style={{ background: 'var(--surf-1)' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--accent)) 55%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--accent)) 100%, var(--surf-1))' }} /> long
           {summary?.median != null ? ` · usual ${Math.round(summary.median * 100)}% long` : ''}
         </span>
-        <ChevronDown className={`poshet__chev h-3.5 w-3.5${open ? ' is-open' : ''}`} aria-hidden="true" />
-      </button>
-      {open && (
-        <div className="poshet__body">
-          <HeatGrid cells={cells} source={derivs?.source ?? null} onHover={setHover} />
-          {hover && (
-            <div className={`bf__tip bf__tip--${(hover.cell.long ?? 0.5) >= (summary?.median ?? 0.5) ? 'bulls' : 'bears'}`} style={{ left: Math.max(8, hover.x - 130), top: hover.y - 118 }} role="status">
-              <span className="bf__tip-k mono">{fieldDate(hover.cell.day, '1d').month} {fieldDate(hover.cell.day, '1d').day}, {fieldDate(hover.cell.day, '1d').year}</span>
-              <strong>{hover.cell.long === null ? 'No reading that day' : `${Math.round(hover.cell.long * 100)}% long · ${100 - Math.round(hover.cell.long * 100)}% short${summary?.median != null ? ` · ${hover.cell.long - summary.median >= 0 ? '+' : '\u2212'}${Math.abs((hover.cell.long - summary.median) * 100).toFixed(0)} pts vs usual` : ''}`}</strong>
-              {hover.cell.pricePct !== null ? <span>price {hover.cell.pricePct >= 0 ? '+' : '\u2212'}{Math.abs(hover.cell.pricePct).toFixed(1)}% that day</span> : null}
-              {hover.cell.oi !== null && derivs && mark ? <span>open interest {fmtUsdShort(derivs.oiUnit === 'coin' ? hover.cell.oi * mark : hover.cell.oi)}</span> : null}
-            </div>
-          )}
-        </div>
-      )}
+      </header>
+      <div className="poshet__body">
+        <HeatGrid cells={cells} source={derivs?.source ?? null} onHover={setHover} />
+        {hover && (
+          <div className={`bf__tip bf__tip--${(hover.cell.long ?? 0.5) >= (summary?.median ?? 0.5) ? 'bulls' : 'bears'}`} style={{ left: Math.max(8, hover.x - 130), top: Math.max(4, hover.y - 118) }} role="status">
+            <span className="bf__tip-k mono">{fieldDate(hover.cell.day, '1d').month} {fieldDate(hover.cell.day, '1d').day}, {fieldDate(hover.cell.day, '1d').year}</span>
+            <strong>{hover.cell.long === null ? 'No reading that day' : `${Math.round(hover.cell.long * 100)}% long · ${100 - Math.round(hover.cell.long * 100)}% short${summary?.median != null ? ` · ${hover.cell.long - summary.median >= 0 ? '+' : '\u2212'}${Math.abs((hover.cell.long - summary.median) * 100).toFixed(0)} pts vs usual` : ''}`}</strong>
+            {hover.cell.pricePct !== null ? <span>price {hover.cell.pricePct >= 0 ? '+' : '\u2212'}{Math.abs(hover.cell.pricePct).toFixed(1)}% that day</span> : null}
+            {hover.cell.oi !== null && derivs && mark ? <span>open interest {fmtUsdShort(derivs.oiUnit === 'coin' ? hover.cell.oi * mark : hover.cell.oi)}</span> : null}
+          </div>
+        )}
+      </div>
     </section>
   )
 }
@@ -169,7 +148,7 @@ export function HeatGrid({ cells, source, onHover }: { cells: HeatCell[]; source
                     className={`bf__cell${c.day > today ? ' is-future' : ''}`}
                     style={{ gridColumnStart: col + 1, gridRowStart: row + 1, background: c.day > today ? 'transparent' : ink(c) }}
                     onPointerEnter={(e) => {
-                      const host = (e.currentTarget as HTMLElement).closest('.bf, .poshet') as HTMLElement | null
+                      const host = (e.currentTarget as HTMLElement).closest('.bf, .poshet__body') as HTMLElement | null
                       const r = host?.getBoundingClientRect()
                       onHover(r ? { cell: c, x: e.clientX - r.left, y: e.clientY - r.top } : null)
                     }}
