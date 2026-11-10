@@ -17,7 +17,7 @@ import { HOME_MODE_ATTR, HOME_MODE_BOOTSTRAP, HOME_RETURN_DAYS, HOME_TOUR_PREF_K
 import { EMPTY_TOUR, TOUR_ANCHOR, TOUR_IDS, TOUR_SIDES, fillSlots, isTourId, parseTourHash, tourAnchor, tourBody, tourFacts, tourJourney, tourSide, type TourSnapshot } from '../lib/home-tour'
 import { staticTourSnapshot, tourFees, tourStaticCounts } from '../lib/home-tour-server'
 import { marketSections } from '../lib/markets'
-import { isSignedInAppHref } from '../lib/home-doors'
+import { isHomeAnchorHref, isSignedInAppHref } from '../lib/home-doors'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -99,6 +99,7 @@ export function landingCoordPins(check: Check): void {
   const hrefs = TOUR_SIDES.flatMap((s) => s.doors.map((d) => ({ id: s.id, href: d.href })))
   const hrefBad = hrefs.filter(({ href }) => {
     if (href.startsWith('#')) return !PAGE_ANCHORS.has(href)
+    if (isHomeAnchorHref(href)) return !PAGE_ANCHORS.has(href.slice(1))
     if (!href.startsWith('/') || href.startsWith('//') || /https?:|\\|\?prompt=|[<>"'\s]/.test(href)) return true
     return !routeExists(href)
   })
@@ -107,6 +108,8 @@ export function landingCoordPins(check: Check): void {
     hrefBad.length === 0,
     hrefBad.map((h) => `${h.id}:${h.href}`).join(' ') || `${hrefs.length} doors`,
   )
+  const bare = hrefs.filter(({ href }) => href.startsWith('#'))
+  check('tour table: no door is a BARE page anchor — the tour is also shown on /story, where `#earn` points at nothing; a door to a board on the home is written from the root (`/#earn`)', bare.length === 0, bare.map((h) => `${h.id}:${h.href}`).join(' ') || 'none bare')
   check(
     'tour table: every side opens a different primary door (eight sides, eight ways in)',
     new Set(TOUR_SIDES.map((s) => s.doors[0].href)).size === 8,
@@ -156,7 +159,9 @@ export function landingCoordPins(check: Check): void {
   const landingLink = code('components/home/LandingLink.tsx')
   check(
     'landing doors: only a page of the SIGNED-IN app gets the sign-in door (the wallet, the dashboard, an open chat); a chart, the chat and its tabs, the community, a docs page, pricing, the story and the links board are plain links — a stranger who taps "Read the docs" goes to the docs. On the tour that is exactly one door: the wallet',
-    ['/wallet', '/wallet?x=1', '/dashboard', '/dashboard/links', '/chat/abc123', '/inbox'].every(isSignedInAppHref) && plain.every((h) => !isSignedInAppHref(h)) && gatedDoors.join() === '/wallet' && /isSignedInAppHref\(href\) \? <SpineLink href=\{href\} \{\.\.\.rest\} \/> : <Link href=\{href\} \{\.\.\.rest\} \/>/.test(landingLink),
+    ['/wallet', '/wallet?x=1', '/dashboard', '/dashboard/links', '/chat/abc123', '/inbox'].every(isSignedInAppHref) && plain.every((h) => !isSignedInAppHref(h)) && gatedDoors.join() === '/wallet' && /isSignedInAppHref\(href\) \? <SpineLink href=\{href\} \{\.\.\.rest\} \/> : <Link href=\{href\} \{\.\.\.rest\} \/>/.test(landingLink) &&
+      // …and a home anchor written from the root is a plain <a>: a fragment jump on `/`, the way back to the board from /story.
+      isHomeAnchorHref('/#earn') && !isHomeAnchorHref('#earn') && !isHomeAnchorHref('/#') && !isHomeAnchorHref('/docs#x') && !isHomeAnchorHref('//#earn') && !isHomeAnchorHref('/#earn?x=1') && /if \(isHomeAnchorHref\(href\)\) \{[\s\S]*?return <a href=\{href\}/.test(landingLink),
     gatedDoors.join(' ') || 'none gated',
   )
 

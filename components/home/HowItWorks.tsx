@@ -47,7 +47,7 @@ export const HOW_STATIONS = [
     id: 'guard',
     who: 'The guard',
     name: 'Guards check it',
-    text: 'Pinned contracts and selectors, exact amounts, the proceeds back to you, a price bound, and a dry run where the venue allows one. Anything off, it refuses and says why.',
+    text: 'Pinned contracts and selectors, exact amounts, the proceeds back to you, a price bound, and on some routes a dry run against the chain. Anything off, it refuses and says why.',
   },
   {
     id: 'sign',
@@ -70,11 +70,12 @@ function costLines(data: TourSnapshot): { what: string; cost: string; note?: str
     { what: 'Looking: charts, the boards, watchlists, alerts', cost: 'Free' },
   ]
   if (f) {
-    lines.push({ what: 'A swap you ask for', cost: f.swapPct })
+    lines.push({ what: 'A swap you ask for, on one chain or across chains', cost: f.swapPct })
     lines.push({ what: 'A swap through a shared link', cost: f.linkPct, note: `${f.creatorPct} of the fill goes to the link’s creator` })
     lines.push({ what: 'A Hyperliquid perp', cost: f.hlPct, note: 'the builder fee, taken from the fill' })
   }
-  lines.push({ what: 'Staking, lending, bridges, transfers, votes', cost: 'No fee' })
+  // A cross-chain move is a swap and carries the swap fee (lib/fees CROSS_CHAIN_FEE_BPS), so "bridges" is not on the fee-free line (QA, 2026-11-10).
+  lines.push({ what: 'Staking, lending, transfers, votes', cost: 'No fee' })
   return lines
 }
 

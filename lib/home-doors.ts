@@ -17,6 +17,13 @@ import { isPublicAppPath } from '@/lib/app-entry'
 /** First path segments that belong to the signed-in app (the spine's gated surfaces). */
 const SIGNED_IN_APP = /^\/(wallet|dashboard|chat|inbox)(\/|$)/
 
+/** Is this an anchor on the HOME page written from the root (`/#earn`)? A door
+ *  the tour shows on `/` AND on /story must be written this way: a bare `#earn`
+ *  points at nothing on /story. */
+export function isHomeAnchorHref(href: string): boolean {
+  return /^\/#[a-z][a-z0-9-]*$/.test(href)
+}
+
 /** Does this href lead into the signed-in app (so a signed-out visitor needs the door)? */
 export function isSignedInAppHref(href: string): boolean {
   if (!href.startsWith('/') || href.startsWith('//')) return false
