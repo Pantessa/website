@@ -1,68 +1,11 @@
 // THE TOUR · lane SIDES-B's pure rules (squad landing, 2026-11-10). Every
-// number the Autopilots panel prints is worked out here from a rule the
-// product itself runs — and each helper is pinned against that rule's own
-// function in scripts/landing-sides-b-pins.ts, so a change over there turns
-// the pin red instead of leaving the landing telling an old story.
+// number the Autopilots panel prints (the stop's level, the alert's two
+// prices) is worked out here from a rule the product itself runs — and each
+// helper is pinned against that rule's own function in
+// scripts/landing-sides-b-pins.ts, so a change over there turns the pin red
+// instead of leaving the landing telling an old story.
 //
 // Pure and client-safe: no fetch, no clock it isn't handed, no DOM.
-
-/** The cadences a recurring buy takes (lib/dca DcaCadence, restated so this
- *  file imports nothing; the pin checks the two lists agree). */
-export type Cadence = 'day' | 'week' | 'month'
-
-/**
- * When the NEXT period of a recurring buy opens.
- *
- * The product's rule (lib/dca periodKeyFor): periods are UTC calendar
- * periods — a UTC day, an ISO-8601 week (Monday 00:00 UTC), a UTC month.
- * The first period is due the moment a schedule is created (lib/dca-exec:
- * "The first period is due NOW"); a missed period lapses, there is no
- * catch-up. So the next buy unlocks at the first instant whose period key
- * differs from now's. Pinned: periodKeyFor(next − 1 ms) is still this
- * period, periodKeyFor(next) is the following one.
- */
-export function nextPeriodStart(cadence: Cadence, at: Date): Date {
-  const y = at.getUTCFullYear()
-  const m = at.getUTCMonth()
-  const d = at.getUTCDate()
-  if (cadence === 'day') return new Date(Date.UTC(y, m, d + 1))
-  if (cadence === 'month') return new Date(Date.UTC(y, m + 1, 1))
-  // ISO week: Monday opens it. getUTCDay(): Sunday = 0 → the 7th day.
-  const dow = at.getUTCDay() || 7
-  return new Date(Date.UTC(y, m, d + (8 - dow)))
-}
-
-/** The next `n` period openings after `at`, in order. */
-export function nextPeriodStarts(cadence: Cadence, at: Date, n: number): Date[] {
-  const out: Date[] = []
-  let cursor = at
-  for (let i = 0; i < n; i++) {
-    cursor = nextPeriodStart(cadence, cursor)
-    out.push(cursor)
-  }
-  return out
-}
-
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
-
-/** "Mon 16 Nov" — a UTC date, spelled without a locale (the server and every
- *  browser print the same string). */
-export function fmtUtcDay(at: Date): string {
-  return `${WEEKDAYS[at.getUTCDay()]} ${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]}`
-}
-
-/** "in 5d 9h" · "in 9h 12m" · "in 12m" · "now". Never negative. */
-export function fmtCountdown(ms: number): string {
-  if (!(ms > 0)) return 'now'
-  const mins = Math.floor(ms / 60_000)
-  const d = Math.floor(mins / (24 * 60))
-  const h = Math.floor((mins % (24 * 60)) / 60)
-  const m = mins % 60
-  if (d > 0) return `in ${d}d ${h}h`
-  if (h > 0) return `in ${h}h ${m}m`
-  return m > 0 ? `in ${m}m` : 'in under a minute'
-}
 
 /**
  * The price a percent stop closes at.
