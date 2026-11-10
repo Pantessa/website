@@ -1,0 +1,118 @@
+/* THE HERO — the top of the home's main column (squad landing, 2026-11-10;
+   lane HERO; components/home/SplashClaim). The block is still `mk-claim`
+   (the harness reads that class and the h1's; `.splash__*` is an older
+   family in x402-design.css and would restyle it), and every rule for it
+   lives HERE — markets.css keeps only a pointer — so no two sheets ever
+   argue about its order.
+
+   TWO POSTURES, ONE HTML. The server renders the stranger's hero; an inline
+   script sets `<html data-home>` before first paint (lib/home-mode) and the
+   last section of this sheet folds the same markup into the returning
+   visitor's one line on `:root[data-home='return']`. No React state, so the
+   block never changes height after it is drawn.
+
+   BUDGETS (measured in HERO.md): a stranger's hero is at most 250px tall in
+   the 990px column of a 1440 window and at most 240px in a 390 phone's
+   358px column; the returning line is no taller than it was before the
+   landing (about 50px, 48px on a phone).
+
+   Sized by the block's OWN width (it is the container), never the viewport.
+   The one scale only: no literal colour, no px type, no px radius, so light
+   mode comes free. Nothing sticky, nothing that moves by itself. */
+
+.mk-claim { container-type: inline-size; container-name: hero; }
+
+/* ── The stranger's hero, in a wide column: the claim on the left; the quiet
+      doors and the three proofs on the right ───────────────────────────── */
+.mk-claim__in { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "main acts" "main proofs"; column-gap: var(--sp-6); row-gap: var(--sp-3); padding: var(--sp-5) 0 var(--sp-4); }
+.mk-claim__main { grid-area: main; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+
+/* Whose page this is, then what kind of thing it is. */
+.mk-claim__eyebrow { display: flex; align-items: center; gap: var(--sp-3); margin: 0 0 var(--sp-2); font-size: var(--fs-xs); line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.mk-claim__eyebrow b { font-weight: 600; color: var(--accent); }
+.mk-claim__eyebrow span { display: inline-flex; align-items: center; gap: var(--sp-3); }
+.mk-claim__eyebrow span::before { content: ''; width: 18px; height: 1px; background: var(--line-2); }
+
+/* The claim. 9.3cqi sets it across a phone's column in ONE line (the five
+   words measure 10.05 times the font size in Fraunces 500, so the line is
+   about 93% of the column at any phone width); a wide column stops at the
+   display size. */
+.mk-claim__h1 { margin: 0; font-family: var(--mk-font-display, 'Fraunces', Georgia, serif); font-weight: 500; font-size: clamp(1.75rem, 9.3cqi, 3.25rem); line-height: 1.04; letter-spacing: -0.028em; color: var(--fg); text-wrap: balance; }
+.mk-claim__sub { margin: var(--sp-3) 0 0; max-width: 34em; font-size: var(--fs-lg); line-height: 1.45; color: var(--muted); text-wrap: balance; }
+
+/* The doors: down to the tour (the one filled thing in the block), and into a real chart. */
+.mk-claim__doors { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-4); }
+.mk-claim__go { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 40px; padding: 0 var(--sp-5); border-radius: var(--r-pill); background: var(--accent); color: var(--ink, var(--bg)); font-family: var(--mk-font-ui); font-size: var(--fs-base); font-weight: 600; white-space: nowrap; text-decoration: none; outline: none; transition: filter var(--dur-1) ease, transform var(--dur-1) ease; }
+.mk-claim__go:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.mk-claim__go:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.mk-claim__try { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 40px; padding: 0 var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-pill); color: var(--fg); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; white-space: nowrap; text-decoration: none; outline: none; transition: border-color var(--dur-1) ease; }
+.mk-claim__try:hover, .mk-claim__try:focus-visible { border-color: var(--accent); }
+.mk-claim__try > span:last-child { color: var(--accent); }
+.mk-claim__sym { padding: 1px 6px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--fg) 8%, transparent); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.04em; color: var(--muted); }
+
+/* The quiet doors (and, for a returning visitor, the way back to the tour). */
+.mk-claim__acts { grid-area: acts; justify-self: end; align-self: start; display: inline-flex; align-items: center; gap: var(--sp-2); }
+.mk-claim .mk-claim__door, .mk-claim .mk-claim__tour { align-items: center; gap: 6px; min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: var(--r-pill); font-size: var(--fs-xs); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); white-space: nowrap; text-decoration: none; outline: none; transition: color var(--dur-1) ease, border-color var(--dur-1) ease; }
+.mk-claim .mk-claim__door { display: inline-flex; }
+.mk-claim .mk-claim__tour { display: none; }
+.mk-claim .mk-claim__door:hover, .mk-claim .mk-claim__door:focus-visible, .mk-claim .mk-claim__tour:hover, .mk-claim .mk-claim__tour:focus-visible { color: var(--fg); border-color: var(--accent); }
+.mk-claim__door span, .mk-claim__tour span { color: var(--accent); }
+
+/* The three proofs, on a rule cut in the stone's five steps, deep to bright
+   (the Emerald cut's own ramp, --gem-1..5): the block's one signature. A
+   large mark behind this column was tried and cut: it muddied the doors. */
+.mk-claim__proofs { grid-area: proofs; position: relative; align-self: end; display: flex; flex-direction: column; gap: 5px; margin: 0; padding: 2px 0 2px var(--sp-4); list-style: none; }
+.mk-claim__proofs::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: linear-gradient(180deg, var(--gem-1) 0 20%, var(--gem-2) 20% 40%, var(--gem-3) 40% 60%, var(--gem-4) 60% 80%, var(--gem-5) 80% 100%); }
+.mk-claim__proof { font-size: var(--fs-md); line-height: 1.4; color: var(--muted); white-space: nowrap; }
+.mk-claim__proof b { font-weight: 600; color: var(--fg); }
+
+@media (pointer: coarse) {
+  .mk-claim__go, .mk-claim__try, .mk-claim .mk-claim__door, .mk-claim .mk-claim__tour { min-height: 44px; }
+  .mk-claim .mk-claim__tour { min-width: 44px; justify-content: center; }
+}
+
+/* ── A column that cannot hold two sides: the claim, then the proofs with the quiet doors beside them ── */
+@container hero (max-width: 779px) {
+  .mk-claim__in { grid-template-areas: "main main" "proofs acts"; align-items: center; }
+  .mk-claim__acts { align-self: center; }
+  .mk-claim__proofs { align-self: center; }
+  .mk-claim__proof { white-space: normal; }
+}
+
+/* ── A phone's column (about 358px): the line set across it, the sentence at
+      reading size, both doors on one row, the proofs beside the story door ── */
+@container hero (max-width: 559px) {
+  .mk-claim__in { column-gap: var(--sp-3); row-gap: var(--sp-2); padding: var(--sp-1) 0 2px; }
+  .mk-claim__eyebrow { display: none; }
+  .mk-claim__h1 { line-height: 1.1; }
+  .mk-claim__sub { margin-top: 6px; font-size: var(--fs-base); line-height: 1.4; }
+  .mk-claim__doors { flex-wrap: nowrap; gap: var(--sp-3); margin-top: var(--sp-3); }
+  .mk-claim__go { min-height: 44px; padding: 0 var(--sp-4); }
+  .mk-claim__try { min-height: 44px; padding: 0; border: 0; }
+  .mk-claim__sym { display: none; }
+  .mk-claim__share { display: none; }
+  /* a plain link, not the mono pill: the pill's case, tracking, border and padding are 30px the row does not have */
+  .mk-claim .mk-claim__door, .mk-claim .mk-claim__tour { min-height: 44px; padding: 0; border: 0; font-family: var(--mk-font-ui); font-size: var(--fs-md); letter-spacing: 0; text-transform: none; color: var(--fg); }
+  .mk-claim .mk-claim__tour { min-width: 44px; justify-content: flex-end; }
+  .mk-claim__proofs { gap: 2px; padding-left: var(--sp-3); }
+  .mk-claim__proof { font-size: var(--fs-sm); line-height: 1.4; }
+}
+
+/* ── THE RETURNING VISITOR'S LINE (`<html data-home="return">`): the claim
+      and the quiet doors on one row; everything a stranger needed is folded
+      away, and one small door brings the tour back ─────────────────────── */
+:root[data-home='return'] .mk-claim__in { grid-template-areas: "main acts"; align-items: center; row-gap: 0; padding: 10px 0 var(--sp-1); }
+:root[data-home='return'] .mk-claim__h1 { font-size: var(--fs-xl); line-height: 1.1; letter-spacing: -0.02em; }
+:root[data-home='return'] :is(.mk-claim__eyebrow, .mk-claim__sub, .mk-claim__doors, .mk-claim__proofs) { display: none; }
+:root[data-home='return'] .mk-claim__acts { align-self: center; }
+:root[data-home='return'] .mk-claim .mk-claim__tour { display: inline-flex; }
+@container hero (max-width: 559px) {
+  :root[data-home='return'] .mk-claim__in { padding: var(--sp-1) 0 0; }
+  /* one line on a phone: the claim and the way back to the tour (the story door returns with the hero) */
+  :root[data-home='return'] .mk-claim .mk-claim__door { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-claim__go, .mk-claim__try, .mk-claim .mk-claim__door, .mk-claim .mk-claim__tour { transition: none; }
+  .mk-claim__go:hover { transform: none; }
+}
