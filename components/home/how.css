@@ -82,9 +82,6 @@
   .how__station { padding-bottom: var(--sp-3); }
   .how__name { font-size: var(--fs-base); }
   .how__cols { gap: var(--sp-4); padding-top: var(--sp-4); }
-  /* Lane MOBILE: one rhythm step tighter between the head, the rail and the
-     columns on a phone (the section is the landing's tallest, ~1,700px). */
-  .how { gap: var(--sp-4); }
 }
 @media (pointer: coarse) {
   .how__door { min-height: 44px; align-items: center; }
