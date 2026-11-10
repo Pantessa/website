@@ -253,7 +253,8 @@ export function readPins(check: Check): void {
   check(
     'read: `/` seats THE READ in the lead seat after the sent-home notice (the live deck is not mounted on the splash), reads its snapshot at render THROUGH the data cache so the page stays ISR at one minute (the readers fetch no-store), and the route serves the same object with a short shared cache, a 400 by name for a bad parameter and never a 500',
     /<SentHomeNotice \/>\s*<TheRead initial=\{read\} \/>/.test(home) && !/Deck/.test(home) && /guide=\{<AppsRow \/>\}/.test(home) &&
-      /export const revalidate = 60/.test(page) && /readSnapshotForRender\(\)/.test(page) && /<HomeSurface trending=\{trending\} tradable=\{tradable\} read=\{read\} \/>/.test(page) &&
+      /export const revalidate = 60/.test(page) && /readSnapshotForRender\(\)/.test(page) && /<HomeSurface trending=\{trending\} tradable=\{tradable\} read=\{read\} tour=\{tour\} \/>/.test(page) && // RE-PINNED 2026-11-10 (landing): the page hands the tour's snapshot beside the read's
+     
       /unstable_cache\(async \(\) => readSnapshot\(\), \['read-snapshot-v1'\], \{ revalidate: 60 \}\)/.test(server) &&
       /const snapshot = await readSnapshot\(\)/.test(route) && /s-maxage=20/.test(route) && /status: 400/.test(route) && !/status: 500/.test(route) && /export const dynamic = 'force-dynamic'/.test(route),
   )

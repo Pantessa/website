@@ -1,17 +1,91 @@
-/* HOW IT WORKS on the landing (squad landing, 2026-11-10; lane CLOSE owns
-   this file). CONTRACT BASELINE. Tokens only — no literal colour, no px
-   font size, no px radius (see components/home/tour/panel.css). */
+/* HOW A SENTENCE BECOMES A SIGNED TRANSACTION (squad landing, 2026-11-10;
+   lane CLOSE owns this file). Rides the markets look (--mk-*) and the ONE
+   SCALE (--sp-* / --fs-* / --r-* / --dur-*) exactly as read.css does: no
+   literal colour, no px font size, no px radius. The section is its own
+   size container: six stations on one rail when the seat is wide, a
+   vertical timeline when it is narrow. Nothing moves; nothing sticky. */
 
-.how { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); container-type: inline-size; container-name: how; }
-.how__title { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: var(--fs-xl); line-height: 1.2; color: var(--fg); }
-.how__steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3) var(--sp-5); margin: 0; padding: 0; list-style: none; counter-reset: how-step; }
-.how__steps li { counter-increment: how-step; font-size: var(--fs-md); line-height: 1.5; color: var(--muted); }
-.how__steps li::before { content: counter(how-step, decimal-leading-zero); display: block; margin-bottom: var(--sp-1); font-family: var(--mk-font-mono); font-size: var(--fs-xs); color: var(--accent); }
-@container how (min-width: 560px) { .how__steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@container how (min-width: 880px) { .how__steps { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-.how__note { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--muted-2); }
-.how__link { color: var(--fg); text-decoration: underline; text-underline-offset: 0.2em; text-decoration-color: color-mix(in srgb, var(--accent) 60%, transparent); }
-.how__link:hover, .how__link:focus-visible { text-decoration-color: var(--accent); outline: none; }
+.how { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; padding: clamp(var(--sp-4), 3cqi, var(--sp-5)); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); container-type: inline-size; container-name: how; }
+
+/* ── The head ─────────────────────────────────────────────────────────── */
+.how__head { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 62ch; }
+.how__eyebrow { margin: 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.how__title { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.375rem, 3.6cqi, 2rem); line-height: 1.12; letter-spacing: -0.015em; color: var(--fg); text-wrap: balance; }
+.how__lede { margin: 0; font-family: var(--mk-font-ui); font-size: var(--fs-base); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+
+/* ── The rail: a vertical timeline by default (narrow seat) ───────────── */
+.how__rail { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; counter-reset: how-step; }
+.how__station { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: var(--sp-3); padding-bottom: var(--sp-4); counter-increment: how-step; }
+.how__station:last-child { padding-bottom: 0; }
+/* The connector: a hairline from under this station's number to the next one. */
+.how__station::before { content: ''; position: absolute; left: 15px; top: 34px; bottom: 2px; width: 1px; background: var(--line-2, var(--line)); }
+.how__station:last-child::before { display: none; }
+.how__mark { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line)); border-radius: var(--r-pill); background: var(--surf-1); }
+.how__mark::before { content: counter(how-step, decimal-leading-zero); font-family: var(--mk-font-mono); font-size: var(--fs-xs); font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+/* The signature is the gate: station five wears the accent in full. */
+.how__station[data-station='sign'] .how__mark { border-color: var(--accent); background: var(--accent); }
+.how__station[data-station='sign'] .how__mark::before { color: var(--bg); }
+.how__body { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; padding-top: 5px; }
+.how__who { margin: 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.how__name { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: var(--fs-lg); line-height: 1.2; letter-spacing: -0.01em; color: var(--fg); }
+.how__text { margin: 0; font-family: var(--mk-font-ui); font-size: var(--fs-md); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+
+/* Wide seat: the six stations on one line, numbers on a rail with connectors. */
+@container how (min-width: 880px) {
+  .how__rail { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); column-gap: var(--sp-4); }
+  .how__station { display: flex; flex-direction: column; gap: var(--sp-3); padding-bottom: 0; }
+  /* The connector runs from the right of this number to the next station's. */
+  .how__station::before { left: 40px; right: calc(8px - var(--sp-4)); top: 16px; bottom: auto; width: auto; height: 1px; }
+  .how__body { padding-top: 0; }
+  .how__name { font-size: var(--fs-base); }
+  .how__text { font-size: var(--fs-sm); }
+}
+
+/* ── Two columns: what it costs · what Pantessa never does ────────────── */
+.how__cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); padding-top: var(--sp-5); border-top: 1px solid var(--line); }
+@container how (min-width: 640px) {
+  .how__cols { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-6); }
+}
+.how__col { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.how__coltitle { margin: 0; font-family: var(--mk-font-ui); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.how__colnote { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--muted-2); text-wrap: pretty; }
+
+.how__costs { display: flex; flex-direction: column; margin: 0; }
+.how__cost { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
+.how__cost:first-child { padding-top: 0; }
+.how__costwhat { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-family: var(--mk-font-ui); font-size: var(--fs-md); line-height: 1.4; color: var(--fg); }
+.how__costnote { font-size: var(--fs-sm); color: var(--muted); }
+.how__costval { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+
+.how__never { display: flex; flex-direction: column; gap: var(--sp-3); margin: 0; padding: 0; list-style: none; }
+.how__never li { position: relative; padding-left: var(--sp-5); font-family: var(--mk-font-ui); font-size: var(--fs-md); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+/* A struck mark, drawn: never a glyph that could read as decoration. */
+.how__never li::before { content: ''; position: absolute; left: 2px; top: 0.45em; width: 12px; height: 12px; border: 1px solid var(--sell); border-radius: var(--r-pill); }
+.how__never li::after { content: ''; position: absolute; left: 3px; top: calc(0.45em + 6px); width: 12px; height: 1px; background: var(--sell); transform: rotate(-45deg); }
+.how__never strong { color: var(--fg); font-weight: 600; }
+
+/* ── The doors ────────────────────────────────────────────────────────── */
+.how__doors { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-5); }
+.how__door { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); min-height: 36px; padding: var(--sp-2) 0; font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; color: var(--fg); text-decoration: none; outline: none; transition: background var(--dur-1) ease; }
+.how__doorlabel { text-decoration: underline; text-underline-offset: 0.25em; text-decoration-color: color-mix(in srgb, var(--accent) 50%, transparent); transition: text-decoration-color var(--dur-1) ease; }
+.how__door:hover .how__doorlabel, .how__door:focus-visible .how__doorlabel { text-decoration-color: var(--accent); }
+.how__door--primary .how__doorlabel { text-decoration: none; }
+.how__door:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: var(--r-sm); }
+.how__door--primary { align-items: center; min-height: 44px; padding: 0 var(--sp-4); border: 1px solid var(--accent); border-radius: var(--r-pill); background: var(--accent); color: var(--bg); text-decoration: none; }
+.how__door--primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--fg)); }
+.how__door--primary:focus-visible { border-radius: var(--r-pill); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.how__doorcount { font-size: var(--fs-xs); font-weight: 400; color: var(--muted-2); }
+
+/* Narrow seat (a phone's column): tighter, so six stations read as one short timeline. */
+@container how (max-width: 520px) {
+  .how__text, .how__never li { font-size: var(--fs-sm); }
+  .how__station { padding-bottom: var(--sp-3); }
+  .how__name { font-size: var(--fs-base); }
+  .how__cols { gap: var(--sp-4); padding-top: var(--sp-4); }
+}
+@media (pointer: coarse) {
+  .how__door { min-height: 44px; align-items: center; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .how__link { transition: none; }
+  .how__door, .how__doorlabel { transition: none; }
 }
