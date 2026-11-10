@@ -400,6 +400,8 @@ import { landingSidesAPins, landingSidesAPinsServed } from './landing-sides-a-pi
 import { landingSidesBPins, landingSidesBPinsServed } from './landing-sides-b-pins'
 import { landingDataPins, landingDataPinsServed } from './landing-data-pins'
 import { landingClosePins, landingClosePinsServed } from './landing-close-pins'
+import { landingStoryPins, landingStoryPinsServed } from './landing-story-pins'
+import { landingMobilePins, landingMobilePinsServed } from './landing-mobile-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -35572,6 +35574,10 @@ async function main() {
   await landingDataPinsServed(check, BASE)
   landingClosePins(check)
   await landingClosePinsServed(check, BASE)
+  landingStoryPins(check)
+  await landingStoryPinsServed(check, BASE)
+  landingMobilePins(check)
+  await landingMobilePinsServed(check, BASE)
 
   // ── squad community (2026-11-09): one pin file per lane, wired once here ──
   communityCoordPins(check)
