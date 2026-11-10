@@ -33,6 +33,7 @@
 .skel--sym .skel__head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
 .skel--sym .skel__tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
 .skel--sym .skel__chart { height: clamp(320px, 58dvh, 640px); }
+@media (min-width: 641px) { .skel--sym .skel__chart { height: clamp(520px, 76dvh, 820px); } }
 
 /* The docked side column on the markets frame: the strip + the watchlist. */
 .skel__side { grid-area: rail; align-self: stretch; min-width: 0; border-left: 1px solid var(--line); }

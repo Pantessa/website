@@ -374,7 +374,7 @@ import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
 import { botUaPins, CRAWL_UAS, PERSON_UA } from './bot-ua-pins'
 import { venueManifestLivePins, venueManifestPins } from './venue-manifest-pins'
-import { execStripLivePins, execStripPins } from './exec-strip-pins'
+import { chartHeatLivePins, chartHeatPins } from './chart-heat-pins'
 import { policyPoolBuilderPins } from './policy-pool-builder-pins'
 import { printAlertPins } from './print-alert-pins'
 import { spotHomePins } from './spot-home-pins'
@@ -34401,8 +34401,8 @@ async function main() {
     )
     // RE-PINNED 2026-10-13 (polish-qa): #911's phone polish (35fd5a80) put a status line between the timeframes and the overlays: the overlays are order 5 with the tools order 6 right after them, and their width rule (row minus the tools) is its own line.
     check(
-      'native markets: on a phone the /t plot keeps 260px however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
-      /\.sym \.tchart:not\(\.tchart--expanded\) \.mkt-chart__canvas \{ flex: 0 0 auto; height: 260px; \}/.test(nmMk) &&
+      'native markets: on a phone the /t plot keeps 320px (RE-PINNED 2026-11-10 (chart-heat): 260 → 320, the strips under it are gone) however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
+      /\.sym \.tchart:not\(\.tchart--expanded\) \.mkt-chart__canvas \{ flex: 0 0 auto; height: 320px; \}/.test(nmMk) &&
         /\.sym \.mkt-chart__bar > \.mkt-chart__ind \{ order: 5; \}/.test(nmMk) && /\.sym \.mkt-chart__bar > \.mkt-chart__tools \{ order: 6; \}/.test(nmMk) &&
         /\.sym \.mkt-chart__bar > \.mkt-chart__ind \{ flex: 1 1 calc\(100% - 200px\); \}/.test(nmMk) &&
         /\.sym \.mkt-chart__tools > \.mkt-tool:first-child \{ display: none; \}/.test(nmMk) &&
@@ -35517,9 +35517,9 @@ async function main() {
   // The venue manifest (2026-11-02): pinned contracts, selectors, guards and bounds per venue, read from the builders' own constants; the served route + page agree.
   venueManifestPins(check)
   await venueManifestLivePins(check, BASE)
-  // The executions strip (2026-11-02): Dune's live fills for the symbol on screen, beside positioning, off the chart's one relay stream; the served page carries it for a covered and an uncovered market.
-  execStripPins(check)
-  await execStripLivePins(check, BASE)
+  // The Heatmap view (2026-11-10): the Dune executions strip is gone, the year of positioning is a chart view in the Tape's seat, the candles take the card. (Replaced the executions-strip pins.)
+  chartHeatPins(check)
+  await chartHeatLivePins(check, BASE)
   // THE POLICY POOL — the builder (2026-11-02): the v4 pin table, the config, the venue words, the hookData-bearing encoding, the guard over a signed attestation, the hook's revert names, the dispatch sites.
   await policyPoolBuilderPins(check)
   // The /live trigger rules armed on the server (2026-10-13): the body reader, the evaluation over consumed fills, the cursor policy, the notification, the wiring.
