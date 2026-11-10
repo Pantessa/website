@@ -20,8 +20,8 @@ import './panel.css'
 
 export function TourPanel({ side, children, demoLabel }: { side: TourSideMeta; children?: ReactNode; demoLabel?: string }) {
   return (
-    <div className="tp-seat" data-tour-panel={side.id}>
-      <article className="tp" aria-labelledby={`${tourAnchor(side.id)}-claim`}>
+    <div className="tpn-seat" data-tour-panel={side.id}>
+      <article className="tpn" aria-labelledby={`${tourAnchor(side.id)}-claim`}>
         <TourCopy side={side} />
         {children != null && <TourDemo label={demoLabel ?? `${side.label}, live`}>{children}</TourDemo>}
       </article>
@@ -33,11 +33,11 @@ export function TourPanel({ side, children, demoLabel }: { side: TourSideMeta; c
 export function TourCopy({ side, children }: { side: TourSideMeta; children?: ReactNode }) {
   const { data } = useTour()
   return (
-    <div className="tp__copy">
-      <h3 className="tp__claim" id={`${tourAnchor(side.id)}-claim`}>
+    <div className="tpn__copy">
+      <h3 className="tpn__claim" id={`${tourAnchor(side.id)}-claim`}>
         {side.claim}
       </h3>
-      <p className="tp__body">{tourBody(side, data)}</p>
+      <p className="tpn__body">{tourBody(side, data)}</p>
       <TourFacts side={side} />
       {children}
       <TourAsks side={side} />
@@ -51,9 +51,9 @@ export function TourFacts({ side }: { side: TourSideMeta }) {
   const facts = tourFacts(side, data)
   if (!facts.length) return null
   return (
-    <ul className="tp__facts">
+    <ul className="tpn__facts">
       {facts.map((f) => (
-        <li key={f} className="tp__fact">
+        <li key={f} className="tpn__fact">
           {f}
         </li>
       ))}
@@ -66,9 +66,9 @@ export function TourAskChip({ side, ask, tone = 'plain' }: { side: TourSideMeta;
   const { act, canAct } = useTour()
   if (!canAct(ask.ask)) return null
   return (
-    <button type="button" className={`tp__chip tp__chip--${tone}`} onClick={() => act(ask.ask)} title={ask.ask} data-ask={ask.ask} data-journey={tourJourney(side.id, ask.label)}>
-      <span className="tp__chiplabel">{ask.label}</span>
-      <span className="tp__chipvia mono">{ask.via}</span>
+    <button type="button" className={`tpn__chip tpn__chip--${tone}`} onClick={() => act(ask.ask)} title={ask.ask} data-ask={ask.ask} data-journey={tourJourney(side.id, ask.label)}>
+      <span className="tpn__chiplabel">{ask.label}</span>
+      <span className="tpn__chipvia mono">{ask.via}</span>
     </button>
   )
 }
@@ -79,9 +79,9 @@ export function TourAsks({ side, asks = side.asks }: { side: TourSideMeta; asks?
   const live = asks.filter((a) => canAct(a.ask))
   if (!live.length) return null
   return (
-    <div className="tp__asks">
-      <p className="tp__askslab mono">Try one. Your wallet signs it.</p>
-      <div className="tp__chips">
+    <div className="tpn__asks">
+      <p className="tpn__askslab mono">Try one. Your wallet signs it.</p>
+      <div className="tpn__chips">
         {live.map((a) => (
           <TourAskChip key={a.ask} side={side} ask={a} />
         ))}
@@ -95,12 +95,12 @@ export function TourAsks({ side, asks = side.asks }: { side: TourSideMeta; asks?
  *  unified door aimed at itself; a public page is a plain link). */
 export function TourDoors({ side }: { side: TourSideMeta }) {
   return (
-    <div className="tp__doors">
+    <div className="tpn__doors">
       {side.doors.map((d) => {
-        const cls = `tp__door tp__door--${d.kind}`
+        const cls = `tpn__door tpn__door--${d.kind}`
         const inner = (
           <>
-            {d.label} <span className="tp__arrow" aria-hidden>→</span>
+            {d.label} <span className="tpn__arrow" aria-hidden>→</span>
           </>
         )
         return d.href.startsWith('#') ? (
@@ -120,7 +120,7 @@ export function TourDoors({ side }: { side: TourSideMeta }) {
 /** The miniature's frame. `label` names it for a screen reader. */
 export function TourDemo({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="tp__demo" role="group" aria-label={label}>
+    <div className="tpn__demo" role="group" aria-label={label}>
       {children}
     </div>
   )
@@ -129,7 +129,7 @@ export function TourDemo({ label, children }: { label: string; children: ReactNo
 /** The contract's placeholder demo: what a side shows until its lane lands. */
 export function TourDemoStub({ side }: { side: TourSideMeta }) {
   return (
-    <p className="tp__stub mono" data-tour-stub={side.id}>
+    <p className="tpn__stub mono" data-tour-stub={side.id}>
       {side.label}: the live miniature lands here.
     </p>
   )

@@ -13,61 +13,61 @@
    WIDTHS A MINIATURE MUST FIT (the demo's own box, measured in the shell):
    about 335px beside the words in the stage at a 1440 window, about 326px
    on a 390 phone, up to about 480px on a very wide window. Size a miniature
-   by `@container tp (…)` or by its own container, never by a media query:
+   by `@container tpn (…)` or by its own container, never by a media query:
    on a desktop the demo is as narrow as it is on a phone. */
 
-.tp-seat { container-type: inline-size; container-name: tp; min-width: 0; }
-.tp { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); min-width: 0; }
+.tpn-seat { container-type: inline-size; container-name: tpn; min-width: 0; }
+.tpn { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); min-width: 0; }
 /* Two columns from 600px of seat: the stage beside the list is 638px at a
    1440 window, and the miniature belongs BESIDE the words there, in view
    with the list, not a screen below it. */
-@container tp (min-width: 600px) {
-  .tp { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--sp-5); align-items: start; }
+@container tpn (min-width: 600px) {
+  .tpn { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--sp-5); align-items: start; }
 }
-@container tp (min-width: 840px) {
-  .tp { gap: var(--sp-6); }
+@container tpn (min-width: 840px) {
+  .tpn { gap: var(--sp-6); }
 }
 
 /* ── The words ────────────────────────────────────────────────────────── */
-.tp__copy { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
-.tp__claim { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.375rem, 3.6cqi, 1.875rem); line-height: 1.14; letter-spacing: -0.015em; color: var(--fg); text-wrap: balance; }
-.tp__body { margin: 0; max-width: 56ch; font-family: var(--mk-font-ui); font-size: var(--fs-base); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
-.tp__facts { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
-.tp__fact { position: relative; padding-left: var(--sp-4); font-family: var(--mk-font-ui); font-size: var(--fs-md); line-height: 1.45; color: var(--fg); text-wrap: pretty; }
-.tp__fact::before { content: ''; position: absolute; left: 1px; top: 0.62em; width: 5px; height: 5px; border-radius: var(--r-pill); background: var(--accent); }
+.tpn__copy { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.tpn__claim { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.375rem, 3.6cqi, 1.875rem); line-height: 1.14; letter-spacing: -0.015em; color: var(--fg); text-wrap: balance; }
+.tpn__body { margin: 0; max-width: 56ch; font-family: var(--mk-font-ui); font-size: var(--fs-base); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.tpn__facts { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.tpn__fact { position: relative; padding-left: var(--sp-4); font-family: var(--mk-font-ui); font-size: var(--fs-md); line-height: 1.45; color: var(--fg); text-wrap: pretty; }
+.tpn__fact::before { content: ''; position: absolute; left: 1px; top: 0.62em; width: 5px; height: 5px; border-radius: var(--r-pill); background: var(--accent); }
 
 /* ── The sentences ────────────────────────────────────────────────────── */
-.tp__asks { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
-.tp__askslab { margin: 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
-.tp__chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.tpn__asks { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.tpn__askslab { margin: 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.tpn__chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 /* A chip is one line when its label and its venue fit, and two (the venue
    under the label) when they do not: the label is never cut for the tag. */
-.tp__chip { display: inline-flex; flex-wrap: wrap; align-items: baseline; align-content: center; column-gap: var(--sp-2); row-gap: 1px; min-height: 36px; max-width: 100%; padding: 5px var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-lg); background: transparent; color: var(--fg); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; line-height: 1.2; text-align: left; cursor: pointer; outline: none; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
-.tp__chip:hover, .tp__chip:focus-visible { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.tp__chip--accent { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.tp__chiplabel { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tp__chipvia { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-xs); font-weight: 400; letter-spacing: 0.04em; color: var(--muted-2); white-space: nowrap; }
+.tpn__chip { display: inline-flex; flex-wrap: wrap; align-items: baseline; align-content: center; column-gap: var(--sp-2); row-gap: 1px; min-height: 36px; max-width: 100%; padding: 5px var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-lg); background: transparent; color: var(--fg); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; line-height: 1.2; text-align: left; cursor: pointer; outline: none; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
+.tpn__chip:hover, .tpn__chip:focus-visible { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tpn__chip--accent { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.tpn__chiplabel { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpn__chipvia { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-xs); font-weight: 400; letter-spacing: 0.04em; color: var(--muted-2); white-space: nowrap; }
 
 /* ── The doors ────────────────────────────────────────────────────────── */
-.tp__doors { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-4); margin-top: var(--sp-1); }
-.tp__door { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 32px; font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; color: var(--fg); text-decoration: none; outline: none; white-space: nowrap; transition: color var(--dur-1) ease, background var(--dur-1) ease, border-color var(--dur-1) ease; }
-.tp__door--primary { min-height: 44px; padding: 0 var(--sp-4); border: 1px solid var(--accent); border-radius: var(--r-pill); background: var(--accent); color: var(--ink, var(--bg)); }
-.tp__door--primary:hover, .tp__door--primary:focus-visible { background: color-mix(in srgb, var(--accent) 86%, var(--fg)); }
-.tp__door--quiet { color: var(--muted); }
-.tp__door--quiet:hover, .tp__door--quiet:focus-visible { color: var(--fg); }
-.tp__arrow { color: var(--accent); transition: transform var(--dur-1) ease; }
-.tp__door--primary .tp__arrow { color: inherit; }
-.tp__door:hover .tp__arrow { transform: translateX(2px); }
-.tp__door:focus-visible, .tp__chip:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.tpn__doors { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-4); margin-top: var(--sp-1); }
+.tpn__door { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 32px; font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; color: var(--fg); text-decoration: none; outline: none; white-space: nowrap; transition: color var(--dur-1) ease, background var(--dur-1) ease, border-color var(--dur-1) ease; }
+.tpn__door--primary { min-height: 44px; padding: 0 var(--sp-4); border: 1px solid var(--accent); border-radius: var(--r-pill); background: var(--accent); color: var(--ink, var(--bg)); }
+.tpn__door--primary:hover, .tpn__door--primary:focus-visible { background: color-mix(in srgb, var(--accent) 86%, var(--fg)); }
+.tpn__door--quiet { color: var(--muted); }
+.tpn__door--quiet:hover, .tpn__door--quiet:focus-visible { color: var(--fg); }
+.tpn__arrow { color: var(--accent); transition: transform var(--dur-1) ease; }
+.tpn__door--primary .tpn__arrow { color: inherit; }
+.tpn__door:hover .tpn__arrow { transform: translateX(2px); }
+.tpn__door:focus-visible, .tpn__chip:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 
 /* ── The miniature ────────────────────────────────────────────────────── */
-.tp__demo { position: relative; display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; min-height: 220px; padding: var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-lg); background: color-mix(in srgb, var(--fg) 2%, var(--bg)); }
-.tp__stub { margin: auto; font-size: var(--fs-sm); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); }
+.tpn__demo { position: relative; display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; min-height: 220px; padding: var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-lg); background: color-mix(in srgb, var(--fg) 2%, var(--bg)); }
+.tpn__stub { margin: auto; font-size: var(--fs-sm); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); }
 
 /* A thumb gets 44px on every tappable thing. */
 @media (pointer: coarse) {
-  .tp__chip, .tp__door { min-height: 44px; }
+  .tpn__chip, .tpn__door { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .tp__chip, .tp__door, .tp__arrow { transition: none; }
+  .tpn__chip, .tpn__door, .tpn__arrow { transition: none; }
 }

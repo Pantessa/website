@@ -286,6 +286,13 @@ export function landingCoordPins(check: Check): void {
   check('landing CSS: tokens only — no literal colour, no px font size, no px radius in any of the landing\'s stylesheets (the one scale: --fs-*, --r-*, --sp-*, the --mk-* look), so light mode comes free', literal.length === 0, literal.join(' ') || `${css.length} sheets`)
   const motion = css.filter(({ c }) => /\b(transition|animation)\s*:/.test(c) && !/prefers-reduced-motion/.test(c)).map(({ p }) => p)
   check('landing CSS: a sheet that moves anything says what happens under prefers-reduced-motion', motion.length === 0, motion.join(' ') || 'all answer')
+  // The landing's class names must be its own. `tp` was the panel prefix until it met
+  // components/markets/chart/tape-view.css (`.tp { position: absolute; inset: 0 }`, loaded
+  // lazily with a chart's tape view), which collapsed every panel on /story to 0 px.
+  const tape = read('components/markets/chart/tape-view.css')
+  const taken = new Set([...tape.matchAll(/\.([a-z][a-z0-9]*)(?:__|--|[\s,{:.>\[])/g)].map((m) => m[1]))
+  const clash = css.filter(({ c }) => [...c.matchAll(/\.([a-z][a-z0-9]*)(?:__|--|[\s,{:.>\[])/g)].some((m) => taken.has(m[1]))).map(({ p }) => p)
+  check("landing CSS: no class prefix shared with the chart's tape view sheet (the panel prefix is `tpn`; `.tp` is the tape view's and would collapse a panel to nothing)", taken.has('tp') && clash.length === 0 && /\.tpn-seat \{/.test(read('components/home/tour/panel.css')), clash.join(' ') || 'no clash')
   const sticky = css.filter(({ c }) => /position:\s*(sticky|fixed)/.test(c)).map(({ p }) => p)
   check('landing CSS: nothing in the landing is sticky or fixed (the tool strip and the phone bar own those layers)', sticky.length === 0, sticky.join(' ') || 'none')
 }

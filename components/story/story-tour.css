@@ -4,7 +4,7 @@
    the section's own container, never the viewport: the brochure's column
    is ~1220 px at most and ~342 px on a 390 phone. Nothing sticky, nothing
    fixed. The panels inside carry their own sheet (components/home/tour/
-   panel.css) and their own container (`tp`), so any panel height fits. */
+   panel.css) and their own container (`tpn`), so any panel height fits. */
 
 .stour {
   counter-reset: stour;
@@ -63,14 +63,10 @@
 .stour__sideline { flex: 1 1 16rem; min-width: 0; font-size: var(--fs-md); color: var(--muted); }
 .stour__panel { min-width: 0; }
 
-/* CLASS COLLISION GUARD (found 2026-11-10): the tape view's sheet
-   (components/markets/chart/tape-view.css, loaded on /story by the brochure's
-   chart) owns `.tp` (absolute, inset 0, overflow hidden — it collapsed every
-   panel here to 0 px) and `.tp__chip` (22 px tall, tiny caps). The panels'
-   own sheet uses the same names. Until one side is renamed (ASK COORDINATOR
-   in STORY.md), the stack undoes exactly what the tape view sets. */
-.stour__panel .tp { position: static; inset: auto; z-index: auto; overflow: visible; border-radius: 0; background: none; }
-.stour__panel .tp__chip { height: auto; font-size: var(--fs-md); letter-spacing: normal; gap: var(--sp-2); }
+/* The panels' own classes are `tpn…` (components/home/tour/panel.css): the
+   prefix was `tp` until it met components/markets/chart/tape-view.css, which
+   owns `.tp` and is loaded lazily with a chart's tape view. Nothing to
+   override here now. */
 
 @container stour (max-width: 559px) {
   .stour__side { padding: var(--sp-4); gap: var(--sp-3); }
