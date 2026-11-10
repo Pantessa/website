@@ -153,8 +153,9 @@ async function openScreen({ w, h, theme, posture, pathname, reduce = false }) {
   await S('Network.enable')
   await S('Network.setExtraHTTPHeaders', { headers: { 'x-yf-internal-run': '1' } })
   const mobile = w < 768
+  // A tablet is a thumb too: touch (so `pointer: coarse` matches) below 1024, the phone's metrics below 768.
   await S('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 2, mobile })
-  if (mobile) await S('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
+  if (w < 1024) await S('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
   await S('Emulation.setFocusEmulationEnabled', { enabled: true })
   const media = [{ name: 'prefers-color-scheme', value: theme }]
   if (reduce) media.push({ name: 'prefers-reduced-motion', value: 'reduce' })
@@ -236,7 +237,7 @@ async function homeScreen({ w, h, theme, posture }) {
   const doc = await ev(`({ vw: innerWidth, sw: document.documentElement.scrollWidth, home: document.documentElement.dataset.home, coarse: matchMedia('(pointer: coarse)').matches })`)
   check(`${tag}: no horizontal page overflow`, doc.sw <= doc.vw + 1, `${doc.sw} > ${doc.vw}`)
   check(`${tag}: posture is ${posture}`, doc.home === posture, `data-home=${doc.home}`)
-  if (p.mobile) check(`${tag}: (pointer: coarse) matches`, doc.coarse)
+  check(`${tag}: (pointer: coarse) matches`, doc.coarse)
   const a = await ev(`__mob.audit(${JSON.stringify(HOME_SECTIONS)})`)
   auditLines(tag, a)
   const tiny = await ev(`__mob.smallText(${JSON.stringify(HOME_SECTIONS)})`)
@@ -260,7 +261,11 @@ async function homeScreen({ w, h, theme, posture }) {
   }
 
   if (posture === 'new' && p.mobile) {
-    // Every side opens on a tap, its panel inside the column.
+    // Every side opens on a tap, its panel inside the column. The phone may
+    // open with the first side open or with every row folded (STAGE round 2):
+    // either is fine, as long as no more than one is open.
+    const opened = await ev(`document.querySelectorAll('[data-tour-panel]').length`)
+    check(`${tag}: the phone tour opens with at most one side open`, opened <= 1, `${opened} open`)
     const heights = {}
     for (const side of SIDES) {
       const open = await ev(`!!document.querySelector('[data-tour-panel="${side}"]')`)
