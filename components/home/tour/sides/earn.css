@@ -1,0 +1,42 @@
+/* THE TOUR · EARN — the ladder (squad landing, 2026-11-10; lane SIDES-A).
+   The best live rate per asset as rows with a bar each, an amount, and the
+   picked row's sentence with one button. Shared pieces: ./a/kit.css. Sized
+   by its own container (`ta`), tokens only, nothing moves by itself. A bar's
+   ink is its venue's (the Earn board's own series colours, set inline as a
+   `var(--mk-series-N)`). */
+
+.te__head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
+
+/* ── The rows ─────────────────────────────────────────────────────────── */
+.te__rows { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.te__rows > li + li { border-top: 1px solid var(--line); }
+.te__row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; grid-template-areas: 'mark id rate' 'mark track year'; align-items: center; column-gap: var(--sp-3); row-gap: 4px; width: 100%; min-height: 46px; padding: 7px var(--sp-3); border: 0; background: transparent; color: var(--fg); font-family: var(--mk-font-ui); text-align: left; cursor: pointer; outline: none; transition: background var(--dur-1) ease; }
+.te__row:hover { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.te__row:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.te__row.is-on { background: color-mix(in srgb, var(--accent) 9%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.te__row.is-on:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.te__mark { grid-area: mark; display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surf-1); font-size: var(--fs-sm); font-weight: 600; color: var(--muted); overflow: hidden; }
+.te__id { grid-area: id; display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.te__asset { font-size: var(--fs-md); font-weight: 600; line-height: 1.2; white-space: nowrap; }
+.te__where { min-width: 0; font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.te__rate { grid-area: rate; justify-self: end; font-size: var(--fs-md); font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.te__track { grid-area: track; display: block; height: 6px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--fg) 7%, transparent); overflow: hidden; }
+.te__bar { display: block; height: 100%; border-radius: var(--r-pill); background: var(--accent); }
+.te__year { grid-area: year; justify-self: end; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.te__empty { display: grid; place-items: center; min-height: 160px; margin: 0; padding: var(--sp-4); border: 1px dashed var(--line); border-radius: var(--r-md); font-size: var(--fs-sm); line-height: 1.5; color: var(--muted-2); text-align: center; }
+
+/* ── The picked row's sentence ────────────────────────────────────────── */
+.te__take { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.te__sentence { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.0625rem, 4.6cqi, 1.375rem); line-height: 1.25; letter-spacing: -0.01em; color: var(--fg); text-wrap: balance; overflow-wrap: anywhere; }
+.te__sentence q { quotes: '“' '”'; }
+.te__go { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); margin-top: var(--sp-1); }
+.te__foot { margin: 0; padding-top: var(--sp-2); border-top: 1px solid var(--line); font-size: var(--fs-xs); line-height: 1.5; color: var(--muted-2); }
+
+/* A narrow frame: the venue stays and the chain gives way (a Morpho sentence names it). */
+@container ta (max-width: 360px) {
+  .te__chain { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .te__row { transition: none; }
+}
