@@ -82,7 +82,7 @@
 /* ── A phone's column (about 358px): the line set across it, the sentence at
       reading size, both doors on one row, the proofs beside the story door ── */
 @container hero (max-width: 559px) {
-  .mk-claim__in { column-gap: var(--sp-3); row-gap: var(--sp-2); padding: var(--sp-1) 0 2px; }
+  .mk-claim__in { column-gap: var(--sp-3); row-gap: var(--sp-2); padding: var(--sp-2) 0 2px; }
   .mk-claim__eyebrow { display: none; }
   .mk-claim__h1 { line-height: 1.1; }
   .mk-claim__sub { margin-top: 6px; font-size: var(--fs-base); line-height: 1.4; }
