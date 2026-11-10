@@ -99,11 +99,11 @@ async function readEarnRows(): Promise<EarnRow[]> {
  *  timed out does not pin an empty ladder for a minute (the read it started
  *  keeps going and fills the route's memory for the next render). */
 const cachedEarn = unstable_cache(
-  async (): Promise<{ earn: TourEarnRow[]; earnWays: number | null }> => {
+  async (): Promise<{ earn: TourEarnRow[]; earnWays: number | null; at: number }> => {
     const rows = await withTimeout(readEarnRows(), TOUR_FEED_TIMEOUT_MS, [] as EarnRow[])
     const out = tourEarnOf(rows)
     if (!out.earn.length) throw new Error('earn: nothing read yet')
-    return out
+    return { ...out, at: Date.now() }
   },
   ['home-tour-v1', 'earn'],
   { revalidate: 60 },
@@ -136,12 +136,12 @@ const cachedCommunity = unstable_cache(
 )
 
 /** The live part alone. Never throws. */
-export async function readTourLive(): Promise<Pick<TourSnapshot, 'earn' | 'community'> & { earnWays: number | null }> {
+export async function readTourLive(): Promise<Pick<TourSnapshot, 'earn' | 'community'> & { earnWays: number | null; at: number }> {
   const [earn, community] = await Promise.all([
-    cachedEarn().catch(() => ({ earn: [] as TourEarnRow[], earnWays: null })),
+    cachedEarn().catch(() => ({ earn: [] as TourEarnRow[], earnWays: null, at: 0 })),
     cachedCommunity().catch(() => EMPTY_TOUR.community),
   ])
-  return { earn: earn.earn, earnWays: earn.earnWays, community }
+  return { earn: earn.earn, earnWays: earn.earnWays, community, at: earn.at }
 }
 
 /** The snapshot for the page's render (and GET /api/home/tour): the static
@@ -154,7 +154,8 @@ export async function readTourSnapshotForRender(): Promise<TourSnapshot> {
     const live = await readTourLive()
     return {
       ...base,
-      asOf: live.earn.length || live.community.rooms || live.community.latest.length ? Date.now() : 0,
+      // When the ladder was read (0 = only the static part and the community line).
+      asOf: live.at,
       counts: { ...base.counts, earnWays: live.earnWays },
       earn: live.earn,
       community: live.community,
