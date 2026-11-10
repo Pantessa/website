@@ -17,7 +17,7 @@
   flex-direction: column;
   gap: var(--sp-5);
   min-width: 0;
-  scroll-margin-top: var(--sp-6);
+  scroll-margin-top: calc(var(--sp-6) * 2.5);
 }
 
 /* ── The head: the brochure's centred rhythm ─────────────────────────── */
@@ -54,7 +54,7 @@
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   background: var(--surf-1);
-  scroll-margin-top: var(--sp-6);
+  scroll-margin-top: calc(var(--sp-6) * 2.5);
 }
 .stour__side:target { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
 .stour__sidehead { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); padding-bottom: var(--sp-3); border-bottom: 1px solid var(--line); }
@@ -62,6 +62,15 @@
 .stour__label { font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg); }
 .stour__sideline { flex: 1 1 16rem; min-width: 0; font-size: var(--fs-md); color: var(--muted); }
 .stour__panel { min-width: 0; }
+
+/* CLASS COLLISION GUARD (found 2026-11-10): the tape view's sheet
+   (components/markets/chart/tape-view.css, loaded on /story by the brochure's
+   chart) owns `.tp` (absolute, inset 0, overflow hidden — it collapsed every
+   panel here to 0 px) and `.tp__chip` (22 px tall, tiny caps). The panels'
+   own sheet uses the same names. Until one side is renamed (ASK COORDINATOR
+   in STORY.md), the stack undoes exactly what the tape view sets. */
+.stour__panel .tp { position: static; inset: auto; z-index: auto; overflow: visible; border-radius: 0; background: none; }
+.stour__panel .tp__chip { height: auto; font-size: var(--fs-md); letter-spacing: normal; gap: var(--sp-2); }
 
 @container stour (max-width: 559px) {
   .stour__side { padding: var(--sp-4); gap: var(--sp-3); }

@@ -28,11 +28,14 @@ export function landingStoryPins(check: Check): void {
 
   // The page stays ISR and reads both snapshots through the cached readers.
   check(
-    'story: /story stays ISR (revalidate = 300), reads the tour + read snapshots through their cached readers at render, and never reads a request (no searchParams, cookies(), headers(), no-store, force-dynamic)',
+    'story: /story stays ISR (revalidate = 300), reads the tour + read snapshots through their cached readers at render inside the page\'s own 300s unstable_cache (so the route table keeps `○ /story 5m`), and never reads a request (no searchParams, cookies(), headers(), no-store, force-dynamic)',
     /export const revalidate = 300\b/.test(page) &&
       /import \{ readTourSnapshotForRender \} from '@\/lib\/home-tour-server'/.test(page) &&
       /import \{ readSnapshotForRender \} from '@\/lib\/read-server'/.test(page) &&
       /await Promise\.all\(\[readTourSnapshotForRender\(\), readSnapshotForRender\(\)\]\)/.test(page) &&
+      // the page's own five minutes around them: called bare, the readers' 60s window would become the page's
+      /const storySnapshots = unstable_cache\([\s\S]*?\['story-tour-v1'\],\s*\{ revalidate: 300 \}\s*,?\s*\)/.test(page) &&
+      /const \{ tour, read \} = await storySnapshots\(\)/.test(page) &&
       !/searchParams|cookies\(|headers\(|no-store|force-dynamic|dynamic\s*=/.test(page),
   )
   const rs = code('lib/read-server.ts')

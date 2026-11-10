@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { unstable_cache } from 'next/cache'
 import Link from 'next/link'
 import { SITE } from '@/lib/docs'
 import { MARKETS_HREF } from '@/lib/markets'
@@ -109,15 +110,28 @@ const JSON_LD = JSON.stringify([
   },
 ])
 
+/** THE TOUR's two snapshots (squad landing, 2026-11-10): the tour's own
+ *  (lib/home-tour-server) and THE READ's nine quotes (lib/read-server). Both
+ *  readers already go through unstable_cache with the HOME's minute and never
+ *  throw; called bare here, Next would take that minute as this page's window
+ *  (it takes the smaller) and `/story` would re-render every 60s. Wrapped in
+ *  the page's own five minutes, the route table keeps `○ /story 5m` — never a
+ *  no-store fetch at render. The panels refresh themselves while on screen. */
+const storySnapshots = unstable_cache(
+  async () => {
+    const [tour, read] = await Promise.all([readTourSnapshotForRender(), readSnapshotForRender()])
+    return { tour, read }
+  },
+  ['story-tour-v1'],
+  { revalidate: 300 },
+)
+
 export default async function StoryPage() {
   // Dark until the tripwire: the Roster front door renders ONLY on the flag;
   // the flag-off return below is the shipped homepage, untouched.
   if (ROSTER_HOME) return <RosterHome />
-  // THE TOUR's two snapshots (squad landing, 2026-11-10): the tour's own
-  // (lib/home-tour-server) and THE READ's nine quotes (lib/read-server). Both
-  // readers go through unstable_cache and never throw, so this page stays
-  // ISR (`○ /story 5m`) — never a no-store fetch at render.
-  const [tour, read] = await Promise.all([readTourSnapshotForRender(), readSnapshotForRender()])
+  // THE TOUR's two snapshots (squad landing, 2026-11-10): see storySnapshots.
+  const { tour, read } = await storySnapshots()
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
