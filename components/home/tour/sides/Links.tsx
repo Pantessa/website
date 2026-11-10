@@ -13,12 +13,13 @@
 //      rate is typed in this file. With no fee line the step says it in
 //      words and draws no number.
 //
-// What pays and what does not is said plainly under the frame, from
-// lib/fees.ts NET_FEE_BPS_BY_BUILD_PATH and /docs/creator-earnings: swaps and
-// stock buys carry the link fee; a perp pays from Hyperliquid's builder fee
-// only when the order carries one; staking and lending are fee-free paths.
-// Minting needs a sign-in (POST /api/intent-links answers 401 without a
-// session); opening a link needs only a wallet.
+// What pays and what does not is said once, in the words beside the frame
+// (lib/home-tour/links.ts facts, from lib/fees.ts NET_FEE_BPS_BY_BUILD_PATH
+// and /docs/creator-earnings: swaps and stock buys carry the link fee;
+// staking and lending are fee-free paths; minting needs a sign-in — POST
+// /api/intent-links answers 401 without a session). The frame itself is the
+// three steps and nothing else (round 2: it stood 800px tall with a rules
+// list that repeated the facts and a card that repeated the body).
 
 import { useState } from 'react'
 import { meta } from '@/lib/home-tour/links'
@@ -47,7 +48,7 @@ export default function LinksSide() {
   if (!STOCK || !ask) return <TourPanel side={meta} />
   const parts = splitAtAmount(ask, usd)
   const split = fees ? linkSplit({ usd, readers, linkBps: fees.linkBps, creatorSplit: fees.creatorSplit }) : null
-  const share = split ? shareWords(split.creatorShare) : 'half'
+  const share = split ? shareWords(split.creatorShare) : ''
 
   return (
     <TourPanel side={meta} demoLabel="How a link pays, worked out">
@@ -82,15 +83,14 @@ export default function LinksSide() {
               2
             </span>
             <div className="tlk__body">
-              <p className="ta-eyebrow mono">It becomes a link</p>
-              <div className="tlk__card" data-specimen>
-                <p className="tlk__cardhead">
-                  <span className="tlk__url mono">pantessa.com/i/your-link</span>
-                  <span className="ta-tag mono">Example</span>
-                </p>
-                <p className="tlk__cardask">{ask}</p>
-                <p className="tlk__cardfoot">Whoever opens it connects their own wallet and signs. You never hold their money.</p>
-              </div>
+              <p className="tlk__lab">
+                <span className="ta-eyebrow mono">It becomes a link</span>
+                <span className="ta-tag mono">Example</span>
+              </p>
+              <p className="tlk__card" data-specimen>
+                <span className="tlk__url mono">pantessa.com/i/your-link</span>
+                <span className="tlk__cardask">{ask}</span>
+              </p>
             </div>
           </li>
 
@@ -99,7 +99,7 @@ export default function LinksSide() {
               3
             </span>
             <div className="tlk__body">
-              <p className="ta-eyebrow mono">Every fill pays you</p>
+              <p className="ta-eyebrow mono">A swap pays you</p>
               <div className="ta-field">
                 <span className="ta-eyebrow mono">Readers who sign it</span>
                 <Seg label="Readers who sign it" value={readers} onChange={setReaders} options={LINK_READER_CHOICES.map((n) => ({ value: n, label: n.toLocaleString('en-US'), say: `${n} ${n === 1 ? 'reader' : 'readers'}` }))} journey={(n) => J(`readers ${n}`)} />
@@ -128,21 +128,15 @@ export default function LinksSide() {
                     <span className="tlk__key tlk__key--you">You {fmtSplitUsd(split.creatorUsd)}</span>
                     <span className="tlk__key tlk__key--house">Pantessa {fmtSplitUsd(split.houseUsd)}</span>
                   </p>
-                  <p className="ta-note">Your part comes out of Pantessa&rsquo;s fee, never on top of it. On a Uniswap swap with a dollar side it arrives inside the reader&rsquo;s own transaction; anything else waits in your ledger.</p>
+                  <p className="ta-note">It comes out of Pantessa&rsquo;s fee, never on top of it. On a Uniswap swap with a dollar side it lands inside the reader&rsquo;s own transaction; otherwise it waits in your ledger.</p>
                 </div>
               ) : (
-                <p className="ta-note">Half of the link fee on every fill is yours.</p>
+                <p className="ta-note">Half of the link fee on a swap through it is yours.</p>
               )}
             </div>
           </li>
         </ol>
 
-        <ul className="tlk__rules" aria-label="Which links pay">
-          <li className="tlk__rule tlk__rule--pays">{fees ? `Swaps and stock buys carry the ${fees.linkPct} link fee. ${share === 'half' ? 'Half' : share} is yours.` : 'Swaps and stock buys carry the link fee. Half is yours.'}</li>
-          <li className="tlk__rule tlk__rule--pays">A perp pays from Hyperliquid&rsquo;s builder fee, when the order carries one.</li>
-          <li className="tlk__rule">Staking and lending carry no fee, so they pay no one.</li>
-          <li className="tlk__rule">Minting a link needs a sign-in. Opening one needs only a wallet.</li>
-        </ul>
       </div>
     </TourPanel>
   )

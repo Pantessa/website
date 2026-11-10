@@ -19,7 +19,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { MINI_DEFAULT_USD, MINI_LEVERAGE, MINI_SIZES, MINI_SYMBOLS, acceptMiniMarket, miniMarketUrl, miniMarkets, miniSideLabel, miniTicket, miniUnits, splitAtAmount } from '../components/home/tour/sides/a/mini-market'
-import { LADDER_AMOUNTS, LADDER_DEFAULT_USD, LADDER_ROWS, LADDER_URL, acceptLadder, fmtAsOfUtc, ladderBarPct, ladderFromLive, ladderFromSeed, yearlyUsd } from '../components/home/tour/sides/a/ladder'
+import { LADDER_AMOUNTS, LADDER_DEFAULT_USD, LADDER_PICK, LADDER_ROWS, LADDER_URL, acceptLadder, fmtAsOfUtc, ladderBarPct, ladderFromLive, ladderFromSeed, yearlyUsd } from '../components/home/tour/sides/a/ladder'
 import { LINK_DEFAULT_READERS, LINK_READER_CHOICES, fmtRoundUsd, fmtSplitUsd, linkSplit, shareWords } from '../components/home/tour/sides/a/split'
 import { FIRST_PARTY_APP_SLUGS, askAppSlugs } from '../lib/ask-apps'
 import { moneyShaped } from '../lib/ask-failure-shape'
@@ -32,6 +32,7 @@ import { meta as askMeta } from '../lib/home-tour/ask'
 import { meta as chartsMeta } from '../lib/home-tour/charts'
 import { meta as earnMeta } from '../lib/home-tour/earn'
 import { meta as linksMeta } from '../lib/home-tour/links'
+import { TOUR_EARN_ROWS } from '../lib/home-tour-live'
 import { tourFees } from '../lib/home-tour-server'
 import { TICKET_DEFAULT_USD, TICKET_LEVERAGE_PRESETS, TICKET_USD_PRESETS, composeTicketAsk, freshTicket, ticketSidesFor } from '../lib/order-ticket'
 import { canTradeAsk } from '../lib/trade-venue-gate'
@@ -58,6 +59,7 @@ function earnFixture() {
       { asset: { symbol: 'USDT' }, active: true, canSupply: true, supplyApyPct: 8.97, suppliedUsd: '$1,000,000', spoke: 'Main' },
       { asset: { symbol: 'USDT' }, active: true, canSupply: true, supplyApyPct: 3.1, suppliedUsd: '$400,000', spoke: 'Lido' },
       { asset: { symbol: 'USDC' }, active: true, canSupply: true, supplyApyPct: 3.4, suppliedUsd: '$9,000,000', spoke: 'Main' },
+      { asset: { symbol: 'USDG' }, active: true, canSupply: true, supplyApyPct: 2.91, suppliedUsd: '$3,000,000', spoke: 'Main' },
       { asset: { symbol: 'WBTC' }, active: true, canSupply: true, supplyApyPct: 0, suppliedUsd: '$5,000,000', spoke: 'Main' },
       { asset: { symbol: 'DAI' }, active: false, canSupply: true, supplyApyPct: 9.9, suppliedUsd: '$1', spoke: 'Main' },
     ]),
@@ -70,7 +72,16 @@ function earnFixture() {
       ],
       8453,
     ),
-    ...morphoRows([{ marketId: HEX(4), curated: true, loan: 'APXUSD', collateral: 'WETH', supplyApy: '6.85%', totalSupplyUsd: 2_000_000 }], 1),
+    ...morphoRows(
+      [
+        { marketId: HEX(4), curated: true, loan: 'APXUSD', collateral: 'WETH', supplyApy: '6.85%', totalSupplyUsd: 2_000_000 },
+        { marketId: HEX(5), curated: true, loan: 'USDS', collateral: 'WETH', supplyApy: '5.96%', totalSupplyUsd: 2_000_000 },
+        { marketId: HEX(6), curated: true, loan: 'AUSD', collateral: 'WETH', supplyApy: '5.86%', totalSupplyUsd: 2_000_000 },
+        { marketId: HEX(7), curated: true, loan: 'PYUSD', collateral: 'WETH', supplyApy: '4.64%', totalSupplyUsd: 2_000_000 },
+        { marketId: HEX(8), curated: true, loan: 'FRXUSD', collateral: 'WETH', supplyApy: '1.2%', totalSupplyUsd: 2_000_000 },
+      ],
+      1,
+    ),
   ]
   return { rows: rowsToWire(rows, ethUsd), failed: [], ethUsd, asOf: '2026-11-10T14:32:10.000Z' }
 }
@@ -161,6 +172,16 @@ export function landingSidesAPins(check: Check): void {
       !/`(?:Buy|Long|\d+x) \$/.test(charts) &&
       !/['"`](?:Buy|Sell|Long|Short) \$\{?/.test(charts),
   )
+  const chartsCss = read(`${SIDES}/charts.css`)
+  check(
+    'sides-a charts (source): the first paint holds its size, so nothing moves when the prices land — a tile is three fixed lines at a set height, a missing price is a dash in the same line, the plot is a box whose height is CSS, and the line under the sentence keeps two lines of room in a narrow frame',
+    /\.tc__tile \{[^}]*min-height: 64px/.test(chartsCss) &&
+      /\.tc__plot \{[^}]*height: clamp\(/.test(chartsCss) &&
+      /@container ta \(max-width: 440px\) \{\s*\.tc__est \{ min-height: 2\.9em; \}/.test(chartsCss) &&
+      /\.tc__empty \{ position: absolute; inset: 0;/.test(chartsCss) &&
+      /lastOf\(m\.symbol\) == null \? '—'/.test(charts) &&
+      /chgOf\(m\.symbol\) == null \? '—'/.test(charts),
+  )
 
   // ── ASK: the composer ──
   const askBad = askMeta.asks.filter((a) => !canTradeAsk(a.ask, null) || !moneyShaped(a.ask) || !FIRST_PARTY_APP_SLUGS.has(askAppSlugs(a.ask)[0] ?? ''))
@@ -178,12 +199,14 @@ export function landingSidesAPins(check: Check): void {
   const ask = code(`${SIDES}/Ask.tsx`)
   const submit = ask.slice(ask.indexOf('const submit'), ask.indexOf('return (', ask.indexOf('const submit')))
   check(
-    'sides-a ask (source): typed words open in the Ask door as a DRAFT (fill) and never go through the wallet gate (a question needs no wallet); an example row runs through act() and is offered only when canAct; the question row is a draft too',
-    /fill\(draft\)/.test(submit) &&
-      !/\bact\(/.test(submit) &&
+    "sides-a ask (source): typed words are SENT into the Ask door through say() — one press, the way the top strip's Ask sends them — and never through the wallet gate (a question needs no wallet); an example row is a composed sentence, so it runs through act() and is offered only when canAct (the two-step job must: the jobs layer's guest wall has no door); the question row is a read, sent through say()",
+    /say\(words\)/.test(submit) &&
+      !/\bact\(|\bfill\(/.test(submit) &&
       /const rows = meta\.asks\.filter\(\(a\) => canAct\(a\.ask\)\)/.test(ask) &&
       /onClick=\{\(\) => act\(a\.ask\)\}/.test(ask) &&
-      /onClick=\{\(\) => fill\(QUESTION\.prompt\)\}/.test(ask) &&
+      /onClick=\{\(\) => say\(QUESTION\.prompt\)\}/.test(ask) &&
+      !/\bfill\(/.test(ask) &&
+      askMeta.asks.some((a) => /, then /.test(a.ask)) &&
       !/useAskDoor|openDoor/.test(ask),
   )
   const askCss = read(`${SIDES}/ask.css`)
@@ -255,34 +278,37 @@ export function landingSidesAPins(check: Check): void {
   // ── EARN: the ladder ──
   const wire = earnFixture()
   const live = acceptLadder(wire)
-  const boards = yieldLadder(rankEarnRows(rowsFromWire(wire.rows)), LADDER_ROWS)
+  const boards = yieldLadder(rankEarnRows(rowsFromWire(wire.rows)), LADDER_PICK)
   const apys = (live?.ladder ?? []).map((r) => r.apyPct ?? 0)
   check(
-    "sides-a earn: the ladder is the Earn board's own (lib/earn yieldLadder over the route's rows) — best rate per asset, drawn highest first, one bar per asset, nothing under the board's floor, at most the board's count; a body that is not an answer is NULL",
+    "sides-a earn: the ladder is the Earn board's own (lib/earn yieldLadder over the route's rows: best rate per asset, familiar assets first, drawn highest first) and the miniature shows its SIX highest bars of the board's eight — the same eight the server snapshot carries, so both sources show the same six; one bar per asset, nothing under the board's floor; a body that is not an answer is NULL",
     live !== null &&
-      live.ladder.map((r) => r.id).join() === boards.map((r) => r.id).join() &&
-      live.ladder.length > 0 &&
-      live.ladder.length <= LADDER_ROWS &&
+      LADDER_ROWS === 6 &&
+      LADDER_PICK === TOUR_EARN_ROWS &&
+      boards.length === LADDER_PICK &&
+      live.ladder.length === LADDER_ROWS &&
+      live.ladder.map((r) => r.id).join() === boards.slice(0, LADDER_ROWS).map((r) => r.id).join() &&
       apys.every((a, i) => i === 0 || apys[i - 1] >= a) &&
+      boards.slice(LADDER_ROWS).every((r) => (r.apyPct ?? 0) <= apys[apys.length - 1]) &&
       new Set(live.ladder.map((r) => r.asset)).size === live.ladder.length &&
       live.ladder.find((r) => r.asset === 'USDC')?.venue === 'morpho' &&
-      !live.ladder.some((r) => r.asset === 'WBTC' || r.asset === 'DAI') &&
+      !boards.some((r) => r.asset === 'WBTC' || r.asset === 'DAI' || r.asset === 'FRXUSD') &&
       live.ways === wire.rows.length &&
       acceptLadder(null) === null &&
       acceptLadder({ rows: 'x' }) === null &&
       acceptLadder({}) === null &&
       acceptLadder({ rows: [] })?.ladder.length === 0,
-    (live?.ladder ?? []).map((r) => `${r.asset}/${r.venue} ${r.apyPct}`).join(' · '),
+    `${(live?.ladder ?? []).map((r) => `${r.asset}/${r.venue} ${r.apyPct}`).join(' · ')} | left to the board: ${boards.slice(LADDER_ROWS).map((r) => r.asset).join(', ')}`,
   )
   const earnBad: string[] = []
   for (const usd of LADDER_AMOUNTS) {
-    const rows = ladderFromLive(live?.ladder ?? [], usd)
+    const rows = ladderFromLive(boards, usd)
     rows.forEach((r, i) => {
-      const own = live?.ladder[i]?.askFor(usd) ?? null
+      const own = boards[i]?.askFor(usd) ?? null
       if (r.ask !== own || !r.ask || !canTradeAsk(r.ask, null) || !canTradeAsk(r.ask, {}) || !/^(Stake|Supply|Lend) /.test(r.ask)) earnBad.push(`${r.asset}@${usd}: ${r.ask}`)
     })
   }
-  const at = (usd: number) => ladderFromLive(live?.ladder ?? [], usd)
+  const at = (usd: number) => ladderFromLive(boards, usd)
   check(
     "sides-a earn: a row's sentence is the board's own composer for the amount picked (the row's askFor), passes the venue gate with no verdicts, and the amount is in it — the amounts are the board's, the default the board's",
     earnBad.length === 0 &&
@@ -307,6 +333,7 @@ export function landingSidesAPins(check: Check): void {
       seeded[1].ask === seed[1].ask &&
       LADDER_AMOUNTS.filter((a) => a !== LADDER_DEFAULT_USD).every((a) => ladderFromSeed(seed, a).every((r) => r.ask === null) && ladderFromSeed(seed, a).length === 2) &&
       ladderFromSeed([], LADDER_DEFAULT_USD).length === 0 &&
+      ladderFromSeed(Array.from({ length: TOUR_EARN_ROWS }, (_, i) => ({ asset: `A${i}`, venue: 'Aave', chain: 'Ethereum', apy: 9 - i, ask: 'x' })), LADDER_DEFAULT_USD).map((r) => r.asset).join() === 'A0,A1,A2,A3,A4,A5' &&
       ladderFromSeed(EMPTY_TOUR.earn, LADDER_DEFAULT_USD).length === 0 &&
       seeded[0].id === at(25).find((r) => r.asset === 'USDT')?.id &&
       seeded[1].id === at(25).find((r) => r.asset === 'ETH')?.id,

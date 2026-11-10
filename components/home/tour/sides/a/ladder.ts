@@ -1,8 +1,9 @@
 // THE TOUR · EARN — the ladder's rules (squad landing, 2026-11-10; lane
 // SIDES-A). Pure: no React, no fetch. The ladder is the Earn board's own
 // (lib/earn yieldLadder: the best live rate per asset, familiar assets first,
-// drawn highest first), and a row's sentence is the board's own composer for
-// the amount picked (the row's `askFor`). Two sources, one shape:
+// drawn highest first); the miniature shows its six highest bars (round 2:
+// the full board is on the same page). A row's sentence is the board's own
+// composer for the amount picked (the row's `askFor`). Two sources, one shape:
 //   • the server snapshot's rows (`data.earn`, lane DATA) — the first frame.
 //     Each carries ONE sentence, composed at the board's default amount, so
 //     it can be run at that amount only;
@@ -14,8 +15,10 @@
 import { EARN_AMOUNTS, EARN_DEFAULT_USD, rankEarnRows, rowsFromWire, yieldLadder, type EarnResponse, type EarnRow } from '@/lib/earn'
 import type { TourEarnRow } from '@/lib/home-tour'
 
-/** Bars on the ladder: the board's own count. */
-export const LADDER_ROWS = 8
+/** The board's own ladder holds this many bars (the server snapshot carries the same: lib/home-tour-live TOUR_EARN_ROWS). */
+export const LADDER_PICK = 8
+/** The miniature shows the highest of them: the full board is one door away, on the same page. */
+export const LADDER_ROWS = 6
 export const LADDER_AMOUNTS: readonly number[] = EARN_AMOUNTS
 export const LADDER_DEFAULT_USD: number = EARN_DEFAULT_USD
 /** The live route, and how often the panel re-reads it while on screen (the board's own minute). */
@@ -52,7 +55,7 @@ export function acceptLadder(body: unknown): LadderLive | null {
   if (!b || typeof b !== 'object' || !Array.isArray(b.rows)) return null
   const all = rankEarnRows(rowsFromWire(b.rows))
   return {
-    ladder: yieldLadder(all, LADDER_ROWS),
+    ladder: yieldLadder(all, LADDER_PICK).slice(0, LADDER_ROWS),
     ways: all.length,
     failed: Array.isArray(b.failed) ? b.failed.filter((v): v is EarnRow['venue'] => typeof v === 'string') : [],
     asOf: typeof b.asOf === 'string' ? b.asOf : null,

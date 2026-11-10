@@ -1,28 +1,29 @@
 /* THE TOUR · LINKS — the split, worked out (squad landing, 2026-11-10; lane
-   SIDES-A). Three numbered steps on one rail (the sentence, the specimen
-   link, who gets what), then the plain rules. Shared pieces: ./a/kit.css.
-   Sized by its own container (`ta`), tokens only, nothing moves by itself. */
+   SIDES-A). Three numbered steps on one rail: the sentence, the specimen
+   link, who gets what. Nothing else in the frame (round 2: the rules moved
+   to the words beside it, the card lost the line that repeated them, the
+   rhythm tightened). Shared pieces: ./a/kit.css. Sized by its own container
+   (`ta`), tokens only, nothing moves by itself. */
 
 /* ── The rail ─────────────────────────────────────────────────────────── */
 .tlk__steps { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
-.tlk__step { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: var(--sp-3); padding-bottom: var(--sp-4); }
+.tlk__step { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: var(--sp-3); padding-bottom: var(--sp-3); }
 .tlk__step:last-child { padding-bottom: 0; }
 /* The connector: from under one number to the next. */
 .tlk__step:not(:last-child)::before { content: ''; position: absolute; left: 11.5px; top: 28px; bottom: 2px; width: 1px; background: var(--line); }
 .tlk__n { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--line-2); border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 600; color: var(--fg); background: var(--bg); }
-.tlk__body { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding-top: 3px; }
+.tlk__body { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding-top: 3px; }
 
 /* ── 1 · the sentence ─────────────────────────────────────────────────── */
 .tlk__sentence { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.125rem, 5.4cqi, 1.5rem); line-height: 1.25; letter-spacing: -0.01em; color: var(--fg); overflow-wrap: anywhere; }
 .tlk__sentence q { quotes: '“' '”'; }
 .tlk__amt { font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
 
-/* ── 2 · the specimen link ────────────────────────────────────────────── */
-.tlk__card { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px dashed var(--line-2); border-radius: var(--r-md); background: var(--surf-1); min-width: 0; }
-.tlk__cardhead { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin: 0; min-width: 0; }
-.tlk__url { min-width: 0; font-size: var(--fs-sm); color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tlk__cardask { margin: 0; font-size: var(--fs-base); font-weight: 600; line-height: 1.3; color: var(--fg); font-variant-numeric: tabular-nums; }
-.tlk__cardfoot { margin: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--muted); }
+/* ── 2 · the specimen link: the link line and the sentence it carries ─── */
+.tlk__lab { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin: 0; min-height: 18px; }
+.tlk__card { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--sp-3); margin: 0; padding: var(--sp-2) var(--sp-3); border: 1px dashed var(--line-2); border-radius: var(--r-md); background: var(--surf-1); min-width: 0; }
+.tlk__url { min-width: 0; max-width: 100%; font-size: var(--fs-sm); color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tlk__cardask { font-size: var(--fs-md); font-weight: 600; line-height: 1.3; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ── 3 · who gets what ────────────────────────────────────────────────── */
 .tlk__math { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
@@ -41,17 +42,8 @@
 .tlk__key--you::before { background: var(--accent); }
 .tlk__key--house::before { background: color-mix(in srgb, var(--fg) 22%, transparent); }
 
-/* ── The plain rules ──────────────────────────────────────────────────── */
-.tlk__rules { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: var(--sp-3) 0 0; border-top: 1px solid var(--line); list-style: none; }
-.tlk__rule { position: relative; padding-left: var(--sp-4); font-size: var(--fs-sm); line-height: 1.45; color: var(--muted); }
-.tlk__rule::before { content: ''; position: absolute; left: 1px; top: 0.5em; width: 6px; height: 6px; border-radius: var(--r-pill); box-shadow: inset 0 0 0 1px var(--muted-2); }
-.tlk__rule--pays { color: var(--fg); }
-.tlk__rule--pays::before { background: var(--accent); box-shadow: none; }
-
 /* A narrow frame: the three sums stack as rows. */
 @container ta (max-width: 340px) {
-  .tlk__cardhead { flex-direction: column-reverse; align-items: flex-start; gap: var(--sp-2); }
-  .tlk__url { max-width: 100%; }
   .tlk__sums { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); }
   .tlk__sum { flex-direction: row; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
   .tlk__sum dd { font-size: var(--fs-base); }

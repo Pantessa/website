@@ -3,17 +3,18 @@
 // THE TOUR · ASK — the composer (squad landing, 2026-11-10; lane SIDES-A).
 // The claim is "say it, it builds", so the miniature is a place to say it:
 //
-//   • a real input. What is typed opens in the Ask door as a draft (`fill`),
-//     never through the wallet gate: typed words may be a question, and a
-//     question is answered with no wallet (the door's own runtime asks for
-//     one only when an order is built — components/AskDoor.tsx send →
-//     ChatInterface's guest lane). Nothing here calls the chat itself;
+//   • a real input. What is typed is SENT into the Ask door (`say`), the
+//     way the top strip's Ask sends it: never through the wallet gate here,
+//     because typed words may be a question and a question is answered with
+//     no wallet (components/AskDoor.tsx send → ChatInterface's guest lane;
+//     a money ask meets the chat's own connect wall, which holds it).
+//     Nothing here calls the chat itself;
 //   • example rows from the side's own sentences (lib/home-tour/ask.ts):
 //     the mark of the app that catches each, the sentence, the app's name.
 //     A row is an ORDER, so it runs through `act` (connect-to-act, then the
 //     door sends it) and is not offered when its venue cannot run it;
-//   • one question row, the chat's own no-wallet example (lib/examples), as
-//     a draft;
+//   • one question row, the chat's own no-wallet example (lib/examples):
+//     a read, so it is sent the way typed words are (`say`), never `act`;
 //   • the fleet's marks as doors into the chat with that app on
 //     (lib/home-apps), so the count in the words is something to touch.
 
@@ -38,7 +39,7 @@ const QUESTION = EXAMPLE_PROMPTS.find((p) => p.prompt.endsWith('?') && !/\bmy\b/
 const J = (what: string) => tourJourney(meta.id, what)
 
 export default function AskSide() {
-  const { data, act, fill, canAct } = useTour()
+  const { data, act, say, canAct } = useTour()
   const [text, setText] = useState('')
   const inputId = useId()
   const rows = meta.asks.filter((a) => canAct(a.ask))
@@ -46,9 +47,9 @@ export default function AskSide() {
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    const draft = text.trim()
-    if (!draft) return
-    fill(draft)
+    const words = text.trim()
+    if (!words) return
+    say(words)
     setText('')
   }
 
@@ -60,11 +61,11 @@ export default function AskSide() {
             Say what you want done
           </label>
           <input id={inputId} className="tk__input" type="text" value={text} onChange={(e) => setText(e.target.value)} placeholder="Say what you want done" autoComplete="off" autoCapitalize="sentences" spellCheck={false} enterKeyHint="go" maxLength={240} data-ask-door-yield data-tour-ask-input />
-          <button type="submit" className={`tk__send${ready ? ' is-ready' : ''}`} disabled={!ready} aria-label="Open it in Ask" data-journey={J('typed')}>
+          <button type="submit" className={`tk__send${ready ? ' is-ready' : ''}`} disabled={!ready} aria-label="Send it to Ask" data-journey={J('typed')}>
             <ArrowUp size={16} aria-hidden />
           </button>
         </form>
-        <p className="ta-note">Your words open in Ask, ready to send. A question needs no wallet; an order asks for one when it is time to sign.</p>
+        <p className="ta-note">Enter sends it: a question needs no wallet, an order asks for one to sign.</p>
 
         <div className="tk__examples">
           <p className="ta-eyebrow mono">Or run one of these</p>
@@ -90,7 +91,7 @@ export default function AskSide() {
             })}
             {QUESTION && (
               <li>
-                <button type="button" className="tk__row tk__row--read" onClick={() => fill(QUESTION.prompt)} title={QUESTION.prompt} data-draft={QUESTION.prompt} data-journey={J('a question')}>
+                <button type="button" className="tk__row tk__row--read" onClick={() => say(QUESTION.prompt)} title={QUESTION.prompt} data-say={QUESTION.prompt} data-journey={J('a question')}>
                   <span className="tk__mark tk__mark--read mono" aria-hidden>
                     ?
                   </span>
