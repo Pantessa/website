@@ -1,0 +1,46 @@
+/* THE TOUR · ASK — the composer (squad landing, 2026-11-10; lane SIDES-A).
+   A real input, example rows (the app's mark, the sentence, what catches
+   it), and the fleet's marks as doors. Shared pieces: ./a/kit.css. Sized by
+   its own container (`ta`), tokens only, nothing moves by itself. The input
+   is 16px (--fs-input): iOS zooms anything smaller. */
+
+/* ── The input ────────────────────────────────────────────────────────── */
+.tk__composer { display: flex; align-items: center; gap: var(--sp-2); min-height: 52px; padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-4); border: 1px solid var(--line-2); border-radius: var(--r-pill); background: var(--bg); transition: border-color var(--dur-1) ease, box-shadow var(--dur-1) ease; }
+.tk__composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.tk__input { flex: 1 1 auto; min-width: 0; height: 44px; padding: 0; border: 0; background: transparent; color: var(--fg); font-family: var(--mk-font-ui); font-size: var(--fs-input); line-height: 1.3; outline: none; }
+.tk__input::placeholder { color: var(--muted-2); opacity: 1; }
+.tk__send { flex: 0 0 auto; display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: var(--r-pill); background: var(--surf-2); color: var(--muted-2); cursor: default; outline: none; transition: background var(--dur-1) ease, color var(--dur-1) ease; }
+.tk__send.is-ready { background: var(--accent); color: var(--ink, var(--bg)); cursor: pointer; }
+.tk__send:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+
+/* ── The example rows ─────────────────────────────────────────────────── */
+.tk__examples { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.tk__rows { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.tk__rows > li + li { border-top: 1px solid var(--line); }
+.tk__row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); width: 100%; min-height: 52px; padding: var(--sp-2) var(--sp-3); border: 0; background: transparent; color: var(--fg); font-family: var(--mk-font-ui); text-align: left; cursor: pointer; outline: none; transition: background var(--dur-1) ease; }
+.tk__row:hover, .tk__row:focus-visible { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.tk__row:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.tk__mark { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surf-1); font-size: var(--fs-sm); font-weight: 600; color: var(--muted); overflow: hidden; }
+.tk__mark--read { color: var(--accent); }
+.tk__words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tk__ask { font-size: var(--fs-md); font-weight: 600; line-height: 1.3; color: var(--fg); text-wrap: pretty; overflow-wrap: anywhere; }
+.tk__via { font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); }
+.tk__arrow { color: var(--accent); font-size: var(--fs-md); transition: transform var(--dur-1) ease; }
+.tk__row:hover .tk__arrow { transform: translateX(2px); }
+
+/* ── The fleet ────────────────────────────────────────────────────────── */
+.tk__fleet { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.tk__apps { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.tk__app { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surf-1); color: var(--muted); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-decoration: none; outline: none; transition: border-color var(--dur-1) ease, color var(--dur-1) ease; }
+.tk__app:hover, .tk__app:focus-visible { border-color: var(--accent); color: var(--fg); }
+.tk__app:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.tk__app--all { text-transform: uppercase; }
+
+@media (pointer: coarse) {
+  .tk__app { width: 44px; height: 44px; }
+  .tk__row { min-height: 56px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tk__composer, .tk__send, .tk__row, .tk__arrow, .tk__app { transition: none; }
+  .tk__row:hover .tk__arrow { transform: none; }
+}
