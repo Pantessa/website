@@ -74,6 +74,14 @@ export interface Eip712OrderRequest {
      *  builds the user-signed typed data (it knows the wallet's chainId) via
      *  approveBuilderFeeArtifacts; the relay re-derives and re-guards. */
     feeApproval?: { builder: string; maxFeeRate: string; feeTenthBps: number }
+    /** A move of the wallet's OWN USDC from its main perp balance into a
+     *  builder dex, signed before the leverage set and the order — a standard
+     *  Hyperliquid account keeps a separate balance per dex, so an order on
+     *  `xyz:SP500` needs its collateral there. Facts only — the CLIENT builds
+     *  the user-signed typed data via hlDexTransferArtifacts; the relay
+     *  re-derives it and pins destination = the signer, a dex we place orders
+     *  on, and USDC (guardHlDexTransfer). */
+    dexTransfer?: { dex: string; amount: string }
   }
 }
 

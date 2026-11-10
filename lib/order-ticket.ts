@@ -39,8 +39,15 @@
 //    exponent (the grammars capture `\d+(?:\.\d+)?`).
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { ChartPair } from '@/lib/charts'
+import { isHip3Pair, type ChartPair } from '@/lib/charts'
 import { composeAsk, execSidesFor, EXEC_SIDE_LABEL, type ExecSide } from '@/lib/trade-asks'
+
+/** Can a perp open on this pair chain a Guardian stop? Not on a builder-dex
+ *  market: the Guardian's watcher reads the main book's ledger and would
+ *  never see the position (lib/hl-guardian-fence builderDexRefusal). */
+export function ticketOffersStop(pair: ChartPair): boolean {
+  return !isHip3Pair(pair)
+}
 import { fmtAskPrice, fmtAskUnits } from '@/lib/chart-actions'
 import { ROBINHOOD_CHAIN_ID, SPOT_CHAINS, fundDestChainFor } from '@/lib/symbol-venues'
 import { tokenHome } from '@/lib/token-home'
@@ -257,8 +264,11 @@ export function composeTicketAsk(pair: ChartPair, st: TicketState, last: number 
       const lev = st.leverage > 1 ? `${Math.round(st.leverage)}x ` : ''
       const verb = st.side === 'long' ? 'Long' : 'Short'
       const open = `${lev}${verb} ${usdWord(usd)} of ${sym} on Hyperliquid`
-      const ask = st.withStop ? `${open}, then protect my ${sym} ${st.side} with a ${st.stopPct}% stop` : open
-      const label = st.withStop ? `${lev}${verb} ${usdWord(usd)} of ${sym} + ${st.stopPct}% stop` : `${lev}${verb} ${usdWord(usd)} of ${sym}`
+      // No stop clause on a builder-dex market (`xyz:SP500`): the Guardian
+      // watches the main book's ledger only (ticketOffersStop is the UI's rule too).
+      const stop = st.withStop && ticketOffersStop(pair)
+      const ask = stop ? `${open}, then protect my ${sym} ${st.side} with a ${st.stopPct}% stop` : open
+      const label = stop ? `${lev}${verb} ${usdWord(usd)} of ${sym} + ${st.stopPct}% stop` : `${lev}${verb} ${usdWord(usd)} of ${sym}`
       return yes(ask, label, usd, units)
     }
     case 'protect': {

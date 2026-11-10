@@ -13,6 +13,7 @@ import { LIDO_MCP } from '@/lib/lido-stake'
 import { hlInfo } from '@/lib/hl-guardian-store'
 import { CROSS_CHAIN_FEE_BPS, HL_BUILDER_FEE_TENTH_BPS, SWAP_FEE_BPS } from '@/lib/fees'
 import { HL_EXEC_SLIPPAGE_BPS } from '@/lib/hyperliquid-exec'
+import { hlDexOf } from '@/lib/hl-dex'
 import { onrampEnabled } from '@/lib/onramp'
 import { usdPerToken } from '@/lib/usd-probe'
 import { cardBuyChip, type CardBuyAsk } from '@/lib/card-buy'
@@ -116,14 +117,18 @@ interface HlCtx {
   openInterestUsd: number | null
   maxLeverage: number
 }
-async function hlContext(sym: string): Promise<HlCtx | null> {
+/** The perp's live context. `coin` is the venue's own market name: a
+ *  main-book coin (`HYPE`) is read from the main book, a builder-dex market
+ *  (`xyz:SP500`) from ITS dex — the main book lists neither it nor its mark. */
+async function hlContext(coin: string): Promise<HlCtx | null> {
   const info = hlInfo()
-  const res = (await (info as unknown as { metaAndAssetCtxs: () => Promise<unknown> }).metaAndAssetCtxs()) as [
+  const dex = hlDexOf(coin)
+  const res = (await (info as unknown as { metaAndAssetCtxs: (params?: { dex: string }) => Promise<unknown> }).metaAndAssetCtxs(dex ? { dex } : undefined)) as [
     { universe: { name: string; maxLeverage: number }[] },
     { markPx?: string; funding?: string; openInterest?: string }[],
   ]
   const [meta, ctxs] = res
-  const idx = meta.universe.findIndex((u) => u.name === sym)
+  const idx = meta.universe.findIndex((u) => u.name === coin)
   if (idx < 0) return null
   const ctx = ctxs[idx]
   const markPx = Number(ctx?.markPx)
@@ -276,7 +281,8 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
 
   const [spotR, hlR, aaveR, aaveUsdcR, lidoR, stockR, tapeR, cardEthR] = await Promise.allSettled([
     Promise.allSettled(wantSpot.map((id) => withTimeout(uniswapQuote(sym, id, amount)).then((q) => [id, q] as const))),
-    wantPerp ? withTimeout(hlContext(sym)) : Promise.resolve(null),
+    // A perp CHART's own market name (`xyz:SP500` for /t/SP500); a coin page's perp row is the main-book coin.
+    wantPerp ? withTimeout(hlContext(pair.source === 'hyperliquid' ? pair.pair : sym)) : Promise.resolve(null),
     wantAave ? withTimeout(aaveApy(sym)) : Promise.resolve(null),
     wantAave ? withTimeout(aaveApy('USDC')) : Promise.resolve(null),
     wantLidoFirst ? withTimeout(lidoApr()) : Promise.resolve(null),

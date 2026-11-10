@@ -237,11 +237,16 @@ export interface LivePosition extends GuardianPosition {
   markPx: number | null
 }
 
-export async function fetchPositions(wallet: string): Promise<LivePosition[]> {
+/** The wallet's open perps. With no `dex`: the MAIN book's ledger — what the
+ *  Guardian watches. With a builder dex (`xyz`): that dex's own ledger, whose
+ *  positions the venue names with the prefix (`xyz:SP500`) — a symbol page
+ *  reads it to show the position; the Guardian's sweep never does. */
+export async function fetchPositions(wallet: string, dex?: string | null): Promise<LivePosition[]> {
   const info = hlInfo()
+  const user = wallet as `0x${string}`
   const [state, mids] = await Promise.all([
-    info.clearinghouseState({ user: wallet as `0x${string}` }),
-    info.allMids(),
+    dex ? info.clearinghouseState({ user, dex }) : info.clearinghouseState({ user }),
+    dex ? info.allMids({ dex }) : info.allMids(),
   ])
   return state.assetPositions
     .map((ap) => ap.position)

@@ -31,6 +31,19 @@ import type { Eip712TypedData } from '@/lib/eip712'
 import { buildReport, type GuardrailCheck, type GuardrailReport } from '@/lib/tx-guardrails'
 import { formatPx, formatSz } from '@/lib/hl-guardian'
 import { HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE, TREASURY_ADDRESS } from '@/lib/fees'
+import {
+  HL_BUILDER_DEXES,
+  HL_BUILDER_DEX_NAMES,
+  HL_USDC_TOKEN,
+  hlAssetId,
+  hlDexOf,
+  hlDexPhrase,
+  hlMarginModeOf,
+  hlTickerOf,
+  isOrderableHlDex,
+  splitHlAssetId,
+  type HlMarginMode,
+} from '@/lib/hl-dex'
 
 // ── Venue constants (verified against official docs 2026-07-13) ────────────
 
@@ -219,7 +232,30 @@ const FILLER = String.raw`(?:\s+(?:please|for me|now|right away))*`
 export function parseHlIntent(message: string): HlIntent | null {
   // "$12 orth of HYPE" — a typo of the "worth" our cards print fell out of
   // this grammar entirely (squad audit 2026-09-08); shared lexicon rewrite.
-  const m = normalizeWorth(message).toLowerCase().replace(/\s+/g, ' ').trim()
+  const lowered = normalizeWorth(message).toLowerCase().replace(/\s+/g, ' ').trim()
+  // A builder-dex market typed the venue's way ("long $25 of xyz:SP500 on
+  // hyperliquid"): the grammar reads the bare ticker, and the dex it named
+  // rides back onto the coin, so the build looks on THAT dex and no other.
+  const { text, dexOf } = stripHlDexPrefixes(lowered)
+  const intent = parseHlIntentText(text)
+  if (!intent || intent.kind === 'deposit') return intent
+  const dex = dexOf.get(intent.coin.toLowerCase())
+  return dex ? { ...intent, coin: `${dex}:${intent.coin}` } : intent
+}
+
+/** `xyz:sp500` → `sp500`, remembering which dex each ticker named. A token
+ *  must START with a letter and carry no space round the colon, so a time
+ *  ("at 10:30"), a ratio or a URL is never read as a market. PURE. */
+export function stripHlDexPrefixes(lowered: string): { text: string; dexOf: Map<string, string> } {
+  const dexOf = new Map<string, string>()
+  const text = lowered.replace(/(?<![\w$.:/])([a-z][a-z0-9]{1,9}):([a-z0-9]{1,10})(?![\w:/])/g, (_all, dex: string, ticker: string) => {
+    dexOf.set(ticker, dex)
+    return ticker
+  })
+  return { text, dexOf }
+}
+
+function parseHlIntentText(m: string): HlIntent | null {
   const venueWorded = new RegExp(VENUE).test(m)
   const leverage = leverageIn(m)
   // Venue word OR a leverage phrase — one of the two must be there. (A
@@ -299,10 +335,18 @@ export function parseHlIntent(message: string): HlIntent | null {
 /** The size chips for an unsized open — the exact strings the HL layer
  *  parses back into a full order (chip = contract). Presets sit above the
  *  venue's $10 minimum; the leverage the user named rides every chip. */
-export function hlUnsizedChips(intent: HlUnsizedIntent): { label: string; resume: string }[] {
+export function hlUnsizedChips(
+  intent: HlUnsizedIntent,
+  /** The smallest dollar ask this market takes (hlMinOpenUsd) when it is
+   *  above the first preset — a market whose size step is dollars wide
+   *  (xyz:SP500) would refuse the $12 chip. The row starts there instead. */
+  minUsd?: number,
+): { label: string; resume: string }[] {
   const side = intent.isBuy ? 'long' : 'short'
   const lev = intent.leverage ? `${intent.leverage}x ` : ''
-  return [12, 25, 50].map((usd) => ({
+  const floor = minUsd !== undefined && Number.isFinite(minUsd) && minUsd > 12 ? Math.ceil(minUsd) : 12
+  const sizes = [floor, ...[25, 50, 100, 250, 500, 1000].filter((usd) => usd > floor)].slice(0, 3)
+  return sizes.map((usd) => ({
     label: `${lev}${side[0].toUpperCase()}${side.slice(1)} $${usd} of ${intent.coin}`,
     resume: `${lev}${side} $${usd} of ${intent.coin} on hyperliquid`,
   }))
@@ -340,7 +384,23 @@ export function nearestHlCoins(coin: string, listed: Iterable<string>, max = 3):
 // ── Order action build (deterministic) ──────────────────────────────────────
 
 export interface HlMarketSnapshot {
+  /** The venue's ASSET ID for the market — what an order's `a` and a leverage
+   *  update's `asset` carry. A main-book coin's id is its row in `meta`; a
+   *  builder-dex (HIP-3) market's is `100000 + dexIndex × 10000 + row`
+   *  (lib/hl-dex hlAssetId — `xyz:SP500` is 110052 on mainnet). */
   assetIndex: number
+  /** The venue's own market name — `BTC`, `kPEPE`, `xyz:SP500`. Absent on a
+   *  hand-built snapshot (then the intent's coin stands in). */
+  coin?: string
+  /** The builder dex the market is on; null / absent = the main book. */
+  dex?: string | null
+  /** The dex's slot in the live `perpDexs` list (null = the main book). */
+  dexIndex?: number | null
+  /** The market's row in its own dex's `meta.universe`. */
+  localIndex?: number
+  /** `isolated` when the venue marks the market isolated-only (a cross
+   *  leverage update is refused there); absent = cross, the main-book default. */
+  marginMode?: HlMarginMode
   szDecimals: number
   markPx: number
   /** Live signed position size for the coin (0 = flat) — close needs it. */
@@ -389,11 +449,68 @@ export type HlWireAction = HlWireOrderAction | HlWireLeverageAction
 /**
  * Build the venue-side leverage update an explicit-leverage ask needs before
  * its order. Cross mode — the venue default and what "2x long" means without
- * further qualification. Numbers come from the intent + live meta only.
+ * further qualification — unless the venue marks the market isolated-only
+ * (most builder-dex markets, a few main-book ones): there a cross update is
+ * refused in the venue's words ("Cross margin is not allowed for this
+ * asset."), so the update sets the isolated multiple the market allows.
+ * Numbers come from the intent + live meta only.
  */
 export function buildHlLeverageAction(intent: HlOrderIntent, snap: HlMarketSnapshot): HlWireLeverageAction {
   if (intent.kind !== 'open' || !intent.leverage) throw new Error('leverage action needs an open intent with explicit leverage')
-  return { type: 'updateLeverage', asset: snap.assetIndex, isCross: true, leverage: intent.leverage }
+  return { type: 'updateLeverage', asset: snap.assetIndex, isCross: snap.marginMode !== 'isolated', leverage: intent.leverage }
+}
+
+/** What a guard knows about WHICH market an asset id must name — read off
+ *  the live snapshot, so a build and its submit re-check agree. All optional:
+ *  a context without it describes a main-book market (the only kind there was
+ *  before builder dexes), and a builder-dex id is then refused outright. */
+export interface HlGuardMarket {
+  /** The builder dex the market is on; null / absent = the main book. */
+  dex?: string | null
+  /** The dex's slot in the live `perpDexs` list. */
+  dexIndex?: number | null
+  /** The market's row in its own dex's universe. */
+  localIndex?: number
+  /** Testnet slots differ from mainnet's (xyz is 65 there, 1 on mainnet), so
+   *  the mainnet slot pin is skipped. Absent = mainnet = the pin holds. */
+  isTestnet?: boolean
+}
+
+/**
+ * Is this asset id the market the snapshot named — and nothing else? Beyond
+ * equality with the live id, the id's own STRUCTURE is checked against the
+ * registry (lib/hl-dex): a builder-dex id is accepted only when the market
+ * was resolved on a PROVEN dex, decomposes to exactly that dex's slot and
+ * the market's row, and — on mainnet — that slot is the one the dex was
+ * measured at. A wrong id is an order on the wrong market; every branch
+ * fails closed. PURE.
+ */
+export function hlAssetIdentity(assetId: unknown, ctx: { assetIndex: number } & HlGuardMarket): { ok: boolean; note: string } {
+  const split = splitHlAssetId(assetId)
+  if (!split) return { ok: false, note: `Asset ${String(assetId)} is not a Hyperliquid perp id.` }
+  const dex = ctx.dex ?? null
+  if (dex === null) {
+    return split.dexIndex === null
+      ? { ok: true, note: 'A main-book market id.' }
+      : { ok: false, note: `Asset ${String(assetId)} is a builder-dex id, and this market is on the main book.` }
+  }
+  const known = isOrderableHlDex(dex) ? HL_BUILDER_DEXES[dex] : null
+  if (!known) return { ok: false, note: `Pantessa places no orders on the ${dex} builder dex.` }
+  if (split.dexIndex === null) return { ok: false, note: `Asset ${String(assetId)} is a main-book id, and this market is on the ${known.label} builder dex.` }
+  if (!Number.isInteger(ctx.dexIndex) || !Number.isInteger(ctx.localIndex)) return { ok: false, note: `The ${known.label} dex's live slot was not read — refusing.` }
+  if (!ctx.isTestnet && ctx.dexIndex !== known.mainnetIndex) {
+    return { ok: false, note: `The ${known.label} dex answered at slot ${ctx.dexIndex}, not the slot ${known.mainnetIndex} it was measured at — refusing.` }
+  }
+  let expected: number
+  try {
+    expected = hlAssetId(ctx.dexIndex as number, ctx.localIndex as number)
+  } catch {
+    return { ok: false, note: `The ${known.label} dex slot does not make a valid asset id — refusing.` }
+  }
+  if (split.dexIndex !== ctx.dexIndex || split.localIndex !== ctx.localIndex || expected !== assetId || expected !== ctx.assetIndex) {
+    return { ok: false, note: `Asset ${String(assetId)} is not ${known.label} dex slot ${ctx.dexIndex}, market ${ctx.localIndex} (id ${expected}).` }
+  }
+  return { ok: true, note: `${known.label} builder dex, slot ${ctx.dexIndex}, market ${ctx.localIndex} — id ${expected} = 100000 + ${ctx.dexIndex} × 10000 + ${ctx.localIndex}.` }
 }
 
 /** Guard the leverage update (fail closed; runs at BUILD and again at
@@ -403,14 +520,23 @@ export function buildHlLeverageAction(intent: HlOrderIntent, snap: HlMarketSnaps
 export function guardHlLeverageBuild(
   intent: HlOrderIntent,
   action: HlWireLeverageAction,
-  ctx: { assetIndex: number; maxLeverage: number },
+  ctx: { assetIndex: number; maxLeverage: number; marginMode?: HlMarginMode } & HlGuardMarket,
 ): GuardrailReport {
   const checks: GuardrailCheck[] = []
   const block = (id: string, ok: boolean, okNote: string, badNote: string) =>
     checks.push({ id, level: 'block', ok, note: ok ? okNote : badNote })
+  const ticker = hlTickerOf(intent.coin)
   block('lev-shape', action.type === 'updateLeverage', 'Leverage update only — no order rides in this signature.', 'Malformed leverage action — refusing.')
-  block('lev-asset-pinned', action.asset === ctx.assetIndex, `Asset pinned to ${intent.coin} (index ${ctx.assetIndex}).`, `Leverage asset ${action.asset} ≠ ${intent.coin}'s live index ${ctx.assetIndex}.`)
-  block('lev-cross', action.isCross === true, 'Cross margin — the venue default mode.', 'Only cross-margin leverage is built here.')
+  block('lev-asset-pinned', action.asset === ctx.assetIndex, `Asset pinned to ${ticker} (id ${ctx.assetIndex}).`, `Leverage asset ${action.asset} ≠ ${ticker}'s live id ${ctx.assetIndex}.`)
+  const identity = hlAssetIdentity(action.asset, ctx)
+  block('lev-asset-market', identity.ok, identity.note, identity.note)
+  const isolatedOnly = ctx.marginMode === 'isolated'
+  block(
+    'lev-cross',
+    action.isCross === !isolatedOnly,
+    isolatedOnly ? `Isolated margin — ${ticker} is an isolated-only market on the venue.` : 'Cross margin — the venue default mode.',
+    isolatedOnly ? `${ticker} is an isolated-only market — the venue refuses a cross leverage update there.` : 'Only cross-margin leverage is built here.',
+  )
   block(
     'lev-integer',
     Number.isInteger(action.leverage),
@@ -420,8 +546,8 @@ export function guardHlLeverageBuild(
   block(
     'lev-bounds',
     action.leverage >= 1 && action.leverage <= ctx.maxLeverage,
-    `${action.leverage}x within ${intent.coin}'s 1–${ctx.maxLeverage}x venue range.`,
-    `${intent.coin} allows 1–${ctx.maxLeverage}x — ${action.leverage}x is outside the venue's range.`,
+    `${action.leverage}x within ${ticker}'s 1–${ctx.maxLeverage}x venue range.`,
+    `${ticker} allows 1–${ctx.maxLeverage}x — ${action.leverage}x is outside the venue's range.`,
   )
   block('lev-as-asked', action.leverage === intent.leverage, `Sets the ${intent.leverage}x you asked for.`, 'Leverage differs from the ask.')
   return buildReport(0, checks)
@@ -609,11 +735,20 @@ export interface HlConsentInput {
 
 export const HL_CONSENT_HEADER = 'Pantessa · Hyperliquid'
 
+/** How a coin reads in a consent line or a ledger note: caps, with a builder
+ *  dex's prefix kept the venue's way (`sp500` → `SP500`, `XYZ:sp500` →
+ *  `xyz:SP500`). The client and the relay both derive the consent text
+ *  through this, so they agree byte for byte. PURE. */
+export function hlCoinLabel(coin: string): string {
+  const dex = hlDexOf(coin)
+  return dex ? `${dex}:${hlTickerOf(coin).toUpperCase()}` : coin.toUpperCase()
+}
+
 /** One human line for the consent text, derived from the ACTION (the
  *  numbers the venue will see) plus the caller's expected coin/kind — both
  *  are re-guarded server-side, so a lie in either dies before the venue. */
 export function hlActionSummary(action: HlWireAction, expected: HlConsentInput['expected']): string {
-  const coin = expected.coin.toUpperCase()
+  const coin = hlCoinLabel(expected.coin)
   if (action.type === 'updateLeverage') {
     return `set ${action.leverage}x ${action.isCross ? 'cross' : 'isolated'} leverage on ${coin}`
   }
@@ -762,14 +897,217 @@ export function guardHlBuilderFeeApproval(action: HlWireApproveBuilderFeeAction,
   return buildReport(0, checks)
 }
 
+// ── Builder-dex collateral move (user-signed, same account) ────────────────
+// A STANDARD Hyperliquid account ("default" / "disabled") keeps a separate
+// balance per perp dex: USDC in the main perp account trades nothing on a
+// builder dex. Measured on testnet 2026-11-09 — 999 USDC in the main account,
+// `activeAssetData.availableToTrade` for xyz:NVDA `["0.0","0.0"]`, and an
+// order answered "Insufficient margin to place order. asset=750024" — until a
+// `sendAsset` (sourceDex "" → destinationDex "xyz") moved it: instant, free,
+// no minimum. (A unified or portfolio-margin account backs every USDC dex
+// from spot USDC and needs none of this.)
+//
+// Like approveBuilderFee it is a USER-SIGNED action: EIP-712 under the
+// HyperliquidSignTransaction domain whose chainId is the wallet's own, so the
+// CLIENT builds it with this pure builder (every wallet signs it — no 1337
+// domain), and the relay re-derives the same payload from the action to
+// recover the signer. The guard pins what makes it safe: the destination is
+// the SIGNER'S OWN address, it leaves the main perp balance for a dex this
+// layer builds on, and it carries USDC and nothing else. Money never leaves
+// the user's Hyperliquid account.
+
+export interface HlWireSendAssetAction {
+  type: 'sendAsset'
+  signatureChainId: string
+  hyperliquidChain: 'Mainnet' | 'Testnet'
+  destination: string
+  sourceDex: string
+  destinationDex: string
+  token: string
+  amount: string
+  fromSubAccount: string
+  nonce: number
+}
+
+/** What an order card carries for the move — facts only; the client builds
+ *  the signable action from them and the relay re-guards the result. */
+export interface HlDexTransferFacts {
+  /** The builder dex the USDC moves INTO (always out of the main perp balance). */
+  dex: string
+  /** Whole-cent USDC amount, as the venue reads it ("8.34"). */
+  amount: string
+}
+
+/** A dollar figure as the venue's `amount` string: whole cents, no trailing
+ *  zeros ("8.34", "40"). PURE. */
+export function hlUsdcAmount(usd: number): string {
+  if (!Number.isFinite(usd) || usd <= 0) throw new Error(`hlUsdcAmount: bad amount ${usd}`)
+  const s = (Math.round(usd * 100) / 100).toFixed(2)
+  return s.replace(/\.?0+$/, '')
+}
+
+/** Typed data derived from the ACTION alone — the relay's recovery source. */
+export function hlSendAssetTypedData(action: HlWireSendAssetAction): Eip712TypedData {
+  return {
+    domain: {
+      name: 'HyperliquidSignTransaction',
+      version: '1',
+      chainId: parseInt(action.signatureChainId, 16),
+      verifyingContract: '0x0000000000000000000000000000000000000000',
+    },
+    types: {
+      'HyperliquidTransaction:SendAsset': [
+        { name: 'hyperliquidChain', type: 'string' },
+        { name: 'destination', type: 'string' },
+        { name: 'sourceDex', type: 'string' },
+        { name: 'destinationDex', type: 'string' },
+        { name: 'token', type: 'string' },
+        { name: 'amount', type: 'string' },
+        { name: 'fromSubAccount', type: 'string' },
+        { name: 'nonce', type: 'uint64' },
+      ],
+    },
+    primaryType: 'HyperliquidTransaction:SendAsset',
+    message: {
+      hyperliquidChain: action.hyperliquidChain,
+      destination: action.destination,
+      sourceDex: action.sourceDex,
+      destinationDex: action.destinationDex,
+      token: action.token,
+      amount: action.amount,
+      fromSubAccount: action.fromSubAccount,
+      nonce: action.nonce,
+    },
+  }
+}
+
+/** The exact move the client signs: the wallet's OWN main perp balance → a
+ *  builder dex this layer builds on, in USDC. Nothing is configurable from
+ *  the outside but the wallet's chain, the dex and the amount — and the relay
+ *  re-guards all three. */
+export function hlDexTransferArtifacts(input: { from: string; dex: string; amount: string; nonce: number; signatureChainId: number; isTestnet: boolean }): {
+  action: HlWireSendAssetAction
+  typedData: Eip712TypedData
+} {
+  const action: HlWireSendAssetAction = {
+    type: 'sendAsset',
+    signatureChainId: `0x${input.signatureChainId.toString(16)}`,
+    hyperliquidChain: input.isTestnet ? 'Testnet' : 'Mainnet',
+    destination: input.from.toLowerCase(),
+    sourceDex: '',
+    destinationDex: input.dex,
+    token: input.isTestnet ? HL_USDC_TOKEN.testnet : HL_USDC_TOKEN.mainnet,
+    amount: input.amount,
+    fromSubAccount: '',
+    nonce: input.nonce,
+  }
+  return { action, typedData: hlSendAssetTypedData(action) }
+}
+
+/**
+ * Relay-side guard for a submitted move (fail closed). `mainWithdrawableUsd`
+ * is the live free balance of the main perp account when the caller read it
+ * (null = unread: the venue then has the last word on the amount).
+ */
+export function guardHlDexTransfer(
+  action: HlWireSendAssetAction,
+  ctx: { from: string; isTestnet: boolean; mainWithdrawableUsd?: number | null },
+): GuardrailReport {
+  const checks: GuardrailCheck[] = []
+  const block = (id: string, ok: boolean, okNote: string, badNote: string) =>
+    checks.push({ id, level: 'block', ok, note: ok ? okNote : badNote })
+  const dex = typeof action.destinationDex === 'string' ? action.destinationDex : ''
+  const known = isOrderableHlDex(dex) && HL_BUILDER_DEXES[dex]?.name === dex ? HL_BUILDER_DEXES[dex] : null
+  block('xfer-shape', action.type === 'sendAsset', 'A balance move only — no order rides in this signature.', 'Malformed transfer action — refusing.')
+  block(
+    'xfer-own-account',
+    typeof action.destination === 'string' && action.destination.toLowerCase() === ctx.from.toLowerCase(),
+    'Stays in your own Hyperliquid account — the destination is the signing wallet.',
+    'The transfer names a destination that is not the signing wallet — refusing.',
+  )
+  block('xfer-source', action.sourceDex === '', 'Leaves your main perp balance.', 'Only a move out of the main perp balance is built here.')
+  block(
+    'xfer-dest',
+    !!known,
+    known ? `Lands on the ${known.label} builder dex — where the order is placed.` : '',
+    `Pantessa builds no move into "${dex}" — only into a builder dex it places orders on.`,
+  )
+  const token = ctx.isTestnet ? HL_USDC_TOKEN.testnet : HL_USDC_TOKEN.mainnet
+  block('xfer-token', action.token === token, 'USDC — the dex\'s own collateral.', 'The transfer carries a token other than USDC — refusing.')
+  block('xfer-subaccount', action.fromSubAccount === '', 'From the main account, not a sub-account.', 'Sub-account transfers are not built here.')
+  const amount = typeof action.amount === 'string' && /^\d+(?:\.\d{1,2})?$/.test(action.amount) ? Number(action.amount) : NaN
+  const free = ctx.mainWithdrawableUsd
+  const covered = free == null || !Number.isFinite(free) || amount <= free + 0.005
+  block(
+    'xfer-amount',
+    Number.isFinite(amount) && amount >= 0.01 && covered,
+    `$${action.amount} USDC${free != null && Number.isFinite(free) ? ` of the $${free.toFixed(2)} free in your perp balance` : ''}.`,
+    !Number.isFinite(amount) || amount < 0.01
+      ? 'The transfer amount is not a whole-cent dollar figure — refusing.'
+      : `Your main perp balance has $${(free ?? 0).toFixed(2)} free — less than the $${action.amount} this move needs.`,
+  )
+  block(
+    'xfer-network',
+    action.hyperliquidChain === (ctx.isTestnet ? 'Testnet' : 'Mainnet'),
+    `${action.hyperliquidChain} transfer matches the venue network.`,
+    'Transfer network does not match the venue — refusing.',
+  )
+  // Not money moved: the USDC changes ledgers inside the user's own account.
+  return buildReport(0, checks)
+}
+
+/** Collateral a builder-dex OPEN should have behind it IN THE DEX: notional
+ *  over the leverage being set (default 3 — the same yardstick the deposit
+ *  plan uses, hlCollateralTargetUsd), to the cent, without the bridge floor
+ *  (a move between a wallet's own ledgers has no minimum). PURE. */
+export function hlDexCollateralNeedUsd(notionalUsd: number, leverage = 3): number {
+  return Math.ceil((notionalUsd / leverage) * 100) / 100
+}
+
+/**
+ * How much USDC to move from the main perp balance into a builder dex before
+ * an open, or 0 when none is needed (or possible). PURE:
+ *   · the dex already covers the yardstick → 0;
+ *   · otherwise the gap, capped at what the main balance has free — the
+ *     chat's funding gate runs first, so a short main balance has normally
+ *     become a deposit job before this is asked.
+ */
+export function hlDexTransferUsd(input: { notionalUsd: number; leverage?: number; dexAvailableUsd: number; transferableUsd: number }): number {
+  const need = hlDexCollateralNeedUsd(input.notionalUsd, input.leverage ?? 3)
+  const gap = need - Math.max(0, input.dexAvailableUsd)
+  if (!(gap > 0.005)) return 0
+  const have = Math.floor(Math.max(0, input.transferableUsd) * 100) / 100
+  const move = Math.min(Math.ceil(gap * 100) / 100, have)
+  return move >= 0.01 ? Number(move.toFixed(2)) : 0
+}
+
+/** The smallest dollar ask that still clears the venue's minimum once the
+ *  size is rounded DOWN to the market's step, with a little headroom for the
+ *  mark moving — in whole dollars. On a coarse-step market the step itself
+ *  is dollars wide (`xyz:SP500` trades in 0.001 = ~$7.46, so "$12 of SP500"
+ *  rounds down to one step and is under the venue's $10). PURE. */
+export function hlMinOpenUsd(markPx: number, szDecimals: number): number {
+  const stepUsd = markPx / 10 ** szDecimals
+  if (!Number.isFinite(stepUsd) || stepUsd <= 0) return HL_MIN_ORDER_USD + 1
+  const steps = Math.max(1, Math.ceil(HL_MIN_ORDER_USD / stepUsd - 1e-9))
+  return Math.ceil(steps * stepUsd * 1.03)
+}
+
 // ── Guard (fail closed; runs at BUILD and again at SUBMIT) ──────────────────
 
-export interface HlExecGuardContext {
+export interface HlExecGuardContext extends HlGuardMarket {
   markPx: number
+  /** The venue's asset id for the market (HlMarketSnapshot.assetIndex). */
   assetIndex: number
   /** Collateral available to trade (hlCollateralUsd) — 0/absent blocks opens. */
   withdrawableUsd: number
   positionSzi: number
+  /** The market's size decimals — lets a too-small order name the size step. */
+  szDecimals?: number
+  /** USDC a signed move brings into the builder dex BEFORE this order (the
+   *  build's own pre-step). Counted as collateral at build; at submit the
+   *  move has landed and the live figure stands alone. */
+  pendingTransferUsd?: number
 }
 
 export function guardHlExecBuild(intent: HlOrderIntent, action: HlWireOrderAction, ctx: HlExecGuardContext): GuardrailReport {
@@ -778,10 +1116,17 @@ export function guardHlExecBuild(intent: HlOrderIntent, action: HlWireOrderActio
     checks.push({ id, level: 'block', ok, note: ok ? okNote : badNote })
 
   const order = action.orders.length === 1 ? action.orders[0] : null
+  const ticker = hlTickerOf(intent.coin)
+  const dexLabel = ctx.dex ? (HL_BUILDER_DEXES[ctx.dex]?.label ?? ctx.dex) : null
   block('shape', !!order && action.type === 'order' && action.grouping === 'na', 'One order, standard grouping.', 'Malformed action — refusing.')
   let notionalUsd: number | null = null
   if (order) {
-    block('asset-pinned', order.a === ctx.assetIndex, `Asset pinned to ${intent.coin} (index ${ctx.assetIndex}).`, `Order asset ${order.a} ≠ ${intent.coin}'s live index ${ctx.assetIndex}.`)
+    block('asset-pinned', order.a === ctx.assetIndex, `Asset pinned to ${ticker} (id ${ctx.assetIndex}).`, `Order asset ${order.a} ≠ ${ticker}'s live id ${ctx.assetIndex}.`)
+    // WHICH market the id names, checked against the registry as well as the
+    // live read (lib/hl-dex): a builder-dex id is only ever accepted for a
+    // market resolved on a proven dex, at that dex's own slot.
+    const identity = hlAssetIdentity(order.a, ctx)
+    block('asset-market', identity.ok, identity.note, identity.note)
     block('ioc-only', order.t.limit?.tif === 'Ioc', 'Immediate-or-cancel — nothing rests.', 'Only IOC orders are built here.')
     // Builder fee pinned to a two-shape family: when configured the action
     // carries EITHER exactly OUR recipient at exactly OUR rate (≤ the venue's
@@ -811,7 +1156,15 @@ export function guardHlExecBuild(intent: HlOrderIntent, action: HlWireOrderActio
     block('price-bounded', px > 0 && Math.abs(px - ctx.markPx) / ctx.markPx <= bound, `Limit ${order.p} within ${HL_EXEC_SLIPPAGE_BPS}bps of mark ${ctx.markPx}.`, `Limit ${order.p} strays >${HL_EXEC_SLIPPAGE_BPS}bps from mark ${ctx.markPx}.`)
     const sz = Number(order.s)
     notionalUsd = Number((sz * ctx.markPx).toFixed(2))
-    block('min-notional', notionalUsd >= HL_MIN_ORDER_USD, `~$${notionalUsd} notional (venue min $${HL_MIN_ORDER_USD}).`, `~$${notionalUsd} is under the venue's $${HL_MIN_ORDER_USD} minimum — it would be rejected.`)
+    // On a coarse-step market the rounding is what refuses: xyz:SP500 trades
+    // in 0.001 (~$7.46), so "$12 of SP500" rounds DOWN to one step. Say the
+    // step and the smallest ask that works, not just "under $10".
+    const stepUsd = ctx.szDecimals !== undefined ? ctx.markPx / 10 ** ctx.szDecimals : NaN
+    const stepNote =
+      intent.kind === 'open' && Number.isFinite(stepUsd) && stepUsd >= 0.5
+        ? ` ${ticker} trades in steps of ${10 ** -(ctx.szDecimals as number)} (~$${stepUsd.toFixed(2)} each) and the size rounds down, so the smallest order here is about $${hlMinOpenUsd(ctx.markPx, ctx.szDecimals as number)}.`
+        : ''
+    block('min-notional', notionalUsd >= HL_MIN_ORDER_USD, `~$${notionalUsd} notional (venue min $${HL_MIN_ORDER_USD}).`, `~$${notionalUsd} is under the venue's $${HL_MIN_ORDER_USD} minimum — it would be rejected.${stepNote}`)
     if (intent.kind === 'close') {
       block('reduce-only', order.r === true, 'Reduce-only — can only shrink the position.', 'Close builds must be reduce-only.')
       block('side-opposes', ctx.positionSzi !== 0 && order.b === ctx.positionSzi < 0, 'Order opposes the open position.', 'Order does not oppose the open position.')
@@ -819,12 +1172,29 @@ export function guardHlExecBuild(intent: HlOrderIntent, action: HlWireOrderActio
     } else {
       const sideWord = intent.isBuy ? 'long' : 'short'
       block('side-as-asked', order.b === intent.isBuy, `Opens the ${sideWord} you asked for.`, 'Order side differs from the ask.')
-      block('has-collateral', ctx.withdrawableUsd > 0, `$${ctx.withdrawableUsd.toFixed(2)} available to trade on the account.`, 'No free collateral on the Hyperliquid account — deposit first ("deposit 10 usdc to hyperliquid").')
+      // A builder dex keeps its own balance on a standard account: the
+      // collateral that counts is what is IN the dex, plus the move this
+      // build signs first (pendingTransferUsd — at submit it has landed and
+      // the live figure stands alone).
+      const pending = Math.max(0, ctx.pendingTransferUsd ?? 0)
+      const collateral = ctx.withdrawableUsd + pending
+      block(
+        'has-collateral',
+        collateral > 0,
+        dexLabel
+          ? pending > 0
+            ? `$${pending.toFixed(2)} moves into the ${dexLabel} dex first${ctx.withdrawableUsd > 0 ? `, beside the $${ctx.withdrawableUsd.toFixed(2)} already there` : ''} — a builder dex keeps its own balance.`
+            : `$${ctx.withdrawableUsd.toFixed(2)} available to trade on the ${dexLabel} dex.`
+          : `$${ctx.withdrawableUsd.toFixed(2)} available to trade on the account.`,
+        dexLabel
+          ? `No free collateral on the ${dexLabel} builder dex, and none in your Hyperliquid perp balance to move there — deposit first ("deposit 10 usdc to hyperliquid").`
+          : 'No free collateral on the Hyperliquid account — deposit first ("deposit 10 usdc to hyperliquid").',
+      )
       // Margin sufficiency is the venue's final call (leverage settings live
       // there); we surface it rather than double-book it. Explicit leverage
       // tightens the yardstick to the multiple being SET.
       const effLev = intent.leverage ?? 3
-      const marginOk = notionalUsd <= ctx.withdrawableUsd * effLev
+      const marginOk = notionalUsd <= collateral * effLev
       checks.push({ id: 'margin', level: 'warn', ok: marginOk, note: marginOk ? `Comfortably within collateral at ≤${effLev}x.` : 'Large vs collateral — the venue may reject on margin.' })
     }
   }
@@ -890,6 +1260,23 @@ export function hlNonceStale(nonce: number, now = Date.now()): boolean {
 }
 
 /**
+ * A nonce for a step the CLIENT signs at tap time (the builder-fee approval,
+ * the move into a builder dex): the clock, unless that exact millisecond is
+ * already spoken for by another action on the same card. The venue refuses a
+ * repeated nonce outright — "Invalid nonce: duplicate nonce 1794237548856",
+ * met on testnet 2026-11-09 when a script signed the move in the same
+ * millisecond the order had been built in; the move landed and the order
+ * behind it was dead. A person's tap is never that fast; an agent's is.
+ * PURE given `now`.
+ */
+export function hlFreshNonce(taken: readonly (number | null | undefined)[], now = Date.now()): number {
+  const used = new Set(taken.filter((n): n is number => typeof n === 'number'))
+  let nonce = now
+  while (used.has(nonce)) nonce++
+  return nonce
+}
+
+/**
  * The collateral an OPEN can actually draw on. `clearinghouseState.withdrawable`
  * alone is NOT it: on a unified account (and under portfolio margin) the venue
  * keeps collateral in spot USDC and sweeps the perp ledger down to the margin
@@ -941,41 +1328,209 @@ export async function readHlCollateralUsd(wallet: string, isTestnet = false): Pr
   })
 }
 
+/** One row of a dex's `meta.universe`, as far as this layer reads it. */
+interface HlUniverseRow {
+  name: string
+  szDecimals: number
+  maxLeverage: number
+  onlyIsolated?: boolean
+  marginMode?: string
+  isDelisted?: boolean
+}
+
+/** A market as the venue lists it right now. */
+export interface HlLiveMarket {
+  /** The venue's own name — `BTC`, `kPEPE`, `xyz:SP500`. */
+  coin: string
+  /** null = the main book. */
+  dex: string | null
+  /** The dex's slot in the live `perpDexs` list; null on the main book. */
+  dexIndex: number | null
+  /** The market's row in its dex's universe. */
+  localIndex: number
+  row: HlUniverseRow
+}
+
+/** The reads `pickHlMarket` decides from — the venue's own answers, nothing
+ *  cached: the main book's universe (skipped when the ask named a dex), the
+ *  `perpDexs` list, and each consulted builder dex's meta (null = that read
+ *  failed). */
+export interface HlMarketReads {
+  main: readonly HlUniverseRow[] | null
+  perpDexs: readonly ({ name?: string; deployer?: string } | null)[] | null
+  dexes: Readonly<Record<string, { universe: readonly HlUniverseRow[]; collateralToken?: number } | null>>
+}
+
+/**
+ * Which market does this coin name, and what is its asset id made of? PURE
+ * on the reads it is handed (the pins feed it the venue's real responses).
+ *   · the MAIN book first for a bare ticker — it wins a collision, as on the
+ *     chart; a `dex:` prefix names that dex and nothing else;
+ *   · then each proven builder dex (lib/hl-dex), where the build fails
+ *     CLOSED on anything that is not the venue this layer was measured
+ *     against: the dex missing from `perpDexs`, a mainnet slot or deployer
+ *     other than the registry's, a collateral token that is not USDC;
+ *   · a market delisted where it was found is used only when nothing lists
+ *     it live (the caller's "no live mark" refusal, as before).
+ * Matching ignores case and returns the venue's own casing (`kPEPE`).
+ */
+export function pickHlMarket(coinInput: string, reads: HlMarketReads, isTestnet = false): HlLiveMarket {
+  const prefix = hlDexOf(coinInput)
+  const ticker = hlTickerOf(coinInput).trim()
+  const label = ticker.toUpperCase()
+  const at = (rows: readonly HlUniverseRow[], want: string) => rows.findIndex((u) => typeof u?.name === 'string' && u.name.toUpperCase() === want.toUpperCase())
+  let delistedOnMain: HlLiveMarket | null = null
+  if (prefix === null) {
+    if (coinInput.includes(':') || !ticker) throw new Error(`${coinInput} is not a Hyperliquid perp`)
+    if (!reads.main) throw new Error('Hyperliquid did not answer with its market list — try again')
+    const i = at(reads.main, ticker)
+    if (i >= 0) {
+      const hit: HlLiveMarket = { coin: reads.main[i].name, dex: null, dexIndex: null, localIndex: i, row: reads.main[i] }
+      if (reads.main[i].isDelisted !== true) return hit
+      delistedOnMain = hit
+    }
+  } else if (!isOrderableHlDex(prefix)) {
+    throw new Error(`${label} is on Hyperliquid's ${prefix} builder dex — Pantessa places orders on the main book and the ${HL_BUILDER_DEX_NAMES.join(', ')} dex only`)
+  }
+  let unread: string | null = null
+  for (const dex of prefix ? [prefix] : HL_BUILDER_DEX_NAMES) {
+    const known = HL_BUILDER_DEXES[dex]
+    const meta = reads.dexes[dex]
+    if (!meta) {
+      unread = known.label
+      continue
+    }
+    const i = at(meta.universe, `${dex}:${ticker}`)
+    if (i < 0 || meta.universe[i].isDelisted === true) continue
+    const dexIndex = reads.perpDexs ? reads.perpDexs.findIndex((d) => d?.name === dex) : -1
+    if (dexIndex < 1) throw new Error(`Hyperliquid's dex list does not carry the ${known.label} dex right now — refusing to build on it`)
+    if (!isTestnet && (dexIndex !== known.mainnetIndex || (reads.perpDexs?.[dexIndex]?.deployer ?? '').toLowerCase() !== known.mainnetDeployer)) {
+      throw new Error(`The ${known.label} dex no longer answers at the slot it was measured at — refusing to build on it`)
+    }
+    if (meta.collateralToken !== known.collateralToken) throw new Error(`The ${known.label} dex's collateral is no longer USDC — refusing to build on it`)
+    return { coin: meta.universe[i].name, dex, dexIndex, localIndex: i, row: meta.universe[i] }
+  }
+  if (delistedOnMain) return delistedOnMain
+  // A read that failed is not a market that does not exist.
+  if (unread) throw new Error(`Hyperliquid's ${unread} dex did not answer, so ${label} could not be looked up there — try again`)
+  throw new Error(`${label} is not a Hyperliquid perp`)
+}
+
+type HlInfoClient = InstanceType<typeof import('@nktkas/hyperliquid').InfoClient>
+
+/** Read what pickHlMarket needs: the main book's meta for a bare ticker, and
+ *  — only when the main book does not list it live, or the ask named a dex —
+ *  `perpDexs` plus the proven builder dexes' metas (one more round-trip, paid
+ *  by builder-dex asks alone). */
+async function readHlMarket(info: HlInfoClient, coinInput: string, isTestnet: boolean): Promise<HlLiveMarket> {
+  const prefix = hlDexOf(coinInput)
+  const reads: { main: HlMarketReads['main']; perpDexs: HlMarketReads['perpDexs']; dexes: Record<string, HlMarketReads['dexes'][string]> } = { main: null, perpDexs: null, dexes: {} }
+  if (prefix === null) {
+    reads.main = (await info.meta()).universe as readonly HlUniverseRow[]
+    const want = hlTickerOf(coinInput).trim().toUpperCase()
+    if (reads.main.some((u) => u.name.toUpperCase() === want && u.isDelisted !== true)) return pickHlMarket(coinInput, reads, isTestnet)
+  }
+  const dexNames = prefix ? (isOrderableHlDex(prefix) ? [prefix] : []) : HL_BUILDER_DEX_NAMES
+  if (dexNames.length) {
+    const [perpDexs, ...metas] = await Promise.all([
+      info.perpDexs().catch(() => null),
+      ...dexNames.map((dex) => info.meta({ dex }).catch(() => null)),
+    ])
+    reads.perpDexs = perpDexs as HlMarketReads['perpDexs']
+    dexNames.forEach((dex, k) => {
+      const meta = metas[k]
+      reads.dexes[dex] = meta ? { universe: meta.universe as readonly HlUniverseRow[], collateralToken: meta.collateralToken } : null
+    })
+  }
+  return pickHlMarket(coinInput, reads, isTestnet)
+}
+
+/** What a builder-dex open can be funded from, beyond what is already in the
+ *  dex — see fetchHlSnapshot. */
+export interface HlAccountFunding {
+  /** Collateral available to trade ON THIS MARKET'S DEX right now (hlCollateralUsd). */
+  withdrawableUsd: number
+  /** Builder-dex markets, STANDARD accounts only: free USDC in the main perp
+   *  balance that a signed `sendAsset` can move into the dex. 0 for the main
+   *  book, for a unified / portfolio-margin account (spot USDC already backs
+   *  the dex), and when the account's mode could not be read. */
+  transferableUsd: number
+  /** `userAbstraction` — read for builder-dex markets only; null otherwise or
+   *  when the read failed. */
+  abstraction: string | null
+}
+
+/** An account whose perp dexes each keep their own balance (measured: a
+ *  "default" account's main-perp USDC trades $0 on xyz). Unknown (a failed
+ *  read) is NOT standard: no move is offered on a guess. */
+export function hlPerDexBalances(abstraction: string | null | undefined): boolean {
+  return abstraction === 'default' || abstraction === 'disabled' || abstraction === 'dexAbstraction'
+}
+
 /** Live market + account snapshot for one coin/wallet (meta + mids +
- *  clearinghouse in two round-trips). Throws on unknown coin. */
-export async function fetchHlSnapshot(coin: string, wallet: string | undefined, isTestnet = false, isBuy?: boolean): Promise<HlMarketSnapshot & { withdrawableUsd: number }> {
+ *  clearinghouse in two round-trips; a builder-dex market costs a third).
+ *  `coin` is what the ask named — `HYPE`, `sp500`, `xyz:SP500` — and the
+ *  snapshot carries the venue's own name and asset id. Throws on unknown coin. */
+export async function fetchHlSnapshot(coin: string, wallet: string | undefined, isTestnet = false, isBuy?: boolean): Promise<HlMarketSnapshot & HlAccountFunding> {
   const { InfoClient, HttpTransport } = await import('@nktkas/hyperliquid')
   const info = new InfoClient({ transport: new HttpTransport({ isTestnet }) })
-  const [meta, mids, state, active, approvedFee] = await Promise.all([
-    info.meta(),
-    info.allMids(),
-    wallet ? info.clearinghouseState({ user: wallet as `0x${string}` }) : Promise.resolve(null),
+  const market = await readHlMarket(info, coin, isTestnet)
+  const venueCoin = market.coin
+  const dex = market.dex
+  const user = wallet as `0x${string}` | undefined
+  const [mids, state, active, approvedFee, mainState, abstractionRaw, spot] = await Promise.all([
+    dex ? info.allMids({ dex }) : info.allMids(),
+    // The position and the balance live in the market's OWN dex.
+    user ? (dex ? info.clearinghouseState({ user, dex }) : info.clearinghouseState({ user })) : Promise.resolve(null),
     // The account's current leverage setting for THIS asset (set even when
     // flat). Fail-soft: null just means an explicit-leverage ask always
     // offers the updateLeverage signature instead of skipping it.
-    wallet ? info.activeAssetData({ user: wallet as `0x${string}`, coin }).catch(() => null) : Promise.resolve(null),
+    user ? info.activeAssetData({ user, coin: venueCoin }).catch(() => null) : Promise.resolve(null),
     // The builder-fee cap already approved for OUR treasury (venue unit:
     // tenths of a bp). Fail-soft null → the turn offers the approval step.
-    wallet && HL_BUILDER_FEE_TENTH_BPS > 0
-      ? info.maxBuilderFee({ user: wallet as `0x${string}`, builder: TREASURY_ADDRESS.toLowerCase() as `0x${string}` }).catch(() => null)
+    user && HL_BUILDER_FEE_TENTH_BPS > 0
+      ? info.maxBuilderFee({ user, builder: TREASURY_ADDRESS.toLowerCase() as `0x${string}` }).catch(() => null)
       : Promise.resolve(null),
+    // Builder dex only — where else this account's USDC sits and which mode
+    // it is in: a standard account can MOVE main-perp USDC into the dex, a
+    // unified one already backs the dex from spot. Fail-soft: unread means
+    // no move is offered and the collateral check explains itself.
+    user && dex ? info.clearinghouseState({ user }).catch(() => null) : Promise.resolve(null),
+    user && dex ? info.userAbstraction({ user }).catch(() => null) : Promise.resolve(null),
+    user && dex ? info.spotClearinghouseState({ user }).catch(() => null) : Promise.resolve(null),
   ])
-  const assetIndex = meta.universe.findIndex((u) => u.name === coin)
-  if (assetIndex < 0) throw new Error(`${coin} is not a Hyperliquid perp`)
-  const markPx = mids[coin] != null ? Number(mids[coin]) : NaN
-  if (!Number.isFinite(markPx)) throw new Error(`no live mark for ${coin}`)
-  const pos = state?.assetPositions.find((ap) => ap.position.coin === coin)
+  const markPx = mids[venueCoin] != null ? Number(mids[venueCoin]) : NaN
+  if (!Number.isFinite(markPx)) throw new Error(`no live mark for ${hlTickerOf(venueCoin)}`)
+  const pos = state?.assetPositions.find((ap) => ap.position.coin === venueCoin)
+  const abstraction = typeof abstractionRaw === 'string' ? abstractionRaw : null
+  const usdc = spot?.balances.find((b) => b.coin === 'USDC')
   return {
-    assetIndex,
-    szDecimals: meta.universe[assetIndex].szDecimals,
+    assetIndex: hlAssetId(market.dexIndex, market.localIndex),
+    coin: venueCoin,
+    dex,
+    dexIndex: market.dexIndex,
+    localIndex: market.localIndex,
+    marginMode: hlMarginModeOf(market.row),
+    szDecimals: market.row.szDecimals,
     markPx,
     positionSzi: pos ? Number(pos.position.szi) : 0,
-    maxLeverage: meta.universe[assetIndex].maxLeverage,
+    maxLeverage: market.row.maxLeverage,
     accountLeverage: active?.leverage ? { type: active.leverage.type, value: Number(active.leverage.value) } : null,
     approvedBuilderFeeTenthBps: typeof approvedFee === 'number' && Number.isFinite(approvedFee) ? approvedFee : null,
     // Collateral available to trade, NOT the raw perp `withdrawable` — see
     // hlCollateralUsd (unified accounts read ~$0 there while fully funded).
-    withdrawableUsd: state ? hlCollateralUsd({ perpWithdrawable: Number(state.withdrawable), availableToTrade: active?.availableToTrade, isBuy }) : 0,
+    // On a builder dex `state` is that dex's own ledger, and the venue's
+    // per-coin availableToTrade is right in every account mode (measured).
+    withdrawableUsd: state
+      ? hlCollateralUsd({
+          perpWithdrawable: Number(state.withdrawable),
+          availableToTrade: active?.availableToTrade,
+          isBuy,
+          ...(dex ? { abstraction, spotUsdcFree: usdc ? Number(usdc.total) - Number(usdc.hold) : null } : {}),
+        })
+      : 0,
+    transferableUsd: dex && mainState && hlPerDexBalances(abstraction) ? Math.max(0, Number(mainState.withdrawable) || 0) : 0,
+    abstraction,
   }
 }
 
@@ -1009,9 +1564,13 @@ export async function hlOpenCollateralShortfall(intent: HlOrderIntent, wallet: s
     if (!(notionalUsd > 0)) return null
     const lev = intent.leverage ?? 3
     const target = hlCollateralTargetUsd(notionalUsd, lev)
-    if (snap.withdrawableUsd >= notionalUsd / lev) return null
-    const depositUsdc = Math.max(HL_MIN_DEPOSIT_USDC, Number((target - snap.withdrawableUsd).toFixed(2)))
-    return { depositUsdc, withdrawableUsd: snap.withdrawableUsd, notionalUsd: Number(notionalUsd.toFixed(2)) }
+    // On a builder dex, a standard account's main-perp USDC counts too: the
+    // build moves it into the dex as its own signed step (hlDexTransferUsd),
+    // so only what the whole Hyperliquid account lacks needs a deposit.
+    const fundable = snap.withdrawableUsd + snap.transferableUsd
+    if (fundable >= notionalUsd / lev) return null
+    const depositUsdc = Math.max(HL_MIN_DEPOSIT_USDC, Number((target - fundable).toFixed(2)))
+    return { depositUsdc, withdrawableUsd: fundable, notionalUsd: Number(notionalUsd.toFixed(2)) }
   } catch {
     return null
   }
@@ -1045,6 +1604,10 @@ export interface HlExecTurn {
   connectWallet?: true
   connectAsk?: string
   connectLabel?: string
+  /** A refusal's next step as chips (the no-dead-ends rule): an order the
+   *  venue's size step rounds under its minimum offers the smallest ask that
+   *  works. Each resume round-trips parseHlIntent. */
+  clarify?: { question: string; options: { label: string; resume: string }[] }
 }
 
 /** The sentence the connect door re-runs when the layer was handed an intent
@@ -1068,6 +1631,10 @@ export async function buildHlExecTurn(
    *  Absent (the jobs runner, which always carries a wallet), the canonical
    *  sentence stands in. */
   originalMessage?: string,
+  /** `isTestnet` builds against the testnet venue (scripts/hl-hip3-drill.ts
+   *  proves a build end to end there with mock funds). Every product caller
+   *  leaves it off: mainnet. */
+  opts?: { isTestnet?: boolean },
 ): Promise<HlExecTurn> {
   if (!walletAddress) {
     // The door, not a wall (standing rule 6): the runtime opens the unified
@@ -1107,7 +1674,16 @@ export async function buildHlExecTurn(
     }
   }
 
-  const snap = await fetchHlSnapshot(intent.coin, walletAddress, false, intent.kind === 'open' ? intent.isBuy : undefined)
+  const isTestnet = opts?.isTestnet === true
+  const snap = await fetchHlSnapshot(intent.coin, walletAddress, isTestnet, intent.kind === 'open' ? intent.isBuy : undefined)
+  // What the card calls the market: the ticker a person reads, and — for a
+  // builder-dex market — the dex it trades on (`SP500 … (XYZ builder dex)`).
+  const ticker = hlTickerOf(snap.coin ?? intent.coin)
+  const dexLabel = snap.dex ? (HL_BUILDER_DEXES[snap.dex]?.label ?? snap.dex) : null
+  const dexTag = hlDexPhrase(snap.dex ?? null)
+  const isolatedOnly = snap.marginMode === 'isolated'
+  const mode = isolatedOnly ? 'isolated' : 'cross'
+  const market: HlGuardMarket = { dex: snap.dex ?? null, dexIndex: snap.dexIndex ?? null, localIndex: snap.localIndex, isTestnet }
   // Q2 self-heal (HANDOFF-gtm-bulletproof §1.2): before attaching the
   // builder fee, ask the venue whether our treasury can actually RECEIVE it.
   // Confirmed-ineligible → build WITHOUT the fee (traced below) so the
@@ -1117,7 +1693,7 @@ export async function buildHlExecTurn(
   let feeOn = HL_BUILDER_FEE_TENTH_BPS > 0
   if (feeOn) {
     try {
-      if (!(await builderFeeEligible())) {
+      if (!(await builderFeeEligible(isTestnet))) {
         feeOn = false
         trace({
           type: 'note',
@@ -1130,25 +1706,57 @@ export async function buildHlExecTurn(
     }
   }
   const action = buildHlOrderAction(intent, snap, { builderFee: feeOn })
+  const builtNotionalUsd = Number(action.orders[0].s) * snap.markPx
+
+  // A builder dex keeps its own balance on a standard account: when the dex
+  // is short and the main perp balance has USDC free, a guarded move INTO the
+  // dex signs first (the wallet's own account both ends — guardHlDexTransfer).
+  // Facts only on the card; the client builds the user-signed payload.
+  let dexTransfer: HlDexTransferFacts | undefined
+  let pendingTransferUsd = 0
+  let transferGuard: GuardrailReport | null = null
+  if (intent.kind === 'open' && snap.dex && snap.transferableUsd > 0) {
+    pendingTransferUsd = hlDexTransferUsd({
+      notionalUsd: builtNotionalUsd,
+      leverage: intent.leverage,
+      dexAvailableUsd: snap.withdrawableUsd,
+      transferableUsd: snap.transferableUsd,
+    })
+    if (pendingTransferUsd > 0) {
+      dexTransfer = { dex: snap.dex, amount: hlUsdcAmount(pendingTransferUsd) }
+      // The same guard the relay runs, over the action the client will build
+      // (the chain id is the wallet's; it changes the domain, not one check).
+      transferGuard = guardHlDexTransfer(
+        hlDexTransferArtifacts({ from: walletAddress, dex: snap.dex, amount: dexTransfer.amount, nonce: 0, signatureChainId: 1, isTestnet }).action,
+        { from: walletAddress, isTestnet, mainWithdrawableUsd: snap.transferableUsd },
+      )
+    }
+  }
+
   let guard = guardHlExecBuild(intent, action, {
     markPx: snap.markPx,
     assetIndex: snap.assetIndex,
     withdrawableUsd: snap.withdrawableUsd,
     positionSzi: snap.positionSzi,
+    szDecimals: snap.szDecimals,
+    pendingTransferUsd,
+    ...market,
   })
+  if (transferGuard) guard = { ...guard, ok: guard.ok && transferGuard.ok, checks: [...transferGuard.checks, ...guard.checks] }
 
   // Explicit leverage ("2x long $12 of HYPE…"): a guarded updateLeverage
   // signature rides AHEAD of the order — never silently ignored. Skipped
-  // only when the account is verifiably ALREADY at that cross multiple.
+  // only when the account is verifiably ALREADY at that multiple in the
+  // mode the market takes (cross, or isolated on an isolated-only market).
   let pre: { action: HlWireLeverageAction; nonce: number; typedData: Eip712TypedData; expected: { coin: string; leverage: number } } | undefined
   let levPhrase = ''
   if (intent.kind === 'open' && intent.leverage) {
-    const already = snap.accountLeverage?.type === 'cross' && snap.accountLeverage.value === intent.leverage
+    const already = snap.accountLeverage?.type === mode && snap.accountLeverage.value === intent.leverage
     if (already) {
-      levPhrase = ` Account is already at ${intent.leverage}x cross on ${intent.coin} — no leverage change needed.`
+      levPhrase = ` Account is already at ${intent.leverage}x ${mode} on ${ticker} — no leverage change needed.`
     } else {
       const levAction = buildHlLeverageAction(intent, snap)
-      const levGuard = guardHlLeverageBuild(intent, levAction, { assetIndex: snap.assetIndex, maxLeverage: snap.maxLeverage })
+      const levGuard = guardHlLeverageBuild(intent, levAction, { assetIndex: snap.assetIndex, maxLeverage: snap.maxLeverage, marginMode: snap.marginMode, ...market })
       // One merged report on the card: the leverage checks lead, the order
       // checks follow; a failure on EITHER side refuses the whole turn.
       guard = { ...guard, ok: guard.ok && levGuard.ok, checks: [...levGuard.checks, ...guard.checks] }
@@ -1156,15 +1764,30 @@ export async function buildHlExecTurn(
         // Distinct nonce (venue nonces must be unique) strictly below the
         // order's — the leverage set is submitted first.
         const levNonce = Date.now() - 1
-        pre = { action: levAction, nonce: levNonce, typedData: hlActionTypedData(levAction, levNonce), expected: { coin: intent.coin, leverage: intent.leverage } }
-        levPhrase = ` Signs ${intent.leverage}x cross leverage first, then the order — two signatures, one card.`
+        pre = { action: levAction, nonce: levNonce, typedData: hlActionTypedData(levAction, levNonce, isTestnet), expected: { coin: intent.coin, leverage: intent.leverage } }
+        levPhrase = dexTransfer
+          ? ` Then signs ${intent.leverage}x ${mode} leverage, then the order.`
+          : ` Signs ${intent.leverage}x ${mode} leverage first, then the order — two signatures, one card.`
       }
     }
   }
   if (!guard.ok) {
-    const bad = guard.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note)
+    const failed = guard.checks.filter((c) => !c.ok && c.level === 'block')
+    const bad = failed.map((c) => c.note)
     trace({ type: 'note', level: 'warn', label: `native hl layer: ${intent.kind} refused — ${bad.join(' · ')}` })
-    return { reply: `🚫 ${bad.join(' ')}`, guardrails: guard }
+    const refusal: HlExecTurn = { reply: `🚫 ${bad.join(' ')}`, guardrails: guard }
+    // The one refusal a bigger number fixes: the size step rounded the order
+    // under the venue's minimum. Offer the smallest ask that clears it.
+    if (intent.kind === 'open' && intent.notionalUsd !== undefined && failed.length === 1 && failed[0].id === 'min-notional') {
+      const usd = hlMinOpenUsd(snap.markPx, snap.szDecimals)
+      const sized: HlOrderIntent = { ...intent, notionalUsd: usd }
+      refusal.clarify = {
+        question: `Size it to ${ticker}'s minimum?`,
+        options: [{ label: `${intent.leverage ? `${intent.leverage}x ` : ''}${intent.isBuy ? 'Long' : 'Short'} $${usd} of ${ticker}`, resume: hlCanonicalAsk(sized) }],
+      }
+      refusal.buildPath = 'native-hl-exec'
+    }
+    return refusal
   }
   // One-time builder-fee approval: needed when the fee is on and the wallet
   // hasn't yet capped it for our treasury (unknown reads offer it too —
@@ -1178,24 +1801,40 @@ export async function buildHlExecTurn(
       ? ` Includes the ${HL_BUILDER_MAX_FEE_RATE} builder fee — first tap approves that cap (one-time), then the order.`
       : ` Includes the ${HL_BUILDER_MAX_FEE_RATE} builder fee (cap already approved).`
     : ''
+  const transferPhrase = dexTransfer
+    ? ` Moves $${dexTransfer.amount} USDC from your Hyperliquid perp balance into the ${dexLabel} dex first — a builder dex keeps its own balance, and the move is its own signature on this card (it never leaves your account).`
+    : ''
+  // An isolated-only market with no leverage named trades at the account's
+  // own setting, and only the position's margin backs it. Say so — the
+  // venue's default there (20x) is not what "long $25" sounds like.
+  const isoPhrase =
+    intent.kind === 'open' && isolatedOnly && !intent.leverage
+      ? ` ${ticker} is an isolated-only market: the position is backed by its own margin${
+          snap.accountLeverage ? ` at your account's ${snap.accountLeverage.value}x setting (about $${(builtNotionalUsd / snap.accountLeverage.value).toFixed(2)})` : ''
+        }, not by the rest of the account — name a leverage ("2x long …") to set it.`
+      : ''
   const nonce = Date.now()
-  const typedData = hlActionTypedData(action, nonce)
+  const typedData = hlActionTypedData(action, nonce, isTestnet)
   const o = action.orders[0]
   const verb = intent.kind === 'close' ? 'Close' : o.b ? 'Long' : 'Short'
-  const levTag = intent.kind === 'open' && intent.leverage ? ` at ${intent.leverage}x (cross)` : ''
-  const summary = `${verb} ${o.s} ${intent.coin}${levTag} on Hyperliquid — IOC at ≤${HL_EXEC_SLIPPAGE_BPS}bps from mark ${snap.markPx} (~$${guard.valueUsd})${intent.kind === 'close' ? ', reduce-only' : ''}.`
+  const levTag = intent.kind === 'open' && intent.leverage ? ` at ${intent.leverage}x (${mode})` : ''
+  const summary = `${verb} ${o.s} ${ticker}${levTag} on Hyperliquid${dexTag} — IOC at ≤${HL_EXEC_SLIPPAGE_BPS}bps from mark ${snap.markPx} (~$${guard.valueUsd})${intent.kind === 'close' ? ', reduce-only' : ''}.`
   const warns = guard.checks.filter((c) => !c.ok && c.level === 'warn').map((c) => ` ⚠️ ${c.note}`).join('')
-  trace({ type: 'status', label: `native hl layer: built ${summary}${pre ? ' (+ leverage pre-step)' : ''}${needsFeeApproval ? ' (+ fee-cap approval)' : ''}` })
+  trace({
+    type: 'status',
+    label: `native hl layer: built ${summary}${snap.dex ? ` [asset ${snap.assetIndex} = ${snap.coin}]` : ''}${dexTransfer ? ` (+ $${dexTransfer.amount} move into the ${snap.dex} dex)` : ''}${pre ? ' (+ leverage pre-step)' : ''}${needsFeeApproval ? ' (+ fee-cap approval)' : ''}`,
+  })
   return {
-    reply: `🔏 ${summary}${levPhrase}${feePhrase}${warns}`,
+    reply: `🔏 ${summary}${transferPhrase}${levPhrase}${isoPhrase}${feePhrase}${warns}`,
     orderRequest: {
       protocol: 'hyperliquid',
       typedData,
       hl: {
         action,
         nonce,
-        isTestnet: false,
+        isTestnet,
         expected: { coin: intent.coin, kind: intent.kind, isBuy: o.b },
+        ...(dexTransfer ? { dexTransfer } : {}),
         ...(pre ? { pre } : {}),
         ...(needsFeeApproval ? { feeApproval: { builder: TREASURY_ADDRESS.toLowerCase(), maxFeeRate: HL_BUILDER_MAX_FEE_RATE, feeTenthBps: HL_BUILDER_FEE_TENTH_BPS } } : {}),
       },

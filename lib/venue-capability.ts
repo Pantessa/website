@@ -25,7 +25,8 @@
 //  they are held to the live lists by a harness pin.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { chartPairFor, isHip3Pair, type ChartPair } from '@/lib/charts'
+import { chartPairFor, isChartOnlyPair, isHip3Pair, type ChartPair } from '@/lib/charts'
+import { resolveHlCoin } from '@/lib/hl-dex'
 import { AAVE_CHAIN_ID, HL_SIGNING_CHAIN_ID, venuesFor } from '@/lib/symbol-venues'
 import { canFill, fillRefusal, type CapabilitySideKey, type TradabilityMap } from '@/lib/tradability'
 import { normalizeWatchSymbol } from '@/lib/watchlists'
@@ -84,10 +85,20 @@ export const aaveRefusal = (token: string, side: 'supply' | 'collateral'): strin
     ? `${token.toUpperCase()} isn't an active, supplyable Aave v4 reserve on Ethereum.`
     : `Aave v4 doesn't count ${token.toUpperCase()} as collateral on Ethereum.`
 
-/** Is the coin a live Hyperliquid perp? `listed` is the venue's own universe
- *  with delisted markets already removed (lib/hl-universe). */
-export function perpCapability(universe: { listed: ReadonlySet<string> }, coin: string): boolean {
-  return universe.listed.has(coin.toUpperCase())
+/**
+ * Is the coin a live Hyperliquid perp an order builds on? Asked the way the
+ * order layer resolves a coin (lib/hl-dex resolveHlCoin): the MAIN book's
+ * universe first, then each builder dex the layer places orders on —
+ * `SP500` is `xyz:SP500`. `listed` is the venue's own universe with delisted
+ * markets already removed (lib/hl-universe); `builderDexes` maps a dex name to
+ * its listed markets (omitted / unread = the main book alone decides).
+ */
+export function perpCapability(
+  universe: { listed: ReadonlySet<string> },
+  coin: string,
+  builderDexes?: Readonly<Record<string, ReadonlySet<string> | null | undefined>> | null,
+): boolean {
+  return resolveHlCoin(coin, { main: universe.listed, dexes: builderDexes ?? {} }) !== null
 }
 
 export const perpRefusal = (coin: string): string => `Hyperliquid doesn't list a live ${coin.toUpperCase()} perp.`
@@ -113,6 +124,9 @@ export interface CapabilityTarget {
   symbol: string
   side: CapabilitySideKey
   chainId: number
+  /** The sentence arms the Guardian on a perp position ("Protect my HYPE
+   *  long …") rather than placing an order. */
+  guard?: true
 }
 
 /**
@@ -129,43 +143,59 @@ export function capabilityTarget(ask: string): CapabilityTarget | null {
     const m = ask.match(re)
     if (m) return { symbol: m[1].toUpperCase(), side: 'supply', chainId: AAVE_CHAIN_ID }
   }
-  const perp = ask.match(PERP_RE) ?? ask.match(PERP_GUARD_RE)
-  if (perp) return { symbol: normalizeWatchSymbol(perp[1]) ?? perp[1].toUpperCase(), side: 'perp', chainId: HL_SIGNING_CHAIN_ID }
+  const order = ask.match(PERP_RE)
+  if (order) return { symbol: normalizeWatchSymbol(order[1]) ?? order[1].toUpperCase(), side: 'perp', chainId: HL_SIGNING_CHAIN_ID }
+  const guard = ask.match(PERP_GUARD_RE)
+  if (guard) return { symbol: normalizeWatchSymbol(guard[1]) ?? guard[1].toUpperCase(), side: 'perp', chainId: HL_SIGNING_CHAIN_ID, guard: true }
   return null
 }
 
 /**
  * Show this chip? Anything that needs no listing: yes. A supply or a perp:
- * yes unless its venue has been measured NOT listing the token, recently.
+ * yes unless its venue has been measured NOT listing the token, recently —
+ * and, structurally, never where the builder cannot build (builderMarketBar).
  */
 export function canRunVenueAsk(ask: string, tradable: TradabilityMap | null | undefined, now = Date.now()): boolean {
   const t = capabilityTarget(ask)
   if (!t) return true
-  if (hip3Perp(t)) return false
+  if (builderMarketBar(t)) return false
   if (!tradable) return true
   return canFill(tradable[t.symbol], t.side, t.chainId, now)
 }
 
 /**
- * A perp ask on a market that only a builder-deployed (HIP-3) dex lists —
- * "Long $25 of SP500 on Hyperliquid" on /t/SP500 (2026-11-09). Structural,
- * not measured: the order layer builds on the main book only (lib/charts
- * isHip3Pair has the measurement), so no verdict can open it. Known only
- * where the live perp table is (the server, a symbol page); elsewhere the
- * pair is unknown and the measured verdict decides as before.
+ * The STRUCTURAL bars on a builder-dex (HIP-3) market — not measured, so no
+ * verdict can open them:
+ *   · `chart-only` — the market's dex is not one the order layer builds on
+ *     (lib/charts isChartOnlyPair; the registry in lib/hl-dex is the gate).
+ *     Until 2026-11-09 that was every builder-dex market; `xyz` is proven now,
+ *     so "Long $25 of SP500 on Hyperliquid" builds.
+ *   · `guard` — a Guardian stop on ANY builder-dex position: the watcher
+ *     reads the main book's ledger only and would never see it.
+ * Known only where the live perp table is (the server, a symbol page);
+ * elsewhere the pair is unknown and the measured verdict decides as before.
  */
-function hip3Perp(t: CapabilityTarget): boolean {
-  return t.side === 'perp' && isHip3Pair(chartPairFor(t.symbol))
+function builderMarketBar(t: CapabilityTarget): 'chart-only' | 'guard' | null {
+  if (t.side !== 'perp') return null
+  const pair = chartPairFor(t.symbol)
+  if (isChartOnlyPair(pair)) return 'chart-only'
+  if (t.guard && isHip3Pair(pair)) return 'guard'
+  return null
 }
 
 /** The page's words for a chart whose market the order layer cannot reach yet. */
 export const hip3Refusal = (coin: string): string => `${coin.toUpperCase()} is a Hyperliquid builder market: the chart is live, and Pantessa does not place orders there yet.`
 
+/** Why no stop can be armed on a builder-dex position. */
+export const builderGuardRefusal = (coin: string): string =>
+  `${coin.toUpperCase()} trades on a Hyperliquid builder dex: long, short and close build here, and the Guardian watches the main book only — no stop can be armed on it yet.`
+
 /** The venue's words for why a chip is missing, or null when nothing is
  *  known to refuse. */
 export function venueAskRefusal(ask: string, tradable: TradabilityMap | null | undefined, now = Date.now()): string | null {
   const t = capabilityTarget(ask)
-  if (t && hip3Perp(t)) return hip3Refusal(t.symbol)
+  const bar = t ? builderMarketBar(t) : null
+  if (t && bar) return bar === 'guard' ? builderGuardRefusal(t.symbol) : hip3Refusal(t.symbol)
   if (!t || !tradable) return null
   return fillRefusal(tradable[t.symbol], t.side, t.chainId, now)
 }

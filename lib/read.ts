@@ -71,21 +71,31 @@ export interface ReadInstrument {
   typical: number
   /** Whose number it is, for the tile's tag and the foot. */
   venue: 'Hyperliquid' | 'Coinbase' | 'Index data'
-  /** Orders on the symbol itself build here (a coin with a spot venue). */
+  /** Orders on the symbol itself build here: a coin with a spot venue, or a
+   *  Hyperliquid builder-dex perp the order layer builds on (the S&P 500, gold
+   *  and oil are `xyz:` markets — lib/hl-dex; tradable since 2026-11-09). The
+   *  card offers its own market first and still names the nearest listed
+   *  thing (`near`) for anyone who would rather hold the fund than a perp. */
   direct: boolean
   /** The nearest things listed here, nearest first. */
   near: readonly ReadNear[]
+  /** The venue's own market name when the instrument is a Hyperliquid perp
+   *  that only the live universe knows (`xyz:SP500`). The card runs on `/`,
+   *  where the browser holds no live perp table (only a symbol page is handed
+   *  one), so the pair its chips are composed from is stated here: the server
+   *  and the browser then offer the same chips. */
+  coin?: string
 }
 
 /** Nine instruments, in tile order. */
 export const READ_INSTRUMENTS: readonly ReadInstrument[] = [
-  { id: 'spx', label: 'S&P 500', name: 'S&P 500', subject: 'Stocks', plural: true, source: 'app', symbol: 'SP500', unit: 'level', typical: 0.8, venue: 'Hyperliquid', direct: false, near: [{ symbol: 'SPY', as: 'the S&P 500 fund' }] },
+  { id: 'spx', label: 'S&P 500', name: 'S&P 500', subject: 'Stocks', plural: true, source: 'app', symbol: 'SP500', unit: 'level', typical: 0.8, venue: 'Hyperliquid', coin: 'xyz:SP500', direct: true, near: [{ symbol: 'SPY', as: 'the S&P 500 fund' }] },
   { id: 'ndx', label: 'Nasdaq 100', name: 'Nasdaq 100', subject: null, plural: false, source: 'index', symbol: '^NDX', unit: 'level', typical: 1.1, venue: 'Index data', direct: false, near: [{ symbol: 'QQQ', as: 'the Nasdaq 100 fund' }] },
   { id: 'us10y', label: '10-yr yield', name: 'US 10-year Treasury yield', subject: 'Yields', plural: true, source: 'index', symbol: '^TNX', unit: 'yield', typical: 6, venue: 'Index data', direct: false, near: [{ symbol: 'SHY', as: 'a short Treasuries fund' }, { symbol: 'TLT', as: 'long Treasuries' }] },
   { id: 'vix', label: 'VIX', name: 'VIX volatility index', subject: null, plural: false, source: 'index', symbol: '^VIX', unit: 'level', typical: 6, venue: 'Index data', direct: false, near: [] },
   { id: 'dxy', label: 'Dollar', name: 'US dollar index', subject: 'The dollar', plural: false, source: 'index', symbol: 'DX-Y.NYB', unit: 'level', typical: 0.4, venue: 'Index data', direct: false, near: [{ symbol: 'EUR', as: 'the euro' }, { symbol: 'JPY', as: 'the yen' }] },
-  { id: 'gold', label: 'Gold', name: 'Gold', subject: 'Gold', plural: false, source: 'app', symbol: 'GOLD', unit: 'usd', typical: 1, venue: 'Hyperliquid', direct: false, near: [{ symbol: 'GLD', as: 'the gold fund' }] },
-  { id: 'oil', label: 'Oil', name: 'Crude oil (WTI)', subject: 'Oil', plural: false, source: 'app', symbol: 'CL', unit: 'usd', typical: 2, venue: 'Hyperliquid', direct: false, near: [{ symbol: 'USO', as: 'the oil fund' }] },
+  { id: 'gold', label: 'Gold', name: 'Gold', subject: 'Gold', plural: false, source: 'app', symbol: 'GOLD', unit: 'usd', typical: 1, venue: 'Hyperliquid', coin: 'xyz:GOLD', direct: true, near: [{ symbol: 'GLD', as: 'the gold fund' }] },
+  { id: 'oil', label: 'Oil', name: 'Crude oil (WTI)', subject: 'Oil', plural: false, source: 'app', symbol: 'CL', unit: 'usd', typical: 2, venue: 'Hyperliquid', coin: 'xyz:CL', direct: true, near: [{ symbol: 'USO', as: 'the oil fund' }] },
   { id: 'btc', label: 'Bitcoin', name: 'Bitcoin', subject: 'Bitcoin', plural: false, source: 'app', symbol: 'BTC', unit: 'usd', typical: 2.5, venue: 'Coinbase', direct: true, near: [] },
   { id: 'eth', label: 'Ether', name: 'Ether', subject: null, plural: false, source: 'app', symbol: 'ETH', unit: 'usd', typical: 3.2, venue: 'Coinbase', direct: true, near: [] },
 ]
@@ -434,6 +444,14 @@ export function readPointAt(points: readonly ReadPoint[], frac: number): number 
 }
 
 // ── Words around the numbers ─────────────────────────────────────────────────
+
+/** The chart pair an instrument's OWN chips are composed from, when the table
+ *  states its market (`coin`): a Hyperliquid perp pair, built from static
+ *  facts so the server render and the browser agree. Null for everything else
+ *  (a coin's pair comes from the static chart table as before). */
+export function readOwnPair(inst: ReadInstrument): { symbol: string; source: 'hyperliquid'; pair: string; label: string } | null {
+  return inst.coin ? { symbol: inst.symbol, source: 'hyperliquid', pair: inst.coin, label: `${inst.symbol} / USD` } : null
+}
 
 /** Whose number it is, one sentence, for the panel beside the chart. */
 export function readVenueLine(inst: ReadInstrument): string {
