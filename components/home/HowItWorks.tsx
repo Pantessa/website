@@ -47,7 +47,7 @@ export const HOW_STATIONS = [
     id: 'guard',
     who: 'The guard',
     name: 'Guards check it',
-    text: 'Pinned contracts and selectors, exact amounts, the proceeds back to you, a price bound, and a dry run where the venue allows one. Anything off, it refuses and says why.',
+    text: 'Pinned contracts and selectors, exact amounts, the proceeds back to you, a price bound, and on some routes a dry run against the chain. Anything off, it refuses and says why.',
   },
   {
     id: 'sign',

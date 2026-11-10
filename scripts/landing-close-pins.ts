@@ -41,7 +41,7 @@ export function landingClosePins(check: Check): void {
   check('close: how has six stations in order (say → quote → build → guard → sign → receipt)', JSON.stringify(ids) === JSON.stringify(STATION_ORDER), ids.join(','))
   check('close: how renders the stations from the table (one map, an ordered list)', /<ol className="how__rail"[\s\S]*HOW_STATIONS\.map\(/.test(how))
   check('close: the model is named only as never writing (station three says it never writes calldata or an address)', /never writes calldata, an amount or an address/.test(how))
-  check('close: a dry run is claimed only "where the venue allows one" (GUARDRAILS residuals: not every venue)', /dry run where the venue allows one/.test(how) && !/always (?:dry|simulat)/i.test(how))
+  check('close: a dry run is claimed only "on some routes" (QA, 2026-11-10: the dry run is ours to run, on the LiFi leg, the refresh route and the jobs runner — not every venue\'s first build)', /on some routes a dry run against the chain/.test(how) && !/always (?:dry|simulat)/i.test(how))
 
   // ── No typed number: fees from data.fees, counts from data.counts ──────
   // Text a reader sees: JSX text nodes and string literals that are not a class name, an id, a key or a route.
