@@ -135,12 +135,16 @@ export async function frontDoorPins(check: Check): Promise<void> {
       /\{claim \?\? <h1 className="sr-only">Markets<\/h1>\}/.test(index) &&
       index.indexOf('{claim ?? ') < index.indexOf('className="mkt-frame__bar"') && index.indexOf('className="mkt-frame__bar"') < index.indexOf('className="mk-lead-seat"'),
   )
+  // RE-PINNED 2026-11-10 (landing): the claim grew into the home's hero (lane HERO). The h1, the sentence and the plain /story
+  // link are as they were; the one-line version is no longer a post-hydration decision off the guide's record — the posture is
+  // `<html data-home>` (lib/home-mode, set before first paint) and components/home/hero.css folds the SAME markup, so the block
+  // holds no state at all. The hero's own pins are scripts/landing-hero-pins.ts.
   check(
-    'front door: the claim is the visible h1 (HERO_LINE as one text node — the roster pin reads it), one sentence, and a plain un-prefetched link to /story; the compact (one-line) version is a post-hydration decision off the GUIDE\'s record (`visited.home`, read ONCE at mount — never a subscription that would flip a first visit mid-page, never a key of its own)',
+    'front door: the claim is the visible h1 (HERO_LINE as one text node — the roster pin reads it), one sentence, and a plain un-prefetched link to /story; the one-line version is NOT a post-hydration decision any more — the block holds no state and reads nothing about the visitor (no guide record, session, wallet or storage); the posture attribute and the hero\'s sheet fold it',
     /<h1 className="mk-claim__h1">\{SPLASH\.h1\}<\/h1>/.test(claim) && /<p className="mk-claim__sub">\{SPLASH\.sub\}<\/p>/.test(claim) &&
       /<Link href=\{STORY_HREF\} className="mk-claim__door mono" prefetch=\{false\} data-splash-door>/.test(claim) &&
-      /import \{ getGuideState \} from '@\/lib\/guide'/.test(claim) && /useEffect\(\(\) => \{\s*setSeen\(!!getGuideState\(\)\.visited\.home\)\s*\}, \[\]\)/.test(claim) &&
-      /const compact = seen \|\| status === 'authed' \|\| !!address/.test(claim) && /data-compact=\{compact \|\| undefined\}/.test(claim) &&
+      /<header className="mk-claim" data-splash-claim>/.test(claim) && /import '\.\/hero\.css'/.test(claim) &&
+      !/getGuideState|useState|useEffect|useSession|useAccount|data-compact/.test(claim) &&
       !/SPLASH_SEEN_KEY|localStorage|useGuideState|useLayoutEffect|window\.location/.test(claim),
   )
   const homeFiles = readdirSync('components/home').filter((f) => f.endsWith('.tsx')).map((f) => `components/home/${f}`)
@@ -153,12 +157,15 @@ export async function frontDoorPins(check: Check): Promise<void> {
   const css = src('components/markets/markets.css')
   const rule = (sel: string) => (css.match(new RegExp(`^${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`, 'm')) ?? ['', ''])[1]
   const marginsOnly = (body: string) => body.trim().length > 0 && body.split(';').map((d) => d.trim()).filter(Boolean).every((d) => /^margin(-top|-bottom)?:/.test(d))
+  // RE-PINNED 2026-11-10 (landing): every rule for the claim block moved to components/home/hero.css, beside the component
+  // (lane HERO: one sheet, so two sheets never argue about order); the 72px budget became the hero's two (a stranger's hero,
+  // the returning line — measured in the squad's HERO.md, pinned as rules in scripts/landing-hero-pins.ts). What stays HERE:
+  // markets.css styles no `.mk-claim`, the sentence folds away in the returning line, and the seats' rules are untouched.
+  const heroCss = src('components/home/hero.css').replace(/\/\*[\s\S]*?\*\//g, '')
   check(
-    'front door: markets.css carries the claim block (≤72px by construction: 12px + 27px h1 + 3px + 17px sentence + 8px), hides the sentence on a phone and in the compact version, the two seat classes carry MARGINS ONLY and only when filled (`:not(:empty)` — an empty guide seat leaves no hole), and the gap above the seated pulse band is the seat\'s alone at every width (`.mk-lead-seat .pulse { margin-top: 0 }` — the band\'s own margin never collapsed through its size-container wrapper: 24px, R3)',
-    /padding: 12px 0 8px/.test(rule('.mk-claim')) && /font-size: clamp\(21px, 1\.9vw, 27px\)/.test(rule('.mk-claim__h1')) && /line-height: 1\.02/.test(rule('.mk-claim__h1')) &&
-      /font-size: 12\.5px; line-height: 1\.4/.test(rule('.mk-claim__sub')) &&
-      /\.mk-claim\[data-compact\] \.mk-claim__sub \{ display: none; \}/.test(css) &&
-      /@media \(max-width: 640px\) \{[^}]*\n(?:[^}]*\}\s*)*?\s*\.mk-claim__sub \{ display: none; \}/.test(css) &&
+    'front door: the claim block\'s rules live in components/home/hero.css (markets.css styles no `.mk-claim`), the returning visitor\'s line folds the sentence away on `:root[data-home=\'return\']` (never a `data-compact` flag), the two seat classes carry MARGINS ONLY and only when filled (`:not(:empty)` — an empty guide seat leaves no hole), and the gap above the seated pulse band is the seat\'s alone at every width (`.mk-lead-seat .pulse { margin-top: 0 }` — the band\'s own margin never collapsed through its size-container wrapper: 24px, R3)',
+    !/\.mk-claim/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')) && /^\.mk-claim__h1 \{[^}]*font-size: clamp\(/m.test(heroCss) && /^\.mk-claim__sub \{/m.test(heroCss) &&
+      /^:root\[data-home='return'\] :is\([^)]*\.mk-claim__sub[^)]*\) \{ display: none; \}$/m.test(heroCss) && !/data-compact/.test(heroCss) &&
       marginsOnly(rule('.mk-lead-seat:not(:empty)')) && marginsOnly(rule('.mk-guide-seat:not(:empty)')) && !/^\.mk-(?:lead|guide)-seat \{/m.test(css) &&
       // R3: one gap above the band at EVERY width — the seat owns it; the seated band's own margin is zeroed at top level (unindented = outside any media query)
       /^\.mk-lead-seat \.pulse \{ margin-top: 0; \}$/m.test(css),
@@ -177,11 +184,12 @@ export async function frontDoorPins(check: Check): Promise<void> {
 
   // ── /story, the sitemap, the cards, the crawl ────────────────────────
   const story = code('app/story/page.tsx')
+  // RE-PINNED 2026-11-10 (landing): the brochure's order gains THE TOUR, stacked (<StoryTour />), between the markets band and the share band.
   check(
-    'front door: /story reads its title + description from SPLASH, keeps the VideoObject and its own canonical, carries the slim top line back to the app (MARKETS_HREF) above the movers tape, and still mounts the brochure in order (hero · venue band · map · honesty · band · share · links · embed) + the phone CTA bar',
+    'front door: /story reads its title + description from SPLASH, keeps the VideoObject and its own canonical, carries the slim top line back to the app (MARKETS_HREF) above the movers tape, and still mounts the brochure in order (hero · venue band · map · honesty · band · the tour stacked · share · links · embed) + the phone CTA bar',
     /const TITLE = SPLASH\.storyTitle/.test(story) && /const DESCRIPTION = SPLASH\.storyDescription/.test(story) && /'@type': 'VideoObject'/.test(story) && /const CANONICAL = `\$\{SITE\}\/story`/.test(story) &&
       /data-story-top/.test(story) && /<Link href=\{MARKETS_HREF\}/.test(story) && story.indexOf('data-story-top') < story.indexOf('<MoversStrip />') &&
-      ['<LinksHero />', '<VenueBand />', '<MarketMapTeaser />', '<HonestyStrip />', '<MarketsBand />', '<ShareBand />', '<LinkEconomy />', '<EmbedAnywhere />', '<MobileCtaBar />'].every((k, i, all) => story.includes(k) && (i === 0 || story.indexOf(all[i - 1]) < story.indexOf(k))),
+      ['<LinksHero />', '<VenueBand />', '<MarketMapTeaser />', '<HonestyStrip />', '<MarketsBand />', '<StoryTour data={tour} read={read} />', '<ShareBand />', '<LinkEconomy />', '<EmbedAnywhere />', '<MobileCtaBar />'].every((k, i, all) => story.includes(k) && (i === 0 || story.indexOf(all[i - 1]) < story.indexOf(k))),
   )
   const sitemap = code('app/sitemap.ts')
   check(

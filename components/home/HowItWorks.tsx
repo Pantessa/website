@@ -17,9 +17,9 @@
 // value that is missing drops its line, never leaves a hole. The station
 // numbers are a CSS counter (how.css), so the source carries no digit.
 //
-// A server component: nothing here moves. SpineLink is the door (rule 6).
+// A server component: nothing here moves. LandingLink is the door (rule 6; lib/home-doors).
 
-import SpineLink from '@/components/SpineLink'
+import LandingLink from '@/components/home/LandingLink'
 import { EMPTY_TOUR, type TourSnapshot } from '@/lib/home-tour'
 import './how.css'
 
@@ -158,16 +158,16 @@ export default function HowItWorks({ data }: { data?: TourSnapshot }) {
       </div>
 
       <nav className="how__doors" aria-label="Read more about trust">
-        <SpineLink href="/docs/trust" className="how__door how__door--primary" prefetch={false} data-journey="How: the trust model">
+        <LandingLink href="/docs/trust" className="how__door how__door--primary" prefetch={false} data-journey="How: the trust model">
           <span className="how__doorlabel">Read the trust model</span>
-        </SpineLink>
-        <SpineLink href="/docs/venues" className="how__door" prefetch={false} data-journey="How: the venue manifest">
+        </LandingLink>
+        <LandingLink href="/docs/venues" className="how__door" prefetch={false} data-journey="How: the venue manifest">
           <span className="how__doorlabel">The venue manifest</span>
           {manifest && <span className="how__doorcount mono">{manifest}</span>}
-        </SpineLink>
-        <SpineLink href="/pricing" className="how__door" prefetch={false} data-journey="How: pricing">
+        </LandingLink>
+        <LandingLink href="/pricing" className="how__door" prefetch={false} data-journey="How: pricing">
           <span className="how__doorlabel">Pricing</span>
-        </SpineLink>
+        </LandingLink>
       </nav>
     </section>
   )

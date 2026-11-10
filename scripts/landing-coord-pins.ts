@@ -17,6 +17,7 @@ import { HOME_MODE_ATTR, HOME_MODE_BOOTSTRAP, HOME_RETURN_DAYS, HOME_TOUR_PREF_K
 import { EMPTY_TOUR, TOUR_ANCHOR, TOUR_IDS, TOUR_SIDES, fillSlots, isTourId, parseTourHash, tourAnchor, tourBody, tourFacts, tourJourney, tourSide, type TourSnapshot } from '../lib/home-tour'
 import { staticTourSnapshot, tourFees, tourStaticCounts } from '../lib/home-tour-server'
 import { marketSections } from '../lib/markets'
+import { isSignedInAppHref } from '../lib/home-doors'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -149,6 +150,16 @@ export function landingCoordPins(check: Check): void {
   )
   check('tour journey: one spelling for every door and chip — "Tour <Side>: <what>" — so the flows page can say which side pulled a visitor in', tourJourney('links', 'Mint a link') === `Tour ${tourSide('links').label}: Mint a link`)
 
+  // ── Which door a landing link is (lib/home-doors, components/home/LandingLink) ──
+  const plain = ['/', '/t/AAPL', '/live', '/chat', '/chat?tab=links', '/chat?tab=mcps&mcps=aave', '/community', '/community?compose=trade', '/g/new', '/leaderboard', '/analytics', '/docs', '/docs/embed', '/pricing', '/story', '/links', '//evil.example/wallet', 'https://example.com/wallet', 'wallet']
+  const gatedDoors = TOUR_SIDES.flatMap((s) => s.doors.map((d) => d.href)).filter(isSignedInAppHref)
+  const landingLink = code('components/home/LandingLink.tsx')
+  check(
+    'landing doors: only a page of the SIGNED-IN app gets the sign-in door (the wallet, the dashboard, an open chat); a chart, the chat and its tabs, the community, a docs page, pricing, the story and the links board are plain links — a stranger who taps "Read the docs" goes to the docs. On the tour that is exactly one door: the wallet',
+    ['/wallet', '/wallet?x=1', '/dashboard', '/dashboard/links', '/chat/abc123', '/inbox'].every(isSignedInAppHref) && plain.every((h) => !isSignedInAppHref(h)) && gatedDoors.join() === '/wallet' && /isSignedInAppHref\(href\) \? <SpineLink href=\{href\} \{\.\.\.rest\} \/> : <Link href=\{href\} \{\.\.\.rest\} \/>/.test(landingLink),
+    gatedDoors.join(' ') || 'none gated',
+  )
+
   // ── The static part of the snapshot comes from the registries ──
   const counts = tourStaticCounts()
   const sections = marketSections()
@@ -247,8 +258,8 @@ export function landingCoordPins(check: Check): void {
   const hit = (re: RegExp, except: string[] = []) => src.filter(({ p, c }) => !except.includes(p) && re.test(c)).map(({ p }) => p)
   const stream = hit(/\bWebSocket\b|\bEventSource\b|connectTape|openDuneTape|openHlTape|from ['"]three['"]|from ['"]lightweight-charts['"]|\/api\/chat\b/)
   check('landing fence: the landing opens no stream and loads no chart engine — no WebSocket, no EventSource, no tape feed, no three, no lightweight-charts, no chat call (a miniature is SVG and a polled read)', stream.length === 0, stream.join(' ') || `${tsx.length} files`)
-  const links = hit(/from ['"]next\/link['"]|<Link[\s>]/)
-  check('landing fence: every door into the app is a SpineLink (a signed-in page opens the unified door aimed at itself; a public page is a plain link) — no bare next/link in the landing', links.length === 0, links.join(' ') || 'all SpineLink')
+  const links = hit(/from ['"]next\/link['"]|<Link[\s>]|from ['"]@\/components\/SpineLink['"]|<SpineLink[\s>]/)
+  check("landing fence: every link the landing writes is the ONE LandingLink (components/home/LandingLink: the sign-in door only for a page of the signed-in app, a plain link otherwise) — no bare next/link and no direct SpineLink in the landing's files", links.length === 0, links.join(' ') || 'all LandingLink')
   const prompts = hit(/\?prompt=/, ['components/home/tour/context.tsx'])
   check('landing fence: a sentence runs through act() (connect-to-act into the Ask door) — no `/chat?prompt=` link is written into the page; only the shared context names that fallback', prompts.length === 0, prompts.join(' ') || 'none')
   const unsafe = hit(/dangerouslySetInnerHTML|location\.search|useSearchParams|document\.cookie|\beval\(|new Function\(/)

@@ -38,11 +38,37 @@ export const HOME_DESCRIPTION =
 export const SPLASH = {
   /** The claim — the page's h1, visible (the roster pin reads it on `/`). */
   h1: HERO_LINE,
-  /** One sentence, from HERO_SUB + HOME_DESCRIPTION. Hidden on a phone
-   *  (one line + the door there); still in the server HTML for a crawler. */
+  /** One sentence, from HERO_SUB + HOME_DESCRIPTION. A stranger reads it at
+   *  every width (2026-11-10, the hero); the returning visitor's one-line
+   *  claim folds it away. Always in the server HTML for a crawler. */
   sub: 'Stocks 24/7, perps, spot and yield in one wallet — every chart is the order form, and you keep the pen.',
   /** The door to the long-form story. */
   door: 'What is this?',
+  // ── THE HERO (squad landing, 2026-11-10; lane HERO) ──
+  // A stranger's page opens on a real hero (components/home/SplashClaim +
+  // hero.css); someone who uses the app keeps the one line. The words below
+  // are the stranger's and say nothing the product does not do today.
+  /** Whose page this is, then what kind of thing it is (the spine wears the
+   *  mark, never the name). Mono, over the h1; a phone has no room for it. */
+  eyebrow: ['Pantessa', 'Markets you can act on'],
+  /** Three short proofs: a bold lead and the rest of its sentence. Looking
+   *  needs no wallet and no account (lib/app-entry isPublicAppPath); an
+   *  action asks for the wallet (lib/use-connect-to-act); nothing is held
+   *  for you; UNLIMITED_LINE is the price of looking. */
+  proofs: [
+    { lead: 'No custody.', rest: 'Your wallet signs.' },
+    { lead: 'No sign-up', rest: 'to look.' },
+    { lead: 'Free', rest: 'charts, watchlists and alerts.' },
+  ],
+  /** The stranger's primary door: down to the tour on this page (`#tour`). */
+  tourDoor: 'See everything it does',
+  /** The second door: a real chart, the claim made concrete. Short: it
+   *  shares a phone's row with the primary door. */
+  chartDoor: 'Open a chart',
+  /** The chart it opens (/t/<symbol>): a tokenized stock leads, as it does on the story's hero. */
+  chartSymbol: 'AAPL',
+  /** The returning visitor's small door back to the tour. */
+  returnTour: 'Tour',
   /** /story's own <title> + description + the line back to the app. */
   storyTitle: 'Pantessa — the story behind the chart that executes',
   storyDescription:
