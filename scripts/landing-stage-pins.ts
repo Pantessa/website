@@ -152,10 +152,10 @@ export function landingStagePins(check: Check): void {
       !/window\.scrollTo|scrollTo\(0/.test(tour),
   )
   check(
-    'tour stage: ONE panel is mounted at a time — the selected side\'s, from the map — and none at all in the return posture or while a phone\'s row is folded; on a phone the same stage sits under its row',
+    'tour stage: ONE panel is mounted at a time — the selected side\'s, from the map — and none at all in the return posture or on a phone until a row is opened; wide and mid always show the selected side; on a phone the same stage sits under its row',
     count(tour, /<Panel \/>/g) === 1 &&
       /const Panel = TOUR_PANELS\[sel\.id\]/.test(tour) &&
-      /const showStage = !strip && sel\.open/.test(tour) &&
+      /const showStage = !strip && \(!phone \|\| sel\.open\)/.test(tour) &&
       /const stage = showStage \? \(/.test(tour) &&
       /\{phone && on && stage\}/.test(tour) &&
       /\{!phone && stage\}/.test(tour) &&
@@ -191,6 +191,10 @@ export function landingStagePins(check: Check): void {
     'tour journeys: every tab, the Next button, every strip door and both posture controls carry a journey label, so the flows page can say which side pulled a visitor in',
     /data-journey=\{tourJourney\(s\.id, 'tab'\)\}/.test(tour) && /data-journey=\{tourJourney\(nextId, 'next'\)\}/.test(tour) && /'data-journey': tourJourney\(side\.id, 'strip door'\)/.test(door) && /data-journey="Tour: hide the tour"/.test(tour) && /data-journey="Tour: show the tour"/.test(tour),
   )
+  check(
+    "tour foot (a11y): the place is said in one visually hidden sentence (\"Side 3 of 8: Links\"); the mono digits and the repeated name are hidden from assistive tech, and no role-less span carries an aria-label",
+    /<span className="tour__count mono" aria-hidden>/.test(tour) && /<span className="tour__here" aria-hidden>/.test(tour) && /<span className="sr-only">\{`\$\{pos\.spoken\}: \$\{side\.label\}`\}<\/span>/.test(tour) && !/<span[^>]*aria-label=/.test(tour),
+  )
   const icons = code('components/home/tour/icons.ts')
   check('tour icons: every side wears one icon, and the map names exactly the eight', TOUR_IDS.every((id) => new RegExp(`^\\s*${id}: [A-Z]\\w+,$`, 'm').test(icons)) && count(icons, /^\s*[a-z]+: [A-Z]\w+,$/gm) === TOUR_IDS.length)
 
@@ -210,7 +214,7 @@ export function landingStagePins(check: Check): void {
       /TOUR_LAYOUT_PROP = '--tour-layout'/.test(code('components/home/tour/stage.ts')),
   )
   check(
-    "tour phone: the eight rows stay a LIST (each a full row at least 56px tall, its line and its index shown) and the open side sits under its own row before any script runs — the list dissolves into the column and `order` seats the stage by the selected row's index",
+    "tour phone: the eight rows stay a LIST (each a full row at least 56px tall, its line and its index shown), and once a side is open it sits under its own row — the list dissolves into the column and `order` seats the stage by the selected row's index",
     /\.tour__list \{ display: contents; \}/.test(phone) &&
       /\.tour__tab \{ order: calc\(var\(--i, 0\) \* 2\);/.test(phone) &&
       /\.tour__stage \{ order: calc\(var\(--tour-at, 0\) \* 2 \+ 1\);/.test(phone) &&
@@ -218,6 +222,17 @@ export function landingStagePins(check: Check): void {
       !/\.tour__tabline[^{]*\{[^}]*display: none/.test(phone) &&
       /style=\{\{ '--tour-at': at \} as CSSProperties\}/.test(tour) &&
       /style=\{\{ '--i': i \} as CSSProperties\}/.test(tour),
+  )
+  check(
+    "tour phone: it STARTS FOLDED, in the first paint — the stylesheet hides the stage in the phone layout until the shell marks a side open (data-tour-open on the body), the open row's look waits for the same mark (the server's `is-on` is wide's), and the shell opens nothing by itself: the mark follows `open`, which starts false and turns true only on a tap, a key, Next or a deep link. Wide and mid never read the mark",
+    /\.tour__body:not\(\[data-tour-open\]\) \.tour__stage \{ display: none; \}/.test(phone) &&
+      count(css, /\[data-tour-open\]/g) === count(phone, /\[data-tour-open\]/g) &&
+      !/\.tour__tab\.is-on/.test(phone.replace(/\.tour__body\[data-tour-open\] \.tour__tab\.is-on/g, '')) &&
+      /useState<\{ id: TourId; open: boolean \}>\(\{ id: TOUR_SIDES\[0\]\.id, open: false \}\)/.test(tour) &&
+      /data-tour-open=\{sel\.open \|\| undefined\}/.test(tour) &&
+      count(tour, /open: true/g) === 2 &&
+      /className=\{`tour__tab\$\{on && \(!phone \|\| sel\.open\) \? ' is-on' : ''\}`\}/.test(tour),
+    `open: true ×${count(tour, /open: true/g)}`,
   )
   check(
     'tour mid: the list is ONE row of tabs that scrolls sideways (the row, never the page) with the selected tab kept in view and only an edge that hides something faded',
@@ -228,14 +243,15 @@ export function landingStagePins(check: Check): void {
     /:root:not\(\[data-home='return'\]\) \.tour__strip, \.tour\[data-tour-forced\] \.tour__strip \{ display: none; \}/.test(css) && /:root\[data-home='return'\] \.tour:not\(\[data-tour-forced\]\) \.tour__full \{ display: none; \}/.test(css),
   )
   check(
-    'tour motion: a panel change is one short fade (the state duration, 160ms) that plays only after the visitor changed the side, and none under reduced motion; the stage holds a floor per layout so the boards below do not jump',
+    'tour motion: a panel change is one short fade (the state duration, 160ms) that plays only after the visitor changed the side, and none under reduced motion; the stage holds a FLOOR per layout (wide: the list\'s own height, the body stretches the stage to it; mid: a fixed floor) and nothing remembers a taller panel — a shorter side gives the height back instead of standing over a blank',
     /\.tour__panel\.is-in \{ animation: tour-in var\(--dur-1\) ease both; \}/.test(css) &&
       /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*\.tour__panel\.is-in \{ animation: none; \}/.test(css) &&
       /className=\{`tour__panel\$\{fade \? ' is-in' : ''\}`\}/.test(tour) &&
       /const \[fade, setFade\] = useState\(false\)/.test(tour) &&
-      /min-height: max\(var\(--tour-floor-base, 0px\), var\(--tour-floor, 0px\)\)/.test(css) &&
-      /--tour-floor-base:/.test(wide) &&
-      /--tour-floor-base:/.test(mid),
+      /\.tour__panel \{[^}]*min-height: var\(--tour-floor-base, 0px\);/.test(css) &&
+      /align-items: stretch;/.test(wide) &&
+      /--tour-floor-base: \d+rem;/.test(mid) &&
+      !/--tour-floor'|setFloor/.test(tour),
   )
   check(
     'tour touch: under a coarse pointer every control of the shell is at least 44px on its short side (strip doors, show, hide, next, a row of tabs)',
@@ -249,8 +265,8 @@ export function landingStagePins(check: Check): void {
   const classesKept = ['tpn-seat', 'tpn', 'tpn__copy', 'tpn__claim', 'tpn__body', 'tpn__facts', 'tpn__fact', 'tpn__asks', 'tpn__askslab', 'tpn__chips', 'tpn__chip', 'tpn__chip--accent', 'tpn__chiplabel', 'tpn__chipvia', 'tpn__doors', 'tpn__door', 'tpn__door--primary', 'tpn__door--quiet', 'tpn__arrow', 'tpn__demo', 'tpn__stub'].filter((c) => !new RegExp(`\\.${c}(?![\\w-])`).test(pcss))
   check('tour primitives: every export and every class name the panels are built against is still there (the looks are STAGE\'s; the names are a contract with the SIDES lanes)', exportsKept.length === 0 && classesKept.length === 0, [...exportsKept, ...classesKept].join(' ') || 'all kept')
   check(
-    'tour primitives: a panel is a size container and goes to two columns from 600px of ITS OWN seat (the stage beside the list is narrower than a tablet), a chip is offered only when its venue can run it, and a door is a LandingLink or an on-page anchor',
-    /\.tpn-seat \{ container-type: inline-size; container-name: tpn;/.test(pcss) && /@container tpn \(min-width: 600px\) \{\s*\.tpn \{ grid-template-columns: minmax\(0, 5fr\) minmax\(0, 6fr\);/.test(pcss) && /if \(!canAct\(ask\.ask\)\) return null/.test(panel) && /d\.href\.startsWith\('#'\) \? \(\s*<a /.test(panel) && /<LandingLink key=\{d\.href\} href=\{d\.href\}/.test(panel),
+    'tour primitives: a panel is a size container and goes to two columns from 600px of ITS OWN seat with a split that favours the miniature (the words keep a reading column, 16.5rem to 22rem, and the demo takes the rest; a very wide seat, 960px and up, keeps the even split), a chip is offered only when its venue can run it, and a door is a LandingLink or an on-page anchor',
+    /\.tpn-seat \{ container-type: inline-size; container-name: tpn;/.test(pcss) && /@container tpn \(min-width: 600px\) \{\s*\.tpn \{ grid-template-columns: minmax\(0, clamp\(16\.5rem, 39cqi, 22rem\)\) minmax\(0, 1fr\);/.test(pcss) && /@container tpn \(min-width: 960px\) \{\s*\.tpn \{ grid-template-columns: minmax\(0, 5fr\) minmax\(0, 6fr\); \}/.test(pcss) && /if \(!canAct\(ask\.ask\)\) return null/.test(panel) && /d\.href\.startsWith\('#'\) \? \(\s*<a /.test(panel) && /<LandingLink key=\{d\.href\} href=\{d\.href\}/.test(panel),
   )
 }
 
@@ -275,13 +291,15 @@ export async function landingStagePinsServed(check: Check, base: string): Promis
     tabs.map(idOf).join(',') || `status ${res.status}`,
   )
   check(
-    "tour (served): the stage is in the server HTML as the first side's tabpanel with exactly ONE panel mounted, and its foot offers the next side",
+    "tour (served): the stage is in the server HTML as the first side's tabpanel with exactly ONE panel mounted (wide and mid show it; a phone's stylesheet folds it, so the HTML carries NO open mark), and its foot says the place for a screen reader and offers the next side",
     /<div[^>]*id="tour-stage"[^>]*>/.test(tourHtml) &&
       /role="tabpanel"/.test(/<div[^>]*id="tour-stage"[^>]*>/.exec(tourHtml)?.[0] ?? '') &&
       new RegExp(`data-tour-stage="${TOUR_IDS[0]}"`).test(tourHtml) &&
       (tourHtml.match(/data-tour-panel="/g) ?? []).length === 1 &&
       tourHtml.includes(`data-tour-panel="${TOUR_IDS[0]}"`) &&
       tourHtml.includes(`data-tour-next="${TOUR_IDS[1]}"`) &&
+      !/data-tour-open/.test(tourHtml) &&
+      tourHtml.includes(`>${esc(`${tourPosition(TOUR_IDS[0]).spoken}: ${tourSide(TOUR_IDS[0]).label}`)}</span>`) &&
       tourHtml.includes(tourPosition(TOUR_IDS[0]).label),
   )
   const doors = tourHtml.match(/<a[^>]*data-tour-door="[a-z]+"[^>]*>/g) ?? []
