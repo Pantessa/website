@@ -101,9 +101,8 @@ export default function LinksSide() {
             <div className="tlk__body">
               <p className="ta-eyebrow mono">Every fill pays you</p>
               <div className="ta-field">
-                <span className="ta-eyebrow mono">If it is signed by</span>
+                <span className="ta-eyebrow mono">Readers who sign it</span>
                 <Seg label="Readers who sign it" value={readers} onChange={setReaders} options={LINK_READER_CHOICES.map((n) => ({ value: n, label: n.toLocaleString('en-US'), say: `${n} ${n === 1 ? 'reader' : 'readers'}` }))} journey={(n) => J(`readers ${n}`)} />
-                <span className="ta-eyebrow mono">{readers === 1 ? 'reader' : 'readers'}</span>
               </div>
               {split && fees ? (
                 <div className="tlk__math" aria-live="polite" data-fee={split.feeUsd} data-creator={split.creatorUsd}>

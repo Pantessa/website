@@ -50,6 +50,8 @@
 
 /* A narrow frame: the three sums stack as rows. */
 @container ta (max-width: 340px) {
+  .tlk__cardhead { flex-direction: column-reverse; align-items: flex-start; gap: var(--sp-2); }
+  .tlk__url { max-width: 100%; }
   .tlk__sums { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); }
   .tlk__sum { flex-direction: row; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
   .tlk__sum dd { font-size: var(--fs-base); }

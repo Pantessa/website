@@ -103,7 +103,7 @@ export default function ChartsSide() {
         {/* The picked market: whose it is, the price, the week. */}
         <div className="tc__market" role="tabpanel" id={panelId} aria-labelledby={`${panelId}-${market.symbol}`}>
           <p className="ta-eyebrow mono">
-            {market.symbol} · {market.kindWords} · {market.venueWords}
+            {market.kindWords} · {market.venueWords}
           </p>
           <p className="tc__quote">
             <span className="tc__last">{last == null ? '—' : `$${fmtQuotePrice(last)}`}</span>
