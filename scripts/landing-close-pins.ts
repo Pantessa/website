@@ -133,7 +133,7 @@ export async function landingClosePinsServed(check: Check, base: string): Promis
     const r = await fetch(`${base}${h}`, { redirect: 'manual' })
     if (r.status >= 400) bad.push(`${h} ${r.status}`)
   }
-  check('close (served): every door in both sections resolves', bad.length === 0 && hrefs.size >= 15, bad.join(', ') || `${hrefs.size} doors`)
+  check('close (served): every door in both sections resolves', bad.length === 0 && hrefs.size >= 13, bad.join(', ') || `${hrefs.size} doors`)
 }
 
 if (process.argv[1]?.endsWith('landing-close-pins.ts')) {

@@ -53,7 +53,7 @@ export default function ClosingDoors(_props: { data?: TourSnapshot }) {
               <span className="closing__line">{side.line}</span>
               <span className="closing__go mono">
                 {door.label}
-                <span aria-hidden="true">{' '}→</span>
+                <span aria-hidden="true">{'\u00a0→'}</span>
               </span>
             </>
           )
