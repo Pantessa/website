@@ -29,7 +29,8 @@ import { canTradeAsk } from '../lib/trade-venue-gate'
 import { classifyTurn } from '../lib/ask-failure'
 import { EARN_DEFAULT_USD, type EarnRow } from '../lib/earn'
 import { TOUR_SIDES, EMPTY_TOUR, type TourSnapshot } from '../lib/home-tour'
-import { TOUR_COMMUNITY_POSTS, TOUR_EARN_ROWS, movedUsdOf, tourEarnOf, tourPostsOf } from '../lib/home-tour-live'
+import { TOUR_COMMUNITY_POSTS, TOUR_EARN_ROWS, TOUR_QUOTE_CLOSES, movedUsdOf, tourEarnOf, tourPostsOf, tourQuoteOf } from '../lib/home-tour-live'
+import { MINI_SYMBOLS } from '../components/home/tour/sides/a/mini-market'
 import type { FeedPost, TradeProof } from '../lib/community/spec'
 import { APP_CHAINS } from '../lib/chains'
 import { HOME_APPS } from '../lib/home-apps'
@@ -224,6 +225,43 @@ export function landingDataPins(check: Check): void {
     check('landing data: the live helpers are pure (no prisma, no fetch)', !/prisma|fetch\(/.test(live))
   }
 
+  // ── the Charts miniature's first frame (round 3, lane SIDES-A) ─────────────
+  {
+    const bars = (n: number, from = 100) => Array.from({ length: n }, (_, i) => ({ t: 1_700_000_000 + i * 3600, o: 1, h: 1, l: 1, c: from + i * 0.123456789, v: 1 }))
+    const q = tourQuoteOf('AAPL', bars(200), -0.66123456)
+    check(
+      "landing data quotes: a market's first frame is the candles route's own three numbers — the window's closes oldest first (the newest 180, six significant figures), `last` = the newest close, the 24-hour change — so the server's first paint and the browser's first read agree",
+      q !== null && q.symbol === 'AAPL' && q.closes.length === TOUR_QUOTE_CLOSES && TOUR_QUOTE_CLOSES === 180 && q.last === q.closes[q.closes.length - 1] && q.closes[0] === Number((100 + 20 * 0.123456789).toPrecision(6)) && q.closes.every((c) => String(c).replace('.', '').replace(/^0+/, '').length <= 6) && q.changePct === -0.6612,
+      q ? `${q.closes.length} closes · last ${q.last} · ${q.changePct}%` : 'null',
+    )
+    check(
+      'landing data quotes: a read that is not an answer is NULL (the market is left out of the list and the panel reads it in the browser) — fewer than two real closes, a non-positive or non-numeric close, no symbol; a missing change stays unstated, never a zero',
+      tourQuoteOf('ETH', bars(1), 1) === null &&
+        tourQuoteOf('ETH', [], 1) === null &&
+        tourQuoteOf('ETH', [{ c: 0 }, { c: -3 }, { c: Number.NaN }], 1) === null &&
+        tourQuoteOf('', bars(5), 1) === null &&
+        tourQuoteOf('ETH', bars(5), null)?.changePct === null &&
+        tourQuoteOf('ETH', bars(5), Number.NaN)?.changePct === null &&
+        tourQuoteOf('ETH', [{ c: 5 }, { c: 0 }, { c: 7 }], 0)?.closes.join() === '5,7' &&
+        EMPTY_TOUR.quotes.length === 0,
+    )
+    const srv = stripComments(read('lib/home-tour-server.ts'))
+    check(
+      "landing data quotes (source): each market is read through the candles route's own loader (lib/candles-server loadCandleSeries, hourly) under its OWN 60s unstable_cache key, time-capped, and a miss THROWS so it is never cached as 'no price' for a minute; the symbols are the miniature's own list; one failed market never fails the rest",
+      /loadCandleSeries\(symbol, '1h'\)/.test(srv) &&
+        /changePct24h\(candles\)/.test(srv) &&
+        /\['home-tour-v1', 'quote', symbol\]/.test(srv) &&
+        /withTimeout\(readQuote\(symbol\), TOUR_FEED_TIMEOUT_MS, null\)/.test(srv) &&
+        /if \(!quote\) throw new Error/.test(srv) &&
+        /readTourQuotes\(symbols: readonly string\[\] = MINI_SYMBOLS\)/.test(srv) &&
+        /symbols\.map\(\(s\) => cachedQuote\(s\)\.catch\(\(\) => null\)\)/.test(srv) &&
+        /quotes: live\.quotes/.test(srv) &&
+        (srv.match(/unstable_cache\(/g) ?? []).length >= 3 &&
+        (srv.match(/revalidate: 60/g) ?? []).length >= 3 &&
+        !/fetch\(/.test(srv),
+    )
+  }
+
   // ── the sentences audit (pure half) ────────────────────────────────────────
   {
     const all = tourSentences()
@@ -257,7 +295,7 @@ export async function landingDataPinsServed(check: Check, base: string): Promise
     snap = r?.ok ? ((await r.json().catch(() => null)) as TourSnapshot | null) : null
     check('landing data (served): GET /api/home/tour answers 200 with s-maxage=60, stale-while-revalidate=300', !!r?.ok && cc === 'public, s-maxage=60, stale-while-revalidate=300', `${r?.status} · ${cc}`)
     const keys = snap ? Object.keys(snap).sort().join(',') : ''
-    check('landing data (served): the snapshot has the contract shape', keys === 'asOf,chains,community,counts,earn,fees' && !!snap && Array.isArray(snap.earn) && Array.isArray(snap.community?.latest) && typeof snap.community?.rooms === 'number' && typeof snap.community?.postsWeek === 'number', keys)
+    check('landing data (served): the snapshot has the contract shape', keys === 'asOf,chains,community,counts,earn,fees,quotes' && !!snap && Array.isArray(snap.quotes) && Array.isArray(snap.earn) && Array.isArray(snap.community?.latest) && typeof snap.community?.rooms === 'number' && typeof snap.community?.postsWeek === 'number', keys)
     const c = snap?.counts
     check(
       'landing data (served): the static counts equal the registries',
@@ -272,6 +310,16 @@ export async function landingDataPinsServed(check: Check, base: string): Promise
     )
     check('landing data (served): earnWays counts at least the ladder (and is null when nothing was read)', earn.length === 0 || (typeof c?.earnWays === 'number' && c.earnWays >= earn.length), String(c?.earnWays))
     check('landing data (served): every community post is a public /c/ address; movedUsd only on a trade', (snap?.community.latest ?? []).every((p) => /^\/c\/[a-z0-9]{6,16}$/.test(p.href) && (p.movedUsd == null || p.kind === 'trade')))
+    const quotes = snap?.quotes
+    check(
+      "landing data (served): the snapshot carries first frames for the Charts miniature — only the miniature's own markets, one each, every one whole (a price, at least two closes whose newest is that price, at most the window's length), and at least one market answered",
+      Array.isArray(quotes) &&
+        quotes.length >= 1 &&
+        quotes.length <= MINI_SYMBOLS.length &&
+        new Set(quotes.map((q) => q.symbol)).size === quotes.length &&
+        quotes.every((q) => (MINI_SYMBOLS as readonly string[]).includes(q.symbol) && typeof q.last === 'number' && q.last > 0 && Array.isArray(q.closes) && q.closes.length >= 2 && q.closes.length <= TOUR_QUOTE_CLOSES && q.closes[q.closes.length - 1] === q.last && (q.changePct === null || Number.isFinite(q.changePct))),
+      Array.isArray(quotes) ? quotes.map((q) => `${q.symbol} ${q.last} (${q.closes.length})`).join(' · ') || '(no market answered)' : 'no quotes field',
+    )
   }
 
   // ── `/` stays static ───────────────────────────────────────────────────────
