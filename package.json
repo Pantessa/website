@@ -75,6 +75,7 @@
     "pins:chart-tape": "tsx scripts/chart-tape-pins.ts",
     "pins:deck": "tsx scripts/deck-pins.ts",
     "pins:read": "tsx scripts/read-pins.ts",
+    "pins:macro": "tsx scripts/macro-pins.ts",
     "pins:community-coord": "tsx scripts/community-coord-pins.ts",
     "pins:community-core": "tsx scripts/community-core-pins.ts",
     "pins:community-feed": "tsx scripts/community-feed-pins.ts",

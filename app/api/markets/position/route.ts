@@ -55,6 +55,12 @@ export async function GET(req: NextRequest) {
   if (!ADDRESS_RE.test(address)) return NextResponse.json({ error: 'address must be a 0x-prefixed 40-hex wallet address.' }, { status: 400 })
   const pair = await resolveChartPair(symbolRaw)
   if (!pair) return NextResponse.json({ error: `${symbolRaw.toUpperCase()} is not a charted symbol.` }, { status: 404 })
+  // A look-only index is not a thing a wallet holds: an empty position, no
+  // reader asked (a token that merely wears the name "VIX" is not the VIX).
+  if (pair.source === 'index') {
+    const empty: SymbolPosition = { symbol: pair.symbol, address, spot: [], perp: null, lend: null, stake: null, dca: [], guardian: [], spotGuard: [], exits: [], totalUsd: 0, private: [], failed: [], updatedAt: new Date().toISOString() }
+    return NextResponse.json(empty, { headers: { 'cache-control': 'no-store' } })
+  }
   const sym = pair.symbol
   // The dex a perp page's own market trades on (`xyz` for /t/SP500); null for the main book and every spot page.
   const builderDex = builderDexOfPair(pair)

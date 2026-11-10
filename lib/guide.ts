@@ -87,6 +87,10 @@ export interface GuideCtx {
    *  cannot build. A builder-dex market that DOES take orders (`xyz:SP500`)
    *  is an ordinary page: it quotes its own long sentence. */
   chartOnly?: boolean
+  /** The page's chart is a look-only index (lib/charts isLookOnlyPair —
+   *  US10Y, VIX…): nothing listed here trades it, so no hint may promise an
+   *  order or an alert that "does the trade" there (2026-11-09). */
+  lookOnly?: boolean
 }
 
 /** What the card's one action does. `href` is a plain link (a public page);
@@ -249,9 +253,25 @@ export function renderGuideText(text: string, ctx: GuideCtx = {}): string {
 /** The chart hint's body on a chart that takes no order here. */
 export const GUIDE_CHART_ONLY_BODY = 'Type “why is it moving?” or “draw support and resistance” — the answer lands on the chart. Orders on this market are not built here yet.'
 
+/** The chart hint's body on a look-only index: the question, and the plain
+ *  fact that nothing here places an order on it. */
+export const GUIDE_LOOK_ONLY_BODY = 'Type “why is it moving?” or “draw support and resistance” — the answer lands on the chart. An index is here to read: nothing listed here places an order on it.'
+
+/** The alerts hint on a look-only index: an alert there TELLS you. It hands
+ *  over no chip, because there is no trade to hand over. */
+export const GUIDE_LOOK_ONLY_ALERT_TITLE = 'An alert here tells you.'
+export const GUIDE_LOOK_ONLY_ALERT_BODY = 'Set a level on {SYM}. When it hits, you are told. Nothing here trades an index, so the alert carries no order.'
+
+/** A hint's title for this ctx, text filled. */
+export function guideTitle(hint: GuideHint, ctx: GuideCtx = {}): string {
+  return renderGuideText(hint.id === 'alerts' && ctx.lookOnly ? GUIDE_LOOK_ONLY_ALERT_TITLE : hint.title, ctx)
+}
+
 /** A hint's body for this ctx, text filled: the chart hint never quotes an
- *  order on a chart-only page. */
+ *  order on a chart-only page, and no hint promises one on a look-only index. */
 export function guideBody(hint: GuideHint, ctx: GuideCtx = {}): string {
+  if (ctx.lookOnly && hint.id === 'chart') return renderGuideText(GUIDE_LOOK_ONLY_BODY, ctx)
+  if (ctx.lookOnly && hint.id === 'alerts') return renderGuideText(GUIDE_LOOK_ONLY_ALERT_BODY, ctx)
   return renderGuideText(hint.id === 'chart' && ctx.chartOnly ? GUIDE_CHART_ONLY_BODY : hint.body, ctx)
 }
 

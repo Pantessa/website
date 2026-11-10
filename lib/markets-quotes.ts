@@ -19,6 +19,11 @@ export interface Quote {
   feed: string
   session: 'open' | 'closed' | '24/7'
   chartable: boolean
+  /** Index quotes only: the close the change is measured from and the
+   *  printing session's range (lib/quotes indexQuoteFrom). */
+  prevClose?: number
+  dayHigh?: number
+  dayLow?: number
 }
 
 export type QuoteMap = Record<string, Quote | undefined>
@@ -27,7 +32,13 @@ const REFRESH_MS = 20_000
 
 let quotesRouteMissing = false
 
-async function fetchQuotes(symbols: string[]): Promise<QuoteMap | null> {
+interface QuotesRead {
+  quotes: QuoteMap
+  /** Symbols the venue no longer lists (lib/quotes QuoteRead.unlisted). */
+  unlisted: string[]
+}
+
+async function fetchQuotes(symbols: string[]): Promise<QuotesRead | null> {
   if (quotesRouteMissing) return null
   try {
     const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, { cache: 'no-store' })
@@ -36,16 +47,19 @@ async function fetchQuotes(symbols: string[]): Promise<QuoteMap | null> {
       return null
     }
     if (!res.ok) return null
-    const body = (await res.json()) as { quotes?: QuoteMap }
-    return body.quotes ?? null
+    const body = (await res.json()) as { quotes?: QuoteMap; unlisted?: unknown }
+    if (!body.quotes) return null
+    return { quotes: body.quotes, unlisted: Array.isArray(body.unlisted) ? body.unlisted.filter((s): s is string => typeof s === 'string') : [] }
   } catch {
     return null
   }
 }
 
 /** Live quotes for a symbol list; `{}` until the first read lands, and a
- *  symbol stays undefined (→ dashes) when no feed answers. */
-export function useQuotes(symbols: readonly string[]): { quotes: QuoteMap; live: boolean; failed: boolean } {
+ *  symbol stays undefined (→ dashes) when no feed answers. `unlisted` names
+ *  the symbols the route said NO market answers to (a venue delisted them) —
+ *  a board that lists venue markets by name drops those rows. */
+export function useQuotes(symbols: readonly string[]): { quotes: QuoteMap; live: boolean; failed: boolean; unlisted: string[] } {
   const key = symbols.join(',')
   const list = useMemo(() => key.split(',').filter(Boolean), [key])
   const [quotes, setQuotes] = useState<QuoteMap>({})
@@ -53,6 +67,7 @@ export function useQuotes(symbols: readonly string[]): { quotes: QuoteMap; live:
   // The last read failed (route down / offline) — a caller can say so instead
   // of waiting on "Reading…" forever. Cleared by the next good read.
   const [failed, setFailed] = useState(false)
+  const [unlisted, setUnlisted] = useState<string[]>([])
 
   useEffect(() => {
     if (list.length === 0) return
@@ -61,7 +76,9 @@ export function useQuotes(symbols: readonly string[]): { quotes: QuoteMap; live:
       const fromRoute = await fetchQuotes(list)
       if (stopped) return
       if (fromRoute) {
-        setQuotes((prev) => ({ ...prev, ...fromRoute }))
+        setQuotes((prev) => ({ ...prev, ...fromRoute.quotes }))
+        // Same names → same array, so a board keyed on it does not re-render every poll.
+        setUnlisted((prev) => (prev.join() === fromRoute.unlisted.join() ? prev : fromRoute.unlisted))
         setLive(true)
         setFailed(false)
       } else setFailed(true)
@@ -74,7 +91,7 @@ export function useQuotes(symbols: readonly string[]): { quotes: QuoteMap; live:
     }
   }, [list])
 
-  return { quotes, live, failed }
+  return { quotes, live, failed, unlisted }
 }
 
 /** Price + change formatting shared by rows, headers and tiles. */
@@ -111,10 +128,20 @@ export function liveTabTitle(symbol: string, last: number | null | undefined): s
   return `$${fmtLivePrice(last)} · ${symbol} · Pantessa`
 }
 
-/** Is this title one of ours (a live price) rather than the page's SEO title
- *  (`… | Pantessa Markets`)? The page tells React's metadata write from its own. */
+/** The same title for a value that is not a dollar price — an index level, a
+ *  yield, an FX rate — already formatted the way its header prints it:
+ *  `4.837% · US10Y · Pantessa`, `27,495.25 · NDX · Pantessa`. No value → null. */
+export function liveTabTitleOf(symbol: string, value: string | null | undefined): string | null {
+  const v = (value ?? '').trim()
+  if (!v || v === '—' || !/^\d/.test(v)) return null
+  return `${v} · ${symbol} · Pantessa`
+}
+
+/** Is this title one of ours (a live value) rather than the page's SEO title
+ *  (`… | Pantessa Markets`)? The page tells React's metadata write from its
+ *  own. A dollar price, or a bare number for an index (liveTabTitleOf). */
 export function isLiveTabTitle(title: string | null | undefined): boolean {
-  return typeof title === 'string' && title.startsWith('$') && title.endsWith(' · Pantessa')
+  return typeof title === 'string' && /^[$\d]/.test(title) && title.endsWith(' · Pantessa')
 }
 
 export function fmtPct(n: number | null | undefined): string {

@@ -380,8 +380,9 @@ export default function TheRead({ initial }: { initial: ReadSnapshot }) {
             <p className="read__noact">{readNoActLine(inst)}</p>
           )}
           <div className="read__doors">
+            {/* Every tile has a full chart now: an app market's symbol page, or an index's look-only page (/t/US10Y, /t/VIX… lib/read readPageHref). */}
             {page && (
-              <SpineLink href={page} className="read__door" prefetch={false} data-journey={`Read open ${inst.symbol}`}>
+              <SpineLink href={page} className="read__door" prefetch={false} data-journey={`Read open ${page.slice(3)}`}>
                 Open the full chart <span aria-hidden>→</span>
               </SpineLink>
             )}

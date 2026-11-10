@@ -385,6 +385,7 @@ import { depthPins } from './depth-pins'
 import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
 import { readPins, readRedirectPins, readServedPins } from './read-pins'
+import { macroLivePins, macroPins, macroServedPins } from './macro-pins'
 import { homeAppsPins } from './home-apps-pins'
 import { communityCoordPins, communityCoordPinsServed } from './community-coord-pins'
 import { communityCorePins, communityCorePinsServed } from './community-core-pins'
@@ -35544,6 +35545,10 @@ async function main() {
   readPins(check)
   await readRedirectPins(check)
   await readServedPins(check, BASE)
+  // MACRO (2026-11-09): the look-only index pages (/t/US10Y · VIX · DXY · NDX · DJI · RUT — a full chart, no order anywhere) and the Macro board beside the Hyperliquid macro markets: the table, the "no side" rule on every surface, the chip gate and the door, the index host's payload, a yield in basis points, the static board.
+  macroPins(check)
+  await macroLivePins(check)
+  await macroServedPins(check, BASE)
 
   // ── squad community (2026-11-09): one pin file per lane, wired once here ──
   communityCoordPins(check)

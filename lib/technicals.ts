@@ -728,6 +728,10 @@ export interface ChipInput {
 // as a guardian action and the build refuses). Pinned: a stock verdict never
 // emits a protect/stop ask.
 export function verdictChips(input: ChipInput): ChartAction[] {
+  // A look-only index (US10Y, VIX… lib/charts): the gauges read its candles
+  // like any tape, and the verdict carries NO order — nothing listed here
+  // trades an index, so a "Buy $25 of VIX" chip could only end in a refusal.
+  if (input.source === 'index') return []
   const sym = input.symbol.toUpperCase()
   const perp = input.source === 'hyperliquid' || !!tokenHome(sym)
   const stock = input.source === 'robinhood' && !perp

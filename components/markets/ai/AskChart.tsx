@@ -471,8 +471,14 @@ export default function AskChart({ symbol, pair, chartState, visible, onChartSta
               className="mk-ai__input"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder={talking ? `Ask a follow-up, or say the trade…` : `Draw a line at…, alert me at…, or “buy $25 of ${symbol}” — it builds right here`}
-              aria-label={`Ask about the ${symbol} chart, or say a trade`}
+              // A chart with no order of its own (a look-only index, a builder market — `hasAct` is the
+              // page's own grammar, lib/markets-ai-suggestions) is never handed an order to type.
+              placeholder={
+                hasAct
+                  ? talking ? `Ask a follow-up, or say the trade…` : `Draw a line at…, alert me at…, or “buy $25 of ${symbol}” — it builds right here`
+                  : talking ? `Ask a follow-up…` : `Draw a line at…, alert me at…, or ask why ${symbol} is moving`
+              }
+              aria-label={hasAct ? `Ask about the ${symbol} chart, or say a trade` : `Ask about the ${symbol} chart`}
               maxLength={400}
               disabled={busy}
             />

@@ -22,7 +22,9 @@
 //   • `index` instruments are look-only index data (the Nasdaq 100, the
 //     10-year yield, the VIX, the dollar index) from the same chart API the
 //     stock candles already fall back to; delayed, closed with their
-//     exchange, and SAID to be.
+//     exchange, and SAID to be. Each has a full chart page of its own since
+//     2026-11-09 (lib/charts CHART_INDEXES: /t/NDX, /t/US10Y, /t/VIX, /t/DXY)
+//     — still with no order on it.
 //
 // Honesty rules: a clause with no quote is omitted (never a guessed "flat");
 // a verb is chosen by the move over that market's own typical day, so "oil
@@ -34,17 +36,24 @@
 // by scripts/read-pins.ts; read by lib/read-server.ts (the snapshot), the
 // route app/api/markets/read and components/home/TheRead.tsx.
 
+import { indexSymbolForHost, type ChartUnit } from '@/lib/charts'
+
 // ── The instruments ──────────────────────────────────────────────────────────
 
 export type ReadId = 'spx' | 'ndx' | 'us10y' | 'vix' | 'dxy' | 'gold' | 'oil' | 'btc' | 'eth'
 
 /** `app`: quoted + charted by the app's own readers (it has a /t page).
- *  `index`: look-only index data (no page, no order). */
+ *  `index`: look-only index data (a chart page, never an order). */
 export type ReadSource = 'app' | 'index'
 
 /** How a value prints: dollars, a bare index level, or a yield in percent
- *  (whose change is stated in basis points). */
-export type ReadUnit = 'usd' | 'level' | 'yield'
+ *  (whose change is stated in basis points). One vocabulary with the chart
+ *  resolver (lib/charts ChartUnit), so a tile and its page print alike. */
+export type ReadUnit = ChartUnit
+
+/** What the formatters below read of an instrument: its unit, nothing else
+ *  (the Macro board and the index pages format through them too, lib/macro). */
+export type ReadUnitOf = Pick<ReadInstrument, 'unit'>
 
 export interface ReadNear {
   /** A symbol listed here (it has a /t page). */
@@ -114,9 +123,13 @@ export function parseReadId(raw: string | null | undefined): ReadId | null {
 /** The app symbols the snapshot quotes (source `app`). */
 export const READ_APP_SYMBOLS: readonly string[] = READ_INSTRUMENTS.filter((i) => i.source === 'app').map((i) => i.symbol)
 
-/** The symbol page of an instrument, when it has one. */
+/** The symbol page of an instrument: the app symbol's own page, or the
+ *  look-only chart page of the index the data symbol belongs to ('^TNX' →
+ *  /t/US10Y, lib/charts). Null only for an index with no page. */
 export function readPageHref(inst: ReadInstrument): string | null {
-  return inst.source === 'app' ? `/t/${inst.symbol}` : null
+  if (inst.source === 'app') return `/t/${inst.symbol}`
+  const page = indexSymbolForHost(inst.symbol)
+  return page ? `/t/${page}` : null
 }
 
 // ── The snapshot ─────────────────────────────────────────────────────────────
@@ -200,7 +213,7 @@ export function readVerb(score: number): ReadVerb {
 }
 
 /** The size of a move as a headline states it: "0.9%" · "12%" · "3 bp" · "0.5 bp". Never signed — the verb is the sign. */
-export function fmtReadAmount(inst: ReadInstrument, chg: number): string {
+export function fmtReadAmount(inst: ReadUnitOf, chg: number): string {
   const a = Math.abs(chg)
   if (inst.unit === 'yield') return `${a >= 10 ? a.toFixed(0) : trimZero(a.toFixed(1))} bp`
   return `${a >= 10 ? a.toFixed(0) : a.toFixed(1)}%`
@@ -305,7 +318,7 @@ export function readTone(chg: number | null | undefined, unit: ReadUnit = 'usd')
 const group = (n: number, min: number, max: number): string => n.toLocaleString('en-US', { minimumFractionDigits: min, maximumFractionDigits: max })
 
 /** A value as a TILE prints it (narrow): "7,445" · "101.85" · "4.84%" · "$74,587" · "$86.68". */
-export function fmtReadValue(inst: ReadInstrument, v: number | null | undefined): string {
+export function fmtReadValue(inst: ReadUnitOf, v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return '—'
   if (inst.unit === 'yield') return `${v.toFixed(2)}%`
   const body = v >= 1000 ? group(v, 0, 0) : group(v, 2, 2)
@@ -313,7 +326,7 @@ export function fmtReadValue(inst: ReadInstrument, v: number | null | undefined)
 }
 
 /** A value as the chart's header prints it (two places from a thousand up): "7,444.70" · "$74,587.25" · "4.841%". */
-export function fmtReadValueFull(inst: ReadInstrument, v: number | null | undefined): string {
+export function fmtReadValueFull(inst: ReadUnitOf, v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return '—'
   if (inst.unit === 'yield') return `${v.toFixed(3)}%`
   const body = group(v, 2, 2)
@@ -321,7 +334,7 @@ export function fmtReadValueFull(inst: ReadInstrument, v: number | null | undefi
 }
 
 /** A signed change: "+0.86%" · "−4.12%" · "−1.8 bp". A true minus sign, so a column of them aligns. */
-export function fmtReadChange(inst: ReadInstrument, chg: number | null | undefined): string {
+export function fmtReadChange(inst: ReadUnitOf, chg: number | null | undefined): string {
   if (chg == null || !Number.isFinite(chg)) return '—'
   const sign = chg > 0 ? '+' : chg < 0 ? '−' : ''
   const a = Math.abs(chg)
@@ -445,6 +458,9 @@ export function readPointAt(points: readonly ReadPoint[], frac: number): number 
 
 // ── Words around the numbers ─────────────────────────────────────────────────
 
+/** Whose number an index is, one sentence. The index pages say the same words (lib/macro). */
+export const READ_INDEX_VENUE_LINE = 'Index data, delayed up to 15 minutes. It closes when its exchange does.'
+
 /** The chart pair an instrument's OWN chips are composed from, when the table
  *  states its market (`coin`): a Hyperliquid perp pair, built from static
  *  facts so the server render and the browser agree. Null for everything else
@@ -455,7 +471,7 @@ export function readOwnPair(inst: ReadInstrument): { symbol: string; source: 'hy
 
 /** Whose number it is, one sentence, for the panel beside the chart. */
 export function readVenueLine(inst: ReadInstrument): string {
-  if (inst.source === 'index') return 'Index data, delayed up to 15 minutes. It closes when its exchange does.'
+  if (inst.source === 'index') return READ_INDEX_VENUE_LINE
   if (inst.venue === 'Hyperliquid') return `Hyperliquid's round-the-clock ${inst.name} market.`
   return 'Coinbase spot, round the clock.'
 }

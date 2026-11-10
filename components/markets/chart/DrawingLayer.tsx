@@ -80,6 +80,11 @@ export interface DrawingLayerProps {
   offersFor: (line: ChartLine) => LineActionOffer[]
   /** Why a level has fewer offers than a trader expects (named, or null). */
   missingNote: string | null
+  /** The sign a price wears here: a dollar sign for a token, nothing for an
+   *  index level or a yield (lib/charts chartUnitOf). Default: a dollar sign. */
+  priceSign?: string
+  /** A level on this chart can carry an order (false on a look-only index). */
+  ordersHere?: boolean
   onAct?: (ask: string) => void
   askHref?: (ask: string) => string
   readOnly?: boolean
@@ -111,7 +116,7 @@ const EXTEND_OPTIONS: { key: TrendExtend | 'none'; label: string; title: string 
   { key: 'both', label: '↔ both', title: 'The line runs across the whole plot' },
 ]
 
-export default function DrawingLayer({ geom, lines, selectedId, onSelect, onChange, onDragStart, onDrag, tool = 'none', onToolDone, onNote, onFocus, magnet = true, offersFor, missingNote, onAct, askHref, readOnly }: DrawingLayerProps) {
+export default function DrawingLayer({ geom, lines, selectedId, onSelect, onChange, onDragStart, onDrag, tool = 'none', onToolDone, onNote, onFocus, magnet = true, offersFor, missingNote, priceSign = '$', ordersHere = true, onAct, askHref, readOnly }: DrawingLayerProps) {
   const selected = useMemo(() => lines.find((l) => l.id === selectedId) ?? null, [lines, selectedId])
   const [labelDraft, setLabelDraft] = useState('')
   const popRef = useRef<HTMLDivElement | null>(null)
@@ -364,13 +369,13 @@ export default function DrawingLayer({ geom, lines, selectedId, onSelect, onChan
   const popKind = !selected
     ? ''
     : selected.kind === 'h'
-      ? `level · $${fmtPrice(selected.price)}`
+      ? `level · ${priceSign}${fmtPrice(selected.price)}`
       : selected.kind === 'zone'
-        ? `zone · $${fmtPrice(Math.min(selected.p1, selected.p2))}–$${fmtPrice(Math.max(selected.p1, selected.p2))}`
+        ? `zone · ${priceSign}${fmtPrice(Math.min(selected.p1, selected.p2))}–${priceSign}${fmtPrice(Math.max(selected.p1, selected.p2))}`
         : selected.kind === 'trend'
           ? 'trend line'
           : selected.kind === 'fib'
-            ? `fib · $${fmtPrice(selected.p1)} → $${fmtPrice(selected.p2)}`
+            ? `fib · ${priceSign}${fmtPrice(selected.p1)} → ${priceSign}${fmtPrice(selected.p2)}`
             : selected.kind === 'vline'
               ? `time · ${fmtLegendTime(selected.t, geom.tf)}`
               : 'note'
@@ -730,9 +735,9 @@ export default function DrawingLayer({ geom, lines, selectedId, onSelect, onChan
               {fibLevels(selected.p1, selected.p2).map((lv) => (
                 <li key={lv.ratio} className={lv.ratio > 1 ? 'is-ext' : undefined}>
                   <span className="mono mkt-pop__ratio">{lv.label}</span>
-                  <span className="mono">${fmtPrice(lv.price)}</span>
+                  <span className="mono">{priceSign}{fmtPrice(lv.price)}</span>
                   {!readOnly && (
-                    <button type="button" className="mkt-pop__mini" title={`Put a level at $${fmtPrice(lv.price)} — it can carry an order`} onClick={() => levelFromFib(lv.price, `fib ${lv.label}`)}>
+                    <button type="button" className="mkt-pop__mini" title={ordersHere ? `Put a level at ${priceSign}${fmtPrice(lv.price)} — it can carry an order` : `Put a level at ${priceSign}${fmtPrice(lv.price)}`} onClick={() => levelFromFib(lv.price, `fib ${lv.label}`)}>
                       level here
                     </button>
                   )}

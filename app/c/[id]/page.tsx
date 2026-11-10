@@ -9,6 +9,7 @@ import CallShareRow from '@/components/markets/call/CallShareRow'
 import CallComments from '@/components/markets/call/CallComments'
 import CallTicket from '@/components/markets/call/CallTicket'
 import CallInfo from '@/components/markets/call/CallInfo'
+import { isLookOnlyPair } from '@/lib/charts'
 import { readCall } from '@/lib/chart-calls-read'
 import { STAMP_FRAMES, callTweetHref, callUrl, fmtCallPrice, fmtCallTime, fmtMove, fmtSpan } from '@/lib/chart-calls'
 import { symbolName } from '@/lib/markets-seo'
@@ -221,7 +222,8 @@ export default async function CallPage({ params }: Params) {
         </div>
 
         <aside className="callpg__side">
-          {pair ? (
+          {/* A call on a look-only index (lib/charts isLookOnlyPair) has no ticket: nothing listed here trades it, so the side offers its chart. */}
+          {pair && !isLookOnlyPair(pair) ? (
             <CallTicket symbol={post.symbol} pair={pair} last={last} lines={post.chartState?.lines ?? []} />
           ) : (
             <Link href={`/t/${post.symbol}`} className="mkt-share__btn">

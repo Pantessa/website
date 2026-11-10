@@ -56,6 +56,8 @@ export function sidesFor(pair: ChartPair): TradeSide[] {
   if (isHip3Pair(pair)) return ['buy', 'sell']
   if (pair.source === 'robinhood') return ['buy', 'sell']
   if (pair.source === 'hyperliquid') return ['buy', 'sell', 'protect']
+  // A look-only index (US10Y, VIX…): nothing listed here trades it, so it offers no side (lib/charts isLookOnlyPair).
+  if (pair.source === 'index') return []
   if (tokenHome(pair.symbol)) return ['buy', 'sell']
   return ['buy', 'sell', 'protect']
 }
@@ -125,6 +127,8 @@ export function execSidesFor(pair: ChartPair): ExecSide[] {
   if (isHip3Pair(pair)) return ['long', 'short']
   if (pair.source === 'robinhood') return ['buy', 'sell']
   if (pair.source === 'hyperliquid') return ['long', 'short', 'protect']
+  // A look-only index: no side, so no strip, no ticket, no suggestion.
+  if (pair.source === 'index') return []
   if (tokenHome(pair.symbol)) return ['long', 'short']
   const out: ExecSide[] = ['buy', 'sell']
   if (hasPerpCold(pair.symbol)) out.push('long', 'short')

@@ -230,6 +230,18 @@ function googleNewsUrl(q: string): string {
   return `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`
 }
 
+/** What the news search asks for each look-only index (lib/charts
+ *  CHART_INDEXES): the phrase a markets desk uses, quoted, so the headlines
+ *  are about the index and not a ticker that shares three letters with it. */
+const INDEX_NEWS_QUERY: Readonly<Record<string, string>> = {
+  US10Y: '"10-year Treasury yield" OR "Treasury yields"',
+  VIX: '"VIX" volatility index',
+  DXY: '"dollar index" OR "DXY"',
+  NDX: '"Nasdaq 100"',
+  DJI: '"Dow Jones Industrial Average" OR "the Dow"',
+  RUT: '"Russell 2000"',
+}
+
 /** The ordered hops for a charted symbol. Pure — the harness pins it. */
 export function newsLadderFor(pair: ChartPair): NewsHop[] {
   const sym = pair.symbol
@@ -248,6 +260,10 @@ export function newsLadderFor(pair: ChartPair): NewsHop[] {
         browserUa: true,
       },
     ]
+  }
+  if (pair.source === 'index') {
+    // A look-only index: the markets desk's own words for it, never "crypto".
+    return [{ feed: 'google-news', url: googleNewsUrl(`${INDEX_NEWS_QUERY[sym] ?? `"${pair.label}"`} when:7d`) }]
   }
   const hops: NewsHop[] = []
   const tagSlug = COINTELEGRAPH_TAGS[sym]

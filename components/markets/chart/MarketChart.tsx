@@ -42,7 +42,7 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { ChartCandlestick, ChevronsRight, Layers2, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, RotateCcw, Rows3, Ruler, ScrollText, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, Trash2, TrendingUp, Undo2, Grid3x3 } from 'lucide-react'
-import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, isHip3Pair, isPrintTf, tfsForSource, type Candle, type ChartTf } from '@/lib/charts'
+import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, chartUnitOf, isHip3Pair, isLookOnlyPair, isPrintTf, sourceHasTf, tfsForSource, type Candle, type ChartTf } from '@/lib/charts'
 import { PRINT_KEEP_MS, applyPrint, barsFromPrints, chartLiveFeed, livePriceStats, printOf, seedThenPrints, tailIsLive, tailWords, type Print } from '@/lib/chart-live'
 import { syncTfParam } from '@/lib/markets'
 import type { TapeFill } from '@/lib/tape'
@@ -269,11 +269,22 @@ export default function MarketChart({
   compare,
   fills,
   overlay,
-  battlefield = false,
+  battlefield: battlefieldProp = false,
   onLimit,
 }: MarketChartProps) {
   const fill = heightProp === 'fill'
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
+  // A look-only index (lib/charts isLookOnlyPair) has no book, no prints and
+  // no positions: the Depth, Tape and Heatmap views and the Wall never mount
+  // for it, whatever the page asks.
+  const lookOnly = isLookOnlyPair(pair)
+  const battlefield = battlefieldProp && !lookOnly
+  // A level's price as the page prints it: dollars for a token, the bare
+  // number for an index level or a yield.
+  const levelPrefix = chartUnitOf(pair) === 'usd' ? '$' : ''
+  // The crosshair's "+" is wired once per chart: it reads this, not a stale closure.
+  const lookOnlyRef = useRef(lookOnly)
+  lookOnlyRef.current = lookOnly
   const [tf, setTf] = useState<ChartTf>(state?.tf ?? defaultTf)
   // The live tail (lib/chart-live): Dune's prints of this instrument move
   // the engine's LAST bar between polls on 1m · 15m · 1H; the venue's own
@@ -759,6 +770,8 @@ export default function MarketChart({
   // A stock's tape has no minute bar: a 1m frame asked by a URL or a memory falls to 15m.
   useEffect(() => {
     if (pair?.source === 'robinhood' && tf === '1m') setTf('15m')
+    // Index data has no minute bar and no print frame: either falls to 15m.
+    if (pair?.source === 'index' && !sourceHasTf('index', tf)) setTf('15m')
   }, [pair?.source, tf])
 
   useEffect(() => {
@@ -926,7 +939,7 @@ export default function MarketChart({
         else {
           plus.style.left = `${Math.max(0, plotW - 26)}px`
           plus.style.top = `${Math.round(p.point.y) - 11}px`
-          plus.title = `Put a level at $${fmtPrice(price)}: an order, a stop or a note`
+          plus.title = lookOnlyRef.current ? `Put a level at ${fmtPrice(price)}: a line or a note` : `Put a level at $${fmtPrice(price)}: an order, a stop or a note`
           plus.classList.add('is-on')
         }
       }
@@ -1489,8 +1502,10 @@ export default function MarketChart({
     if (!tools) return
     if (plusHintSeen()) return
     const touch = window.matchMedia?.('(hover: none)').matches
-    setPlusHint(touch ? 'tap a price, then + to put an order there' : 'point at a price, then + to put an order there')
-  }, [tools])
+    // On a look-only index the "+" drops a level (a line, a note) — never an order.
+    const what = lookOnly ? 'a level' : 'an order'
+    setPlusHint(touch ? `tap a price, then + to put ${what} there` : `point at a price, then + to put ${what} there`)
+  }, [tools, lookOnly])
   const dropLevel = useCallback(() => {
     const price = plusPriceRef.current
     if (price === null) return
@@ -1737,6 +1752,12 @@ export default function MarketChart({
           <span className="mono flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[color:var(--muted-2)]">
             {stale ? (
               'feed stalled — retrying'
+            ) : lookOnly ? (
+              // Index data is delayed up to 15 minutes: the badge says so, and does not pulse.
+              <>
+                <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: 'var(--muted-2)' }} />
+                delayed
+              </>
             ) : (
               <>
                 <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: 'var(--accent)' }} />
@@ -1878,6 +1899,8 @@ export default function MarketChart({
           magnet={magnet}
           offersFor={offersFor}
           missingNote={missingActionNote(pair.symbol, pair.source)}
+          priceSign={levelPrefix}
+          ordersHere={!lookOnly}
           onAct={onAsk}
           askHref={askHref}
           readOnly={!tools}
@@ -1896,7 +1919,7 @@ export default function MarketChart({
               setNoteDraft(null)
             }}
           >
-            <span className="mono mkt-pop__kind">note · ${fmtPrice(noteDraft.price)}</span>
+            <span className="mono mkt-pop__kind">note · {levelPrefix}{fmtPrice(noteDraft.price)}</span>
             <input autoFocus className="mkt-pop__label" value={noteDraft.text} maxLength={280} placeholder="What you noticed…" onChange={(e) => setNoteDraft({ ...noteDraft, text: e.target.value })} />
             <div className="flex gap-1.5">
               <button type="submit" className="mkt-pop__chip mkt-pop__chip--buy">
@@ -2019,11 +2042,16 @@ export default function MarketChart({
           footer is the ONLY credit: never drop it. */}
       <div className="mkt-chart__foot mono">
         {cmp && cmp.tf === tf ? <span>vs {cmp.symbol} · % since the first bar on screen (left scale) · </span> : null}
-        <span>
-          {feedLabel ? `feed · ${String(feedLabel)}` : ''}
-          {feedLabel ? ` · tail · ${tailWords(tailStatus, liveFeed, tf)}` : ''}
-          {sessions && feedLabel ? ' · shaded = pre/post-market' : ''}
-        </span>
+        {lookOnly ? (
+          // An index is delayed data with no live tail: the foot says so in the page's own words.
+          <span>feed · index data · delayed up to 15 minutes · closes with its exchange</span>
+        ) : (
+          <span>
+            {feedLabel ? `feed · ${String(feedLabel)}` : ''}
+            {feedLabel ? ` · tail · ${tailWords(tailStatus, liveFeed, tf)}` : ''}
+            {sessions && feedLabel ? ' · shaded = pre/post-market' : ''}
+          </span>
+        )}
         <a className="mkt-attrib" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer nofollow">
           Charts by TradingView Lightweight Charts™ · <span className="mkt-attrib__notice">© 2025 TradingView, Inc.</span>
         </a>

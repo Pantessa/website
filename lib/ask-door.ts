@@ -17,7 +17,7 @@
 //     curated example prompts.
 
 import { create } from 'zustand'
-import { chartPairFor, normalizeChartSymbol, parseChartAsk } from '@/lib/charts'
+import { chartPairFor, isLookOnlySymbol, normalizeChartSymbol, parseChartAsk } from '@/lib/charts'
 import { parseMarketsNavAsk } from '@/lib/markets'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import { tradeAsks } from '@/lib/trade-asks'
@@ -148,6 +148,8 @@ export function askDoorChips(pathname: string, brief?: { symbol: string; chips: 
 /** The composer placeholder: names the symbol on a symbol page. */
 export function askDoorPlaceholder(pathname: string): string {
   const sym = askDoorSymbol(pathname)
+  // A look-only index (lib/charts): the bar never suggests buying what nothing here trades.
+  if (sym && isLookOnlySymbol(sym)) return `Ask anything about ${sym} — why it is moving, its levels, an alert…`
   return sym ? `Ask anything about ${sym} — buy it, protect it, chart it…` : 'Ask Pantessa — swaps, stocks, stop-losses, anything…'
 }
 

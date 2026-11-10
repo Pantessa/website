@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
   const pair = await resolveChartPair(raw)
   if (!pair) return NextResponse.json({ error: 'no chart for that symbol' }, { status: 404, headers: { 'cache-control': 'no-store' } })
   if (pair.source === 'robinhood') return NextResponse.json({ ...empty(pair.symbol, tf, []), reason: 'A tokenized stock has no perpetual market to read.' }, { headers: HEADERS })
+  if (pair.source === 'index') return NextResponse.json({ ...empty(pair.symbol, tf, []), reason: 'An index has no perpetual market to read.' }, { headers: HEADERS })
   try {
     return NextResponse.json(await readDerivs(pair.symbol, tf), { headers: HEADERS })
   } catch {

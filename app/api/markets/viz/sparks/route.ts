@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { chartPairFor, resolveChartPair } from '@/lib/charts'
 import { cleanSparkSymbols, readSparks, SPARKS_MAX_SYMBOLS } from '@/lib/viz/sparks'
 
 export const runtime = 'nodejs'
@@ -10,7 +11,14 @@ export const dynamic = 'force-dynamic'
 // in `missing` (never a flat array). Public, keyless, market data. Never 500s.
 export async function GET(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get('symbols') ?? ''
-  const { symbols, junk } = cleanSparkSymbols(raw.split(',').map((s) => s.trim()).filter(Boolean))
+  const asked = raw.split(',').map((s) => s.trim()).filter(Boolean)
+  // A symbol the static table does not know may be a market the venue lists
+  // (the Macro board's Hyperliquid rows — SP500, GOLD, CL… — on a cold
+  // process): warm the live pair table once before calling it junk
+  // (lib/charts resolveChartPair; cached 10 min, no read when fresh).
+  const cold = asked.slice(0, SPARKS_MAX_SYMBOLS).find((s) => /^[A-Za-z0-9$._-]{1,16}$/.test(s) && !chartPairFor(s))
+  if (cold) await resolveChartPair(cold).catch(() => null)
+  const { symbols, junk } = cleanSparkSymbols(asked)
   if (symbols.length === 0) {
     return NextResponse.json({ sparks: {}, missing: [], junk, max: SPARKS_MAX_SYMBOLS }, { headers: { 'cache-control': 'no-store' } })
   }
