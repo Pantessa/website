@@ -21,7 +21,7 @@
 // a prop (components/home/tour/context.tsx).
 
 import { APP_CHAINS } from '@/lib/chains'
-import { CREATOR_FEE_SPLIT, HL_BUILDER_MAX_FEE_RATE, LINK_FEE_PCT, LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, SWAP_FEE_PCT, feePctLabel } from '@/lib/fees'
+import { CREATOR_FEE_SPLIT, HL_BUILDER_FEE_TENTH_BPS, LINK_FEE_PCT, LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, SWAP_FEE_PCT, feePctLabel } from '@/lib/fees'
 import { HOME_APPS } from '@/lib/home-apps'
 import { MACRO_ROWS } from '@/lib/macro'
 import { marketSections } from '@/lib/markets'
@@ -65,7 +65,8 @@ export function tourFees(): TourFees {
     swapPct: SWAP_FEE_PCT,
     linkPct: LINK_FEE_PCT,
     creatorPct: feePctLabel(LINK_SWAP_FEE_BPS * CREATOR_FEE_SPLIT),
-    hlPct: HL_BUILDER_MAX_FEE_RATE,
+    // The builder fee in the same two-place form as the other lines ("0.10%"), so a column of fees reads evenly.
+    hlPct: feePctLabel(HL_BUILDER_FEE_TENTH_BPS / 10),
     swapBps: SWAP_FEE_BPS,
     linkBps: LINK_SWAP_FEE_BPS,
     creatorSplit: CREATOR_FEE_SPLIT,
