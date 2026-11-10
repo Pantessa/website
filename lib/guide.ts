@@ -5,8 +5,8 @@
 // each may show, what has to have happened first, the storage record and
 // the journey events. Pure: no DOM at import time, so the harness pins it.
 //
-// The shape of it: ONE card, ONE rule module, five seats (`/`, `/t`, `/live`,
-// `/chat`, `/wallet`). A seat asks `pickHintForLoad(surface, ctx)` once when
+// The shape of it: ONE card, ONE rule module, six seats (`/`, `/t`, `/live`,
+// `/chat`, `/wallet`, and the community feed: `/community` and a room). A seat asks `pickHintForLoad(surface, ctx)` once when
 // it mounts and shows what comes back, or nothing. The rules:
 //   · one hint per surface per page load (a remount shows the same one and
 //     counts it once);
@@ -29,7 +29,7 @@ import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
 
 /** The surfaces a hint can sit on. */
-export type GuideSurface = 'home' | 'symbol' | 'live' | 'chat' | 'wallet'
+export type GuideSurface = 'home' | 'symbol' | 'live' | 'chat' | 'wallet' | 'community'
 
 /** Per-browser memory of what the guide has shown (localStorage). */
 export const GUIDE_STORAGE_KEY = 'pantessa.guide.v1'
@@ -42,7 +42,7 @@ export type GuideVisit = GuideSurface | 'jobs' | 'links'
 /** The spine seats that wear the unseen-dot. */
 export type GuideDotTab = 'jobs' | 'links' | 'wallet'
 
-export const GUIDE_SURFACES: readonly GuideSurface[] = ['home', 'symbol', 'live', 'chat', 'wallet']
+export const GUIDE_SURFACES: readonly GuideSurface[] = ['home', 'symbol', 'live', 'chat', 'wallet', 'community']
 export const GUIDE_VISITS: readonly GuideVisit[] = [...GUIDE_SURFACES, 'jobs', 'links']
 
 /** After a dismiss, the surface it happened on stays quiet this long. */
@@ -59,14 +59,16 @@ export const GUIDE_RECORD_MAX_BYTES = 8_192
  *  GUIDE_COMPACT_MQ): the splash (MOBILE's budget on `/`, R1) and the symbol
  *  page (the full 174px card under the act strip pushed the chart's plot top
  *  421 → 613 at 375×812 — the chart stays primary, R3). /live, /chat and
- *  /wallet keep the full card: nothing there competes for the first screen. */
-export const GUIDE_COMPACT_SURFACES: readonly GuideSurface[] = ['home', 'symbol']
+ *  /wallet keep the full card: nothing there competes for the first screen.
+ *  The community feed (/community and a room, 2026-11-09) is compact too: the
+ *  first post stays on the first screen. */
+export const GUIDE_COMPACT_SURFACES: readonly GuideSurface[] = ['home', 'symbol', 'community']
 
 export function compactOnPhone(surface: GuideSurface): boolean {
   return GUIDE_COMPACT_SURFACES.includes(surface)
 }
 
-export type GuideHintId = 'chart' | 'triggers' | 'links' | 'jobs' | 'wallet' | 'alerts'
+export type GuideHintId = 'chart' | 'triggers' | 'links' | 'jobs' | 'wallet' | 'alerts' | 'proof'
 
 /** What the seat knows that the record does not: where it is, which symbol
  *  (the chart hint names it), the example ask the page's own grammar
@@ -209,6 +211,18 @@ export const GUIDE_HINTS: readonly GuideHint[] = [
     // The second visit: the seat reads the record BEFORE it writes its own
     // visit, so a visit on file means an earlier page load.
     requires: (s, ctx) => !!s.visited[ctx.surface],
+  },
+  // The community feed's one lesson (squad community, lane SHARE, 2026-11-09):
+  // what a trade post proves. It says only what the chain read gives (the
+  // amount and the chain of one transaction); the market is the author's tag
+  // and the hint never calls it confirmed. The action opens the composer on
+  // the trade tab of the page the reader is on (the feed, or the room).
+  {
+    id: 'proof',
+    surfaces: ['community'],
+    title: 'Trades here come with proof.',
+    body: 'A trade post shows what the chain confirmed, and a reader can do the same trade from the card.',
+    cta: { label: 'Post a trade with proof →', short: 'Post one →', kind: 'href', value: '?compose=trade' },
   },
 ]
 

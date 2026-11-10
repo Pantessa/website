@@ -1,0 +1,78 @@
+/* Telegram surfaces on a room page (lane TELEGRAM): the owner's settings
+   panel and the "Continue with Telegram" door. Site tokens only. */
+.tgpanel {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 12px);
+  background: var(--surf-1);
+  color: var(--fg);
+  font-size: var(--fs-md, 13px);
+  line-height: 1.5;
+}
+.tgpanel__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tgpanel__title { margin: 0; font-size: var(--fs-sm, 12px); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.tgpanel__state { font-size: var(--fs-sm, 12px); font-weight: 600; color: var(--accent); }
+.tgpanel__muted { margin: 0; color: var(--muted); }
+.tgpanel__chats { margin: 0; padding: 0; list-style: none; font-weight: 600; font-size: var(--fs-base, 15px); overflow-wrap: anywhere; }
+.tgpanel__row { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tgpanel__code {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm, 8px);
+  background: var(--bg);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-sm, 12px);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.tgpanel__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg);
+  font-weight: 600;
+  font-size: var(--fs-md, 13px);
+  cursor: pointer;
+}
+.tgpanel__btn:hover { border-color: var(--fg); }
+.tgpanel__btn:disabled { opacity: 0.5; cursor: default; }
+.tgpanel__btn--primary { justify-self: start; border-color: var(--accent); background: var(--accent); color: var(--ink, #000); }
+.tgpanel__btn--primary:hover { filter: brightness(1.06); border-color: var(--accent); }
+.tgpanel__btn--danger { border-color: var(--sell, #e5484d); color: var(--sell, #e5484d); }
+.tgpanel__link { justify-self: start; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.tgpanel__link:hover { color: var(--fg); }
+.tgpanel__steps { margin: 0; padding-left: 18px; display: grid; gap: 12px; }
+.tgpanel__steps li { display: grid; gap: 6px; }
+.tgpanel__note { margin: 0; color: var(--fg); }
+
+.tgjoin { display: grid; gap: 6px; justify-items: start; }
+.tgjoin__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 14px;
+}
+.tgjoin--sm .tgjoin__btn { min-height: 36px; padding: 0 12px; font-size: var(--fs-md, 13px); }
+.tgjoin__btn:hover { border-color: var(--fg); }
+.tgjoin__hint, .tgjoin__note { margin: 0; font-size: var(--fs-sm, 12px); color: var(--muted); }
+.tgjoin__note { color: var(--fg); }
+.tgjoin__widget:empty { display: none; }
+
+@media (max-width: 640px) {
+  .tgpanel__btn { min-height: 44px; }
+}

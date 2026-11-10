@@ -1,3 +1,4 @@
+import { tradeHeadline } from '@/lib/community/proof-words'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -11,7 +12,17 @@ import CallInfo from '@/components/markets/call/CallInfo'
 import { readCall } from '@/lib/chart-calls-read'
 import { STAMP_FRAMES, callTweetHref, callUrl, fmtCallPrice, fmtCallTime, fmtMove, fmtSpan } from '@/lib/chart-calls'
 import { symbolName } from '@/lib/markets-seo'
+import PostCard from '@/components/community/PostCard'
+import ShareSheet from '@/components/community/ShareSheet'
+import VoteButtons from '@/components/community/VoteButtons'
+import { postShareText } from '@/components/community/feed-rules'
+import { readComments } from '@/lib/chart-posts'
+import { getActor } from '@/lib/community/identity'
+import { getFeedPost } from '@/lib/community/store'
+import { communityPath, type FeedPost } from '@/lib/community/spec'
+import { absoluteUrl } from '@/lib/site-url'
 import '@/components/markets/comm.css'
+import '@/components/community/community.css'
 
 // /c/<id> — a CALL: one chart post as a public, stamped claim.
 //
@@ -24,16 +35,52 @@ import '@/components/markets/comm.css'
 //
 // By-id read, like /i/<slug>: an internal (harness) post renders for whoever
 // holds its id, is never indexed, and shows no fills.
+//
+// EVERY post has this address (squad community, 2026-11-09). A chart idea is
+// a call and keeps the page above, now with its votes and the share sheet. A
+// video, a trade with proof or a link is not a call (nothing was drawn, no
+// price to stamp): it renders as its feed card at full length with the
+// replies under it. The feed's "N comments" lands here for all four kinds.
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 type Params = { params: Promise<{ id: string }> }
 
+/** The post in the feed's shape (room, video, proof, score, the reader's own
+ *  vote). Its own failure domain: a miss leaves the call page as it was. */
+async function readFeedPost(id: string): Promise<FeedPost | null> {
+  try {
+    const actor = await getActor().catch(() => null)
+    return await getFeedPost(id, actor?.key ?? null)
+  } catch {
+    return null
+  }
+}
+
+const KIND_NOUN: Record<FeedPost['kind'], string> = { idea: 'chart idea', link: 'link', video: 'video', trade: 'trade with proof' }
+
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { id } = await params
   const call = await readCall(id)
-  if (!call) return { title: 'Call · Pantessa', robots: { index: false, follow: false } }
+  if (!call) {
+    // Not a call: a video, a trade or a link, on the same address.
+    const fp = await readFeedPost(id)
+    if (!fp || fp.kind === 'idea') return { title: 'Call · Pantessa', robots: { index: false, follow: false } }
+    const where = fp.community ? ` in ${fp.community.name}` : ''
+    // T4: a trade's og:title is what the chain confirmed; the typed title is quoted as the author's.
+    const th = fp.kind === 'trade' ? tradeHeadline({ title: fp.title, proof: fp.proof }) : null
+    const t = th ? `${th.headline} · Pantessa` : `${fp.symbol ? `${fp.symbol}: ` : ''}${fp.title} · Pantessa`
+    const d = th ? `A trade post by ${fp.authorLabel}${where}.${th.authorWords ? ` ${th.authorWords}` : ''}` : `A ${KIND_NOUN[fp.kind]} by ${fp.authorLabel}${where}.`
+    return {
+      title: t,
+      description: d,
+      alternates: { canonical: callUrl(fp.id) },
+      robots: fp.isInternal ? { index: false, follow: false } : undefined,
+      openGraph: { title: t, description: d, url: callUrl(fp.id), siteName: 'Pantessa', type: 'article' },
+      twitter: { card: 'summary', title: t, description: d },
+    }
+  }
   const { post, stamp, move } = call
   const title = `${post.symbol}: ${post.title} · a call on Pantessa`
   const description = [
@@ -56,8 +103,30 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function CallPage({ params }: Params) {
   const { id } = await params
-  const call = await readCall(id)
-  if (!call) notFound()
+  const [call, feedPost] = await Promise.all([readCall(id), readFeedPost(id)])
+  if (!call) {
+    if (!feedPost || feedPost.kind === 'idea') notFound()
+    const comments = await readComments(feedPost.id, feedPost.isInternal).catch(() => [])
+    return (
+      <>
+        <main className="cmy-postpg" data-post-page={feedPost.kind}>
+          <div className="cmy-postpg__back">
+            <Link href="/community">Community</Link>
+            {feedPost.community && (
+              <>
+                <span aria-hidden> / </span>
+                <Link href={communityPath(feedPost.community.slug)}>{feedPost.community.name}</Link>
+              </>
+            )}
+          </div>
+          <h1 className="sr-only">{feedPost.title}</h1>
+          <PostCard post={feedPost} showCommunity full />
+          <CallComments postId={feedPost.id} initial={comments} />
+        </main>
+        <Footer />
+      </>
+    )
+  }
   const { post, stamp, last, move, fills, heldAtCall, pair, authorLinks } = call
   const frame = stamp ? STAMP_FRAMES.find((f) => f.tf === stamp.tf)!.label : null
   const stood = fmtSpan(Math.floor(Date.now() / 1000) - post.createdAt)
@@ -83,6 +152,17 @@ export default async function CallPage({ params }: Params) {
             )}
           </div>
           <h1 className="callpg__title">{post.title}</h1>
+
+          {/* the vote and the way to pass it on (the feed's own controls) */}
+          <div className="cmy-callbar" data-call-bar="">
+            <VoteButtons postId={post.id} score={feedPost ? feedPost.score : null} myVote={feedPost?.myVote ?? 0} layout="row" />
+            {feedPost?.community && (
+              <Link href={communityPath(feedPost.community.slug)} className="cmy-card__room" style={{ marginLeft: 0 }}>
+                {feedPost.community.name}
+              </Link>
+            )}
+            <ShareSheet url={absoluteUrl(`/c/${post.id}`)} text={postShareText({ kind: 'idea', symbol: post.symbol, title: post.title, proof: null })} what="post" label="Share to a group" />
+          </div>
 
           {/* the stamp */}
           <dl className="callpg__stamp">

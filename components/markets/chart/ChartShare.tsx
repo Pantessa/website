@@ -35,6 +35,7 @@ import { absoluteUrl } from '@/lib/site-url'
 import { viewUrl, type BoardMode, type ChartView } from '@/lib/markets'
 import type { DepthSettings } from '@/lib/depth'
 import { friendlyError } from '@/lib/friendly-error'
+import { CALL_NEXT_LABEL, COMMUNITY_NEW_HREF } from '@/components/community/feed-rules'
 
 export interface ChartShareProps {
   symbol: string
@@ -305,6 +306,13 @@ export default function ChartShare({ symbol, tf, lines, view, board, depth, capt
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden /> Open the call
                 </a>
               </div>
+              {/* The one next step: the call is a post, and the feed (newest first) has it on top. */}
+              <p className="mkt-share__note" data-call-next="">
+                It is posted on the {symbol} board and in the community feed, where people vote and reply.{' '}
+                <Link href={COMMUNITY_NEW_HREF} className="underline decoration-dotted underline-offset-2" target="_blank" rel="noopener" data-journey="See it in the community">
+                  {CALL_NEXT_LABEL}
+                </Link>
+              </p>
             </>
           ) : (
             <>

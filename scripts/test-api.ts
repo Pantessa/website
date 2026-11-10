@@ -385,6 +385,12 @@ import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
 import { readPins, readRedirectPins, readServedPins } from './read-pins'
 import { homeAppsPins } from './home-apps-pins'
+import { communityCoordPins, communityCoordPinsServed } from './community-coord-pins'
+import { communityCorePins, communityCorePinsServed } from './community-core-pins'
+import { communityFeedPins, communityFeedPinsServed } from './community-feed-pins'
+import { communityGroupPins, communityGroupPinsServed } from './community-group-pins'
+import { communityTelegramPins, communityTelegramPinsServed } from './community-telegram-pins'
+import { communityDiscordPins, communityDiscordPinsServed } from './community-discord-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -11503,12 +11509,12 @@ async function main() {
       const seatOrder = (h: string, tag: 'aside' | 'nav') =>
         Array.from(
           (h.match(new RegExp(`<${tag} [^>]*aria-label="Workspace"[\\s\\S]*?</${tag}>`))?.[0] ?? '').matchAll(
-            /aria-label="(MARKETS|APPS|JOBS|LINKS|WALLET|TEAM|CHATS|LEADERS|ANALYTICS|DOCS|Settings)"/g,
+            /aria-label="(MARKETS|APPS|JOBS|LINKS|WALLET|TEAM|CHATS|COMMUNITY|LEADERS|ANALYTICS|DOCS|Settings)"/g,
           ),
           (m) => m[1],
         ).join(' ')
       // RE-PINNED 2026-10-15 (progress): LEADERS + ANALYTICS, the public progress pages, seat under CHATS and above DOCS.
-      const SPINE_SEATS = /^MARKETS APPS JOBS LINKS WALLET (TEAM )?CHATS LEADERS ANALYTICS DOCS Settings$/
+      const SPINE_SEATS = /^MARKETS APPS JOBS LINKS WALLET (TEAM )?CHATS COMMUNITY LEADERS ANALYTICS DOCS Settings$/
       check(
         'spine: the WALLET seat sits right under LINKS in both postures on /chat, /markets and /wallet (MARKETS · APPS · JOBS · LINKS · WALLET · TEAM · CHATS · LEADERS · ANALYTICS · DOCS · Settings; a page link, lit only on its own page); isWalletPath is exactly /wallet + /wallet/*',
         [wpChat, wpMarkets, wpHtml].every(
@@ -35517,6 +35523,20 @@ async function main() {
   readPins(check)
   await readRedirectPins(check)
   await readServedPins(check, BASE)
+
+  // ── squad community (2026-11-09): one pin file per lane, wired once here ──
+  communityCoordPins(check)
+  await communityCoordPinsServed(check, BASE)
+  communityCorePins(check)
+  await communityCorePinsServed(check, BASE)
+  communityFeedPins(check)
+  await communityFeedPinsServed(check, BASE)
+  communityGroupPins(check)
+  await communityGroupPinsServed(check, BASE)
+  communityTelegramPins(check)
+  await communityTelegramPinsServed(check, BASE)
+  communityDiscordPins(check)
+  await communityDiscordPinsServed(check, BASE)
   // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
   // sign-in door, never a planner promise to "fetch your tokens".
   {

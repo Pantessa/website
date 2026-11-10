@@ -77,10 +77,17 @@ export function guidePins(check: Check): void {
   // RE-PINNED 2026-10-13 (apps row): the splash's own lesson ("pulse" → the live tape) left — the deck at the
   // top of `/` IS that lesson and the apps row took the card's seat. Six hints; the splash mounts no seat.
   check(
-    'guide: six hints in the brief\'s priority order (chart · triggers · links · jobs · wallet · alerts — the splash\'s pulse lesson retired 2026-10-13, the deck is it), ids unique, every surface a GuideSurface, the storage key fixed',
-    ids.join(',') === 'chart,triggers,links,jobs,wallet,alerts' &&
-      new Set(ids).size === 6 &&
-      GUIDE_TOTAL === 6 &&
+    // RE-PINNED 2026-11-09 (squad community, lane SHARE): a seventh hint, `proof`, on the new `community` surface (/community and a room).
+    'guide: seven hints in priority order (chart · triggers · links · jobs · wallet · alerts · proof — the splash\'s pulse lesson retired 2026-10-13; proof is the community feed\'s one lesson, 2026-11-09), ids unique, every surface a GuideSurface, the storage key fixed',
+    ids.join(',') === 'chart,triggers,links,jobs,wallet,alerts,proof' &&
+      new Set(ids).size === 7 &&
+      GUIDE_TOTAL === 7 &&
+      hint('proof').surfaces.join(',') === 'community' &&
+      GUIDE_SURFACES.join(',') === 'home,symbol,live,chat,wallet,community' &&
+      /what the chain confirmed/.test(hint('proof').body) &&
+      !/verified/i.test(`${hint('proof').title} ${hint('proof').body}`) &&
+      guideCta(hint('proof'), {})?.kind === 'href' &&
+      guideCta(hint('proof'), {})?.value === '?compose=trade' &&
       GUIDE_HINTS.every((h) => h.surfaces.length > 0 && h.surfaces.every((s) => GUIDE_SURFACES.includes(s))) &&
       GUIDE_STORAGE_KEY === 'pantessa.guide.v1' &&
       guideIndexOf('chart') === 1 &&
@@ -361,8 +368,10 @@ export function guidePins(check: Check): void {
       /Don’t show tips/.test(card),
   )
   check(
-    'guide: the compact row is for the SPLASH and the SYMBOL page (GUIDE_COMPACT_SURFACES = home + symbol; GuideSeat passes compactOnPhone(surface)); /live, /chat and /wallet keep the full card on a phone — nothing there competes for the first screen',
-    GUIDE_COMPACT_SURFACES.join(',') === 'home,symbol' &&
+    // RE-PINNED 2026-11-09 (squad community, lane SHARE): the community feed's seat is compact on a phone too (the first post stays on the first screen).
+    'guide: the compact row is for the SPLASH, the SYMBOL page and the COMMUNITY feed (GUIDE_COMPACT_SURFACES = home + symbol + community; GuideSeat passes compactOnPhone(surface)); /live, /chat and /wallet keep the full card on a phone — nothing there competes for the first screen',
+    GUIDE_COMPACT_SURFACES.join(',') === 'home,symbol,community' &&
+      compactOnPhone('community') &&
       compactOnPhone('home') &&
       compactOnPhone('symbol') &&
       !compactOnPhone('live') &&
