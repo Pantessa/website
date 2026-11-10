@@ -68,11 +68,10 @@
 .tour__tablabel { font-size: var(--fs-base); font-weight: 600; line-height: 1.3; color: var(--fg); }
 .tour__tabline { font-size: var(--fs-sm); line-height: 1.4; color: var(--muted); text-wrap: pretty; }
 .tour__chev { display: none; width: 16px; height: 16px; color: var(--muted-2); transition: transform var(--dur-1) ease, color var(--dur-1) ease; }
-.tour__tab.is-on .tour__icon { color: var(--accent); }
-.tour__tab.is-on .tour__idx { color: var(--accent); }
 
 .tour__stage { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); }
-.tour__panel { flex: 1 0 auto; min-width: 0; min-height: max(var(--tour-floor-base, 0px), var(--tour-floor, 0px)); padding: var(--sp-5); }
+/* The floor is per layout (--tour-floor-base): a taller panel grows the stage, a shorter one gives the height back. */
+.tour__panel { flex: 1 0 auto; min-width: 0; min-height: var(--tour-floor-base, 0px); padding: var(--sp-5); }
 .tour__panel.is-in { animation: tour-in var(--dur-1) ease both; }
 @keyframes tour-in {
   from { opacity: 0; }
@@ -92,18 +91,28 @@
 .tour__arrow { color: var(--accent); transition: transform var(--dur-1) ease; }
 .tour__next:hover .tour__arrow { transform: translateX(2px); }
 
-/* ── WIDE: the list beside the stage ──────────────────────────────────── */
+/* ── WIDE: the list beside the stage ──────────────────────────────────────
+   The list is as narrow as its one-liners allow in two lines (the index
+   rides the label's line at the row's far end, so the words get the full
+   width), which gives the stage, and the miniature in it, the room. */
 @container tour (min-width: 860px) {
   /* The stage stretches to the list's height: the two share a bottom edge. */
-  .tour__body { --tour-layout: wide; display: grid; grid-template-columns: minmax(0, 17.5rem) minmax(0, 1fr); gap: var(--sp-5); align-items: stretch; }
+  .tour__body { --tour-layout: wide; display: grid; grid-template-columns: minmax(0, 15.5rem) minmax(0, 1fr); gap: calc(var(--sp-4) + var(--sp-1)); align-items: stretch; }
   .tour__list { display: flex; flex-direction: column; gap: 2px; align-self: start; }
-  .tour__tab { grid-template-columns: 1.25rem 1.125rem minmax(0, 1fr); column-gap: var(--sp-3); width: 100%; min-height: 64px; padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4); border-radius: var(--r-md); }
+  .tour__tab { grid-template-columns: 1.125rem minmax(0, 1fr) auto; column-gap: 10px; row-gap: 2px; width: 100%; min-height: 60px; padding: 10px var(--sp-3) 10px 14px; border-radius: var(--r-md); }
+  .tour__icon { grid-column: 1; grid-row: 1; }
+  .tour__tabtext { display: contents; }
+  .tour__tablabel { grid-column: 2; grid-row: 1; }
+  .tour__idx { grid-column: 3; grid-row: 1; }
+  .tour__tabline { grid-column: 2 / 4; grid-row: 2; }
   .tour__tab:hover { background: color-mix(in srgb, var(--fg) 4%, transparent); }
   .tour__tab.is-on { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+  .tour__tab.is-on .tour__icon, .tour__tab.is-on .tour__idx { color: var(--accent); }
   /* The selected row's mark: a short accent rule on its leading edge. */
-  .tour__tab::before { content: ''; position: absolute; left: 0; top: var(--sp-3); bottom: var(--sp-3); width: 2px; border-radius: var(--r-pill); background: transparent; transition: background var(--dur-1) ease; }
+  .tour__tab::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: var(--r-pill); background: transparent; transition: background var(--dur-1) ease; }
   .tour__tab.is-on::before { background: var(--accent); }
-  .tour__panel { --tour-floor-base: 26rem; }
+  .tour__panel { --tour-floor-base: 26rem; padding: calc(var(--sp-4) + var(--sp-1)); }
+  .tour__foot { padding-left: calc(var(--sp-4) + var(--sp-1)); }
 }
 
 /* ── MID: a row of tabs above the stage ───────────────────────────────── */
@@ -115,6 +124,7 @@
   .tour__tab { flex: 0 0 auto; grid-template-columns: auto auto; align-items: center; column-gap: var(--sp-2); min-height: 40px; padding: 0 var(--sp-3) 0 10px; border: 1px solid var(--line); border-radius: var(--r-pill); }
   .tour__tab:hover { border-color: color-mix(in srgb, var(--fg) 28%, var(--line)); }
   .tour__tab.is-on { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+  .tour__tab.is-on .tour__icon { color: var(--accent); }
   .tour__idx, .tour__tabline { display: none; }
   .tour__icon { width: 16px; height: 16px; margin-top: 0; }
   .tour__tablabel { font-size: var(--fs-md); white-space: nowrap; }
@@ -122,19 +132,28 @@
 }
 
 /* ── PHONE: the eight rows stay a list; the open side sits under its row ──
-   The list dissolves into the body's column and `order` seats the stage
-   right under the selected row (--tour-at, the row's index), so the server's
-   HTML is already the accordion. After mount Tour.tsx moves the stage in the
-   DOM to the same place: nothing shifts, and focus order follows the eye. */
+   FOLDED IN THE FIRST PAINT. The point of the section is the list, so on a
+   phone all eight rows fit one screen and nothing is open until a tap. The
+   server's HTML is the same for every layout and carries the first side's
+   stage (wide and mid show it); here the stage is hidden until the shell
+   marks a side open (data-tour-open on the body), so the fold needs no
+   script and hydration takes nothing out from under the reader. The same
+   mark gates the open row's look: the server's `is-on` is wide's.
+
+   Once a side is open the list dissolves into the body's column and `order`
+   seats the stage right under its row (--tour-at, the row's index); Tour.tsx
+   also moves the stage in the DOM to that place, so focus order follows the
+   eye. */
 @container tour (max-width: 559.98px) {
   .tour__body { --tour-layout: phone; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
+  .tour__body:not([data-tour-open]) .tour__stage { display: none; }
   .tour__list { display: contents; }
   .tour__tab { order: calc(var(--i, 0) * 2); grid-template-columns: 1.25rem 1.125rem minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3); width: 100%; min-height: 60px; padding: var(--sp-3) var(--sp-1); border-top: 1px solid var(--line); border-radius: 0; }
   .tour__idx { align-self: center; }
   .tour__icon { margin-top: 0; }
   .tour__chev { display: block; }
-  .tour__tab.is-on .tour__chev { transform: rotate(180deg); color: var(--accent); }
-  .tour__tab.is-on .tour__tablabel { color: var(--fg); }
+  .tour__body[data-tour-open] .tour__tab.is-on .tour__icon, .tour__body[data-tour-open] .tour__tab.is-on .tour__idx { color: var(--accent); }
+  .tour__body[data-tour-open] .tour__tab.is-on .tour__chev { transform: rotate(180deg); color: var(--accent); }
   .tour__stage { order: calc(var(--tour-at, 0) * 2 + 1); border: 0; border-radius: 0; background: transparent; }
   .tour__panel { min-height: 0; padding: var(--sp-1) 0 var(--sp-4); }
   .tour__foot { padding: var(--sp-2) 0 var(--sp-3); }

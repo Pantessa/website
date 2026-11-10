@@ -20,7 +20,12 @@
 //   • LAYOUT. The tour answers to its own width (container queries in
 //     tour.css): WIDE is a vertical list beside the stage, MID is a row of
 //     tabs above it, PHONE is the eight rows as a list with the open side's
-//     panel under its row. The stylesheet names the layout it is drawing in
+//     panel under its row. A PHONE STARTS FOLDED: the point of the section
+//     is the list, so all eight rows fit one screen and nothing is open
+//     until a tap (or a deep link). The fold is the stylesheet's, in the
+//     first paint: the phone query hides the stage until the shell marks a
+//     side open (`data-tour-open`), so hydration pulls nothing out from
+//     under the reader. The stylesheet names the layout it is drawing in
 //     `--tour-layout`; the shell reads that back (one source for the
 //     breakpoints) to pick the roles — a real tablist when wide or mid,
 //     buttons with aria-expanded on a phone — and, on a phone, to move the
@@ -29,6 +34,12 @@
 //
 //   • NOTHING CHANGES BY ITSELF. No timer selects a side. The stage's foot
 //     says where you are (`03 / 08`) and offers the next side.
+//
+//   • THE STAGE'S HEIGHT is the stylesheet's: a floor per layout (wide: the
+//     list's own height, the two share a bottom edge; mid: a fixed floor).
+//     A taller panel grows the stage and a shorter one gives the height
+//     back. (Round 1 kept the tallest panel seen; with real panels that left
+//     a large blank under every side after the tallest, so it went.)
 //
 // Kept by whoever edits this:
 //   • the section is `<section id="tour" data-tour>`; a row is
@@ -131,15 +142,14 @@ function StripDoor({ side }: { side: TourSideMeta }) {
 }
 
 export default function Tour({ data, read }: { data?: TourSnapshot; read?: ReadSnapshot }) {
-  // The selected side. `open` is the phone's accordion: a second tap on the open row folds it.
-  const [sel, setSel] = useState<{ id: TourId; open: boolean }>({ id: TOUR_SIDES[0].id, open: true })
+  // The selected side. `open` is the phone's accordion: nothing is open until the visitor taps a row (or a deep
+  // link names one), and a second tap on the open row folds it. Wide and mid always show the selected side.
+  const [sel, setSel] = useState<{ id: TourId; open: boolean }>({ id: TOUR_SIDES[0].id, open: false })
   const [layout, setLayout] = useState<TourLayout>('wide')
   // A deep link to a side shows the whole tour for this page view, whatever the posture.
   const [forced, setForced] = useState(false)
   // The panel fades in only after the visitor changed the side (never on load).
   const [fade, setFade] = useState(false)
-  // The tallest panel seen at this width: the stage never shrinks under the visitor, so the boards below hold still.
-  const [floor, setFloor] = useState(0)
   const mode = useSyncExternalStore(subscribeHomeMode, homeModeNow, homeModeOnServer)
   const strip = mode === 'return' && !forced
 
@@ -147,7 +157,6 @@ export default function Tour({ data, read }: { data?: TourSnapshot; read?: ReadS
   const bodyRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const stripRowRef = useRef<HTMLDivElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
   const tabRefs = useRef<Partial<Record<TourId, HTMLButtonElement | null>>>({})
   const layoutRef = useRef<TourLayout>('wide')
   const after = useRef<After | null>(null)
@@ -157,17 +166,10 @@ export default function Tour({ data, read }: { data?: TourSnapshot; read?: ReadS
     const section = sectionRef.current
     const body = bodyRef.current
     if (!section || !body) return
-    let width = -1
     const readLayout = () => {
       const next = parseTourLayout(getComputedStyle(body).getPropertyValue(TOUR_LAYOUT_PROP))
       layoutRef.current = next
       setLayout(next)
-      // A new width re-measures the stage's floor.
-      const w = Math.round(section.getBoundingClientRect().width)
-      if (w !== width) {
-        width = w
-        setFloor(0)
-      }
     }
     readLayout()
     const sized = new ResizeObserver(readLayout)
@@ -240,15 +242,6 @@ export default function Tour({ data, read }: { data?: TourSnapshot; read?: ReadS
   useMoreEdges(listRef, layout)
   useMoreEdges(stripRowRef, strip)
 
-  // ── The stage's floor: the tallest panel seen at this width ──
-  useEffect(() => {
-    const el = panelRef.current
-    if (!el || layout === 'phone') return
-    const sized = new ResizeObserver(() => setFloor((f) => Math.max(f, Math.ceil(el.getBoundingClientRect().height))))
-    sized.observe(el)
-    return () => sized.disconnect()
-  }, [sel.id, sel.open, layout, strip])
-
   const phone = layout === 'phone'
   const onListKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (phone || e.metaKey || e.ctrlKey || e.altKey) return
@@ -266,7 +259,8 @@ export default function Tour({ data, read }: { data?: TourSnapshot; read?: ReadS
   const pos = tourPosition(sel.id)
   const nextId = tourNextId(sel.id)
   const Panel = TOUR_PANELS[sel.id]
-  const showStage = !strip && sel.open
+  // Wide and mid always show the selected side; a phone shows one only once it was opened.
+  const showStage = !strip && (!phone || sel.open)
 
   // The stage: the selected side's panel (the ONLY one mounted) and the foot that walks the tour.
   const stage = showStage ? (
@@ -276,9 +270,8 @@ export default function Tour({ data, read }: { data?: TourSnapshot; read?: ReadS
       role={phone ? 'region' : 'tabpanel'}
       aria-labelledby={tourAnchor(sel.id)}
       data-tour-stage={sel.id}
-      style={floor && !phone ? ({ '--tour-floor': `${floor}px` } as CSSProperties) : undefined}
     >
-      <div className={`tour__panel${fade ? ' is-in' : ''}`} key={sel.id} ref={panelRef}>
+      <div className={`tour__panel${fade ? ' is-in' : ''}`} key={sel.id}>
         <Panel />
       </div>
       <footer className="tour__foot">
@@ -337,7 +330,7 @@ export default function Tour({ data, read }: { data?: TourSnapshot; read?: ReadS
             </button>
           </header>
 
-          <div className="tour__body" ref={bodyRef} style={{ '--tour-at': at } as CSSProperties}>
+          <div className="tour__body" ref={bodyRef} data-tour-open={sel.open || undefined} style={{ '--tour-at': at } as CSSProperties}>
             <div
               className="tour__list"
               ref={listRef}
@@ -362,7 +355,7 @@ export default function Tour({ data, read }: { data?: TourSnapshot; read?: ReadS
                       ref={(el) => {
                         tabRefs.current[s.id] = el
                       }}
-                      className={`tour__tab${on && sel.open ? ' is-on' : ''}`}
+                      className={`tour__tab${on && (!phone || sel.open) ? ' is-on' : ''}`}
                       style={{ '--i': i } as CSSProperties}
                       onClick={() => select(s.id, 'tap')}
                       data-tour-tab={s.id}

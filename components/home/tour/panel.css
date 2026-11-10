@@ -10,19 +10,22 @@
    given (the stage beside the tab list, a phone's full row, /story's
    column) and never to the viewport.
 
-   WIDTHS A MINIATURE MUST FIT (the demo's own box, measured in the shell):
-   about 335px beside the words in the stage at a 1440 window, about 326px
-   on a 390 phone, up to about 480px on a very wide window. Size a miniature
-   by `@container tpn (…)` or by its own container, never by a media query:
-   on a desktop the demo is as narrow as it is on a phone. */
+   WIDTHS A MINIATURE MUST FIT (the demo's own box, measured in the shell;
+   STAGE.md has the table): about 390px beside the words in the stage at a
+   1440 window, 358px on a 390 phone (one column), wider on a wider window.
+   Size a miniature by `@container tpn (…)` or by its own container, never
+   by a media query: on a desktop the demo is close to a phone's width. */
 
 .tpn-seat { container-type: inline-size; container-name: tpn; min-width: 0; }
 .tpn { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); min-width: 0; }
-/* Two columns from 600px of seat: the stage beside the list is 638px at a
-   1440 window, and the miniature belongs BESIDE the words there, in view
-   with the list, not a screen below it. */
+/* Two columns from 600px of seat: the miniature belongs BESIDE the words in
+   the stage, in view with the list, not a screen below it. The split
+   favours the miniature: the words keep a reading column (16.5rem at the
+   least, 39% of the seat, 22rem at the most) and the demo takes the rest,
+   so a narrow stage does not squeeze the miniature to a phone's width while
+   the words column stands half empty under its doors. */
 @container tpn (min-width: 600px) {
-  .tpn { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--sp-5); align-items: start; }
+  .tpn { grid-template-columns: minmax(0, clamp(16.5rem, 39cqi, 22rem)) minmax(0, 1fr); gap: var(--sp-5); align-items: start; }
 }
 @container tpn (min-width: 840px) {
   .tpn { gap: var(--sp-6); }
