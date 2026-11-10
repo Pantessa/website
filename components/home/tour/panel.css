@@ -30,6 +30,11 @@
 @container tpn (min-width: 840px) {
   .tpn { gap: var(--sp-6); }
 }
+/* A very wide seat (/story's column, a 1920 window) has room for both: the
+   even split it was drawn with. */
+@container tpn (min-width: 960px) {
+  .tpn { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); }
+}
 
 /* ── The words ────────────────────────────────────────────────────────── */
 .tpn__copy { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }

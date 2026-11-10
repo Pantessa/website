@@ -111,7 +111,8 @@
   /* The selected row's mark: a short accent rule on its leading edge. */
   .tour__tab::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: var(--r-pill); background: transparent; transition: background var(--dur-1) ease; }
   .tour__tab.is-on::before { background: var(--accent); }
-  .tour__panel { --tour-floor-base: 26rem; padding: calc(var(--sp-4) + var(--sp-1)); }
+  /* The list's height is the floor here (the body stretches the stage to it). */
+  .tour__panel { padding: calc(var(--sp-4) + var(--sp-1)); }
   .tour__foot { padding-left: calc(var(--sp-4) + var(--sp-1)); }
 }
 
@@ -128,7 +129,8 @@
   .tour__idx, .tour__tabline { display: none; }
   .tour__icon { width: 16px; height: 16px; margin-top: 0; }
   .tour__tablabel { font-size: var(--fs-md); white-space: nowrap; }
-  .tour__panel { --tour-floor-base: 22rem; }
+  /* Four of the eight panels stand within a few px of this at a 1280 window: they share one height. */
+  .tour__panel { --tour-floor-base: 32rem; }
 }
 
 /* ── PHONE: the eight rows stay a list; the open side sits under its row ──
@@ -148,7 +150,15 @@
   .tour__body { --tour-layout: phone; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
   .tour__body:not([data-tour-open]) .tour__stage { display: none; }
   .tour__list { display: contents; }
-  .tour__tab { order: calc(var(--i, 0) * 2); grid-template-columns: 1.25rem 1.125rem minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3); width: 100%; min-height: 60px; padding: var(--sp-3) var(--sp-1); border-top: 1px solid var(--line); border-radius: 0; }
+  /* Folded, the whole section fits one phone screen (the head and eight rows between the stuck tabs and the
+     bottom bar): the hide control rides the eyebrow's line so the heading keeps the full width and one line. */
+  .tour__head { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--sp-3); row-gap: var(--sp-2); align-items: center; }
+  .tour__headtext { display: contents; }
+  .tour__eyebrow { grid-column: 1; grid-row: 1; }
+  .tour__hide { grid-column: 2; grid-row: 1; margin-block: -14px; }
+  .tour__title { grid-column: 1 / 3; grid-row: 2; }
+  .tour__sub { grid-column: 1 / 3; grid-row: 3; }
+  .tour__tab { order: calc(var(--i, 0) * 2); grid-template-columns: 1.25rem 1.125rem minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3); width: 100%; min-height: 56px; padding: 10px var(--sp-1); border-top: 1px solid var(--line); border-radius: 0; }
   .tour__idx { align-self: center; }
   .tour__icon { margin-top: 0; }
   .tour__chev { display: block; }

@@ -280,10 +280,14 @@ export default function Tour({ data, read }: { data?: TourSnapshot; read?: ReadS
             <i key={s.id} className={i <= at ? 'is-done' : undefined} />
           ))}
         </span>
-        <span className="tour__count mono" aria-label={pos.spoken}>
+        {/* The digits and the name are for the eye; a screen reader gets one plain sentence. */}
+        <span className="tour__count mono" aria-hidden>
           {pos.label}
         </span>
-        <span className="tour__here">{side.label}</span>
+        <span className="tour__here" aria-hidden>
+          {side.label}
+        </span>
+        <span className="sr-only">{`${pos.spoken}: ${side.label}`}</span>
         <button type="button" className="tour__next" onClick={() => select(nextId, 'next')} data-tour-next={nextId} data-journey={tourJourney(nextId, 'next')}>
           {tourNextLabel(sel.id, (id) => tourSide(id).label)}
           <span className="tour__arrow" aria-hidden>
