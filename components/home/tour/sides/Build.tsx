@@ -67,7 +67,9 @@ export default function BuildSide() {
     const i = BUILD_TABS.findIndex((t) => t.id === on)
     const to = e.key === 'ArrowRight' ? (i + 1) % BUILD_TABS.length : e.key === 'ArrowLeft' ? (i - 1 + BUILD_TABS.length) % BUILD_TABS.length : e.key === 'Home' ? 0 : e.key === 'End' ? BUILD_TABS.length - 1 : -1
     if (to < 0) return
+    // These tabs sit inside the tour's own tablist: a key handled here stops here.
     e.preventDefault()
+    e.stopPropagation()
     const next = BUILD_TABS[to].id
     setOn(next)
     tabs.current[next]?.focus()

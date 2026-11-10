@@ -1,23 +1,29 @@
-/* THE TOUR · AUTOPILOTS (lane SIDES-B): four standing orders, one under the
-   other, each a sentence with what it does and when. Tokens only. */
+/* THE TOUR · AUTOPILOTS (lane SIDES-B): three standing orders. The stop and
+   its drawing lead; the alert and the job sit side by side under it on a
+   wide seat and stack on a narrow one. Each row's one control rides its
+   head. Tokens only. */
 
-.sb-ap { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; min-width: 0; container-type: inline-size; container-name: sbap; }
-.sb-ap__row { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: var(--sp-4) 0; border-top: 1px solid var(--line); }
-.sb-ap__row:first-child { padding-top: 0; border-top: 0; }
-.sb-ap__row:last-child { padding-bottom: 0; }
-.sb-ap__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-1) var(--sp-2); margin: 0; }
+.sb-ap { display: flex; flex-direction: column; min-width: 0; container-type: inline-size; container-name: sbap; }
+.sb-ap__row { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.sb-ap__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-width: 0; min-height: 28px; }
 
-/* ── 1 · the recurring buy's calendar: this period, then the next ones ── */
-.sb-ap__periods { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-1); margin: 0; padding: 0; list-style: none; }
-.sb-ap__period { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: var(--fs-xs); line-height: 1.3; color: var(--muted); }
-.sb-ap__period b { font-weight: 600; color: var(--fg); }
-.sb-ap__period span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sb-ap__period.is-now { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+/* The alert and the job: stacked, a hairline between every order. */
+.sb-ap__pair { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; margin-top: var(--sp-3); }
+.sb-ap__pair > .sb-ap__row { padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.sb-ap__pair > .sb-ap__row + .sb-ap__row { margin-top: var(--sp-3); }
+@container sbap (min-width: 440px) {
+  .sb-ap__pair { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); column-gap: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+  .sb-ap__pair > .sb-ap__row { padding-top: 0; border-top: 0; }
+  .sb-ap__pair > .sb-ap__row + .sb-ap__row { margin-top: 0; padding-left: var(--sp-4); border-left: 1px solid var(--line); }
+}
 
-/* ── 2 · the stop: ether today, the entry and the level under it ─────── */
-.sb-ap__stops { display: flex; gap: var(--sp-1); }
+/* ── 1 · the stop: ether today, the entry and the level under it ─────── */
+.sb-ap__stops { display: inline-flex; gap: var(--sp-1); }
 .sb-ap__chart { display: flex; flex-direction: column; gap: var(--sp-1); margin: 0; min-width: 0; }
-.sb-ap__chart svg { display: block; width: 100%; height: 88px; overflow: visible; }
+.sb-ap__chart svg { display: block; width: 100%; height: 72px; overflow: visible; }
+@container sbap (max-width: 439px) {
+  .sb-ap__chart svg { height: 60px; }
+}
 .sb-ap__line { fill: none; stroke: var(--fg); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .sb-ap__entry { stroke: var(--muted-2); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
 .sb-ap__stop { stroke: var(--sell); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
@@ -26,13 +32,24 @@
 .sb-ap__levels b { font-weight: 600; color: var(--fg); }
 .sb-ap__levels .is-stop b { color: var(--sell); }
 
-/* ── 4 · the job's steps ─────────────────────────────────────────────── */
+/* ── 2 · the alert's door, in its head ───────────────────────────────── */
+.sb-ap__go { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 28px; font-family: var(--mk-font-ui); font-size: var(--fs-sm); font-weight: 600; color: var(--muted); text-decoration: none; white-space: nowrap; outline: none; transition: color var(--dur-1) ease; }
+.sb-ap__go span { color: var(--accent); }
+.sb-ap__go:hover, .sb-ap__go:focus-visible { color: var(--fg); }
+.sb-ap__go:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: var(--r-sm); }
+
+/* ── 3 · the job's button and steps ──────────────────────────────────── */
+.sb-ap__head .sb-run { align-self: center; min-height: 28px; font-size: var(--fs-sm); }
 .sb-ap__steps { display: flex; flex-direction: column; gap: var(--sp-1); margin: 0; padding: 0; list-style: none; }
-.sb-ap__step { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: var(--sp-1) var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-sm); }
-.sb-ap__stepn { font-size: var(--fs-xs); color: var(--accent); font-weight: 600; }
+.sb-ap__step { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--sp-2); padding: 6px var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.sb-ap__stepn { font-size: var(--fs-xs); font-weight: 600; color: var(--accent); }
 .sb-ap__stepwhat { font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; color: var(--fg); }
-.sb-ap__stepwho { font-size: var(--fs-xs); color: var(--muted); }
-@container sbap (max-width: 360px) {
-  .sb-ap__step { grid-template-columns: auto minmax(0, 1fr); }
-  .sb-ap__stepwho { grid-column: 2; }
+.sb-ap__stepwho { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); }
+
+@media (pointer: coarse) {
+  .sb-ap__head { min-height: 44px; }
+  .sb-ap__go, .sb-ap__head .sb-run { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-ap__go { transition: none; }
 }

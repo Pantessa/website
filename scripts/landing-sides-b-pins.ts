@@ -9,10 +9,12 @@
 // What these hold (each would go red if the behaviour broke):
 //   • every sentence a panel can RUN is accepted by the product's own parser
 //     and gate, and the one that only some wallets can run is not a chip;
-//   • the numbers the Autopilots panel prints (the next weekly period, the
-//     stop's level, the alert's band) agree with the rule that acts on them
-//     (lib/dca periodKeyFor, lib/hl-guardian evaluatePolicy, lib/watchlists
-//     alertFires), over tables of cases;
+//   • a recurring buy is never OFFERED from these panels (retired as a
+//     suggestion 2026-09-16; scripts/test-api.ts fences the landing) and its
+//     words are nowhere in the lane's files outside comments;
+//   • the numbers the Autopilots panel prints (the stop's level, the alert's
+//     band) agree with the rule that acts on them (lib/hl-guardian
+//     evaluatePolicy, lib/watchlists alertFires), over tables of cases;
 //   • the Build panel's code equals the page it was copied from;
 //   • the Community specimen's lines are the real card's own functions' and
 //     never say "bought" under the verified mark; it wears the EXAMPLE tag;
@@ -23,7 +25,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { compileJobAsk } from '@/lib/jobs'
-import { parseCadence, parseDcaCreate, periodKeyFor, type DcaCadence } from '@/lib/dca'
+import { parseCadence, parseDcaCreate } from '@/lib/dca'
 import { evaluatePolicy, parseGuardianArm } from '@/lib/hl-guardian'
 import { parseSpotGuardArm } from '@/lib/spot-guard'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
@@ -39,8 +41,8 @@ import { meta as autopilots } from '@/lib/home-tour/autopilots'
 import { meta as community } from '@/lib/home-tour/community'
 import { meta as wallet } from '@/lib/home-tour/wallet'
 import { meta as build } from '@/lib/home-tour/build'
-import { FUND_FROM_CHAIN_IDS, alertBand, fmtAge, fmtCountdown, fmtUtcDay, levelChart, nextPeriodStart, nextPeriodStarts, stopLevel, type Cadence } from '@/components/home/tour/sides/b/rules'
-import { ALERT_PCT, DCA_CADENCE, JOB_STEPS, alertSentence, stopSentence } from '@/components/home/tour/sides/b/standing'
+import { FUND_FROM_CHAIN_IDS, alertBand, fmtAge, levelChart, stopLevel } from '@/components/home/tour/sides/b/rules'
+import { ALERT_PCT, JOB_STEPS, alertSentence, stopSentence } from '@/components/home/tour/sides/b/standing'
 import { BUILD_TABS, DESK_MCP_SNIPPET, DESK_TOOLS, EMBED_SNIPPET, SDK_INSTALL_SNIPPET, SDK_SNIPPET } from '@/components/home/tour/sides/b/snippets'
 import { ANATOMY, PROOF_LIMIT, SPECIMEN, specimenLines } from '@/components/home/tour/sides/b/specimen'
 import { FUNDING_STEPS, fmtUnits, fmtUsd, listNames, shortAddress, topHoldings, totalUsd } from '@/components/home/tour/sides/b/funding'
@@ -62,36 +64,46 @@ function code(src: string): string {
 
 export function landingSidesBPins(check: Check): void {
   // ── The sentences a panel can run ─────────────────────────────────────────
-  const [buy, job] = autopilots.asks
+  const [job] = autopilots.asks
   const audit = read('scripts/audit-asks.ts')
   const inCorpus = (ask: string) => audit.split('\n').some((l) => l.includes(`'${ask}'`) && /expect: 'action'/.test(l))
-  const dca = buy ? parseDcaCreate(buy.ask) : null
-  check(
-    'sides-b (autopilots): the weekly buy is a sentence lib/dca reads as a recurring buy — dollars, the ticker, a weekly cadence, Robinhood Chain — the venue gate lets it through, and the ask corpus expects an action from it',
-    autopilots.asks.length === 2 && !!dca && !('problem' in dca) && dca.buyUsd === 10 && dca.buyToken === 'AAPL' && dca.cadence === DCA_CADENCE && dca.chainId === 4663 && parseCadence(buy.ask) === 'week' && canTradeAsk(buy.ask, null) && inCorpus(buy.ask),
-    JSON.stringify(dca),
-  )
   const compiled = job ? compileJobAsk(job.ask) : null
   const steps = compiled && 'steps' in compiled ? compiled.steps : []
+  const panel = read('components/home/tour/sides/Autopilots.tsx')
   check(
-    'sides-b (autopilots): the job sentence compiles to exactly the steps the panel draws — your wallet signs the long, the runner arms the stop — and the panel counts its steps from that list',
-    steps.length === JOB_STEPS.length &&
+    'sides-b (autopilots): the one sentence the panel runs compiles to exactly the steps it draws — your wallet signs the long, the runner arms the stop — the venue gate lets it through and the ask corpus expects an action from it',
+    autopilots.asks.length === 1 &&
+      steps.length === JOB_STEPS.length &&
       steps.every((s, i) => s.kind === JOB_STEPS[i].kind) &&
       steps[0]?.builder === 'native-hl-exec' &&
       steps[1]?.builder === 'native-hl-guardian' &&
       canTradeAsk(job.ask, null) &&
       inCorpus(job.ask) &&
-      /JOB_STEPS\.length\} steps/.test(read('components/home/tour/sides/Autopilots.tsx')),
+      /JOB_STEPS\.map\(/.test(panel),
     steps.map((s) => `${s.kind}:${s.builder}`).join(' → '),
   )
   check(
     'sides-b (asks): no side of this lane offers a sentence only some wallets can run — nothing the spot guardian or the perp guardian would read as an arm is a chip (a stop needs a position: it is words on the panel)',
     SIDES.flatMap((s) => s.asks).every((a) => !parseSpotGuardArm(a.ask) && (a.ask === job.ask || !parseGuardianArm(a.ask))) && [community, wallet, build].every((s) => s.asks.length === 0),
   )
-  const panel = read('components/home/tour/sides/Autopilots.tsx')
   check(
-    'sides-b (autopilots): the two runnable rows go through act() behind canAct, never fill(); the stop row has no act() of its own',
-    /canAct\(buy\.ask\) &&/.test(panel) && /canAct\(job\.ask\) &&/.test(panel) && /onClick=\{\(\) => act\(buy\.ask\)\}/.test(panel) && /onClick=\{\(\) => act\(job\.ask\)\}/.test(panel) && !/\bfill\(/.test(code(panel)) && (code(panel).match(/\bact\(/g) ?? []).length === 2,
+    'sides-b (autopilots): the job row goes through act() behind canAct, never fill(); the stop and the alert have no act() of their own',
+    /canAct\(job\.ask\) &&/.test(panel) && /onClick=\{\(\) => act\(job\.ask\)\}/.test(panel) && !/\bfill\(/.test(code(panel)) && (code(panel).match(/\bact\(/g) ?? []).length === 1,
+  )
+  // Retired as a suggestion (2026-09-16, Nate): in confirm mode a recurring
+  // buy only reminds the wallet to sign each period, so no surface OFFERS
+  // one, the landing included. Typing one still works.
+  const RECURRING = /\bdca\b|every (day|week|month)|\b(daily|weekly|monthly)\b/i
+  const recurringIn = [...LANE_TSX, ...LANE_TS, ...LANE_WORDS].map((f) => [f, code(read(f))] as const).concat(LANE_CSS.map((f) => [f, read(f).replace(/\/\*[\s\S]*?\*\//g, '')] as const)).filter(([, src]) => RECURRING.test(src)).map(([f]) => f)
+  check(
+    'sides-b (no recurring buy): no sentence of this lane is one lib/dca reads as a recurring buy, no cadence word is printed by any of the lane\'s files outside comments, and Autopilots is three orders (stop, alert, job)',
+    SIDES.flatMap((s) => s.asks).every((a) => !parseDcaCreate(a.ask) && !parseCadence(a.ask)) &&
+      recurringIn.length === 0 &&
+      SIDES.every((s) => !RECURRING.test([s.label, s.claim, s.line, s.body, ...s.facts, ...s.doors.map((d) => d.label), ...s.asks.flatMap((a) => [a.ask, a.label, a.via])].join(' '))) &&
+      (panel.match(/data-ap-row="/g) ?? []).join('') === 'data-ap-row="'.repeat(3) &&
+      ['stop', 'alert', 'job'].every((r) => panel.includes(`data-ap-row="${r}"`)) &&
+      !/Set it up/.test(panel),
+    recurringIn.join(', '),
   )
 
   // ── The stop: the sentence and the level ──────────────────────────────────
@@ -142,35 +154,9 @@ export function landingSidesBPins(check: Check): void {
     bandOk && alertSentence('ETH', ALERT_PCT, '$2,057.54') === alertLabel({ symbol: 'ETH', condition: 'pct_move', value: ALERT_PCT, basePrice: 2057.54 }) && alertSentence('ETH', ALERT_PCT, null) === alertLabel({ symbol: 'ETH', condition: 'pct_move', value: ALERT_PCT, basePrice: null }) && alertBand(0, 5) === null,
   )
 
-  // ── The recurring buy's calendar ──────────────────────────────────────────
-  const cadences: Cadence[] = ['day', 'week', 'month']
-  const sameSet: DcaCadence[] = cadences
-  const moments = [
-    '2026-11-10T14:40:00Z', // a Tuesday
-    '2026-11-15T23:59:59.999Z', // the last instant of an ISO week (Sunday)
-    '2026-11-16T00:00:00Z', // the first instant of the next (Monday)
-    '2026-12-31T23:59:59.999Z', // year end, a Thursday
-    '2027-01-01T00:00:00Z', // ISO week 53 of 2026 still
-    '2028-02-28T12:00:00Z', // a leap February
-    '2028-02-29T23:00:00Z',
-    '2026-11-30T23:59:59.999Z', // month end
-    '2026-03-08T07:00:00Z', // a US clock change (UTC does not care)
-  ].map((s) => new Date(s))
-  const periodOk = cadences.every((c) =>
-    moments.every((at) => {
-      const next = nextPeriodStart(c, at)
-      return next.getTime() > at.getTime() && periodKeyFor(c, new Date(next.getTime() - 1)) === periodKeyFor(c, at) && periodKeyFor(c, next) !== periodKeyFor(c, at) && next.getUTCHours() === 0 && next.getUTCMinutes() === 0 && next.getUTCSeconds() === 0 && next.getUTCMilliseconds() === 0
-    }),
-  )
-  const run = nextPeriodStarts('week', new Date('2026-11-10T14:40:00Z'), 3)
   check(
-    'sides-b (autopilots): the next period the panel names is where lib/dca\'s own period key changes — a UTC midnight, the instant before it still this period — for a day, an ISO week (Monday) and a month, across a year end, a leap day and a week boundary',
-    sameSet.length === 3 && periodOk && run.map((d) => d.toISOString().slice(0, 10)).join(',') === '2026-11-16,2026-11-23,2026-11-30' && run.every((d) => d.getUTCDay() === 1) && new Set(run.map((d) => periodKeyFor('week', d))).size === 3 && fmtUtcDay(run[0]) === 'Mon 16 Nov',
-    run.map((d) => d.toISOString()).join(' '),
-  )
-  check(
-    'sides-b (autopilots): the countdown and the age never print a negative or an empty figure',
-    fmtCountdown(-5) === 'now' && fmtCountdown(0) === 'now' && fmtCountdown(30_000) === 'in under a minute' && fmtCountdown(12 * 60_000) === 'in 12m' && fmtCountdown(9 * 3_600_000 + 12 * 60_000) === 'in 9h 12m' && fmtCountdown(5 * 86_400_000 + 9 * 3_600_000) === 'in 5d 9h' && fmtAge(-1) === 'just now' && fmtAge(59_000) === 'just now' && fmtAge(12 * 60_000) === '12m ago' && fmtAge(3 * 3_600_000) === '3h ago' && fmtAge(49 * 3_600_000) === '2d ago',
+    'sides-b (community): a post\'s age never prints a negative or an empty figure',
+    fmtAge(-1) === 'just now' && fmtAge(59_000) === 'just now' && fmtAge(12 * 60_000) === '12m ago' && fmtAge(3 * 3_600_000) === '3h ago' && fmtAge(49 * 3_600_000) === '2d ago',
   )
   const chart = levelChart(
     [
@@ -185,8 +171,8 @@ export function landingSidesBPins(check: Check): void {
     !!chart && chart.y(1954.66) <= 96 && chart.y(1954.66) > chart.y(2057.54) && chart.y(2100) >= 0 && /^M0\.0 /.test(chart.d) && levelChart([[1, 5]], [4]) === null && levelChart([], []) === null,
   )
   check(
-    'sides-b (autopilots): the clock is read after mount (a static page prints no date of its own) and only re-reads the minute while the tab is visible; the page opens no stream',
-    /useState<number \| null>\(null\)/.test(panel) && /document\.hidden/.test(panel) && !/new Date\(\)/.test(code(panel)) && LANE_TSX.every((f) => !/WebSocket|EventSource|lightweight-charts|from 'three'|\/api\/chat/.test(code(read(f)))),
+    'sides-b (autopilots): the panel reads no clock and sets no timer (a static page prints no date of its own); Community reads its clock only after mount; no panel opens a stream',
+    !/Date\.now\(|new Date\(|setInterval|setTimeout/.test(code(panel)) && /useEffect\(\(\) => setNow\(Date\.now\(\)\), \[\]\)/.test(read('components/home/tour/sides/Community.tsx')) && LANE_TSX.every((f) => !/WebSocket|EventSource|lightweight-charts|from 'three'|\/api\/chat/.test(code(read(f)))),
   )
 
   // ── Build: the code is the docs' ──────────────────────────────────────────
@@ -220,13 +206,14 @@ export function landingSidesBPins(check: Check): void {
   const pinned = new Set([EMBED_SNIPPET, DESK_MCP_SNIPPET, SDK_INSTALL_SNIPPET, SDK_SNIPPET])
   const buildPanel = read('components/home/tour/sides/Build.tsx')
   check(
-    'sides-b (build): three tabs in order (Embed, Agent desk, SDK), every block one of the pinned snippets, each with a copy button that writes the block\'s own text; the tabs are a real tablist; the venue line is counted from the snapshot and dropped without it',
+    'sides-b (build): three tabs in order (Embed, Agent desk, SDK), every block one of the pinned snippets, each with a copy button that writes the block\'s own text; the tabs are a real tablist whose handled keys stop there (the tour\'s own tablist never moves under them); the venue line is counted from the snapshot and dropped without it',
     BUILD_TABS.map((t) => t.id).join(',') === 'embed,desk,sdk' &&
       BUILD_TABS.every((t) => t.blocks.length > 0 && t.blocks.every((b) => pinned.has(b.code))) &&
       /navigator\.clipboard\.writeText\(block\.code\)/.test(buildPanel) &&
       /role="tablist"/.test(buildPanel) &&
       /role="tabpanel"/.test(buildPanel) &&
       /ArrowRight/.test(buildPanel) &&
+      /e\.preventDefault\(\)\s+e\.stopPropagation\(\)/.test(buildPanel) &&
       /tabIndex=\{t\.id === on \? 0 : -1\}/.test(buildPanel) &&
       /venues != null && pinnedAddresses != null &&/.test(buildPanel) &&
       /href="\/docs\/venues"/.test(buildPanel) &&
