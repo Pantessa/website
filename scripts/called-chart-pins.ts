@@ -678,7 +678,9 @@ export async function calledChartControllerPins(check: Check): Promise<void> {
     const c = 100 + 40 * Math.sin(i / 23) + i * 0.05
     return { t: end - (399 - i) * DAY, o: c, h: c * 1.01, l: c * 0.99, c, v: 1 }
   })
-  const rec = buildRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC', side: 'all', profile: FIXTURE_PROFILE, verified: null, posts: fixturePosts(now), candles, nowMs: now, scannedAt: now, postsRead: 11 })
+  // Four pins of the viewer's own: fewer than this pane holds, so "one more pin" below always has room for its card.
+  const ruled = buildRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC', side: 'all', profile: FIXTURE_PROFILE, verified: null, posts: fixturePosts(now), candles, nowMs: now, scannedAt: now, postsRead: 11 })
+  const rec = applyPins(ruled, ruled.calls.filter((_, i) => i % 2 === 0).slice(0, 4).map((c) => c.postId))
   const picked = rec.calls.filter((c) => c.picked)
   const f = fakeChart(rec, LAPTOP)
   const picks: string[] = []
@@ -717,13 +719,11 @@ export async function calledChartControllerPins(check: Check): Promise<void> {
     handled && !notOurs && picks.length === 1 && picked.some((c) => c.postId === picks[0]) && firstCard.props.linewidth === 2 && callouts.slice(1).every((s) => s.props.linewidth === 1),
   )
   // A pin toggle: one more card, the same tally.
-  const extra = rec.calls.find((c) => !c.picked)
-  if (extra && picked.length < calloutPlan(LAPTOP).total) {
-    ctl.set({ record: applyPins(rec, [...picked.map((c) => c.postId), extra.postId]), focusId: null, fitNonce: 1 })
-    await wait(400)
-    const now2 = [...f.shapes.values()].filter((s) => s.options.shape === 'callout')
-    check('called chart controller: pinning one more call draws one more card, takes its mark away and does not ask for the fit again', now2.length === picked.length + 1 && ctl.marks('BTC').length === rec.calls.length - picked.length - 1 && f.events.filter((e) => e === 'fit').length === 1, `${now2.length} cards`)
-  }
+  const extra = rec.calls.find((c) => !c.picked) as CalledCall
+  ctl.set({ record: applyPins(rec, [...picked.map((c) => c.postId), extra.postId]), focusId: null, fitNonce: 1 })
+  await wait(400)
+  const now2 = [...f.shapes.values()].filter((s) => s.options.shape === 'callout')
+  check('called chart controller: pinning one more call draws one more card, takes its mark away and does not ask for the fit again', picked.length === 4 && picked.length < calloutPlan(LAPTOP).total && now2.length === picked.length + 1 && ctl.marks('BTC').length === rec.calls.length - picked.length - 1 && f.events.filter((e) => e === 'fit').length === 1, `${now2.length} cards`)
   // The library's own "remove drawings" takes a pin: it comes back.
   const victim = [...f.shapes.values()].find((s) => s.options.shape === 'callout') as FakeShape
   const before = [...f.shapes.values()].filter((s) => s.options.shape === 'callout').length
