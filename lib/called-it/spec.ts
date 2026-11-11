@@ -114,6 +114,12 @@ export interface Coverage {
   postsRead: number
   /** A scan stopped at its cap: posts older than `from` were not read. */
   truncated: boolean
+  /**
+   * A stretch INSIDE the coverage nobody read: a later scan stopped at its
+   * cap before it reached where the scan before it ended. The newest such
+   * stretch; absent when the coverage is whole.
+   */
+  gap?: { from: number; to: number }
 }
 
 export interface CalledRecord {
@@ -478,8 +484,9 @@ const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? on
 
 /** What the scans read, in words. The cap ending a scan early is said, never hidden. */
 export function coverageLine(c: Coverage): string {
-  if (c.truncated) return `Read the newest ${count(c.postsRead, 'matching post')}, back to ${fmtDay(c.from)}. Older posts were not read.`
-  return `Read ${count(c.postsRead, 'matching post')} from ${fmtDay(c.from)} to ${fmtDay(c.to)}.`
+  const hole = c.gap ? ` Posts between ${fmtDay(c.gap.from)} and ${fmtDay(c.gap.to)} were not read.` : ''
+  if (c.truncated) return `Read the newest ${count(c.postsRead, 'matching post')}, back to ${fmtDay(c.from)}. Older posts were not read.${hole}`
+  return `Read ${count(c.postsRead, 'matching post')} from ${fmtDay(c.from)} to ${fmtDay(c.to)}.${hole}`
 }
 
 /** Beside a scanned record's tally when viewers pasted posts too. */

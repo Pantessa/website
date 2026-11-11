@@ -23,6 +23,8 @@ import type { FinishedScan } from './store'
 import { FAKE_LABEL_MODELS } from './classify'
 import { POST_ID_RE, buildRecord, fakeModeOn, normalizeHandle, normalizeSide, type Coverage, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
 
+const DAY_MS = 86_400_000
+
 /** @deprecated The market door is lib/called-it/market marketFor (review R5); kept for callers outside this lane. */
 export const SYMBOL_RE = /^[A-Za-z0-9.:^-]{1,24}$/
 
@@ -80,18 +82,29 @@ export function verifiedOf(row: Pick<Store.StoredHandle, 'claimedXUserId' | 'cla
  * What this symbol's finished scans read (review R8), never the chart's window: `from` is the earliest
  * moment any of them reached (for a truncated scan, the oldest post it read), `to` the latest end,
  * `postsRead` their sum, and `truncated` whether the OLDEST reach was a truncated one (posts before it
- * were not read). Null when nothing has finished. Pure; pinned.
+ * were not read), and `gap` the newest stretch inside the coverage that no scan read. Null when nothing
+ * has finished. Pure; pinned.
  */
 export function coverageOf(scans: readonly Pick<FinishedScan, 'windowFrom' | 'windowTo' | 'postsRead' | 'truncated' | 'oldestPostAt'>[]): Coverage | null {
   if (!scans.length) return null
   const reach = (s: (typeof scans)[number]) => (s.truncated ? (s.oldestPostAt ?? s.windowTo) : s.windowFrom)
   let oldest = scans[0]
   for (const s of scans) if (reach(s) < reach(oldest) || (reach(s) === reach(oldest) && !s.truncated)) oldest = s
+  // A later scan that stopped at its cap leaves a stretch between where the scan before it ended and the oldest
+  // post it read. Nothing fills that stretch yet, so the record says it (the newest one; a whole coverage has none).
+  const spans = scans.map((s) => ({ from: reach(s), to: s.windowTo })).sort((a, b) => a.from - b.from)
+  let gap: { from: number; to: number } | undefined
+  let covered = spans[0].to
+  for (const sp of spans.slice(1)) {
+    if (sp.from > covered + DAY_MS) gap = { from: covered, to: sp.from }
+    covered = Math.max(covered, sp.to)
+  }
   return {
     from: reach(oldest),
     to: Math.max(...scans.map((s) => s.windowTo)),
     postsRead: scans.reduce((n, s) => n + s.postsRead, 0),
     truncated: oldest.truncated,
+    ...(gap ? { gap } : {}),
   }
 }
 
