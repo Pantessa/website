@@ -33,7 +33,7 @@
 // is the only part that touches the chart, through the hand-written types in
 // lib/tv/types (the library itself is licensed and never in this repository).
 
-import { PICK_MAX, PIN_URL_MAX, VERDICT_WORDS, cmpPostId, moveLine, recordHref, type CallVerdict, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
+import { ADDED_MARK, PIN_URL_MAX, VERDICT_WORDS, cmpPostId, moveLine, recordHref, type CallVerdict, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
 import type { ShapeSnapshot } from './shapes'
 import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvPriceScaleApi, TvShapeOptions, TvWidget } from './types'
 
@@ -126,8 +126,31 @@ export function estimateTextWidth(text: string, fontPx: number): number {
   return em * fontPx
 }
 
-/** Greedy wrap to `maxWidth`. When `maxLines` cuts it, the last line ends in an ellipsis that fits. */
+/**
+ * Wrap to `maxWidth`, at most `maxLines` lines. Text that fits without a cut
+ * is BALANCED: the same number of lines, as even as they go (no last line of
+ * one word, and a narrower card). When `maxLines` cuts it, the last line ends
+ * in an ellipsis that fits.
+ */
 export function wrapWords(text: string, maxWidth: number, measure: Measure, maxLines: number): string[] {
+  const greedy = wrapGreedy(text, maxWidth, measure, maxLines)
+  if (greedy.cut || greedy.lines.length < 2) return greedy.lines
+  // The narrowest width that still takes no more lines.
+  let lo = Math.max(...text.split(' ').map((w) => Math.min(maxWidth, measure(w))))
+  let hi = maxWidth
+  let best = greedy.lines
+  for (let i = 0; i < 12 && hi - lo > 1; i++) {
+    const mid = (lo + hi) / 2
+    const tried = wrapGreedy(text, mid, measure, maxLines)
+    if (!tried.cut && tried.lines.length <= greedy.lines.length) {
+      hi = mid
+      best = tried.lines
+    } else lo = mid
+  }
+  return best
+}
+
+function wrapGreedy(text: string, maxWidth: number, measure: Measure, maxLines: number): { lines: string[]; cut: boolean } {
   const words = text.split(' ').filter(Boolean)
   const lines: string[] = []
   let line = ''
@@ -164,28 +187,41 @@ export function wrapWords(text: string, maxWidth: number, measure: Measure, maxL
     while (last.length > 1 && measure(`${last.join('').trimEnd()}${ELLIPSIS}`) > maxWidth) last = last.slice(0, -1)
     lines[maxLines - 1] = `${last.join('').trimEnd()}${ELLIPSIS}`
   }
-  return lines
+  return { lines, cut }
 }
 
 export interface PinText {
-  /** `@handle · 10 Jan 2026` */
+  /** `@handle \u00b7 10 Jan 2026` */
   head: string
   /** The post's own words, wrapped. */
   words: string[]
-  /** `-29.1% in 30 days · missed` */
+  /** `-29.1% in 30 days \u00b7 missed` */
   result: string
+  /** A viewer pasted this post (it says so on its own line). */
+  added: boolean
   lines: string[]
   /** What the shape is given. */
   text: string
 }
 
-/** The three short lines of a card. The middle one is X's text and nothing else. */
-export function pinText(call: Pick<CalledCall, 'text' | 'quote' | 'postedAt' | 'verdict' | 'judgedPct'>, handle: string, opts: { textWidth: number; measure: Measure; wordLines: number }): PinText {
+/**
+ * The lines of a card: who and when, the post's own words (X's text and
+ * nothing else), the move with the verdict's word. A post a viewer pasted
+ * says so on a line of its own (the spec's mark) and gives up one line of its
+ * words for it, so every card is the same height at most. No line is ever
+ * wider than the card: a long handle or a long result takes two lines.
+ */
+export function pinText(call: Pick<CalledCall, 'text' | 'quote' | 'postedAt' | 'verdict' | 'judgedPct'> & { origin?: CalledCall['origin'] }, handle: string, opts: { textWidth: number; measure: Measure; wordLines: number }): PinText {
+  const fit = (whole: string, parts: string[]) => (opts.measure(whole) <= opts.textWidth ? [whole] : parts)
+  const added = call.origin === 'added'
   const head = `@${handle} \u00b7 ${pinDate(call.postedAt)}`
-  const words = wrapWords(clampPost(call.text, call.quote), opts.textWidth, opts.measure, opts.wordLines)
   const result = `${moveLine(call)} \u00b7 ${VERDICT_WORDS[call.verdict]}`
-  const lines = [head, ...words, result]
-  return { head, words, result, lines, text: lines.join('\n') }
+  const headLines = [...fit(head, [`@${handle}`, pinDate(call.postedAt)]), ...(added ? [ADDED_MARK] : [])]
+  const resultLines = fit(result, [moveLine(call), VERDICT_WORDS[call.verdict]])
+  const spare = Math.max(1, opts.wordLines - (headLines.length - 1) - (resultLines.length - 1))
+  const words = wrapWords(clampPost(call.text, call.quote), opts.textWidth, opts.measure, spare)
+  const lines = [...headLines, ...words, ...resultLines]
+  return { head, words, result, added, lines, text: lines.join('\n') }
 }
 
 // ── Color, glyph and word ───────────────────────────────────────────────
@@ -285,9 +321,10 @@ export interface BoxSize {
 }
 
 /** The box the library draws for these lines, its own wrap off (measured on v33.1.0: the widest line + 10px a side, one font-size a line + 10px top and bottom). */
-export function boxSize(lines: readonly string[], measure: Measure, textWidth: number): BoxSize {
+export function boxSize(lines: readonly string[], measure: Measure): BoxSize {
   const widest = lines.reduce((m, l) => Math.max(m, measure(l)), 0)
-  return { w: Math.ceil(Math.min(widest, textWidth)) + 2 * CALLOUT_PAD_PX, h: lines.length * CALLOUT_LINE_PX + 2 * CALLOUT_PAD_PX }
+  // Never narrower than what will be drawn (`pinText` keeps every line inside the card's text width).
+  return { w: Math.ceil(widest) + 2 * CALLOUT_PAD_PX, h: lines.length * CALLOUT_LINE_PX + 2 * CALLOUT_PAD_PX }
 }
 
 // ── Where the cards go ──────────────────────────────────────────────────
@@ -321,6 +358,8 @@ export interface LayoutInput {
   sizes: Readonly<Record<string, BoxSize>>
   /** Px the tally line takes at the pane's foot. */
   keepBottom: number
+  /** Px the legend's own row takes at the pane's head (it wraps to two rows on a narrow pane). Default: one row. */
+  keepTop?: number
   /** The first card's rail; the rest alternate. */
   startAbove?: boolean
   gap?: number
@@ -349,14 +388,20 @@ export function spreadRail(items: readonly { cx: number; w: number }[], lo: numb
 }
 
 /** The pane rows the two rails stand on. */
-export function railRows(pane: PaneSize, keepBottom: number, maxBoxH: number): { aboveTop: number; belowBottom: number } {
-  return { aboveTop: PANE_KEEP.top, belowBottom: Math.max(PANE_KEEP.top + maxBoxH * 2 + RAIL_AIR_PX, pane.height - keepBottom) }
+export function railRows(pane: PaneSize, keepBottom: number, maxBoxH: number, keepTop: number = PANE_KEEP.top): { aboveTop: number; belowBottom: number } {
+  return { aboveTop: keepTop, belowBottom: Math.max(keepTop + maxBoxH * 2 + RAIL_AIR_PX, pane.height - keepBottom) }
+}
+
+/** The upper rail's row from the legend's measured foot: never above one legend row, never so low the rail eats the pane. */
+export function keepTopFor(legendBottomPx: number | null): number {
+  if (legendBottomPx === null || !Number.isFinite(legendBottomPx)) return PANE_KEEP.top
+  return Math.max(PANE_KEEP.top, Math.min(96, Math.round(legendBottomPx) + 6))
 }
 
 /** Which rail the first card takes: the one that makes the leaders shorter in all. Decided once per plot. */
-export function pickStartSide(input: Pick<LayoutInput, 'pane' | 'anchors' | 'sizes' | 'keepBottom'>): boolean {
+export function pickStartSide(input: Pick<LayoutInput, 'pane' | 'anchors' | 'sizes' | 'keepBottom' | 'keepTop'>): boolean {
   const maxH = Math.max(0, ...Object.values(input.sizes).map((s) => s.h))
-  const rows = railRows(input.pane, input.keepBottom, maxH)
+  const rows = railRows(input.pane, input.keepBottom, maxH, input.keepTop)
   const cost = (startAbove: boolean) =>
     input.anchors.reduce((sum, a, i) => {
       if (a.y === null) return sum
@@ -378,7 +423,7 @@ export function layoutCallouts(input: LayoutInput): PlacedBox[] {
   const { pane } = input
   const size = (id: string): BoxSize => input.sizes[id] ?? { w: TEXT_W_MAX + 2 * CALLOUT_PAD_PX, h: 4 * CALLOUT_LINE_PX + 2 * CALLOUT_PAD_PX }
   const maxH = Math.max(0, ...input.anchors.map((a) => size(a.id).h))
-  const rows = railRows(pane, input.keepBottom, maxH)
+  const rows = railRows(pane, input.keepBottom, maxH, input.keepTop)
   const out: PlacedBox[] = []
   for (const side of ['above', 'below'] as const) {
     const rail = input.anchors.map((a, i) => ({ a, i })).filter(({ i }) => railOf(i, startAbove) === side)
@@ -410,11 +455,11 @@ export function boxesOverlap(a: Pick<PlacedBox, 'x' | 'y' | 'w' | 'h'>, b: Pick<
  * the two rails of cards, or (marks only) just room for the tally line at the
  * foot. Never tighter than the margins the viewer already had.
  */
-export function railMargins(pane: PaneSize, plan: CalloutPlan, maxBoxH: number, keepBottom: number, base: { top: number; bottom: number }): { top: number; bottom: number } {
+export function railMargins(pane: PaneSize, plan: CalloutPlan, maxBoxH: number, keepBottom: number, base: { top: number; bottom: number }, keepTop: number = PANE_KEEP.top): { top: number; bottom: number } {
   if (!(pane.height > 0)) return base
   const pct = (px: number) => Math.min(38, Math.ceil((px / pane.height) * 100))
   if (plan.total === 0) return { top: base.top, bottom: Math.max(base.bottom, pct(keepBottom + 6)) }
-  return { top: Math.max(base.top, pct(PANE_KEEP.top + maxBoxH + RAIL_AIR_PX)), bottom: Math.max(base.bottom, pct(keepBottom + maxBoxH + RAIL_AIR_PX)) }
+  return { top: Math.max(base.top, pct(keepTop + maxBoxH + RAIL_AIR_PX)), bottom: Math.max(base.bottom, pct(keepBottom + maxBoxH + RAIL_AIR_PX)) }
 }
 
 // ── The time axis, sampled ──────────────────────────────────────────────
@@ -470,7 +515,7 @@ export interface CalloutSpec {
 }
 
 /** One card: its tip on the bar and the day's close, its box centred at `box`. */
-export function calloutShape(call: Pick<CalledCall, 'barTime' | 'priceAt' | 'verdict'>, text: PinText, box: { time: number; price: number }, inks: CalledInks, opts: { focus?: boolean } = {}): CalloutSpec {
+export function calloutShape(call: Pick<CalledCall, 'barTime' | 'priceAt' | 'verdict'> & { origin?: CalledCall['origin'] }, text: PinText, box: { time: number; price: number }, inks: CalledInks, opts: { focus?: boolean } = {}): CalloutSpec {
   const look = verdictLook(call.verdict, inks)
   return {
     points: [
@@ -483,7 +528,8 @@ export function calloutShape(call: Pick<CalledCall, 'barTime' | 'priceAt' | 'ver
       ...PIN_SHAPE_FLAGS,
       // The lines are wrapped here (wrapWords) and the library's own wrap is off: with it on, every box is drawn the full
       // wrap width whatever it says (measured on v33.1.0), and a short post would cover candles for nothing.
-      overrides: { backgroundColor: inks.surf, bordercolor: look.ink, color: inks.fg, fontsize: CALLOUT_FONT_PX, bold: false, italic: false, linewidth: opts.focus ? 2 : 1, transparency: 0, wordWrap: false },
+      // A pasted post's card is set in italics (and says "added by a viewer" on its first line): a scanned call's never is.
+      overrides: { backgroundColor: inks.surf, bordercolor: look.ink, color: inks.fg, fontsize: CALLOUT_FONT_PX, bold: false, italic: call.origin === 'added', linewidth: opts.focus ? 2 : 1, transparency: 0, wordWrap: false },
     },
   }
 }
@@ -491,8 +537,8 @@ export function calloutShape(call: Pick<CalledCall, 'barTime' | 'priceAt' | 'ver
 export const CALLED_MARK_PREFIX = 'called:'
 
 /** A mark's tooltip. The library escapes it (measured: a tag is shown as its characters), and it still carries only one line. */
-export function markTooltip(call: Pick<CalledCall, 'text' | 'quote' | 'postedAt' | 'verdict' | 'judgedPct'>, handle: string): string {
-  return `@${handle} \u00b7 ${pinDate(call.postedAt)} \u00b7 ${moveLine(call)} \u00b7 ${VERDICT_WORDS[call.verdict]}: ${clampPost(call.text, call.quote)}`
+export function markTooltip(call: Pick<CalledCall, 'text' | 'quote' | 'postedAt' | 'verdict' | 'judgedPct'> & { origin?: CalledCall['origin'] }, handle: string): string {
+  return `@${handle} \u00b7 ${pinDate(call.postedAt)}${call.origin === 'added' ? ` \u00b7 ${ADDED_MARK}` : ''} \u00b7 ${moveLine(call)} \u00b7 ${VERDICT_WORDS[call.verdict]}: ${clampPost(call.text, call.quote)}`
 }
 
 /** Every call that has no card, as a bar mark. */
@@ -502,13 +548,15 @@ export function calledMarks(record: Pick<CalledRecord, 'handle' | 'calls'>, boxe
     .filter((c) => !has.has(c.postId))
     .map((c) => {
       const look = verdictLook(c.verdict, inks)
+      // A pasted post's mark is a ring, never a filled disc: it is shown and not counted.
+      const filled = look.filled && c.origin !== 'added'
       return {
         id: `${CALLED_MARK_PREFIX}${c.postId}`,
         time: c.barTime,
-        color: { border: look.ink, background: look.filled ? look.ink : inks.surf },
+        color: { border: look.ink, background: filled ? look.ink : inks.surf },
         text: markTooltip(c, record.handle),
         label: look.glyph,
-        labelFontColor: look.filled ? inks.bg : inks.fg,
+        labelFontColor: filled ? inks.bg : c.origin === 'added' && look.filled ? look.ink : inks.fg,
         minSize: 16,
       }
     })
@@ -555,13 +603,22 @@ export interface TallyLabel {
   keepBottom: number
 }
 
-/** The line on the pane: the record's own headline and standing (lib/called-it/spec words, untouched) and where the record lives. */
+/**
+ * The lines on the pane, all of them the record's own words (lib/called-it/spec,
+ * untouched): the headline (the count of what the scan found, or "no tally"
+ * when nothing was scanned), what the scan read (where the pane has room for
+ * cards; a phone's strip carries it), that pasted posts are shown and not
+ * counted (when any are), who plotted it, and where the record lives.
+ */
 export function tallyLabel(record: Pick<CalledRecord, 'handle' | 'symbol' | 'side' | 'words'>, pane: PaneSize, measure?: Measure): TallyLabel {
   const fontPx = tallyFontPx(pane)
   const width = measure ?? ((s: string) => estimateTextWidth(s, fontPx))
   const wrapWidth = Math.max(140, Math.floor(pane.width - PANE_KEEP.logoWidth - PANE_KEEP.edge - 12))
   const where = `pantessa.com${recordHref(record.handle, record.symbol, record.side)}`
-  const parts = [record.words.headline, `${record.words.standing} ${where}`]
+  const coverage = pane.width >= CARDS_MIN_PANE_W ? record.words.coverage : null
+  // Each sentence starts its own line (a count is never split from its own words by another sentence); the address joins the standing line when both fit.
+  const last = width(`${record.words.standing} ${where}`) <= wrapWidth ? [`${record.words.standing} ${where}`] : [record.words.standing, where]
+  const parts = [record.words.headline, ...(coverage ? [coverage] : []), ...(record.words.added ? [record.words.added] : []), ...last]
   const lines = parts.flatMap((p) => wrapWords(p, wrapWidth, width, 4))
   return { text: lines.join('\n'), lines: lines.length, fontPx, keepBottom: lines.length * fontPx + 22 }
 }
@@ -673,6 +730,8 @@ export interface CalledPinsHooks {
   onPick(postId: string): void
   /** How many cards are on the chart (0 = marks only), for the strip's wording. */
   onCards?(count: number): void
+  /** This chart can draw the plot (true once attached, false when it goes away): the strip offers "Fit all calls" only then. */
+  onAttach?(on: boolean): void
 }
 
 export interface CalledPinsController {
@@ -742,6 +801,7 @@ interface Drawn {
 export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   let widget: TvWidget | null = null
   let chart: TvChartApi | null = null
+  let hostEl: HTMLElement | null = null
   let input: CalledPinsInput = { record: null, focusId: null, fitNonce: 0 }
   let gen = 0
   let fitDone = 0
@@ -787,6 +847,25 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       return null
     }
   }
+  /**
+   * Where the legend's own row ends, px down the pane. The legend is the
+   * library's HTML over the canvas: on a narrow pane it wraps to two rows, and
+   * a card drawn under it would be written over. Read from the frame's own
+   * document (same origin); null when it cannot be read, and one row is assumed.
+   */
+  const legendBottom = (): number | null => {
+    try {
+      const doc = hostEl?.querySelector('iframe')?.contentDocument
+      const root = doc?.querySelector('[data-qa-id="legend"]')
+      const row = doc?.querySelector('[data-qa-id="legend-series-item"]')
+      if (!root || !row) return null
+      const top = root.getBoundingClientRect().top
+      const bottom = row.getBoundingClientRect().bottom
+      return bottom > top ? bottom - top + 4 : null
+    } catch {
+      return null
+    }
+  }
   const sampleAxis = (width: number): AxisSample[] => {
     const scale = chart?.getTimeScale()
     if (!scale) return []
@@ -804,7 +883,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   }
   const recordKey = (r: CalledRecord, p: CalloutPlan) => {
     const ink = hooks.inks()
-    return [r.handle, r.symbol, r.side, r.verified ? 'v' : 'n', r.words.headline, p.perRail, p.textWidth, p.wordLines, ink.bg, ink.fg, ink.up, r.calls.map((c) => `${c.postId}${c.picked ? '*' : ''}${c.verdict[0]}${Math.round(c.judgedPct * 1000)}`).join(',')].join('|')
+    return [r.handle, r.symbol, r.side, r.verified ? 'v' : 'n', r.words.headline, r.words.coverage ?? '', r.words.added ?? '', p.perRail, p.textWidth, p.wordLines, ink.bg, ink.fg, ink.up, r.calls.map((c) => `${c.postId}${c.picked ? '*' : ''}${c.origin === 'added' ? '+' : ''}${c.verdict[0]}${Math.round(c.judgedPct * 1000)}`).join(',')].join('|')
   }
 
   const removeShape = (id: string) => {
@@ -884,7 +963,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
         return { id, x: c ? xForTime(samples, c.barTime) : null, y: c ? scale.priceToCoordinate(c.priceAt) : null }
       })
       const spacing = chart?.getTimeScale().barSpacing() ?? 6
-      return { pane, scale, samples, anchors, spacing }
+      return { pane, scale, samples, anchors, spacing, keepTop: keepTopFor(legendBottom()) }
     } catch {
       return null
     }
@@ -976,7 +1055,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     }
     if (!ids.length) return true
     const sizes = Object.fromEntries([...cards.values()].map((d) => [d.postId, d.size]))
-    const placed = layoutCallouts({ pane: view.pane, anchors: view.anchors, sizes, keepBottom: label.keepBottom, startAbove })
+    const placed = layoutCallouts({ pane: view.pane, anchors: view.anchors, sizes, keepBottom: label.keepBottom, keepTop: view.keepTop, startAbove })
     const byId = new Map(record.calls.map((call) => [call.postId, call]))
     for (const box of placed) {
       const d = cards.get(box.id)
@@ -1036,18 +1115,19 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       if (!call) continue
       const text = pinText(call, record.handle, { textWidth: plan.textWidth, measure, wordLines: plan.wordLines })
       texts.set(id, text)
-      sizes[id] = boxSize(text.lines, measure, plan.textWidth)
+      sizes[id] = boxSize(text.lines, measure)
     }
     const maxH = Math.max(0, ...Object.values(sizes).map((s) => s.h))
     const label = tallyLabel(record, pane, measureTally(pane))
-    setMargins((base) => railMargins(pane, plan, maxH, label.keepBottom, base))
+    const keepTop = keepTopFor(legendBottom())
+    setMargins((base) => railMargins(pane, plan, maxH, label.keepBottom, base, keepTop))
     // The margins move the candles: read the view after the chart has drawn them.
     await sleep(80)
     if (my !== gen) return
     const view = readView(record, ids)
     if (!view) return
-    startAbove = pickStartSide({ pane: view.pane, anchors: view.anchors, sizes, keepBottom: label.keepBottom })
-    const placed = layoutCallouts({ pane: view.pane, anchors: view.anchors, sizes, keepBottom: label.keepBottom, startAbove })
+    startAbove = pickStartSide({ pane: view.pane, anchors: view.anchors, sizes, keepBottom: label.keepBottom, keepTop: view.keepTop })
+    const placed = layoutCallouts({ pane: view.pane, anchors: view.anchors, sizes, keepBottom: label.keepBottom, keepTop: view.keepTop, startAbove })
 
     clearShapes()
     marks = calledMarks(record, ids, inks)
@@ -1102,6 +1182,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     attach(w, c, host) {
       widget = w
       chart = c
+      hostEl = host ?? null
       measure = canvasMeasure(CALLOUT_FONT_PX)
       tallyMeasures.clear()
       const onRange = () => scheduleRelayout()
@@ -1128,6 +1209,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       driftTimer = setInterval(() => {
         if (cards.size && !relayoutTimer && !renderTimer && typeof document !== 'undefined' && !document.hidden) relayout()
       }, DRIFT_CHECK_MS)
+      hooks.onAttach?.(true)
       schedule()
     },
     detach() {
@@ -1155,7 +1237,9 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       marks = []
       drawnKey = ''
       fitDone = 0
+      if (widget) hooks.onAttach?.(false)
       widget = chart = null
+      hostEl = null
     },
     set(next) {
       const focusOnly = next.record === input.record && next.fitNonce === input.fitNonce && next.focusId !== input.focusId
@@ -1187,6 +1271,3 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     },
   }
 }
-
-/** Limits a strip shows beside the pins (the spec's, re-exported so a component reads one module). */
-export const PIN_LIMITS = { picked: PICK_MAX, url: PIN_URL_MAX } as const

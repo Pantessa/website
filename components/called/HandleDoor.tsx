@@ -106,7 +106,7 @@ export default function HandleDoor({ symbol, initialHandle = '', side: sideProp 
             className="xcc-door__input"
             value={value.replace(/^@/, '')}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="handle, or a profile link"
+            placeholder="handle or profile link"
             aria-label="X handle"
             aria-invalid={typed && !handle ? true : undefined}
             aria-describedby={typed && !handle ? `${id}-e` : undefined}

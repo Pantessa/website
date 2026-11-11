@@ -7,8 +7,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Candle } from '../lib/charts'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts } from '../lib/called-it/fixture'
-import { PICK_MAX, PIN_URL_MAX, STANDING_NOT_VERIFIED, VERDICT_WORDS, buildRecord, chartHref, recordHref, type CalledCall, type CalledRecord, type CallVerdict } from '../lib/called-it/spec'
-import { applyPins, asRecordResponse, checkPostLink, classicMarkers, cleanPins, parsePlotParams, plotUrl, plottedFrom, recordApiUrl, safeNextHref, samePlot, togglePin } from '../lib/called-it/use-record'
+import { ADDED_MARK, LABEL_CAVEAT, PICK_MAX, PIN_URL_MAX, STANDING_NOT_VERIFIED, VERDICT_WORDS, buildRecord, chartHref, recordHref, type CalledCall, type CalledRecord, type CallVerdict } from '../lib/called-it/spec'
+import { applyPins, asRecordResponse, checkPostLink, classicMarkers, cleanPins, parsePlotParams, plotUrl, plottedFrom, recordApiUrl, safeNextHref, samePlot, sideCounts, togglePin } from '../lib/called-it/use-record'
 import {
   CALLED_MARK_PREFIX,
   CALLOUT_FONT_PX,
@@ -29,6 +29,7 @@ import {
   createCalledPins,
   estimateTextWidth,
   fitRange,
+  keepTopFor,
   graphemes,
   layoutCallouts,
   markTooltip,
@@ -82,6 +83,16 @@ const CANDLES = bars()
 const record = (side: 'all' | 'bull' | 'bear' = 'all', pins?: string[]): CalledRecord =>
   buildRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC', side, profile: FIXTURE_PROFILE, verified: null, posts: fixturePosts(NOW), candles: CANDLES, nowMs: NOW, scannedAt: NOW, postsRead: 11, pins })
 
+/** The same account with two posts pasted by a viewer on top of what the scan found, and with nothing scanned at all. */
+const withAdded = (): CalledRecord => {
+  const posts = fixturePosts(NOW).map((p, i) => (i === 1 || i === 5 ? { ...p, origin: 'added' as const } : p))
+  return buildRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC', side: 'all', profile: FIXTURE_PROFILE, verified: null, posts, candles: CANDLES, nowMs: NOW, scannedAt: NOW, postsRead: 9, pins: posts.filter((p) => p.label.stance !== 'none').slice(0, 5).map((p) => p.id) })
+}
+const pasteOnly = (): CalledRecord => {
+  const posts = fixturePosts(NOW).slice(0, 4).map((p) => ({ ...p, origin: 'added' as const }))
+  return buildRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC', side: 'all', profile: FIXTURE_PROFILE, verified: null, posts, candles: CANDLES, nowMs: NOW, scannedAt: null, postsRead: 0 })
+}
+
 /** The view a plot opens on, as the chart would draw it: time and price both linear across the pane. */
 function openingView(rec: CalledRecord, pane: PaneSize, ids: readonly string[]): PinAnchor[] {
   const range = fitRange(rec.calls, NOW_SEC)
@@ -99,7 +110,7 @@ function openingView(rec: CalledRecord, pane: PaneSize, ids: readonly string[]):
 function sizesFor(rec: CalledRecord, ids: readonly string[], pane: PaneSize): Record<string, BoxSize> {
   const plan = calloutPlan(pane)
   const byId = new Map(rec.calls.map((c) => [c.postId, c]))
-  return Object.fromEntries(ids.map((id) => [id, boxSize(pinText(byId.get(id) as CalledCall, rec.handle, { textWidth: plan.textWidth, measure, wordLines: plan.wordLines }).lines, measure, plan.textWidth)]))
+  return Object.fromEntries(ids.map((id) => [id, boxSize(pinText(byId.get(id) as CalledCall, rec.handle, { textWidth: plan.textWidth, measure, wordLines: plan.wordLines }).lines, measure)]))
 }
 function laid(rec: CalledRecord, pane: PaneSize): { placed: PlacedBox[]; ids: string[]; keepBottom: number } {
   const plan = calloutPlan(pane)
@@ -184,8 +195,51 @@ export function calledChartPins(check: Check): void {
   )
   check(
     'called chart tally: the pane itself carries the record\'s own headline and standing line, word for word, and where the record lives, so every picture of the pins holds the full count and "Not verified"',
-    tShape.shape === 'anchored_text' && label.text.replace(/\n/g, ' ').includes(rec.words.headline) && label.text.replace(/\n/g, ' ').includes(STANDING_NOT_VERIFIED) && label.text.replace(/\n/g, ' ').includes(`pantessa.com${recordHref(rec.handle, 'BTC')}`) && tallyLabel(record('bear'), LAPTOP).text.includes('side=bear') && label.keepBottom > 20 && label.lines === 2 && tallyLabel(rec, PHONE).lines > label.lines && tallyLabel(rec, PHONE).lines <= 8 && tallyLabel(rec, PHONE).fontPx < label.fontPx && tShape.overrides?.wordWrap === false,
+    tShape.shape === 'anchored_text' && label.text.replace(/\n/g, ' ').includes(rec.words.headline) && label.text.replace(/\n/g, ' ').includes(STANDING_NOT_VERIFIED) && label.text.replace(/\n/g, ' ').includes(`pantessa.com${recordHref(rec.handle, 'BTC')}`) && tallyLabel(record('bear'), LAPTOP).text.includes('side=bear') && label.keepBottom > 20 && label.lines <= 3 && tallyLabel(rec, PHONE).lines > label.lines && tallyLabel(rec, PHONE).lines <= 8 && tallyLabel(rec, PHONE).fontPx < label.fontPx && tShape.overrides?.wordWrap === false,
     label.text,
+  )
+
+  // ── a pasted post is shown and marked, never counted (review R1) ─────────
+  const mixed = withAdded()
+  const pasted = mixed.calls.find((c) => c.origin === 'added' && c.picked) as CalledCall
+  const scannedCall = mixed.calls.find((c) => c.origin === 'scan' && c.picked) as CalledCall
+  const pastedText = pinText(pasted, mixed.handle, { textWidth: plan.textWidth, measure, wordLines: 2 })
+  const scannedText = pinText(scannedCall, mixed.handle, { textWidth: plan.textWidth, measure, wordLines: 2 })
+  const pastedShape = calloutShape(pasted, pastedText, { time: pasted.barTime, price: pasted.priceAt }, INKS)
+  const scannedShape = calloutShape(scannedCall, scannedText, { time: scannedCall.barTime, price: scannedCall.priceAt }, INKS)
+  check(
+    `called chart added: a post a viewer pasted looks different from one the scan found: its card says "${ADDED_MARK}" on a line of its own (the contract's mark) and is set in italics; a scanned call's card has neither, and both are the same height at most`,
+    !!pasted && !!scannedCall && pastedText.added && pastedText.lines[1] === ADDED_MARK && pastedShape.options.overrides?.italic === true && !scannedText.added && !scannedText.lines.includes(ADDED_MARK) && scannedShape.options.overrides?.italic === false && pastedText.lines.length <= 4 && scannedText.lines.length <= 4 && pastedText.words.length === 1,
+    JSON.stringify(pastedText.lines),
+  )
+  const pastedHit = { ...pasted, verdict: 'right' as const }
+  const mAdded = calledMarks({ handle: mixed.handle, calls: [pastedHit, { ...scannedCall, verdict: 'right' as const }] }, [], INKS)
+  check(
+    'called chart added: as a mark a pasted post is a ring where a scanned hit or miss is a filled disc, and its tooltip says it was added by a viewer',
+    mAdded[0].color.background === INKS.surf && mAdded[0].color.border === INKS.up && mAdded[1].color.background === INKS.up && mAdded[0].text.includes(ADDED_MARK) && !mAdded[1].text.includes(ADDED_MARK),
+  )
+  const lMixed = tallyLabel(mixed, LAPTOP)
+  const lPaste = tallyLabel(pasteOnly(), LAPTOP)
+  check(
+    'called chart added: the line on the pane counts only what the scan found, says pasted posts are shown and not counted, and for a record nobody has scanned says there is no tally (never a count of hand-picked posts)',
+    mixed.added === 2 && mixed.tally.total === mixed.calls.length - 2 && !!mixed.words.added && lMixed.text.replace(/\n/g, ' ').includes(mixed.words.added as string) && lMixed.text.replace(/\n/g, ' ').includes(mixed.words.headline) && pasteOnly().scanned === false && /No scan yet, so no tally/.test(lPaste.text.replace(/\n/g, ' ')) && !/called it|missed/.test(lPaste.text),
+    lPaste.text,
+  )
+  check(
+    'called chart added: All . Bull . Bear show what the scan found on each side, and nothing at all for a record with no scan',
+    sideCounts(mixed)?.all === mixed.bySide.bull.total + mixed.bySide.bear.total && sideCounts(mixed)?.all === mixed.calls.length - 2 && sideCounts(pasteOnly()) === null && sideCounts(null) === null && sideCounts(rec)?.bull === rec.bySide.bull.total,
+  )
+  check(
+    'called chart coverage: on a pane with room for cards the line on the pane also says what the scan READ (the record\'s own words), never that the chart\'s window was read; a phone\'s pane leaves it to the strip',
+    !!rec.words.coverage && label.text.replace(/\n/g, ' ').includes(rec.words.coverage as string) && !tallyLabel(rec, PHONE).text.replace(/\n/g, ' ').includes(rec.words.coverage as string) && /^Read /.test(rec.words.coverage as string),
+    label.text,
+  )
+  // A handle of fifteen wide letters and a long result: no line is wider than the card.
+  const wideText = pinText({ text: 'Top is in.', quote: 'Top is in', postedAt: Date.UTC(2026, 8, 30), verdict: 'open', judgedPct: 1.234, origin: 'added' }, 'WWWWWWWWWWWWWWW', { textWidth: 180, measure, wordLines: 2 })
+  check(
+    'called chart words: no line of a card is wider than the card, whatever the handle: a long handle puts the date on its own line, a long result puts the verdict on its own, and the planned box is never narrower than its widest line',
+    wideText.lines.every((l) => measure(l) <= 180) && wideText.lines[0] === '@WWWWWWWWWWWWWWW' && wideText.lines.includes(ADDED_MARK) && boxSize(wideText.lines, measure).w >= Math.max(...wideText.lines.map(measure)) + 20 && boxSize(['a', 'b', 'c'], measure).h === 3 * CALLOUT_FONT_PX + 20,
+    JSON.stringify(wideText.lines),
   )
 
   // ── how many cards a pane holds ───────────────────────────────────────
@@ -259,6 +313,16 @@ export function calledChartPins(check: Check): void {
   check(
     'called chart layout: calls days apart (bars a few pixels from each other) and calls at the pane\'s edges still get cards that do not overlap and stay inside; a card whose bar is off screen is not placed on screen',
     noOverlap(crowded) && inside(crowded, LAPTOP, L.keepBottom) && noOverlap(edged.filter((b) => b.inView)) && inside(edged.filter((b) => b.inView), LAPTOP, L.keepBottom) && !parted[0].inView && !parted[1].inView && parted.slice(2).every((b) => b.inView) && noOverlap(parted.filter((b) => b.inView)),
+  )
+  // A narrow pane wraps the legend to two rows: the upper rail starts under it.
+  const NARROW: PaneSize = { width: 617, height: 513 }
+  const nIds = boxedIds(rec.calls, calloutPlan(NARROW).total)
+  const nSizes = sizesFor(rec, nIds, NARROW)
+  const nKeep = tallyLabel(rec, NARROW).keepBottom
+  const wrapped2 = layoutCallouts({ pane: NARROW, anchors: openingView(rec, NARROW, nIds), sizes: nSizes, keepBottom: nKeep, keepTop: keepTopFor(47) })
+  check(
+    'called chart layout: the upper rail stands under the legend as the library draws it: one row on a wide pane, two when a narrow pane wraps it (measured, with a floor of one row and a ceiling), and the margins follow',
+    keepTopFor(null) === PANE_KEEP.top && keepTopFor(28) === PANE_KEEP.top && keepTopFor(47) === 53 && keepTopFor(400) === 96 && keepTopFor(NaN) === PANE_KEEP.top && wrapped2.filter((b) => b.side === 'above').every((b) => b.y === 53) && noOverlap(wrapped2) && wrapped2.length === 4 && railMargins(NARROW, calloutPlan(NARROW), 68, nKeep, { top: 10, bottom: 8 }, 53).top > railMargins(NARROW, calloutPlan(NARROW), 68, nKeep, { top: 10, bottom: 8 }).top,
   )
   check(
     'called chart layout: one rail spreads its cards with nothing before its start, nothing past its end and a gap between neighbors',
@@ -381,7 +445,7 @@ export function calledChartPins(check: Check): void {
   const ready = asRecordResponse({ status: 'ready', record: rec })
   check(
     'called chart answers: only a body in the contract\'s shape is drawn: the four statuses; a ready one must carry a record with its words, tally and calls; the count of posts still to label is kept only as a positive whole number; anything else is nothing',
-    ready?.status === 'ready' && !('unlabeled' in (ready as object)) && (asRecordResponse({ status: 'ready', record: rec, unlabeled: 12 }) as { unlabeled?: number }).unlabeled === 12 && !('unlabeled' in (asRecordResponse({ status: 'ready', record: rec, unlabeled: -3 }) as object)) && !('unlabeled' in (asRecordResponse({ status: 'ready', record: rec, unlabeled: '9' }) as object)) && asRecordResponse({ status: 'ready', record: { handle: 'x' } }) === null && asRecordResponse({ status: 'ready' }) === null && asRecordResponse({ status: 'done' }) === null && asRecordResponse(null) === null && asRecordResponse('ready') === null && asRecordResponse({ status: 'unscanned', handle: 'jack', symbol: 'BTC', canScan: 'yes' })?.status === 'unscanned' && (asRecordResponse({ status: 'unscanned', handle: 'jack', symbol: 'BTC', canScan: 'yes' }) as { canScan: boolean }).canScan === false && (asRecordResponse({ status: 'scanning', handle: 'jack', symbol: 'BTC', scanId: 'abc123', progress: 'Read 212 posts' }) as { progress: string }).progress === 'Read 212 posts' && asRecordResponse({ status: 'scanning', handle: 7 }) === null,
+    ready?.status === 'ready' && !('unlabeled' in (ready as object)) && (asRecordResponse({ status: 'ready', record: rec, unlabeled: 12 }) as { unlabeled?: number }).unlabeled === 12 && !('unlabeled' in (asRecordResponse({ status: 'ready', record: rec, unlabeled: -3 }) as object)) && !('unlabeled' in (asRecordResponse({ status: 'ready', record: rec, unlabeled: '9' }) as object)) && asRecordResponse({ status: 'ready', record: { handle: 'x' } }) === null && asRecordResponse({ status: 'ready', record: { ...rec, scanned: undefined } }) === null && asRecordResponse({ status: 'ready', record: pasteOnly() })?.status === 'ready' && asRecordResponse({ status: 'ready' }) === null && asRecordResponse({ status: 'done' }) === null && asRecordResponse(null) === null && asRecordResponse('ready') === null && asRecordResponse({ status: 'unscanned', handle: 'jack', symbol: 'BTC', canScan: 'yes' })?.status === 'unscanned' && (asRecordResponse({ status: 'unscanned', handle: 'jack', symbol: 'BTC', canScan: 'yes' }) as { canScan: boolean }).canScan === false && (asRecordResponse({ status: 'scanning', handle: 'jack', symbol: 'BTC', scanId: 'abc123', progress: 'Read 212 posts' }) as { progress: string }).progress === 'Read 212 posts' && asRecordResponse({ status: 'scanning', handle: 7 }) === null,
   )
   const refused = asRecordResponse({ status: 'refused', reason: 'Two scans a day.', next: [{ label: 'Plotted handles', href: '/x' }, { label: 'bad', href: 7 }, 'junk'] })
   check(
@@ -450,6 +514,14 @@ export function calledChartPins(check: Check): void {
   check(
     'called chart wiring: the strip takes its words from the contract: the record\'s own headline, standing and method, the verdict words and the move line; it words none of them itself',
     panel.includes('record.words.headline') && panel.includes('record.words.standing') && panel.includes('record.words.method') && panel.includes('VERDICT_WORDS[call.verdict]') && panel.includes('moveLine(call)') && !/called it|missed|no real move|too early to say|Not verified/.test(code(panel).replace(/Called it/g, '')),
+  )
+  check(
+    'called chart wiring: the strip says what the scan read (the record\'s coverage words, beside the tally), that pasted posts are shown and not counted, marks every pasted row with the contract\'s mark, says a model wrote each label, and draws no count for a record with no scan (it offers the scan instead)',
+    panel.includes('record.words.coverage') && panel.includes('record.words.added') && /call\.origin === 'added'[\s\S]{0,260}\{ADDED_MARK\}/.test(panel) && panel.includes('{LABEL_CAVEAT}') && panel.includes('{DELETED_NOTE}') && panel.includes('sideCounts(record)') && /!record\.scanned \?[\s\S]{0,400}called_scan/.test(panel) && LABEL_CAVEAT.length > 10 && !/whole chart|chart's window|this window/.test(code(panel)),
+  )
+  check(
+    'called chart wiring: a display name and a post\'s text are each isolated in a <bdi> (a right-to-left run cannot reorder the row around it), and Verify with X is never handed a `next` built from anything (it reads its own page on press)',
+    /<bdi>\{cleanPostText\(record\.profile\.name\)/.test(panel) && (panel.match(/<bdi>/g) ?? []).length >= 3 && !/<VerifyWithX[^>]*\bnext=/.test(door) && !/<VerifyWithX[^>]*\bnext=/.test(panel),
   )
   // The prefix is this lane's alone, in every stylesheet in the repo.
   const sheets: string[] = []
@@ -703,7 +775,7 @@ export async function calledChartPinsServed(check: Check, BASE: string): Promise
     for (const pane of [LAPTOP, { width: 958, height: 520 }, { width: 640, height: 395 }]) {
       const plan = calloutPlan(pane)
       const ids = boxedIds(record.calls, plan.total)
-      const sizes = Object.fromEntries(ids.map((id) => [id, boxSize(pinText(record.calls.find((c) => c.postId === id) as CalledCall, record.handle, { textWidth: plan.textWidth, measure, wordLines: plan.wordLines }).lines, measure, plan.textWidth)]))
+      const sizes = Object.fromEntries(ids.map((id) => [id, boxSize(pinText(record.calls.find((c) => c.postId === id) as CalledCall, record.handle, { textWidth: plan.textWidth, measure, wordLines: plan.wordLines }).lines, measure)]))
       const range = fitRange(record.calls, Math.floor(Date.now() / 1000)) as { from: number; to: number }
       const span = (range.to - range.from) * 1.05
       const anchors = ids.map((id) => ({ id, x: (((record.calls.find((c) => c.postId === id) as CalledCall).barTime - range.from) / span) * pane.width, y: pane.height / 2 }))
@@ -737,8 +809,8 @@ export async function calledChartPinsServed(check: Check, BASE: string): Promise
     /* judged below */
   }
   check('called chart (served): the door\'s suggestions come from the public list, which answers a list the door can read (and never the fixture or an internal run)', handles.status === 200 && Array.isArray((list as { plotted?: unknown })?.plotted) && plottedFrom(list, 50).every((p) => p.handle !== FIXTURE_HANDLE && !p.handle.startsWith('zz_pin_')), handles.text.slice(0, 120))
-  const never = asRecordResponse(JSON.parse((await get('/api/x/record?handle=zz_pin_chart_never&sym=BTC')).text))
-  check('called chart (served): a handle nobody has plotted answers "unscanned" with whether a scan can run, which the strip turns into words and a next step', never?.status === 'unscanned' && never.handle === 'zz_pin_chart_never' && typeof never.canScan === 'boolean')
+  const never = asRecordResponse(JSON.parse((await get('/api/x/record?handle=zz_pin_ch_none&sym=BTC')).text))
+  check('called chart (served): a handle nobody has plotted answers "unscanned" with whether a scan can run, which the strip turns into words and a next step', never?.status === 'unscanned' && never.handle === 'zz_pin_ch_none' && typeof never.canScan === 'boolean')
   const garbage = asRecordResponse(JSON.parse((await get('/api/x/record?handle=not%20a%20handle&sym=BTC')).text))
   check('called chart (served): a refusal arrives with a reason and at least one path on this site to go to', garbage?.status === 'refused' && garbage.reason.length > 10 && garbage.next.length >= 1 && garbage.next.every((n) => safeNextHref(n.href) !== null))
 }

@@ -18,8 +18,8 @@ import { ExternalLink, Heart, Maximize, Pin, Share2, X } from 'lucide-react'
 import { fmtPrice } from '@/components/CandleChart'
 import { SIDES } from '@/components/called/HandleDoor'
 import { chartPairFor, chartUnitOf } from '@/lib/charts'
-import { DEAD_BAND, GUEST_SCANS_PER_DAY, JUDGE_DAYS, PROVEN_SCANS_PER_DAY, SCAN_WINDOW_DAYS, VERDICT_WORDS, moveLine, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
-import { safeNextHref, useCalled, useCalledAddress } from '@/lib/called-it/use-record'
+import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, GUEST_SCANS_PER_DAY, JUDGE_DAYS, LABEL_CAVEAT, PROVEN_SCANS_PER_DAY, SCAN_POST_CAP, SCAN_WINDOW_DAYS, VERDICT_WORDS, moveLine, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
+import { safeNextHref, sideCounts, useCalled, useCalledAddress } from '@/lib/called-it/use-record'
 import { xIntentHref } from '@/lib/share-posts'
 import { VERDICT_GLYPH, cleanPostText, pinDate } from '@/lib/tv/called-pins'
 import './called-chart.css'
@@ -37,18 +37,23 @@ function avatarOf(url: string | null): string | null {
   }
 }
 
-/** The post's text with the span that carries the call marked. Text nodes only. */
+/**
+ * The post's text with the span that carries the call marked. Text nodes
+ * only, inside a `<bdi>` (a post can hold a right-to-left run; it must not
+ * reorder the row around it). Both sides are matched with their whitespace
+ * collapsed, because the stored quote is whitespace-normalized.
+ */
 function PostText({ call }: { call: Pick<CalledCall, 'text' | 'quote'> }) {
   const text = cleanPostText(call.text)
   const quote = cleanPostText(call.quote)
   const at = quote ? text.indexOf(quote) : -1
-  if (at < 0) return <>{text}</>
+  if (at < 0) return <bdi>{text}</bdi>
   return (
-    <>
+    <bdi>
       {text.slice(0, at)}
       <mark className="xcc-quote">{quote}</mark>
       {text.slice(at + quote.length)}
-    </>
+    </bdi>
   )
 }
 
@@ -58,7 +63,9 @@ function sharePost(record: CalledRecord): string {
 }
 
 function SideToggle({ record, side, onSide, busy }: { record: CalledRecord | null; side: CalledSide; onSide: (s: CalledSide) => void; busy: boolean }) {
-  const count = (s: CalledSide): number | null => (!record ? null : s === 'all' ? record.bySide.bull.total + record.bySide.bear.total : record.bySide[s].total)
+  // What the scan found on each side. A record nobody has scanned has no tally, so the toggle shows no counts.
+  const counts = sideCounts(record)
+  const count = (s: CalledSide): number | null => (counts ? counts[s] : null)
   return (
     <div className="xcc-seg" role="group" aria-label="Which calls are plotted" aria-busy={busy || undefined}>
       {SIDES.map((s) => {
@@ -117,7 +124,7 @@ function Row({ call, index, px, focused, onFocus, onPin }: { call: CalledCall; i
   }, [focused, by])
   const word = VERDICT_WORDS[call.verdict]
   return (
-    <li ref={ref} className={`xcc-row${focused ? ' is-focus' : ''}${call.picked ? ' is-picked' : ''}`} data-verdict={call.verdict} data-post={call.postId} data-picked={call.picked ? '' : undefined}>
+    <li ref={ref} className={`xcc-row${focused ? ' is-focus' : ''}${call.picked ? ' is-picked' : ''}`} data-verdict={call.verdict} data-post={call.postId} data-picked={call.picked ? '' : undefined} data-origin={call.origin}>
       <button type="button" className="xcc-row__main" onClick={onFocus} aria-expanded={focused} title="Show this call on the chart">
         <span className="xcc-row__n mono">{index + 1}</span>
         <span className="xcc-row__when mono">{pinDate(call.postedAt)}</span>
@@ -131,6 +138,11 @@ function Row({ call, index, px, focused, onFocus, onPin }: { call: CalledCall; i
           <span className="xcc-row__stance mono" data-stance={call.stance}>
             {call.stance === 'bull' ? 'Bull' : 'Bear'}
           </span>
+          {call.origin === 'added' ? (
+            <span className="xcc-row__added mono" title="A viewer pasted this post. It is shown, and it is not in the count.">
+              {ADDED_MARK}
+            </span>
+          ) : null}
           <PostText call={call} />
         </span>
         <span className="xcc-row__nums mono">
@@ -178,6 +190,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   const unlabeled = useCalled((s) => s.unlabeled)
   const focusId = useCalled((s) => s.focusId)
   const note = useCalled((s) => s.note)
+  const advanced = useCalled((s) => s.advanced)
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -201,7 +214,12 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
       <div className="xcc__who">
         <p className="xcc__k mono">
           Called it
-          {record ? <span className="xcc__name"> · {record.profile.name}</span> : null}
+          {record ? (
+            <span className="xcc__name">
+              {' '}
+              · <bdi>{cleanPostText(record.profile.name).slice(0, 60)}</bdi>
+            </span>
+          ) : null}
         </p>
         <h2 className="xcc__headline">{title}</h2>
         {sub}
@@ -224,10 +242,30 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
       <>
         {head(
           record.words.headline,
-          <p className="xcc__standing" data-verified={record.verified ? '' : undefined}>
-            {record.words.standing}
-          </p>,
+          <>
+            {/* What the scan read (never "the chart's window"), then who plotted it. */}
+            {record.words.coverage ? (
+              <p className="xcc__standing xcc__coverage" data-called-coverage="">
+                {record.words.coverage}
+              </p>
+            ) : null}
+            {record.words.added ? <p className="xcc__standing xcc__addednote">{record.words.added}</p> : null}
+            <p className="xcc__standing" data-called-standing="" data-verified={record.verified ? '' : undefined}>
+              {record.words.standing}
+            </p>
+          </>,
         )}
+        {!record.scanned ? (
+          <div className="xcc__actions" data-called-unscanned="">
+            <button type="button" className="xcc-btn xcc-btn--go" onClick={() => void scan()} disabled={scanning} aria-busy={scanning || undefined} data-journey="called_scan">
+              {scanning ? 'Scanning…' : `Scan ${who} on ${record.symbol}`}
+            </button>
+            <span className="xcc__allow">
+              {scanning && progress ? `${progress} ` : ''}
+              Only posts a viewer pasted are here, so there is no tally. A scan reads the account&rsquo;s own posts and counts what it finds.
+            </span>
+          </div>
+        ) : null}
         {unlabeled > 0 ? (
           <p className="xcc__line" role="status" data-called-unlabeled={unlabeled}>
             {unlabeled} {unlabeled === 1 ? 'post' : 'posts'} still to label.{' '}
@@ -250,13 +288,13 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
           </ol>
         ) : (
           <p className="xcc__empty">
-            {record.side === 'all' ? `No post by ${who} took a side on ${record.symbol} in this window.` : `No ${record.side === 'bull' ? 'bullish' : 'bearish'} call here. The other side may have some.`} A post the scan did not find can be added by its link.
+            {record.side === 'all' ? `No post the scan read took a side on ${record.symbol}.` : `No ${record.side === 'bull' ? 'bullish' : 'bearish'} call in what the scan read. The other side may have some.`} A post the scan did not find can be added by its link: it is shown and marked, and it is not counted.
           </p>
         )}
         <footer className="xcc__foot">
           <AddPost handle={plot.handle} />
           <div className="xcc__tools">
-            {record.calls.length > 0 ? (
+            {record.calls.length > 0 && advanced ? (
               <button type="button" className="xcc-btn" onClick={fit} title="Daily bars, every call on screen" data-journey="called_fit">
                 <Maximize className="xcc-row__icon" aria-hidden />
                 Fit all calls
@@ -321,7 +359,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
                 </span>
               ))}
             </span>
-            {record.words.method} Right from +{Math.round(DEAD_BAND * 100)}%, wrong from -{Math.round(DEAD_BAND * 100)}%. {pinned} of {record.calls.length} pinned; every call is counted. Not investment advice.
+            {record.words.method} Right from +{Math.round(DEAD_BAND * 100)}%, wrong from -{Math.round(DEAD_BAND * 100)}%. <span data-called-caveat="">{LABEL_CAVEAT}</span> {DELETED_NOTE} {pinned} of {record.calls.length} pinned; the count is every call the scan found, pinned or not. Not investment advice.
           </p>
         </footer>
       </>
@@ -349,7 +387,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
             {response.progress || progress || `Reading ${who}'s posts about ${symbol}.`}
           </p>,
         )}
-        <p className="xcc__line">It reads the last {SCAN_WINDOW_DAYS} days, so it can take up to a minute. The pins land here when it is done; you can keep using the chart.</p>
+        <p className="xcc__line">It reads up to {SCAN_POST_CAP} posts, so it can take up to a minute. The pins land here when it is done; you can keep using the chart.</p>
       </>
     )
   } else if (response?.status === 'unscanned') {
@@ -359,7 +397,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
           `Nobody has plotted ${who} on ${symbol} yet`,
           <p className="xcc__standing">
             {response.canScan
-              ? `A scan reads ${who}'s public posts about ${symbol} from the last ${SCAN_WINDOW_DAYS} days, marks each one bullish or bearish from its own words, and judges it on this chart's daily close ${JUDGE_DAYS} days later.`
+              ? `A scan reads up to ${SCAN_POST_CAP} of ${who}'s newest public posts about ${symbol}, back as far as ${SCAN_WINDOW_DAYS} days. A model labels each one bullish or bearish from its own words, and each is judged on this chart's daily close ${JUDGE_DAYS} days later.`
               : (response.reason ?? 'Scans are not available here right now.')}
           </p>,
         )}

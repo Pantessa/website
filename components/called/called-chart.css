@@ -70,6 +70,7 @@
 
 /* ── The form ── */
 .xcc-door { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.xcc-door > .xcc-seg { align-self: flex-start; }
 .xcc-door__row { display: flex; align-items: stretch; gap: 6px; min-width: 0; }
 .xcc-door__field {
   flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: var(--r-sm, 8px); border: 1px solid var(--line-2); background: var(--bg); cursor: text;
@@ -88,8 +89,11 @@
 .xcc-door__k { flex: none; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
 .xcc-door__chips, .xcc-door__you { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; font-size: 12.5px; }
 .xcc-door__verify { font-size: 12.5px; }
-/* On its own page the form may breathe. */
+/* On its own page the form may breathe, and on a phone the market and Plot take a row of their own. */
 .xcc-door--page { gap: 12px; }
+.xcc-door--page .xcc-door__row { flex-wrap: wrap; }
+.xcc-door--page .xcc-door__field { flex: 1 1 230px; }
+@media (max-width: 480px) { .xcc-door--page .xcc-btn--go { flex: 1 1 auto; } }
 .xcc-door--page .xcc-door__input { height: 44px; font-size: 16px; }
 .xcc-door--page .xcc-door__market { height: 46px; }
 .xcc-door--page .xcc-btn--go { min-height: 46px; }
@@ -111,6 +115,7 @@
 .xcc__headline { margin: 2px 0 0; font-size: 15px; line-height: 1.3; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
 .xcc__standing { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 .xcc__standing[data-verified] { color: var(--accent); }
+.xcc__coverage { color: var(--fg); }
 .xcc__headtools { flex: none; display: flex; align-items: center; gap: 8px; }
 .xcc__clear { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 6px; border: 0; border-radius: 7px; background: none; color: var(--muted-2); font-size: 11.5px; cursor: pointer; }
 .xcc__clear:hover { color: var(--sell); background: var(--surf-2); }
@@ -138,8 +143,10 @@
 .xcc-row__text { min-width: 0; font-size: 13px; line-height: 1.4; color: var(--fg); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
 .xcc-row.is-focus .xcc-row__text { display: block; overflow: visible; }
 .xcc-row__stance { margin-right: 7px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line-2); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); vertical-align: 1px; }
+.xcc-row__added { margin-right: 7px; padding: 1px 5px; border-radius: 4px; border: 1px dashed var(--line-2); font-size: 9px; letter-spacing: 0.06em; color: var(--muted); vertical-align: 1px; white-space: nowrap; }
 .xcc-quote { background: color-mix(in srgb, var(--accent) 20%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; }
-.xcc-row:not(.is-focus) .xcc-quote { background: none; padding: 0; }
+.xcc-row:not(.is-focus) .xcc-row__added { margin-right: 7px; padding: 1px 5px; border-radius: 4px; border: 1px dashed var(--line-2); font-size: 9px; letter-spacing: 0.06em; color: var(--muted); vertical-align: 1px; white-space: nowrap; }
+.xcc-quote { background: none; padding: 0; }
 .xcc-row__nums { display: inline-flex; align-items: baseline; gap: 10px; font-size: 11px; white-space: nowrap; }
 .xcc-row__price { color: var(--muted); }
 .xcc-row__side { flex: none; display: inline-flex; align-items: center; gap: 4px; padding-right: 6px; }

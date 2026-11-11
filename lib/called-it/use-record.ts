@@ -87,6 +87,8 @@ export function asRecordResponse(body: unknown): RecordResponse | null {
   if (b.status === 'ready') {
     const r = b.record as Partial<CalledRecord> | undefined
     if (!r || typeof r.handle !== 'string' || typeof r.symbol !== 'string' || !Array.isArray(r.calls) || typeof r.words?.headline !== 'string' || typeof r.words?.standing !== 'string' || !r.tally || !r.bySide || !r.profile) return null
+    // Whether a scan stands behind the count is not guessed: a record that does not say is not drawn.
+    if (typeof r.scanned !== 'boolean') return null
     // Posts a large scan kept but has not labeled yet (lane JUDGE): the strip offers to finish them.
     const unlabeled = typeof b.unlabeled === 'number' && Number.isInteger(b.unlabeled) && b.unlabeled > 0 ? b.unlabeled : 0
     return unlabeled ? { status: 'ready', record: r as CalledRecord, unlabeled } : { status: 'ready', record: r as CalledRecord }
@@ -99,6 +101,16 @@ export function asRecordResponse(body: unknown): RecordResponse | null {
   if (typeof b.handle !== 'string' || typeof b.symbol !== 'string') return null
   if (b.status === 'scanning') return { status: 'scanning', handle: b.handle, symbol: b.symbol, scanId: typeof b.scanId === 'string' ? b.scanId : '', progress: typeof b.progress === 'string' ? b.progress : '' }
   return { status: 'unscanned', handle: b.handle, symbol: b.symbol, canScan: b.canScan === true, ...(typeof b.reason === 'string' ? { reason: b.reason } : {}) }
+}
+
+/**
+ * The counts beside All · Bull · Bear: what the SCAN found on each side. A
+ * record with no finished scan has no tally, so it has no counts (its pasted
+ * posts are shown and marked, never counted).
+ */
+export function sideCounts(record: Pick<CalledRecord, 'scanned' | 'bySide'> | null): Record<CalledSide, number> | null {
+  if (!record || !record.scanned) return null
+  return { all: record.bySide.bull.total + record.bySide.bear.total, bull: record.bySide.bull.total, bear: record.bySide.bear.total }
 }
 
 /** A link a refusal offers is followed only when it is a path on this site. */
@@ -182,6 +194,8 @@ interface CalledState {
   fitNonce: number
   /** Cards the chart is showing (0 = marks only, or the built-in chart). */
   cards: number
+  /** The Advanced chart is up and drawing the plot (the built-in chart draws dots and cannot be asked to fit). */
+  advanced: boolean
   /** One line the strip shows once (a pin limit). */
   note: string | null
   /** The address has been read on this page (nothing is mirrored before that). */
@@ -198,6 +212,7 @@ interface CalledState {
   scan(): Promise<void>
   addPost(url: string): Promise<{ ok: true } | { ok: false; reason: string }>
   setCards(n: number): void
+  setAdvanced(on: boolean): void
 }
 
 const SCAN_POLL_MS = 2500
@@ -314,6 +329,7 @@ export const useCalled = create<CalledState>((set, get) => {
     focusBy: null,
     fitNonce: 0,
     cards: 0,
+    advanced: false,
     note: null,
     opened: false,
 
@@ -444,6 +460,9 @@ export const useCalled = create<CalledState>((set, get) => {
     setCards(n) {
       if (get().cards !== n) set({ cards: n })
     },
+    setAdvanced(on) {
+      if (get().advanced !== on) set({ advanced: on })
+    },
   }
 })
 
@@ -496,6 +515,7 @@ export function useCalledPins(symbol: string): CalledPinsController {
       inks: inksNow,
       onPick: (postId) => useCalled.getState().focus(postId, 'chart'),
       onCards: (n) => useCalled.getState().setCards(n),
+      onAttach: (on) => useCalled.getState().setAdvanced(on),
     })
   }
   const record = useCalled((s) => (s.symbol && s.symbol.toUpperCase() === symbol.toUpperCase() ? s.record : null))
