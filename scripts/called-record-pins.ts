@@ -614,7 +614,8 @@ export async function calledRecordPinsServed(check: Check, BASE: string): Promis
         acct.status === 200 && textOf(acct.html).includes(`@${FIXTURE_HANDLE}`) && acct.html.includes('id="plot"') && (acct.html.includes(`href="/x/${FIXTURE_HANDLE}/BTC"`) || acct.html.includes('class="xrc-row"')) &&
         nobody.status === 200 && tn.includes('Nobody has plotted @zz_pin_rec_none on BTC yet.') && tn.includes(`up to ${SCAN_WINDOW_DAYS} days back`) && nobody.html.includes('href="/t/BTC?x=zz_pin_rec_none"') && nobody.html.includes('id="plot"') && /noindex/.test(metaOf(nobody.html, 'robots') ?? '') &&
         script.status === 200 && textOf(script.html).includes('That is not an X handle.') && script.html.includes('id="plot"') && !/<script>alert\(1\)/.test(script.html) && !textOf(script.html).includes('alert(1)') &&
-        badSym.status === 200 && textOf(badSym.html).includes('Name a market to plot the handle on.') && !badSym.html.includes('<img src=x') && !badSym.html.includes('onerror=alert') &&
+        // RE-PINNED 2026-11-11 (review R5): the one market resolver (lib/called-it/market) words a string that is not a ticker itself; the page prints its reason.
+        badSym.status === 200 && textOf(badSym.html).includes('Name a market by its ticker: letters and numbers only, like BTC or AAPL.') && !badSym.html.includes('<img src=x') && !badSym.html.includes('onerror=alert') &&
         badAcct.status === 200 && textOf(badAcct.html).includes('That is not an X handle.') && !badAcct.html.includes('<svg onload') &&
         [307, 308].includes(canon.status) && (canon.location ?? '').endsWith(`/x/${FIXTURE_HANDLE}/BTC?side=bear`) && [307, 308].includes(canonAcct.status) && (canonAcct.location ?? '').endsWith(`/x/${FIXTURE_HANDLE}`),
       `${door.status} ${acct.status} ${nobody.status} ${script.status} ${badSym.status} ${badAcct.status} ${canon.status}→${canon.location} ${canonAcct.status}→${canonAcct.location}`,
