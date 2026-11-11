@@ -115,6 +115,19 @@ export async function getHandle(handle: string): Promise<StoredHandle | null> {
   }
 }
 
+/** Take a handle down (review R12), or put it back. `by` is who: `admin` (the owner self-hide is parked). */
+export async function setHidden(handle: string, hidden: boolean, by: 'admin'): Promise<void> {
+  const name = h(handle)
+  const data = hidden ? { hiddenAt: new Date(), hiddenBy: by } : { hiddenAt: null, hiddenBy: null }
+  await prisma.xHandle.upsert({ where: { handle: name }, create: { handle: name, ...data }, update: data })
+}
+
+/** The account withdraws its own verification (review R12): every handle this user id claimed loses the claim. Returns how many. */
+export async function unclaimAll(xUserId: string): Promise<number> {
+  const r = await prisma.xHandle.updateMany({ where: { claimedXUserId: xUserId }, data: { claimedXUserId: null, claimedAt: null } })
+  return r.count
+}
+
 /** X answered "no such account" (review R4b): remembered for a day, so the same miss is never billed twice. Touches nothing else on the row. */
 export async function markMissing(handle: string): Promise<void> {
   const name = h(handle)

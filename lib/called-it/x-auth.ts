@@ -42,6 +42,28 @@ export interface XIdentity {
 // ── Names and limits ────────────────────────────────────────────────────
 
 export const X_IDENTITY_COOKIE = 'pt_x'
+/**
+ * The identity cookie's name in production (review NOTE): `__Host-` makes the
+ * browser refuse it unless it is Secure, Path=/ and has no Domain, so a sibling
+ * host under pantessa.com cannot plant one. Localhost keeps `pt_x` (http).
+ * For one release both names are read, so nobody seated before is signed out.
+ */
+export const X_IDENTITY_COOKIE_HOST = '__Host-pt_x'
+export const X_IDENTITY_COOKIE_NAMES = [X_IDENTITY_COOKIE_HOST, X_IDENTITY_COOKIE] as const
+
+function isLocalOrigin(origin: string): boolean {
+  try {
+    const u = new URL(origin)
+    return u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]'
+  } catch {
+    return false
+  }
+}
+
+/** The identity cookie's name for a response served from `origin`. */
+export function identityCookieName(origin: string): string {
+  return isLocalOrigin(origin) ? X_IDENTITY_COOKIE : X_IDENTITY_COOKIE_HOST
+}
 export const X_FLOW_COOKIE = 'pt_x_flow'
 /** The flow cookie only rides to the start and callback routes. */
 export const X_FLOW_COOKIE_PATH = '/api/x/auth'
@@ -290,16 +312,22 @@ export async function verifyXIdentityToken(token: unknown): Promise<XIdentity | 
 export async function getXIdentity(): Promise<XIdentity | null> {
   try {
     const { cookies } = await import('next/headers')
-    const token = (await cookies()).get(X_IDENTITY_COOKIE)?.value
-    return token ? await verifyXIdentityToken(token) : null
+    const jar = await cookies()
+    // The production name first; the old name for one release (nobody seated before is signed out).
+    for (const name of X_IDENTITY_COOKIE_NAMES) {
+      const token = jar.get(name)?.value
+      const id = token ? await verifyXIdentityToken(token) : null
+      if (id) return id
+    }
+    return null
   } catch {
     return null
   }
 }
 
-/** Cookie options for the identity (the route sets it on its own response). */
-export function identityCookieOptions(): { httpOnly: true; secure: boolean; sameSite: 'lax'; path: '/'; maxAge: number } {
-  return { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: X_IDENTITY_MAX_AGE_S }
+/** Cookie options for the identity (the route sets it on its own response). A `__Host-` cookie is always Secure, Path=/, no Domain. */
+export function identityCookieOptions(name: string = X_IDENTITY_COOKIE): { httpOnly: true; secure: boolean; sameSite: 'lax'; path: '/'; maxAge: number } {
+  return { httpOnly: true, secure: name.startsWith('__Host-') || process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: X_IDENTITY_MAX_AGE_S }
 }
 
 export function flowCookieOptions(): { httpOnly: true; secure: boolean; sameSite: 'lax'; path: string; maxAge: number } {

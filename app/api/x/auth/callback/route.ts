@@ -5,7 +5,7 @@
 // The logic lives in lib/called-it/x-auth completeXAuth (pinned).
 import { NextResponse } from 'next/server'
 import { claimHandle, saveProfile } from '@/lib/called-it/store'
-import { X_FLOW_COOKIE, X_FLOW_COOKIE_PATH, X_IDENTITY_COOKIE, completeXAuth, identityCookieOptions } from '@/lib/called-it/x-auth'
+import { X_FLOW_COOKIE, X_FLOW_COOKIE_PATH, completeXAuth, identityCookieName, identityCookieOptions } from '@/lib/called-it/x-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,6 +24,9 @@ export async function GET(req: Request) {
   // The code is in this request's URL: never let it ride a Referer onward.
   const res = new NextResponse(null, { status: 303, headers: { location: r.location, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' } })
   res.cookies.set(X_FLOW_COOKIE, '', { path: X_FLOW_COOKIE_PATH, maxAge: 0, httpOnly: true, sameSite: 'lax' })
-  if (r.kind === 'seated') res.cookies.set(X_IDENTITY_COOKIE, r.identityToken, identityCookieOptions())
+  if (r.kind === 'seated') {
+    const name = identityCookieName(url.origin)
+    res.cookies.set(name, r.identityToken, identityCookieOptions(name))
+  }
   return res
 }

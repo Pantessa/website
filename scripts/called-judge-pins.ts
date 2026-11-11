@@ -353,7 +353,8 @@ export async function calledJudgePinsAsync(check: Check): Promise<void> {
     const prot = new MemStore()
     await prot.saveProfile({ ...FIXTURE_PROFILE, handle: 'locked_acct', isProtected: true })
     const pr = await readRecord({ handle: 'locked_acct', symbol: 'BTC' }, recordDeps(prot))
-    check('judge record: a protected account cannot be scanned', pr.body.status === 'unscanned' && !pr.body.canScan && /protected/.test(pr.body.reason ?? ''))
+    // RE-PINNED 2026-11-11 (review R12): a protected account's posts are no longer public, so its record is refused by name (410), not offered as unscanned.
+    check('judge record: a protected account cannot be scanned', pr.body.status === 'refused' && pr.http === 410 && /protected/.test(pr.body.reason))
     const boom = async () => {
       throw new Error('not built yet')
     }

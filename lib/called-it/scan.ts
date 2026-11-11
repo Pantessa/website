@@ -22,6 +22,7 @@ import { readPostById, sourceFor } from './source'
 import { labelPosts, type LabelDeps, type LabelResult } from './classify'
 import { assetTermsFor, marketTermsFor, termsFor } from './terms'
 import { marketFor, type MarketDoor } from './market'
+import { takenDown } from './takedown'
 import {
   RESCAN_AFTER_MS,
   SCAN_WINDOW_DAYS,
@@ -172,6 +173,13 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
   // A symbol with no words to search would read every post the account wrote (review R20).
   if (!termsFor(symbol).length) return refused(422, `There are no words to search X for ${symbol} (its ticker starts with a number and it has no name we know), so a scan would read every post the account wrote. Paste one of their posts instead.`, scanNext(handle, symbol))
   const { store, source } = deps
+  // A handle taken down is refused before anything else (review R12). A protected one is answered further down,
+  // where its 24 h memory decides whether X is asked again.
+  const known = await store.getHandle(handle)
+  if (known?.hiddenAt) {
+    const down = takenDown(handle, { hiddenAt: known.hiddenAt, isProtected: false })!
+    return refused(410, down.reason, down.next)
+  }
   const nowMs = deps.now()
   const deadlineMs = input.deadlineMs ?? nowMs + SCAN_TIME_BUDGET_MS
   const next = scanNext(handle, symbol)
@@ -210,7 +218,6 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
   if (!source) return refused(503, 'Scans are not switched on on this server, so no new posts can be read. Records already plotted still open, and one pasted post still works.', next)
 
   // What we already know about the account answers for a day, before X is asked again (review R4b).
-  const known = await store.getHandle(handle)
   const another = [{ label: 'Plot another handle', href: '/x' }]
   if (known?.missingAt && nowMs - known.missingAt < MISS_REMEMBER_MS) return refused(404, `There is no X account named @${handle}. Check the spelling.`, another)
   if (known?.isProtected && known.readAt && nowMs - known.readAt < MISS_REMEMBER_MS) return refused(403, `@${handle}'s posts are protected, so they cannot be read. Only posts X shows to everyone can be plotted.`, another)
@@ -388,7 +395,7 @@ export async function readWriteBody(req: Request): Promise<Record<string, unknow
 // ── One post pasted by hand ──────────────────────────────────────────────
 
 export interface AddDeps {
-  store: Pick<StoreApi, 'saveProfile' | 'savePosts' | 'labelsFor' | 'saveLabels'> & Pick<typeof Store, 'addsCount' | 'reserveAdd'>
+  store: Pick<StoreApi, 'getHandle' | 'saveProfile' | 'savePosts' | 'labelsFor' | 'saveLabels'> & Pick<typeof Store, 'addsCount' | 'reserveAdd'>
   read: (id: string) => Promise<PostRead>
   label: ScanDeps['label']
   now: () => number
@@ -422,6 +429,10 @@ export async function addPost(input: { handle: string; symbol: string; url: unkn
   const ref = postRefFromUrl(input.url)
   if (!ref) return no(400, 'That is not a link to a post on X. Copy the post\'s link (x.com/<handle>/status/<number>) and paste it here.')
   if (ref.handle && ref.handle !== handle) return no(400, `That link is a post by @${ref.handle}, not @${handle}.`)
+
+  // Taken down or protected: no paste either (review R12).
+  const down = takenDown(handle, await deps.store.getHandle(handle))
+  if (down) return { kind: 'refused', http: 410, body: down }
 
   const have = await deps.store.labelsFor(handle, symbol)
   const already = have.find((l) => l.postId === ref.id)

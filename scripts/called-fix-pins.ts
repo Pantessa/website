@@ -482,6 +482,35 @@ export async function calledFixPinsDb(check: Check): Promise<void> {
       const u3 = await run({ handle: H2, symbol: 'BTC', requester: 'ip:zzpinfixu', internal: true }, fdeps(broken))
       check('fix R11b: a post whose batch failed to parse twice across requests is given `none` (model unparsed) and is never sent again', u1.kind === 'done' && u1.unlabeled === 6 && after1.length === 6 && after1.every((r) => r.model === 'unparsed-1') && u2.kind === 'done' && u2.unlabeled === 0 && after2.every((r) => r.model === 'unparsed' && r.stance === 'none') && u3.kind === 'done' && tries === 2, `tries=${tries} u1=${JSON.stringify(u1)} u2=${JSON.stringify(u2)}`)
     }
+
+    // ── R12: takedown ──
+    {
+      const { runScan: run } = await import('@/lib/called-it/scan')
+      const H = `${FIX_PREFIX}x${FIX_TAG}`
+      const post = { ...pinPost(H, 30, 990, 'Buying this dip.'), source: 'x-api' as const }
+      await Store.saveProfile({ handle: H, name: H, avatarUrl: null, followers: 9000, blue: false, xUserId: '444' })
+      await Store.savePosts([post])
+      await Store.saveLabels([{ postId: post.id, symbol: 'BTC', stance: 'bull', conviction: 2, quote: 'Buying this dip', model: 'pin', origin: 'scan' }])
+      await prisma.xScan.create({ data: { id: `xs_zzpinq${FIX_TAG}x`, handle: H, symbol: 'BTC', status: 'done', provider: 'x-api', isInternal: true, requestedBy: 'ip:zzpinfixx', windowFrom: new Date(Date.now() - 365 * DAY_MS), windowTo: new Date(), startedAt: new Date(), finishedAt: new Date(Date.now() - 2 * DAY_MS) } })
+      const rd: RecordDeps = { store: Store as unknown as RecordDeps['store'], candles: async () => dailyCandles(Date.now()), scansAvailable: () => true, now: Date.now }
+      const shown = await readRecord({ handle: H, symbol: 'BTC' }, rd)
+      await Store.setHidden(H, true, 'admin')
+      const touched: string[] = []
+      const spySrc = new Proxy({}, { get: (_t, k) => (k === 'then' ? undefined : (touched.push(String(k)), async () => null)) }) as XSource
+      const hiddenRec = await readRecord({ handle: H, symbol: 'BTC' }, rd)
+      const hiddenScan = await run({ handle: H, symbol: 'BTC', requester: 'ip:zzpinfixx', internal: true }, { store: Store as unknown as ScanDeps['store'], source: spySrc, label: async () => { touched.push('label'); return { labels: [], unlabeled: [], model: 'x' } }, allowance: async () => ({ ok: true as const, scansLeft: 1, postCap: 400, usdLeft: 10 }), now: Date.now })
+      let reads = 0
+      const hiddenAdd = await addPost({ handle: H, symbol: 'BTC', url: `https://x.com/${H}/status/${post.id}`, requester: 'ip:zzpinfixx' }, { store: Store as unknown as AddDeps['store'], read: async () => { reads++; return { ok: false, reason: 'unavailable' } }, label: async () => { touched.push('label'); return { labels: [], unlabeled: [], model: 'x' } }, now: Date.now })
+      check('fix R12: a handle an admin took down answers a named refusal on the record, the scan and the add, before X, the reader or the model is touched', shown.body.status === 'ready' && hiddenRec.http === 410 && hiddenRec.body.status === 'refused' && /taken down/.test(hiddenRec.body.reason) && hiddenScan.kind === 'refused' && hiddenScan.http === 410 && hiddenAdd.kind === 'refused' && hiddenAdd.http === 410 && touched.length === 0 && reads === 0, `${JSON.stringify(hiddenScan).slice(0, 80)} ${touched}`)
+      await Store.setHidden(H, false, 'admin')
+      const back = await readRecord({ handle: H, symbol: 'BTC' }, rd)
+      await Store.markProtected(H)
+      const locked = await readRecord({ handle: H, symbol: 'BTC' }, rd)
+      check('fix R12: put back, the record reads again; a protected account\'s record is refused the same way (its posts are no longer public)', back.body.status === 'ready' && locked.http === 410 && locked.body.status === 'refused' && /protected/.test(locked.body.reason))
+      await Store.claimHandle(`${FIX_PREFIX}w${FIX_TAG}`, '555')
+      const removed = await Store.unclaimAll('555')
+      check('fix R12: unclaimAll withdraws every claim of that user id', removed === 1 && (await Store.getHandle(`${FIX_PREFIX}w${FIX_TAG}`))?.claimedXUserId === null)
+    }
   } finally {
     const left = await cleanFix(prisma)
     check('fix db: the pins remove every row they made', left === 0, String(left))
@@ -565,6 +594,22 @@ export async function calledFixPinsServed(check: Check, BASE: string): Promise<v
   check('fix R5 (served): B.T.C is refused 400 on the scan, an invented market 404 on the add, and WBTC reads the BTC record', dotted.status === 400 && addNo.status === 404 && recW.status === 200 && (recW.body?.record as { symbol?: string } | undefined)?.symbol === 'BTC', `${dotted.status} ${addNo.status} ${recW.status}`)
   const hs = await get('/api/x/handles?sym=B.T.C')
   check('fix R5 (served): the handles list filter takes the same door', hs.status === 400)
+
+  // R12 (served): the admin route refuses a stranger and another site; unclaim needs the X identity and clears it
+  const hideAnon = await post('/api/x/hide', { handle: 'zz_pin_q_hide', hidden: true })
+  const hideCross = await fetch(`${BASE}/api/x/hide`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' }, body: JSON.stringify({ handle: 'zz_pin_q_hide', hidden: true }) })
+  check('fix R12 (served): POST /api/x/hide refuses a visitor who is not an admin (401) and another site (403)', hideAnon.status === 401 && hideCross.status === 403, `${hideAnon.status} ${hideCross.status}`)
+  const unAnon = await post('/api/x/auth/unclaim', {})
+  const start = await fetch(`${BASE}/api/x/auth/start?next=%2Fx&as=zz_pin_q_unclm`, { redirect: 'manual' })
+  const set = ((start.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ?? []).find((c) => c.startsWith('pt_x='))
+  const cookie = set ? set.split(';')[0] : ''
+  const un = await fetch(`${BASE}/api/x/auth/unclaim`, { method: 'POST', headers: { 'content-type': 'application/json', cookie, origin: new URL(BASE).origin }, body: '{}' })
+  const unBody = (await un.json().catch(() => null)) as { removed?: number } | null
+  const cleared = ((un.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ?? []).some((c) => c.startsWith('pt_x=') && /Max-Age=0/i.test(c))
+  const db = await testDb()
+  const row = db ? await db.xHandle.findUnique({ where: { handle: 'zz_pin_q_unclm' } }) : null
+  check('fix R12 (served): unclaim refuses a visitor with no X identity (401); with one, it withdraws the claim and clears the identity cookie', unAnon.status === 401 && !!cookie && un.status === 200 && (unBody?.removed ?? 0) >= 1 && cleared && (!db || row?.claimedXUserId === null), `${unAnon.status} ${un.status} ${JSON.stringify(unBody)} cleared=${cleared}`)
+  if (db) await cleanFix(db)
 }
 
 if (process.argv[1]?.endsWith('called-fix-pins.ts')) {

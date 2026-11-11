@@ -16,6 +16,9 @@ import { scanAllowance } from './budget'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts, fixtureServed } from './fixture'
 import { RUNNING_STALE_MS, scanNext, scanWindowFrom, type AllowanceFn, type StoreApi } from './scan'
 import { marketFor, type MarketDoor } from './market'
+import { takenDown } from './takedown'
+
+export { takenDown }
 import type { FinishedScan } from './store'
 import { FAKE_LABEL_MODELS } from './classify'
 import { POST_ID_RE, buildRecord, fakeModeOn, normalizeHandle, normalizeSide, type Coverage, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
@@ -133,6 +136,10 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
   } catch {
     return { http: 200, body: { status: 'unscanned', handle, symbol, canScan: false, reason: 'Records are not kept on this server yet, so nothing has been plotted here.' } }
   }
+
+  // Taken down, or no longer public: refused by name, everywhere (review R12).
+  const down = takenDown(handle, row)
+  if (down) return { http: 410, body: down }
 
   if (scan?.status === 'running' && nowMs - scan.startedAt < RUNNING_STALE_MS) {
     return { http: 200, body: { status: 'scanning', handle, symbol, scanId: scan.id, progress: scan.note ?? `Reading @${handle}'s posts about ${symbol}` } }
