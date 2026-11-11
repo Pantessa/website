@@ -120,6 +120,9 @@ export interface TvShapeOptions {
   disableSelection?: boolean
   disableSave?: boolean
   disableUndo?: boolean
+  /** In front of every other drawing AND the candles, or behind them all. */
+  zOrder?: 'top' | 'bottom'
+  showInObjectsTree?: boolean
   overrides?: Record<string, unknown>
 }
 
@@ -127,6 +130,10 @@ export interface TvShapeApi {
   getPoints(): { time?: number; price: number }[]
   getProperties(): Record<string, unknown>
   setPoints(points: TvPoint[]): void
+  setProperties(props: Record<string, unknown>): void
+  bringToFront(): void
+  /** A drawing fixed to the pane (`anchored_text`): its corner as fractions of the pane. */
+  setAnchoredPosition(position: { x: number; y: number }): void
 }
 
 export interface TvSubscription<F> {
@@ -139,6 +146,7 @@ export interface TvPriceScaleApi {
 }
 
 export interface TvPaneApi {
+  hasMainSeries(): boolean
   getMainSourcePriceScale(): TvPriceScaleApi | null
   getHeight(): number
 }
@@ -149,12 +157,16 @@ export interface TvChartApi {
   setResolution(resolution: string): Promise<boolean> | void
   setSymbol(symbol: string): Promise<boolean> | void
   getVisibleRange(): { from: number; to: number }
+  /** Seconds. `percentRightMargin` leaves air after the newest bar (and then `to` is that bar). */
+  setVisibleRange(range: { from: number; to?: number }, options?: { percentRightMargin?: number; rejectByTimeout?: number }): Promise<void>
   onIntervalChanged(): TvSubscription<(interval: string) => void>
   onVisibleRangeChanged(): TvSubscription<(range: { from: number; to: number }) => void>
   crossHairMoved(): TvSubscription<(p: { time: number; price: number }) => void>
   onDataLoaded(): TvSubscription<() => void>
   createShape(point: TvPoint, options: TvShapeOptions): Promise<string>
   createMultipointShape(points: TvPoint[], options: TvShapeOptions): Promise<string>
+  /** A drawing fixed to the pane: `position` is its corner as fractions of the pane (0 to 1). */
+  createAnchoredShape(position: { x: number; y: number }, options: TvShapeOptions): Promise<string>
   getAllShapes(): { id: string; name: string }[]
   getShapeById(id: string): TvShapeApi
   removeEntity(id: string): void
@@ -165,7 +177,7 @@ export interface TvChartApi {
   getPanes(): TvPaneApi[]
   createStudy(name: string, forceOverlay: boolean, lock: boolean, inputs?: Record<string, unknown>): Promise<string | null>
   selection(): { add(id: string): void; clear(): void }
-  getTimeScale(): { setBarSpacing(px: number): void; barSpacing(): number }
+  getTimeScale(): { setBarSpacing(px: number): void; barSpacing(): number; width(): number; coordinateToTime(x: number): number | null }
 }
 
 export interface TvWidget {
