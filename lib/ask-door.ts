@@ -98,7 +98,8 @@ export function askDoorHidden(pathname: string): boolean {
 /** The docked pill additionally steps aside where a composer already lives
  *  (the dashboard's DashAskBar). ⌘K still opens the door there. */
 export function askDoorPillHidden(pathname: string): boolean {
-  return askDoorHidden(pathname) || pathname.startsWith('/dashboard')
+  // /x is the share landing (squad called-it): a stranger's first screen has one door, "Plot a handle", and the pill floated over its chart.
+  return askDoorHidden(pathname) || pathname.startsWith('/dashboard') || pathname === '/x' || pathname.startsWith('/x/')
 }
 
 /**
