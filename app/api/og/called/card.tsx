@@ -8,8 +8,9 @@ import {
   OG_MAX_CARDS,
   OG_PANEL,
   OG_SIZE,
-  clampPostText,
+  clampPostWidth,
   cleanLine,
+  fmtCallPrice,
   fmtUtcDate,
   headlineParts,
   headlineTally,
@@ -53,6 +54,9 @@ const LINE = 'rgba(255,255,255,0.12)'
 const TONE: Record<CallVerdict, string> = { right: ACCENT, wrong: DOWN, flat: FLAT, open: GOLD }
 const TONE_RGB: Record<CallVerdict, string> = { right: '52,227,160', wrong: '255,93,93', flat: '162,169,159', open: '240,180,84' }
 
+/** A post card's two lines, in lowercase-letter widths (card-layout textUnits): 328px of 17.5px Geist, less a word's worth of ragged edge. */
+const CARD_TEXT_UNITS = 62
+
 const MARK = gemMarkSvg(ACCENT)
 const toDataUri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
 
@@ -83,6 +87,8 @@ export interface CalledCardInput {
   avatar: string | null
   /** A refusal's own words. */
   reason?: string
+  /** The chart's unit (dollars unless the market is an index level or a yield). */
+  unit?: 'usd' | 'level' | 'yield'
 }
 
 /** The calls that get a post card: the plot's pins, the best hit and the worst miss first, then by impact (spec pickCalls). */
@@ -150,7 +156,7 @@ function PostCard({ box, call, name, handle, avatar, initial }: { box: OgCardBox
   const tone = TONE[call.verdict]
   const rgb = TONE_RGB[call.verdict]
   const head = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 26, padding: '0 14px', marginTop: box.row === 'top' ? 10 : 8 }}>
+    <div key="head" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 26, padding: '0 14px', marginTop: box.row === 'top' ? 10 : 8 }}>
       <Face uri={avatar} initial={initial} size={26} />
       <span style={{ color: INK, fontSize: 15, fontWeight: 600, maxWidth: 112, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{name}</span>
       <span style={{ color: MUTED, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>{`@${handle}`}</span>
@@ -158,32 +164,24 @@ function PostCard({ box, call, name, handle, avatar, initial }: { box: OgCardBox
     </div>
   )
   const text = (
-    <div style={{ display: 'flex', padding: '0 14px', marginTop: 6, height: 46, overflow: 'hidden', color: INK, fontSize: 17, lineHeight: 1.32 }}>
-      <span>{clampPostText(call.text, 70)}</span>
+    <div key="text" style={{ display: 'flex', padding: '0 14px', marginTop: 6, height: 48, overflow: 'hidden', color: INK, fontSize: 17.5, lineHeight: 1.34 }}>
+      <span>{clampPostWidth(call.text, CARD_TEXT_UNITS)}</span>
     </div>
   )
   // The stamp sits on the card's band-side edge, where its leader leaves.
   const stamp = (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 30, padding: '0 14px', background: `rgba(${rgb},0.15)`, ...(box.row === 'top' ? { marginTop: 'auto', borderTop: `1.5px solid rgba(${rgb},0.5)` } : { borderBottom: `1.5px solid rgba(${rgb},0.5)` }) }}>
-      <span style={{ color: tone, fontSize: 15.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{VERDICT_WORDS[call.verdict]}</span>
+    <div key="stamp" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 30, padding: '0 14px', background: `rgba(${rgb},0.15)`, ...(box.row === 'top' ? { marginTop: 'auto', borderTop: `1.5px solid rgba(${rgb},0.5)` } : { borderBottom: `1.5px solid rgba(${rgb},0.5)` }) }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <span style={{ color: tone, fontSize: 15.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{VERDICT_WORDS[call.verdict]}</span>
+        <span style={{ display: 'flex', padding: '1px 7px', borderRadius: 999, border: `1px solid rgba(${rgb},0.55)`, color: tone, fontSize: 10.5, letterSpacing: 1.6 }}>{call.stance === 'bull' ? 'BULL' : 'BEAR'}</span>
+      </div>
       <span style={{ color: tone, fontSize: 14.5, whiteSpace: 'nowrap' }}>{moveLine(call)}</span>
     </div>
   )
   return (
     <div style={{ position: 'absolute', left: box.x, top: box.y, width: box.w, height: box.h, display: 'flex', flexDirection: 'column', borderRadius: 14, background: CARD_BG, border: `1.5px solid rgba(${rgb},0.42)`, overflow: 'hidden' }}>
-      {box.row === 'top' ? (
-        <>
-          {head}
-          {text}
-          {stamp}
-        </>
-      ) : (
-        <>
-          {stamp}
-          {head}
-          {text}
-        </>
-      )}
+      {/* An array, not a fragment: the image renderer lays a fragment out as a row of its own. */}
+      {box.row === 'top' ? [head, text, stamp] : [stamp, head, text]}
     </div>
   )
 }
@@ -241,7 +239,7 @@ function Scoreboard({ input, address }: { input: CalledCardInput; address: strin
       )}
 
       {market && handle && <span style={{ display: 'flex', marginTop: 16, color: INK, fontFamily: 'Newsreader', fontStyle: 'italic', fontSize: marketSize, letterSpacing: -1, lineHeight: 1.05, whiteSpace: 'nowrap' }}>{market}</span>}
-      {record && <span style={{ display: 'flex', marginTop: 10, color: MUTED, fontSize: 12.5, letterSpacing: 2.2, whiteSpace: 'nowrap' }}>{`DAILY CLOSES SINCE ${fmtUtcDate(record.window.from).toUpperCase()}`}</span>}
+      {record && <span style={{ display: 'flex', marginTop: 10, color: MUTED, fontSize: 12.5, letterSpacing: 2.2, whiteSpace: 'nowrap' }}>{`DAILY CLOSES \u00b7 NOW ${fmtCallPrice(record.priceNow, input.unit ?? 'usd')}`}</span>}
 
       {record && parts && (
         <div style={{ display: 'flex', flexDirection: 'column', marginTop: 20 }}>

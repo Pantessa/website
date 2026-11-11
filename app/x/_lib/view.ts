@@ -13,8 +13,8 @@ import { cache } from 'react'
 import { loadCandleSeries } from '@/lib/candles-server'
 import { chartUnitOf, type ChartUnit } from '@/lib/charts'
 import { SYMBOL_RE, parsePins, readRecord } from '@/lib/called-it/record'
-import { normalizeHandle, normalizeSide, type CalledSide, type RecordResponse } from '@/lib/called-it/spec'
-import type { ClosePoint } from '@/lib/called-it/card-layout'
+import { SCAN_WINDOW_DAYS, normalizeHandle, normalizeSide, type CalledSide, type RecordResponse } from '@/lib/called-it/spec'
+import { plotFromSec, type ClosePoint } from '@/lib/called-it/card-layout'
 import { avatarDataUri } from './avatar'
 
 export interface RecordView {
@@ -59,12 +59,15 @@ async function load(handleRaw: string, symbolRaw: string, sideRaw: string, pinsR
     handle && symbol ? loadCloses(symbol) : Promise.resolve({ closes: [] as ClosePoint[], unit: 'usd' as ChartUnit }),
   ])
 
-  // The line is the record's window: nothing older than its first bar.
+  // The line is drawn over the stretch a pin can stand on (card-layout plotFromSec), inside the record's window.
   let closes = chart.closes
   if (answer.body.status === 'ready') {
-    const fromSec = Math.floor(answer.body.record.window.from / 1000)
+    const rec = answer.body.record
+    const fromSec = plotFromSec(rec.window.from, rec.window.to, rec.calls.length ? rec.calls[0].barTime : null, SCAN_WINDOW_DAYS)
     const cut = closes.filter((p) => p.t >= fromSec)
     if (cut.length >= 2) closes = cut
+  } else if (closes.length > SCAN_WINDOW_DAYS) {
+    closes = closes.slice(-SCAN_WINDOW_DAYS)
   }
   const avatar = answer.body.status === 'ready' ? await avatarDataUri(answer.body.record.profile.avatarUrl) : null
   return { handle, symbol, side, pins, http: answer.http, body: answer.body, closes, unit: chart.unit, avatar }

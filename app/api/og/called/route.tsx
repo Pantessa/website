@@ -77,7 +77,7 @@ export async function GET(req: Request): Promise<Response> {
       const view = await loadRecordView(handleRaw, symRaw, q.get('side') ?? '', (q.get('pins') ?? '').slice(0, 400))
       const body = view.body
       if (view.symbol) address = `pantessa.com/x/${handle}/${view.symbol}`
-      if (body.status === 'ready') input = { kind: body.record.calls.length ? 'record' : 'empty', handle, symbol: body.record.symbol, record: body.record, closes: view.closes, avatar: view.avatar }
+      if (body.status === 'ready') input = { kind: body.record.calls.length ? 'record' : 'empty', handle, symbol: body.record.symbol, record: body.record, closes: view.closes, avatar: view.avatar, unit: view.unit }
       else if (body.status === 'refused') input = { kind: 'refused', handle, symbol: view.symbol, record: null, closes: [], avatar: null, reason: body.reason }
       else input = { kind: body.status, handle, symbol: view.symbol, record: null, closes: view.closes, avatar: null }
     }

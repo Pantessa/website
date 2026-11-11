@@ -93,6 +93,24 @@ export function plotScale(closes: readonly ClosePoint[], prices: readonly number
   }
 }
 
+/** A drawn line starts this long before the first call, so the first pin never sits on the plot's left edge. */
+export const PLOT_LEAD_DAYS = 21
+
+/**
+ * Where a record's drawn line starts (unix seconds). The chart holds more
+ * history than a scan reads, and a line that opens with months no pin can
+ * stand on wastes the picture: so the line starts one scan window back from
+ * now, or a few weeks before the first call when that is earlier (a post a
+ * viewer pasted can be older than a scan), and never before the record's own
+ * first bar.
+ */
+export function plotFromSec(windowFromMs: number, nowMs: number, firstCallBarSec: number | null, scanDays: number): number {
+  const day = 86_400
+  const scanFrom = Math.floor(nowMs / 1000) - scanDays * day
+  const lead = firstCallBarSec === null ? scanFrom : firstCallBarSec - PLOT_LEAD_DAYS * day
+  return Math.max(Math.floor(windowFromMs / 1000), Math.min(scanFrom, lead))
+}
+
 /** The line and the area under it, drawn inside `box`. Coordinates to one decimal. */
 export function linePaths(closes: readonly ClosePoint[], scale: PlotScale, box: Rect): { line: string; area: string } {
   const pts = closes.map((p) => `${round1(box.x + scale.x(p.t) * box.w)} ${round1(box.y + scale.y(p.c) * box.h)}`)
@@ -338,6 +356,43 @@ export function clampPostText(text: string, max: number): string {
   const cut = chars.slice(0, Math.max(1, max - 1)).join('')
   const space = cut.lastIndexOf(' ')
   return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`
+}
+
+/** How wide a character runs against a lowercase letter: capitals and digits wider, thin letters and spaces narrower, CJK and emoji double. */
+function charUnits(ch: string): number {
+  const cp = ch.codePointAt(0) ?? 0
+  if (cp > 0x2e7f) return 2
+  if (/[MW@%]/.test(ch)) return 1.55
+  if (/[A-Z0-9$#&?]/.test(ch)) return 1.22
+  if (/[ iljtfrI.,:;'!|()\-]/.test(ch)) return 0.58
+  return 1
+}
+
+/** A text's drawn width in lowercase-letter widths (an estimate: good enough to decide where a card's two lines end). */
+export function textUnits(text: string): number {
+  let n = 0
+  for (const ch of text) n += charUnits(ch)
+  return Math.round(n * 100) / 100
+}
+
+/**
+ * clampPostText by drawn width instead of by count: a post in capitals or
+ * with emoji fills a card's lines sooner than its character count says, and
+ * its ellipsis must not fall off the card.
+ */
+export function clampPostWidth(text: string, maxUnits: number): string {
+  const one = text.replace(CONTROL_RE, '').replace(/\s+/g, ' ').trim()
+  if (textUnits(one) <= maxUnits) return one
+  let used = 1.2 // the ellipsis
+  let cut = ''
+  for (const ch of one) {
+    const u = charUnits(ch)
+    if (used + u > maxUnits) break
+    used += u
+    cut += ch
+  }
+  const space = cut.lastIndexOf(' ')
+  return `${(space > cut.length * 0.6 ? cut.slice(0, space) : cut).trimEnd()}\u2026`
 }
 
 /** The same cleaning with no cut: for a name on a card. */
