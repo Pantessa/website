@@ -213,28 +213,78 @@ export async function labelsFor(handle: string, symbol: string): Promise<StoredL
   })
 }
 
-export async function saveLabels(labels: readonly StoredLabel[]): Promise<void> {
-  const rows = new Map<string, StoredLabel>()
+/** A label to save; `addedBy` is who pasted it (review R2b), null for a scan's label. */
+export type SaveLabel = StoredLabel & { addedBy?: string | null }
+
+export async function saveLabels(labels: readonly SaveLabel[]): Promise<void> {
+  const rows = new Map<string, SaveLabel>()
   for (const l of labels) rows.set(`${l.postId}|${sym(l.symbol)}`, l)
   const list = [...rows.values()]
   for (let i = 0; i < list.length; i += 500) {
     const chunk = list.slice(i, i + 500)
     await prisma.$executeRaw`
-      INSERT INTO x_calls (post_id, symbol, stance, conviction, quote, model, origin, labeled_at)
-      SELECT t.post_id, t.symbol, t.stance, t.conviction, t.quote, t.model, t.origin, now()
+      INSERT INTO x_calls (post_id, symbol, stance, conviction, quote, model, origin, added_by, labeled_at)
+      SELECT t.post_id, t.symbol, t.stance, t.conviction, NULLIF(t.quote, ''), NULLIF(t.model, ''), t.origin, NULLIF(t.added_by, ''), now()
       FROM unnest(
         ${chunk.map((l) => l.postId)}::text[],
         ${chunk.map((l) => sym(l.symbol))}::text[],
         ${chunk.map((l) => l.stance)}::text[],
         ${chunk.map((l) => (l.stance === 'none' ? 0 : l.conviction))}::int[],
-        ${chunk.map((l) => (l.stance === 'none' ? null : l.quote))}::text[],
-        ${chunk.map((l) => l.model)}::text[],
-        ${chunk.map((l) => l.origin)}::text[]
-      ) AS t(post_id, symbol, stance, conviction, quote, model, origin)
+        -- Prisma types a parameter array by its FIRST element: a text array that starts with null is sent as
+        -- integers and Postgres refuses the whole chunk (measured 2026-11-11). Nulls ride as '' and come back by NULLIF.
+        ${chunk.map((l) => (l.stance === 'none' ? '' : (l.quote ?? '')))}::text[],
+        ${chunk.map((l) => l.model ?? '')}::text[],
+        ${chunk.map((l) => l.origin)}::text[],
+        ${chunk.map((l) => l.addedBy ?? '')}::text[]
+      ) AS t(post_id, symbol, stance, conviction, quote, model, origin, added_by)
       ON CONFLICT (post_id, symbol) DO UPDATE SET
         stance = EXCLUDED.stance, conviction = EXCLUDED.conviction, quote = EXCLUDED.quote,
-        model = EXCLUDED.model, origin = EXCLUDED.origin, labeled_at = now()`
+        model = EXCLUDED.model, origin = EXCLUDED.origin, labeled_at = now(),
+        -- who pasted it stays on the row (the daily count reads it), whatever labels it later
+        added_by = COALESCE(EXCLUDED.added_by, x_calls.added_by)`
   }
+}
+
+// ── Pasted posts: the meter (review R2b) ─────────────────────────────────
+
+/** Rows this requester pasted since 00:00 UTC, and in the last minute (`none` labels included: each was a model call). */
+export async function addsCount(requester: Requester, nowMs: number = Date.now()): Promise<{ today: number; lastMinute: number }> {
+  const rows = await prisma.$queryRaw<{ today: number; minute: number }[]>`
+    SELECT count(*)::int AS today, count(*) FILTER (WHERE labeled_at >= ${new Date(nowMs - 60_000)})::int AS minute
+    FROM x_calls WHERE added_by = ${requester} AND labeled_at >= ${utcDayStart(nowMs)}`
+  return { today: rows[0]?.today ?? 0, lastMinute: rows[0]?.minute ?? 0 }
+}
+
+/** The placeholder a paste holds while its one model call runs. Never a call: stance none. */
+export const ADD_PENDING_MODEL = 'pending'
+
+/**
+ * Count and reserve in one step, under this requester's advisory lock, so N
+ * pastes at once cannot all read "under the limit" (the check-then-spend race,
+ * review R3, on the paste path). `decide` gets the counts and says yes or no;
+ * yes inserts a `none` row (model `pending`, added_by = requester) that the
+ * label then replaces. A row already there for the post and symbol is answered
+ * as `exists` and nothing is reserved (somebody else is labeling it, or did).
+ */
+export async function reserveAdd<T extends { ok: boolean }>(r: { postId: string; symbol: string; requester: Requester; nowMs?: number; decide: (c: { today: number; lastMinute: number }) => T }): Promise<{ kind: 'reserved' } | { kind: 'over'; allowance: T } | { kind: 'exists'; label: StoredLabel }> {
+  const nowMs = r.nowMs ?? Date.now()
+  const symbol = sym(r.symbol)
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${`x_add:${r.requester}`}))) l`
+    const have = await tx.xCall.findUnique({ where: { postId_symbol: { postId: r.postId, symbol } } })
+    if (have) {
+      const stance = have.stance === 'bull' || have.stance === 'bear' ? have.stance : 'none'
+      const conviction = stance === 'none' ? 0 : have.conviction === 1 || have.conviction === 2 || have.conviction === 3 ? have.conviction : 0
+      return { kind: 'exists' as const, label: { postId: have.postId, symbol: have.symbol, stance, conviction, quote: have.quote, model: have.model, origin: have.origin === 'added' ? 'added' : 'scan' } }
+    }
+    const c = await tx.$queryRaw<{ today: number; minute: number }[]>`
+      SELECT count(*)::int AS today, count(*) FILTER (WHERE labeled_at >= ${new Date(nowMs - 60_000)})::int AS minute
+      FROM x_calls WHERE added_by = ${r.requester} AND labeled_at >= ${utcDayStart(nowMs)}`
+    const allowance = r.decide({ today: c[0]?.today ?? 0, lastMinute: c[0]?.minute ?? 0 })
+    if (!allowance.ok) return { kind: 'over' as const, allowance }
+    await tx.xCall.create({ data: { postId: r.postId, symbol, stance: 'none', conviction: 0, quote: null, model: ADD_PENDING_MODEL, origin: 'added', addedBy: r.requester, labeledAt: new Date(nowMs) } })
+    return { kind: 'reserved' as const }
+  })
 }
 
 // ── Scans ─────────────────────────────────────────────────────────────────

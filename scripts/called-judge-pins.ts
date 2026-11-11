@@ -83,6 +83,21 @@ class MemStore {
   async spentTodayUsd() {
     return this.spent
   }
+  // The paste meter (lane FIX, review R2b): rows a requester added, counted like the real store's added_by.
+  addedBy = new Map<string, number[]>()
+  async addsCount(req: string, nowMs = Date.now()) {
+    const ts = this.addedBy.get(req) ?? []
+    return { today: ts.filter((t) => t >= Math.floor(nowMs / DAY_MS) * DAY_MS).length, lastMinute: ts.filter((t) => t >= nowMs - 60_000).length }
+  }
+  async reserveAdd<T extends { ok: boolean }>(r: { postId: string; symbol: string; requester: string; nowMs?: number; decide: (c: { today: number; lastMinute: number }) => T }) {
+    const have = this.labels.get(`${r.postId}:${r.symbol}`)
+    if (have) return { kind: 'exists' as const, label: have }
+    const allowance = r.decide(await this.addsCount(r.requester, r.nowMs))
+    if (!allowance.ok) return { kind: 'over' as const, allowance }
+    this.addedBy.set(r.requester, [...(this.addedBy.get(r.requester) ?? []), r.nowMs ?? Date.now()])
+    this.labels.set(`${r.postId}:${r.symbol}`, { postId: r.postId, symbol: r.symbol, stance: 'none', conviction: 0, quote: null, model: 'pending', origin: 'added' })
+    return { kind: 'reserved' as const }
+  }
   async scansToday(req: string) {
     return this.scansTodayOverride ?? this.scans.filter((s) => s.requestedBy === req).length
   }
@@ -325,7 +340,7 @@ export async function calledJudgePinsAsync(check: Check): Promise<void> {
       const post = { ...real, id, ...over }
       return { ok: true, post, profile: { ...FIXTURE_PROFILE, handle: post.handle, xUserId: '777' } }
     }
-    const addDeps = (read: AddDeps['read']): AddDeps => ({ store: asStore(addStore), read, label: labelPosts, allowance: memAllowance(addStore), now: Date.now })
+    const addDeps = (read: AddDeps['read']): AddDeps => ({ store: addStore as unknown as AddDeps['store'], read, label: labelPosts, now: Date.now })
     const url = `https://x.com/${HANDLE}/status/${real.id}`
     const a1 = await addPost({ handle: HANDLE, symbol: 'BTC', url, requester: 'ip:x' }, addDeps(reader()))
     const saved = [...addStore.labels.values()][0]
@@ -547,7 +562,6 @@ export async function calledJudgeDbPins(check: Check): Promise<void> {
       store: real,
       read: async () => ({ ok: true, post: pastedNew, profile: { ...FIXTURE_PROFILE, handle: PIN_HANDLE, xUserId: '888' } }),
       label: labelPosts,
-      allowance: async (r, n, c) => (await import('@/lib/called-it/budget')).scanAllowance(r, n, c),
       now: Date.now,
     })
     const added = (await real.labelsFor(PIN_HANDLE, 'BTC')).find((l) => l.postId === pastedNew.id)

@@ -13,7 +13,7 @@
 import { getSessionAddress } from '@/lib/auth'
 import { isInternalRun as houseInternalRun } from '@/lib/internal-run'
 import { clientIpFrom, hashIp } from '@/lib/turn-limits'
-import { DAILY_USD_CAP, ENV, GUEST_SCANS_PER_DAY, PROVEN_SCANS_PER_DAY, SCAN_POST_CAP, X_POST_COST_USD, X_USER_COST_USD, chartHref, type Requester } from './spec'
+import { ADDS_PER_MINUTE, DAILY_USD_CAP, ENV, GUEST_ADDS_PER_DAY, GUEST_SCANS_PER_DAY, PROVEN_ADDS_PER_DAY, PROVEN_SCANS_PER_DAY, SCAN_POST_CAP, X_POST_COST_USD, X_USER_COST_USD, chartHref, type Requester } from './spec'
 import { scansToday, spentTodayUsd } from './store'
 import { getXIdentity } from './x-auth'
 
@@ -113,4 +113,27 @@ export function allowanceFor(i: AllowanceInput): Allowance {
 export async function scanAllowance(requester: Requester, nowMs: number = Date.now(), ctx: { handle?: string; symbol?: string } = {}): Promise<Allowance> {
   const [count, spent] = await Promise.all([scansToday(requester, nowMs), spentTodayUsd(nowMs)])
   return allowanceFor({ requester, scansToday: count, spentTodayUsd: spent, capUsd: dailyUsdCap(), postCap: scanPostCap(), ...ctx })
+}
+
+// ── Pasted posts (review R2b): each one is a house-paid model call ──────────
+
+export type AddAllowance = { ok: true; leftToday: number } | { ok: false; reason: string; next: { label: string; href: string }[]; over: 'day' | 'minute' }
+
+/** May this requester paste one more post? Pure over the counts of their rows in x_calls (added_by). */
+export function addAllowanceFor(i: { requester: Requester; today: number; lastMinute: number; handle?: string; symbol?: string }): AddAllowance {
+  const proven = isProven(i.requester)
+  const perDay = proven ? PROVEN_ADDS_PER_DAY : GUEST_ADDS_PER_DAY
+  const next = nextFor(i)
+  if (i.lastMinute >= ADDS_PER_MINUTE) return { ok: false, over: 'minute', reason: `That is ${ADDS_PER_MINUTE} posts added in the last minute. Wait a minute and paste the next one.`, next }
+  if (i.today >= perDay) {
+    return {
+      ok: false,
+      over: 'day',
+      reason: proven
+        ? `You have added today's ${perDay} posts. More can be added after 00:00 UTC.`
+        : `You have added today's ${perDay} posts. Verify with X or sign in with a wallet for ${PROVEN_ADDS_PER_DAY} a day.`,
+      next,
+    }
+  }
+  return { ok: true, leftToday: perDay - i.today }
 }

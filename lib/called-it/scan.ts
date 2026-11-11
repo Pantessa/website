@@ -16,7 +16,7 @@
 // Every dependency can be handed in (the pins run it over an in-memory store,
 // and over the real store on the TEST database).
 import * as Store from './store'
-import { scanAllowance, type Allowance } from './budget'
+import { addAllowanceFor, scanAllowance, type Allowance } from './budget'
 import { readPostById, sourceFor } from './source'
 import { labelPosts, type LabelDeps, type LabelResult } from './classify'
 import { termsFor } from './terms'
@@ -271,16 +271,15 @@ export async function readWriteBody(req: Request): Promise<Record<string, unknow
 // ── One post pasted by hand ──────────────────────────────────────────────
 
 export interface AddDeps {
-  store: Pick<StoreApi, 'saveProfile' | 'savePosts' | 'labelsFor' | 'saveLabels'>
+  store: Pick<StoreApi, 'saveProfile' | 'savePosts' | 'labelsFor' | 'saveLabels'> & Pick<typeof Store, 'addsCount' | 'reserveAdd'>
   read: (id: string) => Promise<PostRead>
   label: ScanDeps['label']
-  allowance: AllowanceFn
   now: () => number
   market?: (raw: unknown) => Promise<MarketDoor>
 }
 
 export function defaultAddDeps(): AddDeps {
-  return { store: Store, read: readPostById, label: labelPosts, allowance: scanAllowance, now: Date.now }
+  return { store: Store, read: readPostById, label: labelPosts, now: Date.now }
 }
 
 export type AddOutcome = { kind: 'added'; postId: string; label: CallLabel } | { kind: 'refused'; http: number; body: Refused }
@@ -288,9 +287,12 @@ export type AddOutcome = { kind: 'added'; postId: string; label: CallLabel } | {
 /**
  * A viewer pastes a post link: read it from X by id (keyless), refuse it
  * unless it is by this handle, label that one post for this symbol, keep it
- * as `added`. Gated by the allowance (a requester out of scans cannot spend
- * model calls this way either); a post already labeled for the symbol is
- * never read or sent to the model again.
+ * as `added`. METERED (review R2b): each paste is one house-paid model call,
+ * so a requester may add GUEST_ADDS_PER_DAY / PROVEN_ADDS_PER_DAY a UTC day
+ * and ADDS_PER_MINUTE a minute, counted from x_calls.added_by (a `none` label
+ * counts: it cost a call). The count and the reservation happen together
+ * under the requester's lock (store reserveAdd), BEFORE the model is called.
+ * A post already labeled for the symbol costs nothing and is not counted.
  */
 export async function addPost(input: { handle: string; symbol: string; url: unknown; requester: Requester }, deps: AddDeps = defaultAddDeps()): Promise<AddOutcome> {
   const { handle, requester } = input
@@ -306,10 +308,13 @@ export async function addPost(input: { handle: string; symbol: string; url: unkn
 
   const have = await deps.store.labelsFor(handle, symbol)
   const already = have.find((l) => l.postId === ref.id)
+  if (already?.model === Store.ADD_PENDING_MODEL) return no(409, 'That post is being labeled right now. Open the record again in a moment.')
   if (already) return { kind: 'added', postId: ref.id, label: { stance: already.stance, conviction: already.conviction, quote: already.quote } }
 
-  const allowed = await deps.allowance(requester, deps.now(), { handle, symbol })
-  if (!allowed.ok && allowed.over === 'requester') return no(429, allowed.reason, [...back, ...allowed.next])
+  // A cheap look before the read (so a requester over the limit does not make us read X either); the locked count below decides.
+  const decide = (c: { today: number; lastMinute: number }) => addAllowanceFor({ requester, ...c, handle, symbol })
+  const early = decide(await deps.store.addsCount(requester, deps.now()))
+  if (!early.ok) return no(429, early.reason, [...back, ...early.next])
 
   const got = await deps.read(ref.id)
   if (!got.ok) return got.reason === 'gone' ? no(404, 'X no longer serves that post, so it cannot be added.') : no(503, 'X did not answer for that post. Try again in a moment.')
@@ -319,10 +324,20 @@ export async function addPost(input: { handle: string; symbol: string; url: unkn
 
   await deps.store.saveProfile(profile)
   await deps.store.savePosts([post])
+  const held = await deps.store.reserveAdd({ postId: post.id, symbol, requester, nowMs: deps.now(), decide })
+  if (held.kind === 'over') return no(429, held.allowance.ok ? 'Too many posts added.' : held.allowance.reason, held.allowance.ok ? back : [...back, ...held.allowance.next])
+  if (held.kind === 'exists') {
+    if (held.label.model === Store.ADD_PENDING_MODEL) return no(409, 'That post is being labeled right now. Open the record again in a moment.')
+    return { kind: 'added', postId: post.id, label: { stance: held.label.stance, conviction: held.label.conviction, quote: held.label.quote } }
+  }
   const res = await deps.label([post], symbol)
   const one = res.labels.find((l) => l.postId === post.id)
-  if (!one) return no(503, 'The post was read but could not be labeled yet. Try again in a moment.')
-  await deps.store.saveLabels([{ ...one.label, postId: post.id, symbol, origin: 'added', model: res.model }])
+  if (!one) {
+    // The call was made and paid for: the reservation stays counted, as a post that took no side we could check.
+    await deps.store.saveLabels([{ stance: 'none', conviction: 0, quote: null, postId: post.id, symbol, origin: 'added', model: 'unparsed', addedBy: requester }])
+    return no(502, 'The post was read, but the labeler gave no answer we could check against its words, so it is kept as not a call.')
+  }
+  await deps.store.saveLabels([{ ...one.label, postId: post.id, symbol, origin: 'added', model: res.model, addedBy: requester }])
   if (one.label.stance === 'none') return no(200, `Read it. That post does not take a side on ${symbol} in words we can quote, so it is not a call.`)
   return { kind: 'added', postId: post.id, label: one.label }
 }
