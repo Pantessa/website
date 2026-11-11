@@ -263,6 +263,7 @@ export async function GET(req: NextRequest) {
     const detail = [said, funds].filter(Boolean).join(' — ') || null
     const ask = clip(f.prompt.replace(/\s+/g, ' '), 240)
     if (f.kind === 'wallet-refused') put(f.wallet, { at, kind: 'refused', title: `Wallet refused: ${clip(f.prompt, 120)}`, detail: said, from: 'db', ask })
+    else if (f.kind === 'venue-refused') put(f.wallet, { at, kind: 'reply-wall', title: `Signed, then the venue refused it: ${clip(f.prompt, 120)}`, detail: said, from: 'db', ask })
     else if (f.kind === 'withheld') put(f.wallet, { at, kind: 'withheld', title: `We withheld a step: ${clip(f.prompt, 120)}`, detail: said, from: 'db', ask })
     else put(f.wallet, { at, kind: 'reply-wall', title: `Wall (${f.kind}${f.buildPath ? ` · ${f.buildPath}` : ''}): ${clip(f.prompt, 120)}`, detail, from: 'db', n: { hadFunds: f.hadFunds }, ask })
   }

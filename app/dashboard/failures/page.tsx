@@ -96,6 +96,10 @@ const KIND_LABEL: Record<string, string> = {
   // and the VENUE returned the money — a cross-chain swap that never
   // happened. had_funds TRUE; the money moved and came home.
   refunded: 'venue refunded',
+  // app/api/cow/submit (server-written): the wallet SIGNED and the venue's
+  // order book refused the signed order — reply carries the venue's own
+  // errorType (lib/cow-refusal.ts). Nothing moved.
+  'venue-refused': 'venue refused (signed)',
   // lib/wallet-handoff.ts + lib/wallet-refusal.ts launchDroppedReport: a
   // phone never switched to the wallet app — the request sat queued in an
   // app nobody opened (mobile-onboarding squad, 2026-09-23). had_funds TRUE.
@@ -207,6 +211,13 @@ export default function FailuresPage() {
             title="Only rows where the deposit signed and confirmed and the VENUE refunded it (?kind=refunded)"
           >
             refunded
+          </button>
+          <button
+            className={`btn btn--sm ${kind === 'venue-refused' ? 'btn--solid' : ''}`}
+            onClick={() => setKind((k) => (k === 'venue-refused' ? null : 'venue-refused'))}
+            title="Only rows where the wallet SIGNED and the venue's order book refused the signed order (?kind=venue-refused)"
+          >
+            venue refused
           </button>
           <button
             className={`btn btn--sm ${showInternal ? 'btn--solid' : ''}`}

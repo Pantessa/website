@@ -15,7 +15,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi'
 import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import type { Eip712OrderRequest } from '@/lib/transaction-layer'
-import { reportWalletRefusal, walletErrorWords } from '@/lib/wallet-refusal'
+import { reportWalletRefusal, walletErrorWords, type SignStage } from '@/lib/wallet-refusal'
+import { signOrderErrorText } from '@/lib/cow-refusal'
+import { chainById } from '@/lib/chains'
 import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 import { oneMethodPerTap } from '@/lib/sign-round-trip'
 import { usePlatform } from '@/lib/use-sign-round-trip'
@@ -120,6 +122,12 @@ export default function SignOrderButton({
       return
     }
     setNote('')
+    // Which side said no decides the words: only a throw from the wallet
+    // itself may read as a rejection. Everything after the signature exists
+    // (our relay, CoW's order book) is shown as the relay wrote it — the
+    // 2026-11-11 limit order read "Signature rejected in the wallet" because
+    // CoW's refusal contained the word "rejected" (lib/cow-refusal).
+    let stage: SignStage = 'wallet'
     try {
       setStatus('signing')
       // The order's EIP-712 domain carries chainId — Coinbase Wallet refuses
@@ -152,6 +160,7 @@ export default function SignOrderButton({
         })
         throw e
       }
+      stage = 'server'
       setStatus('placing')
       const res = await fetch('/api/cow/submit', {
         method: 'POST',
@@ -166,8 +175,8 @@ export default function SignOrderButton({
           mode: typedData.message.feeAmount === '0' ? 'limit' : 'swap',
         }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Order rejected.')
+      const data = (await res.json().catch(() => ({}))) as { error?: string; orderUid?: unknown; explorerUrl?: unknown }
+      if (!res.ok) throw new Error(data.error || `The order relay answered HTTP ${res.status}. The wallet signed; nothing was placed.`)
       const placedExplorerUrl = typeof data.explorerUrl === 'string' ? data.explorerUrl : null
       const placedOrderUid = typeof data.orderUid === 'string' ? data.orderUid : null
       setExplorerUrl(placedExplorerUrl)
@@ -175,12 +184,15 @@ export default function SignOrderButton({
       setStatus('open')
       onPlaced?.({ orderUid: placedOrderUid, explorerUrl: placedExplorerUrl })
     } catch (e) {
-      const msg = e instanceof Error ? walletErrorWords(e) : 'Signing failed.'
-      setError(
-        /rejected|denied/i.test(msg)
-          ? 'Signature rejected in the wallet — nothing was placed. (If you didn’t cancel: check the wallet is on Base.)'
-          : msg,
-      )
+      const words =
+        stage === 'wallet'
+          ? walletErrorWords(e)
+          : e instanceof TypeError // fetch never reached our relay
+            ? `Couldn't reach Pantessa's order relay (${e.message}). The wallet signed; nothing was placed.`
+            : e instanceof Error
+              ? e.message
+              : 'The order relay failed. The wallet signed; nothing was placed.'
+      setError(signOrderErrorText(stage, words, chainById(chainId)?.name ?? `chain ${chainId}`))
       setStatus('error')
     }
   }

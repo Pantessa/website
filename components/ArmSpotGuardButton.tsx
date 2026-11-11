@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi'
 import { oneMethodPerTap } from '@/lib/sign-round-trip'
+import { signStageError, walletErrorWords, type SignStage } from '@/lib/wallet-refusal'
 import { usePlatform } from '@/lib/use-sign-round-trip'
 import SignatureWaitOpenApp from '@/components/SignatureWaitOpenApp'
 import { CheckCircle2, Loader2, PenLine, ShieldCheck } from 'lucide-react'
@@ -50,6 +51,9 @@ export default function ArmSpotGuardButton({ offer }: { offer: SpotGuardArmOffer
       setError(`Connected wallet ${address.slice(0, 6)}… ≠ protection owner ${account.slice(0, 6)}…`)
       return
     }
+    // Only the wallet's own throw may read as a rejection; the arm route's
+    // answer after the signature is shown as the route wrote it.
+    let stage: SignStage = 'wallet'
     try {
       setStatus('signing')
       // On a phone the switch is a trip to the wallet app and back — its own
@@ -84,19 +88,20 @@ export default function ArmSpotGuardButton({ offer }: { offer: SpotGuardArmOffer
           extraData: m.extraData as `0x${string}`,
         },
       })
+      stage = 'server'
       setStatus('arming')
       const res = await fetch(`/api/spot-guard/${offer.policyId}/arm`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ wallet: address, permission: offer.permission, signature }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Arming failed.')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `Arming failed (HTTP ${res.status}).`)
       setEnforced(typeof data.enforced === 'string' ? data.enforced : null)
       setStatus('armed')
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Signing failed.'
-      setError(/rejected|denied/i.test(msg) ? 'Signature rejected in the wallet — nothing was armed.' : msg)
+      const msg = stage === 'wallet' ? walletErrorWords(e) : e instanceof Error ? e.message : ''
+      setError(signStageError(stage, msg, 'Signature rejected in the wallet — nothing was armed.'))
       setStatus('error')
     }
   }

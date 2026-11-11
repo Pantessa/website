@@ -68,6 +68,7 @@
     "pins:battle": "tsx scripts/battle-pins.ts",
     "pins:flyover": "tsx scripts/flyover-pins.ts",
     "pins:ticket": "tsx scripts/order-ticket-pins.ts",
+    "pins:sign-stage": "tsx scripts/sign-stage-pins.ts",
     "pins:guide": "tsx scripts/guide-pins.ts",
     "pins:pulse": "tsx scripts/pulse-pins.ts",
     "pins:front-door": "tsx scripts/front-door-pins.ts",
