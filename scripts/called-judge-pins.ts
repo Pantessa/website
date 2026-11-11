@@ -298,7 +298,10 @@ export async function calledJudgePinsAsync(check: Check): Promise<void> {
     await prot.saveProfile({ ...FIXTURE_PROFILE, handle: 'locked_acct', isProtected: true })
     const pr = await readRecord({ handle: 'locked_acct', symbol: 'BTC' }, recordDeps(prot))
     check('judge record: a protected account cannot be scanned', pr.body.status === 'unscanned' && !pr.body.canScan && /protected/.test(pr.body.reason ?? ''))
-    const throwing = { getHandle: async () => { throw new Error('not built yet') } } as unknown as RecordDeps['store']
+    const boom = async () => {
+      throw new Error('not built yet')
+    }
+    const throwing = { getHandle: boom, latestScan: boom, labelsFor: boom, postsFor: boom } as unknown as RecordDeps['store']
     const fxr = await readRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC' }, { ...recordDeps(new MemStore()), store: throwing })
     check('judge record: the fixture path answers with the store down', fxr.body.status === 'ready' && fxr.body.record.calls.length === 10 && fxr.body.record.verified === null)
     const rx = await readRecord({ handle: HANDLE, symbol: 'BTC' }, { ...recordDeps(new MemStore()), store: throwing })

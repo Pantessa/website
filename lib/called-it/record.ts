@@ -101,7 +101,8 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
   let scan: Awaited<ReturnType<StoreApi['latestScan']>>
   let labels: Awaited<ReturnType<StoreApi['labelsFor']>>
   try {
-    ;[row, scan, labels] = await Promise.all([deps.store.getHandle(handle), deps.store.latestScan(handle, symbol), deps.store.labelsFor(handle, symbol)])
+    // Each read runs inside its own async call, so a store that throws at once rejects instead of stranding the others.
+    ;[row, scan, labels] = await Promise.all([(async () => deps.store.getHandle(handle))(), (async () => deps.store.latestScan(handle, symbol))(), (async () => deps.store.labelsFor(handle, symbol))()])
   } catch {
     return { http: 200, body: { status: 'unscanned', handle, symbol, canScan: false, reason: 'Records are not kept on this server yet, so nothing has been plotted here.' } }
   }
