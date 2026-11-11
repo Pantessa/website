@@ -1,0 +1,42 @@
+/* THE TOUR · lane SIDES-B's shared pieces (Autopilots, Community, Wallet,
+   Build). Rides the markets look and the ONE SCALE exactly as read.css and
+   panel.css do: no literal colour, no px font size, no px radius. Every
+   panel's root is its own size container, so a miniature answers to the
+   width it is given (the stage, a phone row, /story's column). */
+
+/* A mono label: what kind of thing this row is. */
+.sb-tag { font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); white-space: nowrap; }
+/* A quiet fact beside it. */
+.sb-pill { display: inline-flex; align-items: center; min-height: 20px; padding: 0 var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-pill); font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
+/* A specimen is never passed off as real. */
+.sb-example { display: inline-flex; align-items: center; min-height: 20px; padding: 0 var(--sp-2); border: 1px dashed color-mix(in srgb, var(--gold) 70%, var(--line)); border-radius: var(--r-sm); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold); white-space: nowrap; }
+
+/* A sentence the product reads, set as a quotation. */
+.sb-sentence { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: var(--fs-lg); line-height: 1.28; letter-spacing: -0.01em; color: var(--fg); text-wrap: balance; overflow-wrap: anywhere; }
+.sb-sentence::before { content: '\201C'; color: var(--muted-2); }
+.sb-sentence::after { content: '\201D'; color: var(--muted-2); }
+
+/* The line under it: what it does, and when. */
+.sb-note { margin: 0; max-width: 62ch; font-family: var(--mk-font-ui); font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.sb-note b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* One action per row. */
+.sb-run { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 36px; padding: 0 var(--sp-3); border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line)); border-radius: var(--r-pill); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; line-height: 1.2; text-decoration: none; white-space: nowrap; cursor: pointer; outline: none; transition: border-color var(--dur-1) ease, background var(--dur-1) ease, color var(--dur-1) ease; }
+.sb-run span { color: var(--accent); }
+.sb-run:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.sb-run--quiet { border-color: var(--line); background: transparent; color: var(--muted); }
+.sb-run--quiet:hover { border-color: color-mix(in srgb, var(--fg) 28%, var(--line)); background: transparent; color: var(--fg); }
+
+/* A small segmented choice. */
+.sb-seg { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 28px; padding: 0 var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--muted); font-size: var(--fs-sm); cursor: pointer; outline: none; transition: border-color var(--dur-1) ease, background var(--dur-1) ease, color var(--dur-1) ease; }
+.sb-seg:hover { color: var(--fg); }
+.sb-seg.is-on { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg); }
+
+.sb-run:focus-visible, .sb-seg:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+
+@media (pointer: coarse) {
+  .sb-run, .sb-seg { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-run, .sb-seg { transition: none; }
+}

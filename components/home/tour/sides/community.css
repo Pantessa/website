@@ -1,0 +1,40 @@
+/* THE TOUR · COMMUNITY (lane SIDES-B): the anatomy of a trade post with
+   proof (a specimen, tagged EXAMPLE), or the feed's real posts when the
+   snapshot has them. Tokens only. */
+
+.sb-cm { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; container-type: inline-size; container-name: sbcm; }
+.sb-cm__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-1) var(--sp-2); margin: 0; }
+
+/* A numbered marker: the same numeral on the card and in the legend. */
+.sb-cm__n { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1px solid color-mix(in srgb, var(--gold) 70%, var(--line)); border-radius: var(--r-pill); font-family: var(--mk-font-mono); font-size: var(--fs-xs); font-style: normal; font-weight: 600; line-height: 1; color: var(--gold); }
+
+/* ── The specimen card ────────────────────────────────────────────────── */
+.sb-cm__card { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surf-1); }
+.sb-cm__cardmeta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-1) var(--sp-2); margin: 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.sb-cm__room { display: inline-flex; align-items: center; gap: var(--sp-2); text-transform: none; letter-spacing: 0.02em; color: var(--muted); }
+.sb-cm__fact { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; margin: 0; font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; line-height: 1.35; color: var(--fg); overflow-wrap: anywhere; }
+.sb-cm__fact svg { flex: 0 0 auto; width: 15px; height: 15px; color: var(--accent); }
+.sb-cm__fact--box { display: flex; padding: var(--sp-2) var(--sp-3); border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line)); border-radius: var(--r-sm); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.sb-cm__words { display: flex; align-items: flex-start; gap: var(--sp-2); min-width: 0; padding: 0 var(--sp-3); }
+.sb-cm__words p { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin: 0; }
+.sb-cm__tagline { font-family: var(--mk-font-ui); font-size: var(--fs-sm); line-height: 1.45; color: var(--muted); }
+.sb-cm__said { font-family: var(--mk-font-ui); font-size: var(--fs-md); line-height: 1.45; color: var(--fg); overflow-wrap: anywhere; }
+
+/* ── The legend ───────────────────────────────────────────────────────── */
+.sb-cm__legend { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.sb-cm__part { display: flex; align-items: flex-start; gap: var(--sp-2); min-width: 0; }
+.sb-cm__part p { margin: 0; min-width: 0; font-family: var(--mk-font-ui); font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.sb-cm__part b { font-weight: 600; color: var(--fg); }
+
+/* ── Real posts ───────────────────────────────────────────────────────── */
+.sb-cm__posts { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.sb-cm__post { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; min-height: 44px; padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surf-1); color: var(--fg); text-decoration: none; outline: none; transition: border-color var(--dur-1) ease; }
+.sb-cm__post:hover { border-color: color-mix(in srgb, var(--fg) 28%, var(--line)); }
+.sb-cm__post:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.sb-cm__postmeta, .sb-cm__postfoot { font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--muted-2); overflow-wrap: anywhere; }
+.sb-cm__postmeta { text-transform: uppercase; letter-spacing: 0.08em; }
+.sb-cm__posttitle { font-family: var(--mk-font-ui); font-size: var(--fs-base); font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-cm__post { transition: none; }
+}

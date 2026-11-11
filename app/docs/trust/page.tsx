@@ -91,8 +91,8 @@ export default function TrustDocsPage() {
           decisions traced live on <Link href="/activity">/activity</Link>. When Pantessa charges
           a fee ({SWAP_FEE_PCT} on swaps you ask for in chat, {LINK_FEE_PCT} on swaps that come
           through a shared intent link), it is named on the card before you sign and carried in
-          the signed transaction itself — never hidden inside slippage. Bridges, transfers,
-          stakes and votes carry no Pantessa fee.
+          the signed transaction itself — never hidden inside slippage. Transfers, stakes and
+          votes carry no Pantessa fee; a move across chains is a swap and carries the swap fee.
         </p>
 
         <h2>Nothing is capped or approval-gated</h2>

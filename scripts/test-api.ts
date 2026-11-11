@@ -393,6 +393,15 @@ import { communityFeedPins, communityFeedPinsServed } from './community-feed-pin
 import { communityGroupPins, communityGroupPinsServed } from './community-group-pins'
 import { communityTelegramPins, communityTelegramPinsServed } from './community-telegram-pins'
 import { communityDiscordPins, communityDiscordPinsServed } from './community-discord-pins'
+import { landingCoordPins, landingCoordPinsServed } from './landing-coord-pins'
+import { landingHeroPins, landingHeroPinsServed } from './landing-hero-pins'
+import { landingStagePins, landingStagePinsServed } from './landing-stage-pins'
+import { landingSidesAPins, landingSidesAPinsServed } from './landing-sides-a-pins'
+import { landingSidesBPins, landingSidesBPinsServed } from './landing-sides-b-pins'
+import { landingDataPins, landingDataPinsServed } from './landing-data-pins'
+import { landingClosePins, landingClosePinsServed } from './landing-close-pins'
+import { landingStoryPins, landingStoryPinsServed } from './landing-story-pins'
+import { landingMobilePins, landingMobilePinsServed } from './landing-mobile-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -35549,6 +35558,26 @@ async function main() {
   macroPins(check)
   await macroLivePins(check)
   await macroServedPins(check, BASE)
+
+  // ── squad landing (2026-11-10): the landing on `/` — the tour of eight sides, the stranger's hero, the trust section, the closing doors. One pin file per lane, wired once here. ──
+  landingCoordPins(check)
+  await landingCoordPinsServed(check, BASE)
+  landingHeroPins(check)
+  await landingHeroPinsServed(check, BASE)
+  landingStagePins(check)
+  await landingStagePinsServed(check, BASE)
+  landingSidesAPins(check)
+  await landingSidesAPinsServed(check, BASE)
+  landingSidesBPins(check)
+  await landingSidesBPinsServed(check, BASE)
+  landingDataPins(check)
+  await landingDataPinsServed(check, BASE)
+  landingClosePins(check)
+  await landingClosePinsServed(check, BASE)
+  landingStoryPins(check)
+  await landingStoryPinsServed(check, BASE)
+  landingMobilePins(check)
+  await landingMobilePinsServed(check, BASE)
 
   // ── squad community (2026-11-09): one pin file per lane, wired once here ──
   communityCoordPins(check)
