@@ -89,6 +89,8 @@
 .xcc-door__k { flex: none; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
 .xcc-door__chips, .xcc-door__you { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; font-size: 12.5px; }
 .xcc-door__verify { font-size: 12.5px; }
+/* Signed in, the button's own parts (the handle, its two links) run together on one line: give them air here. */
+.xcc-door__verify > * + * { margin-left: 10px; }
 /* On its own page the form may breathe, and on a phone the market and Plot take a row of their own. */
 .xcc-door--page { gap: 12px; }
 .xcc-door--page .xcc-door__row { flex-wrap: wrap; }
