@@ -64,6 +64,8 @@ export const X_AUTH_PROD_ORIGIN = 'https://www.pantessa.com'
 /** Where a `next` that is not a safe path lands. */
 export const NEXT_FALLBACK = '/x'
 export const NEXT_MAX = 300
+/** Fake mode with no `as`: a handle that is not the fixture. */
+export const FAKE_DEFAULT_HANDLE = 'pantessa_me'
 
 /** What the button and the callback tell a returning visitor (`?xauth=`). */
 export type XAuthNote = 'denied' | 'failed' | 'unavailable'
@@ -369,8 +371,10 @@ export async function startXAuth(p: { origin: string; next: unknown; as?: unknow
   const next = safeNext(p.next)
   if (xFakeMode()) {
     // The harness and the UI lanes: seat a handle without leaving the site.
-    // With no `as`, the fixture handle (so a pressed button works in a drive).
-    const handle = normalizeHandle(p.as ?? 'pantessa_test')
+    // With no `as`, `pantessa_me` (a handle with no record), so a pressed
+    // button never claims the shared fixture in the TEST DB by accident;
+    // pass `as=pantessa_test` to see the fixture as its own verified owner.
+    const handle = normalizeHandle(p.as ?? FAKE_DEFAULT_HANDLE)
     if (!handle) return { kind: 'away', location: withAuthNote(next, 'failed') }
     const identity: XIdentity = { xUserId: `fake-${handle}`, handle, name: handle === 'pantessa_test' ? 'Fixture Desk' : `@${handle}`, avatarUrl: null, at: p.nowMs ?? Date.now() }
     // A store failure never breaks a fake sign-in (the store may not be built in this tree).
