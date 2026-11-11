@@ -5,25 +5,31 @@
 // is read. Code then holds every rule the model could break:
 //   · `i` in range and unique (the first answer for an index wins);
 //   · `stance` exactly bull | bear | none; `conviction` an integer 0..3;
-//   · `quote` is a span of THAT post's own text (spec quoteIsFromPost);
-//   · a post that talks to the labeler ("ignore your instructions", "label
-//     this bull") takes no side: its label is `none`, whatever the model says.
-// Anything that fails becomes `none`. A batch whose answer does not parse is
+//   · `quote` is a span of THAT post's own text (spec quoteIsFromPost).
+// Anything that fails becomes `none`. THAT is the containment, with one more
+// fact: a batch holds ONE author's posts, so no post can reach another
+// account's labels. What code does NOT hold (review R15): one post steering
+// the labels of the same author's OTHER posts in its batch, each with a valid
+// quote of its own words. There is no deny-list on post text: it dropped real
+// calls ("My stance: BTC to 200k by June") and, the repo being public, it was
+// a published way to keep a post out of one's own record. A batch whose answer does not parse is
 // asked once more; if it fails again its posts stay UNLABELED (not `none`),
 // so a later scan tries them again.
 //
-// Under XCALLS_FAKE=1 or MK2_AI_MOCK=1 a deterministic keyword labeler
+// In fake mode (spec fakeModeOn), or under MK2_AI_MOCK=1 off Vercel, a deterministic keyword labeler
 // answers (the fixture's posts get the fixture's own labels), so the harness
 // never calls a model.
-import { modelText, modelLabel, modelMocked } from '@/lib/markets-ai-model'
+import { modelText, modelLabel } from '@/lib/markets-ai-model'
 import { fixturePosts, FIXTURE_HANDLE } from './fixture'
-import { quoteIsFromPost, type CallLabel, type XPost } from './spec'
+import { ENV, PROMPT_POST_MAX, fakeModeOn, quoteIsFromPost, type CallLabel, type XPost } from './spec'
 import { canonicalSymbol, isMarketProxy } from './terms'
 import { symbolName } from '@/lib/markets'
 
 export const LABEL_BATCH = 30
 /** Batches in flight at once. 400 posts = 14 batches = 3 rounds, inside a 60 s function. */
 export const LABEL_POOL = 5
+/** max_tokens per batch: a JSON answer for 30 posts is ~1,500 tokens; the rest is headroom for adaptive thinking. */
+export const LABEL_MAX_TOKENS = 8000
 /** A model call never gets less than this, and never more than the time left before the deadline. */
 const MIN_CALL_MS = 3_000
 /** Longest quote kept (a stance rarely needs more than a sentence). */
@@ -34,8 +40,10 @@ export const NONE: CallLabel = { stance: 'none', conviction: 0, quote: null }
 export interface LabelResult {
   /** One per post that got a label (`none` included). */
   labels: { postId: string; label: CallLabel }[]
-  /** Posts left unlabeled (their batch never parsed). A later scan tries again. */
+  /** Posts left unlabeled (their batch never parsed, or the time ran out first). A later scan tries again. */
   unlabeled: string[]
+  /** Of those, the posts whose batch WAS asked twice and never parsed (review R11): the scan counts them across requests. */
+  failed?: string[]
   /** What labeled them: the model id, `keywords`, or `fixture`. */
   model: string
 }
@@ -43,9 +51,16 @@ export interface LabelResult {
 /** The model call, injectable so the pins can hand in hostile answers. Returns the raw text or null. */
 export type ModelFn = (call: { system: string; user: string; maxTokens: number; signal?: AbortSignal }) => Promise<string | null>
 
-export function labelsFaked(): boolean {
-  return process.env.XCALLS_FAKE === '1' || modelMocked()
+/**
+ * The keyword labeler answers instead of the model only off Vercel (review R6): fake mode is spec fakeModeOn,
+ * and MK2_AI_MOCK alone counts only where no Vercel deployment could store its labels as real ones.
+ */
+export function labelsFaked(env: Record<string, string | undefined> = process.env): boolean {
+  return fakeModeOn(env) || (env.MK2_AI_MOCK === '1' && !env.VERCEL && env.VERCEL_ENV !== 'production')
 }
+
+/** What the harness labelers write as a label's model. Outside fake mode such a label is never read as a call (review R6). */
+export const FAKE_LABEL_MODELS: ReadonlySet<string> = new Set(['keywords', 'fixture', 'injected'])
 
 // ── The prompt ───────────────────────────────────────────────────────────
 
@@ -62,9 +77,15 @@ export function systemPrompt(): string {
   ].join('\n')
 }
 
-/** A post's text as it goes to the model: one line, and it can never close (or open) the data block. */
+/**
+ * A post's text as it goes to the model: one line, it can never close (or
+ * open) the data block, and at most PROMPT_POST_MAX characters (review R11c:
+ * X allows 25,000, and thirty of those overflow a batch so it fails on every
+ * try). The quote is still checked against the WHOLE post.
+ */
 export function postForPrompt(text: string): string {
-  return text.replace(/<\s*\/?\s*posts\s*>/gi, '[posts]').replace(/\s+/g, ' ').trim()
+  const flat = text.replace(/<\s*\/?\s*posts\s*>/gi, '[posts]').replace(/\s+/g, ' ').trim()
+  return flat.length > PROMPT_POST_MAX ? `${flat.slice(0, PROMPT_POST_MAX).trimEnd()} ...` : flat
 }
 
 export function userPrompt(posts: readonly Pick<XPost, 'text'>[], symbol: string): string {
@@ -78,7 +99,7 @@ export function userPrompt(posts: readonly Pick<XPost, 'text'>[], symbol: string
 
 // ── Reading the answer (pure) ────────────────────────────────────────────
 
-/** A post that addresses the labeler is not a call on an asset. */
+/** A post that seems to address a labeler. Used by the harness's keyword labeler only; never a verdict on a model's label (review R15). */
 const TALKS_TO_LABELER = /\b(ignore|disregard|forget)\b[^.!?\n]{0,40}\b(instruction|prompt|rule|above|previous|system)s?\b|\b(system prompt|you are (an? )?(ai|llm|model|labell?er|assistant))\b|\blabel (this|every|all|each)\b|\bconviction\s*[:=]?\s*[0-3]\b|"?stance"?\s*[:=]/i
 
 export function talksToLabeler(text: string): boolean {
@@ -106,7 +127,6 @@ export function validLabel(el: { stance?: unknown; conviction?: unknown; quote?:
   if (stance !== 'bull' && stance !== 'bear') return NONE
   if (typeof conviction !== 'number' || !Number.isInteger(conviction) || conviction < 1 || conviction > 3) return NONE
   if (typeof quote !== 'string' || quote.length > QUOTE_MAX || !quoteIsFromPost(quote, text)) return NONE
-  if (talksToLabeler(text)) return NONE
   return { stance, conviction: conviction as 1 | 2 | 3, quote: quote.replace(/\s+/g, ' ').trim() }
 }
 
@@ -173,7 +193,18 @@ export interface LabelDeps {
   minCallMs?: number
 }
 
-const houseModel: ModelFn = (call) => modelText({ ...call, surface: 'called-it' })
+/**
+ * The labeler's own model (review NOTE): it never follows the markets AI's MK2_AI_MODEL, so flipping that for
+ * chart answers does not reprice every scan. Env XCALLS_MODEL; default the current small model, Claude Haiku 5.5
+ * (per the claude-api skill's model table, 2026-11-11; it replaced claude-haiku-4-5-20251001 here).
+ */
+export const LABELER_DEFAULT_MODEL = 'claude-haiku-5-5'
+export function labelerModel(env: Record<string, string | undefined> = process.env): string {
+  const v = (env[ENV.model] ?? '').trim()
+  return v || LABELER_DEFAULT_MODEL
+}
+
+const houseModel: ModelFn = (call) => modelText({ ...call, surface: 'called-it', model: labelerModel() })
 
 /** Run `jobs` with at most `size` in flight; results keep the jobs' order. Pure over its callbacks; pinned. */
 export async function inPool<T>(jobs: readonly (() => Promise<T>)[], size: number): Promise<T[]> {
@@ -206,15 +237,18 @@ export async function labelPosts(posts: readonly XPost[], symbol: string, deps: 
   const batches: XPost[][] = []
   for (let k = 0; k < posts.length; k += LABEL_BATCH) batches.push(posts.slice(k, k + LABEL_BATCH))
 
+  const tries = new Map<XPost[], number>()
   const runBatch = async (batch: XPost[]): Promise<ReturnType<typeof readAnswer>> => {
     const user = userPrompt(batch, symbol)
     let read: ReturnType<typeof readAnswer> = null
     for (let attempt = 0; attempt < 2 && !read; attempt++) {
       const left = deadline - now()
       if (Number.isFinite(deadline) && (left <= 0 || left < minCall)) break
+      tries.set(batch, attempt + 1)
       let raw: string | null = null
       try {
-        raw = await model({ system, user, maxTokens: 4000, signal: Number.isFinite(left) ? AbortSignal.timeout(Math.max(1, left)) : undefined })
+        // Room for the answer of 30 posts AND the thinking a current small model does by default (it counts against max_tokens).
+        raw = await model({ system, user, maxTokens: LABEL_MAX_TOKENS, signal: Number.isFinite(left) ? AbortSignal.timeout(Math.max(1, left)) : undefined })
       } catch {
         raw = null
       }
@@ -226,9 +260,13 @@ export async function labelPosts(posts: readonly XPost[], symbol: string, deps: 
 
   const labels: LabelResult['labels'] = []
   const unlabeled: string[] = []
+  const failed: string[] = []
   answers.forEach((read, k) => {
     if (read) labels.push(...read)
-    else unlabeled.push(...batches[k].map((p) => p.id))
+    else {
+      unlabeled.push(...batches[k].map((p) => p.id))
+      if ((tries.get(batches[k]) ?? 0) >= 2) failed.push(...batches[k].map((p) => p.id))
+    }
   })
-  return { labels, unlabeled, model: deps.model ? 'injected' : modelLabel() }
+  return { labels, unlabeled, failed, model: deps.model ? 'injected' : modelLabel() === 'mock' ? 'mock' : labelerModel() }
 }

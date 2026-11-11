@@ -17,6 +17,7 @@
 // against xAuthStartHref.
 import { useEffect, useState } from 'react'
 import { recordHref } from '@/lib/called-it/spec'
+import { safeNextProp } from '@/lib/called-it/next-path'
 import type { XIdentity } from '@/lib/called-it/x-auth'
 import './verify-with-x.css'
 
@@ -71,7 +72,9 @@ function XMark() {
   )
 }
 
-export default function VerifyWithX({ next, variant = 'button', className, symbol }: VerifyWithXProps) {
+export default function VerifyWithX({ next: nextProp, variant = 'button', className, symbol }: VerifyWithXProps) {
+  // A `next` that is not one path on this site becomes /x (review NOTE: PROD_ORIGIN + next must stay on pantessa.com).
+  const next = nextProp === undefined ? undefined : safeNextProp(nextProp)
   const [me, setMe] = useState<Me | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)

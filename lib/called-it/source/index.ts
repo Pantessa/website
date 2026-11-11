@@ -5,7 +5,7 @@
 //   X_BEARER_TOKEN set                                  → X's own API
 //   otherwise                                           → null (no scans here)
 // readPostById() needs no key at all, so pasting a post works everywhere.
-import { ENV, type PostRead, type XSource } from '../spec'
+import { ENV, fakeModeOn, type PostRead, type XSource } from '../spec'
 import { fixtureServed } from '../fixture'
 import { readPostByIdWith } from './by-id'
 import { FixtureSource } from './fixture'
@@ -15,8 +15,9 @@ export { XApiError, XApiSource } from './x-api'
 export { FixtureSource, FIXTURE_NO_SUCH_HANDLE } from './fixture'
 export { refreshGone, REFRESH_MAX, REFRESH_AFTER_MS } from './refresh'
 
+/** Fake mode is spec fakeModeOn (review R6: off on every Vercel deployment), and the fixture must be served here. */
 function fakeOn(): boolean {
-  return process.env[ENV.fake] === '1' && fixtureServed()
+  return fakeModeOn() && fixtureServed()
 }
 
 function bearer(): string | null {

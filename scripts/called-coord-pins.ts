@@ -45,6 +45,7 @@ import {
 } from '../lib/called-it/spec'
 import { additiveRefusal } from './run-ddl'
 import { askDoorPillHidden } from '../lib/ask-door'
+import { coverageOf } from '../lib/called-it/record'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -190,6 +191,17 @@ export function calledCoordPins(check: Check): void {
       oldPaste.window.from === Date.UTC(2021, 0, 13, 0, 19, 45) - 7 * 86_400_000 && oldPaste.calls.length === 11 && rec.window.from >= up[0].t * 1000 &&
       askDoorPillHidden('/x') && askDoorPillHidden('/x/cz_binance/BTC') && !askDoorPillHidden('/xyz') && !askDoorPillHidden('/t/BTC') && askDoorPillHidden('/dashboard'),
     `${onStock.calls.filter((x) => x.picked).length} pins · ${new Date(onStock.window.from).toISOString().slice(0, 10)}`,
+  )
+  // ── A hole inside the coverage is said (the fix lane's open question: an incremental scan that hit its cap) ──
+  const D = 86_400_000
+  const t0 = Date.UTC(2025, 10, 11)
+  const whole = coverageOf([{ windowFrom: t0, windowTo: t0 + 200 * D, postsRead: 120, truncated: false, oldestPostAt: null }, { windowFrom: t0 + 200 * D - 3_600_000, windowTo: t0 + 365 * D, postsRead: 80, truncated: false, oldestPostAt: null }])
+  const holed = coverageOf([{ windowFrom: t0, windowTo: t0 + 200 * D, postsRead: 120, truncated: false, oldestPostAt: null }, { windowFrom: t0 + 200 * D - 3_600_000, windowTo: t0 + 365 * D, postsRead: 400, truncated: true, oldestPostAt: t0 + 300 * D }])
+  check(
+    'called-it coverage gap: two scans that meet have no gap; when the later scan stopped at its cap before it reached where the first one ended, the record names the stretch nobody read, in words, and still reports the whole reach and the posts read',
+    !!whole && whole.gap === undefined && whole.postsRead === 200 && !whole.truncated && !!holed && holed.gap?.from === t0 + 200 * D && holed.gap.to === t0 + 300 * D && holed.from === t0 && !holed.truncated && holed.postsRead === 520 &&
+      coverageLine(holed) === 'Read 520 matching posts from 11 Nov 2025 to 11 Nov 2026. Posts between 30 May 2026 and 7 Sep 2026 were not read.' && coverageOf([]) === null && ASCII.test(coverageLine(holed)),
+    holed ? coverageLine(holed) : 'null',
   )
   // ── Review R6: one fence for fake mode, and a fake claim is recognisable in the data ──
   check(

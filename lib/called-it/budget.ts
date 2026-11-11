@@ -13,8 +13,8 @@
 import { getSessionAddress } from '@/lib/auth'
 import { isInternalRun as houseInternalRun } from '@/lib/internal-run'
 import { clientIpFrom, hashIp } from '@/lib/turn-limits'
-import { DAILY_USD_CAP, ENV, GUEST_SCANS_PER_DAY, PROVEN_SCANS_PER_DAY, SCAN_POST_CAP, X_POST_COST_USD, X_USER_COST_USD, chartHref, type Requester } from './spec'
-import { scansToday, spentTodayUsd } from './store'
+import { ADDS_PER_MINUTE, DAILY_USD_CAP, ENV, GUEST_ADDS_PER_DAY, GUEST_LOOKUPS_PER_DAY, GUEST_SCANS_PER_DAY, PROVEN_ADDS_PER_DAY, PROVEN_LOOKUPS_PER_DAY, PROVEN_SCANS_PER_DAY, SCAN_POST_CAP, X_POST_COST_USD, X_USER_COST_USD, chartHref, type Requester } from './spec'
+import { lookupsToday, scansToday, spentTodayUsd } from './store'
 import { getXIdentity } from './x-auth'
 
 type HeadersOf = { headers: Headers }
@@ -72,6 +72,8 @@ export interface AllowanceInput {
   spentTodayUsd: number
   capUsd: number
   postCap: number
+  /** Profile reads this requester caused today, misses included (review R4c). Absent = not counted. */
+  lookupsToday?: number
   /** For the refusal's links. */
   handle?: string
   symbol?: string
@@ -96,6 +98,15 @@ export function allowanceFor(i: AllowanceInput): Allowance {
       next: nextFor(i),
     }
   }
+  const lookups = proven ? PROVEN_LOOKUPS_PER_DAY : GUEST_LOOKUPS_PER_DAY
+  if ((i.lookupsToday ?? 0) >= lookups) {
+    return {
+      ok: false,
+      over: 'requester',
+      reason: `You have looked up ${lookups} handles on X today, misses included. Lookups come back at 00:00 UTC; handles already plotted still open.`,
+      next: nextFor(i),
+    }
+  }
   if (i.scansToday >= perDay) {
     return {
       ok: false,
@@ -111,6 +122,29 @@ export function allowanceFor(i: AllowanceInput): Allowance {
 
 /** May this requester start a scan now? Reads today's scans and the house's spend. */
 export async function scanAllowance(requester: Requester, nowMs: number = Date.now(), ctx: { handle?: string; symbol?: string } = {}): Promise<Allowance> {
-  const [count, spent] = await Promise.all([scansToday(requester, nowMs), spentTodayUsd(nowMs)])
-  return allowanceFor({ requester, scansToday: count, spentTodayUsd: spent, capUsd: dailyUsdCap(), postCap: scanPostCap(), ...ctx })
+  const [count, spent, lookups] = await Promise.all([scansToday(requester, nowMs), spentTodayUsd(nowMs), lookupsToday(requester, nowMs)])
+  return allowanceFor({ requester, scansToday: count, spentTodayUsd: spent, lookupsToday: lookups, capUsd: dailyUsdCap(), postCap: scanPostCap(), ...ctx })
+}
+
+// ── Pasted posts (review R2b): each one is a house-paid model call ──────────
+
+export type AddAllowance = { ok: true; leftToday: number } | { ok: false; reason: string; next: { label: string; href: string }[]; over: 'day' | 'minute' }
+
+/** May this requester paste one more post? Pure over the counts of their rows in x_calls (added_by). */
+export function addAllowanceFor(i: { requester: Requester; today: number; lastMinute: number; handle?: string; symbol?: string }): AddAllowance {
+  const proven = isProven(i.requester)
+  const perDay = proven ? PROVEN_ADDS_PER_DAY : GUEST_ADDS_PER_DAY
+  const next = nextFor(i)
+  if (i.lastMinute >= ADDS_PER_MINUTE) return { ok: false, over: 'minute', reason: `That is ${ADDS_PER_MINUTE} posts added in the last minute. Wait a minute and paste the next one.`, next }
+  if (i.today >= perDay) {
+    return {
+      ok: false,
+      over: 'day',
+      reason: proven
+        ? `You have added today's ${perDay} posts. More can be added after 00:00 UTC.`
+        : `You have added today's ${perDay} posts. Verify with X or sign in with a wallet for ${PROVEN_ADDS_PER_DAY} a day.`,
+      next,
+    }
+  }
+  return { ok: true, leftToday: perDay - i.today }
 }

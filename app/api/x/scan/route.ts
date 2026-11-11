@@ -2,11 +2,11 @@
 // GET  /api/x/scan?id=               →  one scan's status and note (a second viewer polls this).
 // Same-origin JSON only. The scan runs inside the request (lib/called-it/scan runScan).
 import { NextResponse } from 'next/server'
-import { readRecord, SYMBOL_RE } from '@/lib/called-it/record'
+import { readRecord } from '@/lib/called-it/record'
 import { CROSS_SITE, SCAN_TIME_BUDGET_MS, isInternalRun, readWriteBody, requesterOf, runScan } from '@/lib/called-it/scan'
 import { getScan } from '@/lib/called-it/store'
 import { FIXTURE_HANDLE } from '@/lib/called-it/fixture'
-import { resolveChartPair } from '@/lib/charts'
+import { marketFor } from '@/lib/called-it/market'
 import { normalizeHandle } from '@/lib/called-it/spec'
 
 export const runtime = 'nodejs'
@@ -22,9 +22,11 @@ export async function POST(req: Request) {
   if (body === 'cross-site') return json(CROSS_SITE, 403)
   if (!body) return json({ status: 'refused', reason: 'Send the handle and the market as JSON.', next: [{ label: 'Plot a handle', href: '/x' }] }, 400)
   const handle = normalizeHandle(body.handle)
-  const sym = typeof body.sym === 'string' ? body.sym.trim() : ''
   if (!handle) return json({ status: 'refused', reason: 'That is not an X handle. A handle is 1 to 15 letters, numbers or underscores.', next: [{ label: 'Plot a handle', href: '/x' }] }, 400)
-  if (!SYMBOL_RE.test(sym)) return json({ status: 'refused', reason: 'Name a market to scan the handle on.', next: [{ label: 'Markets', href: '/' }] }, 400)
+  // One door for the market (lib/called-it/market): the symbol page's spelling, or a refusal before anything is read from X.
+  const door = await marketFor(body.sym)
+  if (!door.ok) return json({ status: 'refused', reason: door.reason, next: door.next }, door.http)
+  const sym = door.symbol
 
   const requester = await requesterOf(req)
   // The fixture needs no scan; a market with no chart is refused before anything is read from X.
@@ -32,16 +34,15 @@ export async function POST(req: Request) {
     const { http, body: rec } = await readRecord({ handle, symbol: sym, side: body.side, requester })
     return json(rec, http)
   }
-  if (!(await resolveChartPair(sym))) return json({ status: 'refused', reason: `${sym.toUpperCase()} has no chart here, so there is nothing to pin a post to.`, next: [{ label: 'Markets', href: '/' }] }, 404)
 
   let outcome
   try {
-    outcome = await runScan({ handle, symbol: sym.toUpperCase(), requester, internal: isInternalRun(req), deadlineMs: startedAt + SCAN_TIME_BUDGET_MS })
+    outcome = await runScan({ handle, symbol: sym, requester, internal: isInternalRun(req), deadlineMs: startedAt + SCAN_TIME_BUDGET_MS })
   } catch {
     return json({ status: 'refused', reason: 'The scan did not start. Try again in a moment.', next: [{ label: 'See handles already plotted', href: '/x' }] }, 503)
   }
   if (outcome.kind === 'refused') return json(outcome.body, outcome.http)
-  if (outcome.kind === 'joined') return json({ status: 'scanning', handle, symbol: sym.toUpperCase(), scanId: outcome.scan.id, progress: outcome.scan.note ?? `Reading @${handle}'s posts` }, 202)
+  if (outcome.kind === 'joined') return json({ status: 'scanning', handle, symbol: sym, scanId: outcome.scan.id, progress: outcome.scan.note ?? `Reading @${handle}'s posts` }, 202)
   const { http, body: rec } = await readRecord({ handle, symbol: sym, side: body.side, requester })
   return json(rec, http)
 }

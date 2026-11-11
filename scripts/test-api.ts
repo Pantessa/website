@@ -396,6 +396,7 @@ import { calledJudgePins, calledJudgePinsServed } from './called-judge-pins'
 import { calledAuthPins, calledAuthPinsServed } from './called-auth-pins'
 import { calledChartPins, calledChartPinsServed } from './called-chart-pins'
 import { calledRecordPins, calledRecordPinsServed } from './called-record-pins'
+import { calledFixPins, calledFixPinsServed } from './called-fix-pins'
 import { communityFeedPins, communityFeedPinsServed } from './community-feed-pins'
 import { communityGroupPins, communityGroupPinsServed } from './community-group-pins'
 import { communityTelegramPins, communityTelegramPinsServed } from './community-telegram-pins'
@@ -35663,6 +35664,8 @@ async function main() {
   await calledChartPinsServed(check, BASE)
   calledRecordPins(check)
   await calledRecordPinsServed(check, BASE)
+  calledFixPins(check)
+  await calledFixPinsServed(check, BASE)
   // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
   // sign-in door, never a planner promise to "fetch your tokens".
   {
