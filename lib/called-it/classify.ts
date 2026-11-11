@@ -5,10 +5,14 @@
 // is read. Code then holds every rule the model could break:
 //   · `i` in range and unique (the first answer for an index wins);
 //   · `stance` exactly bull | bear | none; `conviction` an integer 0..3;
-//   · `quote` is a span of THAT post's own text (spec quoteIsFromPost);
-//   · a post that talks to the labeler ("ignore your instructions", "label
-//     this bull") takes no side: its label is `none`, whatever the model says.
-// Anything that fails becomes `none`. A batch whose answer does not parse is
+//   · `quote` is a span of THAT post's own text (spec quoteIsFromPost).
+// Anything that fails becomes `none`. THAT is the containment, with one more
+// fact: a batch holds ONE author's posts, so no post can reach another
+// account's labels. What code does NOT hold (review R15): one post steering
+// the labels of the same author's OTHER posts in its batch, each with a valid
+// quote of its own words. There is no deny-list on post text: it dropped real
+// calls ("My stance: BTC to 200k by June") and, the repo being public, it was
+// a published way to keep a post out of one's own record. A batch whose answer does not parse is
 // asked once more; if it fails again its posts stay UNLABELED (not `none`),
 // so a later scan tries them again.
 //
@@ -93,7 +97,7 @@ export function userPrompt(posts: readonly Pick<XPost, 'text'>[], symbol: string
 
 // ── Reading the answer (pure) ────────────────────────────────────────────
 
-/** A post that addresses the labeler is not a call on an asset. */
+/** A post that seems to address a labeler. Used by the harness's keyword labeler only; never a verdict on a model's label (review R15). */
 const TALKS_TO_LABELER = /\b(ignore|disregard|forget)\b[^.!?\n]{0,40}\b(instruction|prompt|rule|above|previous|system)s?\b|\b(system prompt|you are (an? )?(ai|llm|model|labell?er|assistant))\b|\blabel (this|every|all|each)\b|\bconviction\s*[:=]?\s*[0-3]\b|"?stance"?\s*[:=]/i
 
 export function talksToLabeler(text: string): boolean {
@@ -121,7 +125,6 @@ export function validLabel(el: { stance?: unknown; conviction?: unknown; quote?:
   if (stance !== 'bull' && stance !== 'bear') return NONE
   if (typeof conviction !== 'number' || !Number.isInteger(conviction) || conviction < 1 || conviction > 3) return NONE
   if (typeof quote !== 'string' || quote.length > QUOTE_MAX || !quoteIsFromPost(quote, text)) return NONE
-  if (talksToLabeler(text)) return NONE
   return { stance, conviction: conviction as 1 | 2 | 3, quote: quote.replace(/\s+/g, ' ').trim() }
 }
 
