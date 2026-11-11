@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import Footer from '@/components/Footer'
 import { readRecord } from '@/lib/called-it/record'
 import { STANDING_NOT_VERIFIED, normalizeHandle, recordHref, standingVerified } from '@/lib/called-it/spec'
-import { headlineTally } from '@/lib/called-it/card-layout'
+import { cleanLine, headlineTally } from '@/lib/called-it/card-layout'
 import { avatarDataUri } from '../_lib/avatar'
 import { agoWords, readPlotted } from '../_lib/plotted'
 import { Avatar, DoorBlock, Eyebrow, MethodBlock } from '../_lib/parts'
@@ -108,7 +108,7 @@ export default async function HandlePage({ params }: Props) {
               <div className="xrc-who">
                 <Avatar uri={avatar} name={top?.name} handle={handle} size="lg" />
                 <div className="xrc-who__id">
-                  <span className="xrc-who__name">{named ? top?.name : `@${handle}`}</span>
+                  <span className="xrc-who__name">{named ? <bdi>{cleanLine(top?.name ?? '', 60)}</bdi> : `@${handle}`}</span>
                   {named && <span className="xrc-who__handle">@{handle}</span>}
                 </div>
               </div>

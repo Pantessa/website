@@ -89,6 +89,10 @@
 .xrc-note a { color: var(--fg); text-underline-offset: 0.2em; }
 .xrc-next, .xrc-starters { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: 0; }
 .xrc-note--meta { font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.02em; color: var(--muted-2); }
+/* What was read, what was only added, what is still to label: the record's own words, under the tally. */
+.xrc-facts { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-md); line-height: 1.45; color: var(--muted); max-width: 62ch; }
+.xrc-facts p { margin: 0; }
+.xrc-facts a { color: var(--fg); text-underline-offset: 0.2em; }
 .xrc-none { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4); border: 1px dashed var(--line-2); border-radius: var(--r-md); font-size: var(--fs-base); line-height: 1.5; color: var(--fg); }
 .xrc-none p { margin: 0; }
 .xrc-none p + p { color: var(--muted); font-size: var(--fs-md); }
@@ -128,6 +132,9 @@
 .xrc-plot__empty { position: absolute; left: 0; right: 0; top: calc(var(--xrc-rail-h) + 10px); margin: 0; display: flex; justify-content: center; pointer-events: none; }
 .xrc-plot__empty span { padding: 6px var(--sp-3); border: 1px solid var(--line-2); border-radius: var(--r-pill); background: color-mix(in srgb, var(--surf-1) 88%, transparent); font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 
+/* A drawn stretch the scans did not read: dimmed, hatched, and said. */
+.xrc-plot__unread { position: absolute; left: 0; top: var(--xrc-rail-h); height: var(--xrc-line-h); display: flex; align-items: flex-end; justify-content: center; overflow: hidden; border-right: 1px dashed var(--line-2); background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--surf-1) 70%, transparent) 0 6px, color-mix(in srgb, var(--surf-1) 40%, transparent) 6px 12px); pointer-events: none; }
+.xrc-plot__unread span { margin-bottom: 6px; padding: 1px 6px; border-radius: var(--r-sm); background: var(--surf-1); font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 .xrc-plot__ticks { position: relative; height: 16px; margin-top: 6px; font-family: var(--xrc-mono); font-size: var(--fs-xs); color: var(--muted-2); }
 .xrc-plot__ticks span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
 .xrc-plot__ticks span[data-edge='start'] { transform: none; }
@@ -141,11 +148,18 @@
 .xrc-pin:hover .xrc-pin__flag, .xrc-pin:focus-visible .xrc-pin__flag { transform: translateX(-50%) scale(1.14); }
 .xrc-pin:hover .xrc-pin__stem, .xrc-pin:focus-visible .xrc-pin__stem { background: var(--xrc-tone); }
 .xrc-pin:focus-visible .xrc-pin__flag { box-shadow: 0 0 0 2px var(--surf-1), 0 0 0 4px var(--xrc-tone); }
+/* A post a viewer pasted: hollow (shown, marked, never counted). */
+.xrc .xrc-pin.is-added .xrc-pin__flag { background: var(--surf-1); color: var(--xrc-tone); box-shadow: inset 0 0 0 1.5px var(--xrc-tone), 0 0 0 2px var(--surf-1); }
+.xrc-pin.is-added .xrc-pin__stem { background: none; border-left: 1px dashed var(--xrc-tone); width: 0; margin-left: -0.5px; opacity: 0.7; }
+.xrc-pin.is-added .xrc-pin__point { background: var(--surf-1); box-shadow: inset 0 0 0 2px var(--xrc-tone), 0 0 0 2px var(--surf-1); }
 /* The rest of the calls: a dot on its day's close. */
 .xrc-dot { position: absolute; top: calc(var(--xrc-rail-h) + var(--xrc-y) * var(--xrc-line-h)); width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--xrc-tone); box-shadow: 0 0 0 2px var(--surf-1); }
 
+.xrc-dot.is-added { background: var(--surf-1); box-shadow: inset 0 0 0 1.5px var(--xrc-tone), 0 0 0 2px var(--surf-1); }
+
 .xrc-chart__key { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--sp-4); margin: var(--sp-1) 0 0; padding: var(--sp-2) var(--sp-4) 0; border-top: 1px solid var(--line); font-size: var(--fs-sm); color: var(--muted); }
 .xrc-key { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.xrc-key--added::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); }
 .xrc-key::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--xrc-tone); }
 .xrc-chart__keynote { flex: 1 1 100%; color: var(--muted-2); }
 
@@ -176,6 +190,15 @@
 .xrc .xrc-call__foot a { margin-left: auto; color: var(--fg); font-weight: 600; text-decoration: none; }
 .xrc-call__foot a::after { content: '\2197'; margin-left: 4px; color: var(--accent); }
 .xrc-call__foot a:hover, .xrc-call__foot a:focus-visible { color: var(--accent); }
+
+/* Posts viewers pasted stand apart: their own group, a dashed edge, the mark on every card. */
+.xrc-addedgroup { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-4); border-top: 1px dashed var(--line-2); }
+.xrc-addedgroup__title { margin: 0; font-family: var(--xrc-mono); font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg); }
+.xrc-addedgroup__lede { margin: 0; font-size: var(--fs-md); line-height: 1.45; color: var(--muted); }
+.xrc-call.is-added { border-style: dashed; border-left-style: dashed; background: transparent; }
+.xrc-call.is-added .xrc-call__n, .xrc-call.is-added.is-picked .xrc-call__n { background: transparent; color: var(--xrc-tone); border-style: dashed; }
+.xrc-call__added { padding: 1px var(--sp-2); border: 1px dashed var(--line-2); border-radius: var(--r-pill); color: var(--fg); }
+.xrc-share__lede { margin: 0; font-size: var(--fs-md); line-height: 1.45; color: var(--muted); }
 
 .xrc-live { margin: 0; }
 
@@ -214,6 +237,7 @@
 .xrc-method__rules div { display: grid; grid-template-columns: 116px minmax(0, 1fr); gap: var(--sp-3); align-items: baseline; }
 .xrc-method__rules dt { color: var(--xrc-tone); font-weight: 600; }
 .xrc-method__rules dd { margin: 0; }
+.xrc-method__caveat { color: var(--fg); }
 .xrc-method__fine { font-size: var(--fs-sm); color: var(--muted-2); }
 
 /* ── Lists: an account's markets, the recently plotted ─────────────────── */

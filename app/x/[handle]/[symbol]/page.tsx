@@ -8,8 +8,8 @@ import RecordChart from '@/components/called/RecordChart'
 import ShareRow from '@/components/called/ShareRow'
 import { FIXTURE_HANDLE } from '@/lib/called-it/fixture'
 import { getXIdentity } from '@/lib/called-it/x-auth'
-import { SCAN_WINDOW_DAYS, chartHref, recordHref, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
-import { calledImageHref, fmtCount, fmtUtcDate, headlineParts } from '@/lib/called-it/card-layout'
+import { ADDED_MARK, SCAN_WINDOW_DAYS, chartHref, recordHref, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
+import { calledImageHref, cleanLine, fmtCount, headlineParts } from '@/lib/called-it/card-layout'
 import { calledPost, myCalledPost } from '@/lib/share-posts'
 import { absoluteUrl } from '@/lib/site-url'
 import { loadRecordView, type RecordView } from '../../_lib/view'
@@ -37,8 +37,16 @@ import '@/components/called/called-record.css'
 // record once (React cache), however many of metadata and page ask.
 //
 // Every answer is a real page: a ready record, a scanned account with no
-// calls, a handle nobody has plotted yet, a scan in flight, and a refusal
-// each say what is so and offer somewhere to go.
+// calls, posts a viewer pasted with no scan behind them, a handle nobody has
+// plotted yet, a scan in flight, and a refusal each say what is so and offer
+// somewhere to go.
+//
+// WHAT IS COUNTED (squad review R1, R8). The tally is what the SCAN found, in
+// the record's own headline. A post a viewer pasted is shown in its own group
+// under the scanned calls, wears spec's mark, and is never counted; a record
+// with no scan has no tally at all (no chips, no score) and offers the scan.
+// What the scans read is the record's own coverage line, printed under the
+// tally. The chart's window is only the chart's: nothing here says "since".
 
 export const runtime = 'nodejs'
 
@@ -78,7 +86,7 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
   const image = { url: calledImageHref(handle, symbol, side, pins), width: 1200, height: 630, alt: headline, type: 'image/png' }
   // One address per record: the toggle is part of it, a viewer's own pins are not.
   const canonical = absoluteUrl(recordHref(handle, symbol, side))
-  const index = !!ready && ready.tally.total > 0 && pins.length === 0 && handle !== FIXTURE_HANDLE
+  const index = !!ready && ready.scanned && ready.tally.total > 0 && pins.length === 0 && handle !== FIXTURE_HANDLE
   return {
     title,
     description,
@@ -135,7 +143,8 @@ function Sides({ record }: { record: CalledRecord }) {
 
 function Who({ view, record }: { view: RecordView; record: CalledRecord | null }) {
   const handle = view.handle ?? ''
-  const name = record?.profile.name?.trim() || null
+  // A display name is X's text: cleaned of control and override characters, and isolated (<bdi>) where it is printed.
+  const name = record?.profile.name ? cleanLine(record.profile.name, 60) || null : null
   // X gave no display name (or we have only the handle): the handle is the name.
   const named = !!name && name.toLowerCase() !== handle && name.toLowerCase() !== `@${handle}`
   const followers = record?.profile.followers != null ? `${fmtCount(record.profile.followers)} followers` : null
@@ -144,7 +153,7 @@ function Who({ view, record }: { view: RecordView; record: CalledRecord | null }
     <Link href={`/x/${handle}`} className="xrc-who" prefetch={false} data-journey="called_handle" aria-label={`@${handle}: every market plotted`}>
       <Avatar uri={view.avatar} name={name} handle={handle} size="lg" />
       <span className="xrc-who__id">
-        <span className="xrc-who__name">{named ? name : `@${handle}`}</span>
+        <span className="xrc-who__name">{named ? <bdi>{name}</bdi> : `@${handle}`}</span>
         {(named || followers) && <span className="xrc-who__handle">{[named ? `@${handle}` : null, followers].filter(Boolean).join(' · ')}</span>}
       </span>
     </Link>
@@ -214,7 +223,7 @@ export default async function RecordPage(props: Props) {
                 ) : (
                   <>
                     <p className="xrc-standing">
-                      A scan reads the account's public posts about {symbol} from the last {SCAN_WINDOW_DAYS} days, labels each one bull or bear from its own words, and pins it to the day it was posted.
+                      A scan searches the account's public posts about {symbol}, up to {SCAN_WINDOW_DAYS} days back. A model labels each one bull or bear from its own words, and each call is pinned to the day it was posted.
                     </p>
                     {body.reason && <p className="xrc-standing">{body.reason}</p>}
                     <p className="xrc-next">
@@ -242,41 +251,58 @@ export default async function RecordPage(props: Props) {
   const record = body.record
   const unlabeled = body.unlabeled ?? 0
   const me = await getXIdentity().catch(() => null)
-  const mine = !!record.verified && !!me && me.handle === record.handle
+  // "This viewer is the owner": the record is verified AND X's user id on the cookie is the record's own. Never the cookie's handle.
+  const mine = !!record.verified && !!me && !!record.profile.xUserId && me.xUserId === record.profile.xUserId
   const post = mine ? myCalledPost(record) : calledPost(record)
   const imageHref = calledImageHref(record.handle, record.symbol, record.side, pins)
   const live = chartHref(record.handle, record.symbol, record.side)
   const ownPins = pins.length > 0 && record.calls.some((c) => pins.includes(c.postId))
   const pinned = record.calls.filter((c) => c.picked).length
-  const everyCall = record.bySide.bull.total + record.bySide.bear.total
-  const since = view.closes.length ? view.closes[0].t * 1000 : record.window.from
+  /** What the scans found, both sides (the toggle's numbers). Pasted posts are not in it. */
+  const found = record.bySide.bull.total + record.bySide.bear.total
+  // Numbers follow the record's own order (by date), so a flag on the chart and its card always agree.
+  const numbered = record.calls.map((call, i) => ({ call, n: i + 1 }))
+  const scannedCalls = numbered.filter((c) => c.call.origin === 'scan')
+  const addedCalls = numbered.filter((c) => c.call.origin === 'added')
+  const pasteOnly = !record.scanned
 
   return (
     <>
-      <main className="xrc" data-xrc="record" data-status="ready" data-side={record.side} data-calls={record.calls.length} data-verified={record.verified ? 'yes' : 'no'}>
+      <main className="xrc" data-xrc="record" data-status="ready" data-side={record.side} data-calls={record.calls.length} data-scanned={record.scanned ? 'yes' : 'no'} data-verified={record.verified ? 'yes' : 'no'}>
         <div className="xrc__wrap">
           <div className="xrc__main">
             <header className="xrc-head">
               <Eyebrow jump share={record.calls.length > 0}>
-                <span className="xrc-eyebrow__ctx">
-                  {record.symbol}
-                  <span className="xrc-eyebrow__since"> · since {fmtUtcDate(since)}</span>
-                </span>
+                <span className="xrc-eyebrow__ctx">{record.symbol}</span>
               </Eyebrow>
               <Who view={view} record={record} />
               <p className={`xrc-standing${record.verified ? ' is-verified' : ''}`} data-standing>
                 {record.words.standing}
               </p>
               <Headline record={record} />
-              {unlabeled > 0 && (
-                <p className="xrc-note" data-unlabeled={unlabeled}>
-                  {unlabeled} {unlabeled === 1 ? 'post' : 'posts'} still to label.{' '}
-                  <Link href={live} prefetch={false} data-journey="called_finish_on_chart">
-                    Finish on the live chart
+              {/* What was read, and what was only added: the record's own words, right under the tally. */}
+              {(record.words.coverage || record.words.added || unlabeled > 0) && (
+                <div className="xrc-facts">
+                  {record.words.coverage && <p data-coverage>{record.words.coverage}</p>}
+                  {record.words.added && <p data-added>{record.words.added}</p>}
+                  {unlabeled > 0 && (
+                    <p data-unlabeled={unlabeled}>
+                      {unlabeled} {unlabeled === 1 ? 'post' : 'posts'} still to label.{' '}
+                      <Link href={live} prefetch={false} data-journey="called_finish_on_chart">
+                        Finish on the live chart
+                      </Link>
+                    </p>
+                  )}
+                </div>
+              )}
+              {pasteOnly && (
+                <p className="xrc-next">
+                  <Link href={live} className="xrc-btn xrc-btn--lead" prefetch={false} data-journey="called_scan_on_chart">
+                    Scan @{record.handle} on the live {record.symbol} chart
                   </Link>
                 </p>
               )}
-              {everyCall > 0 && <Sides record={record} />}
+              {found > 0 && <Sides record={record} />}
             </header>
 
             <RecordChart
@@ -284,6 +310,7 @@ export default async function RecordPage(props: Props) {
               closes={view.closes}
               calls={record.calls}
               unit={view.unit}
+              readFrom={view.readFrom}
               emptyNote="No calls found in this window"
               action={
                 <Link href={live} prefetch={false} data-journey="called_open_chart_top">
@@ -293,36 +320,46 @@ export default async function RecordPage(props: Props) {
             />
             {ownPins && (
               <p className="xrc-note">
-                These {pinned} pins were chosen by a viewer. The tally counts every call found.{' '}
+                These {pinned} pins were chosen by a viewer. The tally counts every call the scan found.{' '}
                 <Link href={recordHref(record.handle, record.symbol, record.side)} prefetch={false}>
                   Show the rule's pins
                 </Link>
               </p>
             )}
 
-            {record.calls.length > 0 ? (
-              <ol className="xrc-calls" aria-label={`Every call, oldest first: ${record.calls.length}`}>
-                {record.calls.map((c, i) => (
-                  <CallCard key={c.postId} call={c} n={i + 1} handle={record.handle} unit={view.unit} />
+            {scannedCalls.length > 0 && (
+              <ol className="xrc-calls" aria-label={`Every call the scan found, oldest first: ${scannedCalls.length}`}>
+                {scannedCalls.map(({ call, n }) => (
+                  <CallCard key={call.postId} call={call} n={n} handle={record.handle} unit={view.unit} />
                 ))}
               </ol>
-            ) : (
-              <div className="xrc-none" data-empty={everyCall === 0 ? 'record' : 'side'}>
+            )}
+            {record.scanned && scannedCalls.length === 0 && (
+              <div className="xrc-none" data-empty={found === 0 ? 'record' : 'side'}>
                 <p>
-                  {everyCall > 0
-                    ? `No ${record.side === 'bull' ? 'bullish' : 'bearish'} calls on ${record.symbol} in this window. The other side has ${everyCall}.`
+                  {found > 0
+                    ? `No ${record.side === 'bull' ? 'bullish' : 'bearish'} calls on ${record.symbol} in what the scan read. The other side has ${found}.`
                     : record.postsRead > 0
-                      ? `${record.postsRead} ${record.postsRead === 1 ? 'post' : 'posts'} about ${record.symbol} from the last ${SCAN_WINDOW_DAYS} days ${record.postsRead === 1 ? 'was' : 'were'} read. None took a side.`
-                      : `The scan found no posts by @${record.handle} about ${record.symbol} in the last ${SCAN_WINDOW_DAYS} days.`}
+                      ? `The scan read ${record.postsRead} ${record.postsRead === 1 ? 'post' : 'posts'} about ${record.symbol}. None took a side.`
+                      : `The scan found no posts by @${record.handle} about ${record.symbol}.`}
                 </p>
-                <p>{everyCall > 0 ? 'The toggle above shows them.' : 'Know of one? Paste its link on the live chart and it joins the record.'}</p>
+                <p>{found > 0 ? 'The toggle above shows them.' : 'Know of one? Paste its link on the live chart. It is shown here, marked as added, and not counted.'}</p>
               </div>
             )}
 
-            {record.calls.length > 0 && (
-              <p className="xrc-note xrc-note--meta">
-                {record.scannedAt ? `Scanned ${fmtUtcDate(record.scannedAt)}. ${record.postsRead} ${record.postsRead === 1 ? 'post' : 'posts'} read, ${everyCall} ${everyCall === 1 ? 'call' : 'calls'} found.` : 'Built from posts viewers added by hand. No scan has run yet.'}
-              </p>
+            {/* Posts viewers pasted: their own group, under what the scan found, marked, never counted. */}
+            {addedCalls.length > 0 && (
+              <section className="xrc-addedgroup" aria-label={`Posts ${ADDED_MARK}: ${addedCalls.length}`} data-added-group={addedCalls.length}>
+                <h2 className="xrc-addedgroup__title">
+                  {addedCalls.length === 1 ? 'A post' : 'Posts'} {ADDED_MARK}
+                </h2>
+                <p className="xrc-addedgroup__lede">{record.words.added ?? `Somebody picked ${addedCalls.length === 1 ? 'this post' : 'these posts'} by hand. No scan has run, so nothing here is a tally.`}</p>
+                <ol className="xrc-calls">
+                  {addedCalls.map(({ call, n }) => (
+                    <CallCard key={call.postId} call={call} n={n} handle={record.handle} unit={view.unit} />
+                  ))}
+                </ol>
+              </section>
             )}
 
             <p className="xrc-live">
@@ -334,8 +371,9 @@ export default async function RecordPage(props: Props) {
 
           <aside className="xrc__side">
             {record.calls.length > 0 && (
-              <section className="xrc-share" id="share" aria-label="Share this record">
-                <h2 className="xrc-share__title">{mine ? 'Share your record' : 'Share this record'}</h2>
+              <section className="xrc-share" id="share" aria-label={pasteOnly ? 'Share these posts' : 'Share this record'}>
+                <h2 className="xrc-share__title">{pasteOnly ? 'Share these posts' : mine ? 'Share your record' : 'Share this record'}</h2>
+                {pasteOnly && <p className="xrc-share__lede">The post and the image say what this is: posts a viewer pinned, with no tally.</p>}
                 <ShareRow post={post} imageHref={imageHref} fileName={`called-it-${record.handle}-${record.symbol.replace(/[^A-Za-z0-9]/g, '')}.png`} />
               </section>
             )}

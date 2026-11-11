@@ -6,7 +6,12 @@
 // is ever treated as HTML and nothing in it becomes a link. The one link out
 // is rebuilt here from the handle and the post's id (spec postUrl); a call
 // with no address on X (the fixture's) shows none.
-import { JUDGE_DAYS, VERDICT_WORDS, fmtMove, moveLine, postUrl, type CalledCall } from '@/lib/called-it/spec'
+//
+// The text sits inside <bdi>: a post may carry right-to-left or override
+// characters, and they must not reorder the date, the verdict or the numbers
+// beside it. A post a viewer pasted wears spec's mark (ADDED_MARK) and a
+// dashed edge: it is shown, and it is never counted.
+import { ADDED_MARK, JUDGE_DAYS, VERDICT_WORDS, fmtMove, moveLine, postUrl, type CalledCall } from '@/lib/called-it/spec'
 import { fmtCallPrice, fmtCount, fmtUtcDateTime, splitQuote } from '@/lib/called-it/card-layout'
 
 export interface CallCardProps {
@@ -28,7 +33,7 @@ export default function CallCard({ call, n, handle, unit = 'usd' }: CallCardProp
     ['90 days', call.d90],
   ]
   return (
-    <li className={`xrc-call is-${call.verdict}${call.picked ? ' is-picked' : ''}`} id={`call-${n}`} data-call={call.postId} data-verdict={call.verdict}>
+    <li className={`xrc-call is-${call.verdict}${call.picked ? ' is-picked' : ''}${call.origin === 'added' ? ' is-added' : ''}`} id={`call-${n}`} data-call={call.postId} data-verdict={call.verdict} data-origin={call.origin}>
       <span className="xrc-call__n" aria-label={`Call ${n}`}>
         {n}
       </span>
@@ -40,18 +45,20 @@ export default function CallCard({ call, n, handle, unit = 'usd' }: CallCardProp
         <p className="xrc-call__meta">
           <span className={`xrc-call__stance is-${call.stance}`}>{STANCE_WORDS[call.stance]}</span>
           <time dateTime={new Date(call.postedAt).toISOString()}>{fmtUtcDateTime(call.postedAt)}</time>
-          {call.origin === 'added' && <span className="xrc-call__added">added by a viewer</span>}
+          {call.origin === 'added' && <span className="xrc-call__added">{ADDED_MARK}</span>}
         </p>
-        <p className="xrc-call__text" dir="auto">
-          {parts ? (
-            <>
-              {parts[0]}
-              <mark className="xrc-call__quote">{parts[1]}</mark>
-              {parts[2]}
-            </>
-          ) : (
-            call.text
-          )}
+        <p className="xrc-call__text">
+          <bdi>
+            {parts ? (
+              <>
+                {parts[0]}
+                <mark className="xrc-call__quote">{parts[1]}</mark>
+                {parts[2]}
+              </>
+            ) : (
+              call.text
+            )}
+          </bdi>
         </p>
         <dl className="xrc-call__moves">
           <div>

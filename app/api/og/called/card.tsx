@@ -2,7 +2,7 @@ import { ImageResponse } from 'next/og'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { gemMarkSvg } from '@/lib/og-marks'
-import { VERDICT_WORDS, moveLine, pickCalls, type CalledCall, type CalledRecord, type CallVerdict } from '@/lib/called-it/spec'
+import { ADDED_MARK, VERDICT_WORDS, moveLine, pickCalls, type CalledCall, type CalledRecord, type CallVerdict } from '@/lib/called-it/spec'
 import {
   OG_COLUMN,
   OG_MAX_CARDS,
@@ -18,6 +18,7 @@ import {
   linePaths,
   ogLayout,
   plotScale,
+  unreadShare,
   type ClosePoint,
   type OgCardBox,
   type OgLayout,
@@ -34,6 +35,14 @@ import {
 // Where everything stands is lib/called-it/card-layout ogLayout (pure,
 // pinned: cards never overlap each other or the scoreboard, a leader never
 // crosses a card or another leader). This file only paints it.
+//
+// WHAT IT MAY CLAIM (squad review R1, R8). The scoreboard's tally is the
+// record's own headline: what the SCAN found. A record nobody has scanned (its
+// posts were pasted by viewers) draws no tally at all: the scoreboard says, in
+// the record's own words, that a viewer added the posts and that there is no
+// tally, and every pasted post that is drawn wears spec's mark and a dashed
+// edge. What the scans read is the record's coverage line, small, above the
+// standing line; a drawn stretch they did not read is dimmed and says so.
 //
 // A post's words reach the picture as TEXT (a React string the renderer
 // draws), clamped for the small card and never reworded; nothing from a post
@@ -76,7 +85,8 @@ function fonts(): Promise<Buffer[]> {
 
 // ── What a card is drawn from ───────────────────────────────────────────
 
-export type CalledCardKind = 'record' | 'empty' | 'unscanned' | 'scanning' | 'refused' | 'handle' | 'generic'
+/** `pasted`: a record with no scan behind it, only posts viewers added. It is never drawn as a record. */
+export type CalledCardKind = 'record' | 'pasted' | 'empty' | 'unscanned' | 'scanning' | 'refused' | 'handle' | 'generic'
 
 export interface CalledCardInput {
   kind: CalledCardKind
@@ -100,7 +110,7 @@ export function cardedCalls(record: CalledRecord): CalledCall[] {
 
 // ── The exhibit's drawing (numbers only) ────────────────────────────────
 
-function exhibitSvg(layout: OgLayout, scale: PlotScale | null, closes: readonly ClosePoint[], tones: Map<string, CallVerdict>): string {
+function exhibitSvg(layout: OgLayout, scale: PlotScale | null, closes: readonly ClosePoint[], tones: Map<string, CallVerdict>, hollow: ReadonlySet<string>, unread: number): string {
   const { panel: P, band } = layout
   const parts: string[] = [`<rect x="${P.x}" y="${P.y}" width="${P.w}" height="${P.h}" rx="22" fill="rgba(255,255,255,0.028)" stroke="rgba(255,255,255,0.11)" stroke-width="1.5"/>`]
   if (scale) {
@@ -111,10 +121,17 @@ function exhibitSvg(layout: OgLayout, scale: PlotScale | null, closes: readonly 
       `<path d="${line}" fill="none" stroke="${INK}" stroke-opacity="0.9" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"/>`,
     )
   }
+  // The stretch the scans did not read: dimmed, with a dashed edge where reading began.
+  if (scale && unread > 0) {
+    const w = Math.round(band.w * unread * 10) / 10
+    parts.push(`<rect x="${band.x}" y="${band.y - 4}" width="${w}" height="${band.h + 8}" fill="${BG}" fill-opacity="0.62"/>`, `<line x1="${band.x + w}" y1="${band.y - 4}" x2="${band.x + w}" y2="${band.y + band.h + 4}" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" stroke-dasharray="4 6"/>`)
+  }
   const toneOf = (id: string) => TONE[tones.get(id) ?? 'flat']
-  for (const c of layout.cards) parts.push(`<line x1="${c.attach.x}" y1="${c.attach.y}" x2="${c.anchor.x}" y2="${c.anchor.y}" stroke="${toneOf(c.id)}" stroke-width="2" stroke-linecap="round" stroke-opacity="0.9"/>`)
-  for (const d of layout.dots.filter((x) => !x.carded)) parts.push(`<circle cx="${d.x}" cy="${d.y}" r="4.5" fill="${toneOf(d.id)}" stroke="${BG}" stroke-width="2"/>`)
-  for (const d of layout.dots.filter((x) => x.carded)) parts.push(`<circle cx="${d.x}" cy="${d.y}" r="12" fill="${toneOf(d.id)}" fill-opacity="0.22"/><circle cx="${d.x}" cy="${d.y}" r="6.5" fill="${toneOf(d.id)}" stroke="${BG}" stroke-width="2.5"/>`)
+  // A pasted post is drawn hollow, its leader dashed: shown, marked, never counted.
+  for (const c of layout.cards) parts.push(`<line x1="${c.attach.x}" y1="${c.attach.y}" x2="${c.anchor.x}" y2="${c.anchor.y}" stroke="${toneOf(c.id)}" stroke-width="2" stroke-linecap="round" stroke-opacity="0.9"${hollow.has(c.id) ? ' stroke-dasharray="5 6"' : ''}/>`)
+  for (const d of layout.dots.filter((x) => !x.carded)) parts.push(hollow.has(d.id) ? `<circle cx="${d.x}" cy="${d.y}" r="4" fill="${BG}" stroke="${toneOf(d.id)}" stroke-width="2"/>` : `<circle cx="${d.x}" cy="${d.y}" r="4.5" fill="${toneOf(d.id)}" stroke="${BG}" stroke-width="2"/>`)
+  for (const d of layout.dots.filter((x) => x.carded))
+    parts.push(`<circle cx="${d.x}" cy="${d.y}" r="12" fill="${toneOf(d.id)}" fill-opacity="0.22"/>`, hollow.has(d.id) ? `<circle cx="${d.x}" cy="${d.y}" r="6" fill="${BG}" stroke="${toneOf(d.id)}" stroke-width="2.5"/>` : `<circle cx="${d.x}" cy="${d.y}" r="6.5" fill="${toneOf(d.id)}" stroke="${BG}" stroke-width="2.5"/>`)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${OG_SIZE.w}" height="${OG_SIZE.h}" viewBox="0 0 ${OG_SIZE.w} ${OG_SIZE.h}">${parts.join('')}</svg>`
 }
 
@@ -155,11 +172,16 @@ function Face({ uri, initial, size }: { uri: string | null; initial: string; siz
 function PostCard({ box, call, name, handle, avatar, initial }: { box: OgCardBox; call: CalledCall; name: string; handle: string; avatar: string | null; initial: string }) {
   const tone = TONE[call.verdict]
   const rgb = TONE_RGB[call.verdict]
+  const added = call.origin === 'added'
   const head = (
     <div key="head" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 26, padding: '0 14px', marginTop: box.row === 'top' ? 10 : 8 }}>
       <Face uri={avatar} initial={initial} size={26} />
-      <span style={{ color: INK, fontSize: 15, fontWeight: 600, maxWidth: 112, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{name}</span>
-      <span style={{ color: MUTED, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>{`@${handle}`}</span>
+      <span style={{ color: INK, fontSize: 15, fontWeight: 600, maxWidth: added ? 96 : 112, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{name}</span>
+      {added ? (
+        <span style={{ display: 'flex', padding: '1px 7px', borderRadius: 999, border: `1px dashed rgba(255,255,255,0.4)`, color: SOFT, fontSize: 11.5, whiteSpace: 'nowrap', flexShrink: 0 }}>{ADDED_MARK}</span>
+      ) : (
+        <span style={{ color: MUTED, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>{`@${handle}`}</span>
+      )}
       <span style={{ color: MUTED, fontSize: 12.5, marginLeft: 'auto', whiteSpace: 'nowrap', flexShrink: 0 }}>{fmtUtcDate(call.postedAt)}</span>
     </div>
   )
@@ -179,7 +201,7 @@ function PostCard({ box, call, name, handle, avatar, initial }: { box: OgCardBox
     </div>
   )
   return (
-    <div style={{ position: 'absolute', left: box.x, top: box.y, width: box.w, height: box.h, display: 'flex', flexDirection: 'column', borderRadius: 14, background: CARD_BG, border: `1.5px solid rgba(${rgb},0.42)`, overflow: 'hidden' }}>
+    <div style={{ position: 'absolute', left: box.x, top: box.y, width: box.w, height: box.h, display: 'flex', flexDirection: 'column', borderRadius: 14, background: CARD_BG, border: `1.5px ${added ? 'dashed' : 'solid'} rgba(${rgb},${added ? 0.6 : 0.42})`, overflow: 'hidden' }}>
       {/* An array, not a fragment: the image renderer lays a fragment out as a row of its own. */}
       {box.row === 'top' ? [head, text, stamp] : [stamp, head, text]}
     </div>
@@ -250,7 +272,7 @@ function Scoreboard({ input, address }: { input: CalledCardInput; address: strin
         <div style={{ display: 'flex', flexDirection: 'column', marginTop: 20 }}>
           {total && <span style={{ color: SOFT, fontSize: 15, letterSpacing: 3 }}>{total.toUpperCase()}</span>}
           {counts.map((c, i) => (
-            <span key={c.kind} style={{ color: TONE[c.kind as CallVerdict], fontSize: i < 2 ? 41 : 21, fontWeight: 600, letterSpacing: i < 2 ? -1.4 : -0.2, lineHeight: 1.16, marginTop: i === 0 ? 4 : i === 2 ? 8 : 0, whiteSpace: 'nowrap' }}>
+            <span key={c.kind} style={{ color: TONE[c.kind as CallVerdict], fontSize: i < 2 ? (counts.length > 3 ? 37 : 41) : 20, fontWeight: 600, letterSpacing: i < 2 ? -1.4 : -0.2, lineHeight: 1.16, marginTop: i === 0 ? 4 : i === 2 ? 6 : 0, whiteSpace: 'nowrap' }}>
               {c.text}
             </span>
           ))}
@@ -260,6 +282,7 @@ function Scoreboard({ input, address }: { input: CalledCardInput; address: strin
       {message && <span style={{ display: 'flex', marginTop: 24, color: kind === 'generic' || kind === 'handle' ? SOFT : INK, fontSize: kind === 'refused' ? 21 : 23, lineHeight: 1.3 }}>{message}</span>}
 
       <div style={{ display: 'flex', flexDirection: 'column', marginTop: 'auto' }}>
+        {record?.words.coverage && <span style={{ color: MUTED, fontSize: 12.5, lineHeight: 1.35, marginBottom: 7 }}>{record.words.coverage}</span>}
         {record && <span style={{ color: record.verified ? ACCENT : MUTED, fontSize: 14.5, fontWeight: record.verified ? 600 : 500, lineHeight: 1.35 }}>{record.words.standing}</span>}
         <span style={{ color: ACCENT, fontSize: 14.5, marginTop: 9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: C.w }}>{address}</span>
       </div>
@@ -277,7 +300,9 @@ function CalledCard({ input, address }: { input: CalledCardInput; address: strin
   const tones = new Map((record?.calls ?? []).map((c) => [c.postId, c.verdict]))
   const byId = new Map((record?.calls ?? []).map((c) => [c.postId, c]))
   const schematic = !scale
-  const svg = schematic ? schematicSvg() : exhibitSvg(layout, scale, closes, tones)
+  const hollow = new Set((record?.calls ?? []).filter((c) => c.origin === 'added').map((c) => c.postId))
+  const unread = scale && record ? unreadShare(scale, record.coverage?.from) : 0
+  const svg = schematic ? schematicSvg() : exhibitSvg(layout, scale, closes, tones, hollow, unread)
   const name = record ? cleanLine(record.profile.name.trim() && record.profile.name.trim().toLowerCase() !== record.handle ? record.profile.name : `@${record.handle}`, 20) : ''
   const initial = record ? initialOf(record.profile.name, record.handle) : ''
   const note = input.kind === 'empty' ? 'No calls found in this window' : input.kind === 'unscanned' ? 'No pins yet' : input.kind === 'scanning' ? 'Pins land when the scan is done' : null
@@ -293,6 +318,9 @@ function CalledCard({ input, address }: { input: CalledCardInput; address: strin
           <span>{fmtUtcDate(closes[0].t * 1000).toUpperCase()}</span>
           <span>{fmtUtcDate(closes[closes.length - 1].t * 1000).toUpperCase()}</span>
         </div>
+      )}
+      {unread > 0.06 && !schematic && (
+        <span style={{ position: 'absolute', left: B.x + 6, top: B.y + B.h - 22, display: 'flex', padding: '2px 8px', borderRadius: 6, background: 'rgba(5,7,8,0.8)', color: SOFT, fontSize: 11.5, letterSpacing: 1.6 }}>NOT READ</span>
       )}
       {note && !schematic && (
         <div style={{ position: 'absolute', left: OG_PANEL.x, top: OG_PANEL.y + 26, width: OG_PANEL.w, display: 'flex', justifyContent: 'center' }}>

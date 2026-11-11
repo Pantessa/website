@@ -13,7 +13,11 @@
 //   · a post's words: clamped for a small card and never reworded, marked
 //     around the quoted span byte for byte, never HTML;
 //   · the share texts: ASCII, the handle tagged inside the sentence, the full
-//     tally in numbers, 280 with the link counted as X counts it;
+//     tally in numbers, 280 with the link counted as X counts it; a record
+//     nobody scanned states no counts at all; a display name never enters one;
+//   · what is counted: a pasted post is shown in its own group, marked, never
+//     counted; a paste-only record has no tally on the page, the image or the
+//     post; what the scans read is the record's own coverage line;
 //   · the avatar rule: X's two image hosts over https and nothing else;
 //   · the addresses: /x is public, the image's address carries the page's side;
 //   · served: every answer is a real page and a real picture.
@@ -21,6 +25,10 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts } from '../lib/called-it/fixture'
 import {
+  ADDED_MARK,
+  DELETED_NOTE,
+  LABEL_CAVEAT,
+  METHOD_LINE,
   PICK_MAX,
   SCAN_WINDOW_DAYS,
   STANDING_NOT_VERIFIED,
@@ -63,13 +71,15 @@ import {
   railPins,
   splitQuote,
   textUnits,
+  unreadShare,
+  cleanLine,
   type ClosePoint,
   type OgCallIn,
   type OgLayout,
   type Pt,
   type Rect,
 } from '../lib/called-it/card-layout'
-import { SHARE_ASCII_RE, X_LINK_WEIGHT, X_POST_MAX, calledPost, myCalledPost, postHref, xPostWeight } from '../lib/share-posts'
+import { CALLED_NO_TALLY, SHARE_ASCII_RE, X_LINK_WEIGHT, X_POST_MAX, calledPost, myCalledPost, postHref, xPostWeight } from '../lib/share-posts'
 import { isCalledPath, isPublicAppPath } from '../lib/app-entry'
 import { X_MENTION } from '../lib/social'
 import { SITE_URL } from '../lib/site-url'
@@ -256,15 +266,15 @@ export function calledRecordPins(check: Check): void {
       lp.line.startsWith('M0 300L') && lp.line.split('L').length === 100 && lp.area.endsWith('Z') && !/NaN|undefined|Infinity/.test(lp.line + lp.area),
     lp.line.slice(0, 40),
   )
-  const mk = (x: number, picked: boolean, i: number) => ({ postId: String(1000 + i), barTime: up[0].t + Math.round(x * 99) * DAY, priceAt: 150, picked, verdict: 'right' as const })
+  const mk = (x: number, picked: boolean, i: number, origin: 'scan' | 'added' = 'scan') => ({ postId: String(1000 + i), barTime: up[0].t + Math.round(x * 99) * DAY, priceAt: 150, picked, verdict: 'right' as const, origin })
   const crowd = railPins([mk(0.1, true, 0), mk(0.12, true, 1), mk(0.14, true, 2), mk(0.5, true, 3), mk(0.52, false, 4), mk(0.9, true, 5)], plotScale(up)!)
   const flown = crowd.pins.filter((p) => p.picked)
   const lone = railPins([mk(0.1, true, 0), mk(0.5, true, 1), mk(0.9, true, 2)], plotScale(up)!)
   const mob = railPins(Array.from({ length: 8 }, (_, i) => mk(0.4 + i * 0.01, true, i)), plotScale(up)!)
   check(
-    `called-it flags: a call's number is its place in the record by date, from 1, picked or not; two pinned calls closer than ${RAIL_MIN_DX * 100}% of the plot never share a rail row (three neighbours take three rows); calls far apart all fly on the top row; eight in a crowd still use at most ${RAIL_LEVELS} rows; a call that is not pinned flies no flag`,
+    `called-it flags: a call's number is its place in the record by date, from 1, picked or not; two pinned calls closer than ${RAIL_MIN_DX * 100}% of the plot never share a rail row (three neighbours take three rows); calls far apart all fly on the top row; eight in a crowd still use at most ${RAIL_LEVELS} rows; a call that is not pinned flies no flag; a post a viewer pasted is flagged as added so it can be drawn hollow`,
     crowd.pins.map((p) => p.n).join() === '1,2,3,4,5,6' && new Set(flown.slice(0, 3).map((p) => p.level)).size === 3 && crowd.levels === 3 && flown[3].level === 0 && flown[4].level === 0 && crowd.pins[4].picked === false &&
-      lone.levels === 1 && lone.pins.every((p) => p.level === 0) && mob.levels === RAIL_LEVELS && mob.pins.every((p) => p.level >= 0 && p.level < RAIL_LEVELS) && railPins([], plotScale(up)!).levels === 0,
+      lone.levels === 1 && lone.pins.every((p) => p.level === 0 && !p.added) && railPins([mk(0.2, false, 0, 'added'), mk(0.6, true, 1, 'added'), mk(0.8, true, 2)], plotScale(up)!).pins.map((p) => p.added).join() === 'true,true,false' && mob.levels === RAIL_LEVELS && mob.pins.every((p) => p.level >= 0 && p.level < RAIL_LEVELS) && railPins([], plotScale(up)!).levels === 0,
     JSON.stringify(flown.map((p) => p.level)),
   )
   const t0 = Date.UTC(2025, 10, 12) / 1000
@@ -284,6 +294,13 @@ export function calledRecordPins(check: Check): void {
       plotFromSec((nowSec - 200 * DAY) * 1000, NOW, nowSec - 100 * DAY, SCAN_WINDOW_DAYS) === nowSec - 200 * DAY &&
       plotFromSec((nowSec - 600 * DAY) * 1000, NOW, null, SCAN_WINDOW_DAYS) === nowSec - SCAN_WINDOW_DAYS * DAY,
   )
+  const ps = plotScale(up)!
+  check(
+    'called-it unread stretch: the chart\'s window is not coverage. When the scans read less than what is drawn (a scan stopped at its cap), the unread share of the plot is known so both pictures can dim it; coverage that reaches the first drawn bar, coverage older than the plot, no coverage at all and a sliver under one percent dim nothing',
+    unreadShare(ps, (up[0].t + 50 * DAY) * 1000) > 0.5 && unreadShare(ps, (up[0].t + 50 * DAY) * 1000) < 0.51 && unreadShare(ps, up[0].t * 1000) === 0 && unreadShare(ps, (up[0].t - 400 * DAY) * 1000) === 0 && unreadShare(ps, null) === 0 && unreadShare(ps, undefined) === 0 &&
+      unreadShare(ps, Number.NaN) === 0 && unreadShare(ps, (up[0].t + 0.5 * DAY) * 1000) === 0 && unreadShare(ps, 9e15) === 1,
+    String(unreadShare(ps, (up[0].t + 50 * DAY) * 1000)),
+  )
 
   // ── A post's words ──
   const long = 'BITCOIN TO $250K BY CHRISTMAS. I have never been more certain of anything in my life, and if you are not all in right now you do not understand the asset.'
@@ -292,10 +309,11 @@ export function calledRecordPins(check: Check): void {
   const cl = clampPostText(long, 70)
   const cw = clampPostWidth(long, 62)
   check(
-    'called-it card text: a long post is cut on a word with an ellipsis and never past its budget, by count for a line and by drawn width for a card (capitals and emoji run wider); what is kept is the post\'s own words in order, never a reword; a short post comes back whole; whitespace becomes one space; a bidi override and a control character are dropped and nothing else is; an emoji sequence is never cut in half',
+    'called-it card text: a long post is cut on a word with an ellipsis and never past its budget, by count for a line and by drawn width for a card (capitals and emoji run wider); what is kept is the post\'s own words in order, never a reword; a short post comes back whole; whitespace becomes one space; a bidi override and a control character are dropped and nothing else is (from a post for a small card, and from a display name before it is drawn); an emoji sequence is never cut in half',
     Array.from(cl).length <= 70 && cl.endsWith('…') && long.startsWith(cl.slice(0, -1)) && textUnits(cw) <= 62 && cw.endsWith('…') && long.startsWith(cw.slice(0, -1)) && cw.length < cl.length + 12 &&
       clampPostText('Top is in.', 70) === 'Top is in.' && clampPostWidth('Top is in.', 62) === 'Top is in.' && clampPostText('a\n\n b\t c', 70) === 'a b c' && clampPostText(hostile, 70) === 'Top is in. Sold it all' &&
-      !/[\ud800-\udbff]$/.test(clampPostText(family, 9).slice(0, -1)) && !/[\ud800-\udbff]$/.test(clampPostWidth(family, 12).slice(0, -1)) && textUnits('WWWW') > textUnits('iiii') && textUnits('日本') === 4,
+      !/[\ud800-\udbff]$/.test(clampPostText(family, 9).slice(0, -1)) && !/[\ud800-\udbff]$/.test(clampPostWidth(family, 12).slice(0, -1)) && textUnits('WWWW') > textUnits('iiii') && textUnits('日本') === 4 &&
+      cleanLine('‮evil‬ Name\u0000⁦ 🦄', 24) === 'evil Name 🦄' && !/[‪-‮⁦-⁩\u0000-\u001f]/.test(cleanLine('a‮b⁧c\u0003d', 24)),
     `${cl} | ${cw}`,
   )
   const post = 'Loading up here.\nThis is the  bottom, mark this post. $250K (soon)?'
@@ -303,9 +321,9 @@ export function calledRecordPins(check: Check): void {
   const whole = splitQuote('Top is in.', 'Top is in.')
   const special = splitQuote(post, '$250K (soon)?')
   check(
-    'called-it quoted span: the three pieces around the mark join back into the post byte for byte; the label\'s whitespace may differ from the post\'s; a quote that is the whole post marks the whole post; a quote full of pattern characters is matched as plain text; a span the post does not hold marks nothing',
+    'called-it quoted span: the three pieces around the mark join back into the post byte for byte; the stored quote is whitespace-normalized, so it is matched with whitespace collapsed on both sides (a newline, a run of spaces, a no-break space); a quote that is the whole post marks the whole post; a quote full of pattern characters is matched as plain text; a span the post does not hold marks nothing',
     !!sq && sq.join('') === post && sq[1] === 'This is the  bottom' && sq[0] === 'Loading up here.\n' && !!whole && whole[0] === '' && whole[1] === 'Top is in.' && whole[2] === '' &&
-      !!special && special[1] === '$250K (soon)?' && special.join('') === post && splitQuote(post, 'words the post never said') === null && splitQuote(post, '') === null && splitQuote(post, null) === null && splitQuote(post, '.*') === null,
+      !!special && special[1] === '$250K (soon)?' && special.join('') === post && splitQuote('Top\n is   in. Sold.', 'Top is in')?.[1] === 'Top\n is   in' && splitQuote('gm all, top is in', 'gm all')?.[1] === 'gm all' && splitQuote(post, 'words the post never said') === null && splitQuote(post, '') === null && splitQuote(post, null) === null && splitQuote(post, '.*') === null,
   )
   const h1 = recordHeadline('pantessa_test', 'BTC', 'all', { total: 10, right: 5, wrong: 2, flat: 1, open: 2 })
   const hp = headlineParts(h1)
@@ -358,6 +376,29 @@ export function calledRecordPins(check: Check): void {
       full.text.endsWith(`${STANDING_NOT_VERIFIED} Plot any handle with ${X_MENTION}:`) && xPostWeight(full.text) <= X_POST_MAX && xPostWeight('a'.repeat(256)) === 280 &&
       calledPost(worst(h15, 'SP500', 'all', false, 2)).text.startsWith('SP500 calls by @') && calledPost(worst(h15, 'btc', 'all', false, 2)).text.startsWith('$BTC calls by @'),
     `${xPostWeight(full.text)} · ${Math.max(...cases.map((p) => xPostWeight(p.text)))} · ${full.text}`,
+  )
+
+  // A record nobody scanned: its posts were pasted by viewers. No tally on the page, in the picture or in the post.
+  const pastedPosts = posts.filter((p) => p.label.stance !== 'none').slice(0, 3).map((p) => ({ ...p, origin: 'added' as const }))
+  const pasted = (verified: boolean, sideOf: 'all' | 'bull' | 'bear' = 'all') => buildRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC', side: sideOf, profile: FIXTURE_PROFILE, verified: verified ? { at: NOW } : null, posts: pastedPosts, candles: bars((i) => 100 + i), nowMs: NOW, scannedAt: null, postsRead: 0 })
+  const pp = calledPost(pasted(false))
+  const pm = myCalledPost(pasted(true))
+  const noCounts = (text: string) => !/\d/.test(text.replace(`@${FIXTURE_HANDLE}`, '').replace(`@${h15}`, '').replace('XYZ:LONGSYMBOL.NAME-24CH', '')) && !/\bcalls?\b|called it|missed|no real move|too early/.test(text)
+  const longPasted = calledPost({ ...worst(h15, 'XYZ:LONGSYMBOL.NAME-24CH', 'bear', false, 5), scanned: false })
+  check(
+    'called-it share text (a record nobody scanned): posts a viewer pasted are never written up as a record. The record itself has no tally (scanned false, every count zero, the headline says so), and the post states no number and no verdict at all, says the posts were pinned by a viewer and that there is no tally, still tags the handle, still carries the standing line, still fits',
+    !pasted(false).scanned && pasted(false).tally.total === 0 && pasted(false).added === 3 && pasted(false).words.headline === '@pantessa_test on BTC: 3 posts added by a viewer. No scan yet, so no tally.' && headlineParts(pasted(false).words.headline) === null &&
+      pp.text === `$BTC posts by @pantessa_test, pinned by a viewer to the day each was posted. ${CALLED_NO_TALLY} Not verified. Plot any handle with ${X_MENTION}:` && pm.text === `My $BTC posts, each pinned to the day I posted it. ${CALLED_NO_TALLY} ${standingVerified(FIXTURE_HANDLE)} Plot yours with ${X_MENTION}:` &&
+      [pp, pm, calledPost(pasted(false, 'bear')), myCalledPost(pasted(true, 'bull')), longPasted].every((x) => noCounts(x.text) && SHARE_ASCII_RE.test(x.text) && xPostWeight(x.text) <= X_POST_MAX && x.text.includes(CALLED_NO_TALLY) && !x.text.startsWith('@')) && CALLED_NO_TALLY === 'No scan yet, so no tally.',
+    `${pp.text} | ${pm.text} | ${longPasted.text}`,
+  )
+  // A display name is X's text and never enters a post: the handle alone names the account.
+  const loudName = '🦄🚀 ‮REVO‬ 名前 "<b>"'
+  const named = buildRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC', side: 'all', profile: { ...FIXTURE_PROFILE, name: loudName }, verified: { at: NOW }, posts, candles: bars((i) => 100 + i), nowMs: NOW, scannedAt: NOW, postsRead: posts.length })
+  check(
+    'called-it share text and a display name: a name full of emoji, another script, markup and a right-to-left override changes nothing in a post. The text, its title and its link are the same printable ASCII as for a plain name, and no character of the name is in them',
+    named.profile.name === loudName && [calledPost(named), myCalledPost(named)].every((x) => SHARE_ASCII_RE.test(x.text) && SHARE_ASCII_RE.test(x.title) && SHARE_ASCII_RE.test(x.url) && !x.text.includes('REVO') && !x.title.includes('REVO') && !/[<>"]/.test(x.text)) &&
+      calledPost(named).text === theirs.text.replace(STANDING_NOT_VERIFIED, standingVerified(FIXTURE_HANDLE)) && myCalledPost(named).text === mine.text,
   )
 
   // ── Addresses ──
@@ -430,7 +471,21 @@ export function calledRecordPins(check: Check): void {
     'called-it honesty in the source: the word "Verified" reaches a page only as the record\'s own standing line or behind the record\'s own rule (verifiedOf); the tally a page prints is the record\'s headline; the landing loads no chart library and opens no sign-in door; the client share row composes nothing and imports nothing of the X sign-in',
     /\{record\.words\.standing\}/.test(recordPage) && /verifiedOf\(await getHandle\(h\)\)/.test(plotted) && /r\.verified \? ' · Verified' : ''/.test(doorPage) && /verified \? standingVerified\(handle\) : STANDING_NOT_VERIFIED/.test(handlePage) &&
       /headlineParts\(record\.words\.headline\)/.test(recordPage) && mineSrc.every((s) => !/lightweight-charts|charting_library|components\/markets\/chart|SpineLink/.test(code(s))) &&
-      shareRow.startsWith("'use client'") && !/x-auth/.test(shareRow) && !/calledPost|myCalledPost/.test(code(shareRow)) && /mine \? myCalledPost\(record\) : calledPost\(record\)/.test(recordPage) && /!!record\.verified && !!me && me\.handle === record\.handle/.test(recordPage),
+      shareRow.startsWith("'use client'") && !/x-auth/.test(shareRow) && !/calledPost|myCalledPost/.test(code(shareRow)) && /mine \? myCalledPost\(record\) : calledPost\(record\)/.test(recordPage),
+  )
+  check(
+    'called-it owner, names and the way back (review): "this viewer is the owner" is the record being verified AND X\'s user id on the cookie being the record\'s own, never the cookie\'s handle; a display name and a post\'s text are isolated (<bdi>) where a page prints them and a name is cleaned before it is drawn; Verify with X is mounted with no path of this lane\'s making (it reads its own page on press); a display name is not an input of any share text',
+    /const mine = !!record\.verified && !!me && !!record\.profile\.xUserId && me\.xUserId === record\.profile\.xUserId/.test(recordPage) && !/me\.handle/.test(code(recordPage)) && !/me\.handle/.test(code(handlePage)) &&
+      /<bdi>\{name\}<\/bdi>/.test(recordPage) && /cleanLine\(record\.profile\.name, 60\)/.test(recordPage) && /<bdi>\{cleanLine\(top\?\.name \?\? '', 60\)\}<\/bdi>/.test(handlePage) && /<p className="xrc-call__text">\s*<bdi>/.test(callCard) &&
+      /cleanLine\(record\.profile\.name, 24\)/.test(ogCard) && /<VerifyWithX symbol=\{symbol\} \/>/.test(parts) && !/<VerifyWithX[^>]*next=/.test(mineSrc.join('\n')) && !/profile|\.name\b/.test(code(read('lib/share-posts.ts')).slice(code(read('lib/share-posts.ts')).indexOf('export interface CalledPostInput'))),
+  )
+  check(
+    'called-it what is counted, in the source (review R1, R8): the landing draws what the scan found and what viewers pasted as two groups, the pasted group under spec\'s mark and never inside the tally; a card and a picture card for a pasted post wear spec\'s ADDED_MARK (not a string of their own); a record nobody scanned offers the scan and its picture is its own kind, never "record"; the coverage line and the added line a page or a picture prints are the record\'s own words; nothing says "since" about what was read; how it is judged says what a label is and that a deleted post leaves',
+    /scannedCalls = numbered\.filter\(\(c\) => c\.call\.origin === 'scan'\)/.test(recordPage) && /addedCalls = numbered\.filter\(\(c\) => c\.call\.origin === 'added'\)/.test(recordPage) && /data-added-group=\{addedCalls\.length\}/.test(recordPage) &&
+      /\{call\.origin === 'added' && <span className="xrc-call__added">\{ADDED_MARK\}<\/span>\}/.test(callCard) && !/added by a viewer/.test(code(callCard)) && /\{ADDED_MARK\}<\/span>/.test(ogCard) && !/'added by a viewer'/.test(code(ogCard)) &&
+      /\{pasteOnly && \(\s*<p className="xrc-next">/.test(recordPage) && /!body\.record\.calls\.length \? 'empty' : body\.record\.scanned \? 'record' : 'pasted'/.test(ogRoute) &&
+      /\{record\.words\.coverage && <p data-coverage>\{record\.words\.coverage\}<\/p>\}/.test(recordPage) && /\{record\.words\.added && <p data-added>\{record\.words\.added\}<\/p>\}/.test(recordPage) && /\{record\.words\.coverage\}<\/span>/.test(ogCard) &&
+      !/[·,] since |SINCE \$\{/.test(code(recordPage) + code(ogCard) + code(chart)) && /<p>\{METHOD_LINE\}<\/p>/.test(parts) && /\{LABEL_CAVEAT\}/.test(parts) && /\{DELETED_NOTE\}/.test(parts) && /readFrom=\{view\.readFrom\}/.test(recordPage) && /unreadShare\(scale, record\.coverage\?\.from\)/.test(ogCard),
   )
   const css = read('components/called/called-record.css').replace(/\/\*[\s\S]*?\*\//g, '')
   const classes = [...css.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((m) => m[1]).filter((c) => !/^\d/.test(c))
@@ -451,6 +506,7 @@ export function calledRecordPins(check: Check): void {
   )
   check('called-it sitemap: /x is listed, and a record\'s own page is not (it reaches a crawler by its link)', /\{ url: `\$\{SITE\}\/x`, changeFrequency: 'hourly'/.test(read('app/sitemap.ts')) && !/\/x\/\$\{/.test(read('app/sitemap.ts')))
   void PICK_MAX
+  void ADDED_MARK
 }
 
 // ── Served ──────────────────────────────────────────────────────────────
@@ -499,11 +555,12 @@ export async function calledRecordPinsServed(check: Check, BASE: string): Promis
     const t = textOf(p.html)
     const picked = rec ? rec.calls.filter((c) => c.picked).length : -1
     check(
-      'called-it landing (served, the fixture on BTC): the page a stranger opens carries the record\'s headline to the letter, its standing line, every call\'s full text, a card and a chart mark per call (a numbered flag that links to its card for each pinned one, a dot for the rest), the toggle with both sides\' counts, the share row, the door and how it is judged; nothing on it links to X (the fixture\'s posts are not real posts)',
+      'called-it landing (served, the fixture on BTC): the page a stranger opens carries the record\'s headline to the letter, its standing line, every call\'s full text, a card and a chart mark per call (a numbered flag that links to its card for each pinned one, a dot for the rest), the toggle with both sides\' counts, what the scan read in the record\'s own words (and nothing that says "since"), the share row, the door, and how it is judged (what a label is, that a label can be wrong, that a deleted post leaves); nothing on it links to X (the fixture\'s posts are not real posts)',
       p.status === 200 && !!rec && t.includes(rec.words.headline) && t.includes(rec.words.standing) && rec.calls.every((c) => t.includes(c.text)) && (p.html.match(/<li class="xrc-call /g) ?? []).length === rec.calls.length &&
         (p.html.match(/class="xrc-pin is-/g) ?? []).length === picked && (p.html.match(/class="xrc-dot is-/g) ?? []).length === rec.calls.length - picked && rec.calls.every((c, i) => p.html.includes(`id="call-${i + 1}"`) && p.html.includes(`href="#call-${i + 1}"`) === c.picked) &&
         /All <span class="xrc-sides__n">10<\/span>/.test(p.html.replace(/<!--[\s\S]*?-->/g, '')) && p.html.includes('data-share="row"') && p.html.includes('id="plot"') && t.includes('How this is judged') && t.includes('Not investment advice. Posts belong to their authors.') &&
-        (p.html.match(/<mark class="xrc-call__quote">/g) ?? []).length === rec.calls.length && !/https:\/\/x\.com\/pantessa_test\/status/.test(p.html) && !t.includes('View on X') && p.html.includes(`href="/t/BTC?x=${FIXTURE_HANDLE}"`),
+        (p.html.match(/<mark class="xrc-call__quote">/g) ?? []).length === rec.calls.length && !/https:\/\/x\.com\/pantessa_test\/status/.test(p.html) && !t.includes('View on X') && p.html.includes(`href="/t/BTC?x=${FIXTURE_HANDLE}"`) &&
+        !!rec.words.coverage && t.includes(rec.words.coverage) && !/ since \d/i.test(t) && t.includes(METHOD_LINE) && t.includes(LABEL_CAVEAT) && t.includes(DELETED_NOTE) && !p.html.includes('data-added-group') && p.html.includes('data-scanned="yes"'),
       `${p.status} ${rec?.calls.length ?? '-'} calls, ${picked} pinned, headline ${rec ? t.includes(rec.words.headline) : '-'}`,
     )
     const og = metaOf(p.html, 'og:image') ?? ''
@@ -521,7 +578,7 @@ export async function calledRecordPinsServed(check: Check, BASE: string): Promis
     check(
       'called-it landing toggle and pins (served): the bear address shows only the four bear calls under a bearish headline and its image address carries side=bear; an address with its own pin draws that one flag, says a viewer chose it and that the tally counts every call, hands the pin to the image, and is not indexed',
       bear.status === 200 && (bear.html.match(/<li class="xrc-call /g) ?? []).length === 4 && textOf(bear.html).includes('@pantessa_test, bearish on BTC: 4 calls') && /\/api\/og\/called\?handle=pantessa_test&sym=BTC&side=bear$/.test(bearOg) && bear.html.includes('aria-current="page"') &&
-        pinsPage.status === 200 && (pinsPage.html.match(/class="xrc-pin is-/g) ?? []).length === 1 && textOf(pinsPage.html).includes('pins were chosen by a viewer. The tally counts every call found.') && textOf(pinsPage.html).includes('10 calls') &&
+        pinsPage.status === 200 && (pinsPage.html.match(/class="xrc-pin is-/g) ?? []).length === 1 && textOf(pinsPage.html).includes('pins were chosen by a viewer. The tally counts every call the scan found.') && textOf(pinsPage.html).includes('10 calls') &&
         (metaOf(pinsPage.html, 'og:image') ?? '').endsWith(`&pins=${onePin}`) && /noindex/.test(metaOf(pinsPage.html, 'robots') ?? ''),
       `${bear.status} ${bearOg} · ${pinsPage.status} ${metaOf(pinsPage.html, 'og:image')}`,
     )
@@ -555,7 +612,7 @@ export async function calledRecordPinsServed(check: Check, BASE: string): Promis
       'called-it pages (served): every address answers a real page with the door. /x asks "Whose calls?" and shows what a plot is; an account with no plots offers markets to start on; a handle nobody plotted says so, says what a scan does and links to the live chart with the handle already on it; a string that is not a handle and a string that is not a market are refused in words, with the door, and nothing of the string is echoed as markup; @Name and a lower-case market land on the one canonical address',
       door.status === 200 && textOf(door.html).includes('Whose calls?') && door.html.includes('id="plot"') && door.html.includes('xrc-schema') && textOf(door.html).includes('Recently plotted') && /<link rel="canonical" href="[^"]*\/x"/.test(door.html) &&
         acct.status === 200 && textOf(acct.html).includes(`@${FIXTURE_HANDLE}`) && acct.html.includes('id="plot"') && (acct.html.includes(`href="/x/${FIXTURE_HANDLE}/BTC"`) || acct.html.includes('class="xrc-row"')) &&
-        nobody.status === 200 && tn.includes('Nobody has plotted @zz_pin_rec_none on BTC yet.') && tn.includes(`last ${SCAN_WINDOW_DAYS} days`) && nobody.html.includes('href="/t/BTC?x=zz_pin_rec_none"') && nobody.html.includes('id="plot"') && /noindex/.test(metaOf(nobody.html, 'robots') ?? '') &&
+        nobody.status === 200 && tn.includes('Nobody has plotted @zz_pin_rec_none on BTC yet.') && tn.includes(`up to ${SCAN_WINDOW_DAYS} days back`) && nobody.html.includes('href="/t/BTC?x=zz_pin_rec_none"') && nobody.html.includes('id="plot"') && /noindex/.test(metaOf(nobody.html, 'robots') ?? '') &&
         script.status === 200 && textOf(script.html).includes('That is not an X handle.') && script.html.includes('id="plot"') && !/<script>alert\(1\)/.test(script.html) && !textOf(script.html).includes('alert(1)') &&
         badSym.status === 200 && textOf(badSym.html).includes('Name a market to plot the handle on.') && !badSym.html.includes('<img src=x') && !badSym.html.includes('onerror=alert') &&
         badAcct.status === 200 && textOf(badAcct.html).includes('That is not an X handle.') && !badAcct.html.includes('<svg onload') &&
@@ -605,20 +662,21 @@ export async function calledRecordPinsServed(check: Check, BASE: string): Promis
     await ie.arrayBuffer()
     check(
       'called-it landing (served, a scanned account with no calls): the page says no calls were found in spec\'s own words and that the scan found no posts, draws the market\'s line with no pins, offers the live chart and the door, shows no toggle and no share row (there is nothing to share), is not indexed, and the image draws the same honest card',
-      te.includes(`@${E} on BTC: no calls found in this window.`) && te.includes(`The scan found no posts by @${E} about BTC in the last ${SCAN_WINDOW_DAYS} days.`) && te.includes(STANDING_NOT_VERIFIED) && pe.includes('data-status="ready"') && pe.includes('data-calls="0"') &&
+      te.includes(`@${E} on BTC: no calls found in this window.`) && te.includes(`The scan found no posts by @${E} about BTC.`) && te.includes(STANDING_NOT_VERIFIED) && pe.includes('data-status="ready"') && pe.includes('data-calls="0"') &&
         !pe.includes('data-share="row"') && !pe.includes('class="xrc-sides"') && !pe.includes('class="xrc-pin ') && pe.includes(`href="/t/BTC?x=${E}"`) && pe.includes('id="plot"') && /noindex/.test(metaOf(pe, 'robots') ?? '') &&
         ie.status === 200 && ie.headers.get('x-pantessa-card') === 'empty' && ie.headers.get('content-type') === 'image/png',
       `${ie.status} ${ie.headers.get('x-pantessa-card')} ${te.includes('no calls found in this window.')}`,
     )
 
-    // 2. A post and a name that are markup: text on the page, text in the picture, and the link out is rebuilt from the id.
+    // 2. A post and a name that are markup, on a record with one call the scan found and one a viewer pasted:
+    //    text on the page, text in the picture, the link out rebuilt from the id, the pasted post apart and uncounted.
     const H = 'zz_pin_rec_h'
     const evil = '<img src=x onerror=alert(1)> the bottom is in </p><script>alert(2)</script> & "quotes" https://evil.example/x'
     const at1 = today - 120 * 86_400_000 + 13 * 3_600_000
     const at2 = today - 60 * 86_400_000 + 9 * 3_600_000
     const id1 = idAt(at1, 7)
     const id2 = idAt(at2, 8)
-    await Store.saveProfile({ handle: H, name: '<b>Name</b> "&', avatarUrl: 'https://evil.example/a.png', followers: 12, blue: true, xUserId: null })
+    await Store.saveProfile({ handle: H, name: '<b>Name</b> ‮"&', avatarUrl: 'https://evil.example/a.png', followers: 12, blue: true, xUserId: null })
     await Store.savePosts([
       { id: id1, handle: H, text: evil, postedAt: at1, likes: 10, replies: 1, reposts: 1, isReply: false, source: 'x-api' },
       { id: id2, handle: H, text: 'Top is in.', postedAt: at2, likes: 5, replies: 0, reposts: 0, isReply: false, source: 'x-api' },
@@ -627,19 +685,59 @@ export async function calledRecordPinsServed(check: Check, BASE: string): Promis
       { postId: id1, symbol: 'BTC', stance: 'bull', conviction: 3, quote: 'the bottom is in', origin: 'scan', model: 'pin' },
       { postId: id2, symbol: 'BTC', stance: 'bear', conviction: 3, quote: 'Top is in.', origin: 'added', model: 'pin' },
     ])
-    await scanned(H, 2, 2)
+    await scanned(H, 2, 1)
     const ph = await (await fetch(`${BASE}/x/${H}/BTC`, { headers: HEAD })).text()
     const th = textOf(ph)
     const ih = await fetch(`${BASE}/api/og/called?handle=${H}&sym=BTC`, { headers: HEAD })
     await ih.arrayBuffer()
+    const group = ph.slice(ph.indexOf('data-added-group="1"'))
+    const beforeGroup = ph.slice(0, ph.indexOf('data-added-group="1"'))
     check(
-      'called-it landing (served, a post and a name that are markup): the post and the name are on the page as the text they are and nowhere as markup (not in the document, not in the data the page ships); the quoted span is marked inside the hostile text and as a whole one-line post alike; "View on X" goes to x.com/<handle>/status/<id> built from the id; the address inside the post is not a link; an avatar address that is not X\'s is never fetched or printed; a pasted post says so; X\'s paid check draws nothing; the image answers a picture',
-      th.includes(evil) && th.includes('<b>Name</b> "&') && !ph.includes('<img src=x onerror') && !ph.includes('<script>alert(2)') && !ph.includes('<b>Name</b>') && !/onerror=alert\(1\)>/.test(ph.replace(/&gt;/g, '')) &&
+      'called-it landing (served, a post and a name that are markup): the post and the name are on the page as the text they are and nowhere as markup (not in the document, not in the data the page ships), each inside <bdi>, the name without its right-to-left override; the quoted span is marked inside the hostile text and as a whole one-line post alike; "View on X" goes to x.com/<handle>/status/<id> built from the id; the address inside the post is not a link; an avatar address that is not X\'s is never fetched or printed; X\'s paid check draws nothing; the image answers a picture',
+      th.includes(evil) && th.includes('<b>Name</b> "&') && !ph.includes('<img src=x onerror') && !ph.includes('<script>alert(2)') && !ph.includes('<b>Name</b>') && !/onerror=alert\(1\)>/.test(ph.replace(/&gt;/g, '')) && !ph.includes('‮') &&
+        /<bdi>&lt;b&gt;Name&lt;\/b&gt; &quot;&amp;<\/bdi>/.test(ph) && /<p class="xrc-call__text"><bdi>&lt;img src=x/.test(ph) &&
         ph.includes('<mark class="xrc-call__quote">the bottom is in</mark>') && ph.includes('<mark class="xrc-call__quote">Top is in.</mark>') &&
         ph.includes(`href="https://x.com/${H}/status/${id1}"`) && ph.includes(`href="https://x.com/${H}/status/${id2}"`) && !ph.includes('href="https://evil.example') && !ph.includes('evil.example/a.png') && (ph.match(/View on X/g) ?? []).length >= 2 &&
-        th.includes('added by a viewer') && !/verified/i.test(th.replace(/Not verified\./g, '').replace(/say Verified\./g, '').replace(/Verify with X/g, '')) && th.includes(`@${H} on BTC: 2 calls`) &&
-        ih.status === 200 && ih.headers.get('x-pantessa-card') === 'record' && ih.headers.get('content-type') === 'image/png',
-      `${ih.status} ${ih.headers.get('x-pantessa-card')} text:${th.includes(evil)} raw:${ph.includes('<img src=x onerror')}`,
+        !/verified/i.test(th.replace(/Not verified\./g, '').replace(/say Verified\./g, '').replace(/Verify with X/g, '')) && ih.status === 200 && ih.headers.get('x-pantessa-card') === 'record' && ih.headers.get('content-type') === 'image/png',
+      `${ih.status} ${ih.headers.get('x-pantessa-card')} text:${th.includes(evil)} raw:${ph.includes('<img src=x onerror')} bdi:${/<bdi>&lt;b&gt;Name/.test(ph)}`,
+    )
+    check(
+      'called-it landing (served, a scanned record with a pasted post): the tally counts what the scan found and nothing else (one call, in the headline and on the toggle); the pasted post is shown in its own group under the scanned call, wears spec\'s mark, and the record\'s own sentence says it is shown and not counted; the coverage line is the record\'s own',
+      th.includes(`@${H} on BTC: 1 call`) && !th.includes(`@${H} on BTC: 2 calls`) && /All <span class="xrc-sides__n">1<\/span>/.test(ph.replace(/<!--[\s\S]*?-->/g, '')) && th.includes('1 more post was added by viewers. It is shown and not counted.') &&
+        ph.includes('data-added-group="1"') && (beforeGroup.match(/<li class="xrc-call /g) ?? []).length === 1 && beforeGroup.includes(`data-call="${id1}"`) && (group.match(/<li class="xrc-call /g) ?? []).length === 1 && group.includes(`data-call="${id2}"`) && group.includes('data-origin="added"') &&
+        (th.match(new RegExp(ADDED_MARK, 'g')) ?? []).length >= 2 && /Read 2 matching posts from \d+ [A-Z][a-z]{2} \d{4} to \d+ [A-Z][a-z]{2} \d{4}\./.test(th) && ph.includes('data-coverage') && ph.includes('class="xrc-dot is-') && /xrc-dot is-(right|wrong|flat|open) is-added/.test(ph),
+      `${th.includes(`@${H} on BTC: 1 call`)} group:${ph.includes('data-added-group="1"')} before:${(beforeGroup.match(/<li class="xrc-call /g) ?? []).length} in:${(group.match(/<li class="xrc-call /g) ?? []).length}`,
+    )
+
+    // 3. Posts a viewer pasted, and no scan: shown, marked, and NO tally anywhere (the page, the post, the picture).
+    const P = 'zz_pin_rec_p'
+    const at3 = today - 80 * 86_400_000 + 11 * 3_600_000
+    const at4 = today - 45 * 86_400_000 + 15 * 3_600_000
+    const id3 = idAt(at3, 9)
+    const id4 = idAt(at4, 10)
+    await Store.saveProfile({ handle: P, name: 'Pasted Only', avatarUrl: null, followers: 900, blue: false, xUserId: null })
+    await Store.savePosts([
+      { id: id3, handle: P, text: 'This is the bottom. Buying.', postedAt: at3, likes: 3, replies: 0, reposts: 0, isReply: false, source: 'x-api' },
+      { id: id4, handle: P, text: 'Short it here.', postedAt: at4, likes: 1, replies: 0, reposts: 0, isReply: false, source: 'x-api' },
+    ])
+    await Store.saveLabels([
+      { postId: id3, symbol: 'BTC', stance: 'bull', conviction: 3, quote: 'This is the bottom', origin: 'added', model: 'pin' },
+      { postId: id4, symbol: 'BTC', stance: 'bear', conviction: 2, quote: 'Short it here', origin: 'added', model: 'pin' },
+    ])
+    const pq = await (await fetch(`${BASE}/x/${P}/BTC`, { headers: HEAD })).text()
+    const tq = textOf(pq)
+    const iq = await fetch(`${BASE}/api/og/called?handle=${P}&sym=BTC`, { headers: HEAD })
+    await iq.arrayBuffer()
+    const intent = /href="(https:\/\/twitter\.com\/intent\/tweet\?[^"]+)"/.exec(pq)?.[1].replace(/&amp;/g, '&') ?? ''
+    const intentText = intent ? (new URL(intent).searchParams.get('text') ?? '') : ''
+    check(
+      'called-it landing (served, posts a viewer pasted and no scan): the page is not a record. The headline is spec\'s "posts added by a viewer. No scan yet, so no tally."; there are no count chips, no toggle, no coverage line and nothing indexed; both posts are in the pasted group, each marked; the scan is offered on the live chart; the share row\'s post states no count and says there is no tally; the image is its own kind ("pasted"), never "record"',
+      pq.includes('data-status="ready"') && pq.includes('data-scanned="no"') && tq.includes(`@${P} on BTC: 2 posts added by a viewer. No scan yet, so no tally.`) && !pq.includes('class="xrc-count') && !pq.includes('class="xrc-sides"') && !pq.includes('data-coverage') &&
+        pq.includes('data-added-group="2"') && (pq.match(/<li class="xrc-call /g) ?? []).length === 2 && (pq.match(/data-origin="added"/g) ?? []).length === 2 && (tq.match(new RegExp(ADDED_MARK, 'g')) ?? []).length >= 2 &&
+        pq.includes(`href="/t/BTC?x=${P}"`) && tq.includes(`Scan @${P} on the live BTC chart`) && /noindex/.test(metaOf(pq, 'robots') ?? '') && tq.includes('Share these posts') && !tq.includes('Share this record') &&
+        intentText === `$BTC posts by @${P}, pinned by a viewer to the day each was posted. ${CALLED_NO_TALLY} Not verified. Plot any handle with ${X_MENTION}:` && !/\d/.test(intentText) &&
+        (metaOf(pq, 'og:title') ?? '').includes('No scan yet, so no tally.') && iq.status === 200 && iq.headers.get('x-pantessa-card') === 'pasted' && iq.headers.get('content-type') === 'image/png',
+      `${iq.status} ${iq.headers.get('x-pantessa-card')} chips:${pq.includes('class="xrc-count')} group:${pq.includes('data-added-group="2"')} intent:${intentText}`,
     )
   } catch (err) {
     check('called-it record (served, TEST DB): the rows could be written and read', false, err instanceof Error ? err.message : String(err))

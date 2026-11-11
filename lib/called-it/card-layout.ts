@@ -111,6 +111,20 @@ export function plotFromSec(windowFromMs: number, nowMs: number, firstCallBarSec
   return Math.max(Math.floor(windowFromMs / 1000), Math.min(scanFrom, lead))
 }
 
+/**
+ * How much of the plot's left side the scans did NOT read, as a fraction of
+ * its width: 0 when coverage reaches back to the first drawn bar (or there is
+ * no coverage to speak of), more when a scan stopped at its cap and the line
+ * is drawn further back than it read. A picture must not let an unread
+ * stretch pass for "no calls there" (review R8), so both pictures dim it.
+ */
+export function unreadShare(scale: PlotScale, coverageFromMs: number | null | undefined): number {
+  if (coverageFromMs == null || !Number.isFinite(coverageFromMs)) return 0
+  const x = scale.x(Math.floor(coverageFromMs / 1000))
+  // Under a day's width of a year-long plot it is not a stretch worth marking.
+  return x < 0.01 ? 0 : Math.round(x * 10000) / 10000
+}
+
 /** The line and the area under it, drawn inside `box`. Coordinates to one decimal. */
 export function linePaths(closes: readonly ClosePoint[], scale: PlotScale, box: Rect): { line: string; area: string } {
   const pts = closes.map((p) => `${round1(box.x + scale.x(p.t) * box.w)} ${round1(box.y + scale.y(p.c) * box.h)}`)
@@ -272,6 +286,8 @@ export interface RailPin {
   y: number
   picked: boolean
   verdict: CallVerdict
+  /** A viewer pasted this post. It is drawn hollow: shown, marked, never counted. */
+  added: boolean
   /** Which rail row the flag flies on (picked calls only; 0 is the top row). */
   level: number
 }
@@ -282,8 +298,8 @@ export interface RailPin {
  * closer than `minDx` (three rows are enough for any three neighbours; a
  * tighter crowd reuses the row furthest back).
  */
-export function railPins(calls: readonly Pick<CalledCall, 'postId' | 'barTime' | 'priceAt' | 'picked' | 'verdict'>[], scale: PlotScale, minDx = RAIL_MIN_DX): { pins: RailPin[]; levels: number } {
-  const pins: RailPin[] = calls.map((c, i) => ({ postId: c.postId, n: i + 1, x: scale.x(c.barTime), y: scale.y(c.priceAt), picked: c.picked, verdict: c.verdict, level: 0 }))
+export function railPins(calls: readonly (Pick<CalledCall, 'postId' | 'barTime' | 'priceAt' | 'picked' | 'verdict'> & { origin?: CalledCall['origin'] })[], scale: PlotScale, minDx = RAIL_MIN_DX): { pins: RailPin[]; levels: number } {
+  const pins: RailPin[] = calls.map((c, i) => ({ postId: c.postId, n: i + 1, x: scale.x(c.barTime), y: scale.y(c.priceAt), picked: c.picked, verdict: c.verdict, added: c.origin === 'added', level: 0 }))
   const flown: RailPin[] = []
   for (const p of [...pins].filter((q) => q.picked).sort((a, b) => a.x - b.x || a.n - b.n)) {
     const near = flown.filter((q) => p.x - q.x < minDx)
@@ -413,7 +429,8 @@ export function splitQuote(text: string, quote: string | null | undefined): [str
   let from = text.indexOf(q)
   let len = q.length
   if (from < 0) {
-    // The label's whitespace may differ from the post's (spec quoteIsFromPost allows it).
+    // The stored quote is whitespace-normalized (one space where the post has a newline or a run of spaces), so
+    // match it against the post with whitespace collapsed on both sides (spec quoteIsFromPost's own rule).
     let m: RegExpExecArray | null = null
     try {
       m = new RegExp(q.split(/\s+/).map(reEscape).join('\\s+')).exec(text)

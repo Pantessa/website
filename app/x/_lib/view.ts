@@ -32,6 +32,8 @@ export interface RecordView {
   unit: ChartUnit
   /** The account's avatar as a data URI, when X's image host answered in time. */
   avatar: string | null
+  /** Where the scans' coverage starts (ms), when a scan has finished. The pictures dim what lies before it. */
+  readFrom: number | null
 }
 
 async function loadCloses(symbol: string): Promise<{ closes: ClosePoint[]; unit: ChartUnit }> {
@@ -60,6 +62,8 @@ async function load(handleRaw: string, symbolRaw: string, sideRaw: string, pinsR
   ])
 
   // The line is drawn over the stretch a pin can stand on (card-layout plotFromSec), inside the record's window.
+  // That is the CHART's window, never a claim about what was read: the record's own coverage line says that, and
+  // where the scans read less than what is drawn the pictures dim the rest (card-layout unreadShare).
   let closes = chart.closes
   if (answer.body.status === 'ready') {
     const rec = answer.body.record
@@ -70,7 +74,8 @@ async function load(handleRaw: string, symbolRaw: string, sideRaw: string, pinsR
     closes = closes.slice(-SCAN_WINDOW_DAYS)
   }
   const avatar = answer.body.status === 'ready' ? await avatarDataUri(answer.body.record.profile.avatarUrl) : null
-  return { handle, symbol, side, pins, http: answer.http, body: answer.body, closes, unit: chart.unit, avatar }
+  const readFrom = answer.body.status === 'ready' ? (answer.body.record.coverage?.from ?? null) : null
+  return { handle, symbol, side, pins, http: answer.http, body: answer.body, closes, unit: chart.unit, avatar, readFrom }
 }
 
 /** One read per request: the page and its metadata share it. */

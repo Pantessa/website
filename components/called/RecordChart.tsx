@@ -9,8 +9,8 @@
 // A flag wears the call's number (its place in the record, by date) and its
 // verdict's colour; the card under the chart wears the same two. Colour is
 // never the only signal: every flag's label says the verdict in words.
-import { VERDICT_WORDS, type CalledCall } from '@/lib/called-it/spec'
-import { fmtCallPrice, fmtUtcDate, linePaths, monthTicks, plotScale, railPins, type ClosePoint } from '@/lib/called-it/card-layout'
+import { ADDED_MARK, VERDICT_WORDS, type CalledCall } from '@/lib/called-it/spec'
+import { fmtCallPrice, fmtUtcDate, linePaths, monthTicks, plotScale, railPins, unreadShare, type ClosePoint } from '@/lib/called-it/card-layout'
 import type { CSSProperties, ReactNode } from 'react'
 
 const BOX = { x: 0, y: 0, w: 1000, h: 300 }
@@ -25,9 +25,11 @@ export interface RecordChartProps {
   action?: ReactNode
   /** Shown over the plot when there is nothing pinned (an unscanned handle). */
   emptyNote?: string
+  /** Where the scans' coverage starts (ms). A drawn stretch older than this is dimmed and says it was not read. */
+  readFrom?: number | null
 }
 
-export default function RecordChart({ symbol, closes, calls, unit = 'usd', action, emptyNote }: RecordChartProps) {
+export default function RecordChart({ symbol, closes, calls, unit = 'usd', action, emptyNote, readFrom }: RecordChartProps) {
   const scale = plotScale(closes, calls.map((c) => c.priceAt))
   if (!scale) {
     return (
@@ -41,6 +43,9 @@ export default function RecordChart({ symbol, closes, calls, unit = 'usd', actio
   const ticks = monthTicks(scale.t0, scale.t1)
   const last = closes[closes.length - 1]
   const pinned = pins.filter((p) => p.picked).length
+  const unread = unreadShare(scale, readFrom)
+  const anyAdded = pins.some((p) => p.added)
+  const label = (p: (typeof pins)[number]) => `Call ${p.n}, ${VERDICT_WORDS[p.verdict]}, ${fmtUtcDate(calls[p.n - 1].postedAt)}${p.added ? `, ${ADDED_MARK}` : ''}`
   const gradId = `xrc-grad-${symbol.replace(/[^A-Za-z0-9]/g, '')}`
 
   return (
@@ -65,6 +70,11 @@ export default function RecordChart({ symbol, closes, calls, unit = 'usd', actio
             <path d={area} fill={`url(#${gradId})`} />
             <path d={line} className="xrc-plot__line" vectorEffect="non-scaling-stroke" />
           </svg>
+          {unread > 0 && (
+            <span className="xrc-plot__unread" style={{ width: pct(unread) }}>
+              <span>not read</span>
+            </span>
+          )}
           <span className="xrc-plot__axis xrc-plot__axis--max">{fmtCallPrice(scale.hi, unit)}</span>
           <span className="xrc-plot__axis xrc-plot__axis--min">{fmtCallPrice(scale.lo, unit)}</span>
 
@@ -72,17 +82,17 @@ export default function RecordChart({ symbol, closes, calls, unit = 'usd', actio
           {pins
             .filter((p) => !p.picked)
             .map((p) => (
-              <i key={p.postId} className={`xrc-dot is-${p.verdict}`} style={{ left: pct(p.x), '--xrc-y': p.y } as CSSProperties} role="img" aria-label={`Call ${p.n}, ${VERDICT_WORDS[p.verdict]}, ${fmtUtcDate(calls[p.n - 1].postedAt)}`} title={`Call ${p.n}: ${VERDICT_WORDS[p.verdict]}`} />
+              <i key={p.postId} className={`xrc-dot is-${p.verdict}${p.added ? ' is-added' : ''}`} style={{ left: pct(p.x), '--xrc-y': p.y } as CSSProperties} role="img" aria-label={label(p)} title={`Call ${p.n}: ${VERDICT_WORDS[p.verdict]}${p.added ? ` (${ADDED_MARK})` : ''}`} />
             ))}
           {pins
             .filter((p) => p.picked)
             .map((p) => (
               <a
                 key={p.postId}
-                className={`xrc-pin is-${p.verdict}`}
+                className={`xrc-pin is-${p.verdict}${p.added ? ' is-added' : ''}`}
                 href={`#call-${p.n}`}
                 style={{ left: pct(p.x), '--xrc-y': p.y, '--xrc-lvl': p.level } as CSSProperties}
-                aria-label={`Call ${p.n}, ${VERDICT_WORDS[p.verdict]}, ${fmtUtcDate(calls[p.n - 1].postedAt)}`}
+                aria-label={label(p)}
                 data-journey="called_pin"
               >
                 <i className="xrc-pin__stem" aria-hidden />
@@ -111,7 +121,8 @@ export default function RecordChart({ symbol, closes, calls, unit = 'usd', actio
           <span className="xrc-key is-wrong">{VERDICT_WORDS.wrong}</span>
           <span className="xrc-key is-flat">{VERDICT_WORDS.flat}</span>
           <span className="xrc-key is-open">{VERDICT_WORDS.open}</span>
-          {pinned < calls.length && <span className="xrc-chart__keynote">A number is a pinned call. A dot is one of the rest. Every call counts.</span>}
+          {anyAdded && <span className="xrc-key xrc-key--added">{ADDED_MARK}</span>}
+          {pinned < calls.length && <span className="xrc-chart__keynote">A number is a pinned call. A dot is one of the rest.{anyAdded ? ' A hollow mark is a post a viewer added: shown, not counted.' : ' Every call the scan found counts.'}</span>}
         </p>
       )}
     </section>

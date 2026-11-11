@@ -195,14 +195,23 @@ export function listCardRows(symbols: string[]): { rows: string[]; more: number 
 //   · everything is ASCII, one line, and fits X's 280 with the link counted
 //     as X counts it (23). A long symbol or a five-digit tally drops the
 //     closing sentence, then the standing line's second half, before it would
-//     ever run over.
+//     ever run over;
+//   · a record nobody has scanned (its posts were pasted by viewers) is never
+//     written up as a record: the post states no counts at all, and says
+//     there is no tally (squad review R1).
 
-/** What a called-it post is written from: a CalledRecord (lib/called-it/spec) has all four. */
+/**
+ * What a called-it post is written from: a CalledRecord (lib/called-it/spec)
+ * has all of it. Only the HANDLE names the account: a display name comes from
+ * X, can carry emoji or a right-to-left override, and never enters a post.
+ */
 export interface CalledPostInput {
   handle: string
   symbol: string
   side: 'all' | 'bull' | 'bear'
   words: { headline: string; standing: string }
+  /** False = no scan has finished: the posts on the page were pasted by viewers and there is NO tally to state. Left out = scanned. */
+  scanned?: boolean
 }
 
 /** X's limit, and what X charges a link whatever its length. */
@@ -237,13 +246,22 @@ function calledUrl(record: CalledPostInput): string {
   return absoluteUrl(`/x/${record.handle}/${encodeURIComponent(record.symbol.toUpperCase())}${record.side === 'all' ? '' : `?side=${record.side}`}`)
 }
 
+/** What a post says in place of a tally when no scan has finished. No number in it. */
+export const CALLED_NO_TALLY = 'No scan yet, so no tally.'
+
 /** Somebody else's handle: their calls on a market, the tally in numbers, "Not verified", the link. */
 export function calledPost(record: CalledPostInput): SharePost {
   const lean = record.side === 'bull' ? 'Bullish ' : record.side === 'bear' ? 'Bearish ' : ''
-  const lead = `${lean}${calledTicker(record.symbol.toUpperCase())} calls by @${record.handle}, each pinned to the day it was posted: ${calledTally(record)}`
+  const ticker = calledTicker(record.symbol.toUpperCase())
   const standing = record.words.standing
   const short = `${standing.split('. ')[0].replace(/\.$/, '')}.`
   const close = `Plot any handle with ${X_MENTION}:`
+  if (record.scanned === false) {
+    // Pasted posts only: what they are, and that nothing was counted.
+    const lead = `${lean}${ticker} posts by @${record.handle}, pinned by a viewer to the day each was posted. ${CALLED_NO_TALLY}`
+    return { url: calledUrl(record), title: record.words.headline, text: fitPost([`${lead} ${short} ${close}`, `${lead} ${short}`, lead]) }
+  }
+  const lead = `${lean}${ticker} calls by @${record.handle}, each pinned to the day it was posted: ${calledTally(record)}`
   return {
     url: calledUrl(record),
     title: record.words.headline,
@@ -254,9 +272,14 @@ export function calledPost(record: CalledPostInput): SharePost {
 /** The account's own record, signed in with X: first person, the same tally, "Verified", the link. */
 export function myCalledPost(record: CalledPostInput): SharePost {
   const lean = record.side === 'bull' ? 'bullish ' : record.side === 'bear' ? 'bearish ' : ''
-  const lead = `My ${lean}${calledTicker(record.symbol.toUpperCase())} calls, each pinned to the day I posted it: ${calledTally(record)}`
+  const ticker = calledTicker(record.symbol.toUpperCase())
   const standing = record.words.standing
   const close = `Plot yours with ${X_MENTION}:`
+  if (record.scanned === false) {
+    const lead = `My ${lean}${ticker} posts, each pinned to the day I posted it. ${CALLED_NO_TALLY}`
+    return { url: calledUrl(record), title: record.words.headline, text: fitPost([`${lead} ${standing} ${close}`, `${lead} ${standing}`, lead]) }
+  }
+  const lead = `My ${lean}${ticker} calls, each pinned to the day I posted it: ${calledTally(record)}`
   return {
     url: calledUrl(record),
     title: record.words.headline,

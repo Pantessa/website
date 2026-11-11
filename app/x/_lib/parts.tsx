@@ -5,7 +5,7 @@
 import Link from 'next/link'
 import HandleDoor from '@/components/called/HandleDoor'
 import VerifyWithX from '@/components/called/VerifyWithX'
-import { DEAD_BAND, JUDGE_DAYS, METHOD_LINE, SCAN_WINDOW_DAYS, VERDICT_WORDS, type CalledSide, type CallVerdict } from '@/lib/called-it/spec'
+import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, JUDGE_DAYS, LABEL_CAVEAT, METHOD_LINE, SCAN_WINDOW_DAYS, VERDICT_WORDS, type CalledSide, type CallVerdict } from '@/lib/called-it/spec'
 import { initialOf } from '@/lib/called-it/card-layout'
 
 /** The account's picture when the server could fetch it, its initial otherwise. Decorative: the name is printed beside it. */
@@ -69,6 +69,7 @@ export function DoorBlock({ symbol, side, initialHandle, heading = 'Plot anyone'
       <div className="xrc-door__you">
         <h3 className="xrc-door__sub">{owner === 'this' ? 'Is this you?' : 'Plot yourself'}</h3>
         <p className="xrc-door__lede">Sign in with X and your own plots say Verified. It proves the handle and nothing else: no wallet, no posting.</p>
+        {/* No `next`: the button reads this page's own path when it is pressed (never a path composed here). */}
         <VerifyWithX symbol={symbol} />
       </div>
     </section>
@@ -136,6 +137,7 @@ export function MethodBlock() {
     <section className="xrc-method" aria-label="How this is judged">
       <h2 className="xrc-method__title">How this is judged</h2>
       <p>{METHOD_LINE}</p>
+      <p className="xrc-method__caveat">{LABEL_CAVEAT}</p>
       <dl className="xrc-method__rules">
         <div className="is-right">
           <dt>{VERDICT_WORDS.right}</dt>
@@ -157,7 +159,7 @@ export function MethodBlock() {
         </div>
       </dl>
       <p>
-        A scan reads the last {SCAN_WINDOW_DAYS} days. Every call found is counted, whichever ones are pinned. A post X no longer serves leaves the record.
+        A scan looks back up to {SCAN_WINDOW_DAYS} days and can stop sooner; each record says how far it read. Every call the scan found is counted, whichever ones are pinned. A post marked "{ADDED_MARK}" is shown and never counted. {DELETED_NOTE}
       </p>
       <p className="xrc-method__fine">Not investment advice. Posts belong to their authors.</p>
     </section>

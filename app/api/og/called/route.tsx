@@ -12,6 +12,8 @@ import { renderCalledCard, type CalledCardInput, type CalledCardKind } from './c
 //
 // Every answer is a picture, never a 500:
 //   a ready record            the scoreboard and the pinned posts
+//   posts a viewer pasted,    the posts, each marked "added by a viewer", and
+//     with no scan behind them  no tally: never drawn as a record
 //   a record with no calls    the line and "no calls found in this window"
 //   a handle nobody plotted   "Not plotted yet", the market's line, no pins
 //   a scan in flight          the same, saying a scan is reading
@@ -77,7 +79,7 @@ export async function GET(req: Request): Promise<Response> {
       const view = await loadRecordView(handleRaw, symRaw, q.get('side') ?? '', (q.get('pins') ?? '').slice(0, 400))
       const body = view.body
       if (view.symbol) address = `pantessa.com/x/${handle}/${view.symbol}`
-      if (body.status === 'ready') input = { kind: body.record.calls.length ? 'record' : 'empty', handle, symbol: body.record.symbol, record: body.record, closes: view.closes, avatar: view.avatar, unit: view.unit }
+      if (body.status === 'ready') input = { kind: !body.record.calls.length ? 'empty' : body.record.scanned ? 'record' : 'pasted', handle, symbol: body.record.symbol, record: body.record, closes: view.closes, avatar: view.avatar, unit: view.unit }
       else if (body.status === 'refused') input = { kind: 'refused', handle, symbol: view.symbol, record: null, closes: [], avatar: null, reason: body.reason }
       else input = { kind: body.status, handle, symbol: view.symbol, record: null, closes: view.closes, avatar: null }
     }
@@ -86,7 +88,7 @@ export async function GET(req: Request): Promise<Response> {
     address = 'pantessa.com/x'
   }
   try {
-    return png(await within(renderCalledCard(input, address), RENDER_BUDGET_MS), input.kind === 'record' || input.kind === 'empty' || input.kind === 'generic' || input.kind === 'handle' ? CACHE_RECORD : CACHE_SHORT, input.kind)
+    return png(await within(renderCalledCard(input, address), RENDER_BUDGET_MS), input.kind === 'record' || input.kind === 'pasted' || input.kind === 'empty' || input.kind === 'generic' || input.kind === 'handle' ? CACHE_RECORD : CACHE_SHORT, input.kind)
   } catch {
     return generic()
   }
