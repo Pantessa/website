@@ -181,7 +181,8 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
     return { http: 503, body: { status: 'refused', reason: 'The record did not load. Try again in a moment.', next: scanNext(handle, symbol) } }
   }
   const byPost = new Map(usable.map((l) => [l.postId, l]))
-  const anyLabel = new Set(labels.map((l) => l.postId))
+  // A post that failed to parse once is still to label (review R11b): the UI offers to finish it.
+  const anyLabel = new Set(labels.filter((l) => l.model !== 'unparsed-1').map((l) => l.postId))
   const posts: LabeledPost[] = []
   for (const p of cached) {
     // A post whose author is not the handle's current owner is not this account's (the handle changed hands, review R9).

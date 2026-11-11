@@ -54,6 +54,12 @@ class MemStore {
     const row = this.handles.get(h)!
     this.handles.set(h, { ...row, isProtected: true, missingAt: null })
   }
+  async openFinish(r: { handle: string; symbol: string; requestedBy: string; isInternal: boolean }) {
+    const running = this.scans.find((s) => s.handle === r.handle && s.symbol === r.symbol && s.status === 'running' && Date.now() - s.startedAt < 120_000)
+    if (running) return { kind: 'joined' as const, scan: { ...running } }
+    return { kind: 'opened' as const, id: `finish${++this.seq}` }
+  }
+  async closeFinish() {}
   async openScan<A extends { ok: boolean }>(r: { handle: string; symbol: string; provider: string; requestedBy: string; isInternal: boolean; windowFrom: number; windowTo: number; reserveUsd: number; decide: (c: { spentTodayUsd: number; scansToday: number; lookupsToday: number }) => A }) {
     const running = this.scans.find((s) => s.handle === r.handle && s.symbol === r.symbol && s.status === 'running' && Date.now() - s.startedAt < 120_000)
     if (running) return { kind: 'joined' as const, scan: { ...running } }

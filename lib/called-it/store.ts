@@ -338,7 +338,8 @@ export async function reserveAdd<T extends { ok: boolean }>(r: { postId: string;
 // ── Scans ─────────────────────────────────────────────────────────────────
 
 export async function latestScan(handle: string, symbol: string): Promise<ScanRow | null> {
-  const r = await prisma.xScan.findFirst({ where: { handle: h(handle), symbol: sym(symbol) }, orderBy: { startedAt: 'desc' } })
+  // A free finish's row is a lease, not a scan (review R11): never the latest scan.
+  const r = await prisma.xScan.findFirst({ where: { handle: h(handle), symbol: sym(symbol), ...NOT_FINISH }, orderBy: { startedAt: 'desc' } })
   return r ? scanRow(r) : null
 }
 
@@ -455,6 +456,34 @@ export async function openScan<A extends { ok: boolean }>(row: { handle: string;
     return { kind: 'opened' as const, scan: scanRow(created) }
     // Requests queue on the lock: give them room to wait (Prisma's defaults are 2 s to get a connection, 5 s to finish).
   }, { maxWait: 15_000, timeout: 20_000 })
+}
+
+/**
+ * THE FREE FINISH TAKES THE SAME LOCK AS A SCAN (review R11): it opens a
+ * `running` row (provider `finish`, nothing reserved) for this handle and
+ * symbol under the budget lock, or answers the running scan or finish it
+ * would collide with, so a second request JOINS instead of labeling the same
+ * posts again. The row is a lease: closeFinish deletes it; a dead one is
+ * retired like any running row. It is never a scan, a lookup or coverage.
+ */
+export async function openFinish(r: { handle: string; symbol: string; requestedBy: Requester; isInternal: boolean; nowMs?: number }): Promise<{ kind: 'opened'; id: string } | { kind: 'joined'; scan: ScanRow }> {
+  const handle = h(r.handle)
+  const symbol = sym(r.symbol)
+  const nowMs = r.nowMs ?? Date.now()
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${SCAN_BUDGET_LOCK}))) l`
+    const cutoff = new Date(nowMs - SCAN_JOIN_MS)
+    await tx.$executeRaw`UPDATE x_scans SET ${RETIRE_DEAD} WHERE status = 'running' AND started_at < ${cutoff}`
+    const running = await tx.xScan.findFirst({ where: { handle, symbol, status: 'running', startedAt: { gte: cutoff } }, orderBy: { startedAt: 'desc' } })
+    if (running) return { kind: 'joined' as const, scan: scanRow(running) }
+    const created = await tx.xScan.create({ data: { id: scanId(), handle, symbol, status: 'running', provider: FINISH_PROVIDER, requestedBy: r.requestedBy, isInternal: r.isInternal, note: 'Labeling the posts still to label', startedAt: new Date(nowMs), reservedUsd: 0 } })
+    return { kind: 'opened' as const, id: created.id }
+  }, { maxWait: 15_000, timeout: 20_000 })
+}
+
+/** Release a finish's lease. */
+export async function closeFinish(id: string): Promise<void> {
+  await prisma.xScan.deleteMany({ where: { id, provider: FINISH_PROVIDER } })
 }
 
 /** Rows a free "finish" opens (review R11): never a scan, never a lookup, never coverage. */

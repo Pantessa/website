@@ -54,7 +54,7 @@ export const RESCAN_OVERLAP_MS = 60 * 60 * 1000
 
 export type StoreApi = Pick<
   typeof Store,
-  'getHandle' | 'saveProfile' | 'savePosts' | 'postsFor' | 'newestPostId' | 'labelsFor' | 'saveLabels' | 'latestScan' | 'startScan' | 'updateScan' | 'openScan' | 'markMissing' | 'markProtected' | 'finishedScans'
+  'getHandle' | 'saveProfile' | 'savePosts' | 'postsFor' | 'newestPostId' | 'labelsFor' | 'saveLabels' | 'latestScan' | 'startScan' | 'updateScan' | 'openScan' | 'markMissing' | 'markProtected' | 'finishedScans' | 'openFinish' | 'closeFinish'
 >
 
 export type AllowanceFn = (requester: Requester, nowMs: number, ctx: { handle?: string; symbol?: string }) => Promise<Allowance>
@@ -136,19 +136,31 @@ function spentOf(source: XSource): number | null {
 }
 
 /** The cached posts in the window with no label for this symbol. */
-async function unlabeledIn(store: StoreApi, handle: string, symbol: string, fromMs: number): Promise<{ todo: XPost[]; have: StoredLabel[] }> {
-  const [have, posts] = await Promise.all([store.labelsFor(handle, symbol), store.postsFor(handle, fromMs)])
+/** A post whose batch failed to parse once (in an earlier request) is marked with this model; a second failure gives it UNPARSED_MODEL (review R11b). */
+export const UNPARSED_ONCE_MODEL = 'unparsed-1'
+export const UNPARSED_MODEL = 'unparsed'
+
+async function unlabeledIn(store: StoreApi, handle: string, symbol: string, fromMs: number): Promise<{ todo: XPost[]; have: StoredLabel[]; failedOnce: Set<string> }> {
+  const [all, posts] = await Promise.all([store.labelsFor(handle, symbol), store.postsFor(handle, fromMs)])
+  // A post that failed to parse once is still to label (one more try, in a later request).
+  const failedOnce = new Set(all.filter((l) => l.model === UNPARSED_ONCE_MODEL).map((l) => l.postId))
+  const have = all.filter((l) => !failedOnce.has(l.postId))
   const labeled = new Set(have.map((l) => l.postId))
-  return { todo: posts.filter((p) => !labeled.has(p.id)), have }
+  return { todo: posts.filter((p) => !labeled.has(p.id)), have, failedOnce }
 }
 
 /** Label `todo` within the deadline and save what came back. */
-async function labelAndSave(deps: ScanDeps, todo: XPost[], symbol: string, deadlineMs: number): Promise<{ rows: StoredLabel[]; unlabeled: number }> {
+async function labelAndSave(deps: ScanDeps, todo: XPost[], symbol: string, deadlineMs: number, failedOnce: ReadonlySet<string> = new Set()): Promise<{ rows: StoredLabel[]; unlabeled: number }> {
   if (!todo.length) return { rows: [], unlabeled: 0 }
   const res = await deps.label(todo, symbol, { deadlineMs, now: deps.now })
   const rows: StoredLabel[] = res.labels.map((l) => ({ ...l.label, postId: l.postId, symbol, origin: 'scan', model: res.model }))
-  if (rows.length) await deps.store.saveLabels(rows)
-  return { rows, unlabeled: res.unlabeled.length }
+  // A batch that never parsed (asked twice): its posts are marked, and on the second request that fails they are
+  // given `none` for good (review R11b: an account whose posts break the JSON answer cannot buy relabels forever).
+  const failed = new Set(res.failed ?? [])
+  const marks: StoredLabel[] = [...failed].map((postId) => ({ postId, symbol, stance: 'none', conviction: 0, quote: null, origin: 'scan', model: failedOnce.has(postId) ? UNPARSED_MODEL : UNPARSED_ONCE_MODEL }))
+  if (rows.length || marks.length) await deps.store.saveLabels([...rows, ...marks])
+  const settled = marks.filter((m) => m.model === UNPARSED_MODEL).length
+  return { rows: [...rows, ...marks.filter((m) => m.model === UNPARSED_MODEL)], unlabeled: res.unlabeled.length - settled }
 }
 
 export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps()): Promise<ScanOutcome> {
@@ -171,17 +183,26 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
   // A finished scan with posts still to label is FINISHED, for free: nothing
   // is read from X, no row opens, no allowance is spent. Works with no source.
   if (last?.status === 'done') {
-    const { todo, have } = await unlabeledIn(store, handle, symbol, windowFrom)
+    const pending = await unlabeledIn(store, handle, symbol, windowFrom)
     const fresh = !!last.finishedAt && nowMs - last.finishedAt < RESCAN_AFTER_MS
-    if (todo.length && (fresh || !source)) {
-      const { rows, unlabeled } = await labelAndSave(deps, todo, symbol, deadlineMs)
-      const calls = [...have, ...rows].filter((l) => l.stance !== 'none').length
+    if (pending.todo.length && (fresh || !source)) {
+      // The same lock as a scan (review R11a): a second request joins, it does not label the same posts again.
+      const lease = await store.openFinish({ handle, symbol, requestedBy: requester, isInternal: internal, nowMs })
+      if (lease.kind === 'joined') return { kind: 'joined', scan: lease.scan }
       try {
-        await store.updateScan(last.id, { callsFound: calls, note: doneNote({ calls, postsRead: last.postsRead, labeled: have.length + rows.length, toLabel: have.length + todo.length, unlabeled }) })
-      } catch {
-        /* the labels are saved; the note is a courtesy */
+        // Read again under the lease: a finish that just ended may have labeled them.
+        const { todo, have, failedOnce } = await unlabeledIn(store, handle, symbol, windowFrom)
+        const { rows, unlabeled } = await labelAndSave(deps, todo, symbol, deadlineMs, failedOnce)
+        const calls = [...have, ...rows].filter((l) => l.stance !== 'none').length
+        try {
+          await store.updateScan(last.id, { callsFound: calls, note: doneNote({ calls, postsRead: last.postsRead, labeled: have.length + rows.length, toLabel: have.length + todo.length, unlabeled }) })
+        } catch {
+          /* the labels are saved; the note is a courtesy */
+        }
+        return { kind: 'done', scanId: last.id, unlabeled }
+      } finally {
+        await store.closeFinish(lease.id).catch(() => undefined)
       }
-      return { kind: 'done', scanId: last.id, unlabeled }
     }
     if (fresh) return { kind: 'done', scanId: last.id, unlabeled: 0 }
   }
@@ -257,9 +278,9 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
     // What this scan covered goes on its row (review R8): the record says how far back it read, never the chart's window.
     await store.updateScan(scan.id, { postsRead, costUsd: cost() || found.costUsd, note: readNote, truncated: found.truncated, oldestPostAt: found.oldestPostAt })
 
-    const { todo, have } = await unlabeledIn(store, handle, symbol, windowFrom)
+    const { todo, have, failedOnce } = await unlabeledIn(store, handle, symbol, windowFrom)
     if (todo.length) await store.updateScan(scan.id, { note: `Labeling ${plural(todo.length, 'post')}` })
-    const { rows, unlabeled } = await labelAndSave(deps, todo, symbol, deadlineMs)
+    const { rows, unlabeled } = await labelAndSave(deps, todo, symbol, deadlineMs, failedOnce)
     const calls = [...have, ...rows].filter((l) => l.stance !== 'none').length
     await store.updateScan(scan.id, {
       status: 'done',

@@ -13,7 +13,8 @@ import { chartPairFor } from '@/lib/charts'
 import { marketFor, type ResolveFn } from '@/lib/called-it/market'
 import { addPost, runScan, type AddDeps, type ScanDeps } from '@/lib/called-it/scan'
 import { GUEST_ADDS_PER_DAY, ADDS_PER_MINUTE, TWITTER_EPOCH_MS, type PostRead, type XPost } from '@/lib/called-it/spec'
-import type { LabelResult } from '@/lib/called-it/classify'
+import { postForPrompt, readAnswer, type LabelResult } from '@/lib/called-it/classify'
+import { PROMPT_POST_MAX } from '@/lib/called-it/spec'
 import { GUEST_LOOKUPS_PER_DAY, X_POST_COST_USD, X_USER_COST_USD, type XSource } from '@/lib/called-it/spec'
 import { XApiSource, mapXPost } from '@/lib/called-it/source/x-api'
 import { mapSyndication } from '@/lib/called-it/source/by-id'
@@ -29,6 +30,14 @@ const src = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 const syncResolve: ResolveFn = async (s) => chartPairFor(s)
 
 export function calledFixPins(check: Check): void {
+  // R11c: a long post is clamped for the model; its quote is still checked against the whole post
+  {
+    const long = `${'word '.repeat(5000)}BTC to 200k by June, I am all in.`
+    const sent = postForPrompt(long)
+    const read = readAnswer(JSON.stringify([{ i: 1, stance: 'bull', conviction: 3, quote: 'BTC to 200k by June' }]), [{ id: '1', text: long }])
+    check(`fix R11c: a 25,000-character post goes to the model as at most ${PROMPT_POST_MAX} characters (+ " ..."), and a quote from its unsent tail still checks against the whole post`, long.length > 25_000 && sent.length <= PROMPT_POST_MAX + 4 && sent.endsWith(' ...') && read?.[0].label.stance === 'bull', `${sent.length}`)
+  }
+
   // R9: the mappers carry the author's user id
   {
     const id = '1585341984679469056'
@@ -441,6 +450,37 @@ export async function calledFixPinsDb(check: Check): Promise<void> {
       const one = await refreshGone(posts.map((p) => p.id), { read: async (id) => (id === posts[0].id ? { ok: false, reason: 'gone' } : { ok: false, reason: 'unavailable' }) })
       const marked2 = await prisma.xPost.findMany({ where: { handle: H, goneAt: { not: null } } })
       check('fix R10: a pass where all 4 posts read gone marks none (the endpoint changed); a pass where 1 of 4 does marks that one', all.checked === 4 && all.gone.length === 0 && all.refusedSpike === 4 && marked1 === 0 && one.gone.join() === posts[0].id && marked2.length === 1 && marked2[0].postId === posts[0].id, JSON.stringify({ all, one, marked1 }))
+    }
+
+    // ── R11: the free finish path ──
+    {
+      const { runScan: run } = await import('@/lib/called-it/scan')
+      const H = `${FIX_PREFIX}f${FIX_TAG}`
+      const posts = Array.from({ length: 6 }, (_, k) => ({ ...pinPost(H, 10 + k, 900 + k, k % 2 ? `Buying more $BTC ${k}` : `words ${k}`), source: 'x-api' as const }))
+      await Store.savePosts(posts)
+      await prisma.xScan.create({ data: { id: `xs_zzpinq${FIX_TAG}f`, handle: H, symbol: 'BTC', status: 'done', provider: 'x-api', isInternal: true, requestedBy: 'ip:zzpinfixf', postsRead: 6, windowFrom: new Date(Date.now() - 365 * DAY_MS), windowTo: new Date(), startedAt: new Date(), finishedAt: new Date() } })
+      let calls = 0
+      const slow: ScanDeps['label'] = async (ps) => {
+        calls++
+        await new Promise((r) => setTimeout(r, 400))
+        return { labels: ps.map((p) => ({ postId: p.id, label: /Buying/.test(p.text) ? { stance: 'bull' as const, conviction: 2 as const, quote: 'Buying more' } : { stance: 'none' as const, conviction: 0 as const, quote: null } })), unlabeled: [], model: 'injected' }
+      }
+      const fdeps = (label: ScanDeps['label']) => ({ store: Store as unknown as ScanDeps['store'], source: null, label, allowance: async () => ({ ok: true as const, scansLeft: 1, postCap: 400, usdLeft: 10 }), now: Date.now })
+      const [a, b] = await Promise.all([run({ handle: H, symbol: 'BTC', requester: 'ip:zzpinfixf1', internal: true }, fdeps(slow)), run({ handle: H, symbol: 'BTC', requester: 'ip:zzpinfixf2', internal: true }, fdeps(slow))])
+      const leases = await prisma.xScan.count({ where: { handle: H, provider: 'finish' } })
+      check('fix R11a: two "finish" requests at once on one record label its posts ONCE: one runs, the other joins, and the lease is gone after', calls === 1 && [a.kind, b.kind].sort().join() === 'done,joined' && leases === 0 && (await Store.labelsFor(H, 'BTC')).length === 6, `calls=${calls} ${a.kind}/${b.kind} leases=${leases}`)
+      // R11b: a batch that never parses, request after request
+      const H2 = `${FIX_PREFIX}u${FIX_TAG}`
+      await Store.savePosts(posts.map((p, k) => ({ ...p, id: idAt(p.postedAt, 950 + k), handle: H2 })))
+      await prisma.xScan.create({ data: { id: `xs_zzpinq${FIX_TAG}u`, handle: H2, symbol: 'BTC', status: 'done', provider: 'x-api', isInternal: true, requestedBy: 'ip:zzpinfixu', postsRead: 6, windowFrom: new Date(Date.now() - 365 * DAY_MS), windowTo: new Date(), startedAt: new Date(), finishedAt: new Date() } })
+      let tries = 0
+      const broken: ScanDeps['label'] = async (ps) => (tries++, { labels: [], unlabeled: ps.map((p) => p.id), failed: ps.map((p) => p.id), model: 'injected' })
+      const u1 = await run({ handle: H2, symbol: 'BTC', requester: 'ip:zzpinfixu', internal: true }, fdeps(broken))
+      const after1 = await prisma.xCall.findMany({ where: { postId: { in: posts.map((_, k) => idAt(posts[k].postedAt, 950 + k)) } } })
+      const u2 = await run({ handle: H2, symbol: 'BTC', requester: 'ip:zzpinfixu', internal: true }, fdeps(broken))
+      const after2 = await prisma.xCall.findMany({ where: { postId: { in: after1.map((r) => r.postId) } } })
+      const u3 = await run({ handle: H2, symbol: 'BTC', requester: 'ip:zzpinfixu', internal: true }, fdeps(broken))
+      check('fix R11b: a post whose batch failed to parse twice across requests is given `none` (model unparsed) and is never sent again', u1.kind === 'done' && u1.unlabeled === 6 && after1.length === 6 && after1.every((r) => r.model === 'unparsed-1') && u2.kind === 'done' && u2.unlabeled === 0 && after2.every((r) => r.model === 'unparsed' && r.stance === 'none') && u3.kind === 'done' && tries === 2, `tries=${tries} u1=${JSON.stringify(u1)} u2=${JSON.stringify(u2)}`)
     }
   } finally {
     const left = await cleanFix(prisma)

@@ -17,7 +17,7 @@
 // never calls a model.
 import { modelText, modelLabel } from '@/lib/markets-ai-model'
 import { fixturePosts, FIXTURE_HANDLE } from './fixture'
-import { fakeModeOn, quoteIsFromPost, type CallLabel, type XPost } from './spec'
+import { PROMPT_POST_MAX, fakeModeOn, quoteIsFromPost, type CallLabel, type XPost } from './spec'
 import { canonicalSymbol, isMarketProxy } from './terms'
 import { symbolName } from '@/lib/markets'
 
@@ -34,8 +34,10 @@ export const NONE: CallLabel = { stance: 'none', conviction: 0, quote: null }
 export interface LabelResult {
   /** One per post that got a label (`none` included). */
   labels: { postId: string; label: CallLabel }[]
-  /** Posts left unlabeled (their batch never parsed). A later scan tries again. */
+  /** Posts left unlabeled (their batch never parsed, or the time ran out first). A later scan tries again. */
   unlabeled: string[]
+  /** Of those, the posts whose batch WAS asked twice and never parsed (review R11): the scan counts them across requests. */
+  failed?: string[]
   /** What labeled them: the model id, `keywords`, or `fixture`. */
   model: string
 }
@@ -69,9 +71,15 @@ export function systemPrompt(): string {
   ].join('\n')
 }
 
-/** A post's text as it goes to the model: one line, and it can never close (or open) the data block. */
+/**
+ * A post's text as it goes to the model: one line, it can never close (or
+ * open) the data block, and at most PROMPT_POST_MAX characters (review R11c:
+ * X allows 25,000, and thirty of those overflow a batch so it fails on every
+ * try). The quote is still checked against the WHOLE post.
+ */
 export function postForPrompt(text: string): string {
-  return text.replace(/<\s*\/?\s*posts\s*>/gi, '[posts]').replace(/\s+/g, ' ').trim()
+  const flat = text.replace(/<\s*\/?\s*posts\s*>/gi, '[posts]').replace(/\s+/g, ' ').trim()
+  return flat.length > PROMPT_POST_MAX ? `${flat.slice(0, PROMPT_POST_MAX).trimEnd()} ...` : flat
 }
 
 export function userPrompt(posts: readonly Pick<XPost, 'text'>[], symbol: string): string {
@@ -213,12 +221,14 @@ export async function labelPosts(posts: readonly XPost[], symbol: string, deps: 
   const batches: XPost[][] = []
   for (let k = 0; k < posts.length; k += LABEL_BATCH) batches.push(posts.slice(k, k + LABEL_BATCH))
 
+  const tries = new Map<XPost[], number>()
   const runBatch = async (batch: XPost[]): Promise<ReturnType<typeof readAnswer>> => {
     const user = userPrompt(batch, symbol)
     let read: ReturnType<typeof readAnswer> = null
     for (let attempt = 0; attempt < 2 && !read; attempt++) {
       const left = deadline - now()
       if (Number.isFinite(deadline) && (left <= 0 || left < minCall)) break
+      tries.set(batch, attempt + 1)
       let raw: string | null = null
       try {
         raw = await model({ system, user, maxTokens: 4000, signal: Number.isFinite(left) ? AbortSignal.timeout(Math.max(1, left)) : undefined })
@@ -233,9 +243,13 @@ export async function labelPosts(posts: readonly XPost[], symbol: string, deps: 
 
   const labels: LabelResult['labels'] = []
   const unlabeled: string[] = []
+  const failed: string[] = []
   answers.forEach((read, k) => {
     if (read) labels.push(...read)
-    else unlabeled.push(...batches[k].map((p) => p.id))
+    else {
+      unlabeled.push(...batches[k].map((p) => p.id))
+      if ((tries.get(batches[k]) ?? 0) >= 2) failed.push(...batches[k].map((p) => p.id))
+    }
   })
-  return { labels, unlabeled, model: deps.model ? 'injected' : modelLabel() }
+  return { labels, unlabeled, failed, model: deps.model ? 'injected' : modelLabel() }
 }
