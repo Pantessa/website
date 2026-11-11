@@ -67,6 +67,7 @@ export type InferenceSurface =
   | 'markets-ask'
   | 'markets-explain'
   | 'mcp-lint'
+  | 'called-it'
 
 export interface InferenceCallRecord {
   surface: InferenceSurface

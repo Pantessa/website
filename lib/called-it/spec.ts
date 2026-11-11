@@ -124,7 +124,8 @@ export interface CalledRecord {
 }
 
 export type RecordResponse =
-  | { status: 'ready'; record: CalledRecord }
+  /** `unlabeled` (lane JUDGE, round 2): cached posts in the window still waiting for a label; present only when > 0. Another scan request finishes them for free. */
+  | { status: 'ready'; record: CalledRecord; unlabeled?: number }
   /** Nobody has scanned this handle on this symbol. `canScan` false carries the reason. */
   | { status: 'unscanned'; handle: string; symbol: string; canScan: boolean; reason?: string }
   | { status: 'scanning'; handle: string; symbol: string; scanId: string; progress: string }
