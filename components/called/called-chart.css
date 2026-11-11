@@ -201,6 +201,8 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
   .xcc-row__nums { grid-column: 1 / -1; }
   .xcc-row__side { padding: 0 4px 6px 8px; justify-content: space-between; }
   .xcc-row__likes { min-width: 0; margin-right: auto; }
+  .xcc-add__k { flex-basis: 100%; }
+  .xcc-add__input { flex: 1 1 140px; }
   .xcc__tools .xcc-btn { flex: 1 1 auto; }
   .xcc-share { margin-left: 0; flex: 1 1 auto; }
   .xcc-share > .xcc-btn { width: 100%; }

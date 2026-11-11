@@ -614,8 +614,10 @@ export function tallyLabel(record: Pick<CalledRecord, 'handle' | 'symbol' | 'sid
   const wrapWidth = Math.max(140, Math.floor(pane.width - PANE_KEEP.logoWidth - PANE_KEEP.edge - 12))
   const where = `pantessa.com${recordHref(record.handle, record.symbol, record.side)}`
   const coverage = pane.width >= CARDS_MIN_PANE_W ? record.words.coverage : null
-  // Each sentence starts its own line (a count is never split from its own words by another sentence); the address joins the standing line when both fit.
-  const last = width(`${record.words.standing} ${where}`) <= wrapWidth ? [`${record.words.standing} ${where}`] : [record.words.standing, where]
+  // Each sentence starts its own line (a count is never split from its own words by another sentence). The address joins
+  // the standing line when both fit, takes a line of its own when it fits alone, and is left out when it would have to
+  // be broken (half an address is no address; the strip's Share has the whole one).
+  const last = width(`${record.words.standing} ${where}`) <= wrapWidth ? [`${record.words.standing} ${where}`] : width(where) <= wrapWidth ? [record.words.standing, where] : [record.words.standing]
   const parts = [record.words.headline, ...(coverage ? [coverage] : []), ...(record.words.added ? [record.words.added] : []), ...last]
   const lines = parts.flatMap((p) => wrapWords(p, wrapWidth, width, 4))
   return { text: lines.join('\n'), lines: lines.length, fontPx, keepBottom: lines.length * fontPx + 22 }

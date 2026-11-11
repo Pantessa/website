@@ -195,7 +195,9 @@ export function calledChartPins(check: Check): void {
   )
   check(
     'called chart tally: the pane itself carries the record\'s own headline and standing line, word for word, and where the record lives, so every picture of the pins holds the full count and "Not verified"',
-    tShape.shape === 'anchored_text' && label.text.replace(/\n/g, ' ').includes(rec.words.headline) && label.text.replace(/\n/g, ' ').includes(STANDING_NOT_VERIFIED) && label.text.replace(/\n/g, ' ').includes(`pantessa.com${recordHref(rec.handle, 'BTC')}`) && tallyLabel(record('bear'), LAPTOP).text.includes('side=bear') && label.keepBottom > 20 && label.lines <= 3 && tallyLabel(rec, PHONE).lines > label.lines && tallyLabel(rec, PHONE).lines <= 8 && tallyLabel(rec, PHONE).fontPx < label.fontPx && tShape.overrides?.wordWrap === false,
+    tShape.shape === 'anchored_text' && label.text.replace(/\n/g, ' ').includes(rec.words.headline) && label.text.replace(/\n/g, ' ').includes(STANDING_NOT_VERIFIED) && label.text.replace(/\n/g, ' ').includes(`pantessa.com${recordHref(rec.handle, 'BTC')}`) && tallyLabel(record('bear'), LAPTOP).text.includes('side=bear') && label.keepBottom > 20 && label.lines <= 3 && tallyLabel(rec, PHONE).lines > label.lines && tallyLabel(rec, PHONE).lines <= 8 && tallyLabel(rec, PHONE).fontPx < label.fontPx && tShape.overrides?.wordWrap === false &&
+      // An address is whole or absent: on a pane too narrow for it on one line it is left out, never broken.
+      [PHONE, { width: 200, height: 372 }, { width: 330, height: 372 }, LAPTOP].every((pane) => { const lines = tallyLabel(rec, pane).text.split('\n'); const where = `pantessa.com${recordHref(rec.handle, 'BTC')}`; return lines.some((l) => l.includes(where)) || !lines.some((l) => l.includes('pantessa.com')) }) && tallyLabel(rec, { width: 200, height: 372 }).text.includes(STANDING_NOT_VERIFIED.split(' ')[0]),
     label.text,
   )
 
