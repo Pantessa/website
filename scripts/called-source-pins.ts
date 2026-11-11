@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs'
 import { TWITTER_EPOCH_MS, X_POST_COST_USD, X_USER_COST_USD, GUEST_SCANS_PER_DAY, PROVEN_SCANS_PER_DAY, type PostRead, type XPost } from '../lib/called-it/spec'
 import { mapOembed, mapSyndication, readPostByIdWith, safeAvatarUrl, syndicationToken, syndicationUrl } from '../lib/called-it/source/by-id'
 import { XApiError, XApiSource, buildSearchQueries, mapXPost, mapXUser, quoteTerm, searchUrl, xTime, X_QUERY_MAX } from '../lib/called-it/source/x-api'
+import { failNote } from '../lib/called-it/scan'
 import { FixtureSource, FIXTURE_NO_SUCH_HANDLE } from '../lib/called-it/source/fixture'
 import { FIXTURE_HANDLE, fixturePosts } from '../lib/called-it/fixture'
 import { allowanceFor, isProven, maxScanCostUsd } from '../lib/called-it/budget'
@@ -240,6 +241,19 @@ async function offlinePins(check: Check): Promise<void> {
     check('called-source x-api (fake fetch): a 429 after a page keeps what was read (billed) and stops truncated, no retry', part.posts.length === 1 && part.truncated && page === 2)
   }
   {
+    // 402 "credits depleted" (X's real answer on 2026-11-11 with a valid key and no credits): named, one request, no retry
+    {
+      let n = 0
+      const broke = new XApiSource({ bearer: SECRET, pageGapMs: 0, now: () => NOWISH, fetch: fakeFetch(() => { n++; return { status: 402, body: { detail: 'credits depleted', status: 402, title: 'Payment Required', type: 'https://api.x.com/2/problems/credits-depleted' } } }) })
+      let e: unknown = null
+      try {
+        await broke.search({ handle: 'elonmusk', terms: ['$BTC'], fromMs: 0, toMs: NOWISH, cap: 400 })
+      } catch (err) {
+        e = err
+      }
+      check("called-source x-api (fake fetch): X's 402 \"credits depleted\" is its own kind (no-credits), after exactly one request, and the scan words it as spent credits, not as X being down", e instanceof XApiError && e.kind === 'no-credits' && e.status === 402 && n === 1 && /credits/.test(failNote(e)) && !/did not answer/.test(failNote(e)) && failNote(new XApiError('unavailable', 'X did not answer (HTTP 500).', 500)) === 'Stopped: the scan hit an error before it finished.', e instanceof Error ? `${(e as XApiError).kind} · ${failNote(e)}` : 'no throw')
+    }
+
     // the bearer is never in an error, whatever X or the network says
     const errs: string[] = []
     for (const a of [{ status: 401, body: { detail: `bad token ${SECRET}` } }, { status: 403, body: { detail: SECRET } }, { status: 500, body: SECRET }, { status: 400, body: { errors: [{ message: SECRET }] } }, { status: 0, throws: true }, { status: 429, body: SECRET }] as FakeRes[]) {
@@ -389,7 +403,8 @@ async function dbPins(check: Check): Promise<void> {
     await store.updateScan(fresh.scan.id, { status: 'done', finished: true })
     await store.updateScan(ja.scan.id, { status: 'refused', finished: true })
 
-    // the requester's count
+    // the requester's count (the stale row above failed with nothing read: the house's failure, not the visitor's scan)
+    await prisma.xScan.create({ data: { id: `xs_zzpin${tag}half`, handle: H, symbol: 'ZZHALF', status: 'failed', postsRead: 5, isInternal: true, requestedBy: reqr, startedAt: new Date(now - 60_000), finishedAt: new Date(now) } })
     const count = await store.scansToday(reqr, now)
     const savedFake = process.env.XCALLS_FAKE
     process.env.XCALLS_FAKE = '1'
@@ -397,7 +412,7 @@ async function dbPins(check: Check): Promise<void> {
     const allowFake = await scanAllowance(reqr, now)
     if (savedFake === undefined) delete process.env.XCALLS_FAKE
     else process.env.XCALLS_FAKE = savedFake
-    check('called-source store: scansToday counts the requester\'s opened scans (not joined, not refused); under XCALLS_FAKE internal runs do not count, so the harness can scan run after run', count === 3 && countFake === 0 && (allowFake.ok || (allowFake as { over: string }).over === 'house'), `count=${count} fake=${countFake}`)
+    check('called-source store: scansToday counts the requester\'s scans that ran (done, running, or failed AFTER reading posts), never a joined or refused one and never one that failed before it read a post (X down or the credits spent is not the visitor\'s scan); under XCALLS_FAKE internal runs do not count, so the harness can scan run after run', count === 3 && countFake === 0 && (allowFake.ok || (allowFake as { over: string }).over === 'house'), `count=${count} fake=${countFake}`)
 
     // refreshGone
     await prisma.xPost.updateMany({ where: { postId: { in: [ids[1], ids[2]] } }, data: { readAt: new Date(now - 2 * 86_400_000) } })
