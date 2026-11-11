@@ -11,9 +11,10 @@
 import { loadCandleSeries } from '@/lib/candles-server'
 import type { Candle } from '@/lib/charts'
 import * as Store from './store'
-import { scansAvailable } from './source'
+import { refreshGone, scansAvailable } from './source'
+import { scanAllowance } from './budget'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts, fixtureServed } from './fixture'
-import { RUNNING_STALE_MS, scanNext, storeAllowance, type Allowance, type StoreApi } from './scan'
+import { RUNNING_STALE_MS, scanNext, scanWindowFrom, type AllowanceFn, type StoreApi } from './scan'
 import { POST_ID_RE, buildRecord, normalizeHandle, normalizeSide, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
 
 export const SYMBOL_RE = /^[A-Za-z0-9.:^-]{1,24}$/
@@ -34,12 +35,12 @@ export interface RecordAnswer {
 }
 
 export interface RecordDeps {
-  store: Pick<StoreApi, 'getHandle' | 'postsFor' | 'labelsFor' | 'latestScan' | 'spentTodayUsd' | 'scansToday'>
+  store: Pick<StoreApi, 'getHandle' | 'postsFor' | 'labelsFor' | 'latestScan'>
   candles: (symbol: string) => Promise<Candle[] | null>
   scansAvailable: () => boolean
-  allowance?: (requester: Requester, nowMs: number) => Promise<Allowance>
+  allowance?: AllowanceFn
   /** Re-read stale posts by id after the answer (lane SOURCE's refreshGone). */
-  refreshGone?: (postIds: readonly string[]) => Promise<void>
+  refreshGone?: (postIds: readonly string[]) => Promise<unknown>
   now: () => number
 }
 
@@ -49,7 +50,7 @@ async function loadDaily(symbol: string): Promise<Candle[] | null> {
 }
 
 export function defaultRecordDeps(): RecordDeps {
-  return { store: Store, candles: loadDaily, scansAvailable, allowance: storeAllowance(Store), now: Date.now }
+  return { store: Store, candles: loadDaily, scansAvailable, allowance: scanAllowance, refreshGone, now: Date.now }
 }
 
 export function parsePins(raw: unknown): string[] {
@@ -111,8 +112,9 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
     return { http: 200, body: { status: 'scanning', handle, symbol, scanId: scan.id, progress: scan.note ?? `Reading @${handle}'s posts about ${symbol}` } }
   }
 
-  const hasAdded = labels.some((l) => l.origin === 'added' && l.stance !== 'none')
-  if (scan?.status !== 'done' && !hasAdded) {
+  // A pasted call, or calls an earlier scan found (a later re-scan may have failed), still make a record.
+  const hasCalls = labels.some((l) => l.stance !== 'none')
+  if (scan?.status !== 'done' && !hasCalls) {
     let canScan = deps.scansAvailable()
     let reason: string | undefined
     if (!canScan) reason = 'Scans are not switched on on this server. One pasted post still works.'
@@ -121,7 +123,7 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
       reason = `@${handle}'s posts are protected, so they cannot be read.`
     } else if (q.requester && deps.allowance) {
       try {
-        const a = await deps.allowance(q.requester, nowMs)
+        const a = await deps.allowance(q.requester, nowMs, { handle, symbol })
         if (!a.ok) {
           canScan = false
           reason = a.reason
@@ -179,5 +181,8 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
       /* outside a request (a script): skip */
     }
   }
-  return { http: 200, body: { status: 'ready', record } }
+  // Posts kept but not yet labeled for this symbol (a scan that ran out of time): the UI offers to finish them, free.
+  const winFrom = Math.max(fromMs, scanWindowFrom(nowMs))
+  const unlabeled = cached.filter((p) => p.postedAt >= winFrom && !byPost.has(p.id)).length
+  return { http: 200, body: unlabeled > 0 ? { status: 'ready', record, unlabeled } : { status: 'ready', record } }
 }

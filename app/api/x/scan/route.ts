@@ -3,7 +3,7 @@
 // Same-origin JSON only. The scan runs inside the request (lib/called-it/scan runScan).
 import { NextResponse } from 'next/server'
 import { readRecord, SYMBOL_RE } from '@/lib/called-it/record'
-import { CROSS_SITE, isInternalRun, readWriteBody, requesterOf, runScan } from '@/lib/called-it/scan'
+import { CROSS_SITE, SCAN_TIME_BUDGET_MS, isInternalRun, readWriteBody, requesterOf, runScan } from '@/lib/called-it/scan'
 import { getScan } from '@/lib/called-it/store'
 import { FIXTURE_HANDLE } from '@/lib/called-it/fixture'
 import { resolveChartPair } from '@/lib/charts'
@@ -16,6 +16,8 @@ export const maxDuration = 60
 const json = (body: unknown, status: number) => NextResponse.json(body, { status, headers: { 'cache-control': 'no-store' } })
 
 export async function POST(req: Request) {
+  // The time budget runs from the start of the request: the function is killed at maxDuration and nothing after that runs.
+  const startedAt = Date.now()
   const body = await readWriteBody(req)
   if (body === 'cross-site') return json(CROSS_SITE, 403)
   if (!body) return json({ status: 'refused', reason: 'Send the handle and the market as JSON.', next: [{ label: 'Plot a handle', href: '/x' }] }, 400)
@@ -34,7 +36,7 @@ export async function POST(req: Request) {
 
   let outcome
   try {
-    outcome = await runScan({ handle, symbol: sym.toUpperCase(), requester, internal: isInternalRun(req) })
+    outcome = await runScan({ handle, symbol: sym.toUpperCase(), requester, internal: isInternalRun(req), deadlineMs: startedAt + SCAN_TIME_BUDGET_MS })
   } catch {
     return json({ status: 'refused', reason: 'The scan did not start. Try again in a moment.', next: [{ label: 'See handles already plotted', href: '/x' }] }, 503)
   }

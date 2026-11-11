@@ -22,6 +22,10 @@ import { canonicalSymbol, isMarketProxy } from './terms'
 import { symbolName } from '@/lib/markets'
 
 export const LABEL_BATCH = 30
+/** Batches in flight at once. 400 posts = 14 batches = 3 rounds, inside a 60 s function. */
+export const LABEL_POOL = 5
+/** A model call never gets less than this, and never more than the time left before the deadline. */
+const MIN_CALL_MS = 3_000
 /** Longest quote kept (a stance rarely needs more than a sentence). */
 export const QUOTE_MAX = 280
 
@@ -37,7 +41,7 @@ export interface LabelResult {
 }
 
 /** The model call, injectable so the pins can hand in hostile answers. Returns the raw text or null. */
-export type ModelFn = (call: { system: string; user: string; maxTokens: number }) => Promise<string | null>
+export type ModelFn = (call: { system: string; user: string; maxTokens: number; signal?: AbortSignal }) => Promise<string | null>
 
 export function labelsFaked(): boolean {
   return process.env.XCALLS_FAKE === '1' || modelMocked()
@@ -160,9 +164,30 @@ function fixtureLabelFor(p: Pick<XPost, 'handle' | 'text'>): CallLabel | null {
 export interface LabelDeps {
   /** Hand in a model (the pins do). Absent: the keyword labeler when faked, else the house model call. */
   model?: ModelFn
+  /** Absolute ms: no batch (and no retry) STARTS after it; a call in flight is cut off at it. Absent: no deadline. */
+  deadlineMs?: number
+  now?: () => number
+  /** Batches in flight at once (default LABEL_POOL). */
+  pool?: number
+  /** The least time a call is started with (default 3 s; the pins pass 0). */
+  minCallMs?: number
 }
 
 const houseModel: ModelFn = (call) => modelText({ ...call, surface: 'called-it' })
+
+/** Run `jobs` with at most `size` in flight; results keep the jobs' order. Pure over its callbacks; pinned. */
+export async function inPool<T>(jobs: readonly (() => Promise<T>)[], size: number): Promise<T[]> {
+  const out = new Array<T>(jobs.length)
+  let nextJob = 0
+  const worker = async () => {
+    while (nextJob < jobs.length) {
+      const k = nextJob++
+      out[k] = await jobs[k]()
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(size, jobs.length)) }, worker))
+  return out
+}
 
 export async function labelPosts(posts: readonly XPost[], symbol: string, deps: LabelDeps = {}): Promise<LabelResult> {
   if (!deps.model && labelsFaked()) {
@@ -174,24 +199,36 @@ export async function labelPosts(posts: readonly XPost[], symbol: string, deps: 
     }
   }
   const model = deps.model ?? houseModel
+  const now = deps.now ?? Date.now
+  const deadline = deps.deadlineMs ?? Infinity
+  const minCall = deps.minCallMs ?? MIN_CALL_MS
   const system = systemPrompt()
-  const labels: LabelResult['labels'] = []
-  const unlabeled: string[] = []
-  for (let k = 0; k < posts.length; k += LABEL_BATCH) {
-    const batch = posts.slice(k, k + LABEL_BATCH)
+  const batches: XPost[][] = []
+  for (let k = 0; k < posts.length; k += LABEL_BATCH) batches.push(posts.slice(k, k + LABEL_BATCH))
+
+  const runBatch = async (batch: XPost[]): Promise<ReturnType<typeof readAnswer>> => {
     const user = userPrompt(batch, symbol)
     let read: ReturnType<typeof readAnswer> = null
     for (let attempt = 0; attempt < 2 && !read; attempt++) {
+      const left = deadline - now()
+      if (Number.isFinite(deadline) && (left <= 0 || left < minCall)) break
       let raw: string | null = null
       try {
-        raw = await model({ system, user, maxTokens: 4000 })
+        raw = await model({ system, user, maxTokens: 4000, signal: Number.isFinite(left) ? AbortSignal.timeout(Math.max(1, left)) : undefined })
       } catch {
         raw = null
       }
       read = readAnswer(raw, batch)
     }
-    if (read) labels.push(...read)
-    else unlabeled.push(...batch.map((p) => p.id))
+    return read
   }
+  const answers = await inPool(batches.map((b) => () => runBatch(b)), deps.pool ?? LABEL_POOL)
+
+  const labels: LabelResult['labels'] = []
+  const unlabeled: string[] = []
+  answers.forEach((read, k) => {
+    if (read) labels.push(...read)
+    else unlabeled.push(...batches[k].map((p) => p.id))
+  })
   return { labels, unlabeled, model: deps.model ? 'injected' : modelLabel() }
 }
