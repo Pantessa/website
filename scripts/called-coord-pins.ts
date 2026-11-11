@@ -7,7 +7,15 @@ import { readFileSync } from 'node:fs'
 import type { Candle } from '../lib/charts'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts } from '../lib/called-it/fixture'
 import {
+  ADDED_MARK,
   DEAD_BAND,
+  DELETED_NOTE,
+  LABEL_CAVEAT,
+  addedLine,
+  coverageLine,
+  fakeModeOn,
+  fmtDay,
+  isFakeXUserId,
   JUDGE_DAYS,
   METHOD_LINE,
   PICK_MAX,
@@ -149,12 +157,40 @@ export function calledCoordPins(check: Check): void {
     'called-it links: the share landing is /x/<handle>/<SYMBOL> and the live chart is /t/<SYMBOL>?x=<handle>; the default side is left out of both',
     recordHref('cz_binance', 'btc') === '/x/cz_binance/BTC' && recordHref('cz_binance', 'BTC', 'bear') === '/x/cz_binance/BTC?side=bear' && chartHref('cz_binance', 'btc') === '/t/BTC?x=cz_binance' && chartHref('cz_binance', 'BTC', 'bull') === '/t/BTC?x=cz_binance&side=bull',
   )
+  // ── Review R1: a pasted post is shown and marked, never counted ──
+  const pasted: LabeledPost[] = posts.map((p, i) => (i === 1 || i === 3 ? { ...p, origin: 'added' as const } : p))
+  const mixed = buildRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC', side: 'all', profile: FIXTURE_PROFILE, verified: null, posts: pasted, candles: up, nowMs: NOW, scannedAt: NOW, postsRead: 11 })
+  const pasteOnly = buildRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC', side: 'all', profile: FIXTURE_PROFILE, verified: { at: NOW }, posts: posts.map((p) => ({ ...p, origin: 'added' as const })), candles: up, nowMs: NOW, scannedAt: null, postsRead: 0 })
+  check(
+    "called-it tally (review R1): the tally counts what the scan found. Two pasted posts among ten calls are listed and marked but the tally is eight; the rule never pins a pasted post while scanned calls exist; a record with NO scan has no tally at all (zero of everything), says so in its headline, has no coverage, and pins its pasted posts because there is nothing else to draw. Eight hand-picked posts can never read as \"8 calls, 8 missed\"",
+    mixed.calls.length === 10 && mixed.added === 2 && mixed.tally.total === 8 && mixed.bySide.bull.total + mixed.bySide.bear.total === 8 && mixed.scanned && mixed.calls.filter((x) => x.origin === 'added').every((x) => !x.picked) &&
+      mixed.words.headline.startsWith('@pantessa_test on BTC: 8 calls,') && mixed.words.added === '2 more posts were added by viewers. They are shown and not counted.' &&
+      pasteOnly.calls.length === 10 && pasteOnly.added === 10 && pasteOnly.tally.total === 0 && pasteOnly.tally.right === 0 && pasteOnly.tally.wrong === 0 && !pasteOnly.scanned && pasteOnly.coverage === null && pasteOnly.words.coverage === null && pasteOnly.words.added === null &&
+      pasteOnly.words.headline === '@pantessa_test on BTC: 10 posts added by a viewer. No scan yet, so no tally.' && pasteOnly.calls.some((x) => x.picked) && !/called it|missed/.test(pasteOnly.words.headline) &&
+      recordHeadline('a', 'ETH', 'all', tallyOf([]), { scanned: false, added: 1 }) === '@a on ETH: 1 post added by a viewer. No scan yet, so no tally.' && addedLine(1) === '1 more post was added by viewers. It is shown and not counted.',
+    `${mixed.tally.total}/${mixed.added} · ${pasteOnly.words.headline}`,
+  )
+  // ── Review R8: the record says what the scan read, not what the chart holds ──
+  const capped = buildRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC', side: 'all', profile: FIXTURE_PROFILE, verified: null, posts, candles: up, nowMs: NOW, scannedAt: NOW, postsRead: 400, coverage: { from: Date.UTC(2026, 7, 3), to: NOW, postsRead: 400, truncated: true } })
+  check(
+    'called-it coverage (review R8): a record carries what its scans read; a scan the cap ended early says how far back it got and that older posts were not read; with no coverage handed in it is the window and the posts read, not truncated; every line is ASCII',
+    capped.words.coverage === 'Read the newest 400 matching posts, back to 3 Aug 2026. Older posts were not read.' && capped.coverage?.truncated === true &&
+      coverageLine({ from: Date.UTC(2025, 10, 30), to: Date.UTC(2026, 10, 11), postsRead: 1, truncated: false }) === 'Read 1 matching post from 30 Nov 2025 to 11 Nov 2026.' && rec.coverage?.truncated === false && rec.coverage.postsRead === posts.length && rec.coverage.from === up[0].t * 1000 &&
+      fmtDay(Date.UTC(2026, 0, 1, 23, 59)) === '1 Jan 2026' && [capped.words.coverage ?? '', LABEL_CAVEAT, DELETED_NOTE, ADDED_MARK, addedLine(3)].every((x) => ASCII.test(x)) && /can be wrong/.test(LABEL_CAVEAT) && /model/.test(METHOD_LINE) && !/by its id/.test(METHOD_LINE),
+    capped.words.coverage ?? '',
+  )
+  // ── Review R6: one fence for fake mode, and a fake claim is recognisable in the data ──
+  check(
+    'called-it fake mode (review R6): on only with XCALLS_FAKE=1 AND off every Vercel deployment (production and preview both set VERCEL); a user id written by the fake sign-in is recognisable as one',
+    fakeModeOn({ XCALLS_FAKE: '1' }) && !fakeModeOn({}) && !fakeModeOn({ XCALLS_FAKE: '1', VERCEL: '1' }) && !fakeModeOn({ XCALLS_FAKE: '1', VERCEL: '1', VERCEL_ENV: 'preview' }) && !fakeModeOn({ XCALLS_FAKE: '1', VERCEL_ENV: 'production' }) && !fakeModeOn({ XCALLS_FAKE: 'true' }) &&
+      isFakeXUserId('fake-pantessa_me') && !isFakeXUserId('44196397') && !isFakeXUserId(null) && !isFakeXUserId(undefined),
+  )
   const ddl = read('prisma/ddl/2026-11-11-called-it.sql')
   const statements = ddl.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n').split(';').map((s) => s.trim()).filter(Boolean)
   const schema = read('prisma/schema.prisma')
   check(
-    'called-it DDL: eight statements, every one additive by the runner\'s own fence; the four tables are the four the schema maps',
-    statements.length === 8 && statements.every((s) => additiveRefusal(s) === null) && ['x_handles', 'x_posts', 'x_calls', 'x_scans'].every((t) => ddl.includes(`CREATE TABLE IF NOT EXISTS ${t} (`) && schema.includes(`@@map("${t}")`)),
+    'called-it DDL: sixteen statements (the four tables, then the review round\'s ledger columns), every one additive by the runner\'s own fence; the four tables are the four the schema maps',
+    statements.length === 16 && statements.every((s) => additiveRefusal(s) === null) && ['x_handles', 'x_posts', 'x_calls', 'x_scans'].every((t) => ddl.includes(`CREATE TABLE IF NOT EXISTS ${t} (`) && schema.includes(`@@map("${t}")`)),
     statements.map((s) => additiveRefusal(s)).filter(Boolean).join(' | '),
   )
 }

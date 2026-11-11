@@ -29,7 +29,7 @@ export const X_PAGE_GAP_MS = 1100
 export const X_TWEET_FIELDS = 'created_at,public_metrics,referenced_tweets,in_reply_to_user_id,lang,author_id,note_tweet'
 export const X_USER_FIELDS = 'profile_image_url,public_metrics,protected,verified'
 
-export type XApiErrorKind = 'rate-limited' | 'unauthorized' | 'bad-request' | 'unavailable'
+export type XApiErrorKind = 'rate-limited' | 'unauthorized' | 'no-credits' | 'bad-request' | 'unavailable'
 
 /** What went wrong talking to X, in our words. Never carries the bearer or X's body. */
 export class XApiError extends Error {
@@ -216,6 +216,8 @@ export class XApiSource implements XSource {
     const s = res.status
     if (s === 429) throw new XApiError('rate-limited', 'X says to slow down. Scans resume when its window resets.', s, resetAtOf(res, this.#now()))
     if (s === 401 || s === 403) throw new XApiError('unauthorized', `X refused this server's key (HTTP ${s}).`, s)
+    // 402 "credits depleted" (measured 2026-11-11): the key is good, the pay-per-use account has no credits left.
+    if (s === 402) throw new XApiError('no-credits', "X's reading credits for this server are spent (HTTP 402).", s)
     if (s === 400) throw new XApiError('bad-request', 'X refused the search as written (HTTP 400).', s)
     throw new XApiError('unavailable', `X did not answer (HTTP ${s}).`, s)
   }
