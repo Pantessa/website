@@ -13,9 +13,12 @@
 //   2. ../.vendor or ../../.vendor/tradingview/charting_library
 //                                the same, at the place this project keeps it
 //   3. TV_LIBRARY_TOKEN          a GitHub token that can read TV_LIBRARY_REPO
-//                                (default: the repo in tv-library.json): the
-//                                pinned commit is downloaded and unpacked.
-//                                This is how a Vercel build gets it.
+//                                (default: the repo in tv-library.json, a
+//                                PRIVATE mirror of TradingView's repository
+//                                with the same commits): the pinned commit is
+//                                downloaded and unpacked. This is how a
+//                                Vercel build gets it. The token needs
+//                                read-only access to that one repository.
 //   4. nothing                   says so in one line and exits 0. The build
 //                                ships no library and every chart is the
 //                                built-in one (lib/tv/config).
@@ -93,18 +96,19 @@ if (args.has('--check')) finish(installed(), installed() ? `ref ${installedRef()
 // Already there at the pinned release: nothing to do (a rebuild, a second worktree build).
 if (installed() && installedRef() === pin.ref && !args.has('--force')) finish(true, 'already at the pinned release')
 
-// 1 + 2: a checkout on this machine.
-const local = [process.env.TV_LIBRARY_DIR, join(root, '..', '.vendor', 'tradingview', 'charting_library'), join(root, '..', '..', '.vendor', 'tradingview', 'charting_library')].filter(Boolean)
+// 1 + 2: a checkout on this machine. TV_LIBRARY_LOCAL=off skips it (to
+// exercise the download a Vercel build does).
+const local = process.env.TV_LIBRARY_LOCAL === 'off' ? [] : [process.env.TV_LIBRARY_DIR, join(root, '..', '.vendor', 'tradingview', 'charting_library'), join(root, '..', '..', '.vendor', 'tradingview', 'charting_library')].filter(Boolean)
 for (const dir of local) {
   if (!existsSync(dir)) continue
   let head = pin.ref
   try {
-    head = execFileSync('git', ['-C', dir, 'rev-parse', '--short=7', 'HEAD'], { encoding: 'utf8' }).trim()
+    head = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
   } catch {
     /* not a git checkout: trust the pin */
   }
-  if (head !== pin.ref) say(`note: the local checkout is at ${head}, tv-library.json pins ${pin.ref}`)
-  if (installFrom(dir, head === pin.ref ? pin.ref : head, dir)) finish(true, 'local checkout')
+  if (head !== pin.ref) say(`note: the local checkout is at ${head.slice(0, 7)}, tv-library.json pins ${pin.ref.slice(0, 7)}`)
+  if (installFrom(dir, head, dir)) finish(true, 'local checkout')
 }
 
 // 3: download the pinned commit with a token.

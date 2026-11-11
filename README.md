@@ -387,7 +387,7 @@ The symbol page's chart runs on [TradingView Advanced Charts](https://www.tradin
 | Source | How |
 |---|---|
 | a checkout on the machine | `TV_LIBRARY_DIR=/path/to/charting_library`, or `../.vendor/tradingview/charting_library` |
-| a download (Vercel) | `TV_LIBRARY_TOKEN` = a GitHub token that reads `TV_LIBRARY_REPO` (default: the repo named in `tv-library.json`); the pinned commit is fetched |
+| a download (Vercel) | `TV_LIBRARY_TOKEN` = a GitHub token with read-only access to the repo named in `tv-library.json` (a private mirror of TradingView's repository, same commits; `TV_LIBRARY_REPO` overrides it); the pinned commit is fetched |
 | nothing | the build ships no library and every chart is the built-in one (TradingView's open-source Lightweight Charts) |
 
 `TV_LIBRARY=off npm run build` builds without it. Access to the library is by application to TradingView; a fork of this repository builds and runs without it.
