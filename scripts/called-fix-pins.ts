@@ -400,10 +400,13 @@ export async function calledFixPinsDb(check: Check): Promise<void> {
 
     // ── R19 + lane RECORD's note: who the public list shows ──
     {
+      let seq = 700
       const mkList = async (tag: string, o: { followers: number | null; claimed?: string; origin?: 'scan' | 'added'; hidden?: boolean; isProtected?: boolean }) => {
         const H = `${FIX_PREFIX}${tag}${FIX_TAG}`
+        seq++
         await prisma.xHandle.create({ data: { handle: H, name: H, followers: o.followers, xUserId: o.claimed ?? null, claimedXUserId: o.claimed ?? null, claimedAt: o.claimed ? new Date() : null, hiddenAt: o.hidden ? new Date() : null, isProtected: !!o.isProtected } })
-        const post = { ...pinPost(H, 30, 70, 'Buying here.'), source: 'x-api' as const }
+        // a post id of its own per handle (ids stamped in the same second with one seq would be ONE post)
+        const post = { ...pinPost(H, 30, seq, 'Buying here.'), source: 'x-api' as const }
         await Store.savePosts([post])
         await Store.saveLabels([{ postId: post.id, symbol: 'ETH', stance: 'bull', conviction: 2, quote: 'Buying here', model: 'pin', origin: o.origin ?? 'scan' }])
         await prisma.xScan.create({ data: { id: `xs_zzpinq${FIX_TAG}${tag}`, handle: H, symbol: 'ETH', status: 'done', provider: 'x-api', isInternal: false, requestedBy: 'ip:zzpinfixlist', windowFrom: new Date(Date.now() - 365 * DAY_MS), windowTo: new Date(), startedAt: new Date(), finishedAt: new Date() } })
@@ -423,6 +426,21 @@ export async function calledFixPinsDb(check: Check): Promise<void> {
       check(`fix R19: the list shows a handle over ${5000} followers and an owner-verified one; never a small one, an unknown count, a fake claim, a pasted-only record, a hidden or a protected handle`, has(big) && has(owner) && !has(small) && !has(unknown) && !has(fakeOwner) && !has(pasted) && !has(hidden) && !has(locked) && mine.find((r) => r.handle === owner)?.verified === true && mine.find((r) => r.handle === big)?.verified === false && mine.find((r) => r.handle === big)?.calls === 1, JSON.stringify(mine.map((r) => [r.handle.slice(-6), r.verified, r.calls])))
       const one = await withEnv({ XCALLS_FAKE: undefined }, () => Store.listPlotted({ limit: 1, symbol: 'ETH' }))
       check('fix R19: the list honors its limit', one.length <= 1)
+    }
+
+    // ── R10: gone means gone, so a spike of "gone" marks nothing ──
+    {
+      const { refreshGone } = await import('@/lib/called-it/source/refresh')
+      const H = `${FIX_PREFIX}d${FIX_TAG}`
+      const posts = Array.from({ length: 4 }, (_, k) => ({ ...pinPost(H, 50 + k, 80 + k, `old post ${k}`), source: 'x-api' as const }))
+      await Store.savePosts(posts)
+      await prisma.xPost.updateMany({ where: { handle: H }, data: { readAt: new Date(Date.now() - 2 * DAY_MS) } })
+      const all = await refreshGone(posts.map((p) => p.id), { read: async () => ({ ok: false, reason: 'gone' }) })
+      const marked1 = await prisma.xPost.count({ where: { handle: H, goneAt: { not: null } } })
+      await prisma.xPost.updateMany({ where: { handle: H }, data: { readAt: new Date(Date.now() - 2 * DAY_MS) } })
+      const one = await refreshGone(posts.map((p) => p.id), { read: async (id) => (id === posts[0].id ? { ok: false, reason: 'gone' } : { ok: false, reason: 'unavailable' }) })
+      const marked2 = await prisma.xPost.findMany({ where: { handle: H, goneAt: { not: null } } })
+      check('fix R10: a pass where all 4 posts read gone marks none (the endpoint changed); a pass where 1 of 4 does marks that one', all.checked === 4 && all.gone.length === 0 && all.refusedSpike === 4 && marked1 === 0 && one.gone.join() === posts[0].id && marked2.length === 1 && marked2[0].postId === posts[0].id, JSON.stringify({ all, one, marked1 }))
     }
   } finally {
     const left = await cleanFix(prisma)
@@ -452,6 +470,17 @@ function fakeX(answer: (url: string, n: number) => { status: number; body?: unkn
 const xUser = (handle: string) => ({ data: { id: '9300', name: handle, username: handle, protected: false, verified: false, public_metrics: { followers_count: 10 } } })
 
 export async function calledFixPinsXApi(check: Check): Promise<void> {
+  // R10: an empty 200 is not "gone"
+  {
+    const { readPostByIdWith } = await import('@/lib/called-it/source/by-id')
+    const e = mapSyndication('1585341984679469056', {})
+    const asked: string[] = []
+    const r = await readPostByIdWith('1585341984679469056', { fetch: fakeX((u) => (asked.push(u.includes('syndication') ? 'syn' : 'oembed'), u.includes('syndication') ? { status: 200, body: {} } : { status: 503 })).fetch })
+    const r404 = await readPostByIdWith('1585341984679469056', { fetch: fakeX(() => ({ status: 404 })).fetch })
+    const tomb = mapSyndication('1585341984679469056', { __typename: 'TweetTombstone' })
+    check('fix R10: X\'s empty `200 {}` is unavailable (it tries oEmbed next), never gone; only a 404 or X\'s own tombstone is gone', !e.ok && e.reason === 'unavailable' && !r.ok && r.reason === 'unavailable' && asked.join() === 'syn,oembed' && !r404.ok && r404.reason === 'gone' && !tomb.ok && tomb.reason === 'gone', `${JSON.stringify(r)} ${asked}`)
+  }
+
   // R4d: page 2 fails (500) after page 1 read 3 posts → those 3 come back truncated, billed, and the stop is named
   {
     const H = 'zz_pin_q_xapi'
