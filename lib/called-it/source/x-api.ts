@@ -158,7 +158,8 @@ export function mapXPost(handle: string, raw: unknown, authorId: string | null):
   const ownId = authorId ?? str(t.author_id)
   const isReply = refs.some((r) => r.type === 'replied_to') && !(replyTo && ownId && replyTo === ownId)
   const m = obj(t.public_metrics)
-  return { id, handle: handle.toLowerCase(), text, postedAt: created, likes: num(m?.like_count), replies: num(m?.reply_count), reposts: num(m?.retweet_count), isReply, source: 'x-api' }
+  const post: XPost & { xUserId: string | null } = { id, handle: handle.toLowerCase(), text, postedAt: created, likes: num(m?.like_count), replies: num(m?.reply_count), reposts: num(m?.retweet_count), isReply, source: 'x-api', xUserId: str(t.author_id) ?? authorId }
+  return post
 }
 
 /** A search with a deadline (review R4e): XSource's query plus the absolute ms after which no page is asked for. */

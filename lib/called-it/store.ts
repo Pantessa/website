@@ -14,7 +14,7 @@
 import { randomBytes } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
-import { fakeModeOn, type Requester, type ScanRow, type StoredLabel, type XPost, type XProfile } from './spec'
+import { LIST_MIN_FOLLOWERS, fakeModeOn, isFakeXUserId, type Requester, type ScanRow, type StoredLabel, type XPost, type XProfile } from './spec'
 
 export interface StoredHandle extends XProfile {
   isProtected: boolean
@@ -68,11 +68,30 @@ function scanRow(r: ScanDb): ScanRow {
   return { id: r.id, handle: r.handle, symbol: r.symbol, status, postsRead: r.postsRead, callsFound: r.callsFound, costUsd: r.costUsd, note: r.note, startedAt: r.startedAt.getTime(), finishedAt: ms(r.finishedAt) }
 }
 
-type PostDb = { postId: string; handle: string; text: string; postedAt: Date; likes: number | null; replies: number | null; reposts: number | null; isReply: boolean; source: string }
+type PostDb = { postId: string; handle: string; xUserId: string | null; text: string; postedAt: Date; likes: number | null; replies: number | null; reposts: number | null; isReply: boolean; source: string }
 
-function postOf(r: PostDb): XPost {
+/** A post as the store keeps it: X's fields plus the author's user id when a read named it (review R9). */
+export type StoredPost = XPost & { xUserId: string | null }
+
+function postOf(r: PostDb): StoredPost {
   const source = r.source === 'x-api' || r.source === 'fixture' ? r.source : 'syndication'
-  return { id: r.postId, handle: r.handle, text: r.text, postedAt: r.postedAt.getTime(), likes: r.likes, replies: r.replies, reposts: r.reposts, isReply: r.isReply, source }
+  return { id: r.postId, handle: r.handle, text: r.text, postedAt: r.postedAt.getTime(), likes: r.likes, replies: r.replies, reposts: r.reposts, isReply: r.isReply, source, xUserId: r.xUserId }
+}
+
+// ── The one "verified" rule (review R9) ─────────────────────────────────────
+
+/**
+ * A handle is Verified only while: the account itself claimed it, the claim's
+ * user id is still the handle's user id (a handle that changed hands loses
+ * it), and the claim is not a fake sign-in's outside fake mode (review R6).
+ * The record (lib/called-it/record verifiedOf) and the public list
+ * (listPlotted) both call this; nothing else decides it.
+ */
+export function claimVerified(row: { claimedXUserId: string | null; claimedAt: number | null; xUserId: string | null } | null, fake: boolean = fakeModeOn()): { at: number } | null {
+  if (!row?.claimedXUserId || !row.claimedAt) return null
+  if (isFakeXUserId(row.claimedXUserId) && !fake) return null
+  if (row.xUserId && row.xUserId !== row.claimedXUserId) return null
+  return { at: row.claimedAt }
 }
 
 // ── Handles ───────────────────────────────────────────────────────────────
@@ -113,11 +132,14 @@ export async function markProtected(handle: string): Promise<void> {
 /** Insert or refresh what X says about an account. Never touches the claim. */
 export async function saveProfile(profile: XProfile & { isProtected?: boolean }): Promise<void> {
   const handle = h(profile.handle)
+  // A null from X (oEmbed knows no id, no avatar, no followers) never replaces what we already know (review R9);
+  // a DIFFERENT non-null user id does: the handle has changed hands, and every check keyed on it follows.
+  const known = <T,>(v: T | null | undefined) => (v === null || v === undefined ? {} : null)
   const fields = {
-    xUserId: profile.xUserId,
+    ...(known(profile.xUserId) ?? { xUserId: profile.xUserId }),
     name: profile.name,
-    avatarUrl: profile.avatarUrl,
-    followers: profile.followers,
+    ...(known(profile.avatarUrl) ?? { avatarUrl: profile.avatarUrl }),
+    ...(known(profile.followers) ?? { followers: profile.followers }),
     isBlue: profile.blue,
     readAt: new Date(),
     // X answered for the account: it exists.
@@ -159,18 +181,19 @@ export async function claimHandle(handle: string, xUserId: string, profile?: Par
  * clears goneAt, and never changes the handle or the source a post was first
  * stored under (so a keyless refresh never turns a scanned post into a pasted one).
  */
-export async function savePosts(posts: readonly XPost[]): Promise<void> {
-  const rows = new Map<string, XPost>()
+export async function savePosts(posts: readonly (XPost & { xUserId?: string | null })[]): Promise<void> {
+  const rows = new Map<string, XPost & { xUserId?: string | null }>()
   for (const p of posts) rows.set(p.id, p)
   const list = [...rows.values()]
   for (let i = 0; i < list.length; i += 500) {
     const chunk = list.slice(i, i + 500)
     await prisma.$executeRaw`
-      INSERT INTO x_posts (post_id, handle, text, posted_at, likes, replies, reposts, is_reply, source, read_at)
-      SELECT t.post_id, t.handle, t.text, t.posted_at, t.likes, t.replies, t.reposts, t.is_reply, t.source, now()
+      INSERT INTO x_posts (post_id, handle, x_user_id, text, posted_at, likes, replies, reposts, is_reply, source, read_at)
+      SELECT t.post_id, t.handle, NULLIF(t.x_user_id, ''), t.text, t.posted_at, t.likes, t.replies, t.reposts, t.is_reply, t.source, now()
       FROM unnest(
         ${chunk.map((p) => p.id)}::text[],
         ${chunk.map((p) => h(p.handle))}::text[],
+        ${chunk.map((p) => (typeof p.xUserId === 'string' && /^\d{1,25}$|^fake-/.test(p.xUserId) ? p.xUserId : ''))}::text[],
         ${chunk.map((p) => p.text)}::text[],
         ${chunk.map((p) => new Date(p.postedAt).toISOString())}::timestamptz[],
         ${chunk.map((p) => p.likes)}::int[],
@@ -178,8 +201,10 @@ export async function savePosts(posts: readonly XPost[]): Promise<void> {
         ${chunk.map((p) => p.reposts)}::int[],
         ${chunk.map((p) => p.isReply)}::boolean[],
         ${chunk.map((p) => p.source)}::text[]
-      ) AS t(post_id, handle, text, posted_at, likes, replies, reposts, is_reply, source)
+      ) AS t(post_id, handle, x_user_id, text, posted_at, likes, replies, reposts, is_reply, source)
       ON CONFLICT (post_id) DO UPDATE SET
+        -- the author's id is X's and never changes for a post: written when a read names it, never erased
+        x_user_id = COALESCE(NULLIF(EXCLUDED.x_user_id, ''), x_posts.x_user_id),
         -- oEmbed's words are a rebuild from X's HTML: never over a scanned post's own text
         text = CASE WHEN EXCLUDED.source = 'syndication' AND x_posts.source <> 'syndication' THEN x_posts.text ELSE EXCLUDED.text END,
         likes = COALESCE(EXCLUDED.likes, x_posts.likes),
@@ -190,7 +215,7 @@ export async function savePosts(posts: readonly XPost[]): Promise<void> {
 }
 
 /** A handle's cached posts from `fromMs` on, date ascending. Gone posts are never returned. */
-export async function postsFor(handle: string, fromMs: number): Promise<XPost[]> {
+export async function postsFor(handle: string, fromMs: number): Promise<StoredPost[]> {
   const rows = await prisma.xPost.findMany({ where: { handle: h(handle), goneAt: null, postedAt: { gte: new Date(fromMs) } }, orderBy: [{ postedAt: 'asc' }, { postId: 'asc' }] })
   return rows.map(postOf)
 }
@@ -493,30 +518,49 @@ export async function lookupsToday(requester: Requester, nowMs: number = Date.no
 }
 
 /**
- * The public list: one row per handle and symbol whose newest finished,
- * non-internal scan exists and which holds at least one bull or bear label on
- * a post X still serves. Newest first. Internal runs never list.
+ * The public list: one row per handle and symbol with a finished,
+ * non-internal scan that found at least one SCAN-origin bull or bear call on
+ * a post X still serves and the handle's current author wrote (a handle with
+ * only pasted posts never lists; lane RECORD's note, review R1). A handle
+ * lists only above LIST_MIN_FOLLOWERS or when its owner verified (review
+ * R19; an unknown count does not list), never when hidden or protected
+ * (review R12). `verified` is claimVerified, the record's own rule (R9).
+ * Bounded: the candidate groups are limited BEFORE calls are counted.
  */
 export async function listPlotted(opts: { limit: number; handle?: string; symbol?: string }): Promise<PlottedRow[]> {
   const limit = Math.max(1, Math.min(200, Math.floor(opts.limit || 0) || 1))
   const only = opts.handle ? h(opts.handle) : null
   const onlySym = opts.symbol ? sym(opts.symbol) : null
-  const rows = await prisma.$queryRaw<{ handle: string; symbol: string; name: string | null; avatar_url: string | null; verified: boolean; calls: number; scanned_at: Date }[]>`
-    SELECT * FROM (
-      SELECT s.handle, s.symbol, xh.name, xh.avatar_url, (xh.claimed_x_user_id IS NOT NULL) AS verified,
-        (SELECT count(*)::int FROM x_calls c JOIN x_posts p ON p.post_id = c.post_id
-          WHERE p.handle = s.handle AND c.symbol = s.symbol AND c.stance IN ('bull', 'bear') AND p.gone_at IS NULL) AS calls,
-        s.scanned_at
-      FROM (
-        SELECT handle, symbol, max(coalesce(finished_at, started_at)) AS scanned_at
-        FROM x_scans
-        WHERE status = 'done' AND is_internal = false AND (${only}::text IS NULL OR handle = ${only}::text) AND (${onlySym}::text IS NULL OR symbol = ${onlySym}::text)
-        GROUP BY handle, symbol
-      ) s
-      LEFT JOIN x_handles xh ON xh.handle = s.handle
-    ) t
-    WHERE t.calls > 0
-    ORDER BY t.scanned_at DESC, t.handle, t.symbol
-    LIMIT ${limit}`
-  return rows.map((r) => ({ handle: r.handle, symbol: r.symbol, name: r.name, avatarUrl: r.avatar_url, verified: r.verified, calls: r.calls, scannedAt: r.scanned_at.getTime() }))
+  const fake = fakeModeOn()
+  const candidates = limit * 4
+  const rows = await prisma.$queryRaw<{ handle: string; symbol: string; name: string | null; avatar_url: string | null; followers: number | null; x_user_id: string | null; claimed_x_user_id: string | null; claimed_at: Date | null; calls: number; scanned_at: Date }[]>`
+    WITH g AS (
+      SELECT handle, symbol, max(coalesce(finished_at, started_at)) AS scanned_at
+      FROM x_scans
+      WHERE status = 'done' AND is_internal = false AND coalesce(provider, '') <> ${FINISH_PROVIDER}
+        AND (${only}::text IS NULL OR handle = ${only}::text) AND (${onlySym}::text IS NULL OR symbol = ${onlySym}::text)
+      GROUP BY handle, symbol
+    ), c AS (
+      SELECT g.handle, g.symbol, g.scanned_at, xh.name, xh.avatar_url, xh.followers, xh.x_user_id, xh.claimed_x_user_id, xh.claimed_at
+      FROM g JOIN x_handles xh ON xh.handle = g.handle
+      WHERE xh.hidden_at IS NULL AND xh.is_protected = false AND (xh.followers >= ${LIST_MIN_FOLLOWERS} OR xh.claimed_x_user_id IS NOT NULL)
+      ORDER BY g.scanned_at DESC, g.handle, g.symbol
+      LIMIT ${candidates}
+    )
+    SELECT c.*,
+      (SELECT count(*)::int FROM x_calls k JOIN x_posts p ON p.post_id = k.post_id
+        WHERE p.handle = c.handle AND k.symbol = c.symbol AND k.stance IN ('bull', 'bear') AND k.origin = 'scan' AND p.gone_at IS NULL
+          AND (p.x_user_id IS NULL OR c.x_user_id IS NULL OR p.x_user_id = c.x_user_id)
+          AND (${fake} OR coalesce(k.model, '') NOT IN ('keywords', 'fixture', 'injected'))) AS calls
+    FROM c
+    ORDER BY c.scanned_at DESC, c.handle, c.symbol`
+  const out: PlottedRow[] = []
+  for (const r of rows) {
+    const verified = claimVerified({ claimedXUserId: r.claimed_x_user_id, claimedAt: ms(r.claimed_at), xUserId: r.x_user_id }, fake) !== null
+    if (r.calls <= 0) continue
+    if (!verified && !((r.followers ?? -1) >= LIST_MIN_FOLLOWERS)) continue
+    out.push({ handle: r.handle, symbol: r.symbol, name: r.name, avatarUrl: r.avatar_url, verified, calls: r.calls, scannedAt: r.scanned_at.getTime() })
+    if (out.length >= limit) break
+  }
+  return out
 }

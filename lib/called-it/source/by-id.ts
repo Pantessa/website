@@ -67,9 +67,11 @@ export function mapSyndication(id: string, body: unknown): PostRead {
   const handle = screen.toLowerCase()
   const replyTo = str(b.in_reply_to_screen_name)?.toLowerCase() ?? null
   const isReply = !!str(b.in_reply_to_status_id_str) && replyTo !== handle
-  const post: XPost = {
+  const post: XPost & { xUserId: string | null } = {
     id,
     handle,
+    // The author's X user id rides with the post (review R9): a record only shows posts its handle's current owner wrote.
+    xUserId: str(user.id_str),
     text,
     postedAt: created,
     likes: num(b.favorite_count),

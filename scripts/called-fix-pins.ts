@@ -15,7 +15,8 @@ import { addPost, runScan, type AddDeps, type ScanDeps } from '@/lib/called-it/s
 import { GUEST_ADDS_PER_DAY, ADDS_PER_MINUTE, TWITTER_EPOCH_MS, type PostRead, type XPost } from '@/lib/called-it/spec'
 import type { LabelResult } from '@/lib/called-it/classify'
 import { GUEST_LOOKUPS_PER_DAY, X_POST_COST_USD, X_USER_COST_USD, type XSource } from '@/lib/called-it/spec'
-import { XApiSource } from '@/lib/called-it/source/x-api'
+import { XApiSource, mapXPost } from '@/lib/called-it/source/x-api'
+import { mapSyndication } from '@/lib/called-it/source/by-id'
 import { maxScanCostUsd } from '@/lib/called-it/budget'
 import { coverageOf, readRecord, type RecordDeps } from '@/lib/called-it/record'
 import { searchInPhases } from '@/lib/called-it/scan'
@@ -28,6 +29,15 @@ const src = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 const syncResolve: ResolveFn = async (s) => chartPairFor(s)
 
 export function calledFixPins(check: Check): void {
+  // R9: the mappers carry the author's user id
+  {
+    const id = '1585341984679469056'
+    const m = mapSyndication(id, { id_str: id, text: 'hi', created_at: '2022-10-26T18:45:58.000Z', user: { id_str: '44196397', screen_name: 'elonmusk', name: 'E' } })
+    const ms = Date.parse('2022-10-26T18:45:58.000Z')
+    const x = mapXPost('elonmusk', { id, text: 'hi', created_at: new Date(ms).toISOString(), author_id: '44196397' }, null)
+    check('fix R9: both mappers carry the author\'s X user id on the post', m.ok && (m.post as { xUserId?: string }).xUserId === '44196397' && (x as { xUserId?: string } | null)?.xUserId === '44196397')
+  }
+
   // R5/R2a: every door goes through the one market function
   const scanRoute = src('app/api/x/scan/route.ts')
   const addRoute = src('app/api/x/add/route.ts')
@@ -354,6 +364,65 @@ export async function calledFixPinsDb(check: Check): Promise<void> {
       const cov = rec.body.status === 'ready' ? rec.body.record.coverage : undefined
       const words = rec.body.status === 'ready' ? rec.body.record.words.coverage : null
       check('fix R8: the record\'s coverage is this symbol\'s scans (from = the oldest post read, truncated), postsRead their sum, scanned explicit, and the words say older posts were not read', rec.body.status === 'ready' && !!cov && cov.from === oldest && cov.truncated && cov.postsRead === 25 && rec.body.record.postsRead === 25 && rec.body.record.scanned && /Older posts were not read/.test(words ?? ''), JSON.stringify(cov) + ' ' + words)
+    }
+
+    // ── R9: a handle that changed hands ──
+    {
+      const H = `${FIX_PREFIX}h${FIX_TAG}`
+      await Store.saveProfile({ handle: H, name: 'Owner One', avatarUrl: 'https://pbs.twimg.com/a.jpg', followers: 9000, blue: false, xUserId: '111' })
+      await Store.saveProfile({ handle: H, name: 'Owner One', avatarUrl: null, followers: null, blue: false, xUserId: null })
+      const kept = await Store.getHandle(H)
+      check('fix R9: saveProfile never replaces a known user id, avatar or follower count with null (an oEmbed read knows none of them)', kept?.xUserId === '111' && kept.avatarUrl === 'https://pbs.twimg.com/a.jpg' && kept.followers === 9000, JSON.stringify(kept))
+      const p1 = { ...pinPost(H, 40, 61, 'Buying this dip with size.'), source: 'x-api' as const, xUserId: '111' }
+      const p2 = { ...pinPost(H, 20, 62, 'Buying more here, shorting nothing.'), source: 'x-api' as const }
+      await Store.savePosts([p1, p2])
+      await Store.savePosts([{ ...p1, xUserId: null }])
+      const stored = await prisma.xPost.findUnique({ where: { postId: p1.id } })
+      check('fix R9: x_posts.x_user_id is written from the read that names the author, and a later read that names none never erases it', stored?.xUserId === '111')
+      await Store.saveLabels([{ postId: p1.id, symbol: 'BTC', stance: 'bull', conviction: 2, quote: 'Buying this dip', model: 'pin', origin: 'scan' }, { postId: p2.id, symbol: 'BTC', stance: 'bull', conviction: 2, quote: 'Buying more here', model: 'pin', origin: 'scan' }])
+      await prisma.xScan.create({ data: { id: `xs_zzpinq${FIX_TAG}h`, handle: H, symbol: 'BTC', status: 'done', provider: 'x-api', isInternal: true, requestedBy: 'ip:zzpinfixh', windowFrom: new Date(Date.now() - 365 * DAY_MS), windowTo: new Date(), startedAt: new Date(), finishedAt: new Date() } })
+      await Store.claimHandle(H, '111')
+      const rd: RecordDeps = { store: Store as unknown as RecordDeps['store'], candles: async () => dailyCandles(Date.now()), scansAvailable: () => true, now: Date.now }
+      const before = await readRecord({ handle: H, symbol: 'BTC' }, rd)
+      // U1 renames; U2 registers the handle and X answers the profile with U2's id
+      await Store.saveProfile({ handle: H, name: 'Owner Two', avatarUrl: null, followers: 12, blue: false, xUserId: '222' })
+      const after = await readRecord({ handle: H, symbol: 'BTC' }, rd)
+      const ids = (b: typeof after) => (b.body.status === 'ready' ? b.body.record.calls.map((c) => c.postId) : [])
+      check('fix R9: once the handle answers for another user id, the old owner\'s posts leave its record and its claim stops reading Verified (a post with no author id stays)', before.body.status === 'ready' && before.body.record.verified !== null && ids(before).length === 2 && after.body.status === 'ready' && after.body.record.verified === null && ids(after).join() === p2.id, `${ids(before)} -> ${ids(after)}`)
+      // claiming a new name drops the user id's claim on its old name
+      const H2 = `${FIX_PREFIX}g${FIX_TAG}`
+      await Store.claimHandle(H2, '222')
+      await Store.claimHandle(`${FIX_PREFIX}k${FIX_TAG}`, '222')
+      check('fix R9: when a claim is written for a user id, any other handle still claimed by that id loses its claim', (await Store.getHandle(H2))?.claimedXUserId === null && (await Store.getHandle(`${FIX_PREFIX}k${FIX_TAG}`))?.claimedXUserId === '222')
+      const rec = src('lib/called-it/record.ts')
+      check('fix R9: ONE predicate decides verified: verifiedOf is claimVerified, and listPlotted calls claimVerified', /return Store\.claimVerified\(row, fake\)/.test(rec) && /claimVerified\(\{ claimedXUserId: r\.claimed_x_user_id/.test(src('lib/called-it/store.ts')))
+    }
+
+    // ── R19 + lane RECORD's note: who the public list shows ──
+    {
+      const mkList = async (tag: string, o: { followers: number | null; claimed?: string; origin?: 'scan' | 'added'; hidden?: boolean; isProtected?: boolean }) => {
+        const H = `${FIX_PREFIX}${tag}${FIX_TAG}`
+        await prisma.xHandle.create({ data: { handle: H, name: H, followers: o.followers, xUserId: o.claimed ?? null, claimedXUserId: o.claimed ?? null, claimedAt: o.claimed ? new Date() : null, hiddenAt: o.hidden ? new Date() : null, isProtected: !!o.isProtected } })
+        const post = { ...pinPost(H, 30, 70, 'Buying here.'), source: 'x-api' as const }
+        await Store.savePosts([post])
+        await Store.saveLabels([{ postId: post.id, symbol: 'ETH', stance: 'bull', conviction: 2, quote: 'Buying here', model: 'pin', origin: o.origin ?? 'scan' }])
+        await prisma.xScan.create({ data: { id: `xs_zzpinq${FIX_TAG}${tag}`, handle: H, symbol: 'ETH', status: 'done', provider: 'x-api', isInternal: false, requestedBy: 'ip:zzpinfixlist', windowFrom: new Date(Date.now() - 365 * DAY_MS), windowTo: new Date(), startedAt: new Date(), finishedAt: new Date() } })
+        return H
+      }
+      const big = await mkList('lb', { followers: 6000 })
+      const small = await mkList('ls', { followers: 40 })
+      const unknown = await mkList('lu', { followers: null })
+      const owner = await mkList('lo', { followers: null, claimed: '333' })
+      const fakeOwner = await mkList('lf', { followers: 10, claimed: 'fake-x' })
+      const pasted = await mkList('lp', { followers: 6000, origin: 'added' })
+      const hidden = await mkList('lh', { followers: 6000, hidden: true })
+      const locked = await mkList('lk', { followers: 6000, isProtected: true })
+      const listed = await withEnv({ XCALLS_FAKE: undefined }, () => Store.listPlotted({ limit: 200, symbol: 'ETH' }))
+      const mine = listed.filter((r) => r.handle.startsWith(FIX_PREFIX))
+      const has = (x: string) => mine.some((r) => r.handle === x)
+      check(`fix R19: the list shows a handle over ${5000} followers and an owner-verified one; never a small one, an unknown count, a fake claim, a pasted-only record, a hidden or a protected handle`, has(big) && has(owner) && !has(small) && !has(unknown) && !has(fakeOwner) && !has(pasted) && !has(hidden) && !has(locked) && mine.find((r) => r.handle === owner)?.verified === true && mine.find((r) => r.handle === big)?.verified === false && mine.find((r) => r.handle === big)?.calls === 1, JSON.stringify(mine.map((r) => [r.handle.slice(-6), r.verified, r.calls])))
+      const one = await withEnv({ XCALLS_FAKE: undefined }, () => Store.listPlotted({ limit: 1, symbol: 'ETH' }))
+      check('fix R19: the list honors its limit', one.length <= 1)
     }
   } finally {
     const left = await cleanFix(prisma)

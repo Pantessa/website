@@ -18,7 +18,7 @@ import { RUNNING_STALE_MS, scanNext, scanWindowFrom, type AllowanceFn, type Stor
 import { marketFor, type MarketDoor } from './market'
 import type { FinishedScan } from './store'
 import { FAKE_LABEL_MODELS } from './classify'
-import { POST_ID_RE, buildRecord, fakeModeOn, isFakeXUserId, normalizeHandle, normalizeSide, type Coverage, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
+import { POST_ID_RE, buildRecord, fakeModeOn, normalizeHandle, normalizeSide, type Coverage, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
 
 /** @deprecated The market door is lib/called-it/market marketFor (review R5); kept for callers outside this lane. */
 export const SYMBOL_RE = /^[A-Za-z0-9.:^-]{1,24}$/
@@ -68,12 +68,9 @@ const chartRefused = (symbol: string): RecordAnswer => ({ http: 503, body: { sta
 const noChart = (symbol: string): RecordAnswer => ({ http: 404, body: { status: 'refused', reason: `${symbol} has no chart here, so there is nothing to pin a post to.`, next: [{ label: 'Markets', href: '/' }] } })
 
 /** The claim counts only while X still says the handle belongs to the account that claimed it. */
+/** ONE rule decides "verified" (store claimVerified, review R9); the record and the public list both call it. */
 export function verifiedOf(row: Pick<Store.StoredHandle, 'claimedXUserId' | 'claimedAt' | 'xUserId'> | null, fake: boolean = fakeModeOn()): { at: number } | null {
-  if (!row?.claimedXUserId || !row.claimedAt) return null
-  // A claim the fake sign-in wrote never reads "Verified" outside fake mode, whatever database it sits in (review R6).
-  if (isFakeXUserId(row.claimedXUserId) && !fake) return null
-  if (row.xUserId && row.xUserId !== row.claimedXUserId) return null
-  return { at: row.claimedAt }
+  return Store.claimVerified(row, fake)
 }
 
 /**
@@ -187,6 +184,9 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
   const anyLabel = new Set(labels.map((l) => l.postId))
   const posts: LabeledPost[] = []
   for (const p of cached) {
+    // A post whose author is not the handle's current owner is not this account's (the handle changed hands, review R9).
+    const author = (p as { xUserId?: string | null }).xUserId ?? null
+    if (author && row?.xUserId && author !== row.xUserId) continue
     const l = byPost.get(p.id)
     if (l) posts.push({ ...p, label: { stance: l.stance, conviction: l.conviction, quote: l.quote }, origin: l.origin })
   }

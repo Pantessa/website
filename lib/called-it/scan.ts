@@ -249,7 +249,8 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
     const searchDeadline = Math.max(nowMs, deadlineMs - SEARCH_LABEL_RESERVE_MS)
     const found = await searchInPhases(source, { handle, symbol, fromMs, toMs: nowMs, cap: postCap, deadlineMs: searchDeadline })
     postsRead = found.readCount
-    const own = found.posts.filter((p) => p.handle === handle && postTimeAgrees(p.id, p.postedAt))
+    // Every post carries its author's id (review R9): X's own author_id when the search named it, else the profile X just answered.
+    const own = found.posts.filter((p) => p.handle === handle && postTimeAgrees(p.id, p.postedAt)).map((p) => ({ ...p, xUserId: (p as { xUserId?: string | null }).xUserId ?? profile.xUserId }))
     await store.savePosts(own)
     saved = true
     const readNote = found.stoppedByX ? `Read ${plural(postsRead, 'post')} before X stopped answering; older posts were not read.` : `Read ${plural(postsRead, 'post')}`
