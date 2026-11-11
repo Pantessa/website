@@ -445,6 +445,7 @@ export async function addPost(input: { handle: string; symbol: string; url: unkn
   if (!early.ok) return no(429, early.reason, [...back, ...early.next])
 
   const got = await deps.read(ref.id)
+  if (!got.ok && (got as { retweet?: boolean }).retweet) return no(400, 'That is a repost of somebody else\'s post, so it is not their call. Paste one of their own posts.')
   if (!got.ok) return got.reason === 'gone' ? no(404, 'X no longer serves that post, so it cannot be added.') : no(503, 'X did not answer for that post. Try again in a moment.')
   const { post, profile } = got
   if (post.handle !== handle || profile.handle !== handle) return no(400, `That post is by @${post.handle}, not @${handle}.`)

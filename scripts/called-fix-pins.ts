@@ -16,8 +16,11 @@ import { GUEST_ADDS_PER_DAY, ADDS_PER_MINUTE, TWITTER_EPOCH_MS, type PostRead, t
 import { postForPrompt, readAnswer, type LabelResult } from '@/lib/called-it/classify'
 import { PROMPT_POST_MAX } from '@/lib/called-it/spec'
 import { GUEST_LOOKUPS_PER_DAY, X_POST_COST_USD, X_USER_COST_USD, type XSource } from '@/lib/called-it/spec'
-import { XApiSource, mapXPost } from '@/lib/called-it/source/x-api'
-import { mapSyndication } from '@/lib/called-it/source/by-id'
+import { XApiSource, mapXPost, mapXUser } from '@/lib/called-it/source/x-api'
+import { mapOembed, mapSyndication } from '@/lib/called-it/source/by-id'
+import { safeNext } from '@/lib/called-it/x-auth'
+import { cleanName } from '@/lib/called-it/clean'
+import { safeNextProp } from '@/lib/called-it/next-path'
 import { maxScanCostUsd } from '@/lib/called-it/budget'
 import { coverageOf, readRecord, type RecordDeps } from '@/lib/called-it/record'
 import { searchInPhases } from '@/lib/called-it/scan'
@@ -30,6 +33,37 @@ const src = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 const syncResolve: ResolveFn = async (s) => chartPairFor(s)
 
 export function calledFixPins(check: Check): void {
+  // R13: next is printable ASCII
+  check('fix R13: safeNext refuses a next that is not printable ASCII (the decoded /x/\u2713 used to pass and 500 the callback after the claim)', safeNext('/x/\u2713') === '/x' && safeNext('/x/%E2%9C%93') === '/x/%E2%9C%93' && safeNext('/x/pantessa_test/BTC') === '/x/pantessa_test/BTC')
+  // R16: names are cleaned where they enter
+  {
+    const id = '1585341984679469056'
+    const evil = 'Al\u202eice\u0000\u2066 Desk' + 'x'.repeat(100)
+    const m = mapSyndication(id, { id_str: id, text: 'hi', created_at: '2022-10-26T18:45:58.000Z', user: { id_str: '1', screen_name: 'alice', name: evil } })
+    const o = mapOembed(id, { url: `https://x.com/alice/status/${id}`, author_url: 'https://x.com/alice', author_name: evil, html: '<blockquote><p>hi</p></blockquote>' })
+    const clean = (n: string | undefined) => !!n && !/[\u0000-\u001f\u202a-\u202e\u2066-\u2069]/.test(n) && n.length <= 64 && n.startsWith('Alice')
+    check('fix R16: a display name from X loses its control and bidi characters and is capped, on the keyless read, oEmbed and the X API alike', m.ok && clean(m.profile.name) && o.ok && clean(o.profile.name) && clean(mapXUser('alice', { data: { id: '1', username: 'alice', name: evil } })?.name) && cleanName('', 'alice') === 'alice', m.ok ? JSON.stringify(m.profile.name) : 'no')
+  }
+  // R17: a retweet is not the retweeter's call
+  {
+    const id = '1585341984679469056'
+    const body = { id_str: id, created_at: '2022-10-26T18:45:58.000Z', user: { id_str: '1', screen_name: 'alice', name: 'A' } }
+    const a = mapSyndication(id, { ...body, text: 'RT @bob: BTC to 200k' })
+    const b = mapSyndication(id, { ...body, text: 'BTC to 200k', retweeted_status: { id_str: '1' } })
+    check('fix R17: the keyless read refuses a body with retweeted_status or text starting "RT @"', !a.ok && !b.ok && (a as { retweet?: boolean }).retweet === true && (b as { retweet?: boolean }).retweet === true && mapSyndication(id, { ...body, text: 'my own words about RT @ etiquette' }).ok)
+  }
+  // VerifyWithX: the production link stays on pantessa.com
+  {
+    const bad = ['@evil.example/', 'evil.example', '//evil.example', '/\\evil', 'https://evil.example', '', '/x/\u2713']
+    const comp = src('components/called/VerifyWithX.tsx')
+    check('fix NOTE (VerifyWithX): a next that is not one path becomes /x, so PROD_ORIGIN + next is never https://www.pantessa.com@evil...; the button uses the guard', bad.every((n) => safeNextProp(n) === '/x') && safeNextProp('/t/BTC?x=a') === '/t/BTC?x=a' && /safeNextProp\(nextProp\)/.test(comp) && /\$\{PROD_ORIGIN\}\$\{next \?\? '\/x'\}/.test(comp))
+  }
+  // Cookies: __Host- in production, pt_x on localhost, both read
+  {
+    const xa = src('lib/called-it/x-auth.ts')
+    check('fix NOTE (cookies): the identity cookie is __Host-pt_x off localhost and pt_x on it; getXIdentity reads both; start, callback, sign-out and unclaim use the names', /return isLocalOrigin\(origin\) \? X_IDENTITY_COOKIE : X_IDENTITY_COOKIE_HOST/.test(xa) && /for \(const name of X_IDENTITY_COOKIE_NAMES\)/.test(xa) && ['start', 'callback'].every((r) => src(`app/api/x/auth/${r}/route.ts`).includes('identityCookieName(url.origin)')) && ['signout', 'unclaim'].every((r) => src(`app/api/x/auth/${r}/route.ts`).includes('X_IDENTITY_COOKIE_NAMES')))
+  }
+
   // R11c: a long post is clamped for the model; its quote is still checked against the whole post
   {
     const long = `${'word '.repeat(5000)}BTC to 200k by June, I am all in.`
@@ -510,6 +544,22 @@ export async function calledFixPinsDb(check: Check): Promise<void> {
       await Store.claimHandle(`${FIX_PREFIX}w${FIX_TAG}`, '555')
       const removed = await Store.unclaimAll('555')
       check('fix R12: unclaimAll withdraws every claim of that user id', removed === 1 && (await Store.getHandle(`${FIX_PREFIX}w${FIX_TAG}`))?.claimedXUserId === null)
+    }
+
+    // ── R16: NUL never reaches an insert ──
+    {
+      const H = `${FIX_PREFIX}n${FIX_TAG}`
+      const p1 = { ...pinPost(H, 9, 1201, 'gm\u0000 frens'), source: 'x-api' as const }
+      const p2 = { ...pinPost(H, 8, 1202, 'second post'), source: 'x-api' as const }
+      let err = ''
+      try {
+        await Store.savePosts([p1, p2])
+        await Store.saveProfile({ handle: H, name: 'Nul\u0000Name', avatarUrl: null, followers: null, blue: false, xUserId: null })
+      } catch (e) {
+        err = String(e).slice(0, 120)
+      }
+      const got = await prisma.xPost.findMany({ where: { handle: H } })
+      check('fix R16: a post or name with a NUL saves (NUL stripped, the rest of the words as X sent them) instead of failing its whole chunk', !err && got.length === 2 && got.some((r) => r.text === 'gm frens') && (await Store.getHandle(H))?.name === 'NulName', err)
     }
   } finally {
     const left = await cleanFix(prisma)

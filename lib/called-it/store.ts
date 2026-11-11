@@ -12,6 +12,7 @@
 //     (startScan, under a transaction-scoped advisory lock);
 //   - handles are lowercase and symbols uppercase in every row.
 import { randomBytes } from 'node:crypto'
+import { stripNul } from './clean'
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { LIST_MIN_FOLLOWERS, fakeModeOn, isFakeXUserId, type Requester, type ScanRow, type StoredLabel, type XPost, type XProfile } from './spec'
@@ -150,7 +151,7 @@ export async function saveProfile(profile: XProfile & { isProtected?: boolean })
   const known = <T,>(v: T | null | undefined) => (v === null || v === undefined ? {} : null)
   const fields = {
     ...(known(profile.xUserId) ?? { xUserId: profile.xUserId }),
-    name: profile.name,
+    name: stripNul(profile.name),
     ...(known(profile.avatarUrl) ?? { avatarUrl: profile.avatarUrl }),
     ...(known(profile.followers) ?? { followers: profile.followers }),
     isBlue: profile.blue,
@@ -173,7 +174,7 @@ export async function claimHandle(handle: string, xUserId: string, profile?: Par
   const name = h(handle)
   const now = new Date()
   const fromProfile = {
-    ...(profile?.name !== undefined ? { name: profile.name } : {}),
+    ...(profile?.name !== undefined ? { name: stripNul(profile.name) } : {}),
     ...(profile?.avatarUrl !== undefined ? { avatarUrl: profile.avatarUrl } : {}),
     ...(profile?.followers !== undefined ? { followers: profile.followers } : {}),
     ...(profile?.blue !== undefined ? { isBlue: profile.blue } : {}),
@@ -207,7 +208,7 @@ export async function savePosts(posts: readonly (XPost & { xUserId?: string | nu
         ${chunk.map((p) => p.id)}::text[],
         ${chunk.map((p) => h(p.handle))}::text[],
         ${chunk.map((p) => (typeof p.xUserId === 'string' && /^\d{1,25}$|^fake-/.test(p.xUserId) ? p.xUserId : ''))}::text[],
-        ${chunk.map((p) => p.text)}::text[],
+        ${chunk.map((p) => stripNul(p.text))}::text[],
         ${chunk.map((p) => new Date(p.postedAt).toISOString())}::timestamptz[],
         ${chunk.map((p) => p.likes)}::int[],
         ${chunk.map((p) => p.replies)}::int[],

@@ -11,6 +11,7 @@
 // followed (no link is fetched), and an avatar is kept only from X's own
 // image hosts.
 import { POST_ID_RE, postTimeAgrees, snowflakeMs, type PostRead, type XPost, type XProfile } from '../spec'
+import { cleanName } from '../clean'
 
 export const SYNDICATION_URL = 'https://cdn.syndication.twimg.com/tweet-result'
 export const OEMBED_URL = 'https://publish.twitter.com/oembed'
@@ -58,6 +59,8 @@ export function mapSyndication(id: string, body: unknown): PostRead {
   const b = obj(body)
   if (!b || Object.keys(b).length === 0) return { ok: false, reason: 'unavailable' }
   if (b.__typename === 'TweetTombstone' || b.tombstone) return { ok: false, reason: 'gone' }
+  // A retweet is somebody else's words (review R17): never the retweeter's call.
+  if (b.retweeted_status || /^RT @/.test(str(b.text) ?? '')) return { ok: false, reason: 'unavailable', retweet: true } as PostRead
   if (str(b.id_str) !== id) return { ok: false, reason: 'unavailable' }
   const user = obj(b.user)
   const screen = str(user?.screen_name)
@@ -84,7 +87,7 @@ export function mapSyndication(id: string, body: unknown): PostRead {
   }
   const profile: XProfile = {
     handle,
-    name: str(user.name) ?? handle,
+    name: cleanName(user.name, handle),
     avatarUrl: safeAvatarUrl(user.profile_image_url_https),
     followers: num(user.followers_count),
     blue: user.is_blue_verified === true,
@@ -123,10 +126,11 @@ export function mapOembed(id: string, body: unknown): PostRead {
   if (!m || !p || postedAt === null) return { ok: false, reason: 'unavailable' }
   const text = decodeEntities(p[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, ''))
   const handle = m[1].toLowerCase()
+  if (/^RT @/.test(text)) return { ok: false, reason: 'unavailable', retweet: true } as PostRead
   return {
     ok: true,
     post: { id, handle, text, postedAt, likes: null, replies: null, reposts: null, isReply: false, source: 'syndication' },
-    profile: { handle, name: str(b.author_name) ?? handle, avatarUrl: null, followers: null, blue: false, xUserId: null },
+    profile: { handle, name: cleanName(b.author_name, handle), avatarUrl: null, followers: null, blue: false, xUserId: null },
   }
 }
 

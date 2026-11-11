@@ -17,6 +17,7 @@
 // return value. Errors carry X's HTTP status and our own words only.
 import { X_POST_COST_USD, X_USER_COST_USD, postTimeAgrees, type XPost, type XProfile, type XSearchQuery, type XSearchResult, type XSource } from '../spec'
 import { safeAvatarUrl } from './by-id'
+import { cleanName } from '../clean'
 
 export const X_API_BASE = 'https://api.x.com/2'
 /** X refuses a full-archive query longer than this. */
@@ -127,7 +128,7 @@ export function mapXUser(handle: string, body: unknown): XProfile | null {
   const id = str(d.id)
   return {
     handle: username.toLowerCase(),
-    name: str(d.name) ?? username.toLowerCase(),
+    name: cleanName(d.name, username.toLowerCase()),
     avatarUrl: safeAvatarUrl(d.profile_image_url),
     followers: num(obj(d.public_metrics)?.followers_count),
     blue: d.verified === true,

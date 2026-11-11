@@ -111,6 +111,8 @@ export function safeNext(raw: unknown): string {
   if (typeof raw !== 'string') return NEXT_FALLBACK
   const s = raw
   if (!s || s.length > NEXT_MAX) return NEXT_FALLBACK
+  // Printable ASCII only (review R13): a decoded non-ASCII next made the callback's Location header throw AFTER the claim was written.
+  if (!/^[\x20-\x7e]+$/.test(s)) return NEXT_FALLBACK
   const bad = (v: string): boolean => {
     if (!v.startsWith('/')) return true
     if (v.startsWith('//')) return true
