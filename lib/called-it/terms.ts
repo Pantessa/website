@@ -87,8 +87,18 @@ function nameTerms(sym: string): string[] {
   return out
 }
 
-/** The search terms for one symbol, de-duplicated (case-insensitive), most specific first. */
-export function termsFor(symbol: string): string[] {
+function dedupe(terms: string[]): string[] {
+  const seen = new Set<string>()
+  return terms.filter((t) => {
+    const k = t.toLowerCase()
+    if (!t.trim() || seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+}
+
+/** The words that name the asset itself (cashtag, hashtag, ticker, name, aliases). A scan searches these FIRST (review R8). */
+export function assetTermsFor(symbol: string): string[] {
   const sym = canonicalSymbol(symbol)
   if (!sym) return []
   const terms: string[] = []
@@ -97,12 +107,18 @@ export function termsFor(symbol: string): string[] {
   if (alpha && sym.length >= 3 && !ENGLISH_WORD_TICKERS.has(sym)) terms.push(sym)
   terms.push(...nameTerms(sym))
   terms.push(...(ALIASES[sym] ?? []))
-  if (MARKET_PROXIES.has(sym)) terms.push(...MARKET_CALL_WORDS)
-  const seen = new Set<string>()
-  return terms.filter((t) => {
-    const k = t.toLowerCase()
-    if (!t.trim() || seen.has(k)) return false
-    seen.add(k)
-    return true
-  })
+  return dedupe(terms)
+}
+
+/** For a market proxy, the market-call words not already among its asset terms; else nothing. Searched with what the cap leaves (review R8). */
+export function marketTermsFor(symbol: string): string[] {
+  const sym = canonicalSymbol(symbol)
+  if (!MARKET_PROXIES.has(sym)) return []
+  const own = new Set(assetTermsFor(sym).map((t) => t.toLowerCase()))
+  return dedupe(MARKET_CALL_WORDS.filter((w) => !own.has(w.toLowerCase())))
+}
+
+/** The search terms for one symbol, de-duplicated (case-insensitive), most specific first: the asset's own words, then the market words. */
+export function termsFor(symbol: string): string[] {
+  return dedupe([...assetTermsFor(symbol), ...marketTermsFor(symbol)])
 }

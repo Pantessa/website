@@ -11,6 +11,7 @@
 // followed (no link is fetched), and an avatar is kept only from X's own
 // image hosts.
 import { POST_ID_RE, postTimeAgrees, snowflakeMs, type PostRead, type XPost, type XProfile } from '../spec'
+import { cleanName } from '../clean'
 
 export const SYNDICATION_URL = 'https://cdn.syndication.twimg.com/tweet-result'
 export const OEMBED_URL = 'https://publish.twitter.com/oembed'
@@ -48,14 +49,18 @@ type Obj = Record<string, unknown>
 const obj = (v: unknown): Obj | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : null)
 
 /**
- * Map a tweet-result body. `gone` when X answered with no post (a tombstone,
- * an empty body). `unavailable` when the body is not the post asked for, or
- * its time disagrees with its id.
+ * Map a tweet-result body. `gone` ONLY for X's own tombstone (review R10).
+ * An empty `{}` is `unavailable`: measured 2026-11-11, X answers `200 {}` for
+ * a request it does not accept (a missing or wrong token), not only for a
+ * missing post, and gone is forever. `unavailable` too when the body is not
+ * the post asked for, or its time disagrees with its id.
  */
 export function mapSyndication(id: string, body: unknown): PostRead {
   const b = obj(body)
-  if (!b || Object.keys(b).length === 0) return { ok: false, reason: 'gone' }
+  if (!b || Object.keys(b).length === 0) return { ok: false, reason: 'unavailable' }
   if (b.__typename === 'TweetTombstone' || b.tombstone) return { ok: false, reason: 'gone' }
+  // A retweet is somebody else's words (review R17): never the retweeter's call.
+  if (b.retweeted_status || /^RT @/.test(str(b.text) ?? '')) return { ok: false, reason: 'unavailable', retweet: true } as PostRead
   if (str(b.id_str) !== id) return { ok: false, reason: 'unavailable' }
   const user = obj(b.user)
   const screen = str(user?.screen_name)
@@ -67,9 +72,11 @@ export function mapSyndication(id: string, body: unknown): PostRead {
   const handle = screen.toLowerCase()
   const replyTo = str(b.in_reply_to_screen_name)?.toLowerCase() ?? null
   const isReply = !!str(b.in_reply_to_status_id_str) && replyTo !== handle
-  const post: XPost = {
+  const post: XPost & { xUserId: string | null } = {
     id,
     handle,
+    // The author's X user id rides with the post (review R9): a record only shows posts its handle's current owner wrote.
+    xUserId: str(user.id_str),
     text,
     postedAt: created,
     likes: num(b.favorite_count),
@@ -80,7 +87,7 @@ export function mapSyndication(id: string, body: unknown): PostRead {
   }
   const profile: XProfile = {
     handle,
-    name: str(user.name) ?? handle,
+    name: cleanName(user.name, handle),
     avatarUrl: safeAvatarUrl(user.profile_image_url_https),
     followers: num(user.followers_count),
     blue: user.is_blue_verified === true,
@@ -119,10 +126,11 @@ export function mapOembed(id: string, body: unknown): PostRead {
   if (!m || !p || postedAt === null) return { ok: false, reason: 'unavailable' }
   const text = decodeEntities(p[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, ''))
   const handle = m[1].toLowerCase()
+  if (/^RT @/.test(text)) return { ok: false, reason: 'unavailable', retweet: true } as PostRead
   return {
     ok: true,
     post: { id, handle, text, postedAt, likes: null, replies: null, reposts: null, isReply: false, source: 'syndication' },
-    profile: { handle, name: str(b.author_name) ?? handle, avatarUrl: null, followers: null, blue: false, xUserId: null },
+    profile: { handle, name: cleanName(b.author_name, handle), avatarUrl: null, followers: null, blue: false, xUserId: null },
   }
 }
 
@@ -147,8 +155,10 @@ export async function readPostByIdWith(id: string, opts: { fetch?: Fetch; timeou
     if (r.status === 404) return { ok: false, reason: 'gone' }
     // A parsed body answers, either way: one that is not the post asked for
     // (or whose time disagrees with its id) is refused, never patched from
-    // the second read. Only a body that did not parse falls through.
-    if (r.status === 200 && r.body !== undefined) return mapSyndication(id, r.body)
+    // the second read. A body that did not parse, or an empty `{}` (X refusing
+    // the request, review R10), falls through to oEmbed.
+    const empty = !!r.body && typeof r.body === 'object' && !Array.isArray(r.body) && Object.keys(r.body as object).length === 0
+    if (r.status === 200 && r.body !== undefined && !empty) return mapSyndication(id, r.body)
   } catch {
     // timeout or network: fall through to the second read
   }

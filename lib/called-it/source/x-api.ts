@@ -17,6 +17,7 @@
 // return value. Errors carry X's HTTP status and our own words only.
 import { X_POST_COST_USD, X_USER_COST_USD, postTimeAgrees, type XPost, type XProfile, type XSearchQuery, type XSearchResult, type XSource } from '../spec'
 import { safeAvatarUrl } from './by-id'
+import { cleanName } from '../clean'
 
 export const X_API_BASE = 'https://api.x.com/2'
 /** X refuses a full-archive query longer than this. */
@@ -127,7 +128,7 @@ export function mapXUser(handle: string, body: unknown): XProfile | null {
   const id = str(d.id)
   return {
     handle: username.toLowerCase(),
-    name: str(d.name) ?? username.toLowerCase(),
+    name: cleanName(d.name, username.toLowerCase()),
     avatarUrl: safeAvatarUrl(d.profile_image_url),
     followers: num(obj(d.public_metrics)?.followers_count),
     blue: d.verified === true,
@@ -158,8 +159,15 @@ export function mapXPost(handle: string, raw: unknown, authorId: string | null):
   const ownId = authorId ?? str(t.author_id)
   const isReply = refs.some((r) => r.type === 'replied_to') && !(replyTo && ownId && replyTo === ownId)
   const m = obj(t.public_metrics)
-  return { id, handle: handle.toLowerCase(), text, postedAt: created, likes: num(m?.like_count), replies: num(m?.reply_count), reposts: num(m?.retweet_count), isReply, source: 'x-api' }
+  const post: XPost & { xUserId: string | null } = { id, handle: handle.toLowerCase(), text, postedAt: created, likes: num(m?.like_count), replies: num(m?.reply_count), reposts: num(m?.retweet_count), isReply, source: 'x-api', xUserId: str(t.author_id) ?? authorId }
+  return post
 }
+
+/** A search with a deadline (review R4e): XSource's query plus the absolute ms after which no page is asked for. */
+export type XSearchQueryTimed = XSearchQuery & { deadlineMs?: number }
+
+/** Why the last search stopped early: the cap, a deadline, or X failing after at least one page (review R4d). Null = it read the whole window. */
+export type XSearchStop = 'cap' | 'deadline' | 'rate-limited' | 'error' | null
 
 // ── The source ────────────────────────────────────────────────────────────
 
@@ -192,6 +200,8 @@ export class XApiSource implements XSource {
   spentUsd = 0
   /** Why the last profile() answered null: `unknown` (no such account) or `protected`. */
   lastProfileMiss: 'unknown' | 'protected' | null = null
+  /** Why the last search() stopped before the window did (review R4d). */
+  lastStop: XSearchStop = null
 
   constructor(opts: XApiOptions) {
     this.#bearer = opts.bearer
@@ -201,10 +211,10 @@ export class XApiSource implements XSource {
     this.#timeout = opts.timeoutMs ?? X_TIMEOUT_MS
   }
 
-  async #get(url: string): Promise<{ res: Response; body: unknown }> {
+  async #get(url: string, timeoutMs = this.#timeout): Promise<{ res: Response; body: unknown }> {
     let res: Response
     try {
-      res = await this.#fetch(url, { headers: { authorization: `Bearer ${this.#bearer}`, accept: 'application/json' }, signal: AbortSignal.timeout(this.#timeout), cache: 'no-store' })
+      res = await this.#fetch(url, { headers: { authorization: `Bearer ${this.#bearer}`, accept: 'application/json' }, signal: AbortSignal.timeout(Math.max(1, timeoutMs)), cache: 'no-store' })
     } catch {
       throw new XApiError('unavailable', 'X did not answer in time.')
     }
@@ -238,7 +248,9 @@ export class XApiSource implements XSource {
     return p
   }
 
-  async search(q: XSearchQuery): Promise<XSearchResult> {
+  async search(q: XSearchQueryTimed): Promise<XSearchResult> {
+    this.lastStop = null
+    const deadline = typeof q.deadlineMs === 'number' && Number.isFinite(q.deadlineMs) ? q.deadlineMs : Infinity
     const cap = Math.max(0, Math.floor(q.cap))
     const queries = buildSearchQueries(q.handle, q.terms)
     const byId = new Map<string, XPost>()
@@ -259,20 +271,31 @@ export class XApiSource implements XSource {
         const left = cap - readCount
         if (left < X_PAGE_MIN) {
           truncated = true
+          this.lastStop = 'cap'
           break outer
         }
         if (!first && this.#gap > 0) await new Promise((r) => setTimeout(r, this.#gap))
+        // The scan's time budget (review R4e): no page is asked for once it has passed, and none outlives it.
+        const timeLeft = deadline - this.#now()
+        if (timeLeft <= 0) {
+          truncated = true
+          this.lastStop = 'deadline'
+          break outer
+        }
         first = false
         const url = searchUrl({ query: queries[qi], fromMs: q.fromMs, toMs: q.toMs, maxResults: left, sinceId: q.sinceId, nextToken: next, nowMs: this.#now() })
         let page: { res: Response; body: unknown }
         try {
-          page = await this.#get(url)
+          page = await this.#get(url, Math.min(this.#timeout, timeLeft))
           if (page.res.status !== 200) this.#fail(page.res)
         } catch (e) {
-          // A 429 stops the scan where it is (never a retry loop). What was
-          // already read is kept and billed; nothing read yet = the error.
-          if (e instanceof XApiError && e.kind === 'rate-limited' && readCount > 0) {
+          // X stops the scan where it is (never a retry loop). What was
+          // already read is kept, billed and returned as `truncated` (review
+          // R4d: a 5xx or a timeout on page 2 used to lose page 1 and its
+          // cost); nothing read yet = the error.
+          if (e instanceof XApiError && readCount > 0) {
             truncated = true
+            this.lastStop = e.kind === 'rate-limited' ? 'rate-limited' : 'error'
             break outer
           }
           throw e

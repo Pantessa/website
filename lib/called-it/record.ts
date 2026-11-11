@@ -15,8 +15,15 @@ import { refreshGone, scansAvailable } from './source'
 import { scanAllowance } from './budget'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts, fixtureServed } from './fixture'
 import { RUNNING_STALE_MS, scanNext, scanWindowFrom, type AllowanceFn, type StoreApi } from './scan'
-import { POST_ID_RE, buildRecord, normalizeHandle, normalizeSide, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
+import { marketFor, type MarketDoor } from './market'
+import { takenDown } from './takedown'
 
+export { takenDown }
+import type { FinishedScan } from './store'
+import { FAKE_LABEL_MODELS } from './classify'
+import { POST_ID_RE, buildRecord, fakeModeOn, normalizeHandle, normalizeSide, type Coverage, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
+
+/** @deprecated The market door is lib/called-it/market marketFor (review R5); kept for callers outside this lane. */
 export const SYMBOL_RE = /^[A-Za-z0-9.:^-]{1,24}$/
 
 export interface RecordQuery {
@@ -35,12 +42,14 @@ export interface RecordAnswer {
 }
 
 export interface RecordDeps {
-  store: Pick<StoreApi, 'getHandle' | 'postsFor' | 'labelsFor' | 'latestScan'>
+  store: Pick<StoreApi, 'getHandle' | 'postsFor' | 'labelsFor' | 'latestScan' | 'finishedScans'>
   candles: (symbol: string) => Promise<Candle[] | null>
   scansAvailable: () => boolean
   allowance?: AllowanceFn
   /** Re-read stale posts by id after the answer (lane SOURCE's refreshGone). */
   refreshGone?: (postIds: readonly string[]) => Promise<unknown>
+  /** The market door (lib/called-it/market). Absent: the house resolver. */
+  market?: (raw: unknown) => Promise<MarketDoor>
   now: () => number
 }
 
@@ -62,18 +71,37 @@ const chartRefused = (symbol: string): RecordAnswer => ({ http: 503, body: { sta
 const noChart = (symbol: string): RecordAnswer => ({ http: 404, body: { status: 'refused', reason: `${symbol} has no chart here, so there is nothing to pin a post to.`, next: [{ label: 'Markets', href: '/' }] } })
 
 /** The claim counts only while X still says the handle belongs to the account that claimed it. */
-export function verifiedOf(row: Pick<Store.StoredHandle, 'claimedXUserId' | 'claimedAt' | 'xUserId'> | null): { at: number } | null {
-  if (!row?.claimedXUserId || !row.claimedAt) return null
-  if (row.xUserId && row.xUserId !== row.claimedXUserId) return null
-  return { at: row.claimedAt }
+/** ONE rule decides "verified" (store claimVerified, review R9); the record and the public list both call it. */
+export function verifiedOf(row: Pick<Store.StoredHandle, 'claimedXUserId' | 'claimedAt' | 'xUserId'> | null, fake: boolean = fakeModeOn()): { at: number } | null {
+  return Store.claimVerified(row, fake)
+}
+
+/**
+ * What this symbol's finished scans read (review R8), never the chart's window: `from` is the earliest
+ * moment any of them reached (for a truncated scan, the oldest post it read), `to` the latest end,
+ * `postsRead` their sum, and `truncated` whether the OLDEST reach was a truncated one (posts before it
+ * were not read). Null when nothing has finished. Pure; pinned.
+ */
+export function coverageOf(scans: readonly Pick<FinishedScan, 'windowFrom' | 'windowTo' | 'postsRead' | 'truncated' | 'oldestPostAt'>[]): Coverage | null {
+  if (!scans.length) return null
+  const reach = (s: (typeof scans)[number]) => (s.truncated ? (s.oldestPostAt ?? s.windowTo) : s.windowFrom)
+  let oldest = scans[0]
+  for (const s of scans) if (reach(s) < reach(oldest) || (reach(s) === reach(oldest) && !s.truncated)) oldest = s
+  return {
+    from: reach(oldest),
+    to: Math.max(...scans.map((s) => s.windowTo)),
+    postsRead: scans.reduce((n, s) => n + s.postsRead, 0),
+    truncated: oldest.truncated,
+  }
 }
 
 export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecordDeps()): Promise<RecordAnswer> {
   const handle = normalizeHandle(q.handle)
-  const symRaw = typeof q.symbol === 'string' ? q.symbol.trim() : ''
   if (!handle) return { http: 400, body: { status: 'refused', reason: 'That is not an X handle. A handle is 1 to 15 letters, numbers or underscores.', next: [{ label: 'Plot a handle', href: '/x' }] } }
-  if (!SYMBOL_RE.test(symRaw)) return { http: 400, body: { status: 'refused', reason: 'Name a market to plot the handle on.', next: [{ label: 'Markets', href: '/' }] } }
-  const symbol = symRaw.toUpperCase()
+  // One door for the market (review R5): the symbol page's own spelling, or a named refusal before anything is read.
+  const door = await (deps.market ?? marketFor)(q.symbol)
+  if (!door.ok) return { http: door.http, body: { status: 'refused', reason: door.reason, next: door.next } }
+  const symbol = door.symbol
   const side = normalizeSide(q.side)
   const pins = parsePins(q.pins)
   const nowMs = deps.now()
@@ -101,20 +129,28 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
   let row: Store.StoredHandle | null
   let scan: Awaited<ReturnType<StoreApi['latestScan']>>
   let labels: Awaited<ReturnType<StoreApi['labelsFor']>>
+  let finished: FinishedScan[]
   try {
     // Each read runs inside its own async call, so a store that throws at once rejects instead of stranding the others.
-    ;[row, scan, labels] = await Promise.all([(async () => deps.store.getHandle(handle))(), (async () => deps.store.latestScan(handle, symbol))(), (async () => deps.store.labelsFor(handle, symbol))()])
+    ;[row, scan, labels, finished] = await Promise.all([(async () => deps.store.getHandle(handle))(), (async () => deps.store.latestScan(handle, symbol))(), (async () => deps.store.labelsFor(handle, symbol))(), (async () => deps.store.finishedScans(handle, symbol))()])
   } catch {
     return { http: 200, body: { status: 'unscanned', handle, symbol, canScan: false, reason: 'Records are not kept on this server yet, so nothing has been plotted here.' } }
   }
+
+  // Taken down, or no longer public: refused by name, everywhere (review R12).
+  const down = takenDown(handle, row)
+  if (down) return { http: 410, body: down }
 
   if (scan?.status === 'running' && nowMs - scan.startedAt < RUNNING_STALE_MS) {
     return { http: 200, body: { status: 'scanning', handle, symbol, scanId: scan.id, progress: scan.note ?? `Reading @${handle}'s posts about ${symbol}` } }
   }
 
   // A pasted call, or calls an earlier scan found (a later re-scan may have failed), still make a record.
-  const hasCalls = labels.some((l) => l.stance !== 'none')
-  if (scan?.status !== 'done' && !hasCalls) {
+  // A label a harness labeler wrote is never read as a call outside fake mode (review R6).
+  const fake = fakeModeOn()
+  const usable = labels.filter((l) => fake || !l.model || !FAKE_LABEL_MODELS.has(l.model))
+  const hasCalls = usable.some((l) => l.stance !== 'none')
+  if (!finished.length && !hasCalls) {
     let canScan = deps.scansAvailable()
     let reason: string | undefined
     if (!canScan) reason = 'Scans are not switched on on this server. One pasted post still works.'
@@ -151,12 +187,18 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
   } catch {
     return { http: 503, body: { status: 'refused', reason: 'The record did not load. Try again in a moment.', next: scanNext(handle, symbol) } }
   }
-  const byPost = new Map(labels.map((l) => [l.postId, l]))
+  const byPost = new Map(usable.map((l) => [l.postId, l]))
+  // A post that failed to parse once is still to label (review R11b): the UI offers to finish it.
+  const anyLabel = new Set(labels.filter((l) => l.model !== 'unparsed-1').map((l) => l.postId))
   const posts: LabeledPost[] = []
   for (const p of cached) {
+    // A post whose author is not the handle's current owner is not this account's (the handle changed hands, review R9).
+    const author = (p as { xUserId?: string | null }).xUserId ?? null
+    if (author && row?.xUserId && author !== row.xUserId) continue
     const l = byPost.get(p.id)
     if (l) posts.push({ ...p, label: { stance: l.stance, conviction: l.conviction, quote: l.quote }, origin: l.origin })
   }
+  const coverage = coverageOf(finished)
   const profile: XProfile = row ? { handle, name: row.name, avatarUrl: row.avatarUrl, followers: row.followers, blue: row.blue, xUserId: row.xUserId } : { handle, name: handle, avatarUrl: null, followers: null, blue: false, xUserId: null }
   const record = buildRecord({
     handle,
@@ -167,8 +209,11 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
     posts,
     candles,
     nowMs,
-    scannedAt: scan?.status === 'done' ? (scan.finishedAt ?? scan.startedAt) : null,
-    postsRead: cached.length,
+    scannedAt: finished.length ? Math.max(...finished.map((f) => f.finishedAt)) : null,
+    // What THIS symbol's scans read (review R8), not every post cached for the handle on any market.
+    postsRead: coverage?.postsRead ?? 0,
+    scanned: finished.length > 0,
+    coverage,
     pins,
   })
   if (deps.refreshGone && record.calls.length) {
@@ -183,6 +228,6 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
   }
   // Posts kept but not yet labeled for this symbol (a scan that ran out of time): the UI offers to finish them, free.
   const winFrom = Math.max(fromMs, scanWindowFrom(nowMs))
-  const unlabeled = cached.filter((p) => p.postedAt >= winFrom && !byPost.has(p.id)).length
+  const unlabeled = cached.filter((p) => p.postedAt >= winFrom && !anyLabel.has(p.id)).length
   return { http: 200, body: unlabeled > 0 ? { status: 'ready', record, unlabeled } : { status: 'ready', record } }
 }
