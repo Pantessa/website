@@ -12,8 +12,9 @@
 //     (startScan, under a transaction-scoped advisory lock);
 //   - handles are lowercase and symbols uppercase in every row.
 import { randomBytes } from 'node:crypto'
+import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
-import type { Requester, ScanRow, StoredLabel, XPost, XProfile } from './spec'
+import { fakeModeOn, type Requester, type ScanRow, type StoredLabel, type XPost, type XProfile } from './spec'
 
 export interface StoredHandle extends XProfile {
   isProtected: boolean
@@ -21,6 +22,10 @@ export interface StoredHandle extends XProfile {
   claimedXUserId: string | null
   claimedAt: number | null
   readAt: number | null
+  /** Taken down (review R12): its records are refused everywhere and it never lists. */
+  hiddenAt: number | null
+  /** X said there is no such account at this time (review R4): not asked again for a day. */
+  missingAt: number | null
 }
 
 export interface PlottedRow {
@@ -86,7 +91,23 @@ export async function getHandle(handle: string): Promise<StoredHandle | null> {
     claimedXUserId: r.claimedXUserId,
     claimedAt: ms(r.claimedAt),
     readAt: ms(r.readAt),
+    hiddenAt: ms(r.hiddenAt),
+    missingAt: ms(r.missingAt),
   }
+}
+
+/** X answered "no such account" (review R4b): remembered for a day, so the same miss is never billed twice. Touches nothing else on the row. */
+export async function markMissing(handle: string): Promise<void> {
+  const name = h(handle)
+  const now = new Date()
+  await prisma.xHandle.upsert({ where: { handle: name }, create: { handle: name, missingAt: now, readAt: now }, update: { missingAt: now, readAt: now } })
+}
+
+/** X answered that the account is protected (review R4b): remembered with the read time; nothing else on the row is touched. */
+export async function markProtected(handle: string): Promise<void> {
+  const name = h(handle)
+  const now = new Date()
+  await prisma.xHandle.upsert({ where: { handle: name }, create: { handle: name, isProtected: true, readAt: now }, update: { isProtected: true, readAt: now } })
 }
 
 /** Insert or refresh what X says about an account. Never touches the claim. */
@@ -99,6 +120,8 @@ export async function saveProfile(profile: XProfile & { isProtected?: boolean })
     followers: profile.followers,
     isBlue: profile.blue,
     readAt: new Date(),
+    // X answered for the account: it exists.
+    missingAt: null,
     ...(profile.isProtected === undefined ? {} : { isProtected: profile.isProtected }),
   }
   await prisma.xHandle.upsert({ where: { handle }, create: { handle, ...fields }, update: fields })
@@ -304,11 +327,15 @@ function scanId(): string {
   return `xs_${Date.now().toString(36)}${randomBytes(6).toString('hex')}`
 }
 
+/** What a running row is assumed to have spent once its request died (review R3): its whole reservation. Never less than what it wrote. */
+const RETIRE_DEAD = Prisma.sql`status = 'failed', note = 'The scan stopped before it finished.', finished_at = now(), cost_usd = GREATEST(cost_usd, reserved_usd), reserved_usd = 0`
+
 /**
  * Opens a `running` row, or returns the one already running for this handle
  * and symbol (two people asking share one scan). A `running` row older than
  * SCAN_JOIN_MS is a scan whose request died: it is finished as `failed` here
- * so it never blocks or misleads a later one.
+ * so it never blocks or misleads a later one. (No reservation: the money path
+ * is openScan; this stays for callers that only want the join rule.)
  */
 export async function startScan(row: { handle: string; symbol: string; provider: string; requestedBy: Requester; isInternal: boolean; windowFrom: number; windowTo: number }): Promise<{ scan: ScanRow; joined: boolean }> {
   const handle = h(row.handle)
@@ -317,7 +344,7 @@ export async function startScan(row: { handle: string; symbol: string; provider:
     await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${`x_scan:${handle}:${symbol}`}))) l`
     const now = new Date()
     const cutoff = new Date(now.getTime() - SCAN_JOIN_MS)
-    await tx.xScan.updateMany({ where: { handle, symbol, status: 'running', startedAt: { lt: cutoff } }, data: { status: 'failed', note: 'The scan stopped before it finished.', finishedAt: now } })
+    await tx.$executeRaw`UPDATE x_scans SET ${RETIRE_DEAD} WHERE handle = ${handle} AND symbol = ${symbol} AND status = 'running' AND started_at < ${cutoff}`
     const running = await tx.xScan.findFirst({ where: { handle, symbol, status: 'running', startedAt: { gte: cutoff } }, orderBy: { startedAt: 'desc' } })
     if (running) return { scan: scanRow(running), joined: true }
     const created = await tx.xScan.create({
@@ -327,35 +354,117 @@ export async function startScan(row: { handle: string; symbol: string; provider:
   })
 }
 
-export async function updateScan(id: string, patch: Partial<Pick<ScanRow, 'status' | 'postsRead' | 'callsFound' | 'costUsd' | 'note'>> & { finished?: boolean }): Promise<void> {
+/** The day's counts a scan's allowance is decided on, read inside the budget lock. */
+export interface ScanCounts {
+  /** Finished rows at their cost, running rows at the larger of their reservation and their cost (review R3). */
+  spentTodayUsd: number
+  /** This requester's scans today (the scansToday rules). */
+  scansToday: number
+  /** This requester's rows today, any status: each one cost a profile read (review R4c). */
+  lookupsToday: number
+}
+
+/** The one advisory lock every scan's money passes through (review R3). */
+export const SCAN_BUDGET_LOCK = 'x_scan_budget'
+
+/**
+ * RESERVE BEFORE SPENDING (review R3). Under ONE global advisory lock, in one
+ * transaction: retire dead running rows (charged their whole reservation),
+ * join a running scan of this handle and symbol, read today's spend (running
+ * rows at their reservation) and this requester's counts, ask `decide`, and
+ * only then open the row holding `reserveUsd` (this scan's worst case: its cap
+ * of posts plus the profile read). K requests at once are decided one after
+ * another, each seeing the others' reservations, so the day's cap is never
+ * crossed by a race. Finishing the row (updateScan finished) releases it.
+ */
+export async function openScan<A extends { ok: boolean }>(row: { handle: string; symbol: string; provider: string; requestedBy: Requester; isInternal: boolean; windowFrom: number; windowTo: number; reserveUsd: number; nowMs?: number; decide: (c: ScanCounts) => A }): Promise<{ kind: 'opened'; scan: ScanRow } | { kind: 'joined'; scan: ScanRow } | { kind: 'refused'; allowance: A }> {
+  const handle = h(row.handle)
+  const symbol = sym(row.symbol)
+  const nowMs = row.nowMs ?? Date.now()
+  const fake = fakeModeOn()
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${SCAN_BUDGET_LOCK}))) l`
+    const now = new Date(nowMs)
+    const cutoff = new Date(nowMs - SCAN_JOIN_MS)
+    await tx.$executeRaw`UPDATE x_scans SET ${RETIRE_DEAD} WHERE status = 'running' AND started_at < ${cutoff}`
+    const running = await tx.xScan.findFirst({ where: { handle, symbol, status: 'running', startedAt: { gte: cutoff } }, orderBy: { startedAt: 'desc' } })
+    if (running) return { kind: 'joined' as const, scan: scanRow(running) }
+    const day = utcDayStart(nowMs)
+    const c = await tx.$queryRaw<{ spent: number | null; scans: number; lookups: number }[]>`
+      SELECT
+        (SELECT sum(CASE WHEN status = 'running' THEN GREATEST(reserved_usd, cost_usd) ELSE cost_usd END) FROM x_scans WHERE started_at >= ${day})::float8 AS spent,
+        (SELECT count(*) FROM x_scans WHERE requested_by = ${row.requestedBy} AND started_at >= ${day} AND coalesce(provider, '') <> ${FINISH_PROVIDER}
+           AND (status IN ('running', 'done') OR (status = 'failed' AND posts_read > 0)) AND (${fake} = false OR is_internal = false))::int AS scans,
+        (SELECT count(*) FROM x_scans WHERE requested_by = ${row.requestedBy} AND started_at >= ${day} AND coalesce(provider, '') <> ${FINISH_PROVIDER}
+           AND (${fake} = false OR is_internal = false))::int AS lookups`
+    const allowance = row.decide({ spentTodayUsd: c[0]?.spent ?? 0, scansToday: c[0]?.scans ?? 0, lookupsToday: c[0]?.lookups ?? 0 })
+    if (!allowance.ok) return { kind: 'refused' as const, allowance }
+    const created = await tx.xScan.create({
+      data: { id: scanId(), handle, symbol, status: 'running', provider: row.provider, requestedBy: row.requestedBy, isInternal: row.isInternal, windowFrom: new Date(row.windowFrom), windowTo: new Date(row.windowTo), note: 'Starting', startedAt: now, reservedUsd: Math.max(0, row.reserveUsd) },
+    })
+    return { kind: 'opened' as const, scan: scanRow(created) }
+    // Requests queue on the lock: give them room to wait (Prisma's defaults are 2 s to get a connection, 5 s to finish).
+  }, { maxWait: 15_000, timeout: 20_000 })
+}
+
+/** Rows a free "finish" opens (review R11): never a scan, never a lookup, never coverage. */
+export const FINISH_PROVIDER = 'finish'
+/** `provider <> 'finish'` that keeps rows with no provider (SQL's NOT on a null drops them). */
+const NOT_FINISH = { OR: [{ provider: null }, { provider: { not: FINISH_PROVIDER } }] }
+
+export interface ScanPatch extends Partial<Pick<ScanRow, 'status' | 'postsRead' | 'callsFound' | 'costUsd' | 'note'>> {
+  finished?: boolean
+  /** The read stopped before the window's start (review R8). */
+  truncated?: boolean
+  /** The oldest post the read reached (ms). */
+  oldestPostAt?: number | null
+  /** The search's real start (an incremental re-scan starts after the last one, review R7). */
+  windowFrom?: number
+}
+
+export async function updateScan(id: string, patch: ScanPatch): Promise<void> {
   const data: Record<string, unknown> = {}
   if (patch.status !== undefined) data.status = patch.status
   if (patch.postsRead !== undefined) data.postsRead = Math.max(0, Math.floor(patch.postsRead))
   if (patch.callsFound !== undefined) data.callsFound = Math.max(0, Math.floor(patch.callsFound))
   if (patch.costUsd !== undefined) data.costUsd = Math.max(0, patch.costUsd)
   if (patch.note !== undefined) data.note = patch.note === null ? null : String(patch.note).slice(0, 300)
-  if (patch.finished) data.finishedAt = new Date()
+  if (patch.truncated !== undefined) data.truncated = patch.truncated
+  if (patch.oldestPostAt !== undefined) data.oldestPostAt = patch.oldestPostAt === null ? null : new Date(patch.oldestPostAt)
+  if (patch.windowFrom !== undefined) data.windowFrom = new Date(patch.windowFrom)
+  // A finished row holds nothing against the day's cap: its cost is what it spent (review R3).
+  if (patch.finished) {
+    data.finishedAt = new Date()
+    data.reservedUsd = 0
+  }
   if (!Object.keys(data).length) return
   await prisma.xScan.update({ where: { id }, data })
 }
 
-/** Dollars spent on X reads since 00:00 UTC, every requester together (internal runs included: the house paid for them too). */
+/** Dollars spent on X reads since 00:00 UTC, every requester together (internal runs included: the house paid for them too). A running scan counts at its reservation (review R3). */
 export async function spentTodayUsd(nowMs: number = Date.now()): Promise<number> {
-  const r = await prisma.xScan.aggregate({ where: { startedAt: { gte: utcDayStart(nowMs) } }, _sum: { costUsd: true } })
-  return r._sum.costUsd ?? 0
+  const r = await prisma.$queryRaw<{ spent: number | null }[]>`
+    SELECT sum(CASE WHEN status = 'running' THEN GREATEST(reserved_usd, cost_usd) ELSE cost_usd END)::float8 AS spent FROM x_scans WHERE started_at >= ${utcDayStart(nowMs)}`
+  return r[0]?.spent ?? 0
 }
 
 /**
  * Scans this requester started since 00:00 UTC (joined scans do not count:
  * they open no row; refused rows do not count either, and neither does a
- * scan that failed before it read a post). Under XCALLS_FAKE=1
- * (never production) internal scans do not count, so the harness can scan
- * the fixture run after run.
+ * scan that failed before it read a post, nor a free finish). In fake mode
+ * (spec fakeModeOn: never on Vercel) internal scans do not count, so the
+ * harness can scan the fixture run after run.
  */
 export async function scansToday(requester: Requester, nowMs: number = Date.now()): Promise<number> {
-  const fake = process.env.XCALLS_FAKE === '1' && process.env.VERCEL_ENV !== 'production'
+  const fake = fakeModeOn()
   // A scan that failed before it read a single post was the house's failure (X down, credits spent): it is not the visitor's scan.
-  return prisma.xScan.count({ where: { requestedBy: requester, startedAt: { gte: utcDayStart(nowMs) }, OR: [{ status: { in: ['running', 'done'] } }, { status: 'failed', postsRead: { gt: 0 } }], ...(fake ? { isInternal: false } : {}) } })
+  return prisma.xScan.count({ where: { requestedBy: requester, startedAt: { gte: utcDayStart(nowMs) }, AND: [NOT_FINISH, { OR: [{ status: { in: ['running', 'done'] } }, { status: 'failed', postsRead: { gt: 0 } }] }], ...(fake ? { isInternal: false } : {}) } })
+}
+
+/** This requester's rows today, any status (each was a billed profile read; review R4c). */
+export async function lookupsToday(requester: Requester, nowMs: number = Date.now()): Promise<number> {
+  const fake = fakeModeOn()
+  return prisma.xScan.count({ where: { requestedBy: requester, startedAt: { gte: utcDayStart(nowMs) }, ...NOT_FINISH, ...(fake ? { isInternal: false } : {}) } })
 }
 
 /**

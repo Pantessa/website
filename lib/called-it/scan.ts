@@ -16,7 +16,8 @@
 // Every dependency can be handed in (the pins run it over an in-memory store,
 // and over the real store on the TEST database).
 import * as Store from './store'
-import { addAllowanceFor, scanAllowance, type Allowance } from './budget'
+import { addAllowanceFor, allowanceFor, dailyUsdCap, maxScanCostUsd, scanAllowance, scanPostCap, type Allowance } from './budget'
+import type { XSearchQueryTimed } from './source/x-api'
 import { readPostById, sourceFor } from './source'
 import { labelPosts, type LabelDeps, type LabelResult } from './classify'
 import { termsFor } from './terms'
@@ -44,10 +45,14 @@ const DAY_MS = 86_400_000
 export const RUNNING_STALE_MS = 2 * 60 * 1000
 /** How long a scan may work inside one request. The route's maxDuration is 60 s; the rest is room to save and answer. */
 export const SCAN_TIME_BUDGET_MS = 45_000
+/** Of the budget, what the search leaves for labeling (review R4e): the search stops paging this long before the deadline. */
+export const SEARCH_LABEL_RESERVE_MS = 15_000
+/** "No such account" and "protected" are answered from the store this long before X is asked again (review R4b). */
+export const MISS_REMEMBER_MS = 24 * 60 * 60 * 1000
 
 export type StoreApi = Pick<
   typeof Store,
-  'getHandle' | 'saveProfile' | 'savePosts' | 'postsFor' | 'newestPostId' | 'labelsFor' | 'saveLabels' | 'latestScan' | 'startScan' | 'updateScan'
+  'getHandle' | 'saveProfile' | 'savePosts' | 'postsFor' | 'newestPostId' | 'labelsFor' | 'saveLabels' | 'latestScan' | 'startScan' | 'updateScan' | 'openScan' | 'markMissing' | 'markProtected'
 >
 
 export type AllowanceFn = (requester: Requester, nowMs: number, ctx: { handle?: string; symbol?: string }) => Promise<Allowance>
@@ -181,42 +186,69 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
 
   if (!source) return refused(503, 'Scans are not switched on on this server, so no new posts can be read. Records already plotted still open, and one pasted post still works.', next)
 
-  const allowed = await deps.allowance(requester, nowMs, { handle, symbol })
-  if (!allowed.ok) return refused(429, allowed.reason, allowed.next)
+  // What we already know about the account answers for a day, before X is asked again (review R4b).
+  const known = await store.getHandle(handle)
+  const another = [{ label: 'Plot another handle', href: '/x' }]
+  if (known?.missingAt && nowMs - known.missingAt < MISS_REMEMBER_MS) return refused(404, `There is no X account named @${handle}. Check the spelling.`, another)
+  if (known?.isProtected && known.readAt && nowMs - known.readAt < MISS_REMEMBER_MS) return refused(403, `@${handle}'s posts are protected, so they cannot be read. Only posts X shows to everyone can be plotted.`, another)
 
-  const profile = await source.profile(handle)
-  if (!profile) {
-    const miss = (source as { lastProfileMiss?: unknown }).lastProfileMiss
-    if (miss === 'protected') {
+  // RESERVE BEFORE SPENDING (review R3): the allowance, the day's spend (running scans at their worst case) and
+  // this row are decided together under one lock, and the row holds this scan's worst case until it finishes.
+  const postCap = scanPostCap()
+  const capUsd = dailyUsdCap()
+  const opened = await store.openScan({
+    handle,
+    symbol,
+    provider: source.name,
+    requestedBy: requester,
+    isInternal: internal,
+    windowFrom,
+    windowTo: nowMs,
+    reserveUsd: maxScanCostUsd(postCap),
+    nowMs,
+    decide: (c) => allowanceFor({ requester, ...c, capUsd, postCap, handle, symbol }),
+  })
+  if (opened.kind === 'joined') return { kind: 'joined', scan: opened.scan }
+  if (opened.kind === 'refused') {
+    const a = opened.allowance
+    return a.ok ? refused(429, 'Scans are resting.', next) : refused(429, a.reason, a.next)
+  }
+  const { scan } = opened
+
+  let postsRead = 0
+  let saved = false
+  const cost = () => spentOf(source) ?? 0
+  try {
+    // NO SPEND WITHOUT A ROW (review R4a): the profile read happens after the row is open, so its cent is on it whatever X answers.
+    const profile = await source.profile(handle)
+    if (!profile || profile.handle !== handle) {
+      const miss = (source as { lastProfileMiss?: unknown }).lastProfileMiss
+      const reason = !profile && miss === 'protected' ? `@${handle}'s posts are protected, so they cannot be read. Only posts X shows to everyone can be plotted.` : !profile ? `There is no X account named @${handle}. Check the spelling.` : `X answered for a different account than @${handle}.`
       try {
-        await store.saveProfile({ handle, name: handle, avatarUrl: null, followers: null, blue: false, xUserId: null, isProtected: true })
+        if (!profile && miss === 'protected') await store.markProtected(handle)
+        else if (!profile) await store.markMissing(handle)
       } catch {
         /* the refusal still stands */
       }
-      return refused(403, `@${handle}'s posts are protected, so they cannot be read. Only posts X shows to everyone can be plotted.`, [{ label: 'Plot another handle', href: '/x' }])
+      await store.updateScan(scan.id, { status: 'refused', finished: true, costUsd: cost(), note: reason })
+      return refused(!profile && miss === 'protected' ? 403 : 404, reason, another)
     }
-    return refused(404, `There is no X account named @${handle}. Check the spelling.`, [{ label: 'Plot another handle', href: '/x' }])
-  }
-  if (profile.handle !== handle) return refused(404, `X answered for a different account than @${handle}.`, [{ label: 'Plot another handle', href: '/x' }])
-  await store.saveProfile({ ...profile, isProtected: false })
+    await store.saveProfile({ ...profile, isProtected: false })
+    await store.updateScan(scan.id, { note: `Reading @${handle}'s posts about ${symbol}`, costUsd: cost() })
 
-  const windowTo = nowMs
-  const { scan, joined } = await store.startScan({ handle, symbol, provider: source.name, requestedBy: requester, isInternal: internal, windowFrom, windowTo })
-  if (joined) return { kind: 'joined', scan }
-
-  let costUsd = spentOf(source) ?? 0
-  let postsRead = 0
-  try {
-    await store.updateScan(scan.id, { note: `Reading @${handle}'s posts about ${symbol}`, costUsd })
     // Incremental after a finished scan: newestPostId ignores pasted posts, so a post added today never hides older ones.
     const sinceId = last?.status === 'done' ? ((await store.newestPostId(handle)) ?? undefined) : undefined
-    const found = await source.search({ handle, terms: termsFor(symbol), fromMs: windowFrom, toMs: windowTo, cap: allowed.postCap, sinceId })
-    // The source bills the profile read into the search's cost; its own running total wins when it keeps one.
-    costUsd = spentOf(source) ?? found.costUsd
+    // The search gets the scan's time budget less what labeling needs (review R4e).
+    const searchDeadline = Math.max(nowMs, deadlineMs - SEARCH_LABEL_RESERVE_MS)
+    const query: XSearchQueryTimed = { handle, terms: termsFor(symbol), fromMs: windowFrom, toMs: nowMs, cap: postCap, sinceId, deadlineMs: searchDeadline }
+    const found = await source.search(query)
     postsRead = found.readCount
     const own = found.posts.filter((p) => p.handle === handle && postTimeAgrees(p.id, p.postedAt))
     await store.savePosts(own)
-    await store.updateScan(scan.id, { postsRead, costUsd, note: `Read ${plural(postsRead, 'post')}` })
+    saved = true
+    const stop = (source as { lastStop?: unknown }).lastStop
+    const readNote = found.truncated && (stop === 'error' || stop === 'rate-limited') ? `Read ${plural(postsRead, 'post')} before X stopped answering; older posts were not read.` : `Read ${plural(postsRead, 'post')}`
+    await store.updateScan(scan.id, { postsRead, costUsd: cost() || found.costUsd, note: readNote })
 
     const { todo, have } = await unlabeledIn(store, handle, symbol, windowFrom)
     if (todo.length) await store.updateScan(scan.id, { note: `Labeling ${plural(todo.length, 'post')}` })
@@ -226,18 +258,19 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
       status: 'done',
       finished: true,
       postsRead,
-      costUsd,
+      costUsd: cost() || found.costUsd,
       callsFound: calls,
       note: doneNote({ calls, postsRead, labeled: have.length + rows.length, toLabel: have.length + todo.length, unlabeled }),
     })
     return { kind: 'done', scanId: scan.id, unlabeled }
   } catch (err) {
     try {
-      await store.updateScan(scan.id, { status: 'failed', finished: true, postsRead, costUsd: spentOf(source) ?? costUsd, note: failNote(err) })
+      // What was spent is on the row whatever failed (review R4): the profile, and every page the source billed.
+      await store.updateScan(scan.id, { status: 'failed', finished: true, postsRead, costUsd: cost(), note: failNote(err) })
     } catch {
-      /* the store retires a running row after RUNNING_STALE_MS */
+      /* the store retires a running row after RUNNING_STALE_MS, charged its whole reservation */
     }
-    return refused(502, `${failNote(err)} Posts already read are kept.`, next)
+    return refused(502, saved ? `${failNote(err)} The posts already read are kept.` : failNote(err), next)
   }
 }
 

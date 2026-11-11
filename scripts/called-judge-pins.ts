@@ -38,7 +38,25 @@ class MemStore {
   }
   async saveProfile(p: XProfile & { isProtected?: boolean }) {
     const old = this.handles.get(p.handle)
-    this.handles.set(p.handle, { ...p, isProtected: !!p.isProtected, claimedXUserId: old?.claimedXUserId ?? null, claimedAt: old?.claimedAt ?? null, readAt: Date.now() })
+    this.handles.set(p.handle, { ...p, isProtected: !!p.isProtected, claimedXUserId: old?.claimedXUserId ?? null, claimedAt: old?.claimedAt ?? null, readAt: Date.now(), hiddenAt: old?.hiddenAt ?? null, missingAt: null })
+  }
+  // Lane FIX (review R3, R4): the reservation door and the remembered misses, as the real store answers them.
+  async markMissing(h: string) {
+    const old = this.handles.get(h)
+    this.handles.set(h, { handle: h, name: old?.name ?? h, avatarUrl: old?.avatarUrl ?? null, followers: old?.followers ?? null, blue: old?.blue ?? false, xUserId: old?.xUserId ?? null, isProtected: old?.isProtected ?? false, claimedXUserId: old?.claimedXUserId ?? null, claimedAt: old?.claimedAt ?? null, readAt: Date.now(), hiddenAt: old?.hiddenAt ?? null, missingAt: Date.now() })
+  }
+  async markProtected(h: string) {
+    await this.markMissing(h)
+    const row = this.handles.get(h)!
+    this.handles.set(h, { ...row, isProtected: true, missingAt: null })
+  }
+  async openScan<A extends { ok: boolean }>(r: { handle: string; symbol: string; provider: string; requestedBy: string; isInternal: boolean; windowFrom: number; windowTo: number; reserveUsd: number; decide: (c: { spentTodayUsd: number; scansToday: number; lookupsToday: number }) => A }) {
+    const running = this.scans.find((s) => s.handle === r.handle && s.symbol === r.symbol && s.status === 'running' && Date.now() - s.startedAt < 120_000)
+    if (running) return { kind: 'joined' as const, scan: { ...running } }
+    const allowance = r.decide({ spentTodayUsd: this.spent, scansToday: await this.scansToday(r.requestedBy), lookupsToday: 0 })
+    if (!allowance.ok) return { kind: 'refused' as const, allowance }
+    const { scan } = await this.startScan(r)
+    return { kind: 'opened' as const, scan }
   }
   claim(h: string, xUserId: string) {
     const old = this.handles.get(h)!
@@ -295,7 +313,8 @@ export async function calledJudgePinsAsync(check: Check): Promise<void> {
     const protSrc = Object.assign(new DoubleSource({ profile: null }), { lastProfileMiss: 'protected' as const })
     const protStore = new MemStore()
     const protOut = await runScan({ handle: 'locked_two', symbol: 'BTC', requester: 'ip:x', internal: false }, scanDeps(protStore, protSrc))
-    check('judge scan: a protected account is worded apart (403) and remembered', protOut.kind === 'refused' && protOut.http === 403 && /protected/.test(protOut.body.reason) && protStore.handles.get('locked_two')?.isProtected === true && protStore.scans.length === 0)
+    // RE-PINNED 2026-11-11 (review R4): the profile read now happens on an open row, so the refusal leaves a `refused` row carrying the read's cost (it used to leave none, and the cent landed nowhere).
+    check('judge scan: a protected account is worded apart (403) and remembered', protOut.kind === 'refused' && protOut.http === 403 && /protected/.test(protOut.body.reason) && protStore.handles.get('locked_two')?.isProtected === true && protStore.scans.length === 1 && protStore.scans[0].status === 'refused')
     const spentStore = new MemStore()
     spentStore.scansTodayOverride = GUEST_SCANS_PER_DAY
     const capped = await runScan({ handle: HANDLE, symbol: 'BTC', requester: 'ip:x', internal: false }, scanDeps(spentStore, new DoubleSource()))
