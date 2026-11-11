@@ -178,8 +178,8 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 /* A touch screen: every control a thumb can hit. */
 @media (hover: none) {
   .xcc-btn { min-height: 44px; padding: 0 14px; }
-  .xcc-seg__btn { min-height: 44px; padding: 0 13px; }
-  .xcc-chip { min-height: 44px; padding: 0 13px; }
+  .xcc-seg__btn, .xcc-door--page .xcc-seg__btn { min-height: 44px; padding: 0 13px; }
+  .xcc-chip, .xcc-door--page .xcc-chip { min-height: 44px; padding: 0 13px; }
   .xcc-pin, .xcc-pop__x { width: 44px; height: 44px; }
   .xcc__clear { min-height: 44px; padding: 0 10px; }
   .xcc-add__input { height: 44px; font-size: 16px; }

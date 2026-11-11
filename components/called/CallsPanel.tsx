@@ -187,6 +187,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   const focusId = useCalled((s) => s.focusId)
   const note = useCalled((s) => s.note)
   const advanced = useCalled((s) => s.advanced)
+  const cards = useCalled((s) => s.cards)
   const viewer = useXViewer()
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -277,6 +278,14 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
         {note ? (
           <p className="xcc__line xcc__line--note" role="status">
             {note}
+          </p>
+        ) : null}
+        {/* What the chart is showing, when it is not a card for every pin (a narrow pane holds fewer; a phone's holds none). */}
+        {advanced && pinned > cards && record.calls.length > 0 ? (
+          <p className="xcc__line" data-called-cards={cards}>
+            {cards === 0
+              ? 'On a chart this narrow every call is a mark on its bar. Tap a mark to find its post here.'
+              : `The chart has room for ${cards} cards at this width. The other pinned calls are marks on their bars, like the rest.`}
           </p>
         ) : null}
         {record.calls.length > 0 ? (
