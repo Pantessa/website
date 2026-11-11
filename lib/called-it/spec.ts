@@ -578,13 +578,18 @@ export function buildRecord(input: BuildRecordInput): CalledRecord {
   const counted = calls.filter((c) => c.origin === 'scan')
   const added = calls.length - counted.length
   const scanned = input.scanned ?? input.scannedAt !== null
-  const span = candles.length > 1 ? candles[candles.length - 1].t - candles[0].t : 0
+  // The record's window is the scan's reach (a year), widened to hold an older pasted post, never past the chart's first bar.
+  // (A stock's daily series holds five years: spacing pins by THAT span left three pins on a year of calls.)
+  const firstBarMs = candles.length ? candles[0].t * 1000 : nowMs
+  const reachMs = nowMs - SCAN_WINDOW_DAYS * DAY_MS
+  const windowFrom = Math.max(firstBarMs, Math.min(reachMs, every.length ? every[0].postedAt - 7 * DAY_MS : reachMs))
+  const span = Math.max(0, Math.round((nowMs - windowFrom) / 1000))
   const own = (input.pins ?? []).filter((id, i, a) => a.indexOf(id) === i && calls.some((c) => c.postId === id)).slice(0, PIN_URL_MAX)
   // The rule pins from what the scan found. With no scan there is nothing to rank against, so the pasted posts are the plot.
   const picked = new Set(own.length ? own : pickCalls(counted.length ? counted : calls, { minGapSec: Math.round(span / 14) }))
   for (const c of calls) c.picked = picked.has(c.postId)
   const tally = tallyOf(counted)
-  const coverage: Coverage | null = !scanned ? null : (input.coverage ?? { from: candles.length ? candles[0].t * 1000 : nowMs, to: input.scannedAt ?? nowMs, postsRead: input.postsRead, truncated: false })
+  const coverage: Coverage | null = !scanned ? null : (input.coverage ?? { from: Math.max(firstBarMs, reachMs), to: input.scannedAt ?? nowMs, postsRead: input.postsRead, truncated: false })
   return {
     handle,
     symbol,
@@ -594,7 +599,7 @@ export function buildRecord(input: BuildRecordInput): CalledRecord {
     calls,
     tally,
     bySide,
-    window: { from: candles.length ? candles[0].t * 1000 : nowMs, to: nowMs },
+    window: { from: windowFrom, to: nowMs },
     scanned,
     added,
     coverage,

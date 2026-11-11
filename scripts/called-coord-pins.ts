@@ -44,6 +44,7 @@ import {
   type RecordResponse,
 } from '../lib/called-it/spec'
 import { additiveRefusal } from './run-ddl'
+import { askDoorPillHidden } from '../lib/ask-door'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -175,9 +176,20 @@ export function calledCoordPins(check: Check): void {
   check(
     'called-it coverage (review R8): a record carries what its scans read; a scan the cap ended early says how far back it got and that older posts were not read; with no coverage handed in it is the window and the posts read, not truncated; every line is ASCII',
     capped.words.coverage === 'Read the newest 400 matching posts, back to 3 Aug 2026. Older posts were not read.' && capped.coverage?.truncated === true &&
-      coverageLine({ from: Date.UTC(2025, 10, 30), to: Date.UTC(2026, 10, 11), postsRead: 1, truncated: false }) === 'Read 1 matching post from 30 Nov 2025 to 11 Nov 2026.' && rec.coverage?.truncated === false && rec.coverage.postsRead === posts.length && rec.coverage.from === up[0].t * 1000 &&
+      coverageLine({ from: Date.UTC(2025, 10, 30), to: Date.UTC(2026, 10, 11), postsRead: 1, truncated: false }) === 'Read 1 matching post from 30 Nov 2025 to 11 Nov 2026.' && rec.coverage?.truncated === false && rec.coverage.postsRead === posts.length && rec.coverage.from === NOW - 365 * 86_400_000 &&
       fmtDay(Date.UTC(2026, 0, 1, 23, 59)) === '1 Jan 2026' && [capped.words.coverage ?? '', LABEL_CAVEAT, DELETED_NOTE, ADDED_MARK, addedLine(3)].every((x) => ASCII.test(x)) && /can be wrong/.test(LABEL_CAVEAT) && /model/.test(METHOD_LINE) && !/by its id/.test(METHOD_LINE),
     capped.words.coverage ?? '',
+  )
+  // ── The window is the scan's reach, not the chart's history (a stock's daily series holds five years) ──
+  const fiveYears = bars((i) => 100 + i / 10, 1825)
+  const onStock = buildRecord({ handle: FIXTURE_HANDLE, symbol: 'AAPL', side: 'all', profile: FIXTURE_PROFILE, verified: null, posts, candles: fiveYears, nowMs: NOW, scannedAt: NOW, postsRead: 11 })
+  const oldPaste = buildRecord({ handle: FIXTURE_HANDLE, symbol: 'AAPL', side: 'all', profile: FIXTURE_PROFILE, verified: null, posts: [...posts, { ...posts[0], id: '1349149096909668363', postedAt: Date.UTC(2021, 0, 13, 0, 19, 45), origin: 'added' as const }], candles: bars((i) => 100 + i / 10, 2200), nowMs: NOW, scannedAt: NOW, postsRead: 11 })
+  check(
+    "called-it window: on five years of daily bars the record's window is still the year a scan reaches, so pins are spaced against that year and the plot holds six of them (it held three when the spacing followed the chart's whole history); an older pasted post widens the window to hold it; the window never starts before the chart's first bar; the Ask pill stays off the share landing",
+    onStock.window.from === NOW - 365 * 86_400_000 && onStock.calls.filter((x) => x.picked).length === PICK_MAX && onStock.coverage?.from === NOW - 365 * 86_400_000 &&
+      oldPaste.window.from === Date.UTC(2021, 0, 13, 0, 19, 45) - 7 * 86_400_000 && oldPaste.calls.length === 11 && rec.window.from >= up[0].t * 1000 &&
+      askDoorPillHidden('/x') && askDoorPillHidden('/x/cz_binance/BTC') && !askDoorPillHidden('/xyz') && !askDoorPillHidden('/t/BTC') && askDoorPillHidden('/dashboard'),
+    `${onStock.calls.filter((x) => x.picked).length} pins · ${new Date(onStock.window.from).toISOString().slice(0, 10)}`,
   )
   // ── Review R6: one fence for fake mode, and a fake claim is recognisable in the data ──
   check(

@@ -167,7 +167,22 @@ export function isPublicAppPath(href: string): boolean {
   // …and the public progress pages (/leaderboard, /analytics — 2026-10-15).
   // …and the policy pool's public ledger (/policy-pool — squad policy-pool, 2026-11-02).
   // …and the community: the feed, every room, and Telegram's Mini App entry (squad community, 2026-11-09).
-  return isMarketsPath(path) || isProgressPath(path) || isCommunityPath(path) || isTelegramEntryPath(path) || path === '/chat' || path === '/chat/' || path === '/policy-pool' || path === '/policy-pool/'
+  // …and Called it: the door, every account and every record (squad called-it, 2026-11-11).
+  return isMarketsPath(path) || isProgressPath(path) || isCommunityPath(path) || isTelegramEntryPath(path) || isCalledPath(path) || path === '/chat' || path === '/chat/' || path === '/policy-pool' || path === '/policy-pool/'
+}
+
+// ── Called it (squad called-it, 2026-11-11) ─────────────────────────────
+// /x (the door), /x/<handle> (an account) and /x/<handle>/<SYMBOL> (a record)
+// are share landings: a stranger arrives from X with no wallet and no session,
+// so a link to them is always a plain link and nothing there sends a visitor
+// home. Exactly `/x` and what is under it: `/x402`, `/xyz` are not it. Pure;
+// pinned in scripts/called-record-pins.ts.
+
+export const CALLED_HREF = '/x'
+
+export function isCalledPath(pathname: string): boolean {
+  const path = pathname.split(/[?#]/)[0]
+  return path === CALLED_HREF || path.startsWith(`${CALLED_HREF}/`)
 }
 
 // ── The community surface (squad community, 2026-11-09) ─────────────────
