@@ -24321,6 +24321,33 @@ async function main() {
             (await import('../lib/app-entry')).isPublicAppPath('/'),
         )
       }
+      // 2026-11-11, Nate: a Macro row clicked low on `/` opened /t/<sym>
+      // scrolled to the bottom. Next's LoadingBoundary renders a loading.tsx's
+      // stylesheet links BEFORE the skeleton; React hoists them into <head>, so
+      // Next's scroll-to-top finds no visible first node, gives up, and never
+      // retries when the page streams in. The route skeletons carry
+      // ArriveAtTop, which does that scroll on a client navigation only.
+      {
+        const skelSrc = readFileSync('components/skeleton/RouteSkeleton.tsx', 'utf8')
+        const arriveSrc = readFileSync('components/skeleton/ArriveAtTop.tsx', 'utf8')
+        const chatLoaderSrc = readFileSync('components/ChatLoader.tsx', 'utf8')
+        const nextRouterSrc = readFileSync('node_modules/next/dist/client/components/layout-router.js', 'utf8')
+        const loadingFiles = ['app/t/[symbol]/loading.tsx', 'app/live/loading.tsx', 'app/chat/loading.tsx', 'app/chat/[id]/loading.tsx']
+        const loadings = loadingFiles.map((f) => readFileSync(f, 'utf8'))
+        check(
+          'arrive at top: both route skeletons (/t/<sym>, /live) mount ArriveAtTop, which scrolls the window to 0 on a client navigation only (not the first load, not a #hash, not a back/forward), because Next renders a loading fallback\'s stylesheets first and its scroll-to-top bails on the hoisted <link>; the chat loaders import no stylesheet, so Next scrolls those itself',
+          /import ArriveAtTop from '\.\/ArriveAtTop'/.test(skelSrc) &&
+            (skelSrc.match(/<MarketsShell(?: sym)?>\s*<ArriveAtTop \/>/g) ?? []).length === 2 &&
+            /^'use client'/.test(arriveSrc) &&
+            /const \[byNavigation\] = useState\(hydrated\)/.test(arriveSrc) &&
+            /if \(!byNavigation\) return\s*if \(window\.location\.hash\) return\s*if \(performance\.now\(\) - poppedAt < POP_GRACE_MS\) return\s*if \(window\.scrollY > 0\) window\.scrollTo\(\{ top: 0, left: 0, behavior: 'instant' \}\)/.test(arriveSrc) &&
+            /addEventListener\('popstate'/.test(arriveSrc) &&
+            /SymbolSkeleton/.test(loadings[0]) && /BoardSkeleton/.test(loadings[1]) &&
+            loadings.slice(2).every((s) => /ChatLoader/.test(s)) &&
+            !/^import ['"][^'"]+\.css['"]/m.test(chatLoaderSrc) &&
+            /fallback: \/\*#__PURE__\*\/ \(0, _jsxruntime\.jsxs\)\(_jsxruntime\.Fragment, \{\s*children: \[\s*loadingStyles,\s*loadingScripts,\s*loadingRsc\s*\]/.test(nextRouterSrc),
+        )
+      }
       check(
         "SpineLink: a plain click by a settled signed-out visitor opens the sign-in door aimed at the link's own target; modified clicks, everyone else, and every link to a public app page (the markets surface) get the plain link",
         /if \(e\.defaultPrevented \|\| !signedOut \|\| isPublicAppPath\(href\)\) return/.test(spineLinkS) &&
