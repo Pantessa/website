@@ -739,6 +739,21 @@ export async function calledRecordPinsServed(check: Check, BASE: string): Promis
         (metaOf(pq, 'og:title') ?? '').includes('No scan yet, so no tally.') && iq.status === 200 && iq.headers.get('x-pantessa-card') === 'pasted' && iq.headers.get('content-type') === 'image/png',
       `${iq.status} ${iq.headers.get('x-pantessa-card')} chips:${pq.includes('class="xrc-count')} group:${pq.includes('data-added-group="2"')} intent:${intentText}`,
     )
+
+    // 4. A scan in flight: a real page that says what is being read, asks again by itself, and still offers the door.
+    const R = 'zz_pin_rec_s'
+    const { scan: running } = await Store.startScan({ handle: R, symbol: 'BTC', provider: 'fixture', requestedBy: 'ip:zz_pin_record', isInternal: true, windowFrom: now - SCAN_WINDOW_DAYS * 86_400_000, windowTo: now })
+    await Store.updateScan(running.id, { note: 'Read 212 posts' })
+    const pr = await (await fetch(`${BASE}/x/${R}/BTC`, { headers: HEAD })).text()
+    const tr = textOf(pr)
+    const ir = await fetch(`${BASE}/api/og/called?handle=${R}&sym=BTC`, { headers: HEAD })
+    await ir.arrayBuffer()
+    check(
+      'called-it landing (served, a scan in flight): the page says whose posts are being read, prints the scan\'s own progress note, reloads itself every few seconds with no script (a meta refresh), draws the market\'s line with no pins, still offers the door, is not indexed, and the image says a scan is reading',
+      pr.includes('data-status="scanning"') && tr.includes(`Reading @${R}'s posts about BTC.`) && tr.includes('Read 212 posts') && /<meta http-equiv="refresh" content="6"\/?>/i.test(pr) && pr.includes('id="plot"') && !pr.includes('class="xrc-pin ') && !pr.includes('data-share="row"') &&
+        /noindex/.test(metaOf(pr, 'robots') ?? '') && ir.status === 200 && ir.headers.get('x-pantessa-card') === 'scanning' && ir.headers.get('content-type') === 'image/png' && /s-maxage=15/.test(ir.headers.get('cache-control') ?? ''),
+      `${ir.status} ${ir.headers.get('x-pantessa-card')} status:${pr.includes('data-status="scanning"')} refresh:${/http-equiv="refresh"/i.test(pr)} note:${tr.includes('Read 212 posts')}`,
+    )
   } catch (err) {
     check('called-it record (served, TEST DB): the rows could be written and read', false, err instanceof Error ? err.message : String(err))
   } finally {

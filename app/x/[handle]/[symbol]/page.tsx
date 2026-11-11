@@ -218,7 +218,8 @@ export default async function RecordPage(props: Props) {
                 <h1 className="xrc-headline">{scanning ? `Reading @${handle}'s posts about ${symbol}.` : `Nobody has plotted @${handle} on ${symbol} yet.`}</h1>
                 {scanning ? (
                   <p className="xrc-standing" role="status">
-                    {body.progress || 'The scan has started.'} This page checks again every few seconds.
+                    {/* The scan's own note, closed with a full stop if it has none. */}
+                    {`${(body.progress || 'The scan has started').trim().replace(/[.\s]+$/, '')}.`} This page checks again every few seconds.
                   </p>
                 ) : (
                   <>
