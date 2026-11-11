@@ -106,6 +106,7 @@ export function calledAuthPins(check: Check): void {
 
   // The authorize URL.
   const au = new URL(authorizeUrl({ clientId: 'cid', redirectUri: 'https://www.pantessa.com/api/x/auth/callback', state: 'st', challenge: 'ch' }))
+  check('x auth: the scope is space-separated as %20', authorizeUrl({ clientId: 'cid', redirectUri: 'R', state: 'st', challenge: 'ch' }).includes('scope=users.read%20tweet.read'))
   check(
     'x auth: authorize URL carries every PKCE parameter',
     `${au.origin}${au.pathname}` === X_AUTHORIZE_URL &&

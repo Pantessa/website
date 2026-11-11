@@ -210,7 +210,8 @@ export function authorizeUrl(p: { clientId: string; redirectUri: string; state: 
     code_challenge: p.challenge,
     code_challenge_method: 'S256',
   })
-  return `${X_AUTHORIZE_URL}?${q.toString()}`
+  // Spaces as %20 (X's own examples), not the form encoding's `+`.
+  return `${X_AUTHORIZE_URL}?${q.toString().replace(/\+/g, '%20')}`
 }
 
 /** The token exchange's request. Public client: `client_id` in the body. Confidential: HTTP Basic. */
