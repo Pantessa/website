@@ -826,7 +826,18 @@ export async function calledChartPinsServed(check: Check, BASE: string): Promise
   } catch {
     /* judged below */
   }
-  check('called chart (served): the door\'s suggestions come from the public list, which answers a list the door can read (and never the fixture or an internal run)', handles.status === 200 && Array.isArray((list as { plotted?: unknown })?.plotted) && plottedFrom(list, 50).every((p) => p.handle !== FIXTURE_HANDLE && !p.handle.startsWith('zz_pin_')), handles.text.slice(0, 120))
+  const onBtc = await get('/api/x/handles?sym=BTC')
+  let listBtc: unknown = null
+  try {
+    listBtc = JSON.parse(onBtc.text)
+  } catch {
+    /* judged below */
+  }
+  check(
+    'called chart (served): the door\'s suggestions come from the public list, narrowed to the market the door is on, which answers a list the door can read (and never the fixture or an internal run)',
+    handles.status === 200 && Array.isArray((list as { plotted?: unknown })?.plotted) && plottedFrom(list, 50).every((p) => p.handle !== FIXTURE_HANDLE && !p.handle.startsWith('zz_pin_')) && onBtc.status === 200 && Array.isArray((listBtc as { plotted?: unknown })?.plotted) && plottedFrom(listBtc, 50).every((p) => p.symbol === null || p.symbol === 'BTC') && read('components/called/HandleDoor.tsx').includes('/api/x/handles${symbol ? `?sym=${encodeURIComponent(symbol)}` : \'\'}'),
+    handles.text.slice(0, 120),
+  )
   const never = asRecordResponse(JSON.parse((await get('/api/x/record?handle=zz_pin_ch_none&sym=BTC')).text))
   check('called chart (served): a handle nobody has plotted answers "unscanned" with whether a scan can run, which the strip turns into words and a next step', never?.status === 'unscanned' && never.handle === 'zz_pin_ch_none' && typeof never.canScan === 'boolean')
   const garbage = asRecordResponse(JSON.parse((await get('/api/x/record?handle=not%20a%20handle&sym=BTC')).text))

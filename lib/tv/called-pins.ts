@@ -33,7 +33,7 @@
 // is the only part that touches the chart, through the hand-written types in
 // lib/tv/types (the library itself is licensed and never in this repository).
 
-import { ADDED_MARK, PIN_URL_MAX, VERDICT_WORDS, cmpPostId, moveLine, recordHref, type CallVerdict, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
+import { ADDED_MARK, PIN_URL_MAX, VERDICT_WORDS, cmpPostId, fmtDay, moveLine, recordHref, type CallVerdict, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
 import type { ShapeSnapshot } from './shapes'
 import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvPriceScaleApi, TvShapeOptions, TvWidget } from './types'
 
@@ -41,14 +41,12 @@ import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvPriceScaleApi, TvShapeO
 
 /** A card shows this many of the post's characters at most. */
 export const PIN_WORDS_MAX = 90
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
 const ELLIPSIS = '\u2026'
 const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g
 
-/** `10 Jan 2026`, the UTC day the post was made. */
+/** `10 Jan 2026`, the UTC day the post was made (the contract's own day format, so a card and the coverage line agree). */
 export function pinDate(ms: number): string {
-  const d = new Date(ms)
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`
+  return fmtDay(ms)
 }
 
 /** X's text on one line: control and direction characters out, runs of whitespace as one space. No word is changed. */

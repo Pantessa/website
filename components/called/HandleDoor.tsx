@@ -64,15 +64,15 @@ export default function HandleDoor({ symbol, initialHandle = '', side: sideProp 
   useEffect(() => setSide(sideProp), [sideProp])
   useEffect(() => {
     let alive = true
-    // Handles somebody already plotted: a tap draws them at once, no scan.
-    fetch('/api/x/handles', { credentials: 'same-origin' })
+    // Handles somebody already plotted (on this market, when the door knows it): a tap draws them at once, no scan.
+    fetch(`/api/x/handles${symbol ? `?sym=${encodeURIComponent(symbol)}` : ''}`, { credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() : null))
       .then((body) => alive && setPlotted(plottedFrom(body)))
       .catch(() => undefined)
     return () => {
       alive = false
     }
-  }, [])
+  }, [symbol])
 
   const go = (h: string, s: CalledSide, on: string) => {
     if (onPlot) onPlot(h, s)
