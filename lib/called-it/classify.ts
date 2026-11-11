@@ -21,13 +21,15 @@
 // never calls a model.
 import { modelText, modelLabel } from '@/lib/markets-ai-model'
 import { fixturePosts, FIXTURE_HANDLE } from './fixture'
-import { PROMPT_POST_MAX, fakeModeOn, quoteIsFromPost, type CallLabel, type XPost } from './spec'
+import { ENV, PROMPT_POST_MAX, fakeModeOn, quoteIsFromPost, type CallLabel, type XPost } from './spec'
 import { canonicalSymbol, isMarketProxy } from './terms'
 import { symbolName } from '@/lib/markets'
 
 export const LABEL_BATCH = 30
 /** Batches in flight at once. 400 posts = 14 batches = 3 rounds, inside a 60 s function. */
 export const LABEL_POOL = 5
+/** max_tokens per batch: a JSON answer for 30 posts is ~1,500 tokens; the rest is headroom for adaptive thinking. */
+export const LABEL_MAX_TOKENS = 8000
 /** A model call never gets less than this, and never more than the time left before the deadline. */
 const MIN_CALL_MS = 3_000
 /** Longest quote kept (a stance rarely needs more than a sentence). */
@@ -191,7 +193,18 @@ export interface LabelDeps {
   minCallMs?: number
 }
 
-const houseModel: ModelFn = (call) => modelText({ ...call, surface: 'called-it' })
+/**
+ * The labeler's own model (review NOTE): it never follows the markets AI's MK2_AI_MODEL, so flipping that for
+ * chart answers does not reprice every scan. Env XCALLS_MODEL; default the current small model, Claude Haiku 5.5
+ * (per the claude-api skill's model table, 2026-11-11; it replaced claude-haiku-4-5-20251001 here).
+ */
+export const LABELER_DEFAULT_MODEL = 'claude-haiku-5-5'
+export function labelerModel(env: Record<string, string | undefined> = process.env): string {
+  const v = (env[ENV.model] ?? '').trim()
+  return v || LABELER_DEFAULT_MODEL
+}
+
+const houseModel: ModelFn = (call) => modelText({ ...call, surface: 'called-it', model: labelerModel() })
 
 /** Run `jobs` with at most `size` in flight; results keep the jobs' order. Pure over its callbacks; pinned. */
 export async function inPool<T>(jobs: readonly (() => Promise<T>)[], size: number): Promise<T[]> {
@@ -234,7 +247,8 @@ export async function labelPosts(posts: readonly XPost[], symbol: string, deps: 
       tries.set(batch, attempt + 1)
       let raw: string | null = null
       try {
-        raw = await model({ system, user, maxTokens: 4000, signal: Number.isFinite(left) ? AbortSignal.timeout(Math.max(1, left)) : undefined })
+        // Room for the answer of 30 posts AND the thinking a current small model does by default (it counts against max_tokens).
+        raw = await model({ system, user, maxTokens: LABEL_MAX_TOKENS, signal: Number.isFinite(left) ? AbortSignal.timeout(Math.max(1, left)) : undefined })
       } catch {
         raw = null
       }
@@ -254,5 +268,5 @@ export async function labelPosts(posts: readonly XPost[], symbol: string, deps: 
       if ((tries.get(batches[k]) ?? 0) >= 2) failed.push(...batches[k].map((p) => p.id))
     }
   })
-  return { labels, unlabeled, failed, model: deps.model ? 'injected' : modelLabel() }
+  return { labels, unlabeled, failed, model: deps.model ? 'injected' : modelLabel() === 'mock' ? 'mock' : labelerModel() }
 }

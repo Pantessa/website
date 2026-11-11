@@ -735,14 +735,15 @@ async function liveOnce(): Promise<void> {
   })
   let raws: (string | null)[] = []
   const { modelText } = await import('@/lib/markets-ai-model')
+  // Lane FIX (review NOTE): the labeler's own model, exactly as the house labeler sends it.
+  const { labelerModel } = await import('@/lib/called-it/classify')
   const spy: ModelFn = async (call) => {
-    const r = await modelText({ ...call, surface: 'called-it' })
+    const r = await modelText({ ...call, surface: 'called-it', model: labelerModel() })
     raws.push(r)
     return r
   }
   const res = await labelPosts(posts, 'BTC', { model: spy })
-  const { MARKETS_AI_MODEL } = await import('@/lib/markets-ai-model')
-  console.log(`model: ${MARKETS_AI_MODEL} · calls: ${raws.length} · parsed first time: ${raws.length === 1 && res.unlabeled.length === 0}`)
+  console.log(`model: ${labelerModel()} · calls: ${raws.length} · parsed first time: ${raws.length === 1 && res.unlabeled.length === 0}`)
   res.labels.forEach((l, k) => console.log(`${String(k + 1).padStart(2)} expected ${texts[k][0].padEnd(4)} got ${l.label.stance.padEnd(4)} c${l.label.conviction} ${l.label.quote ? JSON.stringify(l.label.quote) : ''} · ${texts[k][1].slice(0, 60)}`))
   if (res.unlabeled.length) console.log('unlabeled:', res.unlabeled.length, 'raw:', raws.map((r) => r?.slice(0, 300)))
   raws = []

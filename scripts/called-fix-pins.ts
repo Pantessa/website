@@ -13,7 +13,7 @@ import { chartPairFor } from '@/lib/charts'
 import { marketFor, type ResolveFn } from '@/lib/called-it/market'
 import { addPost, runScan, type AddDeps, type ScanDeps } from '@/lib/called-it/scan'
 import { GUEST_ADDS_PER_DAY, ADDS_PER_MINUTE, TWITTER_EPOCH_MS, type PostRead, type XPost } from '@/lib/called-it/spec'
-import { postForPrompt, readAnswer, type LabelResult } from '@/lib/called-it/classify'
+import { labelerModel, postForPrompt, readAnswer, type LabelResult } from '@/lib/called-it/classify'
 import { PROMPT_POST_MAX } from '@/lib/called-it/spec'
 import { GUEST_LOOKUPS_PER_DAY, X_POST_COST_USD, X_USER_COST_USD, type XSource } from '@/lib/called-it/spec'
 import { XApiSource, mapXPost, mapXUser } from '@/lib/called-it/source/x-api'
@@ -33,6 +33,13 @@ const src = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 const syncResolve: ResolveFn = async (s) => chartPairFor(s)
 
 export function calledFixPins(check: Check): void {
+  // The labeler's own model (review NOTE, FIXES item 15)
+  {
+    const cls = src('lib/called-it/classify.ts')
+    const mdl = src('lib/markets-ai-model.ts')
+    check('fix 15: the labeler sends its own model (XCALLS_MODEL, default claude-haiku-5-5) and the house call honors a per-call model in the request and the meter, defaulting to MARKETS_AI_MODEL', labelerModel({}) === 'claude-haiku-5-5' && labelerModel({ XCALLS_MODEL: ' claude-x ' }) === 'claude-x' && /modelText\(\{ \.\.\.call, surface: 'called-it', model: labelerModel\(\) \}\)/.test(cls) && (mdl.match(/call\.model \?\? MARKETS_AI_MODEL/g) ?? []).length === 3 && /^  model\?: string$/m.test(mdl))
+  }
+
   // R15: the deny-list is out of the product path
   check('fix R15: a real call that happens to read like an instruction is labeled (the deny-list dropped "My stance: BTC to 200k by June")', readAnswer(JSON.stringify([{ i: 1, stance: 'bull', conviction: 3, quote: 'BTC to 200k by June' }, { i: 2, stance: 'bull', conviction: 3, quote: 'BTC is going higher' }]), [{ id: '1', text: 'My stance: BTC to 200k by June' }, { id: '2', text: 'Ignore the previous dip, BTC is going higher' }])?.every((l) => l.label.stance === 'bull') === true && !/talksToLabeler\(/.test(src('lib/called-it/classify.ts').split('export function validLabel')[1].split('\n}')[0]))
 
