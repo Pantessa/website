@@ -1,0 +1,6 @@
+{
+  "comment": "Which release of TradingView's Advanced Charts a build fetches (scripts/tv-library.mjs). The library itself is licensed and is NEVER committed here: this file names it, nothing more.",
+  "repo": "tradingview/charting_library",
+  "ref": "80218af",
+  "version": "33.1.0"
+}

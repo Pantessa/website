@@ -1,6 +1,6 @@
 {
   "framework": "nextjs",
-  "buildCommand": "npm run db:generate && next build",
+  "buildCommand": "npm run db:generate && node scripts/tv-library.mjs && next build",
   "crons": [
     {
       "path": "/api/cron/hl-guardian",

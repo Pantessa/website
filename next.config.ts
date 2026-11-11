@@ -1,6 +1,25 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { NextConfig } from 'next'
 
+// TradingView's Advanced Charts is licensed and never committed here:
+// scripts/tv-library.mjs copies it into public/charting_library/ before the
+// build, when the build can get it. The version found there is stamped into
+// the bundle (lib/tv/config reads it); no files, an empty stamp, and every
+// chart is the built-in one.
+function tvLibraryVersion(): string {
+  try {
+    const dir = join(process.cwd(), 'public', 'charting_library')
+    if (!existsSync(join(dir, 'charting_library.standalone.js'))) return ''
+    const desc = String(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).description ?? '')
+    return /v(\d+\.\d+(?:\.\d+)?)/.exec(desc)?.[1] ?? ''
+  } catch {
+    return ''
+  }
+}
+
 const nextConfig: NextConfig = {
+  env: { NEXT_PUBLIC_TV_LIBRARY: tvLibraryVersion() },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**' },
@@ -61,6 +80,12 @@ const nextConfig: NextConfig = {
       {
         source: '/embed',
         headers: [{ key: 'Content-Security-Policy', value: 'frame-ancestors *' }],
+      },
+      // The chart library's bundles are content-hashed files: cache them hard.
+      // (Its entry script is requested with ?v=<version>, lib/tv/loader.)
+      {
+        source: '/charting_library/bundles/:file*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
       },
     ]
   },
