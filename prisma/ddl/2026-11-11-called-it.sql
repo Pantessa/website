@@ -64,3 +64,13 @@ CREATE TABLE IF NOT EXISTS x_scans (
 );
 CREATE INDEX IF NOT EXISTS x_scans_handle_symbol_started_at_idx ON x_scans (handle, symbol, started_at);
 CREATE INDEX IF NOT EXISTS x_scans_started_at_idx ON x_scans (started_at);
+
+-- Review round (2026-11-11): the ledger columns the fixes need. Additive.
+ALTER TABLE x_calls ADD COLUMN IF NOT EXISTS added_by text;
+CREATE INDEX IF NOT EXISTS x_calls_added_by_labeled_at_idx ON x_calls (added_by, labeled_at);
+ALTER TABLE x_scans ADD COLUMN IF NOT EXISTS truncated boolean NOT NULL DEFAULT false;
+ALTER TABLE x_scans ADD COLUMN IF NOT EXISTS oldest_post_at timestamptz;
+ALTER TABLE x_scans ADD COLUMN IF NOT EXISTS reserved_usd double precision NOT NULL DEFAULT 0;
+ALTER TABLE x_handles ADD COLUMN IF NOT EXISTS hidden_at timestamptz;
+ALTER TABLE x_handles ADD COLUMN IF NOT EXISTS hidden_by text;
+ALTER TABLE x_handles ADD COLUMN IF NOT EXISTS missing_at timestamptz;

@@ -2105,6 +2105,12 @@ model XHandle {
   claimedAt      DateTime? @map("claimed_at") @db.Timestamptz(6)
   readAt         DateTime? @map("read_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Taken down: its records answer a named refusal and it never lists.
+  hiddenAt       DateTime? @map("hidden_at") @db.Timestamptz(6)
+  /// admin | owner
+  hiddenBy       String?   @map("hidden_by")
+  /// X said "no such account" at this time: not asked again for a day.
+  missingAt      DateTime? @map("missing_at") @db.Timestamptz(6)
 
   @@map("x_handles")
 }
@@ -2143,9 +2149,12 @@ model XCall {
   /// scan | added
   origin     String   @default("scan")
   labeledAt  DateTime @default(now()) @map("labeled_at") @db.Timestamptz(6)
+  /// Who pasted it (x:<id> | w:<wallet> | ip:<hash>), for the daily count. Null for a scan's label.
+  addedBy    String?  @map("added_by")
 
   @@id([postId, symbol])
   @@index([symbol])
+  @@index([addedBy, labeledAt])
   @@map("x_calls")
 }
 
@@ -2169,6 +2178,11 @@ model XScan {
   note        String?
   startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
   finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+  /// The cap ended the read before the window did: older posts were not read.
+  truncated    Boolean   @default(false)
+  oldestPostAt DateTime? @map("oldest_post_at") @db.Timestamptz(6)
+  /// Held against the day's cap while the scan runs (its worst case), released when it finishes.
+  reservedUsd  Float     @default(0) @map("reserved_usd")
 
   @@index([handle, symbol, startedAt])
   @@index([startedAt])
