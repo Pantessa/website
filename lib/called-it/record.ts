@@ -15,8 +15,10 @@ import { refreshGone, scansAvailable } from './source'
 import { scanAllowance } from './budget'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts, fixtureServed } from './fixture'
 import { RUNNING_STALE_MS, scanNext, scanWindowFrom, type AllowanceFn, type StoreApi } from './scan'
+import { marketFor, type MarketDoor } from './market'
 import { POST_ID_RE, buildRecord, normalizeHandle, normalizeSide, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
 
+/** @deprecated The market door is lib/called-it/market marketFor (review R5); kept for callers outside this lane. */
 export const SYMBOL_RE = /^[A-Za-z0-9.:^-]{1,24}$/
 
 export interface RecordQuery {
@@ -41,6 +43,8 @@ export interface RecordDeps {
   allowance?: AllowanceFn
   /** Re-read stale posts by id after the answer (lane SOURCE's refreshGone). */
   refreshGone?: (postIds: readonly string[]) => Promise<unknown>
+  /** The market door (lib/called-it/market). Absent: the house resolver. */
+  market?: (raw: unknown) => Promise<MarketDoor>
   now: () => number
 }
 
@@ -70,10 +74,11 @@ export function verifiedOf(row: Pick<Store.StoredHandle, 'claimedXUserId' | 'cla
 
 export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecordDeps()): Promise<RecordAnswer> {
   const handle = normalizeHandle(q.handle)
-  const symRaw = typeof q.symbol === 'string' ? q.symbol.trim() : ''
   if (!handle) return { http: 400, body: { status: 'refused', reason: 'That is not an X handle. A handle is 1 to 15 letters, numbers or underscores.', next: [{ label: 'Plot a handle', href: '/x' }] } }
-  if (!SYMBOL_RE.test(symRaw)) return { http: 400, body: { status: 'refused', reason: 'Name a market to plot the handle on.', next: [{ label: 'Markets', href: '/' }] } }
-  const symbol = symRaw.toUpperCase()
+  // One door for the market (review R5): the symbol page's own spelling, or a named refusal before anything is read.
+  const door = await (deps.market ?? marketFor)(q.symbol)
+  if (!door.ok) return { http: door.http, body: { status: 'refused', reason: door.reason, next: door.next } }
+  const symbol = door.symbol
   const side = normalizeSide(q.side)
   const pins = parsePins(q.pins)
   const nowMs = deps.now()

@@ -1,7 +1,8 @@
 // POST /api/x/add { handle, sym, url }  →  the record with the pasted post (RecordResponse).
 // Same-origin JSON only. Read from X by id (keyless); must be by this handle.
 import { NextResponse } from 'next/server'
-import { readRecord, SYMBOL_RE } from '@/lib/called-it/record'
+import { readRecord } from '@/lib/called-it/record'
+import { marketFor } from '@/lib/called-it/market'
 import { CROSS_SITE, addPost, readWriteBody, requesterOf } from '@/lib/called-it/scan'
 import { normalizeHandle } from '@/lib/called-it/spec'
 
@@ -15,9 +16,11 @@ export async function POST(req: Request) {
   if (body === 'cross-site') return json(CROSS_SITE, 403)
   if (!body) return json({ status: 'refused', reason: 'Send the handle, the market and the post link as JSON.', next: [{ label: 'Plot a handle', href: '/x' }] }, 400)
   const handle = normalizeHandle(body.handle)
-  const sym = typeof body.sym === 'string' ? body.sym.trim() : ''
   if (!handle) return json({ status: 'refused', reason: 'That is not an X handle. A handle is 1 to 15 letters, numbers or underscores.', next: [{ label: 'Plot a handle', href: '/x' }] }, 400)
-  if (!SYMBOL_RE.test(sym)) return json({ status: 'refused', reason: 'Name a market to add the post to.', next: [{ label: 'Markets', href: '/' }] }, 400)
+  // One door for the market (review R2a): a market with no chart is refused before a read or a model call.
+  const door = await marketFor(body.sym)
+  if (!door.ok) return json({ status: 'refused', reason: door.reason, next: door.next }, door.http)
+  const sym = door.symbol
   const requester = await requesterOf(req)
   let out
   try {

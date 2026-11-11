@@ -313,9 +313,10 @@ export async function scansToday(requester: Requester, nowMs: number = Date.now(
  * non-internal scan exists and which holds at least one bull or bear label on
  * a post X still serves. Newest first. Internal runs never list.
  */
-export async function listPlotted(opts: { limit: number; handle?: string }): Promise<PlottedRow[]> {
+export async function listPlotted(opts: { limit: number; handle?: string; symbol?: string }): Promise<PlottedRow[]> {
   const limit = Math.max(1, Math.min(200, Math.floor(opts.limit || 0) || 1))
   const only = opts.handle ? h(opts.handle) : null
+  const onlySym = opts.symbol ? sym(opts.symbol) : null
   const rows = await prisma.$queryRaw<{ handle: string; symbol: string; name: string | null; avatar_url: string | null; verified: boolean; calls: number; scanned_at: Date }[]>`
     SELECT * FROM (
       SELECT s.handle, s.symbol, xh.name, xh.avatar_url, (xh.claimed_x_user_id IS NOT NULL) AS verified,
@@ -325,7 +326,7 @@ export async function listPlotted(opts: { limit: number; handle?: string }): Pro
       FROM (
         SELECT handle, symbol, max(coalesce(finished_at, started_at)) AS scanned_at
         FROM x_scans
-        WHERE status = 'done' AND is_internal = false AND (${only}::text IS NULL OR handle = ${only}::text)
+        WHERE status = 'done' AND is_internal = false AND (${only}::text IS NULL OR handle = ${only}::text) AND (${onlySym}::text IS NULL OR symbol = ${onlySym}::text)
         GROUP BY handle, symbol
       ) s
       LEFT JOIN x_handles xh ON xh.handle = s.handle

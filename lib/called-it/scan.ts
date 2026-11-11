@@ -20,6 +20,7 @@ import { scanAllowance, type Allowance } from './budget'
 import { readPostById, sourceFor } from './source'
 import { labelPosts, type LabelDeps, type LabelResult } from './classify'
 import { termsFor } from './terms'
+import { marketFor, type MarketDoor } from './market'
 import {
   RESCAN_AFTER_MS,
   SCAN_WINDOW_DAYS,
@@ -58,6 +59,8 @@ export interface ScanDeps {
   label: (posts: readonly XPost[], symbol: string, deps?: LabelDeps) => Promise<LabelResult>
   allowance: AllowanceFn
   now: () => number
+  /** The market door (lib/called-it/market). Absent: the house resolver. */
+  market?: (raw: unknown) => Promise<MarketDoor>
 }
 
 export interface ScanInput {
@@ -143,7 +146,12 @@ async function labelAndSave(deps: ScanDeps, todo: XPost[], symbol: string, deadl
 
 export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps()): Promise<ScanOutcome> {
   const { handle, requester, internal } = input
-  const symbol = input.symbol.toUpperCase()
+  // One door for the market (review R5): six spellings of BTC are one record, and a market with no chart is refused before anything is read.
+  const door = await (deps.market ?? marketFor)(input.symbol)
+  if (!door.ok) return refused(door.http, door.reason, door.next)
+  const symbol = door.symbol
+  // A symbol with no words to search would read every post the account wrote (review R20).
+  if (!termsFor(symbol).length) return refused(422, `There are no words to search X for ${symbol} (its ticker starts with a number and it has no name we know), so a scan would read every post the account wrote. Paste one of their posts instead.`, scanNext(handle, symbol))
   const { store, source } = deps
   const nowMs = deps.now()
   const deadlineMs = input.deadlineMs ?? nowMs + SCAN_TIME_BUDGET_MS
@@ -268,6 +276,7 @@ export interface AddDeps {
   label: ScanDeps['label']
   allowance: AllowanceFn
   now: () => number
+  market?: (raw: unknown) => Promise<MarketDoor>
 }
 
 export function defaultAddDeps(): AddDeps {
@@ -285,7 +294,10 @@ export type AddOutcome = { kind: 'added'; postId: string; label: CallLabel } | {
  */
 export async function addPost(input: { handle: string; symbol: string; url: unknown; requester: Requester }, deps: AddDeps = defaultAddDeps()): Promise<AddOutcome> {
   const { handle, requester } = input
-  const symbol = input.symbol.toUpperCase()
+  // The market door first (review R2a): no read and no model call for a market with no chart.
+  const door = await (deps.market ?? marketFor)(input.symbol)
+  if (!door.ok) return { kind: 'refused', http: door.http, body: { status: 'refused', reason: door.reason, next: door.next } }
+  const symbol = door.symbol
   const back = [{ label: `Back to @${handle} on ${symbol}`, href: `/t/${encodeURIComponent(symbol)}?x=${handle}` }]
   const no = (http: number, reason: string, next = back): AddOutcome => ({ kind: 'refused', http, body: { status: 'refused', reason, next } })
   const ref = postRefFromUrl(input.url)
