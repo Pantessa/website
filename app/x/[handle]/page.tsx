@@ -125,7 +125,7 @@ export default async function HandlePage({ params }: Props) {
                   <li key={r.symbol}>
                     <Link href={recordHref(handle, r.symbol)} className="xrc-row" prefetch={false} data-journey="called_row">
                       <span className="xrc-row__sym">{r.symbol}</span>
-                      <span className="xrc-row__tally">{tallies[i] ?? `${r.calls} ${r.calls === 1 ? 'call' : 'calls'}.`}</span>
+                      <span className="xrc-row__tally">{tallies[i] ?? 'Open the record for its tally.'}</span>
                       <span className="xrc-row__when">scanned {agoWords(r.scannedAt, now)}</span>
                     </Link>
                   </li>

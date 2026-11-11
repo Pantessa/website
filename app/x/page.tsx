@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import Footer from '@/components/Footer'
 import { recordHref } from '@/lib/called-it/spec'
+import { cleanLine } from '@/lib/called-it/card-layout'
 import { avatarDataUri } from './_lib/avatar'
 import { agoWords, readPlotted } from './_lib/plotted'
 import { Avatar, DoorBlock, Eyebrow, MethodBlock, Schematic } from './_lib/parts'
@@ -64,8 +65,9 @@ export default async function CalledDoorPage() {
                         <span className="xrc-row__sym">
                           @{r.handle} <span className="xrc-row__on">on {r.symbol}</span>
                         </span>
+                        {/* No count here: the list's own number takes in posts viewers pasted, and a tally is what the scan found (the record page prints it). */}
                         <span className="xrc-row__tally">
-                          {r.calls} {r.calls === 1 ? 'call' : 'calls'}
+                          {r.name && r.name.trim().toLowerCase() !== r.handle ? <bdi>{cleanLine(r.name, 40)}</bdi> : 'Open the record'}
                           {r.verified ? ' · Verified' : ''}
                         </span>
                         <span className="xrc-row__when">{agoWords(r.scannedAt, now)}</span>

@@ -468,8 +468,8 @@ export function calledRecordPins(check: Check): void {
       [...code(ogRoute).matchAll(/^export (?:const|async function|function) (\w+)/gm)].map((m) => m[1]).sort().join() === 'GET,dynamic,runtime' && /loadRecordView\(/.test(ogRoute),
   )
   check(
-    'called-it honesty in the source: the word "Verified" reaches a page only as the record\'s own standing line or behind the record\'s own rule (verifiedOf); the tally a page prints is the record\'s headline; the landing loads no chart library and opens no sign-in door; the client share row composes nothing and imports nothing of the X sign-in',
-    /\{record\.words\.standing\}/.test(recordPage) && /verifiedOf\(await getHandle\(h\)\)/.test(plotted) && /r\.verified \? ' · Verified' : ''/.test(doorPage) && /verified \? standingVerified\(handle\) : STANDING_NOT_VERIFIED/.test(handlePage) &&
+    'called-it honesty in the source: the word "Verified" reaches a page only as the record\'s own standing line or behind the record\'s own rule (verifiedOf); the tally a page prints is the record\'s headline (a list row prints no count of its own: the list\'s number takes in pasted posts); the landing loads no chart library and opens no sign-in door; the client share row composes nothing and imports nothing of the X sign-in',
+    /\{record\.words\.standing\}/.test(recordPage) && /verifiedOf\(await getHandle\(h\)\)/.test(plotted) && /\{r\.verified \? ' · Verified' : ''\}/.test(doorPage) && !/r\.calls/.test(code(doorPage)) && !/r\.calls/.test(code(handlePage)) && /verified \? standingVerified\(handle\) : STANDING_NOT_VERIFIED/.test(handlePage) &&
       /headlineParts\(record\.words\.headline\)/.test(recordPage) && mineSrc.every((s) => !/lightweight-charts|charting_library|components\/markets\/chart|SpineLink/.test(code(s))) &&
       shareRow.startsWith("'use client'") && !/x-auth/.test(shareRow) && !/calledPost|myCalledPost/.test(code(shareRow)) && /mine \? myCalledPost\(record\) : calledPost\(record\)/.test(recordPage),
   )
