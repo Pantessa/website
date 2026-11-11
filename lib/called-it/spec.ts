@@ -12,7 +12,9 @@
 //   3. The result is ARITHMETIC on the chart's own daily candles: the close
 //      of the day it was posted against the close JUDGE_DAYS later.
 //   4. The tally is never curated. A viewer chooses which calls are pinned;
-//      nobody chooses which calls are counted.
+//      nobody chooses which calls are counted: the tally counts what the
+//      SCAN found. A post a viewer pasted is shown and marked, never counted
+//      (review R1: eight hand-picked posts must not read as a record).
 //   5. A plot of somebody else's handle says "not verified". Only the
 //      account itself, signed in with X, makes a plot "verified".
 //   6. A post X no longer serves is never shown again.
@@ -103,6 +105,17 @@ export interface CalledTally {
   open: number
 }
 
+/** What the scans of this handle on this symbol actually read (review R8). The chart's window is not coverage. */
+export interface Coverage {
+  /** The oldest moment the scans reached (ms): the window's start, or the oldest post read when the cap ended a scan early. */
+  from: number
+  to: number
+  /** Posts read for THIS symbol's searches. */
+  postsRead: number
+  /** A scan stopped at its cap: posts older than `from` were not read. */
+  truncated: boolean
+}
+
 export interface CalledRecord {
   handle: string
   /** Uppercase, the symbol page's spelling (/t/<symbol>). */
@@ -113,14 +126,21 @@ export interface CalledRecord {
   verified: { at: number } | null
   /** Date ascending, already filtered to `side`. */
   calls: CalledCall[]
-  /** For `side`. Counts every call found, picked or not. */
+  /** For `side`. Counts every call the SCAN found, picked or not. A pasted post (origin `added`) is never counted. */
   tally: CalledTally
   bySide: Record<CallStance, CalledTally>
+  /** A scan of this handle on this symbol has finished. False = the only calls here were pasted by viewers, and there is no tally. */
+  scanned: boolean
+  /** Calls in `calls` that a viewer pasted. Shown, marked, not counted. */
+  added: number
+  /** Null until a scan has finished. */
+  coverage: Coverage | null
   window: { from: number; to: number }
   scannedAt: number | null
   postsRead: number
   priceNow: number
-  words: { headline: string; standing: string; method: string }
+  /** `coverage` is null until scanned; `added` is null when nothing was pasted. */
+  words: { headline: string; standing: string; method: string; coverage: string | null; added: string | null }
 }
 
 export type RecordResponse =
@@ -201,6 +221,17 @@ export const SCAN_POST_CAP = 400
 export const DAILY_USD_CAP = 10
 export const GUEST_SCANS_PER_DAY = 2
 export const PROVEN_SCANS_PER_DAY = 10
+/** Pasted posts one requester may add in a UTC day, and in one minute (review R2: each one is a model call). */
+export const GUEST_ADDS_PER_DAY = 10
+export const PROVEN_ADDS_PER_DAY = 40
+export const ADDS_PER_MINUTE = 4
+/** Handle lookups on X one requester may cause in a UTC day, misses included (review R4: each is a billed profile read). */
+export const GUEST_LOOKUPS_PER_DAY = 12
+export const PROVEN_LOOKUPS_PER_DAY = 40
+/** An account is LISTED on /x only above this many followers, or when its owner verified (review R19). Anyone can still be plotted by name. */
+export const LIST_MIN_FOLLOWERS = 5000
+/** Characters of one post that go to the labeler (X allows 25,000). The quote is still checked against the whole post. */
+export const PROMPT_POST_MAX = 1200
 /** A finished scan is fresh this long; after it a re-scan reads only newer posts. */
 export const RESCAN_AFTER_MS = 24 * 60 * 60 * 1000
 
@@ -214,7 +245,23 @@ export const ENV = {
   scanPostCap: 'XCALLS_SCAN_POST_CAP',
   /** `1` = the harness: the fixture source, the keyword labeler, the fake X sign-in. Never on prod. */
   fake: 'XCALLS_FAKE',
+  /** The labeler's own model id (review: it must not follow the markets AI's model when that changes). */
+  model: 'XCALLS_MODEL',
 } as const
+
+/**
+ * THE one fence for fake mode (review R6). Off on every Vercel deployment,
+ * production and preview alike (Vercel sets VERCEL=1), whatever XCALLS_FAKE
+ * says: a preview can share production's database and session secret.
+ */
+export function fakeModeOn(env: Record<string, string | undefined> = process.env): boolean {
+  return env.XCALLS_FAKE === '1' && !env.VERCEL && env.VERCEL_ENV !== 'production'
+}
+
+/** A user id the fake sign-in wrote. A claim by one never reads "Verified" outside fake mode, whatever database it is in. */
+export function isFakeXUserId(id: string | null | undefined): boolean {
+  return typeof id === 'string' && id.startsWith('fake-')
+}
 
 // ── Handles and post links ──────────────────────────────────────────────
 
@@ -403,7 +450,18 @@ export const STANDING_NOT_VERIFIED = 'Not verified. Plotted by a viewer from pub
 export function standingVerified(handle: string): string {
   return `Verified. @${handle} signed in with X.`
 }
-export const METHOD_LINE = `Every post is read from X by its id. Bull or bear is a label on the post's own words. The result is this chart's daily close ${JUDGE_DAYS} days after the post.`
+export const METHOD_LINE = `Posts come from X: its search for a scan, its public post page for a pasted link. A model labels each post bull or bear and must quote the post's own words. The result is this chart's daily close ${JUDGE_DAYS} days after the post.`
+/** Said wherever labels are shown. */
+export const LABEL_CAVEAT = 'A model wrote each label, and a label can be wrong.'
+export const DELETED_NOTE = 'A post deleted on X leaves this record.'
+export const ADDED_MARK = 'added by a viewer'
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+/** `3 Aug 2026`, UTC. */
+export function fmtDay(ms: number): string {
+  const d = new Date(ms)
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`
+}
 
 /** `+23.4%` / `-29.1%`, ASCII. */
 export function fmtMove(p: number): string {
@@ -418,8 +476,24 @@ export function moveLine(c: Pick<CalledCall, 'verdict' | 'judgedPct'>): string {
 
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-export function recordHeadline(handle: string, symbol: string, side: CalledSide, tally: CalledTally): string {
+/** What the scans read, in words. The cap ending a scan early is said, never hidden. */
+export function coverageLine(c: Coverage): string {
+  if (c.truncated) return `Read the newest ${count(c.postsRead, 'matching post')}, back to ${fmtDay(c.from)}. Older posts were not read.`
+  return `Read ${count(c.postsRead, 'matching post')} from ${fmtDay(c.from)} to ${fmtDay(c.to)}.`
+}
+
+/** Beside a scanned record's tally when viewers pasted posts too. */
+export function addedLine(added: number): string {
+  return `${count(added, 'more post')} ${added === 1 ? 'was' : 'were'} added by viewers. ${added === 1 ? 'It is' : 'They are'} shown and not counted.`
+}
+
+/**
+ * The record in one sentence. `state` matters only for a record with no
+ * finished scan: its pasted posts are counted as posts, never as a tally.
+ */
+export function recordHeadline(handle: string, symbol: string, side: CalledSide, tally: CalledTally, state: { scanned: boolean; added: number } = { scanned: true, added: 0 }): string {
   const who = side === 'all' ? `@${handle} on ${symbol}` : `@${handle}, ${side === 'bull' ? 'bullish' : 'bearish'} on ${symbol}`
+  if (!state.scanned) return state.added > 0 ? `${who}: ${count(state.added, 'post')} added by a viewer. No scan yet, so no tally.` : `${who}: not scanned yet.`
   if (tally.total === 0) return `${who}: no calls found in this window.`
   const parts = [count(tally.total, 'call')]
   if (tally.right) parts.push(`${tally.right} called it`)
@@ -450,6 +524,10 @@ export interface BuildRecordInput {
   postsRead: number
   /** The viewer's own pins (post ids). Unknown ids are ignored; none valid = the rule picks. */
   pins?: readonly string[]
+  /** A scan of this handle on this symbol has finished. Defaults to `scannedAt !== null`. */
+  scanned?: boolean
+  /** What those scans read. Left out: derived from the candles' window and `postsRead`, not truncated. */
+  coverage?: Coverage | null
 }
 
 /** The quote is the post's own words (whitespace aside). The one check between a label and a pin. */
@@ -493,13 +571,20 @@ export function buildRecord(input: BuildRecordInput): CalledRecord {
     })
   }
   every.sort((a, b) => a.postedAt - b.postedAt || cmpPostId(a.postId, b.postId))
-  const bySide: Record<CallStance, CalledTally> = { bull: tallyOf(every.filter((c) => c.stance === 'bull')), bear: tallyOf(every.filter((c) => c.stance === 'bear')) }
+  // The tally is what the SCAN found. A pasted post is shown and marked, never counted (rule 4, review R1).
+  const found = every.filter((c) => c.origin === 'scan')
+  const bySide: Record<CallStance, CalledTally> = { bull: tallyOf(found.filter((c) => c.stance === 'bull')), bear: tallyOf(found.filter((c) => c.stance === 'bear')) }
   const calls = side === 'all' ? every : every.filter((c) => c.stance === side)
+  const counted = calls.filter((c) => c.origin === 'scan')
+  const added = calls.length - counted.length
+  const scanned = input.scanned ?? input.scannedAt !== null
   const span = candles.length > 1 ? candles[candles.length - 1].t - candles[0].t : 0
   const own = (input.pins ?? []).filter((id, i, a) => a.indexOf(id) === i && calls.some((c) => c.postId === id)).slice(0, PIN_URL_MAX)
-  const picked = new Set(own.length ? own : pickCalls(calls, { minGapSec: Math.round(span / 14) }))
+  // The rule pins from what the scan found. With no scan there is nothing to rank against, so the pasted posts are the plot.
+  const picked = new Set(own.length ? own : pickCalls(counted.length ? counted : calls, { minGapSec: Math.round(span / 14) }))
   for (const c of calls) c.picked = picked.has(c.postId)
-  const tally = tallyOf(calls)
+  const tally = tallyOf(counted)
+  const coverage: Coverage | null = !scanned ? null : (input.coverage ?? { from: candles.length ? candles[0].t * 1000 : nowMs, to: input.scannedAt ?? nowMs, postsRead: input.postsRead, truncated: false })
   return {
     handle,
     symbol,
@@ -510,9 +595,18 @@ export function buildRecord(input: BuildRecordInput): CalledRecord {
     tally,
     bySide,
     window: { from: candles.length ? candles[0].t * 1000 : nowMs, to: nowMs },
+    scanned,
+    added,
+    coverage,
     scannedAt: input.scannedAt,
     postsRead: input.postsRead,
     priceNow: candles.length ? candles[candles.length - 1].c : 0,
-    words: { headline: recordHeadline(handle, symbol, side, tally), standing: input.verified ? standingVerified(handle) : STANDING_NOT_VERIFIED, method: METHOD_LINE },
+    words: {
+      headline: recordHeadline(handle, symbol, side, tally, { scanned, added }),
+      standing: input.verified ? standingVerified(handle) : STANDING_NOT_VERIFIED,
+      method: METHOD_LINE,
+      coverage: coverage ? coverageLine(coverage) : null,
+      added: scanned && added > 0 ? addedLine(added) : null,
+    },
   }
 }

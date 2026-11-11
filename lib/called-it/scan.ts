@@ -106,6 +106,7 @@ export function failNote(err: unknown): string {
   const m = err instanceof Error ? err.message : String(err)
   if (kind === 'rate-limited' || /rate|429/i.test(m)) return 'Stopped: X asked us to slow down. Try again later.'
   if (kind === 'unauthorized') return 'Stopped: X refused this server\'s key.'
+  if (kind === 'no-credits') return 'Stopped: the credits this site reads X with are spent. Scans return when they are topped up.'
   if (/timeout|timed out|abort/i.test(m)) return 'Stopped: X did not answer in time.'
   return 'Stopped: the scan hit an error before it finished.'
 }

@@ -297,13 +297,15 @@ export async function spentTodayUsd(nowMs: number = Date.now()): Promise<number>
 
 /**
  * Scans this requester started since 00:00 UTC (joined scans do not count:
- * they open no row; refused rows do not count either). Under XCALLS_FAKE=1
+ * they open no row; refused rows do not count either, and neither does a
+ * scan that failed before it read a post). Under XCALLS_FAKE=1
  * (never production) internal scans do not count, so the harness can scan
  * the fixture run after run.
  */
 export async function scansToday(requester: Requester, nowMs: number = Date.now()): Promise<number> {
   const fake = process.env.XCALLS_FAKE === '1' && process.env.VERCEL_ENV !== 'production'
-  return prisma.xScan.count({ where: { requestedBy: requester, startedAt: { gte: utcDayStart(nowMs) }, status: { not: 'refused' }, ...(fake ? { isInternal: false } : {}) } })
+  // A scan that failed before it read a single post was the house's failure (X down, credits spent): it is not the visitor's scan.
+  return prisma.xScan.count({ where: { requestedBy: requester, startedAt: { gte: utcDayStart(nowMs) }, OR: [{ status: { in: ['running', 'done'] } }, { status: 'failed', postsRead: { gt: 0 } }], ...(fake ? { isInternal: false } : {}) } })
 }
 
 /**
