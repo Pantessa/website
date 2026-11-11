@@ -4,7 +4,7 @@ import Footer from '@/components/Footer'
 import { recordHref } from '@/lib/called-it/spec'
 import { avatarDataUri } from './_lib/avatar'
 import { agoWords, readPlotted } from './_lib/plotted'
-import { Avatar, DoorBlock, Eyebrow, MethodBlock } from './_lib/parts'
+import { Avatar, DoorBlock, Eyebrow, MethodBlock, Schematic } from './_lib/parts'
 import '@/components/called/called-record.css'
 
 // /x — THE DOOR (squad called-it, lane RECORD): "Whose calls?", plot
@@ -50,6 +50,7 @@ export default async function CalledDoorPage() {
               <Eyebrow />
             </header>
             <DoorBlock level={1} heading="Whose calls?" lede="Type an X handle. Every post where the account took a side on a market is pinned to the day it was posted, and judged by what the price did next." />
+            <Schematic />
           </div>
           <aside className="xrc__side">
             <section className="xrc-recent" aria-label="Recently plotted">
@@ -73,7 +74,7 @@ export default async function CalledDoorPage() {
                   ))}
                 </ul>
               ) : (
-                <p className="xrc-recent__none">{list.failed ? 'The list did not load just now. The door still works.' : 'Nothing has been plotted yet. Type a handle and be the first.'}</p>
+                <p className="xrc-recent__none">{list.failed ? 'The list did not load just now. The door still works: type a handle.' : 'Nobody has plotted a handle here yet. Plot one and it is the first on this list.'}</p>
               )}
             </section>
             <MethodBlock />

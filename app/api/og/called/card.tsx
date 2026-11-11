@@ -186,6 +186,9 @@ function PostCard({ box, call, name, handle, avatar, initial }: { box: OgCardBox
   )
 }
 
+/** Spec's words, standing alone as a sentence: the same words with a capital to open them. */
+const sentenceCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
 /** "on BTC" / "bullish on BTC": the headline's own words between the handle and the colon. */
 function marketWords(record: CalledRecord | null, handle: string | null, symbol: string | null): string {
   if (record) {
@@ -199,7 +202,9 @@ function marketWords(record: CalledRecord | null, handle: string | null, symbol:
 function Scoreboard({ input, address }: { input: CalledCardInput; address: string }) {
   const { record, handle, symbol, kind } = input
   const C = OG_COLUMN
-  const name = record ? cleanLine(record.profile.name || `@${record.handle}`, 24) : handle ? `@${handle}` : ''
+  // X gave no display name (a bare profile): the handle is the name, printed once.
+  const bare = !record || !record.profile.name.trim() || record.profile.name.trim().toLowerCase() === record.handle
+  const name = record && !bare ? cleanLine(record.profile.name, 24) : handle ? `@${handle}` : ''
   const market = marketWords(record, handle, symbol)
   const marketSize = market.length <= 8 ? 54 : market.length <= 15 ? 42 : market.length <= 22 ? 32 : 25
   const parts = record ? headlineParts(record.words.headline) : null
@@ -231,7 +236,7 @@ function Scoreboard({ input, address }: { input: CalledCardInput; address: strin
           <Face uri={input.avatar} initial={initialOf(record?.profile.name, handle)} size={60} />
           <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
             <span style={{ color: INK, fontSize: 23, fontWeight: 600, letterSpacing: -0.4, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-            {record && <span style={{ color: SOFT, fontSize: 18, marginTop: 2, whiteSpace: 'nowrap' }}>{`@${handle}`}</span>}
+            {!bare && <span style={{ color: SOFT, fontSize: 18, marginTop: 2, whiteSpace: 'nowrap' }}>{`@${handle}`}</span>}
           </div>
         </div>
       ) : (
@@ -251,7 +256,7 @@ function Scoreboard({ input, address }: { input: CalledCardInput; address: strin
           ))}
         </div>
       )}
-      {record && !parts && <span style={{ display: 'flex', marginTop: 22, color: INK, fontSize: 25, lineHeight: 1.25 }}>{headlineTally(record.words.headline)}</span>}
+      {record && !parts && <span style={{ display: 'flex', marginTop: 22, color: INK, fontSize: 25, lineHeight: 1.25 }}>{sentenceCase(headlineTally(record.words.headline))}</span>}
       {message && <span style={{ display: 'flex', marginTop: 24, color: kind === 'generic' || kind === 'handle' ? SOFT : INK, fontSize: kind === 'refused' ? 21 : 23, lineHeight: 1.3 }}>{message}</span>}
 
       <div style={{ display: 'flex', flexDirection: 'column', marginTop: 'auto' }}>
@@ -273,7 +278,7 @@ function CalledCard({ input, address }: { input: CalledCardInput; address: strin
   const byId = new Map((record?.calls ?? []).map((c) => [c.postId, c]))
   const schematic = !scale
   const svg = schematic ? schematicSvg() : exhibitSvg(layout, scale, closes, tones)
-  const name = record ? cleanLine(record.profile.name || `@${record.handle}`, 20) : ''
+  const name = record ? cleanLine(record.profile.name.trim() && record.profile.name.trim().toLowerCase() !== record.handle ? record.profile.name : `@${record.handle}`, 20) : ''
   const initial = record ? initialOf(record.profile.name, record.handle) : ''
   const note = input.kind === 'empty' ? 'No calls found in this window' : input.kind === 'unscanned' ? 'No pins yet' : input.kind === 'scanning' ? 'Pins land when the scan is done' : null
   const B = layout.band

@@ -72,14 +72,7 @@ export default function RecordChart({ symbol, closes, calls, unit = 'usd', actio
           {pins
             .filter((p) => !p.picked)
             .map((p) => (
-              <a
-                key={p.postId}
-                className={`xrc-dot is-${p.verdict}`}
-                href={`#call-${p.n}`}
-                style={{ left: pct(p.x), '--xrc-y': p.y } as CSSProperties}
-                aria-label={`Call ${p.n}, ${VERDICT_WORDS[p.verdict]}, ${fmtUtcDate(calls[p.n - 1].postedAt)}`}
-                data-journey="called_dot"
-              />
+              <i key={p.postId} className={`xrc-dot is-${p.verdict}`} style={{ left: pct(p.x), '--xrc-y': p.y } as CSSProperties} role="img" aria-label={`Call ${p.n}, ${VERDICT_WORDS[p.verdict]}, ${fmtUtcDate(calls[p.n - 1].postedAt)}`} title={`Call ${p.n}: ${VERDICT_WORDS[p.verdict]}`} />
             ))}
           {pins
             .filter((p) => p.picked)
@@ -97,7 +90,11 @@ export default function RecordChart({ symbol, closes, calls, unit = 'usd', actio
                 <span className="xrc-pin__flag">{p.n}</span>
               </a>
             ))}
-          {emptyNote && calls.length === 0 && <p className="xrc-plot__empty">{emptyNote}</p>}
+          {emptyNote && calls.length === 0 && (
+            <p className="xrc-plot__empty">
+              <span>{emptyNote}</span>
+            </p>
+          )}
         </div>
         <div className="xrc-plot__ticks" aria-hidden>
           {ticks.map((t) => (

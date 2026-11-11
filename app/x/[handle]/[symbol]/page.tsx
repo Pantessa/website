@@ -29,14 +29,16 @@ import '@/components/called/called-record.css'
 // DYNAMIC, ON PURPOSE. The address carries the toggle and a viewer's own pins
 // in its query, so the page reads searchParams; and the standing line must
 // flip to "Verified" the moment the account's owner comes back from X, so the
-// record is read on every request rather than held in a cache. What is
-// expensive is already held elsewhere: the daily candles (30s per process,
-// lib/candles-server), the avatar (an hour, _lib/avatar), and the share image
-// (the CDN, by its own cache headers). One request reads the record once
-// (React cache), however many of metadata and page ask.
+// record is read on every request rather than held in a cache (readRecord
+// also schedules its own after-the-answer work, which a cache would swallow).
+// What is expensive is already held elsewhere: the daily candles (30s per
+// process, lib/candles-server), the avatar (an hour, _lib/avatar), and the
+// share image (the CDN, by its own cache headers). One request reads the
+// record once (React cache), however many of metadata and page ask.
 //
-// Every answer is a real page: a ready record, a handle nobody has plotted
-// yet, a scan in flight, and a refusal each say what is so and offer the door.
+// Every answer is a real page: a ready record, a scanned account with no
+// calls, a handle nobody has plotted yet, a scan in flight, and a refusal
+// each say what is so and offer somewhere to go.
 
 export const runtime = 'nodejs'
 
@@ -87,9 +89,9 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
   }
 }
 
-// ── The pieces of a ready record ────────────────────────────────────────
+// ── The pieces of a record ──────────────────────────────────────────────
 
-/** The headline, every count a chip in its verdict's colour. The text is spec's sentence, unchanged. */
+/** The headline, every count a chip in its verdict's colour. */
 function Headline({ record }: { record: CalledRecord }) {
   const parts = headlineParts(record.words.headline)
   if (!parts) return <h1 className="xrc-headline">{record.words.headline}</h1>
@@ -133,20 +135,19 @@ function Sides({ record }: { record: CalledRecord }) {
 
 function Who({ view, record }: { view: RecordView; record: CalledRecord | null }) {
   const handle = view.handle ?? ''
-  const name = record?.profile.name ?? null
+  const name = record?.profile.name?.trim() || null
+  // X gave no display name (or we have only the handle): the handle is the name.
+  const named = !!name && name.toLowerCase() !== handle && name.toLowerCase() !== `@${handle}`
+  const followers = record?.profile.followers != null ? `${fmtCount(record.profile.followers)} followers` : null
+  // The whole block is one link to the account's page: a target a thumb can hit.
   return (
-    <div className="xrc-who">
+    <Link href={`/x/${handle}`} className="xrc-who" prefetch={false} data-journey="called_handle" aria-label={`@${handle}: every market plotted`}>
       <Avatar uri={view.avatar} name={name} handle={handle} size="lg" />
-      <div className="xrc-who__id">
-        <span className="xrc-who__name">{name || `@${handle}`}</span>
-        <span className="xrc-who__handle">
-          <Link href={`/x/${handle}`} prefetch={false} data-journey="called_handle">
-            @{handle}
-          </Link>
-          {record?.profile.followers != null && <span> · {fmtCount(record.profile.followers)} followers</span>}
-        </span>
-      </div>
-    </div>
+      <span className="xrc-who__id">
+        <span className="xrc-who__name">{named ? name : `@${handle}`}</span>
+        {(named || followers) && <span className="xrc-who__handle">{[named ? `@${handle}` : null, followers].filter(Boolean).join(' · ')}</span>}
+      </span>
+    </Link>
   )
 }
 
@@ -160,7 +161,8 @@ export default async function RecordPage(props: Props) {
   // ── Not a handle, or not a market: the refusal, and the door ──
   if (!handle || !symbol || body.status === 'refused') {
     const reason = body.status === 'refused' ? body.reason : 'That address does not name a handle and a market.'
-    const next = body.status === 'refused' ? body.next : []
+    // Somewhere to go, on this site only; the door itself is on this page, so a link to it is left out.
+    const next = (body.status === 'refused' ? body.next : []).filter((n) => n.href.startsWith('/') && !n.href.startsWith('//') && n.href !== '/x')
     return (
       <>
         <main className="xrc" data-xrc="record" data-status="refused">
@@ -170,13 +172,11 @@ export default async function RecordPage(props: Props) {
               <h1 className="xrc-headline">{reason}</h1>
               {next.length > 0 && (
                 <p className="xrc-next">
-                  {next
-                    .filter((n) => n.href.startsWith('/') && !n.href.startsWith('//'))
-                    .map((n) => (
-                      <Link key={n.href + n.label} href={n.href} className="xrc-btn" prefetch={false}>
-                        {n.label}
-                      </Link>
-                    ))}
+                  {next.map((n) => (
+                    <Link key={n.href + n.label} href={n.href} className="xrc-btn" prefetch={false}>
+                      {n.label}
+                    </Link>
+                  ))}
                 </p>
               )}
             </header>
@@ -192,6 +192,8 @@ export default async function RecordPage(props: Props) {
   // ── Nobody has plotted this handle here yet, or a scan is reading it now ──
   if (body.status !== 'ready') {
     const scanning = body.status === 'scanning'
+    const canScan = body.status === 'unscanned' && body.canScan
+    const live = chartHref(handle, symbol, side)
     return (
       <>
         {/* A scan in flight: the page asks again by itself, with no script. */}
@@ -200,7 +202,7 @@ export default async function RecordPage(props: Props) {
           <div className="xrc__wrap">
             <div className="xrc__main">
               <header className="xrc-head">
-                <Eyebrow>
+                <Eyebrow jump>
                   <span className="xrc-eyebrow__ctx">{symbol}</span>
                 </Eyebrow>
                 <Who view={view} record={null} />
@@ -210,16 +212,23 @@ export default async function RecordPage(props: Props) {
                     {body.progress || 'The scan has started.'} This page checks again every few seconds.
                   </p>
                 ) : (
-                  <p className="xrc-standing">
-                    A scan reads the account's public posts about {symbol} from the last {SCAN_WINDOW_DAYS} days, labels each one bull or bear from its own words, and pins it to the day it was posted.
-                    {!body.canScan && body.reason ? ` ${body.reason}` : ''}
-                  </p>
+                  <>
+                    <p className="xrc-standing">
+                      A scan reads the account's public posts about {symbol} from the last {SCAN_WINDOW_DAYS} days, labels each one bull or bear from its own words, and pins it to the day it was posted.
+                    </p>
+                    {body.reason && <p className="xrc-standing">{body.reason}</p>}
+                    <p className="xrc-next">
+                      <Link href={live} className="xrc-btn xrc-btn--lead" prefetch={false} data-journey="called_scan_on_chart">
+                        {canScan ? `Scan @${handle} on the live ${symbol} chart` : `Open @${handle} on the live ${symbol} chart`}
+                      </Link>
+                    </p>
+                  </>
                 )}
               </header>
-              <RecordChart symbol={symbol} closes={view.closes} calls={[]} unit={view.unit} emptyNote={scanning ? 'Pins land here when the scan is done.' : 'No pins yet.'} action={<Link href={`/t/${encodeURIComponent(symbol)}`} prefetch={false}>Open the live chart</Link>} />
+              <RecordChart symbol={symbol} closes={view.closes} calls={[]} unit={view.unit} emptyNote={scanning ? 'Pins land here when the scan is done' : 'No pins yet'} />
             </div>
             <aside className="xrc__side">
-              <DoorBlock symbol={symbol} side={side} initialHandle={handle} heading={scanning ? 'Plot another handle' : `Plot @${handle}`} lede={scanning ? undefined : `Start here. The door reads @${handle}'s posts about ${symbol} and draws the record on this page.`} owner="this" />
+              <DoorBlock symbol={symbol} side={side} initialHandle={scanning ? undefined : handle} heading={scanning ? 'Plot another handle' : 'Plot a handle'} owner="this" />
               <MethodBlock />
             </aside>
           </div>
@@ -231,22 +240,27 @@ export default async function RecordPage(props: Props) {
 
   // ── The record ──
   const record = body.record
+  const unlabeled = body.unlabeled ?? 0
   const me = await getXIdentity().catch(() => null)
   const mine = !!record.verified && !!me && me.handle === record.handle
   const post = mine ? myCalledPost(record) : calledPost(record)
   const imageHref = calledImageHref(record.handle, record.symbol, record.side, pins)
+  const live = chartHref(record.handle, record.symbol, record.side)
   const ownPins = pins.length > 0 && record.calls.some((c) => pins.includes(c.postId))
   const pinned = record.calls.filter((c) => c.picked).length
+  const everyCall = record.bySide.bull.total + record.bySide.bear.total
+  const since = view.closes.length ? view.closes[0].t * 1000 : record.window.from
 
   return (
     <>
-      <main className="xrc" data-xrc="record" data-status="ready" data-side={record.side} data-verified={record.verified ? 'yes' : 'no'}>
+      <main className="xrc" data-xrc="record" data-status="ready" data-side={record.side} data-calls={record.calls.length} data-verified={record.verified ? 'yes' : 'no'}>
         <div className="xrc__wrap">
           <div className="xrc__main">
             <header className="xrc-head">
-              <Eyebrow jump>
+              <Eyebrow jump share={record.calls.length > 0}>
                 <span className="xrc-eyebrow__ctx">
-                  {record.symbol} · since {fmtUtcDate(record.window.from)}
+                  {record.symbol}
+                  <span className="xrc-eyebrow__since"> · since {fmtUtcDate(since)}</span>
                 </span>
               </Eyebrow>
               <Who view={view} record={record} />
@@ -254,10 +268,29 @@ export default async function RecordPage(props: Props) {
                 {record.words.standing}
               </p>
               <Headline record={record} />
-              <Sides record={record} />
+              {unlabeled > 0 && (
+                <p className="xrc-note" data-unlabeled={unlabeled}>
+                  {unlabeled} {unlabeled === 1 ? 'post' : 'posts'} still to label.{' '}
+                  <Link href={live} prefetch={false} data-journey="called_finish_on_chart">
+                    Finish on the live chart
+                  </Link>
+                </p>
+              )}
+              {everyCall > 0 && <Sides record={record} />}
             </header>
 
-            <RecordChart symbol={record.symbol} closes={view.closes} calls={record.calls} unit={view.unit} action={<Link href={chartHref(record.handle, record.symbol, record.side)} prefetch={false} data-journey="called_open_chart_top">Live chart</Link>} />
+            <RecordChart
+              symbol={record.symbol}
+              closes={view.closes}
+              calls={record.calls}
+              unit={view.unit}
+              emptyNote="No calls found in this window"
+              action={
+                <Link href={live} prefetch={false} data-journey="called_open_chart_top">
+                  Live chart
+                </Link>
+              }
+            />
             {ownPins && (
               <p className="xrc-note">
                 These {pinned} pins were chosen by a viewer. The tally counts every call found.{' '}
@@ -274,25 +307,38 @@ export default async function RecordPage(props: Props) {
                 ))}
               </ol>
             ) : (
-              <p className="xrc-note">
-                {record.side === 'all'
-                  ? `${record.postsRead} posts were read and none took a side on ${record.symbol} in this window.`
-                  : `No ${record.side === 'bull' ? 'bullish' : 'bearish'} calls on ${record.symbol} in this window. The other side may have some.`}
+              <div className="xrc-none" data-empty={everyCall === 0 ? 'record' : 'side'}>
+                <p>
+                  {everyCall > 0
+                    ? `No ${record.side === 'bull' ? 'bullish' : 'bearish'} calls on ${record.symbol} in this window. The other side has ${everyCall}.`
+                    : record.postsRead > 0
+                      ? `${record.postsRead} ${record.postsRead === 1 ? 'post' : 'posts'} about ${record.symbol} from the last ${SCAN_WINDOW_DAYS} days ${record.postsRead === 1 ? 'was' : 'were'} read. None took a side.`
+                      : `The scan found no posts by @${record.handle} about ${record.symbol} in the last ${SCAN_WINDOW_DAYS} days.`}
+                </p>
+                <p>{everyCall > 0 ? 'The toggle above shows them.' : 'Know of one? Paste its link on the live chart and it joins the record.'}</p>
+              </div>
+            )}
+
+            {record.calls.length > 0 && (
+              <p className="xrc-note xrc-note--meta">
+                {record.scannedAt ? `Scanned ${fmtUtcDate(record.scannedAt)}. ${record.postsRead} ${record.postsRead === 1 ? 'post' : 'posts'} read, ${everyCall} ${everyCall === 1 ? 'call' : 'calls'} found.` : 'Built from posts viewers added by hand. No scan has run yet.'}
               </p>
             )}
 
             <p className="xrc-live">
-              <Link href={chartHref(record.handle, record.symbol, record.side)} className="xrc-btn xrc-btn--wide" prefetch={false} data-journey="called_open_chart">
+              <Link href={live} className="xrc-btn xrc-btn--wide" prefetch={false} data-journey="called_open_chart">
                 Open the live chart
               </Link>
             </p>
           </div>
 
           <aside className="xrc__side">
-            <section className="xrc-share" aria-label="Share this record">
-              <h2 className="xrc-share__title">{mine ? 'Share your record' : 'Share this record'}</h2>
-              <ShareRow post={post} imageHref={imageHref} fileName={`called-it-${record.handle}-${record.symbol.replace(/[^A-Za-z0-9]/g, '')}.png`} />
-            </section>
+            {record.calls.length > 0 && (
+              <section className="xrc-share" id="share" aria-label="Share this record">
+                <h2 className="xrc-share__title">{mine ? 'Share your record' : 'Share this record'}</h2>
+                <ShareRow post={post} imageHref={imageHref} fileName={`called-it-${record.handle}-${record.symbol.replace(/[^A-Za-z0-9]/g, '')}.png`} />
+              </section>
+            )}
             <DoorBlock symbol={record.symbol} side={record.side} owner={record.verified ? 'yourself' : 'this'} />
             <MethodBlock />
           </aside>

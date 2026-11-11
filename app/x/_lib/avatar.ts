@@ -2,9 +2,16 @@
 // image as a data URI (squad called-it, lane RECORD). A visitor's browser
 // never asks X for it, and the server only ever asks one of X's two image
 // hosts (lib/called-it/card-layout avatarFetchUrl: https, the host exactly, no
-// port, no credentials), follows no redirect, waits two seconds, takes a
-// small JPEG/PNG/GIF and nothing else. Every miss is a null: the caller draws
-// the account's initial instead.
+// port, no credentials), follows no redirect (only a plain 200 is an avatar),
+// waits two seconds in all, takes a small JPEG/PNG/GIF and nothing else.
+// Every miss is a null: the caller draws the account's initial instead.
+//
+// node:https, not fetch, on purpose: the door page (/x) is cached, and inside
+// a cached page the framework's fetch refuses an uncached read ("Page changed
+// from static to dynamic at runtime") — which a catch here would turn into a
+// silent missing avatar on every listed row. This request is nobody's cache
+// entry: what it returns is held below, an hour per process.
+import { request } from 'node:https'
 import { AVATAR_MAX_BYTES, AVATAR_TIMEOUT_MS, AVATAR_TYPES, avatarFetchUrl } from '@/lib/called-it/card-layout'
 
 const HIT_TTL_MS = 60 * 60_000
@@ -14,20 +21,52 @@ const MAX_ENTRIES = 200
 const memo = new Map<string, { at: number; uri: string | null }>()
 const inflight = new Map<string, Promise<string | null>>()
 
-async function fetchAvatar(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url, { redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(AVATAR_TIMEOUT_MS), headers: { accept: 'image/jpeg,image/png,image/gif' } })
-    if (res.status !== 200) return null
-    const type = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
-    if (!AVATAR_TYPES.has(type)) return null
-    const declared = Number(res.headers.get('content-length') ?? '0')
-    if (declared > AVATAR_MAX_BYTES) return null
-    const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.byteLength === 0 || buf.byteLength > AVATAR_MAX_BYTES) return null
-    return `data:${type};base64,${buf.toString('base64')}`
-  } catch {
-    return null
-  }
+function fetchAvatar(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (uri: string | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(uri)
+    }
+    let u: URL
+    try {
+      u = new URL(url)
+    } catch {
+      resolve(null)
+      return
+    }
+    const req = request({ protocol: 'https:', hostname: u.hostname, port: 443, path: u.pathname + u.search, method: 'GET', headers: { accept: 'image/jpeg,image/png,image/gif' } })
+    req.on('response', (res) => {
+      const type = String(res.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase()
+      // A redirect is never followed, and a body that is not a small image is never read to the end.
+      if (res.statusCode !== 200 || !AVATAR_TYPES.has(type) || Number(res.headers['content-length'] ?? 0) > AVATAR_MAX_BYTES) {
+        res.resume()
+        req.destroy()
+        finish(null)
+        return
+      }
+      const chunks: Buffer[] = []
+      let size = 0
+      res.on('data', (chunk: Buffer) => {
+        size += chunk.length
+        if (size > AVATAR_MAX_BYTES) {
+          req.destroy()
+          finish(null)
+        } else chunks.push(chunk)
+      })
+      res.on('end', () => finish(size > 0 ? `data:${type};base64,${Buffer.concat(chunks).toString('base64')}` : null))
+      res.on('error', () => finish(null))
+    })
+    // Two seconds for the whole exchange, not per socket event.
+    const timer = setTimeout(() => {
+      req.destroy()
+      finish(null)
+    }, AVATAR_TIMEOUT_MS)
+    req.on('error', () => finish(null))
+    req.end()
+  })
 }
 
 /** The avatar as a data URI, or null (not one of X's image hosts, slow, missing, too big, not an image). Held an hour per process. */

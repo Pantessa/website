@@ -95,6 +95,8 @@ export default async function HandlePage({ params }: Props) {
     ),
   ])
   const now = Date.now()
+  // X gave no display name (or nothing is plotted yet): the handle is the name, printed once.
+  const named = !!top?.name?.trim() && top.name.trim().toLowerCase() !== handle
 
   return (
     <>
@@ -106,8 +108,8 @@ export default async function HandlePage({ params }: Props) {
               <div className="xrc-who">
                 <Avatar uri={avatar} name={top?.name} handle={handle} size="lg" />
                 <div className="xrc-who__id">
-                  <span className="xrc-who__name">{top?.name || `@${handle}`}</span>
-                  <span className="xrc-who__handle">@{handle}</span>
+                  <span className="xrc-who__name">{named ? top?.name : `@${handle}`}</span>
+                  {named && <span className="xrc-who__handle">@{handle}</span>}
                 </div>
               </div>
               {rows.length > 0 && <p className={`xrc-standing${verified ? ' is-verified' : ''}`}>{verified ? standingVerified(handle) : STANDING_NOT_VERIFIED}</p>}

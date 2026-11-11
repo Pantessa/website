@@ -29,9 +29,9 @@ export default function CallCard({ call, n, handle, unit = 'usd' }: CallCardProp
   ]
   return (
     <li className={`xrc-call is-${call.verdict}${call.picked ? ' is-picked' : ''}`} id={`call-${n}`} data-call={call.postId} data-verdict={call.verdict}>
-      <a className="xrc-call__n" href="#chart" aria-label={`Call ${n}: back to the chart`}>
+      <span className="xrc-call__n" aria-label={`Call ${n}`}>
         {n}
-      </a>
+      </span>
       <div className="xrc-call__body">
         <p className="xrc-call__result">
           <b className="xrc-call__verdict">{VERDICT_WORDS[call.verdict]}</b>
