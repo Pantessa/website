@@ -20,7 +20,7 @@ import { addAllowanceFor, allowanceFor, dailyUsdCap, maxScanCostUsd, scanAllowan
 import type { XSearchQueryTimed } from './source/x-api'
 import { readPostById, sourceFor } from './source'
 import { labelPosts, type LabelDeps, type LabelResult } from './classify'
-import { termsFor } from './terms'
+import { assetTermsFor, marketTermsFor, termsFor } from './terms'
 import { marketFor, type MarketDoor } from './market'
 import {
   RESCAN_AFTER_MS,
@@ -49,10 +49,12 @@ export const SCAN_TIME_BUDGET_MS = 45_000
 export const SEARCH_LABEL_RESERVE_MS = 15_000
 /** "No such account" and "protected" are answered from the store this long before X is asked again (review R4b). */
 export const MISS_REMEMBER_MS = 24 * 60 * 60 * 1000
+/** An incremental re-scan starts this long before the last scan's end (review R7). */
+export const RESCAN_OVERLAP_MS = 60 * 60 * 1000
 
 export type StoreApi = Pick<
   typeof Store,
-  'getHandle' | 'saveProfile' | 'savePosts' | 'postsFor' | 'newestPostId' | 'labelsFor' | 'saveLabels' | 'latestScan' | 'startScan' | 'updateScan' | 'openScan' | 'markMissing' | 'markProtected'
+  'getHandle' | 'saveProfile' | 'savePosts' | 'postsFor' | 'newestPostId' | 'labelsFor' | 'saveLabels' | 'latestScan' | 'startScan' | 'updateScan' | 'openScan' | 'markMissing' | 'markProtected' | 'finishedScans'
 >
 
 export type AllowanceFn = (requester: Requester, nowMs: number, ctx: { handle?: string; symbol?: string }) => Promise<Allowance>
@@ -192,6 +194,13 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
   if (known?.missingAt && nowMs - known.missingAt < MISS_REMEMBER_MS) return refused(404, `There is no X account named @${handle}. Check the spelling.`, another)
   if (known?.isProtected && known.readAt && nowMs - known.readAt < MISS_REMEMBER_MS) return refused(403, `@${handle}'s posts are protected, so they cannot be read. Only posts X shows to everyone can be plotted.`, another)
 
+  // AN INCREMENTAL RE-SCAN IS PER MARKET (review R7): it reads from the end of the last FINISHED scan of THIS
+  // handle on THIS symbol, an hour of overlap kept (the upsert de-duplicates), never from the handle's newest
+  // post on any market. With no finished scan it reads the whole window.
+  const prior = await store.finishedScans(handle, symbol)
+  const lastTo = prior.length ? Math.max(...prior.map((p) => p.windowTo)) : null
+  const fromMs = lastTo === null ? windowFrom : Math.max(windowFrom, lastTo - RESCAN_OVERLAP_MS)
+
   // RESERVE BEFORE SPENDING (review R3): the allowance, the day's spend (running scans at their worst case) and
   // this row are decided together under one lock, and the row holds this scan's worst case until it finishes.
   const postCap = scanPostCap()
@@ -202,7 +211,7 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
     provider: source.name,
     requestedBy: requester,
     isInternal: internal,
-    windowFrom,
+    windowFrom: fromMs,
     windowTo: nowMs,
     reserveUsd: maxScanCostUsd(postCap),
     nowMs,
@@ -236,19 +245,16 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
     await store.saveProfile({ ...profile, isProtected: false })
     await store.updateScan(scan.id, { note: `Reading @${handle}'s posts about ${symbol}`, costUsd: cost() })
 
-    // Incremental after a finished scan: newestPostId ignores pasted posts, so a post added today never hides older ones.
-    const sinceId = last?.status === 'done' ? ((await store.newestPostId(handle)) ?? undefined) : undefined
     // The search gets the scan's time budget less what labeling needs (review R4e).
     const searchDeadline = Math.max(nowMs, deadlineMs - SEARCH_LABEL_RESERVE_MS)
-    const query: XSearchQueryTimed = { handle, terms: termsFor(symbol), fromMs: windowFrom, toMs: nowMs, cap: postCap, sinceId, deadlineMs: searchDeadline }
-    const found = await source.search(query)
+    const found = await searchInPhases(source, { handle, symbol, fromMs, toMs: nowMs, cap: postCap, deadlineMs: searchDeadline })
     postsRead = found.readCount
     const own = found.posts.filter((p) => p.handle === handle && postTimeAgrees(p.id, p.postedAt))
     await store.savePosts(own)
     saved = true
-    const stop = (source as { lastStop?: unknown }).lastStop
-    const readNote = found.truncated && (stop === 'error' || stop === 'rate-limited') ? `Read ${plural(postsRead, 'post')} before X stopped answering; older posts were not read.` : `Read ${plural(postsRead, 'post')}`
-    await store.updateScan(scan.id, { postsRead, costUsd: cost() || found.costUsd, note: readNote })
+    const readNote = found.stoppedByX ? `Read ${plural(postsRead, 'post')} before X stopped answering; older posts were not read.` : `Read ${plural(postsRead, 'post')}`
+    // What this scan covered goes on its row (review R8): the record says how far back it read, never the chart's window.
+    await store.updateScan(scan.id, { postsRead, costUsd: cost() || found.costUsd, note: readNote, truncated: found.truncated, oldestPostAt: found.oldestPostAt })
 
     const { todo, have } = await unlabeledIn(store, handle, symbol, windowFrom)
     if (todo.length) await store.updateScan(scan.id, { note: `Labeling ${plural(todo.length, 'post')}` })
@@ -272,6 +278,62 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
     }
     return refused(502, saved ? `${failNote(err)} The posts already read are kept.` : failNote(err), next)
   }
+}
+
+/** What one scan's search read, over its phases. */
+export interface PhasedRead {
+  posts: XPost[]
+  readCount: number
+  costUsd: number
+  /** A phase stopped before its window's start: posts older than `oldestPostAt` were not all read. */
+  truncated: boolean
+  /** For a truncated read, the time from which it is complete (ms); null when it read the whole window. */
+  oldestPostAt: number | null
+  /** X itself stopped the read (an error or a rate limit after a page), not the cap. */
+  stoppedByX: boolean
+}
+
+/**
+ * The search, in two phases for a market proxy (review R8): the asset's own
+ * words first with the whole cap, then the market-call words with whatever
+ * the cap left. A phase that stopped early marks the read truncated; the read
+ * is complete only from the NEWEST of the truncated phases' oldest posts.
+ */
+export async function searchInPhases(source: XSource, q: { handle: string; symbol: string; fromMs: number; toMs: number; cap: number; deadlineMs: number }): Promise<PhasedRead> {
+  const phases = [assetTermsFor(q.symbol), marketTermsFor(q.symbol)].filter((t) => t.length > 0)
+  const byId = new Map<string, XPost>()
+  let readCount = 0
+  let costUsd = 0
+  let truncated = false
+  let stoppedByX = false
+  let completeFrom: number | null = null
+  for (const terms of phases) {
+    const left = q.cap - readCount
+    // Too little cap left for X's smallest page: the market-word phase is not read. The read is not whole, and
+    // the coverage stays what the asset's own words reached (the market words are the secondary net; judgment
+    // call, lane FIX hand-back).
+    if (left < 10) {
+      truncated = true
+      if (completeFrom === null) completeFrom = byId.size ? Math.min(...[...byId.values()].map((p) => p.postedAt)) : q.toMs
+      break
+    }
+    const query: XSearchQueryTimed = { handle: q.handle, terms, fromMs: q.fromMs, toMs: q.toMs, cap: left, deadlineMs: q.deadlineMs }
+    const r = await source.search(query)
+    readCount += r.readCount
+    costUsd += r.costUsd
+    for (const p of r.posts) byId.set(p.id, p)
+    if (r.truncated) {
+      truncated = true
+      const oldest = r.posts.length ? Math.min(...r.posts.map((p) => p.postedAt)) : q.toMs
+      completeFrom = Math.max(completeFrom ?? -Infinity, oldest)
+      const stop = (source as { lastStop?: unknown }).lastStop
+      if (stop === 'error' || stop === 'rate-limited') stoppedByX = true
+      // X stopped, or the time ran out: the next phase would only read less of it.
+      if (stop !== 'cap') break
+    }
+  }
+  const posts = [...byId.values()].sort((a, b) => b.postedAt - a.postedAt)
+  return { posts, readCount, costUsd: Math.round(costUsd * 1e6) / 1e6, truncated, oldestPostAt: truncated ? completeFrom : null, stoppedByX }
 }
 
 // ── The mutation routes' door (app/api/x/scan, app/api/x/add) ────────────

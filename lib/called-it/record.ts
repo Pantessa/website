@@ -16,7 +16,8 @@ import { scanAllowance } from './budget'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts, fixtureServed } from './fixture'
 import { RUNNING_STALE_MS, scanNext, scanWindowFrom, type AllowanceFn, type StoreApi } from './scan'
 import { marketFor, type MarketDoor } from './market'
-import { POST_ID_RE, buildRecord, normalizeHandle, normalizeSide, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
+import type { FinishedScan } from './store'
+import { POST_ID_RE, buildRecord, normalizeHandle, normalizeSide, type Coverage, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
 
 /** @deprecated The market door is lib/called-it/market marketFor (review R5); kept for callers outside this lane. */
 export const SYMBOL_RE = /^[A-Za-z0-9.:^-]{1,24}$/
@@ -37,7 +38,7 @@ export interface RecordAnswer {
 }
 
 export interface RecordDeps {
-  store: Pick<StoreApi, 'getHandle' | 'postsFor' | 'labelsFor' | 'latestScan'>
+  store: Pick<StoreApi, 'getHandle' | 'postsFor' | 'labelsFor' | 'latestScan' | 'finishedScans'>
   candles: (symbol: string) => Promise<Candle[] | null>
   scansAvailable: () => boolean
   allowance?: AllowanceFn
@@ -70,6 +71,25 @@ export function verifiedOf(row: Pick<Store.StoredHandle, 'claimedXUserId' | 'cla
   if (!row?.claimedXUserId || !row.claimedAt) return null
   if (row.xUserId && row.xUserId !== row.claimedXUserId) return null
   return { at: row.claimedAt }
+}
+
+/**
+ * What this symbol's finished scans read (review R8), never the chart's window: `from` is the earliest
+ * moment any of them reached (for a truncated scan, the oldest post it read), `to` the latest end,
+ * `postsRead` their sum, and `truncated` whether the OLDEST reach was a truncated one (posts before it
+ * were not read). Null when nothing has finished. Pure; pinned.
+ */
+export function coverageOf(scans: readonly Pick<FinishedScan, 'windowFrom' | 'windowTo' | 'postsRead' | 'truncated' | 'oldestPostAt'>[]): Coverage | null {
+  if (!scans.length) return null
+  const reach = (s: (typeof scans)[number]) => (s.truncated ? (s.oldestPostAt ?? s.windowTo) : s.windowFrom)
+  let oldest = scans[0]
+  for (const s of scans) if (reach(s) < reach(oldest) || (reach(s) === reach(oldest) && !s.truncated)) oldest = s
+  return {
+    from: reach(oldest),
+    to: Math.max(...scans.map((s) => s.windowTo)),
+    postsRead: scans.reduce((n, s) => n + s.postsRead, 0),
+    truncated: oldest.truncated,
+  }
 }
 
 export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecordDeps()): Promise<RecordAnswer> {
@@ -106,9 +126,10 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
   let row: Store.StoredHandle | null
   let scan: Awaited<ReturnType<StoreApi['latestScan']>>
   let labels: Awaited<ReturnType<StoreApi['labelsFor']>>
+  let finished: FinishedScan[]
   try {
     // Each read runs inside its own async call, so a store that throws at once rejects instead of stranding the others.
-    ;[row, scan, labels] = await Promise.all([(async () => deps.store.getHandle(handle))(), (async () => deps.store.latestScan(handle, symbol))(), (async () => deps.store.labelsFor(handle, symbol))()])
+    ;[row, scan, labels, finished] = await Promise.all([(async () => deps.store.getHandle(handle))(), (async () => deps.store.latestScan(handle, symbol))(), (async () => deps.store.labelsFor(handle, symbol))(), (async () => deps.store.finishedScans(handle, symbol))()])
   } catch {
     return { http: 200, body: { status: 'unscanned', handle, symbol, canScan: false, reason: 'Records are not kept on this server yet, so nothing has been plotted here.' } }
   }
@@ -119,7 +140,7 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
 
   // A pasted call, or calls an earlier scan found (a later re-scan may have failed), still make a record.
   const hasCalls = labels.some((l) => l.stance !== 'none')
-  if (scan?.status !== 'done' && !hasCalls) {
+  if (!finished.length && !hasCalls) {
     let canScan = deps.scansAvailable()
     let reason: string | undefined
     if (!canScan) reason = 'Scans are not switched on on this server. One pasted post still works.'
@@ -162,6 +183,7 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
     const l = byPost.get(p.id)
     if (l) posts.push({ ...p, label: { stance: l.stance, conviction: l.conviction, quote: l.quote }, origin: l.origin })
   }
+  const coverage = coverageOf(finished)
   const profile: XProfile = row ? { handle, name: row.name, avatarUrl: row.avatarUrl, followers: row.followers, blue: row.blue, xUserId: row.xUserId } : { handle, name: handle, avatarUrl: null, followers: null, blue: false, xUserId: null }
   const record = buildRecord({
     handle,
@@ -172,8 +194,11 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
     posts,
     candles,
     nowMs,
-    scannedAt: scan?.status === 'done' ? (scan.finishedAt ?? scan.startedAt) : null,
-    postsRead: cached.length,
+    scannedAt: finished.length ? Math.max(...finished.map((f) => f.finishedAt)) : null,
+    // What THIS symbol's scans read (review R8), not every post cached for the handle on any market.
+    postsRead: coverage?.postsRead ?? 0,
+    scanned: finished.length > 0,
+    coverage,
     pins,
   })
   if (deps.refreshGone && record.calls.length) {

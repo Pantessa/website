@@ -354,6 +354,31 @@ export async function startScan(row: { handle: string; symbol: string; provider:
   })
 }
 
+/** What one finished scan of a handle on a symbol read (reviews R7, R8). */
+export interface FinishedScan {
+  id: string
+  windowFrom: number
+  windowTo: number
+  finishedAt: number
+  postsRead: number
+  truncated: boolean
+  oldestPostAt: number | null
+}
+
+/** Every finished scan of this handle on this symbol (free finishes excluded), oldest first. */
+export async function finishedScans(handle: string, symbol: string): Promise<FinishedScan[]> {
+  const rows = await prisma.xScan.findMany({ where: { handle: h(handle), symbol: sym(symbol), status: 'done', ...NOT_FINISH }, orderBy: { startedAt: 'asc' } })
+  return rows.map((r) => ({
+    id: r.id,
+    windowFrom: (r.windowFrom ?? r.startedAt).getTime(),
+    windowTo: (r.windowTo ?? r.startedAt).getTime(),
+    finishedAt: (r.finishedAt ?? r.startedAt).getTime(),
+    postsRead: r.postsRead,
+    truncated: r.truncated,
+    oldestPostAt: ms(r.oldestPostAt),
+  }))
+}
+
 /** The day's counts a scan's allowance is decided on, read inside the budget lock. */
 export interface ScanCounts {
   /** Finished rows at their cost, running rows at the larger of their reservation and their cost (review R3). */

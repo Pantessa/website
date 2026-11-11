@@ -29,7 +29,11 @@ class MemStore {
   handles = new Map<string, StoredHandle>()
   posts = new Map<string, XPost & { goneAt?: number }>()
   labels = new Map<string, StoredLabel>()
-  scans: (ScanRow & { requestedBy: string; isInternal: boolean })[] = []
+  scans: (ScanRow & { requestedBy: string; isInternal: boolean; windowFrom?: number; windowTo?: number; truncated?: boolean; oldestPostAt?: number | null })[] = []
+  // Lane FIX (reviews R7, R8): what the real store's finishedScans answers.
+  async finishedScans(h: string, sym: string) {
+    return this.scans.filter((s) => s.handle === h && s.symbol === sym && s.status === 'done').map((s) => ({ id: s.id, windowFrom: s.windowFrom ?? s.startedAt, windowTo: s.windowTo ?? s.startedAt, finishedAt: s.finishedAt ?? s.startedAt, postsRead: s.postsRead, truncated: !!s.truncated, oldestPostAt: s.oldestPostAt ?? null }))
+  }
   spent = 0
   scansTodayOverride: number | null = null
   seq = 0
@@ -88,7 +92,7 @@ class MemStore {
   async startScan(r: { handle: string; symbol: string; provider: string; requestedBy: string; isInternal: boolean; windowFrom: number; windowTo: number }) {
     const running = this.scans.find((s) => s.handle === r.handle && s.symbol === r.symbol && s.status === 'running' && Date.now() - s.startedAt < 120_000)
     if (running) return { scan: { ...running }, joined: true }
-    const row = { id: `scan${++this.seq}xx`, handle: r.handle, symbol: r.symbol, status: 'running' as const, postsRead: 0, callsFound: 0, costUsd: 0, note: null, startedAt: Date.now(), finishedAt: null, requestedBy: r.requestedBy, isInternal: r.isInternal }
+    const row = { id: `scan${++this.seq}xx`, handle: r.handle, symbol: r.symbol, status: 'running' as const, postsRead: 0, callsFound: 0, costUsd: 0, note: null, startedAt: Date.now(), finishedAt: null, requestedBy: r.requestedBy, isInternal: r.isInternal, windowFrom: r.windowFrom, windowTo: r.windowTo, truncated: false, oldestPostAt: null as number | null }
     this.scans.push(row)
     return { scan: { ...row }, joined: false }
   }
@@ -141,6 +145,10 @@ class DoubleSource implements XSource {
     return h === HANDLE ? { ...FIXTURE_PROFILE, handle: HANDLE, xUserId: '777' } : null
   }
   async search(q: XSearchQuery) {
+    // RE-PINNED 2026-11-11 (review R8): a proxy's scan now searches its market-call words in a second phase. These
+    // posts carry none of those words, so X would answer that phase with nothing; the double does too, and counts
+    // only the searches that name the asset.
+    if (!q.terms.some((t) => t.startsWith('$'))) return { posts: [], readCount: 0, costUsd: 0, truncated: false }
     this.searches.push(q)
     if (this.opts.fail) throw new Error('x api 429 rate limit')
     const posts = doublePosts(Date.now()).filter((p) => p.postedAt >= q.fromMs && p.postedAt <= q.toMs)
@@ -414,7 +422,9 @@ class ManySource implements XSource {
   async profile(h: string) {
     return { ...FIXTURE_PROFILE, handle: h, xUserId: '888' }
   }
-  async search() {
+  async search(q?: XSearchQuery) {
+    // RE-PINNED 2026-11-11 (review R8): see DoubleSource.search, the market-word phase finds none of these posts.
+    if (q && !q.terms.some((t) => t.startsWith('$'))) return { posts: [], readCount: 0, costUsd: 0, truncated: false }
     this.searches++
     return { posts: this.posts, readCount: this.posts.length, costUsd: this.posts.length * 0.005, truncated: false }
   }

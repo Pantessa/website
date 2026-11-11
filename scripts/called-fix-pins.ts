@@ -17,6 +17,10 @@ import type { LabelResult } from '@/lib/called-it/classify'
 import { GUEST_LOOKUPS_PER_DAY, X_POST_COST_USD, X_USER_COST_USD, type XSource } from '@/lib/called-it/spec'
 import { XApiSource } from '@/lib/called-it/source/x-api'
 import { maxScanCostUsd } from '@/lib/called-it/budget'
+import { coverageOf, readRecord, type RecordDeps } from '@/lib/called-it/record'
+import { searchInPhases } from '@/lib/called-it/scan'
+import type { Candle } from '@/lib/charts'
+import type { XSearchQuery, XSearchResult } from '@/lib/called-it/spec'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 const src = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
@@ -50,6 +54,61 @@ export async function calledFixPinsAsync(check: Check): Promise<void> {
     const out = await runScan({ handle: 'zz_pin_fix', symbol: '0G', requester: 'ip:zzpinfix', internal: true }, { store: spy, source: spy, label: spy, allowance: async () => { touched.push('allowance'); throw new Error('allowance') }, now: Date.now, market: (r: unknown) => marketFor(r, { resolve: async () => ({ symbol: '0G' }) }) } as unknown as ScanDeps)
     check('fix R20: a symbol with no search terms (0G) is refused by name and never becomes one query for every post', out.kind === 'refused' && out.http === 422 && /no words to search/.test(out.body.reason) && touched.length === 0, `${JSON.stringify(out)} ${touched.join()}`)
   }
+}
+
+/** A source that records every query and answers from a list (by the query's own terms when `match` is given). */
+class RecordingSource implements XSource {
+  readonly name = 'x-api' as const
+  queries: XSearchQuery[] = []
+  lastStop: string | null = null
+  constructor(private answer: (q: XSearchQuery) => XSearchResult = () => ({ posts: [], readCount: 0, costUsd: 0, truncated: false })) {}
+  async profile(handle: string) {
+    return { handle, name: handle, avatarUrl: null, followers: 9, blue: false, xUserId: '9500' }
+  }
+  async search(q: XSearchQuery) {
+    this.queries.push({ ...q })
+    const r = this.answer(q)
+    this.lastStop = r.truncated ? 'cap' : null
+    return r
+  }
+}
+
+export async function calledFixPinsCoverage(check: Check): Promise<void> {
+  const D = DAY_MS
+  const t0 = Date.UTC(2026, 0, 1)
+  const full = { windowFrom: t0, windowTo: t0 + 100 * D, postsRead: 50, truncated: false, oldestPostAt: null }
+  const capped = { windowFrom: t0 + 99 * D, windowTo: t0 + 120 * D, postsRead: 400, truncated: true, oldestPostAt: t0 + 110 * D }
+  const a = coverageOf([full, capped])
+  check('fix R8: coverage = the earliest reach of this symbol\'s finished scans, the latest end, their posts read, and truncated only when the OLDEST reach was a truncated scan', !!a && a.from === t0 && a.to === t0 + 120 * D && a.postsRead === 450 && !a.truncated, JSON.stringify(a))
+  const b = coverageOf([capped])
+  check('fix R8: a scan the cap ended reaches back only to the oldest post it read, and says so', !!b && b.from === t0 + 110 * D && b.truncated && coverageOf([]) === null)
+  // Two phases for a market proxy: the asset's words with the whole cap, then the market words with what is left
+  const src = new RecordingSource((q) => {
+    const n = q.terms.includes('$BTC') ? 150 : 0
+    const posts = Array.from({ length: Math.min(n, q.cap) }, (_, k) => pinPost('zz_pin_q_ph', 1 + k / 10, 2000 + k, `post ${k}`))
+    return { posts, readCount: posts.length, costUsd: posts.length * X_POST_COST_USD, truncated: false }
+  })
+  const r = await searchInPhases(src, { handle: 'zz_pin_q_ph', symbol: 'BTC', fromMs: 0, toMs: Date.now(), cap: 400, deadlineMs: Date.now() + 10_000 })
+  const [p1, p2] = src.queries
+  const u = new RecordingSource()
+  await searchInPhases(u, { handle: 'zz_pin_q_ph', symbol: 'UNI', fromMs: 0, toMs: Date.now(), cap: 400, deadlineMs: Date.now() + 10_000 })
+  check('fix R8: a market proxy is searched in two phases: its own words first with the whole cap, then the market-call words with what the cap left; any other symbol once', src.queries.length === 2 && p1.terms.includes('$BTC') && !p1.terms.includes('bottom') && p1.cap === 400 && p2.terms.includes('bottom') && !p2.terms.includes('$BTC') && p2.cap === 250 && r.readCount === 150 && u.queries.length === 1 && !u.queries[0].terms.includes('bottom'), JSON.stringify(src.queries.map((q) => [q.cap, q.terms.length])))
+  // A capped first phase: the market phase is not read, and the read is complete only from phase 1's oldest post
+  const cap1 = new RecordingSource((q) => {
+    const posts = Array.from({ length: Math.min(30, q.cap) }, (_, k) => pinPost('zz_pin_q_ph', 1 + k, 3000 + k, `post ${k}`))
+    return { posts, readCount: posts.length, costUsd: 0, truncated: true }
+  })
+  const rc = await searchInPhases(cap1, { handle: 'zz_pin_q_ph', symbol: 'BTC', fromMs: 0, toMs: Date.now(), cap: 30, deadlineMs: Date.now() + 10_000 })
+  check('fix R8: when the cap ends the first phase, the read is truncated from its oldest post and the market phase is skipped', cap1.queries.length === 1 && rc.truncated && rc.oldestPostAt === Math.min(...rc.posts.map((p) => p.postedAt)))
+}
+
+function dailyCandles(nowMs: number, days = 420): Candle[] {
+  const today = Math.floor(nowMs / DAY_MS) * DAY_MS
+  return Array.from({ length: days }, (_, i) => {
+    const t = (today - (days - 1 - i) * DAY_MS) / 1000
+    const c = 100 + 30 * Math.sin(i / 17)
+    return { t, o: c, h: c, l: c, c, v: 1 }
+  })
 }
 
 // ── Against the TEST database ───────────────────────────────────────────
@@ -195,6 +254,55 @@ export async function calledFixPinsDb(check: Check): Promise<void> {
       const rt = await prisma.xScan.findFirst({ where: { handle: TR } })
       check('fix R4d: a scan whose search fails on page 2 finishes done with page 1\'s posts saved, their cost and the profile read on the row', ot.kind === 'done' && rt?.status === 'done' && rt.postsRead === 2 && Math.abs(rt.costUsd - (2 * X_POST_COST_USD + X_USER_COST_USD)) < 1e-9 && (await prisma.xPost.count({ where: { handle: TR } })) === 2, JSON.stringify(rt))
     }
+
+    // ── R7: an incremental re-scan is per market ──
+    {
+      const { runScan: run } = await import('@/lib/called-it/scan')
+      const { labelPosts } = await import('@/lib/called-it/classify')
+      const H = `${FIX_PREFIX}i${FIX_TAG}`
+      const src = new RecordingSource()
+      const deps = { store: Store as unknown as ScanDeps['store'], source: src, label: labelPosts, allowance: async () => ({ ok: true as const, scansLeft: 1, postCap: 400, usdLeft: 10 }), now: Date.now }
+      await run({ handle: H, symbol: 'BTC', requester: `ip:zzpinfix${FIX_TAG}i`, internal: true }, deps)
+      const first = src.queries[0]
+      // the BTC scan finished two days ago; since then somebody scanned UNI, which stored a post from an hour ago
+      const btc = await prisma.xScan.findFirst({ where: { handle: H, symbol: 'BTC' } })
+      const twoDays = Date.now() - 2 * DAY_MS
+      await prisma.xScan.update({ where: { id: btc!.id }, data: { startedAt: new Date(twoDays), finishedAt: new Date(twoDays), windowTo: new Date(twoDays) } })
+      await prisma.xScan.create({ data: { id: `xs_zzpinq${FIX_TAG}uni`, handle: H, symbol: 'UNI', status: 'done', provider: 'x-api', isInternal: true, requestedBy: 'ip:zzpinfixuni', windowFrom: new Date(Date.now() - 365 * DAY_MS), windowTo: new Date(), startedAt: new Date(), finishedAt: new Date() } })
+      await Store.savePosts([{ ...pinPost(H, 1 / 24, 77, '$UNI to the moon'), source: 'x-api' }])
+      src.queries = []
+      await run({ handle: H, symbol: 'BTC', requester: `ip:zzpinfix${FIX_TAG}i`, internal: true }, deps)
+      const again = src.queries[0]
+      check('fix R7: the BTC re-scan reads from the end of the last finished BTC scan (minus an hour), not from the handle\'s newest post on UNI, and sends no since_id', first.fromMs < Date.now() - 360 * DAY_MS && !!again && Math.abs(again.fromMs - (twoDays - 3_600_000)) < 1000 && again.sinceId === undefined && src.queries.every((q) => q.sinceId === undefined), JSON.stringify(src.queries.map((q) => [q.fromMs, q.sinceId])))
+    }
+
+    // ── R8: each scan records what it read, and the record says it ──
+    {
+      const { runScan: run } = await import('@/lib/called-it/scan')
+      const { labelPosts } = await import('@/lib/called-it/classify')
+      const H = `${FIX_PREFIX}c${FIX_TAG}`
+      const posts = Array.from({ length: 40 }, (_, k) => ({ ...pinPost(H, 1 + k, 4000 + k, k % 4 === 0 ? `Buying more $ETH ${k}` : `note ${k}`), source: 'x-api' as const }))
+      const src = new RecordingSource((q) => {
+        const got = posts.slice(0, Math.min(posts.length, q.cap))
+        return { posts: got, readCount: got.length, costUsd: got.length * X_POST_COST_USD, truncated: got.length < posts.length }
+      })
+      const prevCap = process.env.XCALLS_SCAN_POST_CAP
+      process.env.XCALLS_SCAN_POST_CAP = '25'
+      try {
+        await run({ handle: H, symbol: 'ETH', requester: `ip:zzpinfix${FIX_TAG}c`, internal: true }, { store: Store as unknown as ScanDeps['store'], source: src, label: labelPosts, allowance: async () => ({ ok: true as const, scansLeft: 1, postCap: 25, usdLeft: 10 }), now: Date.now })
+      } finally {
+        if (prevCap === undefined) delete process.env.XCALLS_SCAN_POST_CAP
+        else process.env.XCALLS_SCAN_POST_CAP = prevCap
+      }
+      const row = await prisma.xScan.findFirst({ where: { handle: H, symbol: 'ETH' } })
+      const oldest = Math.min(...posts.slice(0, 25).map((p) => p.postedAt))
+      check('fix R8: a scan the cap ended records truncated and the oldest post it reached on its row', !!row && row.truncated && row.oldestPostAt?.getTime() === oldest, JSON.stringify(row))
+      const rdeps: RecordDeps = { store: Store as unknown as RecordDeps['store'], candles: async () => dailyCandles(Date.now()), scansAvailable: () => true, now: Date.now }
+      const rec = await readRecord({ handle: H, symbol: 'ETH' }, rdeps)
+      const cov = rec.body.status === 'ready' ? rec.body.record.coverage : undefined
+      const words = rec.body.status === 'ready' ? rec.body.record.words.coverage : null
+      check('fix R8: the record\'s coverage is this symbol\'s scans (from = the oldest post read, truncated), postsRead their sum, scanned explicit, and the words say older posts were not read', rec.body.status === 'ready' && !!cov && cov.from === oldest && cov.truncated && cov.postsRead === 25 && rec.body.record.postsRead === 25 && rec.body.record.scanned && /Older posts were not read/.test(words ?? ''), JSON.stringify(cov) + ' ' + words)
+    }
   } finally {
     const left = await cleanFix(prisma)
     check('fix db: the pins remove every row they made', left === 0, String(left))
@@ -250,6 +358,7 @@ export async function calledFixPinsXApi(check: Check): Promise<void> {
 export async function calledFixPinsServed(check: Check, BASE: string): Promise<void> {
   await calledFixPinsAsync(check)
   await calledFixPinsXApi(check)
+  await calledFixPinsCoverage(check)
   await calledFixPinsDb(check)
   const post = async (p: string, body: unknown) => {
     const r = await fetch(`${BASE}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify(body) })
@@ -281,6 +390,7 @@ if (process.argv[1]?.endsWith('called-fix-pins.ts')) {
     else {
       await calledFixPinsAsync(check)
       await calledFixPinsXApi(check)
+      await calledFixPinsCoverage(check)
       await calledFixPinsDb(check)
     }
     console.log(failed ? `\n${failed} of ${n} called-it fix pins failed` : `\nall ${n} called-it fix pins green${process.env.BASE ? '' : ' (no server)'}`)
