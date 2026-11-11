@@ -272,7 +272,7 @@ export default function SignOrderButton({
           </button>
           <SignatureWaitOpenApp waiting={status === 'signing'} />
           {note && <span className="text-[12px] text-[color:var(--muted)]" data-order-rearmed="switch">{note}</span>}
-          {error && <span className="text-[12px] text-red-400">{error}</span>}
+          {error && <span className="text-[12px] text-red-400" data-order-error="">{error}</span>}
         </div>
       )}
     </div>
