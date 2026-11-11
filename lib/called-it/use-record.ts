@@ -17,7 +17,7 @@
 // hooks after. Nothing here judges a call or words a verdict: that is
 // lib/called-it/spec, and the server's record is the only source of both.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { readTokens } from '@/components/markets/chart/chart-tokens'
 import { VERDICT_GLYPH, createCalledPins, type CalledInks, type CalledPinsController } from '@/lib/tv/called-pins'
@@ -160,6 +160,30 @@ export function plottedFrom(body: unknown, limit = 6): { handle: string; symbol:
     if (out.length >= limit) break
   }
   return out
+}
+
+/** The X account this browser proved (GET /api/x/me, lane AUTH), reduced to what this lane reads. */
+export interface XViewer {
+  xUserId: string
+  /** Lowercase, no @. What the cookie says: good for a shortcut, never for "this is the owner". */
+  handle: string
+}
+
+/** The identity in an `/api/x/me` body (or in the sign-in / sign-out event's detail), or null. */
+export function viewerFrom(body: unknown): XViewer | null {
+  const id = (body as { identity?: { xUserId?: unknown; handle?: unknown } | null } | null)?.identity
+  const handle = normalizeHandle(id?.handle)
+  return id && typeof id.xUserId === 'string' && id.xUserId.length > 0 && handle ? { xUserId: id.xUserId, handle } : null
+}
+
+/**
+ * Is the viewer the account this record is about? Only when the record itself
+ * is verified (the account signed in with X and still holds the handle) AND
+ * the viewer's proven user id is that account's. Never from the cookie's
+ * handle: a handle can change hands, a user id cannot (squad review).
+ */
+export function viewerOwns(record: Pick<CalledRecord, 'verified' | 'profile'> | null, viewer: XViewer | null): boolean {
+  return !!record?.verified && !!viewer && !!record.profile.xUserId && viewer.xUserId === record.profile.xUserId
 }
 
 /** The plot as dots for the built-in chart (its markers take a time and a short label): the glyph and the verdict's own word. */
@@ -499,6 +523,25 @@ export function useCalledAddress(symbol: string): void {
     const next = plotUrl(plot, pathname, search)
     if (next !== `${pathname}${search}`) window.history.replaceState(null, '', next)
   }, [plot, opened])
+}
+
+/** The X identity this browser proved, kept in step with a sign-in or sign-out on the same page. Null until known, and when there is none. */
+export function useXViewer(): XViewer | null {
+  const [viewer, setViewer] = useState<XViewer | null>(null)
+  useEffect(() => {
+    let alive = true
+    fetch('/api/x/me', { credentials: 'same-origin', cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => alive && setViewer(viewerFrom(body)))
+      .catch(() => undefined)
+    const onChange = (e: Event) => alive && setViewer(viewerFrom((e as CustomEvent<unknown>).detail))
+    window.addEventListener('pantessa:x-identity', onChange)
+    return () => {
+      alive = false
+      window.removeEventListener('pantessa:x-identity', onChange)
+    }
+  }, [])
+  return viewer
 }
 
 function inksNow(): CalledInks {

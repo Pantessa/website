@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import type { Candle } from '../lib/charts'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts } from '../lib/called-it/fixture'
 import { ADDED_MARK, LABEL_CAVEAT, PICK_MAX, PIN_URL_MAX, STANDING_NOT_VERIFIED, VERDICT_WORDS, buildRecord, chartHref, recordHref, type CalledCall, type CalledRecord, type CallVerdict } from '../lib/called-it/spec'
-import { applyPins, asRecordResponse, checkPostLink, classicMarkers, cleanPins, parsePlotParams, plotUrl, plottedFrom, recordApiUrl, safeNextHref, samePlot, sideCounts, togglePin } from '../lib/called-it/use-record'
+import { applyPins, asRecordResponse, checkPostLink, classicMarkers, cleanPins, parsePlotParams, plotUrl, plottedFrom, recordApiUrl, safeNextHref, samePlot, sideCounts, togglePin, viewerFrom, viewerOwns } from '../lib/called-it/use-record'
 import {
   CALLED_MARK_PREFIX,
   CALLOUT_FONT_PX,
@@ -485,6 +485,17 @@ export function calledChartPins(check: Check): void {
     dots.length === rec.calls.length && dots.every((d, i) => d.t === rec.calls[i].barTime && d.label === `${VERDICT_GLYPH[rec.calls[i].verdict]} ${VERDICT_WORDS[rec.calls[i].verdict]}`) && classicMarkers(null).length === 0,
   )
 
+  // ── who is looking ────────────────────────────────────────────────────
+  const claimed = { verified: { at: NOW }, profile: { ...FIXTURE_PROFILE, xUserId: '42' } }
+  check(
+    'called chart owner: "this viewer is the account" only when the record itself is verified AND the viewer\'s proven X user id is the account\'s; never from the handle in the cookie (a handle can change hands), never for a record that is not verified, never with no id on either side',
+    viewerOwns(claimed, { xUserId: '42', handle: 'renamed_since' }) && !viewerOwns(claimed, { xUserId: '43', handle: FIXTURE_HANDLE }) && !viewerOwns({ ...claimed, verified: null }, { xUserId: '42', handle: FIXTURE_HANDLE }) && !viewerOwns({ verified: { at: NOW }, profile: FIXTURE_PROFILE }, { xUserId: '42', handle: FIXTURE_HANDLE }) && !viewerOwns(claimed, null) && !viewerOwns(null, { xUserId: '42', handle: 'x' }),
+  )
+  check(
+    'called chart owner: the identity is read from the sign-in route\'s answer as a user id and a real handle, or it is nobody',
+    viewerFrom({ identity: { xUserId: '42', handle: 'Jack' }, available: true })?.handle === 'jack' && viewerFrom({ identity: { xUserId: '42', handle: 'Jack' } })?.xUserId === '42' && viewerFrom({ identity: null }) === null && viewerFrom({ identity: { handle: 'jack' } }) === null && viewerFrom({ identity: { xUserId: '42', handle: 'not a handle' } }) === null && viewerFrom(null) === null && viewerFrom('x') === null,
+  )
+
   // ── wiring (source) ───────────────────────────────────────────────────
   const adv = read('components/markets/chart/AdvancedChart.tsx')
   const pins = read('lib/tv/called-pins.ts')
@@ -518,6 +529,10 @@ export function calledChartPins(check: Check): void {
   check(
     'called chart wiring: the strip says what the scan read (the record\'s coverage words, beside the tally), that pasted posts are shown and not counted, marks every pasted row with the contract\'s mark, says a model wrote each label, and draws no count for a record with no scan (it offers the scan instead)',
     panel.includes('record.words.coverage') && panel.includes('record.words.added') && /call\.origin === 'added'[\s\S]{0,260}\{ADDED_MARK\}/.test(panel) && panel.includes('{LABEL_CAVEAT}') && panel.includes('{DELETED_NOTE}') && panel.includes('sideCounts(record)') && /!record\.scanned \?[\s\S]{0,400}called_scan/.test(panel) && LABEL_CAVEAT.length > 10 && !/whole chart|chart's window|this window/.test(code(panel)),
+  )
+  check(
+    'called chart wiring: the strip\'s Share sends the post lane RECORD wrote (somebody else\'s record in the third person, the account\'s own in the first only when the owner rule says so), the record\'s own image with the viewer\'s pins, and composes no share text of its own',
+    /viewerOwns\(record, viewer\) \? myCalledPost\(record\) : calledPost\(record\)/.test(panel) && panel.includes('postHref(post)') && panel.includes('calledImageHref(record.handle, record.symbol, record.side, plot.pins)') && !/xIntentHref\(/.test(panel) && /variant === 'chart' \?[\s\S]{0,700}<VerifyWithX variant="line"/.test(door),
   )
   check(
     'called chart wiring: a display name and a post\'s text are each isolated in a <bdi> (a right-to-left run cannot reorder the row around it), and Verify with X is never handed a `next` built from anything (it reads its own page on press)',
@@ -749,6 +764,9 @@ export async function calledChartControllerPins(check: Check): Promise<void> {
 const INTERNAL = { 'x-yf-internal-run': '1' }
 
 export async function calledChartPinsServed(check: Check, BASE: string): Promise<void> {
+  // The controller's pins are pure but take a moment (they wait on its timers): they ride with the served half, which
+  // the harness awaits, so test-api runs them without a line of its own.
+  await calledChartControllerPins(check)
   const get = async (path: string) => {
     const res = await fetch(`${BASE}${path}`, { headers: INTERNAL })
     return { status: res.status, text: await res.text() }
@@ -825,8 +843,8 @@ if (process.argv[1]?.endsWith('called-chart-pins.ts')) {
       if (!ok) failed++
     }
     calledChartPins(check)
-    await calledChartControllerPins(check)
     if (process.env.BASE) await calledChartPinsServed(check, process.env.BASE)
+    else await calledChartControllerPins(check)
     console.log(failed ? `\n${failed} of ${n} called-it chart pins failed` : `\nall ${n} called-it chart pins green${process.env.BASE ? '' : ' (pure half only)'}`)
     process.exit(failed ? 1 : 0)
   })()

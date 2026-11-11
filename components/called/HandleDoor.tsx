@@ -17,7 +17,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { AtSign, X } from 'lucide-react'
 import VerifyWithX from '@/components/called/VerifyWithX'
 import { chartHref, normalizeHandle, recordHref, type CalledSide } from '@/lib/called-it/spec'
-import { plottedFrom, useCalled } from '@/lib/called-it/use-record'
+import { plottedFrom, useCalled, useXViewer } from '@/lib/called-it/use-record'
 import './called-chart.css'
 
 export interface HandleDoorProps {
@@ -51,7 +51,9 @@ export default function HandleDoor({ symbol, initialHandle = '', side: sideProp 
   const [side, setSide] = useState<CalledSide>(sideProp)
   const [market, setMarket] = useState(symbol ?? 'BTC')
   const [plotted, setPlotted] = useState<Suggestion[]>([])
-  const [me, setMe] = useState<string | null>(null)
+  // The account this browser proved with X, if any: "Plot yourself" is then one tap. It is a shortcut to that
+  // handle's plot and claims nothing: whether a plot is verified is the record's to say.
+  const me = useXViewer()?.handle ?? null
   const inputRef = useRef<HTMLInputElement | null>(null)
   const id = useId()
   const handle = normalizeHandle(value)
@@ -67,18 +69,8 @@ export default function HandleDoor({ symbol, initialHandle = '', side: sideProp 
       .then((r) => (r.ok ? r.json() : null))
       .then((body) => alive && setPlotted(plottedFrom(body)))
       .catch(() => undefined)
-    // The account this browser proved with X, if any: "Plot yourself" is then one tap.
-    const readMe = () =>
-      fetch('/api/x/me', { credentials: 'same-origin', cache: 'no-store' })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((body: { identity?: { handle?: unknown } | null } | null) => alive && setMe(normalizeHandle(body?.identity?.handle)))
-        .catch(() => undefined)
-    void readMe()
-    const onIdentity = (e: Event) => alive && setMe(normalizeHandle((e as CustomEvent<{ identity?: { handle?: unknown } | null }>).detail?.identity?.handle))
-    window.addEventListener('pantessa:x-identity', onIdentity)
     return () => {
       alive = false
-      window.removeEventListener('pantessa:x-identity', onIdentity)
     }
   }, [])
 
@@ -153,17 +145,20 @@ export default function HandleDoor({ symbol, initialHandle = '', side: sideProp 
           </span>
         </div>
       )}
-      <div className="xcc-door__more">
-        <span className="xcc-door__k mono">Plot yourself</span>
-        <span className="xcc-door__you">
-          {me && variant === 'chart' ? (
-            <button type="button" className="xcc-chip xcc-chip--you" onClick={() => go(me, side, sym)} data-journey="called_plot_self">
-              @{me} on {sym}
-            </button>
-          ) : null}
-          <VerifyWithX variant="line" symbol={marketOk ? sym : undefined} className="xcc-door__verify" />
-        </span>
-      </div>
+      {/* On /x the page gives "Plot yourself" a block of its own beside this form (lane RECORD mounts Verify with X there). */}
+      {variant === 'chart' ? (
+        <div className="xcc-door__more">
+          <span className="xcc-door__k mono">Plot yourself</span>
+          <span className="xcc-door__you">
+            {me ? (
+              <button type="button" className="xcc-chip xcc-chip--you" onClick={() => go(me, side, sym)} data-journey="called_plot_self">
+                @{me} on {sym}
+              </button>
+            ) : null}
+            <VerifyWithX variant="line" symbol={marketOk ? sym : undefined} className="xcc-door__verify" />
+          </span>
+        </div>
+      ) : null}
     </form>
   )
 }

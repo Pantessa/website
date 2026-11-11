@@ -19,8 +19,9 @@ import { fmtPrice } from '@/components/CandleChart'
 import { SIDES } from '@/components/called/HandleDoor'
 import { chartPairFor, chartUnitOf } from '@/lib/charts'
 import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, GUEST_SCANS_PER_DAY, JUDGE_DAYS, LABEL_CAVEAT, PROVEN_SCANS_PER_DAY, SCAN_POST_CAP, SCAN_WINDOW_DAYS, VERDICT_WORDS, moveLine, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
-import { safeNextHref, sideCounts, useCalled, useCalledAddress } from '@/lib/called-it/use-record'
-import { xIntentHref } from '@/lib/share-posts'
+import { calledImageHref } from '@/lib/called-it/card-layout'
+import { safeNextHref, sideCounts, useCalled, useCalledAddress, useXViewer, viewerOwns } from '@/lib/called-it/use-record'
+import { calledPost, myCalledPost, postHref } from '@/lib/share-posts'
 import { VERDICT_GLYPH, cleanPostText, pinDate } from '@/lib/tv/called-pins'
 import './called-chart.css'
 
@@ -55,11 +56,6 @@ function PostText({ call }: { call: Pick<CalledCall, 'text' | 'quote'> }) {
       {text.slice(at + quote.length)}
     </bdi>
   )
-}
-
-/** The share text until lane RECORD's `calledPost` lands in lib/share-posts: the record's own headline (ASCII by rule), then what the page is. */
-function sharePost(record: CalledRecord): string {
-  return `${record.words.headline} Every post pinned on the chart at the day it was posted.`
 }
 
 function SideToggle({ record, side, onSide, busy }: { record: CalledRecord | null; side: CalledSide; onSide: (s: CalledSide) => void; busy: boolean }) {
@@ -191,6 +187,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   const focusId = useCalled((s) => s.focusId)
   const note = useCalled((s) => s.note)
   const advanced = useCalled((s) => s.advanced)
+  const viewer = useXViewer()
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -237,7 +234,9 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   let body: ReactNode
   if (record) {
     const pinned = record.calls.filter((c) => c.picked).length
-    const origin = () => window.location.origin
+    // The post is lane RECORD's (lib/share-posts): somebody else's record in the third person, the account's own in the
+    // first, and "own" only when the record is verified AND the viewer's proven X user id is the account's.
+    const post = viewerOwns(record, viewer) ? myCalledPost(record) : calledPost(record)
     body = (
       <>
         {head(
@@ -312,13 +311,15 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
               </button>
               {shareOpen ? (
                 <span className="xcc-share__menu" role="menu">
+                  <a role="menuitem" className="xcc-share__item" href={postHref(post)} target="_blank" rel="noopener noreferrer" data-journey="called_share_x">
+                    Post on X
+                  </a>
                   <button
                     type="button"
                     role="menuitem"
                     className="xcc-share__item"
                     onClick={() => {
-                      const link = `${origin()}${recordHref(record.handle, record.symbol, record.side)}`
-                      void navigator.clipboard?.writeText(link).then(
+                      void navigator.clipboard?.writeText(post.url).then(
                         () => setCopied(true),
                         () => setCopied(false),
                       )
@@ -327,19 +328,8 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
                   >
                     {copied ? 'Link copied' : 'Copy link'}
                   </button>
-                  <a
-                    role="menuitem"
-                    className="xcc-share__item"
-                    href={xIntentHref(sharePost(record), `https://www.pantessa.com${recordHref(record.handle, record.symbol, record.side)}`)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      // The address is this site's own, read on press (a preview shares its own page).
-                      e.currentTarget.href = xIntentHref(sharePost(record), `${origin()}${recordHref(record.handle, record.symbol, record.side)}`)
-                    }}
-                    data-journey="called_share_x"
-                  >
-                    Post on X
+                  <a role="menuitem" className="xcc-share__item" href={calledImageHref(record.handle, record.symbol, record.side, plot.pins)} download={`${record.handle}-${record.symbol}-calls.png`} data-journey="called_share_image">
+                    Save image
                   </a>
                   <a role="menuitem" className="xcc-share__item" href={recordHref(record.handle, record.symbol, record.side)} data-journey="called_share_open">
                     Open the record&rsquo;s page
