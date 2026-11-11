@@ -240,7 +240,7 @@ export const PANE_KEEP = {
 export const CARDS_MIN_PANE_W = 520
 const CARDS_MIN_PANE_H = 300
 /** Air between a rail of cards and the candles. */
-const RAIL_AIR_PX = 14
+const RAIL_AIR_PX = 18
 
 export interface PaneSize {
   width: number
@@ -284,7 +284,7 @@ export interface BoxSize {
   h: number
 }
 
-/** The box the library draws for these lines (text width + padding, one font-size a line + padding). */
+/** The box the library draws for these lines, its own wrap off (measured on v33.1.0: the widest line + 10px a side, one font-size a line + 10px top and bottom). */
 export function boxSize(lines: readonly string[], measure: Measure, textWidth: number): BoxSize {
   const widest = lines.reduce((m, l) => Math.max(m, measure(l)), 0)
   return { w: Math.ceil(Math.min(widest, textWidth)) + 2 * CALLOUT_PAD_PX, h: lines.length * CALLOUT_LINE_PX + 2 * CALLOUT_PAD_PX }
@@ -470,7 +470,7 @@ export interface CalloutSpec {
 }
 
 /** One card: its tip on the bar and the day's close, its box centred at `box`. */
-export function calloutShape(call: Pick<CalledCall, 'barTime' | 'priceAt' | 'verdict'>, text: PinText, box: { time: number; price: number }, inks: CalledInks, opts: { textWidth: number; focus?: boolean }): CalloutSpec {
+export function calloutShape(call: Pick<CalledCall, 'barTime' | 'priceAt' | 'verdict'>, text: PinText, box: { time: number; price: number }, inks: CalledInks, opts: { focus?: boolean } = {}): CalloutSpec {
   const look = verdictLook(call.verdict, inks)
   return {
     points: [
@@ -481,7 +481,9 @@ export function calloutShape(call: Pick<CalledCall, 'barTime' | 'priceAt' | 'ver
       shape: 'callout',
       text: text.text,
       ...PIN_SHAPE_FLAGS,
-      overrides: { backgroundColor: inks.surf, bordercolor: look.ink, color: inks.fg, fontsize: CALLOUT_FONT_PX, bold: false, italic: false, linewidth: opts.focus ? 2 : 1, transparency: 0, wordWrap: true, wordWrapWidth: opts.textWidth },
+      // The lines are wrapped here (wrapWords) and the library's own wrap is off: with it on, every box is drawn the full
+      // wrap width whatever it says (measured on v33.1.0), and a short post would cover candles for nothing.
+      overrides: { backgroundColor: inks.surf, bordercolor: look.ink, color: inks.fg, fontsize: CALLOUT_FONT_PX, bold: false, italic: false, linewidth: opts.focus ? 2 : 1, transparency: 0, wordWrap: false },
     },
   }
 }
@@ -540,31 +542,37 @@ export function withCalledMarks<F extends Pick<TvDatafeed, 'getMarks'>>(feed: F,
 }
 
 export const TALLY_FONT_PX = 11
+/** On a pane too narrow for cards (a phone) the tally is set a size down: it is three times the lines there. */
+export function tallyFontPx(pane: PaneSize): number {
+  return pane.width < CARDS_MIN_PANE_W ? 10 : TALLY_FONT_PX
+}
 
 export interface TallyLabel {
   text: string
   lines: number
-  wrapWidth: number
+  fontPx: number
   /** Px the label takes at the pane's foot, its own air included. */
   keepBottom: number
 }
 
 /** The line on the pane: the record's own headline and standing (lib/called-it/spec words, untouched) and where the record lives. */
-export function tallyLabel(record: Pick<CalledRecord, 'handle' | 'symbol' | 'side' | 'words'>, pane: PaneSize, measure: Measure = (s) => estimateTextWidth(s, TALLY_FONT_PX)): TallyLabel {
+export function tallyLabel(record: Pick<CalledRecord, 'handle' | 'symbol' | 'side' | 'words'>, pane: PaneSize, measure?: Measure): TallyLabel {
+  const fontPx = tallyFontPx(pane)
+  const width = measure ?? ((s: string) => estimateTextWidth(s, fontPx))
   const wrapWidth = Math.max(140, Math.floor(pane.width - PANE_KEEP.logoWidth - PANE_KEEP.edge - 12))
   const where = `pantessa.com${recordHref(record.handle, record.symbol, record.side)}`
   const parts = [record.words.headline, `${record.words.standing} ${where}`]
-  const lines = parts.flatMap((p) => wrapWords(p, wrapWidth, measure, 4))
-  return { text: lines.join('\n'), lines: lines.length, wrapWidth, keepBottom: lines.length * TALLY_FONT_PX + 22 }
+  const lines = parts.flatMap((p) => wrapWords(p, wrapWidth, width, 4))
+  return { text: lines.join('\n'), lines: lines.length, fontPx, keepBottom: lines.length * fontPx + 22 }
 }
 
-/** The tally's shape: fixed to the pane (it does not pan), same flags as a pin. */
+/** The tally's shape: fixed to the pane (it does not pan), same flags as a pin. The lines are wrapped here; the library's wrap is off. */
 export function tallyShape(label: TallyLabel, inks: CalledInks): TvShapeOptions {
   return {
     shape: 'anchored_text',
     text: label.text,
     ...PIN_SHAPE_FLAGS,
-    overrides: { color: inks.muted, fontsize: TALLY_FONT_PX, bold: false, italic: false, fillBackground: true, backgroundColor: inks.bg, backgroundTransparency: 18, drawBorder: false, wordWrap: true, wordWrapWidth: label.wrapWidth },
+    overrides: { color: inks.muted, fontsize: label.fontPx, bold: false, italic: false, fillBackground: true, backgroundColor: inks.bg, backgroundTransparency: 18, drawBorder: false, wordWrap: false },
   }
 }
 
@@ -753,7 +761,17 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   let driftTimer: ReturnType<typeof setInterval> | null = null
   let resizeWatch: ResizeObserver | null = null
   let measure: Measure = (s) => estimateTextWidth(s, CALLOUT_FONT_PX)
-  let measureTally: Measure = (s) => estimateTextWidth(s, TALLY_FONT_PX)
+  const tallyMeasures = new Map<number, Measure>()
+  /** The tally's text measure at the size this pane sets it in. */
+  const measureTally = (pane: PaneSize): Measure => {
+    const px = tallyFontPx(pane)
+    let m = tallyMeasures.get(px)
+    if (!m) {
+      m = widget ? canvasMeasure(px) : (s: string) => estimateTextWidth(s, px)
+      tallyMeasures.set(px, m)
+    }
+    return m
+  }
   const subs: (() => void)[] = []
 
   const mainPane = () => {
@@ -891,9 +909,9 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   const placeLabel = async (record: CalledRecord, pane: PaneSize, my: number): Promise<void> => {
     const c = chart
     if (!c) return
-    const label = tallyLabel(record, pane, measureTally)
+    const label = tallyLabel(record, pane, measureTally(pane))
     const inks = hooks.inks()
-    const key = `${label.text}|${label.wrapWidth}|${inks.bg}|${inks.muted}`
+    const key = `${label.text}|${label.fontPx}|${inks.bg}|${inks.muted}`
     try {
       if (labelId && labelKey === key) {
         c.getShapeById(labelId).setAnchoredPosition(labelPos(pane, label.keepBottom))
@@ -943,10 +961,10 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       schedule()
       return true
     }
-    const label = tallyLabel(record, view.pane, measureTally)
+    const label = tallyLabel(record, view.pane, measureTally(view.pane))
     if (labelId) {
       try {
-        if (labelKey.startsWith(`${label.text}|${label.wrapWidth}|`)) c.getShapeById(labelId).setAnchoredPosition(labelPos(view.pane, label.keepBottom))
+        if (labelKey.startsWith(`${label.text}|${label.fontPx}|`)) c.getShapeById(labelId).setAnchoredPosition(labelPos(view.pane, label.keepBottom))
         else {
           drawnKey = ''
           schedule()
@@ -1021,7 +1039,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       sizes[id] = boxSize(text.lines, measure, plan.textWidth)
     }
     const maxH = Math.max(0, ...Object.values(sizes).map((s) => s.h))
-    const label = tallyLabel(record, pane, measureTally)
+    const label = tallyLabel(record, pane, measureTally(pane))
     setMargins((base) => railMargins(pane, plan, maxH, label.keepBottom, base))
     // The margins move the candles: read the view after the chart has drawn them.
     await sleep(80)
@@ -1040,7 +1058,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       if (!call || !text) continue
       // A card whose bar is off screen is made beside its bar and placed when the bar comes into view.
       const point = box.inView ? boxPoint(view, box, call.priceAt) : null
-      const spec = calloutShape(call, text, point ?? { time: call.barTime, price: call.priceAt * (box.side === 'above' ? 1.06 : 0.94) }, inks, { textWidth: plan.textWidth, focus: call.postId === input.focusId })
+      const spec = calloutShape(call, text, point ?? { time: call.barTime, price: call.priceAt * (box.side === 'above' ? 1.06 : 0.94) }, inks, { focus: call.postId === input.focusId })
       try {
         const id = await c.createMultipointShape(spec.points, spec.options)
         owned.add(id)
@@ -1085,7 +1103,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       widget = w
       chart = c
       measure = canvasMeasure(CALLOUT_FONT_PX)
-      measureTally = canvasMeasure(TALLY_FONT_PX)
+      tallyMeasures.clear()
       const onRange = () => scheduleRelayout()
       const onMark = ((id: unknown) => {
         const post = postIdOfMark(id)

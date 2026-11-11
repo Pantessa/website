@@ -87,7 +87,9 @@ export function asRecordResponse(body: unknown): RecordResponse | null {
   if (b.status === 'ready') {
     const r = b.record as Partial<CalledRecord> | undefined
     if (!r || typeof r.handle !== 'string' || typeof r.symbol !== 'string' || !Array.isArray(r.calls) || typeof r.words?.headline !== 'string' || typeof r.words?.standing !== 'string' || !r.tally || !r.bySide || !r.profile) return null
-    return { status: 'ready', record: r as CalledRecord }
+    // Posts a large scan kept but has not labeled yet (lane JUDGE): the strip offers to finish them.
+    const unlabeled = typeof b.unlabeled === 'number' && Number.isInteger(b.unlabeled) && b.unlabeled > 0 ? b.unlabeled : 0
+    return unlabeled ? { status: 'ready', record: r as CalledRecord, unlabeled } : { status: 'ready', record: r as CalledRecord }
   }
   if (b.status === 'refused') {
     if (typeof b.reason !== 'string') return null
@@ -169,6 +171,10 @@ interface CalledState {
   record: CalledRecord | null
   /** A scan this browser started is running. */
   scanning: boolean
+  /** The running scan's own note ("Read 212 posts"), as the server words it. */
+  progress: string
+  /** Posts a scan kept but has not labeled yet (the strip offers to finish them). */
+  unlabeled: number
   /** The call the chart and the strip are both pointing at, and who pointed. */
   focusId: string | null
   focusBy: 'chart' | 'strip' | null
@@ -231,7 +237,15 @@ export const useCalled = create<CalledState>((set, get) => {
     if (my !== seq || !plot || !symbol) return
     const record = body.status === 'ready' ? applyPins(body.record, plot.pins) : null
     if (body.status === 'ready') cache.set(cacheKey(symbol, plot), { at: Date.now(), body })
-    set((s) => ({ phase: 'settled', response: body, record, fitNonce: record && opts.fit ? s.fitNonce + 1 : s.fitNonce, focusId: record && s.focusId && record.calls.some((c) => c.postId === s.focusId) ? s.focusId : null }))
+    set((s) => ({
+      phase: 'settled',
+      response: body,
+      record,
+      unlabeled: body.status === 'ready' ? (body.unlabeled ?? 0) : 0,
+      progress: body.status === 'scanning' ? body.progress : '',
+      fitNonce: record && opts.fit ? s.fitNonce + 1 : s.fitNonce,
+      focusId: record && s.focusId && record.calls.some((c) => c.postId === s.focusId) ? s.focusId : null,
+    }))
     stopPoll()
     // Somebody else's scan is running: the answer arrives by asking again.
     if (body.status === 'scanning') {
@@ -265,9 +279,13 @@ export const useCalled = create<CalledState>((set, get) => {
         if (!opts.quiet) set({ phase: 'failed', response: null })
         return false
       }
-      if (opts.quiet && answer.status === 'scanning') {
-        set({ response: answer })
-        return true
+      if (opts.quiet) {
+        // A poll while a scan runs only carries its progress note; the scan's own request brings the answer.
+        if (answer.status === 'scanning') {
+          set(get().record ? { progress: answer.progress } : { progress: answer.progress, response: answer })
+          return true
+        }
+        if (get().scanning) return false
       }
       settle(my, answer, opts)
       return false
@@ -279,7 +297,7 @@ export const useCalled = create<CalledState>((set, get) => {
   const load = (plot: Plot, opts: { fit?: boolean; keep?: boolean } = {}) => {
     const my = ++seq
     stopPoll()
-    set((s) => ({ plot, phase: 'loading', scanning: false, note: null, focusId: null, focusBy: null, ...(opts.keep && s.record && s.record.handle === plot.handle ? {} : { record: null, response: null }) }))
+    set((s) => ({ plot, phase: 'loading', scanning: false, progress: '', note: null, focusId: null, focusBy: null, ...(opts.keep && s.record && s.record.handle === plot.handle ? {} : { record: null, response: null, unlabeled: 0 }) }))
     void read(my, { fit: opts.fit })
   }
 
@@ -290,6 +308,8 @@ export const useCalled = create<CalledState>((set, get) => {
     response: null,
     record: null,
     scanning: false,
+    progress: '',
+    unlabeled: 0,
     focusId: null,
     focusBy: null,
     fitNonce: 0,
@@ -304,7 +324,7 @@ export const useCalled = create<CalledState>((set, get) => {
       if (s.symbol !== symbol) {
         seq++
         stopPoll()
-        set({ symbol, plot: null, phase: 'idle', response: null, record: null, scanning: false, focusId: null, focusBy: null, fitNonce: 0, cards: 0, note: null, opened: true })
+        set({ symbol, plot: null, phase: 'idle', response: null, record: null, scanning: false, progress: '', unlabeled: 0, focusId: null, focusBy: null, fitNonce: 0, cards: 0, note: null, opened: true })
       } else set({ opened: true })
       if (!plot) {
         if (get().plot) get().clear()
@@ -343,7 +363,7 @@ export const useCalled = create<CalledState>((set, get) => {
     clear() {
       seq++
       stopPoll()
-      set({ plot: null, phase: 'idle', response: null, record: null, scanning: false, focusId: null, focusBy: null, note: null, cards: 0 })
+      set({ plot: null, phase: 'idle', response: null, record: null, scanning: false, progress: '', unlabeled: 0, focusId: null, focusBy: null, note: null, cards: 0 })
     },
     focus(postId, by) {
       set({ focusId: postId, focusBy: postId ? by : null })
@@ -360,7 +380,9 @@ export const useCalled = create<CalledState>((set, get) => {
       if (!plot || !symbol || scanning) return
       const my = ++seq
       stopPoll()
-      set({ scanning: true, phase: 'settled', response: { status: 'scanning', handle: plot.handle, symbol, scanId: '', progress: '' } })
+      // A first scan shows its progress in place of the record; "Finish" (a record is already up) keeps the record on screen.
+      if (get().record) set({ scanning: true })
+      else set({ scanning: true, phase: 'settled', response: { status: 'scanning', handle: plot.handle, symbol, scanId: '', progress: '' } })
       // The scan runs inside this request; its own progress note is read beside it.
       let polls = 0
       const tick = () => {
@@ -373,19 +395,22 @@ export const useCalled = create<CalledState>((set, get) => {
       }
       tick()
       try {
-        const { status, body } = await getJson('/api/x/scan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ handle: plot.handle, sym: symbol }) })
+        const { status, body } = await getJson('/api/x/scan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ handle: plot.handle, sym: symbol, side: plot.side }) })
         if (my !== seq) return
         stopPoll()
         const answer = asRecordResponse(body)
         cache.delete(cacheKey(symbol, plot))
         set({ scanning: false })
-        if (answer && !(answer.status === 'scanning' && !answer.scanId)) settle(my, answer, { fit: true })
+        const had = get().record
+        if (answer && !(answer.status === 'scanning' && !answer.scanId) && !(had && answer.status !== 'ready')) settle(my, answer, { fit: !had })
+        else if (had) set({ note: answer?.status === 'refused' ? answer.reason : 'The rest could not be labeled just now. The record on screen stands.' })
         else settle(my, { status: 'refused', reason: status === 404 ? 'Scans are not on this server yet. One post can still be added by its link.' : 'The scan did not finish. Nothing was plotted. Try again in a moment.', next: [] })
       } catch {
         if (my !== seq) return
         stopPoll()
         set({ scanning: false })
-        settle(my, { status: 'refused', reason: 'The scan did not answer in time. If it is still running, the plot will be here when you come back.', next: [] })
+        if (get().record) set({ note: 'The rest could not be labeled just now. The record on screen stands.' })
+        else settle(my, { status: 'refused', reason: 'The scan did not answer in time. If it is still running, the plot will be here when you come back.', next: [] })
       }
     },
     async addPost(url) {
