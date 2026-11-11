@@ -145,7 +145,8 @@ export function calledAuthPins(check: Check): void {
   check('x auth: no route or the lib writes X tokens to the database', !routes.some(([, s]) => /prisma|@\/lib\/db/.test(s)) && !/prisma|@\/lib\/db/.test(lib))
   check('x auth: the signout route checks the origin', /sameOrigin\(req\.headers\)/.test(routes[2][1]))
   check('x auth: the callback answers no-referrer (the code is in its URL)', /'referrer-policy': 'no-referrer'/.test(routes[1][1]))
-  check('x auth: fake mode is off on production', /process\.env\[ENV\.fake\] === '1' && process\.env\.VERCEL_ENV !== 'production'/.test(lib))
+  // RE-PINNED 2026-11-11 (review R6): fake mode is the one fence spec fakeModeOn (off on every Vercel deployment, preview included).
+  check('x auth: fake mode is off on production', /export function xFakeMode\(\): boolean \{\n  return fakeModeOn\(\)\n\}/.test(lib))
 }
 
 // ── Pure, asynchronous (signing, the flow with its world mocked) ────────

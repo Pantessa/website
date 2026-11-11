@@ -102,6 +102,58 @@ export async function calledFixPinsCoverage(check: Check): Promise<void> {
   check('fix R8: when the cap ends the first phase, the read is truncated from its oldest post and the market phase is skipped', cap1.queries.length === 1 && rc.truncated && rc.oldestPostAt === Math.min(...rc.posts.map((p) => p.postedAt)))
 }
 
+/** Run `fn` with these env values (undefined deletes), then put them back. */
+async function withEnv<T>(vals: Record<string, string | undefined>, fn: () => T | Promise<T>): Promise<T> {
+  const saved: Record<string, string | undefined> = {}
+  for (const k of Object.keys(vals)) {
+    saved[k] = process.env[k]
+    if (vals[k] === undefined) delete process.env[k]
+    else process.env[k] = vals[k]
+  }
+  try {
+    return await fn()
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  }
+}
+
+/** A read-only store double for readRecord: one handle, its posts and labels, one finished scan. */
+function recordStore(o: { handle: string; posts: XPost[]; labels: { postId: string; stance: 'bull' | 'bear' | 'none'; conviction: 0 | 1 | 2 | 3; quote: string | null; model: string; origin?: 'scan' | 'added' }[]; xUserId?: string | null; claimed?: string | null; extra?: Record<string, unknown>; postAuthor?: Record<string, string | null> }) {
+  const now = Date.now()
+  const row = { handle: o.handle, name: o.handle, avatarUrl: null, followers: 10, blue: false, xUserId: o.xUserId ?? null, isProtected: false, claimedXUserId: o.claimed ?? null, claimedAt: o.claimed ? now - 1000 : null, readAt: now, hiddenAt: null, missingAt: null, ...(o.extra ?? {}) }
+  return {
+    getHandle: async () => row,
+    postsFor: async () => o.posts.map((p) => ({ ...p, xUserId: o.postAuthor?.[p.id] ?? null })),
+    labelsFor: async (_h: string, sym: string) => o.labels.map((l) => ({ ...l, symbol: sym, origin: l.origin ?? ('scan' as const) })),
+    latestScan: async () => ({ id: 'xs_double', handle: o.handle, symbol: 'BTC', status: 'done' as const, postsRead: o.posts.length, callsFound: 1, costUsd: 0, note: null, startedAt: now - 5000, finishedAt: now - 4000 }),
+    finishedScans: async () => [{ id: 'xs_double', windowFrom: now - 365 * DAY_MS, windowTo: now - 4000, finishedAt: now - 4000, postsRead: o.posts.length, truncated: false, oldestPostAt: null }],
+  } as unknown as RecordDeps['store']
+}
+
+export async function calledFixPinsFake(check: Check): Promise<void> {
+  const { fakeModeOn } = await import('@/lib/called-it/spec')
+  const { labelsFaked } = await import('@/lib/called-it/classify')
+  const { xFakeMode } = await import('@/lib/called-it/x-auth')
+  const { sourceFor } = await import('@/lib/called-it/source')
+  const { verifiedOf } = await import('@/lib/called-it/record')
+  const onPreview = await withEnv({ XCALLS_FAKE: '1', VERCEL: '1', VERCEL_ENV: 'preview', X_BEARER_TOKEN: undefined }, () => ({ spec: fakeModeOn(), auth: xFakeMode(), src: sourceFor(), labels: labelsFaked() }))
+  check('fix R6: XCALLS_FAKE=1 on a Vercel preview is NOT fake mode: no fake sign-in, no fixture source, no keyword labels', !onPreview.spec && !onPreview.auth && onPreview.src === null && !onPreview.labels, JSON.stringify({ ...onPreview, src: onPreview.src?.name ?? null }))
+  check('fix R6: MK2_AI_MOCK alone never fakes labels on production (or any Vercel deployment); off Vercel it still does', !labelsFaked({ MK2_AI_MOCK: '1', VERCEL_ENV: 'production' }) && !labelsFaked({ MK2_AI_MOCK: '1', VERCEL: '1' }) && labelsFaked({ MK2_AI_MOCK: '1' }) && labelsFaked({ XCALLS_FAKE: '1' }))
+  const fakeClaim = { claimedXUserId: 'fake-alice', claimedAt: 5, xUserId: 'fake-alice' }
+  check('fix R6: a claim the fake sign-in wrote reads Verified only in fake mode', verifiedOf(fakeClaim, false) === null && verifiedOf(fakeClaim, true)?.at === 5 && verifiedOf({ claimedXUserId: '42', claimedAt: 5, xUserId: '42' }, false)?.at === 5)
+  // keyword labels in the database are not calls outside fake mode
+  const H = 'zz_pin_q_kw'
+  const post = pinPost(H, 40, 51, 'Buying this dip with size.')
+  const rdeps = (store: RecordDeps['store']): RecordDeps => ({ store, candles: async () => dailyCandles(Date.now()), scansAvailable: () => true, now: Date.now, market: (r) => marketFor(r, { resolve: syncResolve }) })
+  const st = recordStore({ handle: H, posts: [post], labels: [{ postId: post.id, stance: 'bull', conviction: 2, quote: 'Buying this dip', model: 'keywords' }], claimed: 'fake-zz_pin_q_kw', xUserId: 'fake-zz_pin_q_kw' })
+  const off = await withEnv({ XCALLS_FAKE: undefined }, () => readRecord({ handle: H, symbol: 'BTC' }, rdeps(st)))
+  const on = await withEnv({ XCALLS_FAKE: '1', VERCEL: undefined, VERCEL_ENV: undefined }, () => readRecord({ handle: H, symbol: 'BTC' }, rdeps(st)))
+  check('fix R6: a keyword label and a fake claim in the data read as nothing outside fake mode (no call, not Verified), and as themselves inside it', off.body.status === 'ready' && off.body.record.calls.length === 0 && off.body.record.verified === null && on.body.status === 'ready' && on.body.record.calls.length === 1 && on.body.record.verified !== null, `${JSON.stringify(off.body).slice(0, 120)} | ${JSON.stringify(on.body).slice(0, 80)}`)
+}
+
 function dailyCandles(nowMs: number, days = 420): Candle[] {
   const today = Math.floor(nowMs / DAY_MS) * DAY_MS
   return Array.from({ length: days }, (_, i) => {
@@ -359,6 +411,7 @@ export async function calledFixPinsServed(check: Check, BASE: string): Promise<v
   await calledFixPinsAsync(check)
   await calledFixPinsXApi(check)
   await calledFixPinsCoverage(check)
+  await calledFixPinsFake(check)
   await calledFixPinsDb(check)
   const post = async (p: string, body: unknown) => {
     const r = await fetch(`${BASE}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify(body) })
@@ -391,6 +444,7 @@ if (process.argv[1]?.endsWith('called-fix-pins.ts')) {
       await calledFixPinsAsync(check)
       await calledFixPinsXApi(check)
       await calledFixPinsCoverage(check)
+      await calledFixPinsFake(check)
       await calledFixPinsDb(check)
     }
     console.log(failed ? `\n${failed} of ${n} called-it fix pins failed` : `\nall ${n} called-it fix pins green${process.env.BASE ? '' : ' (no server)'}`)

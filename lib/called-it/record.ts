@@ -17,7 +17,8 @@ import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts, fixtureServed } from './
 import { RUNNING_STALE_MS, scanNext, scanWindowFrom, type AllowanceFn, type StoreApi } from './scan'
 import { marketFor, type MarketDoor } from './market'
 import type { FinishedScan } from './store'
-import { POST_ID_RE, buildRecord, normalizeHandle, normalizeSide, type Coverage, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
+import { FAKE_LABEL_MODELS } from './classify'
+import { POST_ID_RE, buildRecord, fakeModeOn, isFakeXUserId, normalizeHandle, normalizeSide, type Coverage, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
 
 /** @deprecated The market door is lib/called-it/market marketFor (review R5); kept for callers outside this lane. */
 export const SYMBOL_RE = /^[A-Za-z0-9.:^-]{1,24}$/
@@ -67,8 +68,10 @@ const chartRefused = (symbol: string): RecordAnswer => ({ http: 503, body: { sta
 const noChart = (symbol: string): RecordAnswer => ({ http: 404, body: { status: 'refused', reason: `${symbol} has no chart here, so there is nothing to pin a post to.`, next: [{ label: 'Markets', href: '/' }] } })
 
 /** The claim counts only while X still says the handle belongs to the account that claimed it. */
-export function verifiedOf(row: Pick<Store.StoredHandle, 'claimedXUserId' | 'claimedAt' | 'xUserId'> | null): { at: number } | null {
+export function verifiedOf(row: Pick<Store.StoredHandle, 'claimedXUserId' | 'claimedAt' | 'xUserId'> | null, fake: boolean = fakeModeOn()): { at: number } | null {
   if (!row?.claimedXUserId || !row.claimedAt) return null
+  // A claim the fake sign-in wrote never reads "Verified" outside fake mode, whatever database it sits in (review R6).
+  if (isFakeXUserId(row.claimedXUserId) && !fake) return null
   if (row.xUserId && row.xUserId !== row.claimedXUserId) return null
   return { at: row.claimedAt }
 }
@@ -139,7 +142,10 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
   }
 
   // A pasted call, or calls an earlier scan found (a later re-scan may have failed), still make a record.
-  const hasCalls = labels.some((l) => l.stance !== 'none')
+  // A label a harness labeler wrote is never read as a call outside fake mode (review R6).
+  const fake = fakeModeOn()
+  const usable = labels.filter((l) => fake || !l.model || !FAKE_LABEL_MODELS.has(l.model))
+  const hasCalls = usable.some((l) => l.stance !== 'none')
   if (!finished.length && !hasCalls) {
     let canScan = deps.scansAvailable()
     let reason: string | undefined
@@ -177,7 +183,8 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
   } catch {
     return { http: 503, body: { status: 'refused', reason: 'The record did not load. Try again in a moment.', next: scanNext(handle, symbol) } }
   }
-  const byPost = new Map(labels.map((l) => [l.postId, l]))
+  const byPost = new Map(usable.map((l) => [l.postId, l]))
+  const anyLabel = new Set(labels.map((l) => l.postId))
   const posts: LabeledPost[] = []
   for (const p of cached) {
     const l = byPost.get(p.id)
@@ -213,6 +220,6 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
   }
   // Posts kept but not yet labeled for this symbol (a scan that ran out of time): the UI offers to finish them, free.
   const winFrom = Math.max(fromMs, scanWindowFrom(nowMs))
-  const unlabeled = cached.filter((p) => p.postedAt >= winFrom && !byPost.has(p.id)).length
+  const unlabeled = cached.filter((p) => p.postedAt >= winFrom && !anyLabel.has(p.id)).length
   return { http: 200, body: unlabeled > 0 ? { status: 'ready', record, unlabeled } : { status: 'ready', record } }
 }

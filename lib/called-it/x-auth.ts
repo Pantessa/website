@@ -21,13 +21,13 @@
 // This is a HANDLE PROOF, not an account sign-in: it never asks for a wallet
 // and never goes through the unified sign-in modal.
 //
-// Fake mode (XCALLS_FAKE=1, never when VERCEL_ENV is production): start with
+// Fake mode (XCALLS_FAKE=1, never on a Vercel deployment: spec fakeModeOn): start with
 // `as=<handle>` seats that handle without leaving the site. A fake identity
 // is signed under a DIFFERENT audience and is refused whenever fake mode is
 // off, so a cookie minted on a preview can never be replayed on production.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { SignJWT, jwtVerify } from 'jose'
-import { ENV, normalizeHandle, type XProfile } from './spec'
+import { ENV, fakeModeOn, normalizeHandle, type XProfile } from './spec'
 
 export interface XIdentity {
   xUserId: string
@@ -146,9 +146,9 @@ export function isAllowedAuthOrigin(origin: unknown): boolean {
   return false
 }
 
-/** Fake sign-in is on: the harness and local servers only, never production. */
+/** Fake sign-in is on: the harness and local servers only. The ONE fence (spec fakeModeOn, review R6): off on every Vercel deployment, preview included. */
 export function xFakeMode(): boolean {
-  return process.env[ENV.fake] === '1' && process.env.VERCEL_ENV !== 'production'
+  return fakeModeOn()
 }
 
 export function xClientId(): string | null {

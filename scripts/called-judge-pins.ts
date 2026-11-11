@@ -447,6 +447,19 @@ function slowModel(ms: number, seen: { inFlight: number; max: number; calls: num
 }
 
 export async function calledJudgeTimingPins(check: Check): Promise<void> {
+  // RE-PINNED 2026-11-11 (review R6): these pins hand in their own model, whose labels are stored as `injected`;
+  // outside fake mode such a label is never read as a call, so the record reads below run in fake mode.
+  const prevFake = process.env.XCALLS_FAKE
+  process.env.XCALLS_FAKE = '1'
+  try {
+    await timingPins(check)
+  } finally {
+    if (prevFake === undefined) delete process.env.XCALLS_FAKE
+    else process.env.XCALLS_FAKE = prevFake
+  }
+}
+
+async function timingPins(check: Check): Promise<void> {
   check('judge timing: the finishing note', doneNote({ calls: 3, postsRead: 400, labeled: 240, toLabel: 400, unlabeled: 160 }) === 'Labeled 240 of 400 posts. Open it again to finish.' && doneNote({ calls: 1, postsRead: 1, labeled: 1, toLabel: 1, unlabeled: 0 }) === 'Found 1 call in 1 post.')
 
   // The pool: order kept, at most 5 in flight, wall time ~ rounds not jobs

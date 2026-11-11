@@ -164,7 +164,8 @@ export function calledSourcePins(check: Check): void {
 
   // Source wiring (read the source: env decides, fixture never on production)
   const idx = read('lib/called-it/source/index.ts')
-  check('called-source wiring: sourceFor = fixture under XCALLS_FAKE=1 only where the fixture is served, X API only with a bearer, else null; scansAvailable mirrors it', /process\.env\[ENV\.fake\] === '1' && fixtureServed\(\)/.test(idx) && /if \(fakeOn\(\)\) return new FixtureSource\(\)/.test(idx) && /return b \? new XApiSource\(\{ bearer: b \}\) : null/.test(idx) && /return fakeOn\(\) \|\| bearer\(\) !== null/.test(idx))
+  // RE-PINNED 2026-11-11 (review R6): fake mode is the one fence spec fakeModeOn (off on every Vercel deployment), no longer a local env test.
+  check('called-source wiring: sourceFor = fixture under XCALLS_FAKE=1 only where the fixture is served, X API only with a bearer, else null; scansAvailable mirrors it', /return fakeModeOn\(\) && fixtureServed\(\)/.test(idx) && /if \(fakeOn\(\)\) return new FixtureSource\(\)/.test(idx) && /return b \? new XApiSource\(\{ bearer: b \}\) : null/.test(idx) && /return fakeOn\(\) \|\| bearer\(\) !== null/.test(idx))
   const xapi = read('lib/called-it/source/x-api.ts')
   check('called-source x-api: the bearer appears in exactly one place (the authorization header) and no console call exists in the source', (xapi.match(/#bearer\b/g) ?? []).length === 3 && /authorization: `Bearer \$\{this\.#bearer\}`/.test(xapi) && !/console\./.test(xapi) && !/console\./.test(read('lib/called-it/source/by-id.ts')))
 }

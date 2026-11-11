@@ -12,12 +12,12 @@
 // asked once more; if it fails again its posts stay UNLABELED (not `none`),
 // so a later scan tries them again.
 //
-// Under XCALLS_FAKE=1 or MK2_AI_MOCK=1 a deterministic keyword labeler
+// In fake mode (spec fakeModeOn), or under MK2_AI_MOCK=1 off Vercel, a deterministic keyword labeler
 // answers (the fixture's posts get the fixture's own labels), so the harness
 // never calls a model.
-import { modelText, modelLabel, modelMocked } from '@/lib/markets-ai-model'
+import { modelText, modelLabel } from '@/lib/markets-ai-model'
 import { fixturePosts, FIXTURE_HANDLE } from './fixture'
-import { quoteIsFromPost, type CallLabel, type XPost } from './spec'
+import { fakeModeOn, quoteIsFromPost, type CallLabel, type XPost } from './spec'
 import { canonicalSymbol, isMarketProxy } from './terms'
 import { symbolName } from '@/lib/markets'
 
@@ -43,9 +43,16 @@ export interface LabelResult {
 /** The model call, injectable so the pins can hand in hostile answers. Returns the raw text or null. */
 export type ModelFn = (call: { system: string; user: string; maxTokens: number; signal?: AbortSignal }) => Promise<string | null>
 
-export function labelsFaked(): boolean {
-  return process.env.XCALLS_FAKE === '1' || modelMocked()
+/**
+ * The keyword labeler answers instead of the model only off Vercel (review R6): fake mode is spec fakeModeOn,
+ * and MK2_AI_MOCK alone counts only where no Vercel deployment could store its labels as real ones.
+ */
+export function labelsFaked(env: Record<string, string | undefined> = process.env): boolean {
+  return fakeModeOn(env) || (env.MK2_AI_MOCK === '1' && !env.VERCEL && env.VERCEL_ENV !== 'production')
 }
+
+/** What the harness labelers write as a label's model. Outside fake mode such a label is never read as a call (review R6). */
+export const FAKE_LABEL_MODELS: ReadonlySet<string> = new Set(['keywords', 'fixture', 'injected'])
 
 // ── The prompt ───────────────────────────────────────────────────────────
 
