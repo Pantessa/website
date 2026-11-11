@@ -375,6 +375,7 @@ import { tapePins } from './tape-pins'
 import { botUaPins, CRAWL_UAS, PERSON_UA } from './bot-ua-pins'
 import { venueManifestLivePins, venueManifestPins } from './venue-manifest-pins'
 import { chartHeatLivePins, chartHeatPins } from './chart-heat-pins'
+import { tvLivePins, tvPins } from './tv-pins'
 import { policyPoolBuilderPins } from './policy-pool-builder-pins'
 import { printAlertPins } from './print-alert-pins'
 import { spotHomePins } from './spot-home-pins'
@@ -23439,9 +23440,18 @@ async function main() {
 
     // The engine on /t: the Apache-2.0 attribution notice + tools in the HTML.
     const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    // RE-PINNED 2026-11-11 (advanced chart): a build that ships TradingView's
+    // Advanced Charts serves THAT chart's shell on /t (its own credit line and
+    // the plan's quick tools); a build without the library serves the built-in
+    // engine exactly as before. Either way the page credits TradingView with a link.
+    const tAaplAdvanced = tAapl.includes('data-engine="advanced"')
     check(
-      '/t/AAPL: MarketChart server-renders the license attribution (the NOTICE line + a tradingview.com link, the ONLY credit now that attributionLogo is off), the drawing toolbar and the performance tiles',
-      tAapl.includes('Charts by TradingView Lightweight Charts') && tAapl.includes('2025 TradingView, Inc.') && /class="mkt-attrib" href="https:\/\/www\.tradingview\.com\/"/.test(tAapl) && tAapl.includes('Horizontal level') && tAapl.includes('mkt-perf'),
+      '/t/AAPL: the chart server-renders its license attribution (a tradingview.com link; on the built-in engine the NOTICE line, the ONLY credit now that attributionLogo is off), its drawing tools and the performance tiles',
+      /class="mkt-attrib" href="https:\/\/www\.tradingview\.com\/"/.test(tAapl) &&
+        tAapl.includes('mkt-perf') &&
+        (tAaplAdvanced
+          ? tAapl.includes('Charts by TradingView') && tAapl.includes('data-tv-attribution') && tAapl.includes('A level: click a price')
+          : tAapl.includes('Charts by TradingView Lightweight Charts') && tAapl.includes('2025 TradingView, Inc.') && tAapl.includes('Horizontal level')),
     )
 
     // Pool-price honesty: stocks only; everything else says why.
@@ -25796,11 +25806,17 @@ async function main() {
 
     // The page: the overlay bar server-renders with the 50 and the 200 lit.
     const tMa = flat(await (await fetch(`${BASE}/t/ETH`)).text())
+    // RE-PINNED 2026-11-11 (advanced chart): a build that ships TradingView's
+    // Advanced Charts serves that chart's shell on /t, where the indicators are
+    // the library's own (no overlay chips of ours in the HTML); a build without
+    // it serves the built-in bar exactly as before.
     check(
-      '/t/ETH: the overlay bar server-renders SMA 50 and SMA 200 lit (swatch first, painted from the chart tokens) and SMA 20 off',
-      /aria-pressed="true"[^>]*style="--ind-sw:var\(--chart-ma-50\)"><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 50</.test(tMa) &&
-        /aria-pressed="true"[^>]*style="--ind-sw:var\(--chart-ma-200\)"><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 200</.test(tMa) &&
-        /aria-pressed="false"[^>]*><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 20</.test(tMa),
+      '/t/ETH: the overlay bar server-renders SMA 50 and SMA 200 lit (swatch first, painted from the chart tokens) and SMA 20 off — or, on a build with the Advanced chart, its shell and none of our overlay chips',
+      tMa.includes('data-engine="advanced"')
+        ? !tMa.includes('mkt-ind__sw') && tMa.includes('Your drawings')
+        : /aria-pressed="true"[^>]*style="--ind-sw:var\(--chart-ma-50\)"><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 50</.test(tMa) &&
+            /aria-pressed="true"[^>]*style="--ind-sw:var\(--chart-ma-200\)"><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 200</.test(tMa) &&
+            /aria-pressed="false"[^>]*><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 20</.test(tMa),
     )
   }
 
@@ -28992,9 +29008,14 @@ async function main() {
     const dayEth = flat(await (await fetch(`${BASE}/t/ETH`)).text())
     const dayTech = flat(await (await fetch(`${BASE}/t/AMAT?tab=technicals`)).text())
     // RE-PINNED 2026-10-13 (polish-qa): #913 (09fee064) gave each timeframe button a keyboard title after aria-pressed ("1D bars (press 4 over the chart)"); the reader allows trailing attributes — 1D is still the one pressed frame.
+    // RE-PINNED 2026-11-11 (advanced chart): on a build with TradingView's
+    // Advanced Charts the frame buttons are the library's (drawn in the browser,
+    // opened on 1D by lib/tv — pinned in scripts/tv-pins), so the served shell
+    // carries none of ours; without the library the built-in bar is as before.
+    const dayAdvanced = dayAapl.includes('data-engine="advanced"') && dayEth.includes('data-engine="advanced"')
     check(
-      '/t/AAPL + /t/ETH: the chart ships in the server HTML with 1D pressed (and only 1D); the Technicals tab renders on 1d too; no Sell chip in either header for a visitor with no wallet',
-      sgTfPressed(dayAapl).join() === '1D' && sgTfPressed(dayEth).join() === '1D' && /data-technicals="AMAT" data-tf="1d"/.test(dayTech) &&
+      '/t/AAPL + /t/ETH: the chart ships in the server HTML with 1D pressed (and only 1D; on a build with the Advanced chart, its shell and no frame buttons of ours); the Technicals tab renders on 1d too; no Sell chip in either header for a visitor with no wallet',
+      (dayAdvanced ? sgTfPressed(dayAapl).length === 0 && sgTfPressed(dayEth).length === 0 : sgTfPressed(dayAapl).join() === '1D' && sgTfPressed(dayEth).join() === '1D') && /data-technicals="AMAT" data-tf="1d"/.test(dayTech) &&
         !/>Sell AAPL</.test(dayAapl) && !/>Sell ETH</.test(dayEth) && /sym__act-chip--buy"[^>]*>Buy AAPL</.test(dayAapl),
       `AAPL pressed=${sgTfPressed(dayAapl).join() || 'none'} · ETH pressed=${sgTfPressed(dayEth).join() || 'none'}`,
     )
@@ -35530,6 +35551,9 @@ async function main() {
   // The Heatmap view (2026-11-10): the Dune executions strip is gone, the year of positioning is a chart view in the Tape's seat, the candles take the card. (Replaced the executions-strip pins.)
   chartHeatPins(check)
   await chartHeatLivePins(check, BASE)
+  // The Advanced chart (TradingView's licensed library on /t, 2026-11-11).
+  tvPins(check)
+  await tvLivePins(check, BASE)
   // THE POLICY POOL — the builder (2026-11-02): the v4 pin table, the config, the venue words, the hookData-bearing encoding, the guard over a signed attestation, the hook's revert names, the dispatch sites.
   await policyPoolBuilderPins(check)
   // The /live trigger rules armed on the server (2026-10-13): the body reader, the evaluation over consumed fills, the cursor policy, the notification, the wiring.

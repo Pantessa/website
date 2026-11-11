@@ -1,0 +1,101 @@
+/* The Advanced chart's own chrome (components/markets/chart/AdvancedChart).
+   Prefix `tvx`: checked against every sheet in the repo (a global prefix that
+   collides lands on someone else's element once the chunk loads). The bar,
+   the view switch and the foot wear the built-in chart's classes on purpose,
+   so the two engines look like one card. */
+
+.tvx__canvas { background: var(--bg); min-height: 280px; }
+.tvx__host { position: absolute; inset: 0; }
+.tvx__host iframe { display: block; width: 100%; height: 100%; border: 0; }
+
+/* ── The plan: what you drew, as things you can do ── */
+.tvx-plan { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tvx-plan__head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; min-width: 0; }
+.tvx-plan__title {
+  font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); background: none; border: 0; padding: 4px 0; cursor: pointer;
+}
+.tvx-plan__title::after { content: ' −'; color: var(--muted-2); }
+.tvx-plan.is-folded .tvx-plan__title::after { content: ' +'; }
+.tvx-plan__title:hover { color: var(--fg); }
+.tvx-plan__tools { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
+.tvx-tool {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 7px; border: 1px solid var(--line);
+  font-size: 10px; letter-spacing: 0.04em; color: var(--muted-2); background: transparent; transition: color .15s, border-color .15s, background .15s;
+}
+.tvx-tool:hover:not(:disabled) { color: var(--fg); border-color: var(--line-2); background: var(--surf-1); }
+.tvx-tool:disabled { opacity: .45; }
+.tvx-plan__empty { margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--muted-2); max-width: 76ch; }
+.tvx-plan__empty b { color: var(--fg); font-weight: 600; }
+
+.tvx-plan__list {
+  list-style: none; margin: 0; padding: 0 0 2px; display: flex; align-items: flex-start; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin;
+}
+.tvx-card {
+  flex: 0 0 auto; width: min(300px, 86vw); display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 9px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--surf-1); min-width: 0;
+}
+.tvx-card.is-focus { border-color: var(--accent); }
+/* A tall card (a fib's five levels) scrolls inside itself: the plan never takes the plot's room. */
+.tvx-card__rows { max-height: 92px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.tvx-card--long { border-left: 2px solid var(--mk-up, var(--accent)); }
+.tvx-card--short { border-left: 2px solid var(--mk-down, var(--sell)); }
+.tvx-card__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tvx-card__title {
+  display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  background: none; border: 0; padding: 0; cursor: pointer; text-align: left;
+}
+.tvx-card__title:hover { color: var(--fg); }
+.tvx-card__label { letter-spacing: 0; text-transform: none; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.tvx-card__x { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--muted-2); background: none; border: 0; }
+.tvx-card__x:hover { color: var(--sell); background: var(--surf-2); }
+.tvx-card__whole { display: flex; }
+.tvx-card__whole .tvx-chip { flex: 1; justify-content: center; }
+.tvx-card__rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.tvx-row { display: grid; grid-template-columns: minmax(52px, auto) auto 1fr; align-items: center; gap: 8px; min-width: 0; }
+.tvx-row__name { font-size: 10px; letter-spacing: 0.04em; color: var(--muted-2); white-space: nowrap; }
+.tvx-row__price { font-size: 11.5px; color: var(--fg); white-space: nowrap; }
+.tvx-row__chips { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+.tvx-row__none { font-size: 10px; color: var(--muted-2); }
+.tvx-card__note { margin: 0; font-size: 10.5px; line-height: 1.35; color: var(--muted-2); }
+
+.tvx-chip {
+  display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 8px; border: 1px solid var(--line-2); background: transparent;
+  font-size: 11px; font-weight: 600; color: var(--fg); text-decoration: none; white-space: nowrap; cursor: pointer;
+  transition: border-color var(--dur-1, .15s), background var(--dur-1, .15s), color var(--dur-1, .15s);
+}
+.tvx-chip:hover { border-color: var(--accent); color: var(--accent); }
+.tvx-chip--primary { border-color: var(--accent); background: var(--accent); color: var(--ink, #04130c); }
+.tvx-chip--primary:hover { color: var(--ink, #04130c); filter: brightness(1.08); }
+
+@media (hover: none) {
+  .tvx-chip { min-height: 36px; padding-inline: 12px; }
+  .tvx-tool { min-height: 32px; padding-inline: 10px; }
+  .tvx-card__x { width: 32px; height: 32px; }
+}
+@media (max-width: 640px) {
+  .tvx-plan__tools { margin-left: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .tvx-plan__tools::-webkit-scrollbar { display: none; }
+  .tvx-tool { flex-shrink: 0; }
+}
+
+/* The library carries its own toolbars (frames on top, tools on the left,
+   ranges underneath) and the plan sits under the plot: the card grows so the
+   candles keep the room they had. */
+.sym .tchart:has(.tvx):not(.tchart--expanded) { height: clamp(520px, 74dvh, 900px); }
+@media (max-width: 640px) {
+  .sym .tchart:has(.tvx):not(.tchart--expanded) { height: auto; }
+  .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas.tvx__canvas { height: 440px; }
+}
+
+/* The engine switch (ChartMount): a quiet word beside Share. */
+.tvx-engine {
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); background: none; border: 0; padding: 4px 2px; cursor: pointer;
+  border-bottom: 1px dotted var(--line-2);
+}
+.tvx-engine:hover { color: var(--fg); border-color: var(--fg); }
+@media (hover: none) { .tvx-engine { min-height: 32px; } }
+/* A phone's bar has no room for it: the choice still works by link (?chart=classic). */
+@media (max-width: 640px) { .tvx-engine { display: none; } }
+
+/* Before the engine is decided (one frame after mount): the card keeps its shape. */
+.tvx-pending { flex: 1; min-height: 280px; border-radius: 10px; background: var(--bg); }

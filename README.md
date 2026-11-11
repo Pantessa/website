@@ -361,7 +361,7 @@ artifact × wallet matrix lives in [`WALLET-MATRIX.md`](WALLET-MATRIX.md).
 
 ## Deployment
 
-Vercel, `framework: nextjs`, build command `npm run db:generate && next build`
+Vercel, `framework: nextjs`, build command `npm run db:generate && node scripts/tv-library.mjs && next build`
 ([`vercel.json`](vercel.json)). Crons are declared there and are load-bearing:
 
 | Path | Schedule |
@@ -377,6 +377,20 @@ They require `CRON_SECRET`; the guardians additionally require
 — `fingerprint:deploy` is the check that a deployment is actually whole.
 
 ---
+
+### The chart library (TradingView Advanced Charts)
+
+The symbol page's chart runs on [TradingView Advanced Charts](https://www.tradingview.com/charting-library-docs/) when a build has the library. The library is licensed and **is not in this repository** (its terms forbid any part of it in a public one). What is here is Pantessa's own half: the datafeed, the drawing bridge and the plan that reads drawings into orders (`lib/tv/`, `components/markets/chart/AdvancedChart.tsx`).
+
+`scripts/tv-library.mjs` runs before `next build` and copies the library into the gitignored `public/charting_library/`:
+
+| Source | How |
+|---|---|
+| a checkout on the machine | `TV_LIBRARY_DIR=/path/to/charting_library`, or `../.vendor/tradingview/charting_library` |
+| a download (Vercel) | `TV_LIBRARY_TOKEN` = a GitHub token with read-only access to the repo named in `tv-library.json` (a private mirror of TradingView's repository, same commits; `TV_LIBRARY_REPO` overrides it); the pinned commit is fetched |
+| nothing | the build ships no library and every chart is the built-in one (TradingView's open-source Lightweight Charts) |
+
+`TV_LIBRARY=off npm run build` builds without it. Access to the library is by application to TradingView; a fork of this repository builds and runs without it.
 
 ## Repo layout
 

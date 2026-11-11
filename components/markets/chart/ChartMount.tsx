@@ -13,13 +13,42 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ChartStats } from '@/components/CandleChart'
 import MarketChart, { type ChartMarker } from '@/components/markets/chart/MarketChart'
+import AdvancedChart from '@/components/markets/chart/AdvancedChart'
 import { DEFAULT_CHART_TF, type ChartTf } from '@/lib/charts'
+import { syncViewParam, type ChartView } from '@/lib/markets'
+import { ENGINE_PREF_KEY, advancedChartsBuilt, engineFor, parseEnginePref, type EnginePref } from '@/lib/tv/config'
 import { parseChartState, serializeChartState, type ChartState } from '@/lib/chart-state'
 import { DEFAULT_SYMBOL_OVERLAYS } from '@/lib/chart-indicators'
 import { useChartMarkers } from '@/lib/chart-markers'
 import type { FillMarker } from '@/lib/chart-fills'
 
 export type { ChartStats, ChartMarker }
+
+// THE ADVANCED CHART (2026-11-11): TradingView's Advanced Charts, on the
+// symbol page, when the build ships the library (lib/tv/config — the files
+// are licensed and never in this repository). The component here is only
+// Pantessa's own shell and datafeed; the library itself is a script the
+// shell loads on demand. The built-in chart stays the fallback (the library
+// failed to load), the home of the views only it draws (Depth, Tape,
+// Heatmap, the Wall) and a choice the visitor can make ("Classic chart").
+const ADVANCED_BUILT = advancedChartsBuilt()
+/** The library failed in this tab: every later chart opens on the built-in engine. */
+let advancedFailed = false
+
+function readEnginePref(): EnginePref | null {
+  try {
+    return parseEnginePref(window.localStorage.getItem(ENGINE_PREF_KEY))
+  } catch {
+    return null
+  }
+}
+function writeEnginePref(pref: EnginePref) {
+  try {
+    window.localStorage.setItem(ENGINE_PREF_KEY, pref)
+  } catch {
+    /* the choice lasts for this page */
+  }
+}
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
@@ -76,6 +105,9 @@ export interface ChartMountProps {
   battlefield?: boolean
   /** The Depth chart's act (MarketChart `onLimit`). */
   onLimit?: (side: 'buy' | 'sell', price: number) => void
+  /** Offer the Advanced chart here (the symbol page). Every other mount is
+   *  the built-in engine: a small embedded chart has no room for its toolbars. */
+  advanced?: boolean
 }
 
 export default function ChartMount({
@@ -96,8 +128,48 @@ export default function ChartMount({
   overlay,
   battlefield,
   onLimit,
+  advanced = false,
 }: ChartMountProps) {
   const [drawings, setDrawings] = useState<ChartState | null>(null)
+  // Which engine draws: decided after mount (the choice, the URL and the
+  // view all live in the browser). A build without the library is 'classic'
+  // from the first render, exactly as before.
+  const offered = advanced && ADVANCED_BUILT
+  // The server renders the Advanced chart's shell where the build has it
+  // (the view switch, the plan, the foot): most visitors stay on it. The
+  // library itself is not asked for until the choice is settled (`armed`),
+  // so a visitor headed for the built-in chart never downloads it.
+  const [engine, setEngine] = useState<EnginePref>(offered ? 'advanced' : 'classic')
+  const [armed, setArmed] = useState(false)
+  const [liveTf, setLiveTf] = useState<ChartTf | undefined>(undefined)
+  useEffect(() => {
+    if (!offered) return
+    setEngine(engineFor({ built: true, pref: readEnginePref(), search: window.location.search, failed: advancedFailed }))
+    setArmed(true)
+  }, [offered, symbol])
+  const chooseEngine = useCallback((next: EnginePref) => {
+    writeEnginePref(next)
+    setEngine(next)
+  }, [])
+  const onAdvancedFail = useCallback(() => {
+    advancedFailed = true
+    setEngine('classic')
+  }, [])
+  // A view only the built-in chart draws: its `?view=` address is written
+  // first, so the built-in chart opens straight onto it.
+  const onAdvancedView = useCallback((view: ChartView) => {
+    syncViewParam(view, null)
+    setEngine('classic')
+  }, [])
+  // …and back: "Candles" on the built-in switch returns to the Advanced chart.
+  const onClassicView = useCallback(
+    (view: ChartView) => {
+      if (view !== 'candles' || !offered || advancedFailed || readEnginePref() === 'classic') return
+      syncViewParam('candles', null)
+      setEngine('advanced')
+    },
+    [offered],
+  )
   // News-on-bars: the News tab toggles markers into COMM's session store;
   // the engine draws whatever is there plus anything passed in by prop.
   const newsMarkers = useChartMarkers(symbol)
@@ -125,14 +197,71 @@ export default function ChartMount({
     [onStateChange],
   )
 
+  const engineSwitch =
+    offered && armed && !advancedFailed ? (
+      <button
+        type="button"
+        className="tvx-engine mono"
+        data-engine-switch={engine}
+        title={engine === 'advanced' ? 'Back to the built-in chart (the Wall, the session shading)' : 'The TradingView chart: every drawing tool and indicator'}
+        onClick={() => chooseEngine(engine === 'advanced' ? 'classic' : 'advanced')}
+      >
+        {engine === 'advanced' ? 'Classic chart' : 'Pro chart'}
+      </button>
+    ) : null
+
+  if (engine === 'advanced') {
+    return (
+      <AdvancedChart
+        key={symbol}
+        armed={armed}
+        symbol={symbol}
+        height={height}
+        defaultTf={liveTf ?? defaultTf}
+        urlTf={urlTf}
+        onStats={onStats}
+        controlsRight={
+          <>
+            {engineSwitch}
+            {controlsRight}
+          </>
+        }
+        resizeKey={resizeKey}
+        state={stateProp ?? null}
+        legacy={stateProp ? null : drawings}
+        onStateChange={onStateChange}
+        markers={allMarkers}
+        onAsk={onAsk}
+        askHref={promptHref}
+        onViewport={onViewport}
+        compare={compare}
+        fills={fills}
+        battlefield={battlefield}
+        onView={onAdvancedView}
+        onFail={onAdvancedFail}
+        onTf={setLiveTf}
+      />
+    )
+  }
+
   return (
     <MarketChart
       symbol={symbol}
       height={height}
-      defaultTf={defaultTf}
+      defaultTf={liveTf ?? defaultTf}
       urlTf={urlTf}
       onStats={onStats}
-      controlsRight={controlsRight}
+      controlsRight={
+        engineSwitch ? (
+          <>
+            {engineSwitch}
+            {controlsRight}
+          </>
+        ) : (
+          controlsRight
+        )
+      }
+      onView={offered ? onClassicView : undefined}
       resizeKey={resizeKey}
       state={drawings}
       onStateChange={handleStateChange}

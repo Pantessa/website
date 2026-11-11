@@ -670,7 +670,7 @@ export default function SymbolPage({
         <div ref={shellRef} className={`tchart sym__chart${expanded ? ' tchart--expanded' : ''}${showChart ? '' : ' is-parked'}`} data-chart-tab={tab} aria-hidden={showChart ? undefined : true}>
           <div className="tchart__canvas">
             {pair ? (
-              <ChartMount symbol={sym} height="fill" defaultTf={initialTf} urlTf onStats={setStats} controlsRight={chartControls} resizeKey={`${expanded}:${showChart}`} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} compare={vs} fills={fills} battlefield onLimit={onLimit} />
+              <ChartMount symbol={sym} height="fill" defaultTf={initialTf} urlTf onStats={setStats} controlsRight={chartControls} resizeKey={`${expanded}:${showChart}`} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} compare={vs} fills={fills} battlefield onLimit={onLimit} advanced />
             ) : unknown ? (
               <div className="flex flex-1 items-center justify-center">
                 <div className="mkt-card max-w-md text-center" data-standing="unknown">

@@ -172,6 +172,9 @@ export interface MarketChartProps {
   /** The Depth chart's act: a level clicked → aim the page's order ticket
    *  at a limit order resting at that price (lib/order-size useOrderAim). */
   onLimit?: (side: 'buy' | 'sell', price: number) => void
+  /** A view was picked on the switch (ChartMount hands "Candles" back to
+   *  the Advanced chart where the build has it). */
+  onView?: (view: ChartView) => void
 }
 
 interface CandlesResponse {
@@ -271,7 +274,10 @@ export default function MarketChart({
   overlay,
   battlefield: battlefieldProp = false,
   onLimit,
+  onView,
 }: MarketChartProps) {
+  const onViewRef = useRef(onView)
+  onViewRef.current = onView
   const fill = heightProp === 'fill'
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
   // A look-only index (lib/charts isLookOnlyPair) has no book, no prints and
@@ -1023,6 +1029,7 @@ export default function MarketChart({
       setSelectedId(null)
     }
     setView(next)
+    onViewRef.current?.(next)
   }, [])
 
   // Parent-announced layout change (expand/collapse).

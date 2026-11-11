@@ -49,3 +49,11 @@ design/*.zip
 # self-heal workflow scratch files
 incident.json
 FIX_NOTES.md
+
+# TradingView Advanced Charts: licensed, fetched at build time by
+# scripts/tv-library.mjs, NEVER committed (its terms forbid any part of it
+# in a public repository). tv-library.json names the release.
+/public/charting_library/
+/public/datafeeds/
+charting_library.d.ts
+datafeed-api.d.ts

@@ -1,0 +1,7 @@
+{
+  "comment": "Which release of TradingView's Advanced Charts a build fetches (scripts/tv-library.mjs). The library itself is licensed and is NEVER committed here: this file names it, nothing more. `repo` is Pantessa's private mirror (same commits as `upstream`, so `ref` can be checked against TradingView's own repository).",
+  "repo": "Pantessa/charting_library",
+  "upstream": "tradingview/charting_library",
+  "ref": "80218aff0edd9305d051274543bf3d73c14fb940",
+  "version": "33.1.0"
+}
