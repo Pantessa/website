@@ -21,6 +21,7 @@ import { parseChartState, serializeChartState, type ChartState } from '@/lib/cha
 import { DEFAULT_SYMBOL_OVERLAYS } from '@/lib/chart-indicators'
 import { useChartMarkers } from '@/lib/chart-markers'
 import type { FillMarker } from '@/lib/chart-fills'
+import { useClassicCalledMarkers } from '@/lib/called-it/use-record'
 
 export type { ChartStats, ChartMarker }
 
@@ -174,6 +175,10 @@ export default function ChartMount({
   // the engine draws whatever is there plus anything passed in by prop.
   const newsMarkers = useChartMarkers(symbol)
   const allMarkers = markers && markers.length ? [...newsMarkers, ...markers] : newsMarkers
+  // CALLED IT on the built-in chart: a plotted handle's calls as dots on their bars (the
+  // Advanced chart draws its own cards and marks; the strip under the chart carries the words).
+  const calledMarkers = useClassicCalledMarkers(symbol)
+  const classicMarkers = calledMarkers.length ? [...allMarkers, ...calledMarkers] : allMarkers
   // The engine mounts (and server-renders) with no drawings; the persisted
   // ones arrive after hydration. Child effects fire before this one, so the
   // engine's first empty emit must NOT erase the stored state — writes are
@@ -265,7 +270,7 @@ export default function ChartMount({
       resizeKey={resizeKey}
       state={drawings}
       onStateChange={handleStateChange}
-      markers={allMarkers}
+      markers={classicMarkers}
       onAsk={onAsk}
       askHref={promptHref}
       defaultOverlays={DEFAULT_SYMBOL_OVERLAYS}
