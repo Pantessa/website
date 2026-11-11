@@ -181,3 +181,85 @@ export function listCardRows(symbols: string[]): { rows: string[]; more: number 
   const rows = symbols.slice(0, LIST_CARD_ROWS)
   return { rows, more: Math.max(0, symbols.length - rows.length) }
 }
+
+// ── Called it (squad called-it, 2026-11-11, lane RECORD) ──────────────────
+// The post for one record: an X handle's calls on one market, pinned to the
+// days they were posted (lib/called-it). The house rules above hold: the
+// ticker leads as a cashtag, the handle is tagged INSIDE the sentence (a post
+// that opens with an @mention is filed as a reply), no hashtags, one link,
+// last. Three more, from the squad's honesty rules:
+//   · the tally is the record's own words (the headline's second half: every
+//     call found, in numbers, never a pick of them);
+//   · the standing line is the record's own ("Not verified…" for a plot of
+//     somebody else, "Verified…" only for the account itself);
+//   · everything is ASCII, one line, and fits X's 280 with the link counted
+//     as X counts it (23). A long symbol or a five-digit tally drops the
+//     closing sentence, then the standing line's second half, before it would
+//     ever run over.
+
+/** What a called-it post is written from: a CalledRecord (lib/called-it/spec) has all four. */
+export interface CalledPostInput {
+  handle: string
+  symbol: string
+  side: 'all' | 'bull' | 'bear'
+  words: { headline: string; standing: string }
+}
+
+/** X's limit, and what X charges a link whatever its length. */
+export const X_POST_MAX = 280
+export const X_LINK_WEIGHT = 23
+
+/** What a prefilled post weighs on X: the text, one space, the link. (ASCII text: one per character.) */
+export function xPostWeight(text: string): number {
+  return text.length + 1 + X_LINK_WEIGHT
+}
+
+/** Printable ASCII, one line: what a share intent may receive. */
+export const SHARE_ASCII_RE = /^[\x20-\x7e]*$/
+
+/** `$BTC` where X draws a cashtag (one to six letters); the plain symbol where it would not. */
+function calledTicker(symbol: string): string {
+  return /^[A-Z]{1,6}$/.test(symbol) ? `$${symbol}` : symbol
+}
+
+/** The tally half of the record's headline: "10 calls, 5 called it, 3 missed." */
+function calledTally(record: CalledPostInput): string {
+  const cut = record.words.headline.indexOf(': ')
+  return cut < 0 ? record.words.headline : record.words.headline.slice(cut + 2)
+}
+
+/** The fullest of `variants` that fits a post; the last one whatever it weighs (it is the shortest we write). */
+function fitPost(variants: string[]): string {
+  return variants.find((t) => xPostWeight(t) <= X_POST_MAX) ?? variants[variants.length - 1]
+}
+
+function calledUrl(record: CalledPostInput): string {
+  return absoluteUrl(`/x/${record.handle}/${encodeURIComponent(record.symbol.toUpperCase())}${record.side === 'all' ? '' : `?side=${record.side}`}`)
+}
+
+/** Somebody else's handle: their calls on a market, the tally in numbers, "Not verified", the link. */
+export function calledPost(record: CalledPostInput): SharePost {
+  const lean = record.side === 'bull' ? 'Bullish ' : record.side === 'bear' ? 'Bearish ' : ''
+  const lead = `${lean}${calledTicker(record.symbol.toUpperCase())} calls by @${record.handle}, each pinned to the day it was posted: ${calledTally(record)}`
+  const standing = record.words.standing
+  const short = `${standing.split('. ')[0].replace(/\.$/, '')}.`
+  const close = `Plot any handle with ${X_MENTION}:`
+  return {
+    url: calledUrl(record),
+    title: record.words.headline,
+    text: fitPost([`${lead} ${standing} ${close}`, `${lead} ${short} ${close}`, `${lead} ${short}`, lead]),
+  }
+}
+
+/** The account's own record, signed in with X: first person, the same tally, "Verified", the link. */
+export function myCalledPost(record: CalledPostInput): SharePost {
+  const lean = record.side === 'bull' ? 'bullish ' : record.side === 'bear' ? 'bearish ' : ''
+  const lead = `My ${lean}${calledTicker(record.symbol.toUpperCase())} calls, each pinned to the day I posted it: ${calledTally(record)}`
+  const standing = record.words.standing
+  const close = `Plot yours with ${X_MENTION}:`
+  return {
+    url: calledUrl(record),
+    title: record.words.headline,
+    text: fitPost([`${lead} ${standing} ${close}`, `${lead} ${standing}`, lead]),
+  }
+}

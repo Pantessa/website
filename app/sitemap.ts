@@ -44,6 +44,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // The community feed (squad community, 2026-11-09): chart ideas, videos
     // and trades with proof, public to read.
     { url: `${SITE}/community`, changeFrequency: 'hourly', priority: 0.8 },
+    // Called it (squad called-it, 2026-11-11): the door to plot an X handle's
+    // market calls on a chart. A record's own page (/x/<handle>/<SYMBOL>) is a
+    // share target and is not listed here: it reaches a crawler by its link.
+    { url: `${SITE}/x`, changeFrequency: 'hourly', priority: 0.8 },
     // Docs come from the registry — a page flips `ready` and it's indexed.
     ...readyPages().map((p) => ({
       url: p.slug ? `${SITE}/docs/${p.slug}` : `${SITE}/docs`,
