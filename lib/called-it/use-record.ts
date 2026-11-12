@@ -196,6 +196,53 @@ export function classicMarkers(record: CalledRecord | null): { t: number; label:
 
 export type CalledPhase = 'idle' | 'loading' | 'settled' | 'failed'
 
+// ── What the door says about the plot (pure; pinned) ────────────────────
+// A plot with nothing to pin used to look like nothing had happened: the
+// handle sat on the door's pill and every word about it was in the strip
+// under the chart, below the fold (Nate, 2026-11-12: "I put @nategeier in
+// and nothing popped up"). The pill now names the state and, when the chart
+// has no pins to speak for it, a note under the pill says why.
+
+export type PlotStatusKind = 'idle' | 'loading' | 'scanning' | 'unscanned' | 'refused' | 'failed' | 'empty' | 'pasted' | 'ready'
+
+export interface PlotStatus {
+  kind: PlotStatusKind
+  /** After the handle on the door's pill ("8 calls", "reading posts"). Empty while idle. */
+  pill: string
+  /** One or two sentences for the note under the pill. Empty when the pins on the chart speak for themselves. */
+  line: string
+  /** The note offers the Scan button (a plot opened from an address is never scanned without a press). */
+  canScan: boolean
+  /** Somewhere to go, from a refusal. */
+  next: { label: string; href: string }[]
+}
+
+const countOf = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
+
+export function plotStatus(s: { plot: Pick<Plot, 'handle'> | null; symbol: string | null; phase: CalledPhase; response: RecordResponse | null; record: CalledRecord | null; scanning: boolean; progress: string }): PlotStatus {
+  const none: PlotStatus = { kind: 'idle', pill: '', line: '', canScan: false, next: [] }
+  if (!s.plot || !s.symbol) return none
+  const who = `@${s.plot.handle}`
+  const r = s.response
+  if ((s.scanning && !s.record) || r?.status === 'scanning') {
+    // The scan's own note joins the sentence only when it adds something ("Read 42 posts", "Labeling 42 posts"): its first note says the same thing as this line.
+    const raw = (r?.status === 'scanning' ? r.progress : s.progress).trim().replace(/[.\s]+$/, '')
+    const note = raw && !/^(reading|starting)\b/i.test(raw) ? `${raw}. ` : ''
+    return { ...none, kind: 'scanning', pill: 'reading posts', line: `Reading ${who}'s posts about ${s.symbol}. ${note}It takes up to a minute.` }
+  }
+  if (s.record) {
+    const rec = s.record
+    if (!rec.scanned) return { ...none, kind: 'pasted', pill: `${rec.added} added` }
+    if (rec.calls.length === 0) return { ...none, kind: 'empty', pill: 'no calls', line: `No calls by ${who} on ${rec.symbol}. ${rec.words.coverage ?? ''} A call is a post that says where the price goes or tells people what to do.`.replace(/\s+/g, ' ') }
+    return { ...none, kind: 'ready', pill: countOf(rec.tally.total, 'call') }
+  }
+  if (s.phase === 'loading' || s.phase === 'idle') return { ...none, kind: 'loading', pill: 'loading' }
+  if (s.phase === 'failed' || !r) return { ...none, kind: 'failed', pill: 'no answer', line: `The record for ${who} did not load.` }
+  if (r.status === 'unscanned') return { ...none, kind: 'unscanned', pill: 'not scanned', canScan: r.canScan, line: r.canScan ? `Nobody has scanned ${who} on ${s.symbol} yet. A scan reads their posts about it from the last year.` : (r.reason ?? `Nobody has scanned ${who} on ${s.symbol} yet, and scans are not available here.`) }
+  if (r.status === 'refused') return { ...none, kind: 'refused', pill: 'not plotted', line: r.reason, next: r.next.map((n) => ({ label: n.label, href: safeNextHref(n.href) ?? '' })).filter((n) => n.href) }
+  return { ...none, kind: 'loading', pill: 'loading' }
+}
+
 interface CalledState {
   /** The symbol page the plot is on. A plot never follows to another symbol. */
   symbol: string | null
@@ -333,11 +380,17 @@ export const useCalled = create<CalledState>((set, get) => {
       return false
     }
   }
-  const load = (plot: Plot, opts: { fit?: boolean; keep?: boolean } = {}) => {
+  const load = (plot: Plot, opts: { fit?: boolean; keep?: boolean; byHand?: boolean } = {}) => {
     const my = ++seq
     stopPoll()
     set((s) => ({ plot, phase: 'loading', scanning: false, progress: '', note: null, focusId: null, focusBy: null, ...(opts.keep && s.record && s.record.handle === plot.handle ? {} : { record: null, response: null, unlabeled: 0 }) }))
-    void read(my, { fit: opts.fit })
+    void read(my, { fit: opts.fit }).then(() => {
+      // The door's press IS the ask: a handle nobody has scanned is scanned now, not after a second button under the
+      // chart. A plot opened from an address (a shared link, a reload) never scans without a press: `open` passes no byHand.
+      if (!opts.byHand || my !== seq) return
+      const r = get().response
+      if (r?.status === 'unscanned' && r.canScan) void get().scan()
+    })
   }
 
   return {
@@ -376,7 +429,7 @@ export const useCalled = create<CalledState>((set, get) => {
     },
     plotHandle(handle, side) {
       if (!get().symbol) return
-      load({ handle, side, pins: [] }, { fit: true })
+      load({ handle, side, pins: [] }, { fit: true, byHand: true })
     },
     setSide(side) {
       const { plot } = get()

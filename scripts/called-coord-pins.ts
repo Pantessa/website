@@ -47,6 +47,7 @@ import {
 import { additiveRefusal } from './run-ddl'
 import { askDoorPillHidden } from '../lib/ask-door'
 import { coverageOf } from '../lib/called-it/record'
+import { isCallLabel } from '../lib/called-it/scan'
 import { systemPrompt, userPrompt } from '../lib/called-it/classify'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -165,8 +166,8 @@ export function calledCoordPins(check: Check): void {
   const remarks: LabeledPost[] = posts.map((p, i) => (i === 0 || i === 3 ? { ...p, label: { ...p.label, conviction: 1 as const } } : p))
   const bold = buildRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC', side: 'all', profile: FIXTURE_PROFILE, verified: null, posts: remarks, candles: up, nowMs: NOW, scannedAt: NOW, postsRead: 11 })
   check(
-    'called-it calls only: a label at conviction 1 is a remark, not a call. Two of ten labeled posts marked as remarks leave eight calls: the two are not listed, not counted, not pinned, and can never be a "missed"',
-    MIN_CALL_CONVICTION === 2 && bold.calls.length === 8 && bold.tally.total === 8 && !bold.calls.some((x) => x.postId === posts[0].id || x.postId === posts[3].id) && bold.calls.every((x) => x.conviction >= 2) && rec.calls.every((x) => x.conviction >= 2),
+    'called-it calls only: a label at conviction 1 is a remark, not a call. Two of ten labeled posts marked as remarks leave eight calls: the two are not listed, not counted, not pinned, and can never be a "missed"; a scan counts its own "calls found" by the same rule (the first scan of a small account said "Found 2 calls" beside a record that showed none)',
+    MIN_CALL_CONVICTION === 2 && isCallLabel({ stance: 'bull', conviction: 2 }) && !isCallLabel({ stance: 'bull', conviction: 1 }) && !isCallLabel({ stance: 'none', conviction: 0 }) && bold.calls.length === 8 && bold.tally.total === 8 && !bold.calls.some((x) => x.postId === posts[0].id || x.postId === posts[3].id) && bold.calls.every((x) => x.conviction >= 2) && rec.calls.every((x) => x.conviction >= 2),
     String(bold.calls.length),
   )
   // ── What the first real scan taught the labeler (2026-11-12) ──
