@@ -18,6 +18,7 @@ import {
   isFakeXUserId,
   JUDGE_DAYS,
   METHOD_LINE,
+  MIN_CALL_CONVICTION,
   PICK_MAX,
   STANDING_NOT_VERIFIED,
   VERDICT_WORDS,
@@ -46,6 +47,8 @@ import {
 import { additiveRefusal } from './run-ddl'
 import { askDoorPillHidden } from '../lib/ask-door'
 import { coverageOf } from '../lib/called-it/record'
+import { isCallLabel } from '../lib/called-it/scan'
+import { systemPrompt, userPrompt } from '../lib/called-it/classify'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -158,6 +161,22 @@ export function calledCoordPins(check: Check): void {
   check(
     'called-it links: the share landing is /x/<handle>/<SYMBOL> and the live chart is /t/<SYMBOL>?x=<handle>; the default side is left out of both',
     recordHref('cz_binance', 'btc') === '/x/cz_binance/BTC' && recordHref('cz_binance', 'BTC', 'bear') === '/x/cz_binance/BTC?side=bear' && chartHref('cz_binance', 'btc') === '/t/BTC?x=cz_binance' && chartHref('cz_binance', 'BTC', 'bull') === '/t/BTC?x=cz_binance&side=bull',
+  )
+  // ── A remark is not a call (the first real scan, 2026-11-12) ──
+  const remarks: LabeledPost[] = posts.map((p, i) => (i === 0 || i === 3 ? { ...p, label: { ...p.label, conviction: 1 as const } } : p))
+  const bold = buildRecord({ handle: FIXTURE_HANDLE, symbol: 'BTC', side: 'all', profile: FIXTURE_PROFILE, verified: null, posts: remarks, candles: up, nowMs: NOW, scannedAt: NOW, postsRead: 11 })
+  check(
+    'called-it calls only: a label at conviction 1 is a remark, not a call. Two of ten labeled posts marked as remarks leave eight calls: the two are not listed, not counted, not pinned, and can never be a "missed"; a scan counts its own "calls found" by the same rule (the first scan of a small account said "Found 2 calls" beside a record that showed none)',
+    MIN_CALL_CONVICTION === 2 && isCallLabel({ stance: 'bull', conviction: 2 }) && !isCallLabel({ stance: 'bull', conviction: 1 }) && !isCallLabel({ stance: 'none', conviction: 0 }) && bold.calls.length === 8 && bold.tally.total === 8 && !bold.calls.some((x) => x.postId === posts[0].id || x.postId === posts[3].id) && bold.calls.every((x) => x.conviction >= 2) && rec.calls.every((x) => x.conviction >= 2),
+    String(bold.calls.length),
+  )
+  // ── What the first real scan taught the labeler (2026-11-12) ──
+  const sys = systemPrompt()
+  const asked = userPrompt([{ text: 'Top is in.', isReply: false }, { text: '@someone agreed, more over there', isReply: true }, { text: 'plain' }], 'BTC')
+  check(
+    'called-it labeler: a reply is marked in the request and the instructions say it counts only when its own words state the call in full (the labeler cannot see what it answers); a remark about the asset or about what the author holds is conviction 1, not a call; posts in any language are judged by meaning, unsure means none',
+    asked.includes('[1] Top is in.') && asked.includes('[2] (reply) @someone agreed, more over there') && asked.includes('[3] plain') && !asked.includes('[1] (reply)') &&
+      /marked \(reply\)/.test(sys) && /own words state the call in full/.test(sys) && /REMARK with no call/.test(sys) && /saying what they own or hold/.test(sys) && /any language/.test(sys) && /When unsure between 1 and 2, choose 1/.test(sys),
   )
   // ── Review R1: a pasted post is shown and marked, never counted ──
   const pasted: LabeledPost[] = posts.map((p, i) => (i === 1 || i === 3 ? { ...p, origin: 'added' as const } : p))

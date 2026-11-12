@@ -57,6 +57,19 @@
 .xcc-open.is-on:hover, .xcc-open.is-on[aria-expanded='true'] { background: var(--accent); }
 .xcc-open__icon { width: 12px; height: 12px; flex: none; }
 .xcc-open__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The plot's state on the pill, and a note under it when the chart has no pins to speak for the plot. */
+.xcc-open.is-on { max-width: 280px; }
+.xcc-open__state { flex: none; padding-left: 7px; border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent); font-size: 10px; letter-spacing: 0.02em; opacity: 0.85; white-space: nowrap; }
+.xcc-seat[data-called-status='scanning'] .xcc-open__state { animation: xcc-pulse 1.2s ease-in-out infinite; }
+@keyframes xcc-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .xcc-seat[data-called-status='scanning'] .xcc-open__state { animation: none; } }
+.xcc-note {
+  position: absolute; z-index: 39; top: calc(100% + 8px); right: 0; width: min(320px, calc(100vw - 32px)); padding: 10px 12px 10px; border-radius: 12px;
+  border: 1px solid var(--line-2); background: var(--surf-1); box-shadow: 0 14px 36px rgb(0 0 0 / 0.3); text-align: left;
+}
+.xcc-note__line { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--fg); text-transform: none; letter-spacing: 0; }
+.xcc-note__acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+.xcc-note__acts:empty { display: none; }
 
 .xcc-pop {
   position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; width: min(340px, calc(100vw - 32px)); padding: 12px 14px 14px; border-radius: 14px;

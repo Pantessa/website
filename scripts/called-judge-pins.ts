@@ -562,6 +562,11 @@ async function cleanDb(prisma: NonNullable<Awaited<ReturnType<typeof pinDb>>>): 
   await prisma.$executeRawUnsafe(`DELETE FROM x_handles WHERE handle = $1`, PIN_HANDLE)
   // The fixture's posts are shared; only this pin's symbol rows go.
   await prisma.$executeRawUnsafe(`DELETE FROM x_calls WHERE symbol = $1 AND post_id IN (SELECT post_id FROM x_posts WHERE handle = $2)`, FIX_SYM, FIXTURE_HANDLE)
+  // The fixture's post ids carry their time and its times are relative to TODAY, so yesterday's cached fixture posts are other
+  // posts to the store. Left in place they doubled the next day's scan (22 read, 20 calls; found 2026-11-12). Only fixture-source
+  // rows of the fixture handle are removed; the scan below saves today's.
+  await prisma.$executeRawUnsafe(`DELETE FROM x_calls WHERE post_id IN (SELECT post_id FROM x_posts WHERE handle = $1 AND source = 'fixture')`, FIXTURE_HANDLE)
+  await prisma.$executeRawUnsafe(`DELETE FROM x_posts WHERE handle = $1 AND source = 'fixture'`, FIXTURE_HANDLE)
   await prisma.$executeRawUnsafe(`DELETE FROM x_scans WHERE handle = $1 AND symbol = $2 AND requested_by = 'ip:zz_pin_judge'`, FIXTURE_HANDLE, FIX_SYM)
 }
 

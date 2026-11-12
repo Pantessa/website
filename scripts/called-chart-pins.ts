@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import type { Candle } from '../lib/charts'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts } from '../lib/called-it/fixture'
 import { ADDED_MARK, LABEL_CAVEAT, PICK_MAX, PIN_URL_MAX, STANDING_NOT_VERIFIED, VERDICT_WORDS, buildRecord, chartHref, recordHref, type CalledCall, type CalledRecord, type CallVerdict } from '../lib/called-it/spec'
-import { applyPins, asRecordResponse, checkPostLink, classicMarkers, cleanPins, parsePlotParams, plotUrl, plottedFrom, recordApiUrl, safeNextHref, samePlot, sideCounts, togglePin, viewerFrom, viewerOwns } from '../lib/called-it/use-record'
+import { applyPins, asRecordResponse, checkPostLink, classicMarkers, cleanPins, parsePlotParams, plotStatus, plotUrl, plottedFrom, recordApiUrl, safeNextHref, samePlot, sideCounts, togglePin, viewerFrom, viewerOwns } from '../lib/called-it/use-record'
 import {
   CALLED_MARK_PREFIX,
   CALLOUT_FONT_PX,
@@ -127,6 +127,40 @@ const LAPTOP: PaneSize = { width: 825, height: 395 }
 const PHONE: PaneSize = { width: 252, height: 372 }
 
 export function calledChartPins(check: Check): void {
+  // ── One press plots (2026-11-12: "I put @nategeier in and nothing popped up") ──
+  {
+    const src = readFileSync(new URL('../lib/called-it/use-record.ts', import.meta.url), 'utf8')
+    const door = readFileSync(new URL('../components/called/HandleDoor.tsx', import.meta.url), 'utf8')
+    const base = { plot: { handle: 'nategeier' }, symbol: 'UNI', phase: 'settled' as const, record: null, scanning: false, progress: '' }
+    const unscanned = plotStatus({ ...base, response: { status: 'unscanned', handle: 'nategeier', symbol: 'UNI', canScan: true } })
+    const noScans = plotStatus({ ...base, response: { status: 'unscanned', handle: 'nategeier', symbol: 'UNI', canScan: false, reason: 'Scans are not switched on here.' } })
+    const reading = plotStatus({ ...base, scanning: true, progress: 'Read 42 posts', response: { status: 'scanning', handle: 'nategeier', symbol: 'UNI', scanId: '', progress: 'Read 42 posts' } })
+    const refused = plotStatus({ ...base, response: { status: 'refused', reason: 'X has no account by that name.', next: [{ label: 'Plot a handle', href: '/x' }, { label: 'bad', href: 'https://evil.example' }] } })
+    const rec = (over: Record<string, unknown>) => ({ handle: 'nategeier', symbol: 'UNI', scanned: true, added: 0, calls: [], tally: { total: 0, right: 0, wrong: 0, flat: 0, open: 0 }, words: { coverage: 'Read 12 matching posts from 12 Nov 2025 to 12 Nov 2026.' }, ...over }) as never
+    const empty = plotStatus({ ...base, response: null, record: rec({}) })
+    const ready = plotStatus({ ...base, response: null, record: rec({ calls: [{}, {}, {}], tally: { total: 3, right: 1, wrong: 1, flat: 1, open: 0 } }) })
+    const one = plotStatus({ ...base, response: null, record: rec({ calls: [{}], tally: { total: 1, right: 1, wrong: 0, flat: 0, open: 0 } }) })
+    const pasted = plotStatus({ ...base, response: null, record: rec({ scanned: false, added: 2, calls: [{}, {}] }) })
+    check(
+      "called-chart door: a plot always says what it is doing ON the chart's bar. The pill names the state (reading posts, 3 calls, 1 call, no calls, 2 added, not scanned, not plotted) and a note explains a plot with nothing to pin: a scan in flight with its own progress, no calls found with what was read and what a call is, a handle nobody scanned (with the Scan button only when scans are on), a refusal with only same-site links. A record with pins needs no note. Nothing plotted = nothing shown",
+      plotStatus({ ...base, plot: null, response: null }).kind === 'idle' && plotStatus({ ...base, plot: null, response: null }).pill === '' &&
+        unscanned.kind === 'unscanned' && unscanned.pill === 'not scanned' && unscanned.canScan && /Nobody has scanned @nategeier on UNI yet/.test(unscanned.line) &&
+        noScans.kind === 'unscanned' && !noScans.canScan && noScans.line === 'Scans are not switched on here.' &&
+        reading.kind === 'scanning' && reading.pill === 'reading posts' && reading.line === "Reading @nategeier's posts about UNI. Read 42 posts. It takes up to a minute." &&
+        plotStatus({ ...base, scanning: true, progress: "Reading @nategeier's posts about UNI", response: null }).line === "Reading @nategeier's posts about UNI. It takes up to a minute." && plotStatus({ ...base, scanning: true, progress: 'Starting', response: null }).line === "Reading @nategeier's posts about UNI. It takes up to a minute." &&
+        refused.kind === 'refused' && refused.line === 'X has no account by that name.' && refused.next.length === 1 && refused.next[0].href === '/x' &&
+        empty.kind === 'empty' && empty.pill === 'no calls' && /^No calls by @nategeier on UNI\. Read 12 matching posts/.test(empty.line) && /says where the price goes/.test(empty.line) &&
+        ready.kind === 'ready' && ready.pill === '3 calls' && ready.line === '' && one.pill === '1 call' && pasted.kind === 'pasted' && pasted.pill === '2 added' && pasted.line === '' &&
+        plotStatus({ ...base, phase: 'loading', response: null }).kind === 'loading' && plotStatus({ ...base, phase: 'failed', response: null }).kind === 'failed',
+      `${unscanned.line} | ${reading.line} | ${empty.line}`,
+    )
+    check(
+      "called-chart door: pressing Plot is the ask. plotHandle (the door's press) reads the record and, when nobody has scanned the handle and scans are on, starts the scan itself; a plot opened from an address (open: a shared link, a reload) loads without `byHand`, so a link never spends on load; the pill and the note are drawn from plotStatus on the chart's bar",
+      /plotHandle\(handle, side\) \{[\s\S]{0,160}byHand: true/.test(src) && /if \(!opts\.byHand \|\| my !== seq\) return[\s\S]{0,160}r\?\.status === 'unscanned' && r\.canScan\) void get\(\)\.scan\(\)/.test(src) &&
+        !/open\(symbol, plot, opts\) \{[\s\S]*?byHand[\s\S]*?\n    plotHandle/.test(src) && /setSide\(side\)[\s\S]{0,400}keep: true \}\)/.test(src) &&
+        /const status = plotStatus\(/.test(door) && /xcc-open__state/.test(door) && /className="xcc-note" role="status"/.test(door) && /status\.kind === 'unscanned' && status\.canScan/.test(door),
+    )
+  }
   const rec = record()
   const call = (v: CallVerdict) => rec.calls.find((c) => c.verdict === v)
   const anyCall = rec.calls[0]
