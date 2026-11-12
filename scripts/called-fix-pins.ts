@@ -27,6 +27,9 @@ import { searchInPhases } from '@/lib/called-it/scan'
 import type { Candle } from '@/lib/charts'
 import type { XSearchQuery, XSearchResult } from '@/lib/called-it/spec'
 
+// These pins drive guest scans over doubles. Production gives a guest none (spec GUEST_SCANS_PER_DAY = 0, pinned in called-coord-pins); the two the harness always had are set here.
+process.env.XCALLS_GUEST_SCANS ??= '2'
+
 type Check = (name: string, ok: boolean, extra?: string) => void
 const src = (p: string) => readFileSync(join(process.cwd(), p), 'utf8')
 /** The house resolver's sync half: no network for a miss (resolveChartPair would warm the venue's live table). */
