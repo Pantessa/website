@@ -17,7 +17,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { AtSign, X } from 'lucide-react'
 import VerifyWithX from '@/components/called/VerifyWithX'
 import { chartHref, normalizeHandle, recordHref, type CalledSide } from '@/lib/called-it/spec'
-import { plotStatus, plottedFrom, useCalled, useXViewer } from '@/lib/called-it/use-record'
+import { PLOT_INTENT_KEY, plotIntentValue, plotStatus, plottedFrom, useCalled, useXViewer } from '@/lib/called-it/use-record'
 import './called-chart.css'
 
 export interface HandleDoorProps {
@@ -75,8 +75,16 @@ export default function HandleDoor({ symbol, initialHandle = '', side: sideProp 
   }, [symbol])
 
   const go = (h: string, s: CalledSide, on: string) => {
-    if (onPlot) onPlot(h, s)
-    else window.location.href = variant === 'chart' ? chartHref(h, on, s) : recordHref(h, on, s)
+    if (onPlot) return onPlot(h, s)
+    if (variant === 'page') {
+      // The press IS the ask: the record's page scans a handle nobody has scanned without a second button (ScanNow reads this once).
+      try {
+        window.sessionStorage.setItem(PLOT_INTENT_KEY, plotIntentValue(h, on, Date.now()))
+      } catch {
+        /* no session storage: the page offers the Scan button */
+      }
+    }
+    window.location.href = variant === 'chart' ? chartHref(h, on, s) : recordHref(h, on, s)
   }
 
   return (

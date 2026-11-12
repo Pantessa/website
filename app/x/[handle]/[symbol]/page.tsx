@@ -5,6 +5,7 @@ import { Fragment } from 'react'
 import Footer from '@/components/Footer'
 import CallCard from '@/components/called/CallCard'
 import RecordChart from '@/components/called/RecordChart'
+import ScanNow from '@/components/called/ScanNow'
 import ShareRow from '@/components/called/ShareRow'
 import { FIXTURE_HANDLE } from '@/lib/called-it/fixture'
 import { getXIdentity } from '@/lib/called-it/x-auth'
@@ -228,9 +229,19 @@ export default async function RecordPage(props: Props) {
                     </p>
                     {body.reason && <p className="xrc-standing">{body.reason}</p>}
                     <p className="xrc-next">
-                      <Link href={live} className="xrc-btn xrc-btn--lead" prefetch={false} data-journey="called_scan_on_chart">
-                        {canScan ? `Scan @${handle} on the live ${symbol} chart` : `Open @${handle} on the live ${symbol} chart`}
-                      </Link>
+                      {canScan ? (
+                        <>
+                          {/* It scans HERE (and by itself when the door's press brought the visitor): no trip to the chart for a second button. */}
+                          <ScanNow handle={handle} symbol={symbol} label={`Scan @${handle} on ${symbol}`} auto />
+                          <Link href={live} className="xrc-next__also" prefetch={false} data-journey="called_open_chart">
+                            or open the live {symbol} chart
+                          </Link>
+                        </>
+                      ) : (
+                        <Link href={live} className="xrc-btn xrc-btn--lead" prefetch={false} data-journey="called_scan_on_chart">
+                          Open @{handle} on the live {symbol} chart
+                        </Link>
+                      )}
                     </p>
                   </>
                 )}
@@ -288,19 +299,14 @@ export default async function RecordPage(props: Props) {
                   {record.words.added && <p data-added>{record.words.added}</p>}
                   {unlabeled > 0 && (
                     <p data-unlabeled={unlabeled}>
-                      {unlabeled} {unlabeled === 1 ? 'post' : 'posts'} still to label.{' '}
-                      <Link href={live} prefetch={false} data-journey="called_finish_on_chart">
-                        Finish on the live chart
-                      </Link>
+                      {unlabeled} {unlabeled === 1 ? 'post' : 'posts'} still to label. <ScanNow handle={record.handle} symbol={record.symbol} label="Finish" variant="link" />
                     </p>
                   )}
                 </div>
               )}
               {pasteOnly && (
                 <p className="xrc-next">
-                  <Link href={live} className="xrc-btn xrc-btn--lead" prefetch={false} data-journey="called_scan_on_chart">
-                    Scan @{record.handle} on the live {record.symbol} chart
-                  </Link>
+                  <ScanNow handle={record.handle} symbol={record.symbol} label={`Scan @${record.handle} on ${record.symbol}`} auto />
                 </p>
               )}
               {found > 0 && <Sides record={record} />}

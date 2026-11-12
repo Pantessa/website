@@ -297,3 +297,13 @@
   .xrc-pin__flag, .xrc-call, .xrc-btn, .xrc-row, .xrc-sides__tab { transition: none; }
   .xrc-pin:hover .xrc-pin__flag, .xrc-pin:focus-visible .xrc-pin__flag { transform: translateX(-50%); }
 }
+
+/* The scan started from the landing (ScanNow): its button, its running line, a refusal's words. */
+.xrc-scan { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.xrc-scan[data-scan='running'] { display: block; color: var(--fg); font-size: var(--fs-md); line-height: 1.5; animation: xrc-scan-pulse 1.4s ease-in-out infinite; }
+@keyframes xrc-scan-pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .xrc-scan[data-scan='running'] { animation: none; } }
+.xrc-scan__link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.xrc-scan__why { flex-basis: 100%; color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
+.xrc-scan__why a { color: var(--accent); margin-left: 6px; }
+.xrc-next__also { margin-left: 14px; color: var(--muted); font-size: var(--fs-sm); text-decoration: underline; text-underline-offset: 3px; }

@@ -196,6 +196,31 @@ export function classicMarkers(record: CalledRecord | null): { t: number; label:
 
 export type CalledPhase = 'idle' | 'loading' | 'settled' | 'failed'
 
+// ── "The visitor just pressed Plot" (pure; pinned) ──────────────────────
+// The door on the share landing navigates to the record's page. When that
+// page finds the handle unscanned, the press that brought the visitor there
+// already was the ask, so the page scans by itself. The press leaves a mark
+// in THIS tab's session for two minutes; a page opened from a link has none,
+// so a link never spends on load.
+
+export const PLOT_INTENT_KEY = 'pantessa.called.plot'
+export const PLOT_INTENT_MS = 2 * 60 * 1000
+
+export function plotIntentValue(handle: string, symbol: string, nowMs: number): string {
+  return JSON.stringify({ k: `${handle.toLowerCase()}|${symbol.toUpperCase()}`, at: nowMs })
+}
+
+/** The stored mark is for this handle and market and is fresh. Anything else (absent, malformed, another handle, old, from the future) is no mark. */
+export function plotIntentMatches(raw: string | null | undefined, handle: string, symbol: string, nowMs: number): boolean {
+  if (!raw || raw.length > 200) return false
+  try {
+    const v = JSON.parse(raw) as { k?: unknown; at?: unknown }
+    return v.k === `${handle.toLowerCase()}|${symbol.toUpperCase()}` && typeof v.at === 'number' && nowMs - v.at >= 0 && nowMs - v.at <= PLOT_INTENT_MS
+  } catch {
+    return false
+  }
+}
+
 // ── What the door says about the plot (pure; pinned) ────────────────────
 // A plot with nothing to pin used to look like nothing had happened: the
 // handle sat on the door's pill and every word about it was in the strip

@@ -22,6 +22,7 @@
 //   · the addresses: /x is public, the image's address carries the page's side;
 //   · served: every answer is a real page and a real picture.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { PLOT_INTENT_MS, plotIntentMatches, plotIntentValue } from '../lib/called-it/use-record'
 import { join } from 'node:path'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts } from '../lib/called-it/fixture'
 import {
@@ -206,6 +207,28 @@ function bars(f: (i: number) => number, n = 400): Candle[] {
 const idAt = (ms: number, seq: number) => ((BigInt(ms - TWITTER_EPOCH_MS) << BigInt(22)) | BigInt(seq)).toString()
 
 export function calledRecordPins(check: Check): void {
+  // ── The landing scans in place (2026-11-12: "does it scan through their tweets or do people need to plot it going forward?") ──
+  {
+    const page = readFileSync(new URL('../app/x/[handle]/[symbol]/page.tsx', import.meta.url), 'utf8')
+    const scanNow = readFileSync(new URL('../components/called/ScanNow.tsx', import.meta.url), 'utf8')
+    const door = readFileSync(new URL('../components/called/HandleDoor.tsx', import.meta.url), 'utf8')
+    const t = 1_800_000_000_000
+    const mark = plotIntentValue('Brian_Armstrong', 'btc', t)
+    check(
+      "called-it landing: pressing Plot in the door is the ask. The press leaves a mark for that handle and market in the tab's session; the record's page scans by itself only when that mark is there, fresh (two minutes) and for this very handle and market, and reads it once. No mark, another handle, another market, an old mark, a mark from the future or junk start nothing, so a page opened from a link never scans on load",
+      plotIntentMatches(mark, 'brian_armstrong', 'BTC', t + 5_000) && plotIntentMatches(mark, 'BRIAN_ARMSTRONG', 'btc', t + PLOT_INTENT_MS) &&
+        !plotIntentMatches(mark, 'brian_armstrong', 'BTC', t + PLOT_INTENT_MS + 1) && !plotIntentMatches(mark, 'brian_armstrong', 'BTC', t - 1) && !plotIntentMatches(mark, 'cz_binance', 'BTC', t + 1) && !plotIntentMatches(mark, 'brian_armstrong', 'ETH', t + 1) &&
+        !plotIntentMatches(null, 'a', 'BTC', t) && !plotIntentMatches('', 'a', 'BTC', t) && !plotIntentMatches('{not json', 'a', 'BTC', t) && !plotIntentMatches('"a|BTC"', 'a', 'BTC', t) && !plotIntentMatches('x'.repeat(500), 'a', 'BTC', t) &&
+        /variant === 'page'\) \{[\s\S]{0,260}sessionStorage\.setItem\(PLOT_INTENT_KEY, plotIntentValue\(h, on, Date\.now\(\)\)\)/.test(door) &&
+        /removeItem\(PLOT_INTENT_KEY\)/.test(scanNow) && /if \(plotIntentMatches\(raw, handle, symbol, Date\.now\(\)\)\) void start\(\)/.test(scanNow) && /if \(!auto\) return/.test(scanNow),
+    )
+    check(
+      "called-it landing: a handle nobody has scanned gets a Scan button that scans ON this page (POST /api/x/scan, then the page reloads onto the record), with the live chart as a second way; a record with posts still to label finishes here too; a refusal is shown in words with only same-site links. The landing no longer sends a visitor to the chart to press a second button",
+      /<ScanNow handle=\{handle\} symbol=\{symbol\} label=\{`Scan @\$\{handle\} on \$\{symbol\}`\} auto \/>/.test(page) && /or open the live \{symbol\} chart/.test(page) && /label="Finish" variant="link"/.test(page) &&
+        !/Scan @\$\{handle\} on the live/.test(page) && !/Finish on the live chart/.test(page) &&
+        /fetch\('\/api\/x\/scan', \{ method: 'POST'/.test(scanNow) && /window\.location\.reload\(\)/.test(scanNow) && /safeNextHref\(n\.href\)/.test(scanNow) && /role="status" data-scan="running"/.test(scanNow),
+    )
+  }
   // ── The share image: where the cards stand ──
   let fault: string | null = null
   let layouts = 0
@@ -732,10 +755,11 @@ export async function calledRecordPinsServed(check: Check, BASE: string): Promis
     const intent = /href="(https:\/\/twitter\.com\/intent\/tweet\?[^"]+)"/.exec(pq)?.[1].replace(/&amp;/g, '&') ?? ''
     const intentText = intent ? (new URL(intent).searchParams.get('text') ?? '') : ''
     check(
-      'called-it landing (served, posts a viewer pasted and no scan): the page is not a record. The headline is spec\'s "posts added by a viewer. No scan yet, so no tally."; there are no count chips, no toggle, no coverage line and nothing indexed; both posts are in the pasted group, each marked; the scan is offered on the live chart; the share row\'s post states no count and says there is no tally; the image is its own kind ("pasted"), never "record"',
+      'called-it landing (served, posts a viewer pasted and no scan): the page is not a record. The headline is spec\'s "posts added by a viewer. No scan yet, so no tally."; there are no count chips, no toggle, no coverage line and nothing indexed; both posts are in the pasted group, each marked; the scan is offered on this page; the share row\'s post states no count and says there is no tally; the image is its own kind ("pasted"), never "record"',
       pq.includes('data-status="ready"') && pq.includes('data-scanned="no"') && tq.includes(`@${P} on BTC: 2 posts added by a viewer. No scan yet, so no tally.`) && !pq.includes('class="xrc-count') && !pq.includes('class="xrc-sides"') && !pq.includes('data-coverage') &&
         pq.includes('data-added-group="2"') && (pq.match(/<li class="xrc-call /g) ?? []).length === 2 && (pq.match(/data-origin="added"/g) ?? []).length === 2 && (tq.match(new RegExp(ADDED_MARK, 'g')) ?? []).length >= 2 &&
-        pq.includes(`href="/t/BTC?x=${P}"`) && tq.includes(`Scan @${P} on the live BTC chart`) && /noindex/.test(metaOf(pq, 'robots') ?? '') && tq.includes('Share these posts') && !tq.includes('Share this record') &&
+        // RE-PINNED 2026-11-12 (the landing scans in place): the Scan button is ON this page (ScanNow); it was a link to the live chart.
+        pq.includes('data-journey="called_scan_here"') && tq.includes(`Scan @${P} on BTC`) && !tq.includes(`on the live BTC chart`) && /noindex/.test(metaOf(pq, 'robots') ?? '') && tq.includes('Share these posts') && !tq.includes('Share this record') &&
         intentText === `$BTC posts by @${P}, pinned by a viewer to the day each was posted. ${CALLED_NO_TALLY} Not verified. Plot any handle with ${X_MENTION}:` && !/\d/.test(intentText) &&
         (metaOf(pq, 'og:title') ?? '').includes('No scan yet, so no tally.') && iq.status === 200 && iq.headers.get('x-pantessa-card') === 'pasted' && iq.headers.get('content-type') === 'image/png',
       `${iq.status} ${iq.headers.get('x-pantessa-card')} chips:${pq.includes('class="xrc-count')} group:${pq.includes('data-added-group="2"')} intent:${intentText}`,
