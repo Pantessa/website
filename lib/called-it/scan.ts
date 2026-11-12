@@ -24,6 +24,7 @@ import { assetTermsFor, marketTermsFor, termsFor } from './terms'
 import { marketFor, type MarketDoor } from './market'
 import { takenDown } from './takedown'
 import {
+  MIN_CALL_CONVICTION,
   RESCAN_AFTER_MS,
   SCAN_WINDOW_DAYS,
   postRefFromUrl,
@@ -125,6 +126,11 @@ export function failNote(err: unknown): string {
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
 
 /** The note a scan finishes with. Pure; pinned. */
+/** A label that is a CALL (spec MIN_CALL_CONVICTION): a remark is stored and never counted, here or on the record. */
+export function isCallLabel(l: { stance: string; conviction: number }): boolean {
+  return l.stance !== 'none' && l.conviction >= MIN_CALL_CONVICTION
+}
+
 export function doneNote(p: { calls: number; postsRead: number; labeled: number; toLabel: number; unlabeled: number }): string {
   if (p.unlabeled > 0) return `Labeled ${p.labeled} of ${p.toLabel} posts. Open it again to finish.`
   return `Found ${plural(p.calls, 'call')} in ${plural(p.postsRead, 'post')}.`
@@ -201,7 +207,7 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
         // Read again under the lease: a finish that just ended may have labeled them.
         const { todo, have, failedOnce } = await unlabeledIn(store, handle, symbol, windowFrom)
         const { rows, unlabeled } = await labelAndSave(deps, todo, symbol, deadlineMs, failedOnce)
-        const calls = [...have, ...rows].filter((l) => l.stance !== 'none').length
+        const calls = [...have, ...rows].filter(isCallLabel).length
         try {
           await store.updateScan(last.id, { callsFound: calls, note: doneNote({ calls, postsRead: last.postsRead, labeled: have.length + rows.length, toLabel: have.length + todo.length, unlabeled }) })
         } catch {
@@ -288,7 +294,7 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
     const { todo, have, failedOnce } = await unlabeledIn(store, handle, symbol, windowFrom)
     if (todo.length) await store.updateScan(scan.id, { note: `Labeling ${plural(todo.length, 'post')}` })
     const { rows, unlabeled } = await labelAndSave(deps, todo, symbol, deadlineMs, failedOnce)
-    const calls = [...have, ...rows].filter((l) => l.stance !== 'none').length
+    const calls = [...have, ...rows].filter(isCallLabel).length
     await store.updateScan(scan.id, {
       status: 'done',
       finished: true,

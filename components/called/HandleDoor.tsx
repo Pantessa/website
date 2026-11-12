@@ -17,7 +17,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { AtSign, X } from 'lucide-react'
 import VerifyWithX from '@/components/called/VerifyWithX'
 import { chartHref, normalizeHandle, recordHref, type CalledSide } from '@/lib/called-it/spec'
-import { plottedFrom, useCalled, useXViewer } from '@/lib/called-it/use-record'
+import { plotStatus, plottedFrom, useCalled, useXViewer } from '@/lib/called-it/use-record'
 import './called-chart.css'
 
 export interface HandleDoorProps {
@@ -170,6 +170,17 @@ export default function HandleDoor({ symbol, initialHandle = '', side: sideProp 
  */
 export function PlotHandleButton({ symbol }: { symbol: string }) {
   const plot = useCalled((s) => (s.symbol === symbol ? s.plot : null))
+  // What the plot is doing, said ON the chart's bar: the pill names the state, and a note under it explains a plot with
+  // nothing to pin (reading posts, no calls found, not scanned, refused). Without these a plot with no pins looked like
+  // nothing had happened: every word about it was in the strip under the chart.
+  const phase = useCalled((s) => s.phase)
+  const response = useCalled((s) => s.response)
+  const record = useCalled((s) => s.record)
+  const scanning = useCalled((s) => s.scanning)
+  const progress = useCalled((s) => s.progress)
+  const status = plotStatus({ plot, symbol: plot ? symbol : null, phase, response, record, scanning, progress })
+  const noteKey = plot ? `${plot.handle}|${plot.side}|${status.kind}` : ''
+  const [dismissed, setDismissed] = useState('')
   const [open, setOpen] = useState(false)
   const seatRef = useRef<HTMLSpanElement | null>(null)
 
@@ -197,7 +208,7 @@ export function PlotHandleButton({ symbol }: { symbol: string }) {
   }, [open])
 
   return (
-    <span className="xcc-seat" ref={seatRef} data-called-door={plot ? 'plotted' : 'empty'}>
+    <span className="xcc-seat" ref={seatRef} data-called-door={plot ? 'plotted' : 'empty'} data-called-status={status.kind}>
       <button
         type="button"
         className={`xcc-open mono${plot ? ' is-on' : ''}`}
@@ -209,7 +220,51 @@ export function PlotHandleButton({ symbol }: { symbol: string }) {
       >
         <AtSign className="xcc-open__icon" aria-hidden />
         <span className="xcc-open__label">{plot ? plot.handle : 'Plot a handle'}</span>
+        {plot && status.pill && (
+          <span className="xcc-open__state" aria-live="polite">
+            {status.pill}
+          </span>
+        )}
       </button>
+      {plot && !open && status.line && dismissed !== noteKey && (
+        <div className="xcc-note" role="status" data-called-note={status.kind}>
+          <p className="xcc-note__line">{status.line}</p>
+          <div className="xcc-note__acts">
+            {status.kind === 'unscanned' && status.canScan && (
+              <button type="button" className="xcc-btn xcc-btn--go" onClick={() => void useCalled.getState().scan()} data-journey="called_scan_note">
+                Scan @{plot.handle}
+              </button>
+            )}
+            {status.kind === 'failed' && (
+              <button type="button" className="xcc-btn" onClick={() => useCalled.getState().retry()}>
+                Try again
+              </button>
+            )}
+            {status.kind === 'empty' && (
+              <button
+                type="button"
+                className="xcc-btn"
+                onClick={() => {
+                  setDismissed(noteKey)
+                  document.querySelector<HTMLElement>('section.xcc')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }}
+              >
+                Add a post by its link
+              </button>
+            )}
+            {status.next.map((n) => (
+              <a key={n.href} className="xcc-link" href={n.href}>
+                {n.label}
+              </a>
+            ))}
+            {status.kind !== 'scanning' && (
+              <button type="button" className="xcc-link" onClick={() => setDismissed(noteKey)}>
+                Dismiss
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {open && (
         <div className="xcc-pop" role="dialog" aria-label="Plot a handle">
           <div className="xcc-pop__head">
