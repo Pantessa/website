@@ -57,7 +57,9 @@ const ALIASES: Readonly<Record<string, readonly string[]>> = {
 }
 
 /** Symbols whose calls are often calls on the whole market. */
-export const MARKET_PROXIES: ReadonlySet<string> = new Set(['BTC', 'ETH', 'SP500', 'SPY', 'NDX', 'QQQ', 'DJI', 'RUT'])
+// Only BTC since 2026-11-12: measured on real accounts with X's count endpoint, the market words added 63% to an ETH scan
+// (dcinvestor: 201 posts naming ETH, 127 more for "top", "bottom", "bull"…) and most of those were not calls on ETH.
+export const MARKET_PROXIES: ReadonlySet<string> = new Set(['BTC'])
 
 /** The words a market call uses when it does not name the asset. */
 export const MARKET_CALL_WORDS: readonly string[] = ['bottom', 'top', 'cycle', 'supercycle', 'capitulation', 'all-time high', 'ath', 'bull', 'bear']
