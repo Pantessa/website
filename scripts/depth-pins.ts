@@ -30,13 +30,18 @@ import {
   levelAt,
   limitAimAt,
   parseCoinbaseL2,
+  parseCoinbaseTicker,
+  parseHlBbo,
   parseDepthSettings,
   parseHlL2Book,
   printAlpha,
   printOnBook,
   printRadius,
   printWords,
+  topQuote,
+  topQuoteKey,
   wallsIn,
+  withExactMid,
 } from '../lib/depth'
 import { bookProductFor } from '../lib/depth-feed'
 import { fmtLimitPrice } from '../lib/order-ticket'
@@ -232,6 +237,43 @@ export function depthPins(check: Check): void {
       const css = readFileSync('components/markets/markets.css', 'utf8')
       return !/color-mix\(/.test(src.replace(/\/\/.*$/gm, '').replace(/\/\*[^]*?\*\//g, '')) && /waiting for the first print/.test(src) && /tokens\.up/.test(src) && /tokens\.down/.test(src) && /openBookFeed\(plan\.main, pair/.test(src) &&
         /\.mkt-chart__canvas\.is-depth \{ height: 460px; \}/.test(css) && /:has\(\.mkt-chart__canvas\.is-depth\) \{ height: clamp\(/.test(css)
+    })())
+
+  // ── The top of the book: the header's price (2026-11-10) ──
+  // Verbatim frames, read keyless off the venues on 2026-11-10.
+  const CB_TICKER = '{"channel":"ticker","timestamp":"2026-11-10T15:18:14.83315177Z","sequence_num":4,"events":[{"type":"update","tickers":[{"type":"ticker","product_id":"UNI-USD","price":"7.0606","volume_24_h":"1355095.094263","low_24_h":"6.7178","high_24_h":"7.152","low_52_w":"2.316","high_52_w":"10.9321","price_percent_chg_24_h":"1.68646935983294","best_bid":"7.0524","best_ask":"7.0563","best_bid_quantity":"14.76","best_ask_quantity":"14.76"}]}]}'
+  const CB_HEARTBEAT = '{"channel":"heartbeats","timestamp":"2026-11-10T15:18:13.930829509Z","sequence_num":3,"events":[{"current_time":"2026-11-10 15:18:13.929490649 +0000 UTC m=+4837.242219631","heartbeat_counter":4837}]}'
+  const HL_BBO = '{"channel":"bbo","data":{"coin":"HYPE","time":1794323893837,"bbo":[{"px":"73.677","sz":"0.22","n":1},{"px":"73.678","sz":"9.25","n":4}]}}'
+  const HL_BBO_XYZ = '{"channel":"bbo","data":{"coin":"xyz:SP500","time":1794323893837,"bbo":[{"px":"7527.1","sz":"3.265","n":1},{"px":"7527.4","sz":"8.972","n":1}]}}'
+  const cbq = parseCoinbaseTicker(JSON.parse(CB_TICKER), 'UNI-USD')
+  check('top of book: a Coinbase ticker frame is the best bid and ask as of the match, its mid, the last trade, stamped with the venue\'s own time; another product, a heartbeat or garbage is no quote',
+    !!cbq && cbq.bid === 7.0524 && cbq.ask === 7.0563 && Math.abs(cbq.mid - 7.05435) < 1e-9 && cbq.last === 7.0606 && cbq.at === Date.parse('2026-11-10T15:18:14.83315177Z') &&
+      parseCoinbaseTicker(JSON.parse(CB_TICKER), 'ETH-USD') === null && parseCoinbaseTicker(JSON.parse(CB_HEARTBEAT), 'UNI-USD') === null && parseCoinbaseTicker(null, 'UNI-USD') === null && parseCoinbaseTicker('x', 'UNI-USD') === null,
+    JSON.stringify(cbq))
+  const hlq = parseHlBbo(JSON.parse(HL_BBO), 'HYPE')
+  const xyzq = parseHlBbo(JSON.parse(HL_BBO_XYZ), 'xyz:SP500')
+  check('top of book: a Hyperliquid bbo frame is the exact best bid and ask (a builder dex\'s too), no last trade, the venue\'s time; another coin or a one-sided bbo is no quote',
+    !!hlq && hlq.bid === 73.677 && hlq.ask === 73.678 && Math.abs(hlq.mid - 73.6775) < 1e-9 && hlq.last === null && hlq.at === 1794323893837 &&
+      !!xyzq && Math.abs(xyzq.mid - 7527.25) < 1e-9 && parseHlBbo(JSON.parse(HL_BBO), 'UNI') === null &&
+      parseHlBbo({ channel: 'bbo', data: { coin: 'HYPE', time: 1, bbo: [null, { px: '73.678' }] } }, 'HYPE') === null,
+    JSON.stringify({ hlq, xyzq }))
+  check('top of book: a crossed or locked book, a missing side or a non-number is no quote (the header keeps the one it had); a bad last is dropped, not the quote',
+    topQuote(7.06, 7.05, null, 1) === null && topQuote(7.05, 7.05, null, 1) === null && topQuote(0, 7.05, null, 1) === null && topQuote(NaN, 7.05, null, 1) === null &&
+      topQuote(7.04, 7.05, NaN, 1)?.last === null && topQuote(7.04, 7.05, 0, 1)?.last === null && topQuoteKey('coinbase', 'UNI-USD') === 'coinbase:UNI-USD')
+  const coarse = bookFromLevels([{ px: 73.6, size: 100 }, { px: 73.5, size: 50 }], [{ px: 73.7, size: 80 }], 1)
+  check('top of book: Hyperliquid\'s coarse depth book takes the exact bbo mid when it lies between the coarse best bid and ask (73.661, not 73.65 — measured), keeps its own outside them, and returns the SAME book when nothing changes',
+    coarse.mid === 73.65 && withExactMid(coarse, 73.661).mid === 73.661 && withExactMid(coarse, 73.661).bids === coarse.bids &&
+      withExactMid(coarse, 73.59) === coarse && withExactMid(coarse, 73.71) === coarse && withExactMid(coarse, null) === coarse && withExactMid(coarse, 73.65) === coarse && withExactMid(EMPTY_BOOK, 73.66) === EMPTY_BOOK &&
+      depthWindow(withExactMid(coarse, 73.661), 2)?.mid === 73.661)
+  check('top of book: wired — the chart opens the light feed (Coinbase ticker + heartbeats, Hyperliquid bbo) on its own venue only, publishes to lib/top-quote, and the depth view reports the MID it draws on a Coinbase book (a Hyperliquid header keeps the exact bbo), takes HL\'s exact mid for its line, and labels the venue\'s last trade',
+    (() => {
+      const feed = readFileSync('lib/depth-feed.ts', 'utf8')
+      const mc = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
+      const dc = readFileSync('components/markets/chart/DepthChart.tsx', 'utf8')
+      return /channel: 'ticker'/.test(feed) && /channel: 'heartbeats'/.test(feed) && /type: 'bbo', coin: product/.test(feed) && /onQuote\(null\)/.test(feed) &&
+        /openTopOfBook\(topVenue, pair,/.test(mc) && /publishTopQuote\(key, q\)/.test(mc) && /emitMid\('book', sym, q\?\.mid \?\? null\)/.test(mc) && /onMid=\{onDepthMid\}/.test(mc) &&
+        /pair\.source === 'coinbase' \? 'coinbase' : pair\.source === 'hyperliquid' \? 'hyperliquid' : null/.test(mc) && /lookOnly \|\| !pair \? null/.test(mc) &&
+        /withExactMid\(main, exactMid\)/.test(dc) && /plan\.main === 'hyperliquid' \? \(top\?\.mid \?\? null\) : null/.test(dc) && /onMidRef\.current\?\.\(pair\.symbol, drawnMid\)/.test(dc) && /const drawnMid = plan\.main === 'coinbase' \? \(win\?\.mid \?\? null\) : null/.test(dc) && /last \$\{fmtDepthPrice\(lastShown\)\}/.test(dc)
     })())
 }
 

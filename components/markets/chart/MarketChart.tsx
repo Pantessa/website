@@ -43,7 +43,10 @@ import {
 } from 'lightweight-charts'
 import { ChartCandlestick, ChevronsRight, Layers2, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, RotateCcw, Rows3, Ruler, ScrollText, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, Trash2, TrendingUp, Undo2, Grid3x3 } from 'lucide-react'
 import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, chartUnitOf, isHip3Pair, isLookOnlyPair, isPrintTf, sourceHasTf, tfsForSource, type Candle, type ChartTf } from '@/lib/charts'
-import { PRINT_KEEP_MS, applyPrint, barsFromPrints, chartLiveFeed, livePriceStats, printOf, seedThenPrints, tailIsLive, tailWords, type Print } from '@/lib/chart-live'
+import { PRINT_KEEP_MS, applyPrint, barsFromPrints, chartLiveFeed, livePriceStats, pickLivePrice, printOf, seedThenPrints, tailIsLive, tailWords, type LiveSources, type Print } from '@/lib/chart-live'
+import { topQuoteKey, type DepthVenue } from '@/lib/depth'
+import { bookProductFor, openTopOfBook } from '@/lib/depth-feed'
+import { publishTopQuote } from '@/lib/top-quote'
 import { syncTfParam } from '@/lib/markets'
 import type { TapeFill } from '@/lib/tape'
 import { openDuneTape, type FeedStatus } from '@/lib/tape-feed'
@@ -84,10 +87,8 @@ import { useTradable } from '@/lib/use-tradable'
 
 const POLL_MS: Record<ChartTf, number> = { '10s': 30_000, '1m': 5_000, '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
 const POOL_POLL_MS = 30_000
-/** The header re-states a live print at most this often (ms). */
+/** The header re-states a live price (the book's center, a print) at most this often (ms). */
 const LIVE_EMIT_MS = 250
-/** A print this fresh outranks the poll's close in the header (ms). */
-const LIVE_PRINT_FRESH_MS = 60_000
 /** Bars the chart holds for one symbol + frame: the live window (180), its
  *  warm-up (200), and the older pages a zoom-out pulls in. Past it the chart
  *  stops paging, and a zoom-out stops where every drawn bar fits the plot. */
@@ -457,37 +458,66 @@ export default function MarketChart({
   const barsRef = useRef<Candle[]>([])
   const onStatsRef = useRef(onStats)
   onStatsRef.current = onStats
-  // THE HEADER FOLLOWS THE PRINTS (2026-10-20): the last stats the poll
-  // emitted, the newest print since, and one trailing timer so a 40-print
-  // second re-states the header at most four times (lib/chart-live
-  // livePriceStats re-bases the 24h change on the same day-ago price).
-  const emittedStatsRef = useRef<ChartStats | null>(null)
-  const livePrintRef = useRef<{ price: number; at: number } | null>(null)
+  // THE HEADER IS THE BOOK'S CENTER (2026-11-10; it followed the prints from
+  // 2026-10-20). What the header can follow — the venue's mid (the light
+  // top-of-book feed, or the depth view's own MID while it draws), the
+  // newest print — stamped with the symbol it was read for, so a soft
+  // navigation never paints one coin's price under another's name. The poll
+  // still brings the 24h change, the label and the feed; lib/chart-live
+  // pickLivePrice decides, livePriceStats re-bases the change. One trailing
+  // timer: a busy book re-states the header at most four times a second.
+  const symRef = useRef(pair?.symbol ?? symbol)
+  symRef.current = pair?.symbol ?? symbol
+  const liveRef = useRef<{ sym: string; book: number | null; depth: number | null; print: LiveSources['print'] }>({ sym: '', book: null, depth: null, print: null })
+  const depthOnRef = useRef(false)
+  const emittedStatsRef = useRef<{ sym: string; stats: ChartStats } | null>(null)
   const liveEmitRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const emitPollStats = useCallback((s: ChartStats) => {
-    // A print newer than the poll's own window is the truer last: keep it,
-    // take the poll's change, label and feed. A print older than that is
-    // the venue's to override (the feed may have gone quiet).
-    const lp = livePrintRef.current
-    const next = lp && lp.at > Date.now() - LIVE_PRINT_FRESH_MS && s.last != null ? livePriceStats(s, lp.price) : s
-    emittedStatsRef.current = next
-    onStatsRef.current?.(next)
+  /** This symbol's sources (a new symbol starts with none). */
+  const liveOf = useCallback(() => {
+    if (liveRef.current.sym !== symRef.current) liveRef.current = { sym: symRef.current, book: null, depth: null, print: null }
+    return liveRef.current
   }, [])
-  const emitLivePrice = useCallback((price: number) => {
-    if (!(price > 0)) return
-    livePrintRef.current = { price, at: Date.now() }
+  /** The price the header shows now, or null (the poll's close stands). */
+  const livePrice = useCallback(() => {
+    const l = liveOf()
+    // In the depth view the header is the MID the chart draws, to the digit.
+    const mid = depthOnRef.current && l.depth != null ? l.depth : l.book
+    return pickLivePrice({ mid, print: l.print }, Date.now())
+  }, [liveOf])
+  const emitPollStats = useCallback((s: ChartStats) => {
+    const p = livePrice()
+    const next = p != null && s.last != null ? livePriceStats(s, p) : s
+    emittedStatsRef.current = { sym: symRef.current, stats: next }
+    onStatsRef.current?.(next)
+  }, [livePrice])
+  const scheduleLive = useCallback(() => {
     if (liveEmitRef.current) return
     liveEmitRef.current = setTimeout(() => {
       liveEmitRef.current = null
       const prev = emittedStatsRef.current
-      const lp = livePrintRef.current
-      if (!prev || !lp) return
-      const next = livePriceStats(prev, lp.price)
-      if (next === prev) return
-      emittedStatsRef.current = next
+      // Nothing to re-state until this symbol's poll has named its change.
+      if (!prev || prev.sym !== symRef.current) return
+      const p = livePrice()
+      if (p == null) return
+      const next = livePriceStats(prev.stats, p)
+      if (next === prev.stats) return
+      emittedStatsRef.current = { sym: prev.sym, stats: next }
       onStatsRef.current?.(next)
     }, LIVE_EMIT_MS)
-  }, [])
+  }, [livePrice])
+  const emitLivePrice = useCallback((price: number) => {
+    if (!(price > 0)) return
+    liveOf().print = { price, at: Date.now() }
+    scheduleLive()
+  }, [liveOf, scheduleLive])
+  /** A venue mid for `sym` (null = that feed dropped). A late call for a
+   *  symbol the chart has left is dropped. */
+  const emitMid = useCallback((kind: 'book' | 'depth', sym: string, mid: number | null) => {
+    if (sym !== symRef.current) return
+    liveOf()[kind] = mid != null && mid > 0 ? mid : null
+    scheduleLive()
+  }, [liveOf, scheduleLive])
+  const onDepthMid = useCallback((sym: string, mid: number | null) => emitMid('depth', sym, mid), [emitMid])
   useEffect(() => () => {
     if (liveEmitRef.current) clearTimeout(liveEmitRef.current)
   }, [])
@@ -1009,6 +1039,31 @@ export default function MarketChart({
 
   const fieldOn = battlefield && view === 'field'
   const depthOn = battlefield && view === 'depth'
+  depthOnRef.current = depthOn
+  // The header's price: the venue's light top-of-book feed (lib/depth-feed
+  // openTopOfBook), open on every frame and every view while a header
+  // listens or the depth view wants its last trade — the instrument's OWN
+  // venue only (a Coinbase coin reads Coinbase, a perp its own book); a
+  // stock and a look-only index have no book and keep the prints / the poll.
+  const topVenue: DepthVenue | null = lookOnly || !pair ? null : pair.source === 'coinbase' ? 'coinbase' : pair.source === 'hyperliquid' ? 'hyperliquid' : null
+  const topProduct = topVenue && pair ? bookProductFor(topVenue, pair) : null
+  const wantsTop = !!onStats || depthOn
+  useEffect(() => {
+    if (!topVenue || !topProduct || !pair || !wantsTop) return
+    const sym = pair.symbol
+    const key = topQuoteKey(topVenue, topProduct)
+    const h = openTopOfBook(topVenue, pair, (q) => {
+      publishTopQuote(key, q)
+      emitMid('book', sym, q?.mid ?? null)
+    })
+    return () => {
+      h.close()
+      publishTopQuote(key, null)
+      emitMid('book', sym, null)
+    }
+    // pair follows topProduct (one product per pair)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topVenue, topProduct, wantsTop, emitMid])
   const tapeOn = battlefield && view === 'tape'
   // Any other view: the candles' own chrome (tools, legend, drawings) steps aside.
   const heatOn = battlefield && view === 'heat'
@@ -1887,7 +1942,7 @@ export default function MarketChart({
           </div>
         )}
         {fieldOn && tokens && <FrontBoard symbol={pair.symbol} pair={pair} tf={tf} bars={candles} tokens={tokens} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} board={board} onBoard={setBoard} />}
-        {depthOn && tokens && <DepthChart symbol={pair.symbol} pair={pair} tokens={tokens} last={last} perpListed={hasPerpCold(pair.symbol)} printSink={depthPrintRef} printStatus={liveFeed ? tailStatus : null} printLabel={liveFeed?.label ?? null} onLevel={onLimit} settings={depthSettings} onSettings={setDepthSettings} />}
+        {depthOn && tokens && <DepthChart symbol={pair.symbol} pair={pair} tokens={tokens} last={last} perpListed={hasPerpCold(pair.symbol)} printSink={depthPrintRef} printStatus={liveFeed ? tailStatus : null} printLabel={liveFeed?.label ?? null} onLevel={onLimit} settings={depthSettings} onSettings={setDepthSettings} onMid={onDepthMid} />}
         {heatOn && pair && <HeatView year={heatYear} mark={last} />}
         {tapeOn && <TapeView symbol={pair.symbol} pair={pair} printSink={tapePrintRef} printStatus={liveFeed ? tailStatus : null} printLabel={liveFeed?.label ?? null} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} />}
         {wallOn && tokens && <TheWall geom={geom} bars={bars} symbol={pair.symbol} pair={pair} tf={tf} tokens={tokens} last={last} hostRef={wrapRef} onStatus={setWallStatus} onHide={hideWall} />}

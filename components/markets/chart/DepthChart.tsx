@@ -34,7 +34,8 @@ import type { ChartPair } from '@/lib/charts'
 import type { TapeFill } from '@/lib/tape'
 import { venueTag } from '@/lib/tape'
 import type { FeedStatus } from '@/lib/tape-feed'
-import { openBookFeed } from '@/lib/depth-feed'
+import { bookProductFor, openBookFeed } from '@/lib/depth-feed'
+import { useTopQuote } from '@/lib/top-quote'
 import {
   DEPTH_TAPE_ROWS,
   DEPTH_VENUE_LABEL,
@@ -54,7 +55,9 @@ import {
   printOnBook,
   printRadius,
   printWords,
+  topQuoteKey,
   wallsIn,
+  withExactMid,
   type BookFeedStatus,
   type DepthBook,
   type DepthSettings,
@@ -78,8 +81,13 @@ export interface DepthChartProps {
   symbol: string
   pair: ChartPair
   tokens: Tokens
-  /** The chart's last close — the header's number, shown beside the mid. */
+  /** The chart's last close: the legend's "last" until the venue's own last
+   *  trade arrives (lib/top-quote; Coinbase's ticker carries it). */
   last: number | null
+  /** The MID this view draws, for the header (null when the book drops).
+   *  Stamped with the symbol so a late call for a coin the chart has left is
+   *  dropped. */
+  onMid?: (symbol: string, mid: number | null) => void
   /** Hyperliquid lists a perp for this coin: the second book is offered. */
   perpListed: boolean
   /** The chart's print stream: the view registers its sink here and the
@@ -115,7 +123,7 @@ interface Geom {
   plotH: number
 }
 
-export default function DepthChart({ symbol, pair, tokens, last, perpListed, printSink, printStatus, printLabel, onLevel, settings, onSettings }: DepthChartProps) {
+export default function DepthChart({ symbol, pair, tokens, last, perpListed, printSink, printStatus, printLabel, onLevel, settings, onSettings, onMid }: DepthChartProps) {
   const plan = useMemo(() => depthPlanFor(pair, perpListed), [pair, perpListed])
   const { pct, unit } = settings
   const otherOn = settings.overlay
@@ -206,7 +214,30 @@ export default function DepthChart({ symbol, pair, tokens, last, perpListed, pri
     if (w !== geomRef.current.w || h !== geomRef.current.h) setGeom({ w, h, plotW: Math.max(0, w - PAD.l - PAD.r), plotH: Math.max(0, h - PAD.t - PAD.b) })
   })
 
-  const win = useMemo(() => (main ? depthWindow(main, pct) : null), [main, pct])
+  // The venue's top of book (lib/top-quote, published by the chart): its
+  // last trade for the legend, and on Hyperliquid the EXACT mid — the depth
+  // book is coarse (nSigFigs 3) and its own mid sat a cent off (withExactMid).
+  const topKey = plan.main ? topQuoteKey(plan.main, bookProductFor(plan.main, pair)) : null
+  const top = useTopQuote(topKey)
+  const exactMid = plan.main === 'hyperliquid' ? (top?.mid ?? null) : null
+  const drawn = useMemo(() => (main ? withExactMid(main, exactMid) : null), [main, exactMid])
+  const win = useMemo(() => (drawn ? depthWindow(drawn, pct) : null), [drawn, pct])
+  // THE HEADER IS THIS MID (2026-11-10) on a Coinbase book: the full book,
+  // so the chart's header and the tab follow the line drawn here, to the
+  // digit. A Hyperliquid book is coarse and its pushes trail the venue's bbo
+  // (3 of 8 samples a rung behind, measured): the header keeps the bbo there,
+  // the line takes it whenever the coarse rungs bracket it.
+  const onMidRef = useRef(onMid)
+  onMidRef.current = onMid
+  const drawnMid = plan.main === 'coinbase' ? (win?.mid ?? null) : null
+  useEffect(() => {
+    onMidRef.current?.(pair.symbol, drawnMid)
+  }, [pair.symbol, drawnMid])
+  useEffect(() => {
+    const sym = pair.symbol
+    return () => onMidRef.current?.(sym, null)
+  }, [pair.symbol])
+  const lastShown = top?.last ?? last
   const otherWin = useMemo(() => (other && win ? depthWindow(other, pct) : null), [other, win, pct])
   const walls = useMemo(() => (win ? wallsIn(win, 1) : null), [win])
   const yMax = useMemo(() => {
@@ -508,7 +539,7 @@ export default function DepthChart({ symbol, pair, tokens, last, perpListed, pri
               {DEPTH_VENUE_LABEL[plan.other]} {fmtDepthUsd(otherWin.bidUsd)} / {fmtDepthUsd(otherWin.askUsd)} · one scale
             </span>
           ) : null}
-          {plan.main && last != null && win ? <span>last ${fmtDepthPrice(last)}</span> : null}
+          {plan.main && lastShown != null && win ? <span>last ${fmtDepthPrice(lastShown)}</span> : null}
         </p>
       </div>
       <div ref={hostRef} className="dp__plot">
