@@ -8,7 +8,11 @@
 //   1. A post is X's own words. Its text, author and time are read from X by
 //      the post's id. No model writes, shortens or rewords a post.
 //   2. Bull or bear is a LABEL on the post. A label must quote a span that is
-//      in the post, or it is dropped (lib/called-it/classify).
+//      in the post, or it is dropped (lib/called-it/classify). Only a CALL is
+//      on a record: a post that says where the price goes or tells people
+//      what to do. A favourable remark ("is resilient", "I hold some") is not
+//      a call, so it can never be counted as a miss (the first real scan,
+//      2026-11-12, had padded an 18-call tally with nine of them).
 //   3. The result is ARITHMETIC on the chart's own daily candles: the close
 //      of the day it was posted against the close JUDGE_DAYS later.
 //   4. The tally is never curated. A viewer chooses which calls are pinned;
@@ -57,7 +61,7 @@ export interface XPost {
 /** What the labeler says about one post, for one symbol. */
 export interface CallLabel {
   stance: CallStance | 'none'
-  /** 0 with `none`. 1 a lean, 2 a clear directional claim, 3 a stated prediction, target or position. */
+  /** 0 with `none`. 1 a remark with no call on direction (kept as a label, never on a record), 2 a clear call, 3 a prediction with a level or a time, or a trade just made. */
   conviction: 0 | Conviction
   /** A span of the post's own text that carries the stance. Null with `none`. */
   quote: string | null
@@ -362,6 +366,8 @@ export function chartHref(handle: string, symbol: string, side: CalledSide = 'al
 // ── What a call is worth (the arithmetic) ───────────────────────────────
 
 const DAY_MS = 86_400_000
+/** What makes a post a CALL. A label below this is a remark: it is stored (so the post is never labeled twice) and never shown, counted or pinned. */
+export const MIN_CALL_CONVICTION: Conviction = 2
 /** A call is judged on the close this many days after it. */
 export const JUDGE_DAYS = 30
 /** A move smaller than this either way is "no real move". */
@@ -552,7 +558,7 @@ export function buildRecord(input: BuildRecordInput): CalledRecord {
   const every: CalledCall[] = []
   for (const p of input.posts) {
     const { label } = p
-    if (label.stance === 'none' || label.conviction === 0 || seen.has(p.id)) continue
+    if (label.stance === 'none' || label.conviction === 0 || label.conviction < MIN_CALL_CONVICTION || seen.has(p.id)) continue
     if (p.handle !== handle || !quoteIsFromPost(label.quote, p.text) || !postTimeAgrees(p.id, p.postedAt)) continue
     const moves = movesFor(candles, p.postedAt, nowMs)
     if (!moves) continue
