@@ -382,6 +382,7 @@ import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
 import { flyoverPins } from './flyover-pins'
 import { orderTicketPins } from './order-ticket-pins'
+import { cowRefusalLivePins, signStagePins } from './sign-stage-pins'
 import { depthPins } from './depth-pins'
 import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
@@ -35594,6 +35595,9 @@ async function main() {
   spotHomePins(check)
   // The order ticket (2026-10-06): every shape the form composes lands native, the honesty rules, the sizing, the Available line, the wiring.
   orderTicketPins(check)
+  // Only the wallet may be blamed for a wallet rejection (2026-11-11): a CoW order the wallet SIGNED read "Signature rejected in the wallet" when CoW's order book refused it; the stage rule on five sign surfaces, CoW's errorType kept + logged + filed, and one live unfunded throwaway order through the relay.
+  signStagePins(check)
+  await cowRefusalLivePins(BASE, check)
   // The Depth chart (2026-10-13): the book model and its deltas, the venue wire shapes, the window, the curve, the hover's numbers, the act at a level, the plan per chart, the words, the view's URL and wiring.
   depthPins(check)
   chartTapePins(check)

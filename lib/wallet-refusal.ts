@@ -33,6 +33,14 @@ export const REFUNDED_KIND = 'refunded'
  *  stall is a /dashboard/failures row, not silence (mobile-onboarding squad,
  *  2026-09-23). */
 export const LAUNCH_DROPPED_KIND = 'launch-dropped'
+/** The wallet SIGNED and the venue's order book refused the signed order
+ *  (CoW: InsufficientBalance, WrongOwner, …). Nobody's wallet refused and
+ *  nothing moved. Written by the SERVER (app/api/cow/submit), never the
+ *  browser: the words are the venue's own answer to our relay, so no client
+ *  can forge one. Born 2026-11-11, when a CoW refusal read on screen as
+ *  "Signature rejected in the wallet" and CoW's reason was logged nowhere
+ *  (lib/cow-refusal.ts). */
+export const VENUE_REFUSED_KIND = 'venue-refused'
 
 /** `wallet-app` = the app launch itself (a dropped launch names the method it
  *  carried in `ask`); `consent` = a personal_sign consent (on-ramp, desk,
@@ -110,6 +118,23 @@ export function isReportableWalletError(message: string): boolean {
   const m = message.trim()
   if (!m) return false
   return !/user rejected|user denied|rejected the request|denied|declined|cancell?ed by user|action_rejected/i.test(m)
+}
+
+/** Which side of a sign flow said no: the WALLET (before a signature
+ *  existed) or our SERVER / the venue behind it (after one did). */
+export type SignStage = 'wallet' | 'server'
+
+/** Pure: the error line a sign surface shows. Only the wallet stage may read
+ *  as a human "no" (`declined`); a server's answer after the signature is
+ *  shown as the server wrote it. A venue's "rejected" is not the wallet's:
+ *  on 2026-11-11 CoW's order book refused a signed limit order and the card
+ *  said "Signature rejected in the wallet" (lib/cow-refusal.ts), and the
+ *  Guardian's own fallback "The venue rejected the approval." read as
+ *  "Signature request declined." every time. */
+export function signStageError(stage: SignStage, words: string, declined: string): string {
+  const w = words.trim()
+  if (stage === 'server') return w || 'The server refused it after the signature.'
+  return !w || !isReportableWalletError(w) ? declined : w
 }
 
 /** Pure: the row a dropped app launch files. `link` is the SDK's link (its
