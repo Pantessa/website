@@ -1,0 +1,28 @@
+/* Verify with X (lane AUTH, squad called-it). Prefix `xva-`, checked against
+   every stylesheet in the repo on 2026-11-11. Site tokens only. */
+.xva-root { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 14px; line-height: 1.35; color: var(--fg); }
+.xva-root[data-variant='line'] { display: inline; }
+
+.xva-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; padding: 0 16px; border-radius: 999px;
+  border: 1px solid var(--line-2); background: var(--surf-1); color: var(--fg);
+  font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
+}
+.xva-btn:hover { border-color: var(--fg); }
+.xva-btn:focus-visible, .xva-link:focus-visible, .xva-quiet:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.xva-btn[aria-busy='true'] { opacity: 0.6; cursor: progress; }
+.xva-mark { width: 14px; height: 14px; flex: none; fill: currentColor; }
+
+.xva-link { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.xva-who { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.xva-avatar { width: 24px; height: 24px; border-radius: 50%; flex: none; object-fit: cover; background: var(--surf-2); }
+.xva-plot { min-height: 44px; display: inline-flex; align-items: center; }
+.xva-quiet {
+  min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--muted);
+  font: inherit; font-size: 13px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.xva-quiet:hover { color: var(--fg); }
+.xva-note { flex-basis: 100%; color: var(--muted); font-size: 13px; }
+.xva-root[data-variant='line'] .xva-note { display: block; }
+.xva-away { color: var(--muted); }

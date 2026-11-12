@@ -56,6 +56,8 @@ import LookOnlyCard from '@/components/markets/shell/LookOnlyCard'
 import { useDayStats } from '@/components/markets/shell/useDayStats'
 import HeldPill from '@/components/markets/shell/HeldPill'
 import CompareControl from '@/components/markets/shell/CompareControl'
+import CallsPanel from '@/components/called/CallsPanel'
+import { PlotHandleButton } from '@/components/called/HandleDoor'
 import ExecStrip from '@/components/markets/slots/ExecStrip'
 import AskChart from '@/components/markets/slots/AskChart'
 import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
@@ -453,8 +455,10 @@ export default function SymbolPage({
   )
   // Compare is a chart control: it rides the chart's own bar, beside the
   // expand toggle (it used to be a header pill).
+  // So is CALLED IT's door ("Plot a handle"): an X handle's calls pinned on this chart.
   const chartControls = (
     <>
+      {pair && <PlotHandleButton symbol={sym} />}
       {pair && <CompareControl symbol={sym} vs={vs} onChange={setVs} />}
       {expandButton}
     </>
@@ -716,6 +720,9 @@ export default function SymbolPage({
             )}
           </div>
         </div>
+
+        {/* ── CALLED IT: the plotted handle's calls, right under the chart they are pinned on (nothing until a handle is plotted); parks with it ── */}
+        {pair && <CallsPanel symbol={sym} parked={!showChart} />}
 
         {/* A look-only index, on a PHONE: the chart leads, and right under it the page says it is here to read
             and names the closest thing listed (a desktop carries the same card in the rail, where the ticket

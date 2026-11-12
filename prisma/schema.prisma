@@ -2085,3 +2085,106 @@ model PolicyPoolCursor {
 
   @@map("policy_pool_cursors")
 }
+
+// ── CALLED IT (squad called-it, 2026-11-11) ─────────────────────────────────
+// An X handle's market calls, pinned on a chart. Four tables, all new
+// (prisma/ddl/2026-11-11-called-it.sql). The contract is lib/called-it/spec.
+
+/// One X account somebody plotted. `claimedXUserId` is set only when the
+/// account itself signed in with X: that, and nothing else, makes its plots
+/// "verified".
+model XHandle {
+  handle         String    @id // lowercase, no @
+  xUserId        String?   @map("x_user_id")
+  name           String?
+  avatarUrl      String?   @map("avatar_url")
+  followers      Int?
+  isProtected    Boolean   @default(false) @map("is_protected")
+  isBlue         Boolean   @default(false) @map("is_blue")
+  claimedXUserId String?   @map("claimed_x_user_id")
+  claimedAt      DateTime? @map("claimed_at") @db.Timestamptz(6)
+  readAt         DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Taken down: its records answer a named refusal and it never lists.
+  hiddenAt       DateTime? @map("hidden_at") @db.Timestamptz(6)
+  /// admin | owner
+  hiddenBy       String?   @map("hidden_by")
+  /// X said "no such account" at this time: not asked again for a day.
+  missingAt      DateTime? @map("missing_at") @db.Timestamptz(6)
+
+  @@map("x_handles")
+}
+
+/// A public post as X returned it. `goneAt` is set when a later read says X
+/// no longer serves it: a gone post is never shown again.
+model XPost {
+  postId   String    @id @map("post_id")
+  handle   String
+  xUserId  String?   @map("x_user_id")
+  text     String
+  postedAt DateTime  @map("posted_at") @db.Timestamptz(6)
+  likes    Int?
+  replies  Int?
+  reposts  Int?
+  isReply  Boolean   @default(false) @map("is_reply")
+  /// x-api | syndication | fixture
+  source   String
+  readAt   DateTime  @default(now()) @map("read_at") @db.Timestamptz(6)
+  goneAt   DateTime? @map("gone_at") @db.Timestamptz(6)
+
+  @@index([handle, postedAt])
+  @@map("x_posts")
+}
+
+/// The label on one post for one symbol: which side it takes, how sure it
+/// sounds, and the span of the post's own words that says so.
+model XCall {
+  postId     String   @map("post_id")
+  symbol     String
+  /// bull | bear | none
+  stance     String
+  conviction Int      @default(0)
+  quote      String?
+  model      String?
+  /// scan | added
+  origin     String   @default("scan")
+  labeledAt  DateTime @default(now()) @map("labeled_at") @db.Timestamptz(6)
+  /// Who pasted it (x:<id> | w:<wallet> | ip:<hash>), for the daily count. Null for a scan's label.
+  addedBy    String?  @map("added_by")
+
+  @@id([postId, symbol])
+  @@index([symbol])
+  @@index([addedBy, labeledAt])
+  @@map("x_calls")
+}
+
+/// One read of a handle's posts for a symbol: what it cost and who asked.
+/// `isInternal` keeps the harness and our own drives out of every public list.
+model XScan {
+  id          String    @id
+  handle      String
+  symbol      String
+  /// running | done | failed | refused
+  status      String
+  provider    String?
+  windowFrom  DateTime? @map("window_from") @db.Timestamptz(6)
+  windowTo    DateTime? @map("window_to") @db.Timestamptz(6)
+  postsRead   Int       @default(0) @map("posts_read")
+  callsFound  Int       @default(0) @map("calls_found")
+  costUsd     Float     @default(0) @map("cost_usd")
+  /// x:<user id> | w:<wallet> | ip:<hash>
+  requestedBy String?   @map("requested_by")
+  isInternal  Boolean   @default(false) @map("is_internal")
+  note        String?
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+  /// The cap ended the read before the window did: older posts were not read.
+  truncated    Boolean   @default(false)
+  oldestPostAt DateTime? @map("oldest_post_at") @db.Timestamptz(6)
+  /// Held against the day's cap while the scan runs (its worst case), released when it finishes.
+  reservedUsd  Float     @default(0) @map("reserved_usd")
+
+  @@index([handle, symbol, startedAt])
+  @@index([startedAt])
+  @@map("x_scans")
+}

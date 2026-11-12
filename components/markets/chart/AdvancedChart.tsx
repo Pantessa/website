@@ -50,6 +50,8 @@ import { linesFromShapes, sameLines, shapeFromLine, type ShapeSnapshot } from '@
 import { externalApplied, layoutForChart, legacyMoved, markExternalApplied, markLegacyMoved, readStoredLayout, writeStoredLayout } from '@/lib/tv/store'
 import { tvCssProperties, tvOverrides, tvStudyOverrides } from '@/lib/tv/theme'
 import type { TvChartApi, TvWidget } from '@/lib/tv/types'
+import { useCalledPins } from '@/lib/called-it/use-record'
+import { withCalledMarks, withoutCalled } from '@/lib/tv/called-pins'
 import { readTokens, type Tokens } from './chart-tokens'
 import ChartShare from './ChartShare'
 import { useHeatYear } from './PositionHeat'
@@ -216,12 +218,17 @@ export default function AdvancedChart({
   const applyingRef = useRef(false)
   const sym = pair?.symbol ?? symbol.toUpperCase()
 
+  // CALLED IT: a plotted X handle's calls, drawn as the library's own shapes
+  // (lib/tv/called-pins). They are the plot's, not the viewer's drawings: they
+  // are left out of the plan, the bridge and the saved layout.
+  const called = useCalledPins(sym)
+
   const syncNow = useCallback(() => {
     const chart = chartRef.current
     if (!chart || applyingRef.current) return
     let snap: ShapeSnapshot[] = []
     try {
-      snap = chart.getAllShapes().flatMap(({ id, name }) => {
+      snap = withoutCalled(chart.getAllShapes(), called.owns).flatMap(({ id, name }) => {
         try {
           const api = chart.getShapeById(id)
           return [{ id, name, points: api.getPoints(), props: api.getProperties() ?? {} }]
@@ -241,7 +248,7 @@ export default function AdvancedChart({
       lastEmittedRef.current = key
       onStateRef.current?.(st)
     }
-  }, [sym])
+  }, [sym, called])
   const scheduleSync = useCallback(() => {
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
     syncTimerRef.current = setTimeout(syncNow, SYNC_MS)
@@ -252,11 +259,11 @@ export default function AdvancedChart({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveLayout = useCallback(() => {
     try {
-      widgetRef.current?.save((s) => writeStoredLayout(s))
+      widgetRef.current?.save((s) => writeStoredLayout(called.cleanLayout(s)))
     } catch {
       /* nothing saved this time */
     }
-  }, [])
+  }, [called])
   const scheduleSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(saveLayout, 600)
@@ -311,6 +318,8 @@ export default function AdvancedChart({
         return { up: t.up, down: t.down, fg: t.fg, bg: t.bg, accent: t.accent }
       },
     })
+    // The plot's marks (the calls that have no card) ride beside the feed's own.
+    withCalledMarks(feed, called.marks)
     feedRef.current = feed
 
     const phone = typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches
@@ -406,6 +415,8 @@ export default function AdvancedChart({
           })
 
           w.subscribe('drawing_event', ((id: string, type: string) => {
+            // A pin of the plot: its click goes to the Calls strip, and it is never synced or saved.
+            if (called.event(id, type)) return
             if (type === 'click') setFocusId(id)
             if (type === 'create') {
               setFocusId(id)
@@ -451,6 +462,7 @@ export default function AdvancedChart({
             if (!dead) {
               syncNow()
               setReady(true)
+              called.attach(w, chart, host)
             }
           }
           void restore()
@@ -463,7 +475,10 @@ export default function AdvancedChart({
           void w
             .changeTheme(isDark(t.bg) ? 'dark' : 'light', { disableUndo: true })
             .catch(() => undefined)
-            .then(() => applyTheme(t))
+            .then(() => {
+              applyTheme(t)
+              called.retheme()
+            })
         })
         themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] })
       })
@@ -474,11 +489,12 @@ export default function AdvancedChart({
     return () => {
       dead = true
       themeWatch?.disconnect()
+      called.detach()
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current)
         try {
-          widget?.save((s) => writeStoredLayout(s))
+          widget?.save((s) => writeStoredLayout(called.cleanLayout(s)))
         } catch {
           /* the last save stands */
         }

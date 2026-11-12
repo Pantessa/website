@@ -391,6 +391,13 @@ import { macroLivePins, macroPins, macroServedPins } from './macro-pins'
 import { homeAppsPins } from './home-apps-pins'
 import { communityCoordPins, communityCoordPinsServed } from './community-coord-pins'
 import { communityCorePins, communityCorePinsServed } from './community-core-pins'
+import { calledCoordPins, calledCoordPinsServed } from './called-coord-pins'
+import { calledSourcePins, calledSourcePinsServed } from './called-source-pins'
+import { calledJudgePins, calledJudgePinsServed } from './called-judge-pins'
+import { calledAuthPins, calledAuthPinsServed } from './called-auth-pins'
+import { calledChartPins, calledChartPinsServed } from './called-chart-pins'
+import { calledRecordPins, calledRecordPinsServed } from './called-record-pins'
+import { calledFixPins, calledFixPinsServed } from './called-fix-pins'
 import { communityFeedPins, communityFeedPinsServed } from './community-feed-pins'
 import { communityGroupPins, communityGroupPinsServed } from './community-group-pins'
 import { communityTelegramPins, communityTelegramPinsServed } from './community-telegram-pins'
@@ -35647,6 +35654,22 @@ async function main() {
   await communityTelegramPinsServed(check, BASE)
   communityDiscordPins(check)
   await communityDiscordPinsServed(check, BASE)
+
+  // ── squad called-it (2026-11-11): one pin file per lane, wired once here ──
+  calledCoordPins(check)
+  await calledCoordPinsServed(check, BASE)
+  calledSourcePins(check)
+  await calledSourcePinsServed(check, BASE)
+  calledJudgePins(check)
+  await calledJudgePinsServed(check, BASE)
+  calledAuthPins(check)
+  await calledAuthPinsServed(check, BASE)
+  calledChartPins(check)
+  await calledChartPinsServed(check, BASE)
+  calledRecordPins(check)
+  await calledRecordPinsServed(check, BASE)
+  calledFixPins(check)
+  await calledFixPinsServed(check, BASE)
   // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
   // sign-in door, never a planner promise to "fetch your tokens".
   {
