@@ -24,7 +24,7 @@ import { BadgeCheck, ExternalLink, Heart, Maximize, Pin, Share2, X } from 'lucid
 import { fmtPrice } from '@/components/CandleChart'
 import { SIDES } from '@/components/called/HandleDoor'
 import { chartPairFor, chartUnitOf } from '@/lib/charts'
-import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, GUEST_SCANS_PER_DAY, JUDGE_DAYS, LABEL_CAVEAT, PROVEN_SCANS_PER_DAY, SCAN_POST_CAP, SCAN_WINDOW_DAYS, VERDICT_WORDS, moveLine, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
+import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, FREE_SCANS_PER_DAY, JUDGE_DAYS, LABEL_CAVEAT, SCAN_ANSWER_PRICE, SCAN_POST_CAP, SCAN_WINDOW_DAYS, VERDICT_WORDS, moveLine, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
 import { calledImageHref, fmtCount, headlineParts } from '@/lib/called-it/card-layout'
 import { plotStatus, safeNextHref, sideCounts, useCalled, useCalledAddress, useXViewer, viewerOwns } from '@/lib/called-it/use-record'
 import { calledPost, myCalledPost, postHref } from '@/lib/share-posts'
@@ -34,7 +34,7 @@ import './called-chart.css'
 const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
 
 /** An avatar is shown only from X's own image hosts (lane SOURCE keeps no other); anything else is an initial. */
-function avatarOf(url: string | null): string | null {
+export function avatarOf(url: string | null): string | null {
   if (!url) return null
   try {
     const u = new URL(url)
@@ -51,7 +51,7 @@ function avatarOf(url: string | null): string | null {
  * reorder the row around it). Both sides are matched with their whitespace
  * collapsed, because the stored quote is whitespace-normalized.
  */
-function PostText({ call }: { call: Pick<CalledCall, 'text' | 'quote'> }) {
+export function PostText({ call }: { call: Pick<CalledCall, 'text' | 'quote'> }) {
   const text = cleanPostText(call.text)
   const quote = cleanPostText(call.quote)
   const at = quote ? text.indexOf(quote) : -1
@@ -122,8 +122,16 @@ function Row({ call, index, px, focused, onFocus, onPin }: { call: CalledCall; i
   const ref = useRef<HTMLLIElement | null>(null)
   const by = useCalled((s) => (focused ? s.focusBy : null))
   useEffect(() => {
-    // A pin clicked on the chart brings its words into view; a row clicked here is already under the pointer.
-    if (focused && by === 'chart') ref.current?.scrollIntoView({ block: 'nearest', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    // A call opened on the chart (a dot, a bubble, the call card's own arrows) is shown THERE, in the call card. The page
+    // never moves for it (2026-11-16: the jump down to this list was disorienting); only the list's own box scrolls, so
+    // the row is in view when the reader comes down to it.
+    const li = ref.current
+    const list = li?.parentElement
+    if (!focused || !li || !list || (by !== 'chart' && by !== 'card') || list.scrollHeight <= list.clientHeight) return
+    const row = li.getBoundingClientRect()
+    const box = list.getBoundingClientRect()
+    if (row.top < box.top) list.scrollTop -= box.top - row.top
+    else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom
   }, [focused, by])
   const word = VERDICT_WORDS[call.verdict]
   return (
@@ -372,6 +380,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   const unlabeled = useCalled((s) => s.unlabeled)
   const focusId = useCalled((s) => s.focusId)
   const note = useCalled((s) => s.note)
+  const payOffer = useCalled((s) => s.payOffer)
   const advanced = useCalled((s) => s.advanced)
   const cards = useCalled((s) => s.cards)
   if (!here || !plot) return null
@@ -398,7 +407,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
         <header className="xcc__head xcc__head--list">
           <p className="xcc__k mono">
             The calls
-            <span className="xcc__name"> · oldest first · tap one to find it on the chart</span>
+            <span className="xcc__name"> · oldest first · tap one to open it on the chart</span>
           </p>
           {record.words.added ? <p className="xcc__standing xcc__addednote">{record.words.added}</p> : null}
         </header>
@@ -425,13 +434,21 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
         {note ? (
           <p className="xcc__line xcc__line--note" role="status">
             {note}
+            {payOffer ? (
+              <>
+                {' '}
+                <button type="button" className="xcc-link" onClick={() => void scan({ pay: true })} disabled={scanning} data-journey="called_scan_pay">
+                  Scan for {payOffer.answers} answers
+                </button>
+              </>
+            ) : null}
           </p>
         ) : null}
         {/* What the chart is showing, when it is not a card for every pin (a narrow pane holds fewer; a phone's holds none). */}
         {advanced && pinned > cards && record.calls.length > 0 ? (
           <p className="xcc__line" data-called-cards={cards}>
             {cards === 0
-              ? 'On a chart this narrow every call is a mark on its bar. Tap a mark to find its post here.'
+              ? 'On a chart this narrow every call is a mark on its bar. Tap a mark to open its post.'
               : `The chart has room for ${cards} cards at this width. The other pinned calls are marks on their bars, like the rest.`}
           </p>
         ) : null}
@@ -518,7 +535,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
           {response.canScan ? (
             <span className="xcc__allow">
               {response.reason ? `${response.reason} ` : ''}
-              {GUEST_SCANS_PER_DAY} scans a day for a visitor, {PROVEN_SCANS_PER_DAY} once you verify with X or sign in. A handle somebody already plotted costs none.
+              {FREE_SCANS_PER_DAY} new scan a day is free once you verify with X or sign in; more cost {SCAN_ANSWER_PRICE} answers each. A handle somebody already plotted costs none.
             </span>
           ) : (
             <span className="xcc__allow">One post can still be pinned by its link, with no scan.</span>
@@ -538,6 +555,11 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
       <>
         {head(`${who} on ${symbol} was not plotted`, <p className="xcc__standing">{response.reason}</p>)}
         <div className="xcc__actions">
+          {response.pay ? (
+            <button type="button" className="xcc-btn xcc-btn--go" onClick={() => void scan({ pay: true })} disabled={scanning} aria-busy={scanning || undefined} data-journey="called_scan_pay">
+              Scan for {response.pay.answers} answers
+            </button>
+          ) : null}
           {next.map((n) => (
             <a key={`${n.href}:${n.label}`} className="xcc-btn" href={n.href}>
               {n.label}

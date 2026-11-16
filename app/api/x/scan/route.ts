@@ -1,4 +1,5 @@
-// POST /api/x/scan { handle, sym }  →  the record after the scan (RecordResponse).
+// POST /api/x/scan { handle, sym, pay? }  →  the record after the scan (RecordResponse).
+// `pay: true` lets a scan past the free one spend the wallet session's answers; without it the refusal carries the price.
 // GET  /api/x/scan?id=               →  one scan's status and note (a second viewer polls this).
 // Same-origin JSON only. The scan runs inside the request (lib/called-it/scan runScan).
 import { NextResponse } from 'next/server'
@@ -7,6 +8,7 @@ import { CROSS_SITE, SCAN_TIME_BUDGET_MS, isInternalRun, readWriteBody, requeste
 import { getScan } from '@/lib/called-it/store'
 import { FIXTURE_HANDLE } from '@/lib/called-it/fixture'
 import { marketFor } from '@/lib/called-it/market'
+import { payerOf } from '@/lib/called-it/budget'
 import { normalizeHandle } from '@/lib/called-it/spec'
 
 export const runtime = 'nodejs'
@@ -37,7 +39,7 @@ export async function POST(req: Request) {
 
   let outcome
   try {
-    outcome = await runScan({ handle, symbol: sym, requester, internal: isInternalRun(req), deadlineMs: startedAt + SCAN_TIME_BUDGET_MS })
+    outcome = await runScan({ handle, symbol: sym, requester, internal: isInternalRun(req), deadlineMs: startedAt + SCAN_TIME_BUDGET_MS, owner: await payerOf(), pay: body.pay === true })
   } catch {
     return json({ status: 'refused', reason: 'The scan did not start. Try again in a moment.', next: [{ label: 'See handles already plotted', href: '/x' }] }, 503)
   }

@@ -11,13 +11,14 @@
 // bodies are HAND-WRITTEN to X's documented v2 shapes: no bearer existed, so
 // nothing here was ever answered by api.x.com.
 import { readFileSync } from 'node:fs'
-import { TWITTER_EPOCH_MS, X_POST_COST_USD, X_USER_COST_USD, GUEST_SCANS_PER_DAY, PROVEN_SCANS_PER_DAY, type PostRead, type XPost } from '../lib/called-it/spec'
+import { TWITTER_EPOCH_MS, X_POST_COST_USD, X_USER_COST_USD, GUEST_SCANS_PER_DAY, FREE_SCANS_PER_DAY, PAID_SCANS_PER_DAY, SCAN_ANSWER_PRICE, type PostRead, type XPost } from '../lib/called-it/spec'
 import { mapOembed, mapSyndication, readPostByIdWith, safeAvatarUrl, syndicationToken, syndicationUrl } from '../lib/called-it/source/by-id'
 import { XApiError, XApiSource, buildSearchQueries, mapXPost, mapXUser, quoteTerm, searchUrl, xTime, X_QUERY_MAX } from '../lib/called-it/source/x-api'
 import { failNote } from '../lib/called-it/scan'
 import { FixtureSource, FIXTURE_NO_SUCH_HANDLE } from '../lib/called-it/source/fixture'
 import { FIXTURE_HANDLE, fixturePosts } from '../lib/called-it/fixture'
-import { guestScansPerDay, allowanceFor, isProven, maxScanCostUsd } from '../lib/called-it/budget'
+import { guestScansPerDay, freeScansPerDay, scanAnswerPrice, allowanceFor, isProven, maxScanCostUsd } from '../lib/called-it/budget'
+import { splitAnswerDebit } from '../lib/billing'
 
 // These pins drive guest scans over doubles. Production gives a guest none (spec GUEST_SCANS_PER_DAY = 0, pinned in called-coord-pins); the two the harness always had are set here.
 process.env.XCALLS_GUEST_SCANS ??= '2'
@@ -152,20 +153,47 @@ export function calledSourcePins(check: Check): void {
   check('called-source budget: a scan at its cap costs 400 x $0.005 + one user read = $2.01', maxScanCostUsd(400) === 2.01 && maxScanCostUsd(10) === Math.round((10 * X_POST_COST_USD + X_USER_COST_USD) * 1e6) / 1e6)
   check('called-source budget: only x: and w: requesters are proven', isProven('x:123') && isProven('w:0xabc') && !isProven('ip:deadbeef') && !isProven('x:') && !isProven('anything'))
   // RE-PINNED 2026-11-12 (scan cost): the guest's number comes from guestScansPerDay() (0 in production, 2 where these pins set XCALLS_GUEST_SCANS).
-  check(`called-source budget: a guest gets ${guestScansPerDay()} a day here (the server's setting), a proven requester ${PROVEN_SCANS_PER_DAY}; the next one is refused with a reason and somewhere to go`, (() => {
+  // RE-PINNED 2026-11-16 (scan answers): a proven requester's free number comes from freeScansPerDay() (1 in production, 10 in fake mode); past it a scan is paid with answers.
+  const free = freeScansPerDay()
+  check(`called-source budget: a guest gets ${guestScansPerDay()} a day here (the server's setting), a proven requester ${free} free; the next one is refused with a reason and somewhere to go`, (() => {
     const g1 = allowanceFor({ ...base, requester: 'ip:aa', scansToday: guestScansPerDay() - 1 })
     const g2 = allowanceFor({ ...base, requester: 'ip:aa', scansToday: guestScansPerDay(), handle: 'jack', symbol: 'BTC' })
-    const p1 = allowanceFor({ ...base, requester: 'x:1', scansToday: PROVEN_SCANS_PER_DAY - 1 })
-    const p2 = allowanceFor({ ...base, requester: 'w:0x1', scansToday: PROVEN_SCANS_PER_DAY })
-    return g1.ok && g1.scansLeft === 1 && !g2.ok && g2.over === 'requester' && /Verify with X/.test(g2.reason) && g2.next.some((n) => n.href === '/x') && g2.next.some((n) => n.href === '/t/BTC?x=jack') && p1.ok && !p2.ok && /00:00 UTC/.test(p2.reason) && p2.next.length >= 1
+    const p1 = allowanceFor({ ...base, requester: 'x:1', scansToday: free - 1 })
+    const p2 = allowanceFor({ ...base, requester: 'w:0x1', scansToday: free })
+    return g1.ok && g1.scansLeft === 1 && !g2.ok && g2.over === 'requester' && /Verify with X/.test(g2.reason) && g2.next.some((n) => n.href === '/x') && g2.next.some((n) => n.href === '/t/BTC?x=jack') && p1.ok && p1.charge === 0 && !p2.ok && /00:00 UTC/.test(p2.reason) && p2.next.length >= 1
   })())
-  check('called-source budget: the house rests scans once what is left today could not pay for one whole scan at its cap (the cap is never crossed)', (() => {
+  check('called-source budget: the house rests FREE scans once what is left of the free pool could not pay for one whole scan at its cap (the cap is never crossed)', (() => {
     const fits = allowanceFor({ ...base, requester: 'x:1', spentTodayUsd: 10 - 2.01 })
     const over = allowanceFor({ ...base, requester: 'x:1', spentTodayUsd: 10 - 2.0 })
     const zero = allowanceFor({ ...base, requester: 'x:1', capUsd: 0 })
     return fits.ok && !over.ok && over.over === 'house' && !zero.ok && /\$10\.00/.test(over.reason)
   })())
-  check('called-source budget: every refusal is ASCII', [allowanceFor({ ...base, requester: 'ip:a', scansToday: 9 }), allowanceFor({ ...base, requester: 'x:a', scansToday: 99 }), allowanceFor({ ...base, requester: 'x:a', capUsd: 1 })].every((a) => !a.ok && ASCII.test(a.reason) && a.next.every((n) => ASCII.test(n.label))))
+  // ── Paid with answers (2026-11-16) ──
+  const paid = { ...base, requester: 'w:0xabc', scansToday: free, owner: '0xabc', paidCapUsd: 50, paidSpentTodayUsd: 0, paidScansToday: 0, price: 100 }
+  check('called-source paid: production gives a signed-in requester ONE free scan a day and prices the next at 100 answers; env can move both; fake mode keeps ten free for the harness and is off on Vercel', FREE_SCANS_PER_DAY === 1 && SCAN_ANSWER_PRICE === 100 && freeScansPerDay({}) === 1 && freeScansPerDay({ XCALLS_FREE_SCANS: '3' }) === 3 && freeScansPerDay({ XCALLS_FREE_SCANS: 'many' }) === 1 && freeScansPerDay({ XCALLS_FAKE: '1' }) === 10 && freeScansPerDay({ XCALLS_FAKE: '1', VERCEL: '1' }) === 1 && scanAnswerPrice({}) === 100 && scanAnswerPrice({ XCALLS_SCAN_ANSWERS: '150' }) === 150 && scanAnswerPrice({ XCALLS_SCAN_ANSWERS: '0' }) === 100)
+  check('called-source paid: past the free scan, a wallet with enough answers is OFFERED the price and nothing is spent until the request says pay; saying pay charges exactly the price', (() => {
+    const offer = allowanceFor({ ...paid, answers: 540 })
+    const go = allowanceFor({ ...paid, answers: 540, pay: true })
+    const exact = allowanceFor({ ...paid, answers: 100, pay: true })
+    return !offer.ok && offer.over === 'pay' && offer.pay?.answers === 100 && offer.pay.have === 540 && /100 answers/.test(offer.reason) && /Nothing is spent/.test(offer.reason) && go.ok && go.charge === 100 && exact.ok && exact.charge === 100
+  })())
+  check('called-source paid: too few answers, no wallet session, or pay with nothing behind it never opens a paid scan; the refusal points at /pricing', (() => {
+    const short = allowanceFor({ ...paid, answers: 99, pay: true })
+    const noWallet = allowanceFor({ ...paid, requester: 'x:1', owner: null, answers: 9999, pay: true })
+    const guest = allowanceFor({ ...paid, requester: 'ip:aa', scansToday: 0, owner: null, answers: 9999, pay: true })
+    return !short.ok && short.over === 'requester' && !short.pay && short.next.some((n) => n.href === '/pricing') && /you have 99/.test(short.reason) && !noWallet.ok && !noWallet.pay && /wallet sign-in/.test(noWallet.reason) && (guestScansPerDay() > 0 || (!guest.ok && !guest.pay))
+  })())
+  check('called-source paid: a free scan is never charged even when pay is said; a paid scan does not need the free pool (a spent free pool still lets a payer through) and has its own fuse and its own daily count', (() => {
+    const freeFirst = allowanceFor({ ...paid, scansToday: 0, answers: 540, pay: true })
+    const poolSpent = allowanceFor({ ...paid, scansToday: 0, spentTodayUsd: 10, answers: 540, pay: true })
+    const poolSpentBroke = allowanceFor({ ...paid, scansToday: 0, spentTodayUsd: 10, answers: 0 })
+    const fuse = allowanceFor({ ...paid, answers: 540, pay: true, paidSpentTodayUsd: 50 - 2.0 })
+    const closed = allowanceFor({ ...paid, answers: 540, pay: true, paidCapUsd: undefined })
+    const count = allowanceFor({ ...paid, answers: 99999, pay: true, paidScansToday: PAID_SCANS_PER_DAY })
+    return freeFirst.ok && freeFirst.charge === 0 && poolSpent.ok && poolSpent.charge === 100 && !poolSpentBroke.ok && poolSpentBroke.over === 'house' && !fuse.ok && !fuse.pay && !closed.ok && !count.ok && /paid scans/.test(count.reason)
+  })())
+  check('called-source paid: answers come from the plan month first, then the bank; a spend the two do not cover splits to nothing', JSON.stringify(splitAnswerDebit(100, 600, 50)) === '{"plan":100,"bank":0}' && JSON.stringify(splitAnswerDebit(100, 40, 80)) === '{"plan":40,"bank":60}' && JSON.stringify(splitAnswerDebit(100, 0, 100)) === '{"plan":0,"bank":100}' && splitAnswerDebit(100, 40, 59) === null && splitAnswerDebit(0, 9, 9) === null && splitAnswerDebit(1.5, 9, 9) === null)
+  check('called-source budget: every refusal is ASCII', [allowanceFor({ ...base, requester: 'ip:a', scansToday: 9 }), allowanceFor({ ...base, requester: 'x:a', scansToday: 99 }), allowanceFor({ ...base, requester: 'x:a', capUsd: 1 }), allowanceFor({ ...paid, answers: 540 }), allowanceFor({ ...paid, answers: 3 }), allowanceFor({ ...paid, answers: 99999, pay: true, paidScansToday: PAID_SCANS_PER_DAY })].every((a) => !a.ok && ASCII.test(a.reason) && a.next.every((n) => ASCII.test(n.label))))
 
   // Source wiring (read the source: env decides, fixture never on production)
   const idx = read('lib/called-it/source/index.ts')

@@ -166,9 +166,11 @@ export function orderTicketPins(check: Check): void {
   // RE-PINNED 2026-10-13 (cockpit): the card seat moved from the Trade tab
   // into the right column (RailTicket) — the Trade tab carries no ticket.
   const rtk = rf('components/markets/trade/RailTicket.tsx')
-  check('order ticket (wired): SymbolPage hands both seats a build door that docks the sentence in Ask the chart\'s order ticket (lib/ask-door dock, send: true) and falls back to the act door; the right column\'s ticket IS the card seat (RailTicket, every tab) and the Trade tab carries none',
-    sp.includes('const dock = useAskDoor.getState().dock') && sp.includes('if (dock) dock(ask, { send: true })') && sp.includes('onBuild={buildHere} last={stats?.last ?? null} autoOpen={false} />') && (sp.match(/onBuild=\{buildHere\}/g) ?? []).length === 2 &&
-      sp.includes('<RailTicket symbol={sym} pair={pair} last={stats?.last ?? null} side={railSide} onSide={setRailSide} onBuild={buildHere} onSay={sayHere} />') &&
+  // RE-PINNED 2026-11-16 (asks to the app): the ticket's sentence no longer docks in Ask the chart's
+  // inline order ticket — both seats take the act door and the sentence runs in /chat (scripts/symbol-ask-pins).
+  check('order ticket (wired): SymbolPage hands both seats the act door as their order door (the sentence runs in the app, never in a runtime docked on the page); the right column\'s ticket IS the card seat (RailTicket, every tab) and the Trade tab carries none',
+    sp.includes('const orderToApp = act') && !sp.includes('useAskDoor.getState().dock') && sp.includes('onBuild={orderToApp} last={stats?.last ?? null} autoOpen={false} />') && (sp.match(/onBuild=\{orderToApp\}/g) ?? []).length === 2 &&
+      sp.includes('<RailTicket symbol={sym} pair={pair} last={stats?.last ?? null} side={railSide} onSide={setRailSide} onBuild={orderToApp} onSay={sayToApp} />') &&
       rtk.includes('seat="card"') && rtk.includes('onSend={onBuild}') && rtk.includes('data-slot="order-ticket"') && !tt.includes('OrderTicket') && tt.includes('aria-label={`Trade ${symbol}`} data-shut={shutSides.join(\'+\')}'))
   check('order ticket (wired): the form\'s box is a decimal keyboard, its button sends the composed sentence and nothing else, the live quote is the venue map\'s own read (never a build), and the CSS is one size container with 44px targets on touch',
     ot.includes('inputMode="decimal"') && ot.includes('onSend(out.ask)') && ot.includes("fetch(`/api/markets/routes?") && !ot.includes('/api/chat') && ot.includes('disabled={!out.ok || !allowed}') &&

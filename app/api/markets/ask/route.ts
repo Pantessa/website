@@ -169,7 +169,7 @@ export async function POST(req: NextRequest) {
   // The user typed a complete ask ("buy $37 of ETH") — it IS the order: the
   // panel builds it in the ticket at once (the signature is the gate).
   const direct = validateProposedAsk(question, symbol)
-  if (direct.ok) return answer({ kind: 'act', say: 'Building it in your order ticket — your wallet signs.', chip: { label: direct.ask, ask: direct.ask }, typed: true }, { deterministic: true, model: 'none' })
+  if (direct.ok) return answer({ kind: 'act', say: 'Opening it in the app — your wallet signs.', chip: { label: direct.ask, ask: direct.ask }, typed: true }, { deterministic: true, model: 'none' })
 
   // A plain reply to the ticket's question ("yes", "use my USDC on Base",
   // "the first one") goes to the ticket without a model call.
@@ -189,10 +189,10 @@ export async function POST(req: NextRequest) {
   // The model's prose is checked before it reaches the page: a reply that
   // says it can't (no feed, "try Yahoo Finance", "in this environment") is a
   // dead end with our name on it — the tape's own read answers instead, plus
-  // the one sentence that always builds here.
+  // the one sentence that always opens in the app.
   const honest = (text: string): { text: string; replaced: boolean } =>
     DEAD_END_PROSE.test(text)
-      ? { text: `${tapeWords('trend')}\n\nSay the trade (“buy $25 of ${symbol}”) and it builds right here for your wallet to sign.`, replaced: true }
+      ? { text: `${tapeWords('trend')}\n\nSay the trade (“buy $25 of ${symbol}”) and it opens in the app for your wallet to sign.`, replaced: true }
       : { text, replaced: false }
 
   // ── The model ────────────────────────────────────────────────────────────
@@ -245,7 +245,7 @@ export async function POST(req: NextRequest) {
   switch (m.kind) {
     case 'relay': {
       if (orderLive) return answer({ kind: 'relay' }, { deterministic: false, model })
-      return answer({ kind: 'answer', text: `Nothing is building on this page yet. Say the trade ("buy $25 of ${symbol}") and it builds right here for your wallet to sign.` }, { deterministic: false, model })
+      return answer({ kind: 'answer', text: `No order is open on this page. Say the trade ("buy $25 of ${symbol}") and it opens in the app for your wallet to sign.` }, { deterministic: false, model })
     }
     case 'act': {
       const v = validateProposedAsk(m.ask, symbol)
@@ -253,7 +253,7 @@ export async function POST(req: NextRequest) {
         console.warn('[markets/ask] model act dropped by the fence', { why: v.why })
         return answer({ kind: 'answer', text: `${m.say ? `${cleanProse(m.say, 300)} ` : ''}That one doesn't build as an order on this page (${v.why}). The chips above do, or say the amount and the ticker ("buy $25 of ${symbol}").` }, { deterministic: false, model })
       }
-      return answer({ kind: 'act', say: cleanProse(m.say || 'Building it in your order ticket — your wallet signs.', 300), chip: { label: v.ask, ask: v.ask } }, { deterministic: false, model })
+      return answer({ kind: 'act', say: cleanProse(m.say || 'Opening it in the app — your wallet signs.', 300), chip: { label: v.ask, ask: v.ask } }, { deterministic: false, model })
     }
     case 'chart': {
       const built = buildChartMutation({ base, symbol, tf, last, lines: m.lines })

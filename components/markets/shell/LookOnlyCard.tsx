@@ -46,7 +46,7 @@ export default function LookOnlyCard({
   seat: 'rail' | 'page'
   /** The page's act door: a neighbour's sentence runs through it (connect to act). */
   onAsk: (ask: string) => void
-  /** The ask row: a question for Ask the chart. Omitted → no row. */
+  /** The ask row: a question, sent to the app. Omitted → no row. */
   onSay?: (text: string) => void
 }) {
   const tradable = useTradable()
@@ -114,7 +114,7 @@ export default function LookOnlyCard({
             autoComplete="off"
             spellCheck={false}
           />
-          <button type="submit" className="mk-look__go" aria-label="Send to Ask the chart" title="Send" disabled={!say.trim()}>
+          <button type="submit" className="mk-look__go" aria-label="Send to the app" title="Send" disabled={!say.trim()}>
             <CornerDownLeft className="h-3.5 w-3.5" />
           </button>
         </form>

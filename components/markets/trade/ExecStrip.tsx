@@ -22,8 +22,8 @@
 // (components/markets/trade/OrderTicket): the size in dollars or units, a
 // slider over what the wallet holds, Market / Limit, leverage and a stop
 // for a perp, the sentence printed, one button that sends it through the
-// page's build door (`onBuild`: the chart's own order ticket, under the
-// chart; `onAsk` when the page has no dock). Desktop opens the ticket on the
+// page's order door (`onBuild`: the app, since 2026-11-16, through the same
+// act door a chip takes; `onAsk` when a page hands none). Desktop opens the ticket on the
 // lead side by itself (remembered per browser); a phone starts on the chips
 // so the chart stays high, and a tap opens it. The server renders the chips
 // only, so every act-strip pin on the HTML holds.
@@ -88,8 +88,8 @@ export default function ExecStrip({
   pair: ChartPair
   /** The page's act door: runs the ask in the app (the chip contract). */
   onAsk: (ask: string) => void
-  /** The page's BUILD door: the sentence builds on this page (the chart's own
-   *  order ticket). The ticket sends here; without it, through onAsk. */
+  /** The page's order door: the ticket's sentence runs in the app (it built
+   *  on the page until 2026-11-16). Without it, through onAsk. */
   onBuild?: (ask: string) => void
   /** The chart's last close — sizes the Lido stake chip in ETH units
    *  (optional; without it the Stake chip is omitted, never guessed). */

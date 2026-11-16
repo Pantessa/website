@@ -16,7 +16,8 @@
 // Every dependency can be handed in (the pins run it over an in-memory store,
 // and over the real store on the TEST database).
 import * as Store from './store'
-import { addAllowanceFor, allowanceFor, dailyUsdCap, maxScanCostUsd, scanAllowance, scanPostCap, type Allowance } from './budget'
+import { addAllowanceFor, allowanceFor, dailyUsdCap, maxScanCostUsd, paidDailyUsdCap, scanAllowance, scanPostCap, type Allowance } from './budget'
+import { answersLeft } from '@/lib/billing'
 import type { XSearchQueryTimed } from './source/x-api'
 import { readPostById, sourceFor } from './source'
 import { labelPosts, type LabelDeps, type LabelResult } from './classify'
@@ -57,7 +58,10 @@ export const RESCAN_OVERLAP_MS = 60 * 60 * 1000
 export type StoreApi = Pick<
   typeof Store,
   'getHandle' | 'saveProfile' | 'savePosts' | 'postsFor' | 'newestPostId' | 'labelsFor' | 'saveLabels' | 'latestScan' | 'startScan' | 'updateScan' | 'openScan' | 'markMissing' | 'markProtected' | 'finishedScans' | 'openFinish' | 'closeFinish'
->
+> & {
+  /** Give a paid scan's answers back (lib/called-it/store refundScan). Optional: a store with no ledger charges nothing. */
+  refundScan?: (id: string) => Promise<number>
+}
 
 export type AllowanceFn = (requester: Requester, nowMs: number, ctx: { handle?: string; symbol?: string }) => Promise<Allowance>
 
@@ -70,6 +74,8 @@ export interface ScanDeps {
   now: () => number
   /** The market door (lib/called-it/market). Absent: the house resolver. */
   market?: (raw: unknown) => Promise<MarketDoor>
+  /** The payer's monthly plan allowance (lib/billing answersLeft). Absent: the house ledger. */
+  planOf?: (owner: string) => Promise<{ allowance: number }>
 }
 
 export interface ScanInput {
@@ -79,6 +85,10 @@ export interface ScanInput {
   internal: boolean
   /** Absolute ms after which no new label batch starts. Default: SCAN_TIME_BUDGET_MS from now. */
   deadlineMs?: number
+  /** The wallet SESSION that may pay with answers (never a claimed address). Absent: only a free scan can run. */
+  owner?: string | null
+  /** The request said to spend answers. Without it a scan that needs them is refused with the offer. */
+  pay?: boolean
 }
 
 type Refused = Extract<RecordResponse, { status: 'refused' }>
@@ -98,7 +108,7 @@ export function scanNext(handle: string, symbol: string): { label: string; href:
   ]
 }
 
-const refused = (http: number, reason: string, next: { label: string; href: string }[]): ScanOutcome => ({ kind: 'refused', http, body: { status: 'refused', reason, next } })
+const refused = (http: number, reason: string, next: { label: string; href: string }[], pay?: { answers: number; have: number }): ScanOutcome => ({ kind: 'refused', http, body: pay ? { status: 'refused', reason, next, pay } : { status: 'refused', reason, next } })
 
 function utcDayStart(ms: number): number {
   return Math.floor(ms / DAY_MS) * DAY_MS
@@ -239,6 +249,8 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
   // this row are decided together under one lock, and the row holds this scan's worst case until it finishes.
   const postCap = scanPostCap()
   const capUsd = dailyUsdCap()
+  const owner = input.owner ? input.owner.toLowerCase() : null
+  const payer = owner ? { owner, allowance: (await (deps.planOf ?? answersLeft)(owner)).allowance } : null
   const opened = await store.openScan({
     handle,
     symbol,
@@ -249,14 +261,26 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
     windowTo: nowMs,
     reserveUsd: maxScanCostUsd(postCap),
     nowMs,
-    decide: (c) => allowanceFor({ requester, ...c, capUsd, postCap, handle, symbol }),
+    payer,
+    decide: (c) => allowanceFor({ requester, ...c, capUsd, postCap, handle, symbol, owner, pay: input.pay === true, paidCapUsd: paidDailyUsdCap() }),
   })
   if (opened.kind === 'joined') return { kind: 'joined', scan: opened.scan }
   if (opened.kind === 'refused') {
     const a = opened.allowance
-    return a.ok ? refused(429, 'Scans are resting.', next) : refused(429, a.reason, a.next)
+    // 402: the scan can run, for answers the wallet has. Nothing was spent.
+    return a.ok ? refused(429, 'Scans are resting.', next) : refused(a.pay ? 402 : 429, a.reason, a.next, a.pay)
   }
   const { scan } = opened
+  // A paid scan that read nothing gives its answers back (the account does not exist, X refused, it failed before a post).
+  const giveBack = async (): Promise<string> => {
+    if (!opened.charged || !store.refundScan) return ''
+    try {
+      const n = await store.refundScan(scan.id)
+      return n > 0 ? ` Your ${n} answers were returned.` : ''
+    } catch {
+      return ''
+    }
+  }
 
   let postsRead = 0
   let saved = false
@@ -274,7 +298,7 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
         /* the refusal still stands */
       }
       await store.updateScan(scan.id, { status: 'refused', finished: true, costUsd: cost(), note: reason })
-      return refused(!profile && miss === 'protected' ? 403 : 404, reason, another)
+      return refused(!profile && miss === 'protected' ? 403 : 404, reason + (await giveBack()), another)
     }
     await store.saveProfile({ ...profile, isProtected: false })
     await store.updateScan(scan.id, { note: `Reading @${handle}'s posts about ${symbol}`, costUsd: cost() })
@@ -311,7 +335,8 @@ export async function runScan(input: ScanInput, deps: ScanDeps = defaultScanDeps
     } catch {
       /* the store retires a running row after RUNNING_STALE_MS, charged its whole reservation */
     }
-    return refused(502, saved ? `${failNote(err)} The posts already read are kept.` : failNote(err), next)
+    const back = postsRead === 0 ? await giveBack() : ''
+    return refused(502, (saved ? `${failNote(err)} The posts already read are kept.` : failNote(err)) + back, next)
   }
 }
 

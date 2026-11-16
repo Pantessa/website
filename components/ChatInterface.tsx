@@ -481,9 +481,14 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // with its apps (sendChip below); a single edited character makes it a
   // typed ask.
   const parkedAskRef = useRef<string | null>(null)
-  const parkAsk = (text: string) => {
+  // The apps the page that parked it asked for (2026-11-16: a symbol page's
+  // handoff names the venue that trades its symbol, lib/symbol-ask — a
+  // visitor with no wallet gets the ask parked, and it must not lose them).
+  const parkedAppsRef = useRef<string[]>([])
+  const parkAsk = (text: string, apps: readonly string[] = []) => {
     setInput(text)
     parkedAskRef.current = text.trim() || null
+    parkedAppsRef.current = [...apps]
   }
 
   // A rail row's action (a due recurring buy, a pause/cancel verb) lands in
@@ -913,7 +918,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // and a guest turn fired here would race AppSpine's signed-out bounce.
     // The ask parks in the composer instead; nothing runs unasked.
     if (walletStatus === 'disconnected' || !effectiveAddress) {
-      parkAsk(arrival.text)
+      parkAsk(arrival.text, arrival.mcps)
       setArrival(null)
       return
     }
@@ -930,7 +935,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // nothing to call off, and the row retires itself after the reply lands.
   const dropArrival = () => {
     if (arrival) {
-      parkAsk(arrival.text)
+      parkAsk(arrival.text, arrival.mcps)
       textareaRef.current?.focus()
     }
     setArrival(null)
@@ -1934,7 +1939,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     if (text && text === parked && !loading && !pendingPayment) {
       parkedAskRef.current = null
       setInput('')
-      sendChip(text)
+      sendChip(text, parkedAppsRef.current)
       return
     }
     if (text && !loading && !pendingPayment) parkedAskRef.current = null

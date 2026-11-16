@@ -96,7 +96,9 @@ export function asRecordResponse(body: unknown): RecordResponse | null {
   if (b.status === 'refused') {
     if (typeof b.reason !== 'string') return null
     const next = Array.isArray(b.next) ? (b.next as unknown[]).flatMap((n) => (n && typeof (n as { label?: unknown }).label === 'string' && typeof (n as { href?: unknown }).href === 'string' ? [{ label: (n as { label: string }).label, href: (n as { href: string }).href }] : [])) : []
-    return { status: 'refused', reason: b.reason, next }
+    const p = b.pay as { answers?: unknown; have?: unknown } | undefined
+    const whole = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0 && v <= 1_000_000_000
+    return p && whole(p.answers) && whole(p.have) ? { status: 'refused', reason: b.reason, next, pay: { answers: p.answers, have: p.have } } : { status: 'refused', reason: b.reason, next }
   }
   if (typeof b.handle !== 'string' || typeof b.symbol !== 'string') return null
   if (b.status === 'scanning') return { status: 'scanning', handle: b.handle, symbol: b.symbol, scanId: typeof b.scanId === 'string' ? b.scanId : '', progress: typeof b.progress === 'string' ? b.progress : '' }
@@ -285,7 +287,9 @@ interface CalledState {
   unlabeled: number
   /** The call the chart and the strip are both pointing at, and who pointed. */
   focusId: string | null
-  focusBy: 'chart' | 'strip' | null
+  focusBy: 'chart' | 'strip' | 'card' | null
+  /** The side of the chart the call card docks on: the one the focused call's bar is not on. */
+  focusDock: 'left' | 'right'
   /** Bumped to ask the chart for "fit all calls". */
   fitNonce: number
   /** Cards the chart is showing (0 = marks only, or the built-in chart). */
@@ -294,6 +298,8 @@ interface CalledState {
   advanced: boolean
   /** One line the strip shows once (a pin limit). */
   note: string | null
+  /** The last scan was refused with a price the wallet can pay (spec RecordResponse `pay`): the note offers it. */
+  payOffer: { answers: number; have: number } | null
   /** The address has been read on this page (nothing is mirrored before that). */
   opened: boolean
   open(symbol: string, plot: Plot | null, opts?: { fit?: boolean }): void
@@ -302,10 +308,12 @@ interface CalledState {
   togglePin(postId: string): void
   rulePins(): void
   clear(): void
-  focus(postId: string | null, by: 'chart' | 'strip'): void
+  focus(postId: string | null, by: 'chart' | 'strip' | 'card'): void
+  setDock(side: 'left' | 'right'): void
   fit(): void
   retry(): void
-  scan(): Promise<void>
+  /** `pay`: spend the answers a refusal just offered (spec RecordResponse `pay`). */
+  scan(opts?: { pay?: boolean }): Promise<void>
   addPost(url: string): Promise<{ ok: true } | { ok: false; reason: string }>
   setCards(n: number): void
   setAdvanced(on: boolean): void
@@ -429,10 +437,12 @@ export const useCalled = create<CalledState>((set, get) => {
     unlabeled: 0,
     focusId: null,
     focusBy: null,
+    focusDock: 'right',
     fitNonce: 0,
     cards: 0,
     advanced: false,
     note: null,
+    payOffer: null,
     opened: false,
 
     open(symbol, plot, opts) {
@@ -486,6 +496,9 @@ export const useCalled = create<CalledState>((set, get) => {
     focus(postId, by) {
       set({ focusId: postId, focusBy: postId ? by : null })
     },
+    setDock(side) {
+      if (get().focusDock !== side) set({ focusDock: side })
+    },
     fit() {
       set((s) => ({ fitNonce: s.fitNonce + 1 }))
     },
@@ -493,7 +506,7 @@ export const useCalled = create<CalledState>((set, get) => {
       const { plot } = get()
       if (plot) load(plot, { fit: true })
     },
-    async scan() {
+    async scan(opts) {
       const { plot, symbol, scanning } = get()
       if (!plot || !symbol || scanning) return
       const my = ++seq
@@ -501,6 +514,7 @@ export const useCalled = create<CalledState>((set, get) => {
       // A first scan shows its progress in place of the record; "Finish" (a record is already up) keeps the record on screen.
       if (get().record) set({ scanning: true })
       else set({ scanning: true, phase: 'settled', response: { status: 'scanning', handle: plot.handle, symbol, scanId: '', progress: '' } })
+      set({ payOffer: null })
       // The scan runs inside this request; its own progress note is read beside it.
       let polls = 0
       const tick = () => {
@@ -513,7 +527,7 @@ export const useCalled = create<CalledState>((set, get) => {
       }
       tick()
       try {
-        const { status, body } = await getJson('/api/x/scan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ handle: plot.handle, sym: symbol, side: plot.side }) })
+        const { status, body } = await getJson('/api/x/scan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ handle: plot.handle, sym: symbol, side: plot.side, ...(opts?.pay ? { pay: true } : {}) }) })
         if (my !== seq) return
         stopPoll()
         const answer = asRecordResponse(body)
@@ -521,7 +535,7 @@ export const useCalled = create<CalledState>((set, get) => {
         set({ scanning: false })
         const had = get().record
         if (answer && !(answer.status === 'scanning' && !answer.scanId) && !(had && answer.status !== 'ready')) settle(my, answer, { fit: !had })
-        else if (had) set({ note: answer?.status === 'refused' ? answer.reason : 'The rest could not be labeled just now. The record on screen stands.' })
+        else if (had) set({ note: answer?.status === 'refused' ? answer.reason : 'The rest could not be labeled just now. The record on screen stands.', payOffer: answer?.status === 'refused' ? (answer.pay ?? null) : null })
         else settle(my, { status: 'refused', reason: status === 404 ? 'Scans are not on this server yet. One post can still be added by its link.' : 'The scan did not finish. Nothing was plotted. Try again in a moment.', next: [] })
       } catch {
         if (my !== seq) return
@@ -634,7 +648,9 @@ export function useCalledPins(symbol: string): CalledPinsController {
     ref.current = createCalledPins({
       symbol,
       inks: inksNow,
-      onPick: (postId) => useCalled.getState().focus(postId, 'chart'),
+      // A dot or a card pressed again closes its call card.
+      onPick: (postId) => useCalled.getState().focus(useCalled.getState().focusId === postId ? null : postId, 'chart'),
+      onDock: (side) => useCalled.getState().setDock(side),
       onCards: (n) => useCalled.getState().setCards(n),
       onAttach: (on) => useCalled.getState().setAdvanced(on),
     })

@@ -177,7 +177,8 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
       try {
         const a = await deps.allowance(q.requester, nowMs, { handle, symbol })
         if (!a.ok) {
-          canScan = false
+          // A scan the wallet can pay for is still a scan that can run: the button stays, and the reason names the price.
+          if (a.over !== 'pay') canScan = false
           reason = a.reason
         }
       } catch {
