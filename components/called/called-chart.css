@@ -240,3 +240,93 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
   .sym .mkt-chart__bar > .mkt-chart__right > .xcc-seat > .xcc-open::after { content: ''; position: absolute; inset: -4px 0; }
   .xcc-pop { top: calc(100% + 6px); left: 0; right: 0; width: auto; }
 }
+
+/* ── THE BAND above the chart (2026-11-16): the record's header, joined to the
+   chart card. Prefix `xch`, checked against every stylesheet in the repo. ── */
+.xch-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.sym .xch {
+  position: relative; margin-top: 14px; min-width: 0; border: 1px solid var(--line); border-bottom: 0; border-radius: 14px 14px 0 0;
+  background: linear-gradient(100deg, color-mix(in srgb, var(--accent) 9%, var(--surf-1)) 0%, var(--surf-1) 46%);
+}
+.sym .xch.is-parked { display: none; }
+/* The chart card under it gives up its top corners and its gap: one card. */
+.sym .xch:not(.is-parked) + .tchart:not(.tchart--expanded) { margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; border-top-color: transparent; }
+.xch__row { display: flex; align-items: center; gap: 12px 22px; min-width: 0; padding: 14px 16px 13px; }
+
+.xch__id { flex: none; display: flex; align-items: center; gap: 12px; min-width: 0; max-width: 100%; color: inherit; text-decoration: none; }
+.xch__id:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 10px; }
+.xch__avatar {
+  flex: none; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; overflow: hidden; background: var(--surf-2); color: var(--muted); font-size: 22px; font-weight: 600;
+  box-shadow: 0 0 0 1px var(--line-2), 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.xch__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.xch__idtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.xch__k { font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); white-space: nowrap; }
+.xch__ksym { color: var(--muted-2); }
+.xch__name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-family: var(--font-chat-display, Georgia, serif); font-size: 21px; line-height: 1.15; font-weight: 600; letter-spacing: -0.012em; color: var(--fg); overflow-wrap: anywhere; }
+.xch__id:hover .xch__name { text-decoration: underline; text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
+.xch__verified { display: inline-grid; color: var(--accent); }
+.xch__vicon { width: 17px; height: 17px; }
+.xch__sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.xch__tally { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 7px; padding-left: 22px; border-left: 1px solid var(--line); }
+.xch__counts { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; font-weight: 600; line-height: 1.2; }
+.xch__count {
+  --xch-tone: var(--muted);
+  display: inline-flex; align-items: center; min-height: 28px; padding: 0 11px; border-radius: var(--r-pill, 999px); white-space: nowrap; font-variant-numeric: tabular-nums;
+  border: 1px solid color-mix(in srgb, var(--xch-tone) 42%, transparent); background: color-mix(in srgb, var(--xch-tone) 13%, transparent); color: var(--xch-tone);
+}
+.xch__count.is-total { border-color: var(--line-2); background: transparent; color: var(--fg); }
+.xch__count.is-right, .xch__seg.is-right { --xch-tone: var(--mk-up, var(--accent)); }
+.xch__count.is-wrong, .xch__seg.is-wrong { --xch-tone: var(--mk-down, var(--sell)); }
+.xch__count.is-flat, .xch__seg.is-flat { --xch-tone: var(--muted); }
+.xch__count.is-open, .xch__seg.is-open { --xch-tone: var(--gold, #d9a441); }
+.xch__headline { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 16px; line-height: 1.3; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+.xch__state { display: inline-flex; align-items: center; min-height: 22px; padding: 0 9px; border-radius: var(--r-pill, 999px); border: 1px solid var(--line-2); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.xch__state:empty { display: none; }
+.xch__facts { margin: 0; font-size: 12px; line-height: 1.45; color: var(--muted); max-width: 86ch; }
+.xch__facts:empty { display: none; }
+.xch__standing { color: var(--muted-2); }
+.xch__standing[data-verified] { color: var(--accent); font-weight: 600; }
+
+.xch__tools { flex: none; display: flex; align-items: center; gap: 8px; align-self: flex-start; }
+.xch__tools .xcc-share { margin-left: 0; }
+.xch__tools .xcc-share__menu { top: calc(100% + 6px); bottom: auto; z-index: 41; }
+.xch__clear { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid transparent; border-radius: var(--r-sm, 8px); background: none; color: var(--muted-2); cursor: pointer; transition: color var(--dur-1, .16s), border-color var(--dur-1, .16s); }
+.xch__clear:hover { color: var(--sell); border-color: var(--line-2); }
+.xch__clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The seam between the band and the chart: the tally, as proportions. */
+.xch__bar { display: flex; gap: 2px; height: 3px; background: var(--line); }
+.xch__seg { flex: 1 1 0; min-width: 3px; background: var(--xch-tone); }
+.xch__seg.is-flat { opacity: .55; }
+
+/* The strip under the chart: words only now (the band carries who and the tally). */
+.xcc__head--list { flex-direction: column; gap: 3px; }
+
+@media (hover: none) {
+  .xch__clear { width: 44px; height: 44px; }
+  .xch__count { min-height: 30px; }
+}
+/* A laptop with the rail docked, a tablet: the controls take their own row under the tally. */
+@media (max-width: 1180px) {
+  .xch__row { flex-wrap: wrap; }
+  .xch__tally { flex: 1 1 320px; }
+  .xch__tools { flex: 1 1 100%; align-self: auto; }
+  .xch__tools .xcc-share { margin-left: auto; }
+  .xch__tools .xcc-share__menu { right: 0; left: auto; }
+}
+/* A phone: who (with Clear at its corner), then the chips, then the controls. */
+@media (max-width: 760px) {
+  .sym .xch { margin-top: 10px; }
+  .xch__row { padding: 12px 12px 11px; gap: 11px; }
+  .xch__id { flex: 1 1 100%; padding-right: 44px; }
+  .xch__avatar { width: 46px; height: 46px; font-size: 18px; box-shadow: 0 0 0 1px var(--line-2), 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+  .xch__name { font-size: 18px; }
+  .xch__tally { flex: 1 1 100%; padding-left: 0; border-left: 0; }
+  .xch__count { padding: 0 9px; font-size: 12.5px; }
+  .xch__tools { gap: 8px; }
+  .xch__tools .xcc-seg { flex: 1 1 auto; }
+  .xch__tools .xcc-seg__btn { flex: 1 1 0; justify-content: center; }
+  .xch__clear { position: absolute; top: 8px; right: 6px; }
+}

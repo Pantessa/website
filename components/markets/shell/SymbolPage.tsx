@@ -56,7 +56,7 @@ import LookOnlyCard from '@/components/markets/shell/LookOnlyCard'
 import { useDayStats } from '@/components/markets/shell/useDayStats'
 import HeldPill from '@/components/markets/shell/HeldPill'
 import CompareControl from '@/components/markets/shell/CompareControl'
-import CallsPanel from '@/components/called/CallsPanel'
+import CallsPanel, { CalledHead } from '@/components/called/CallsPanel'
 import { PlotHandleButton } from '@/components/called/HandleDoor'
 import ExecStrip from '@/components/markets/slots/ExecStrip'
 import AskChart from '@/components/markets/slots/AskChart'
@@ -669,6 +669,9 @@ export default function SymbolPage({
         {/* The guide's one hint card: under the chips on a phone, right under
             the tabs on a desktop (where the chips hide). */}
         {pair && <GuideSeat surface="symbol" symbol={sym} ask={isChartOnlyPair(pair) || lookOnly ? null : composeAsk(pair, 'buy', { usd: 25 })} chartOnly={isChartOnlyPair(pair)} lookOnly={lookOnly} />}
+
+        {/* ── CALLED IT: who is plotted and their tally, as a band joined to the top of the chart card (nothing until a handle is plotted); parks with it ── */}
+        {pair && <CalledHead symbol={sym} parked={!showChart} />}
 
         {/* ── Chart: always mounted; shown on Overview + Chart, parked elsewhere ── */}
         <div ref={shellRef} className={`tchart sym__chart${expanded ? ' tchart--expanded' : ''}${showChart ? '' : ' is-parked'}`} data-chart-tab={tab} aria-hidden={showChart ? undefined : true}>

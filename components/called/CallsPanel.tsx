@@ -1,9 +1,15 @@
 'use client'
 
-// THE CALLS STRIP under the symbol page's chart (squad called-it, lane CHART).
-// Shown only while a handle is plotted. It carries everything the pins on the
-// chart cannot: the full tally, who plotted it, every call with its whole
-// text, and the doors (add a post, fit, share, clear).
+// CALLED IT on the symbol page (squad called-it, lane CHART), in two seats,
+// both shown only while a handle is plotted:
+//
+//   CalledHead   the band ABOVE the chart, joined to its card: who the account
+//                is (picture, name, followers, standing), the tally as chips,
+//                what the scans read, and the plot's controls (All / Bull /
+//                Bear, Share, Clear). It is the record page's header, on the
+//                chart (Nate, 2026-11-16: the /x tiles open the chart directly).
+//   CallsPanel   the strip UNDER the chart: every call with its whole text, and
+//                the doors that act on one (add a post, fit, pin).
 //
 // Words: the headline, the standing line, the verdict words and the move line
 // all come from lib/called-it/spec or from the server's record. Nothing here
@@ -13,14 +19,14 @@
 // scan does, the button, the allowance) · scanning (the scan's own note) ·
 // ready · refused · failed · no scans on this server (one pasted post still
 // works).
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { ExternalLink, Heart, Maximize, Pin, Share2, X } from 'lucide-react'
+import { Fragment, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { BadgeCheck, ExternalLink, Heart, Maximize, Pin, Share2, X } from 'lucide-react'
 import { fmtPrice } from '@/components/CandleChart'
 import { SIDES } from '@/components/called/HandleDoor'
 import { chartPairFor, chartUnitOf } from '@/lib/charts'
 import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, GUEST_SCANS_PER_DAY, JUDGE_DAYS, LABEL_CAVEAT, PROVEN_SCANS_PER_DAY, SCAN_POST_CAP, SCAN_WINDOW_DAYS, VERDICT_WORDS, moveLine, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
-import { calledImageHref } from '@/lib/called-it/card-layout'
-import { safeNextHref, sideCounts, useCalled, useCalledAddress, useXViewer, viewerOwns } from '@/lib/called-it/use-record'
+import { calledImageHref, fmtCount, headlineParts } from '@/lib/called-it/card-layout'
+import { plotStatus, safeNextHref, sideCounts, useCalled, useCalledAddress, useXViewer, viewerOwns } from '@/lib/called-it/use-record'
 import { calledPost, myCalledPost, postHref } from '@/lib/share-posts'
 import { VERDICT_GLYPH, cleanPostText, pinDate } from '@/lib/tv/called-pins'
 import './called-chart.css'
@@ -32,7 +38,8 @@ function avatarOf(url: string | null): string | null {
   if (!url) return null
   try {
     const u = new URL(url)
-    return u.protocol === 'https:' && (u.hostname === 'pbs.twimg.com' || u.hostname === 'abs.twimg.com') ? u.toString() : null
+    // X's own size suffix: the 48px file is soft in a 56px seat on a 2x screen.
+    return u.protocol === 'https:' && (u.hostname === 'pbs.twimg.com' || u.hostname === 'abs.twimg.com') ? u.toString().replace(/_normal(\.[a-z]+)$/i, '_200x200$1') : null
   } catch {
     return null
   }
@@ -174,6 +181,185 @@ function Row({ call, index, px, focused, onFocus, onPin }: { call: CalledCall; i
   )
 }
 
+/** The tally as one thin bar: the same counts the chips print, as proportions. Decorative. */
+function TallyBar({ record }: { record: CalledRecord }) {
+  const t = record.tally
+  if (!record.scanned || t.total === 0) return <span className="xch__bar" aria-hidden />
+  const segs = (['right', 'wrong', 'flat', 'open'] as const).filter((v) => t[v] > 0)
+  return (
+    <span className="xch__bar" aria-hidden>
+      {segs.map((v) => (
+        <i key={v} className={`xch__seg is-${v}`} style={{ flexGrow: t[v] }} />
+      ))}
+    </span>
+  )
+}
+
+/**
+ * THE BAND above the chart while a handle is plotted: the record page's
+ * header, on the chart. Who, the tally, what was read, and the plot's
+ * controls. Every word about the record is the record's own (the headline's
+ * counts become chips; read with the tags off it is the headline to the
+ * letter).
+ */
+export function CalledHead({ symbol, parked = false }: { symbol: string; parked?: boolean }) {
+  const here = useCalled((s) => s.symbol === symbol)
+  const plot = useCalled((s) => s.plot)
+  const phase = useCalled((s) => s.phase)
+  const response = useCalled((s) => s.response)
+  const record = useCalled((s) => s.record)
+  const scanning = useCalled((s) => s.scanning)
+  const progress = useCalled((s) => s.progress)
+  const viewer = useXViewer()
+  const [shareOpen, setShareOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const shareRef = useRef<HTMLSpanElement | null>(null)
+  useEffect(() => {
+    setShareOpen(false)
+    setCopied(false)
+  }, [plot?.handle, plot?.side])
+  useEffect(() => {
+    if (!shareOpen) return
+    const away = (e: PointerEvent) => {
+      if (!shareRef.current?.contains(e.target as Node)) setShareOpen(false)
+    }
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShareOpen(false)
+    }
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('pointerdown', away)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [shareOpen])
+
+  if (!here || !plot) return null
+  const { setSide, clear, scan } = useCalled.getState()
+  const who = `@${plot.handle}`
+  const status = plotStatus({ plot, symbol, phase, response, record, scanning, progress })
+  const avatar = record ? avatarOf(record.profile.avatarUrl) : null
+  const rawName = record ? cleanPostText(record.profile.name).slice(0, 60) : ''
+  const named = !!rawName && rawName.toLowerCase() !== plot.handle && rawName.toLowerCase() !== who
+  const followers = record?.profile.followers != null ? `${fmtCount(record.profile.followers)} followers` : null
+  const parts = record ? headlineParts(record.words.headline) : null
+  // Somebody else's record in the third person, the account's own in the first; "own" only when the record is verified
+  // AND the viewer's proven X user id is the account's (lane RECORD's posts, lib/share-posts).
+  const post = record ? (viewerOwns(record, viewer) ? myCalledPost(record) : calledPost(record)) : null
+
+  return (
+    <section className={`xch${parked ? ' is-parked' : ''}`} data-called-head={status.kind} data-called-handle={plot.handle} aria-label={`${who} on ${symbol}: the record`} aria-hidden={parked || undefined}>
+      <div className="xch__row">
+        <a className="xch__id" href={`/x/${plot.handle}`} title={`${who}: every market plotted`} data-journey="called_head_handle">
+          <span className="xch__avatar" aria-hidden>
+            {avatar ? <img src={avatar} alt="" width={56} height={56} referrerPolicy="no-referrer" /> : (rawName || plot.handle).slice(0, 1).toUpperCase()}
+          </span>
+          <span className="xch__idtext">
+            <span className="xch__k mono">
+              Called it <span className="xch__ksym">· {symbol}</span>
+            </span>
+            <span className="xch__name">
+              {named && record ? <bdi>{cleanPostText(record.profile.name).slice(0, 60)}</bdi> : who}
+              {record?.verified ? (
+                <span className="xch__verified" title={record.words.standing}>
+                  <BadgeCheck className="xch__vicon" aria-hidden />
+                </span>
+              ) : null}
+            </span>
+            {named || followers ? <span className="xch__sub mono">{[named ? who : null, followers].filter(Boolean).join(' · ')}</span> : null}
+          </span>
+        </a>
+
+        <div className="xch__tally">
+          {record ? (
+            parts ? (
+              <h2 className="xch__counts">
+                <span className="xch-sr">{parts.who}</span>
+                {parts.counts.map((c, i) => (
+                  <Fragment key={c.kind}>
+                    <span className={`xch__count is-${c.kind}`}>{c.text}</span>
+                    <span className="xch-sr">{i < parts.counts.length - 1 ? ', ' : parts.end}</span>
+                  </Fragment>
+                ))}
+              </h2>
+            ) : (
+              <h2 className="xch__headline">{record.words.headline}</h2>
+            )
+          ) : (
+            <h2 className="xch__headline">
+              {who} on {symbol}
+              <span className="xch__state mono" data-kind={status.kind}>
+                {status.kind === 'scanning' ? <span className="xcc__spin" aria-hidden /> : null}
+                {status.pill}
+              </span>
+            </h2>
+          )}
+          <p className="xch__facts">
+            {record ? (
+              <>
+                {record.words.coverage ? <span data-called-coverage="">{record.words.coverage} </span> : null}
+                <span className="xch__standing" data-called-standing="" data-verified={record.verified ? '' : undefined}>
+                  {record.words.standing}
+                </span>
+              </>
+            ) : (
+              <span role={status.kind === 'scanning' ? 'status' : undefined}>{status.line}</span>
+            )}
+          </p>
+        </div>
+
+        <div className="xch__tools">
+          {!record && status.canScan ? (
+            <button type="button" className="xcc-btn xcc-btn--go" onClick={() => void scan()} disabled={scanning} aria-busy={scanning || undefined} data-journey="called_scan">
+              {scanning ? 'Scanning…' : `Scan ${who} on ${symbol}`}
+            </button>
+          ) : null}
+          {record ? <SideToggle record={record} side={plot.side} onSide={setSide} busy={phase === 'loading'} /> : null}
+          {record && post && record.calls.length > 0 ? (
+            <span className="xcc-share" ref={shareRef}>
+              <button type="button" className="xcc-btn xcc-btn--go" aria-haspopup="menu" aria-expanded={shareOpen} onClick={() => setShareOpen((o) => !o)} data-journey="called_share">
+                <Share2 className="xcc-row__icon" aria-hidden />
+                Share
+              </button>
+              {shareOpen ? (
+                <span className="xcc-share__menu" role="menu">
+                  <a role="menuitem" className="xcc-share__item" href={postHref(post)} target="_blank" rel="noopener noreferrer" data-journey="called_share_x">
+                    Post on X
+                  </a>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="xcc-share__item"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(post.url).then(
+                        () => setCopied(true),
+                        () => setCopied(false),
+                      )
+                    }}
+                    data-journey="called_share_copy"
+                  >
+                    {copied ? 'Link copied' : 'Copy link'}
+                  </button>
+                  <a role="menuitem" className="xcc-share__item" href={calledImageHref(record.handle, record.symbol, record.side, plot.pins)} download={`${record.handle}-${record.symbol}-calls.png`} data-journey="called_share_image">
+                    Save image
+                  </a>
+                  <a role="menuitem" className="xcc-share__item" href={recordHref(record.handle, record.symbol, record.side)} data-journey="called_share_open">
+                    Open the share page
+                  </a>
+                </span>
+              ) : null}
+            </span>
+          ) : null}
+          <button type="button" className="xch__clear" onClick={clear} title="Take this plot off the chart" aria-label={`Take ${who} off the chart`} data-journey="called_clear">
+            <X className="xcc-row__icon" aria-hidden />
+          </button>
+        </div>
+      </div>
+      {record ? <TallyBar record={record} /> : <span className="xch__bar" aria-hidden />}
+    </section>
+  )
+}
+
 export default function CallsPanel({ symbol, parked = false }: { symbol: string; parked?: boolean }) {
   useCalledAddress(symbol)
   const here = useCalled((s) => s.symbol === symbol)
@@ -188,46 +374,18 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   const note = useCalled((s) => s.note)
   const advanced = useCalled((s) => s.advanced)
   const cards = useCalled((s) => s.cards)
-  const viewer = useXViewer()
-  const [shareOpen, setShareOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
-  useEffect(() => {
-    setShareOpen(false)
-    setCopied(false)
-  }, [plot?.handle, plot?.side])
-
   if (!here || !plot) return null
-  const { setSide, togglePin, focus, fit, clear, scan, retry, rulePins } = useCalled.getState()
+  const { togglePin, focus, fit, scan, retry, rulePins } = useCalled.getState()
   const pair = chartPairFor(symbol)
   const px = chartUnitOf(pair) === 'usd' ? '$' : ''
   const who = `@${plot.handle}`
   const state = record ? 'ready' : phase === 'loading' ? 'loading' : phase === 'failed' ? 'failed' : (response?.status ?? 'loading')
-  const avatar = record ? avatarOf(record.profile.avatarUrl) : null
-
+  // The account, the tally and the plot's controls are in the band above the chart (CalledHead); this strip's head is words only.
   const head = (title: ReactNode, sub?: ReactNode) => (
     <header className="xcc__head">
-      <span className="xcc__avatar" aria-hidden>
-        {avatar ? <img src={avatar} alt="" width={36} height={36} loading="lazy" referrerPolicy="no-referrer" /> : (record?.profile.name ?? plot.handle).slice(0, 1).toUpperCase()}
-      </span>
       <div className="xcc__who">
-        <p className="xcc__k mono">
-          Called it
-          {record ? (
-            <span className="xcc__name">
-              {' '}
-              · <bdi>{cleanPostText(record.profile.name).slice(0, 60)}</bdi>
-            </span>
-          ) : null}
-        </p>
         <h2 className="xcc__headline">{title}</h2>
         {sub}
-      </div>
-      <div className="xcc__headtools">
-        <SideToggle record={record} side={plot.side} onSide={setSide} busy={phase === 'loading'} />
-        <button type="button" className="xcc__clear" onClick={clear} title="Take this plot off the chart" data-journey="called_clear">
-          <X className="xcc-row__icon" aria-hidden />
-          Clear
-        </button>
       </div>
     </header>
   )
@@ -235,26 +393,15 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   let body: ReactNode
   if (record) {
     const pinned = record.calls.filter((c) => c.picked).length
-    // The post is lane RECORD's (lib/share-posts): somebody else's record in the third person, the account's own in the
-    // first, and "own" only when the record is verified AND the viewer's proven X user id is the account's.
-    const post = viewerOwns(record, viewer) ? myCalledPost(record) : calledPost(record)
     body = (
       <>
-        {head(
-          record.words.headline,
-          <>
-            {/* What the scan read (never "the chart's window"), then who plotted it. */}
-            {record.words.coverage ? (
-              <p className="xcc__standing xcc__coverage" data-called-coverage="">
-                {record.words.coverage}
-              </p>
-            ) : null}
-            {record.words.added ? <p className="xcc__standing xcc__addednote">{record.words.added}</p> : null}
-            <p className="xcc__standing" data-called-standing="" data-verified={record.verified ? '' : undefined}>
-              {record.words.standing}
-            </p>
-          </>,
-        )}
+        <header className="xcc__head xcc__head--list">
+          <p className="xcc__k mono">
+            The calls
+            <span className="xcc__name"> · oldest first · tap one to find it on the chart</span>
+          </p>
+          {record.words.added ? <p className="xcc__standing xcc__addednote">{record.words.added}</p> : null}
+        </header>
         {!record.scanned ? (
           <div className="xcc__actions" data-called-unscanned="">
             <button type="button" className="xcc-btn xcc-btn--go" onClick={() => void scan()} disabled={scanning} aria-busy={scanning || undefined} data-journey="called_scan">
@@ -313,39 +460,6 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
                 The rule&rsquo;s pins
               </button>
             ) : null}
-            <span className="xcc-share">
-              <button type="button" className="xcc-btn xcc-btn--go" aria-haspopup="menu" aria-expanded={shareOpen} onClick={() => setShareOpen((o) => !o)} data-journey="called_share">
-                <Share2 className="xcc-row__icon" aria-hidden />
-                Share
-              </button>
-              {shareOpen ? (
-                <span className="xcc-share__menu" role="menu">
-                  <a role="menuitem" className="xcc-share__item" href={postHref(post)} target="_blank" rel="noopener noreferrer" data-journey="called_share_x">
-                    Post on X
-                  </a>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="xcc-share__item"
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(post.url).then(
-                        () => setCopied(true),
-                        () => setCopied(false),
-                      )
-                    }}
-                    data-journey="called_share_copy"
-                  >
-                    {copied ? 'Link copied' : 'Copy link'}
-                  </button>
-                  <a role="menuitem" className="xcc-share__item" href={calledImageHref(record.handle, record.symbol, record.side, plot.pins)} download={`${record.handle}-${record.symbol}-calls.png`} data-journey="called_share_image">
-                    Save image
-                  </a>
-                  <a role="menuitem" className="xcc-share__item" href={recordHref(record.handle, record.symbol, record.side)} data-journey="called_share_open">
-                    Open the record&rsquo;s page
-                  </a>
-                </span>
-              ) : null}
-            </span>
           </div>
           <p className="xcc__method">
             <span className="xcc__legend mono" aria-label="What each mark means">
@@ -402,15 +516,10 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
         )}
         <div className="xcc__actions">
           {response.canScan ? (
-            <>
-              <button type="button" className="xcc-btn xcc-btn--go" onClick={() => void scan()} disabled={scanning} data-journey="called_scan">
-                Scan {who} on {symbol}
-              </button>
-              <span className="xcc__allow">
-                {response.reason ? `${response.reason} ` : ''}
-                {GUEST_SCANS_PER_DAY} scans a day for a visitor, {PROVEN_SCANS_PER_DAY} once you verify with X or sign in. A handle somebody already plotted costs none.
-              </span>
-            </>
+            <span className="xcc__allow">
+              {response.reason ? `${response.reason} ` : ''}
+              {GUEST_SCANS_PER_DAY} scans a day for a visitor, {PROVEN_SCANS_PER_DAY} once you verify with X or sign in. A handle somebody already plotted costs none.
+            </span>
           ) : (
             <span className="xcc__allow">One post can still be pinned by its link, with no scan.</span>
           )}

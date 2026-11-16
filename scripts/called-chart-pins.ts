@@ -551,6 +551,13 @@ export function calledChartPins(check: Check): void {
     /<PlotHandleButton symbol=\{sym\} \/>\}\s+\{pair && <CompareControl/.test(page) && /<CallsPanel symbol=\{sym\} parked=\{!showChart\} \/>/.test(page) && page.indexOf('<CallsPanel') > page.indexOf('<ChartMount') && page.indexOf('<CallsPanel') < page.lastIndexOf('<AskChart ') && mount.includes('useClassicCalledMarkers(symbol)') && /<MarketChart[\s\S]*markers=\{classicMarkers\}/.test(mount) && /<AdvancedChart[\s\S]*markers=\{allMarkers\}/.test(mount),
   )
   check(
+    'called chart head (2026-11-16): while a handle is plotted the record\'s header is a band joined to the TOP of the chart card (who, followers, standing, the tally as chips cut from the record\'s own headline, what the scans read, All / Bull / Bear, Share, Clear) and it parks with the chart; the strip under the chart carries no second copy of the controls; a scanned account\'s tile on /x, the hero\'s button and a row on /x/<handle> open the live chart with the account plotted, not the record page',
+    /<CalledHead symbol=\{sym\} parked=\{!showChart\} \/>/.test(page) && page.indexOf('<CalledHead') < page.indexOf('<ChartMount') && page.indexOf('<CalledHead') > page.indexOf('<GuideSeat surface="symbol"') &&
+      /export function CalledHead\(/.test(panel) && panel.includes('headlineParts(record.words.headline)') && panel.includes('fmtCount(record.profile.followers)') && (code(panel).match(/<SideToggle /g) ?? []).length === 1 && (code(panel).match(/data-journey="called_clear"/g) ?? []).length === 1 && (code(panel).match(/data-journey="called_share"/g) ?? []).length === 1 &&
+      /\.sym \.xch:not\(\.is-parked\) \+ \.tchart:not\(\.tchart--expanded\) \{[^}]*margin-top: 0;[^}]*border-top-left-radius: 0/.test(css) && /\.sym \.xch\.is-parked \{ display: none; \}/.test(css) &&
+      /<Link href=\{chartHref\(summary\.handle, summary\.symbol\)\} className="xrc-tile"/.test(read('app/x/_lib/splash.tsx')) && !/recordHref/.test(read('app/x/_lib/splash.tsx')) && /<Link href=\{chartHref\(handle, r\.symbol\)\} className="xrc-row"/.test(read('app/x/[handle]/page.tsx')),
+  )
+  check(
     'called chart wiring: the pins file touches no React and no browser global outside its controller\'s guarded calls, and no browser file of this lane imports the server\'s side of the feature (the X identity\'s secret, the store, the scan) except as a type',
     !/from 'react'/.test(pins) && !/\bwindow\./.test(code(pins)) && [hook, door, panel, pins].every((s) => !/import (?!type)[^\n]*called-it\/(x-auth|store|scan|record|budget|classify|source)/.test(s)) && door.includes("from '@/components/called/VerifyWithX'") && /<VerifyWithX variant="line"/.test(door),
   )
@@ -586,10 +593,10 @@ export function calledChartPins(check: Check): void {
   }
   for (const d of ['app', 'components']) walk(new URL(`../${d}`, import.meta.url).pathname)
   const others = sheets.filter((f) => !f.endsWith('components/called/called-chart.css'))
-  const foreign = (css.replace(/\/\*[\s\S]*?\*\//g, '').match(/\.[a-zA-Z][\w-]*/g) ?? []).filter((c) => !/^\.(xcc|is-[a-z]+$|sym$|mkt-chart__bar$|mkt-chart__right$|mkt-view$|mkt-pool$|mkt-sharebtn$|tchart__fs$|mk-vs__open$|\d)/.test(c))
+  const foreign = (css.replace(/\/\*[\s\S]*?\*\//g, '').match(/\.[a-zA-Z][\w-]*/g) ?? []).filter((c) => !/^\.(xcc|xch|is-[a-z]+$|sym$|tchart$|tchart--expanded$|mkt-chart__bar$|mkt-chart__right$|mkt-view$|mkt-pool$|mkt-sharebtn$|tchart__fs$|mk-vs__open$|\d)/.test(c))
   check(
-    'called chart css: every class this lane styles wears its own prefix (`xcc`; a state class like `is-focus` only ever on one of them), the few host classes it reaches into are the chart bar\'s on a phone, and no other stylesheet in the repo uses the prefix',
-    sheets.length > 20 && others.every((f) => !/\.xcc[-_\w]*/.test(readFileSync(f, 'utf8'))) && foreign.length === 0 && !/(^|[\s,>+~])\.is-[a-z]+/m.test(css.replace(/\/\*[\s\S]*?\*\//g, '')),
+    'called chart css: every class this lane styles wears its own prefix (`xcc`, and `xch` for the band above the chart, RE-PINNED 2026-11-16 (called head); a state class like `is-focus` only ever on one of them), the few host classes it reaches into are the chart bar\'s on a phone and the chart card the band joins, and no other stylesheet in the repo uses either prefix',
+    sheets.length > 20 && others.every((f) => !/\.(xcc|xch)[-_\w]*/.test(readFileSync(f, 'utf8'))) && foreign.length === 0 && !/(^|[\s,>+~])\.is-[a-z]+/m.test(css.replace(/\/\*[\s\S]*?\*\//g, '')),
     foreign.slice(0, 8).join(' '),
   )
 }
