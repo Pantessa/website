@@ -13,11 +13,14 @@
 //
 // Words: the verdict's word, the judged move and the "since" line are the
 // spec's. A post's text is rendered as text.
-import { useEffect, useRef } from 'react'
-import { ChevronLeft, ChevronRight, ExternalLink, Heart, Pin, X } from 'lucide-react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
+import Link from 'next/link'
+import { ChevronLeft, ChevronRight, ExternalLink, Heart, Pin, Share2, X } from 'lucide-react'
 import { fmtPrice } from '@/components/CandleChart'
+import CallActs from '@/components/called/CallActs'
 import { PostText, avatarOf } from '@/components/called/CallsPanel'
 import { chartPairFor, chartUnitOf } from '@/lib/charts'
+import { callHref } from '@/lib/called-it/gtm'
 import { ADDED_MARK, VERDICT_WORDS, judgedLine, sinceLine } from '@/lib/called-it/spec'
 import { useCalled } from '@/lib/called-it/use-record'
 import { VERDICT_GLYPH, cleanPostText, pinDate } from '@/lib/tv/called-pins'
@@ -25,11 +28,21 @@ import './called-chart.css'
 
 const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
 
+// The card is a sheet on a phone (called-chart.css, max-width 640px): its trade buttons stack there.
+const SHEET_QUERY = '(max-width: 640px)'
+const onSheetChange = (cb: () => void) => {
+  const mq = window.matchMedia(SHEET_QUERY)
+  mq.addEventListener('change', cb)
+  return () => mq.removeEventListener('change', cb)
+}
+const useSheet = () => useSyncExternalStore(onSheetChange, () => window.matchMedia(SHEET_QUERY).matches, () => false)
+
 export default function CallFocus({ symbol }: { symbol: string }) {
   const record = useCalled((s) => (s.symbol && s.symbol.toUpperCase() === symbol.toUpperCase() ? s.record : null))
   const focusId = useCalled((s) => s.focusId)
   const dock = useCalled((s) => s.focusDock)
   const ref = useRef<HTMLElement | null>(null)
+  const sheet = useSheet()
   const index = record && focusId ? record.calls.findIndex((c) => c.postId === focusId) : -1
   const open = index >= 0
 
@@ -147,6 +160,16 @@ export default function CallFocus({ symbol }: { symbol: string }) {
           </div>
         ) : null}
       </dl>
+
+      {/* The trade for this market, the app's own sentence (lib/called-it/acts; nothing renders where nothing can run), and the
+          call's own page, where its share row lives. */}
+      <div className="xca-band" data-sheet={sheet || undefined}>
+        <CallActs symbol={record.symbol} stance={call.stance} handle={record.handle} postId={call.postId} variant={sheet ? 'stack' : 'row'} className="xca--card" />
+        <Link className="xca-share" href={callHref(record.handle, record.symbol, call.postId)} data-journey="called_card_share">
+          <Share2 aria-hidden />
+          Share this call
+        </Link>
+      </div>
 
       <footer className="xcf__foot">
         {call.url ? (
