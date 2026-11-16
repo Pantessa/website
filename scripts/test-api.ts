@@ -392,6 +392,7 @@ import { homeAppsPins } from './home-apps-pins'
 import { communityCoordPins, communityCoordPinsServed } from './community-coord-pins'
 import { communityCorePins, communityCorePinsServed } from './community-core-pins'
 import { calledCoordPins, calledCoordPinsServed } from './called-coord-pins'
+import { calledTargetPins } from './called-target-pins'
 import { calledSourcePins, calledSourcePinsServed } from './called-source-pins'
 import { calledJudgePins, calledJudgePinsServed } from './called-judge-pins'
 import { calledAuthPins, calledAuthPinsServed } from './called-auth-pins'
@@ -35658,6 +35659,7 @@ async function main() {
   // ── squad called-it (2026-11-11): one pin file per lane, wired once here ──
   calledCoordPins(check)
   await calledCoordPinsServed(check, BASE)
+  calledTargetPins(check)
   calledSourcePins(check)
   await calledSourcePinsServed(check, BASE)
   calledJudgePins(check)

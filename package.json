@@ -82,6 +82,7 @@
     "pins:macro": "tsx scripts/macro-pins.ts",
     "pins:community-coord": "tsx scripts/community-coord-pins.ts",
     "pins:called-coord": "tsx scripts/called-coord-pins.ts",
+    "pins:called-target": "tsx scripts/called-target-pins.ts",
     "pins:called-source": "tsx scripts/called-source-pins.ts",
     "pins:called-judge": "tsx scripts/called-judge-pins.ts",
     "pins:called-auth": "tsx scripts/called-auth-pins.ts",

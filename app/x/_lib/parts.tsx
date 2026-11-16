@@ -5,7 +5,7 @@
 import Link from 'next/link'
 import HandleDoor from '@/components/called/HandleDoor'
 import VerifyWithX from '@/components/called/VerifyWithX'
-import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, JUDGE_DAYS, LABEL_CAVEAT, METHOD_LINE, SCAN_WINDOW_DAYS, VERDICT_WORDS, type CalledSide, type CallVerdict } from '@/lib/called-it/spec'
+import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, JUDGE_DAYS, LABEL_CAVEAT, METHOD_LINE, SCAN_WINDOW_DAYS, TARGET_DAYS, TARGET_STOP_MAX, VERDICT_WORDS, type CalledSide, type CallVerdict } from '@/lib/called-it/spec'
 import { initialOf } from '@/lib/called-it/card-layout'
 
 /** The account's picture when the server could fetch it, its initial otherwise. Decorative: the name is printed beside it. */
@@ -158,6 +158,9 @@ export function MethodBlock() {
           <dd>The post is under {JUDGE_DAYS} days old. The move so far is shown and nothing is judged yet.</dd>
         </div>
       </dl>
+      <p>
+        A post that names a level (&quot;$5B is a clear magnet&quot;, &quot;150k by March&quot;, &quot;up 50%&quot;) is judged on that level instead: {VERDICT_WORDS.right} when the price reaches it within {TARGET_DAYS} days before it goes the same distance the other way (at most {Math.round(TARGET_STOP_MAX * 100)}%), {VERDICT_WORDS.wrong} otherwise. The model only points at the words; code reads the number. A market cap becomes a price with today&apos;s circulating supply. Every judged call also shows how the price has gone since.
+      </p>
       <p>
         A scan looks back up to {SCAN_WINDOW_DAYS} days and can stop sooner; each record says how far it read. Every call the scan found is counted, whichever ones are pinned. A post marked "{ADDED_MARK}" is shown and never counted. {DELETED_NOTE}
       </p>

@@ -17,11 +17,12 @@ import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts, fixtureServed } from './
 import { RUNNING_STALE_MS, scanNext, scanWindowFrom, type AllowanceFn, type StoreApi } from './scan'
 import { marketFor, type MarketDoor } from './market'
 import { takenDown } from './takedown'
+import { circulatingSupply } from './supply'
 
 export { takenDown }
 import type { FinishedScan } from './store'
 import { FAKE_LABEL_MODELS } from './classify'
-import { POST_ID_RE, buildRecord, fakeModeOn, normalizeHandle, normalizeSide, type Coverage, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
+import { POST_ID_RE, buildRecord, parseTargetSpan, fakeModeOn, normalizeHandle, normalizeSide, type Coverage, type LabeledPost, type RecordResponse, type Requester, type XProfile } from './spec'
 
 const DAY_MS = 86_400_000
 
@@ -52,6 +53,8 @@ export interface RecordDeps {
   refreshGone?: (postIds: readonly string[]) => Promise<unknown>
   /** The market door (lib/called-it/market). Absent: the house resolver. */
   market?: (raw: unknown) => Promise<MarketDoor>
+  /** Circulating supply for market-cap targets (lib/called-it/supply). Absent: market-cap targets are not priced. */
+  supply?: (symbol: string, lastClose: number) => Promise<number | null>
   now: () => number
 }
 
@@ -61,7 +64,7 @@ async function loadDaily(symbol: string): Promise<Candle[] | null> {
 }
 
 export function defaultRecordDeps(): RecordDeps {
-  return { store: Store, candles: loadDaily, scansAvailable, allowance: scanAllowance, refreshGone, now: Date.now }
+  return { store: Store, candles: loadDaily, scansAvailable, allowance: scanAllowance, refreshGone, supply: circulatingSupply, now: Date.now }
 }
 
 export function parsePins(raw: unknown): string[] {
@@ -209,7 +212,16 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
     const author = (p as { xUserId?: string | null }).xUserId ?? null
     if (author && row?.xUserId && author !== row.xUserId) continue
     const l = byPost.get(p.id)
-    if (l) posts.push({ ...p, label: { stance: l.stance, conviction: l.conviction, quote: l.quote }, origin: l.origin })
+    if (l) posts.push({ ...p, label: { stance: l.stance, conviction: l.conviction, quote: l.quote, target: l.target ?? null }, origin: l.origin })
+  }
+  // Supply is read only when some call names a market cap (one cached request a day per symbol).
+  let supply: number | null = null
+  if (deps.supply && posts.some((p) => p.label.stance !== 'none' && p.label.target && parseTargetSpan(p.label.target)?.unit === 'mcap')) {
+    try {
+      supply = await deps.supply(symbol, candles[candles.length - 1].c)
+    } catch {
+      supply = null
+    }
   }
   const coverage = coverageOf(finished)
   const profile: XProfile = row ? { handle, name: row.name, avatarUrl: row.avatarUrl, followers: row.followers, blue: row.blue, xUserId: row.xUserId } : { handle, name: handle, avatarUrl: null, followers: null, blue: false, xUserId: null }
@@ -227,6 +239,7 @@ export async function readRecord(q: RecordQuery, deps: RecordDeps = defaultRecor
     postsRead: coverage?.postsRead ?? 0,
     scanned: finished.length > 0,
     coverage,
+    supply,
     pins,
   })
   if (deps.refreshGone && record.calls.length) {

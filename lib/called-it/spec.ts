@@ -14,7 +14,11 @@
 //      a call, so it can never be counted as a miss (the first real scan,
 //      2026-11-12, had padded an 18-call tally with nine of them).
 //   3. The result is ARITHMETIC on the chart's own daily candles: the close
-//      of the day it was posted against the close JUDGE_DAYS later.
+//      of the day it was posted against the close JUDGE_DAYS later. A call
+//      that names a level (a price, a market cap, a percent, a multiple) is
+//      judged on that level instead: reached before the price fell (rose,
+//      for a bear) the same distance the other way, within TARGET_DAYS. The
+//      model only points at the words; code reads the number (2026-11-16).
 //   4. The tally is never curated. A viewer chooses which calls are pinned;
 //      nobody chooses which calls are counted: the tally counts what the
 //      SCAN found. A post a viewer pasted is shown and marked, never counted
@@ -65,6 +69,13 @@ export interface CallLabel {
   conviction: 0 | Conviction
   /** A span of the post's own text that carries the stance. Null with `none`. */
   quote: string | null
+  /**
+   * A span of the post's own text that names the level the author expects
+   * ("$5B is a clear magnet", "150k by March"). Code reads the number from it
+   * (parseTargetSpan). Null when the post names none, or when the label was
+   * written before targets were read (2026-11-16).
+   */
+  target?: string | null
 }
 
 export interface CallMoves {
@@ -80,6 +91,25 @@ export interface CallMoves {
   now: number
 }
 
+export type TargetUnit = 'price' | 'mcap' | 'pct' | 'multiple'
+/** hit: the level was reached first. stopped: the price went the same distance the other way first. expired: neither within TARGET_DAYS. open: neither yet. */
+export type TargetOutcome = 'hit' | 'stopped' | 'expired' | 'open'
+
+export interface CallTarget {
+  /** The post's own words that name the level. */
+  span: string
+  unit: TargetUnit
+  /** The level as written, in words: `$5B`, `$150,000`, `+50%`, `10x`. */
+  stated: string
+  /** The level as a price on this chart. For a market cap: the level over today's circulating supply. */
+  price: number
+  /** The other side: the same distance the wrong way, never more than TARGET_STOP_MAX of the price. */
+  stop: number
+  outcome: TargetOutcome
+  /** Ms: the open of the daily bar that reached the level (or the stop). Null while open, or when it expired. */
+  at: number | null
+}
+
 export interface CalledCall extends CallMoves {
   postId: string
   /** The post on X. Null for the fixture (its ids are not real posts). */
@@ -92,8 +122,10 @@ export interface CalledCall extends CallMoves {
   conviction: Conviction
   quote: string
   verdict: CallVerdict
-  /** The move the verdict was read from: d30 once it exists, the move so far while open. */
+  /** The move the verdict was read from: d30 once it exists, the move so far while open. A target call: the move to its level or its stop. */
   judgedPct: number
+  /** Set when the post named a level this chart can price. Null: the call is judged on the close JUDGE_DAYS later. */
+  target: CallTarget | null
   impact: number
   /** Found by the scan, or pasted by a viewer. */
   origin: 'scan' | 'added'
@@ -413,6 +445,117 @@ export function verdictFor(stance: CallStance, moves: Pick<CallMoves, 'd30' | 'n
   return { verdict: signed >= DEAD_BAND ? 'right' : signed <= -DEAD_BAND ? 'wrong' : 'flat', judgedPct: moves.d30 }
 }
 
+// ── A call that names a level ───────────────────────────────────────────
+
+/** A target call has this long to reach its level. */
+export const TARGET_DAYS = 180
+/** The stop is the target's distance the other way, capped at this share of the price (a 10x call is not given a free ride to zero). */
+export const TARGET_STOP_MAX = 0.5
+/** Longest target span kept. */
+export const TARGET_SPAN_MAX = 120
+
+const SUFFIX: Record<string, number> = { k: 1e3, thousand: 1e3, m: 1e6, mm: 1e6, mil: 1e6, million: 1e6, b: 1e9, bn: 1e9, billion: 1e9, t: 1e12, tn: 1e12, trillion: 1e12 }
+const NUM_RE = /([$+-]?)\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?:\s?(trillion|billion|million|thousand|tn|bn|mil|mm|[kmbt])(?![a-z]))?(?:\s?(%)|(x)(?![a-z])|(?![a-z0-9]))/gi
+const CAP_WORDS = /\b(market ?cap|mcap|m\.?cap|valuation|fdv|cap)\b/i
+
+/**
+ * The level a span names, read by code: the FIRST number that can be a level.
+ * `$5B` → 5e9 mcap · `150k` → 150,000 price · `+50%` → pct 0.5 · `10x` →
+ * multiple 10. A year, a count ("2 digits"), or a bare small number with no
+ * $ and no suffix next to nothing that says price is not a level. Null when
+ * the span names none. Pure; pinned.
+ */
+export function parseTargetSpan(span: string): { value: number; unit: TargetUnit; stated: string } | null {
+  const capWord = CAP_WORDS.test(span)
+  NUM_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = NUM_RE.exec(span))) {
+    const [whole, sign, digits, sufRaw, pct, times] = m
+    const after = span.slice(m.index + whole.length)
+    if (/^\s*(digits?|figures?|days?|weeks?|months?|years?|hours?|am|pm|st|nd|rd|th)\b/i.test(after)) continue
+    const n = Number(digits.replace(/,/g, ''))
+    if (!(n > 0) || !Number.isFinite(n)) continue
+    const suf = sufRaw?.toLowerCase()
+    if (pct) return { value: n / 100, unit: 'pct', stated: `${sign === '-' ? '-' : '+'}${n}%` }
+    if (times) return n > 1 ? { value: n, unit: 'multiple', stated: `${n}x` } : null
+    if (!sign && !suf && n >= 1900 && n <= 2100 && Number.isInteger(n)) continue // a year
+    const value = n * (suf ? SUFFIX[suf] : 1)
+    // Millions and up, or a word that says so, is a market cap. A thousands suffix is a price ("150k BTC").
+    const unit: TargetUnit = (suf && SUFFIX[suf] >= 1e6) || (capWord && value >= 1e6) ? 'mcap' : 'price'
+    if (unit === 'price' && sign !== '$' && !suf) continue // a bare number with no $ is too often not a price
+    return { value, unit, stated: `$${fmtLevel(value)}` }
+  }
+  return null
+}
+
+/** `5B`, `150,000`, `3.81`, `0.0042`. */
+export function fmtLevel(v: number): string {
+  for (const [s, k] of [['T', 1e12], ['B', 1e9], ['M', 1e6]] as const) if (v >= k) return `${+(v / k).toFixed(2)}${s}`
+  if (v >= 1000) return Math.round(v).toLocaleString('en-US')
+  if (v >= 1) return Number.isInteger(v) ? String(v) : v.toFixed(2)
+  return v.toPrecision(2)
+}
+
+/**
+ * The level as a price on this chart, or null when it cannot be one: a market
+ * cap with no supply; a level on the wrong side of the price for the stance,
+ * or inside the dead band (a "target" the price already sits at is not a
+ * prediction); a price more than 100x away (a misread number).
+ */
+export function targetPrice(level: { value: number; unit: TargetUnit }, stance: CallStance, priceAt: number, supply: number | null): number | null {
+  let p: number | null
+  if (level.unit === 'price') p = level.value
+  else if (level.unit === 'mcap') p = supply && supply > 0 ? level.value / supply : null
+  else if (level.unit === 'pct') p = stance === 'bull' ? priceAt * (1 + level.value) : priceAt * (1 - Math.min(level.value, 0.99))
+  else p = stance === 'bull' ? priceAt * level.value : priceAt / level.value
+  if (p === null || !(p > 0) || !Number.isFinite(p)) return null
+  if (p > priceAt * 100 || p < priceAt / 100) return null
+  if (stance === 'bull' ? p < priceAt * (1 + DEAD_BAND) : p > priceAt * (1 - DEAD_BAND)) return null
+  return p
+}
+
+/**
+ * Walk the daily bars AFTER the post's bar: the first bar whose high (low,
+ * for a bear) reaches the level is a hit; the first whose low (high) reaches
+ * the stop is stopped. A bar that reaches both is stopped (a daily bar does
+ * not say which came first, and the rule never guesses in the caller's
+ * favour). Neither within TARGET_DAYS: expired. Pure; pinned.
+ */
+export function judgeTarget(candles: readonly Candle[], postedAt: number, stance: CallStance, priceAt: number, price: number, nowMs: number): { outcome: TargetOutcome; stop: number; at: number | null; judgedPct: number } {
+  const dist = Math.min(Math.abs(price - priceAt), priceAt * TARGET_STOP_MAX)
+  const stop = stance === 'bull' ? priceAt - dist : priceAt + dist
+  const end = postedAt + TARGET_DAYS * DAY_MS
+  const i = barIndexAt(candles, postedAt)
+  for (let j = i + 1; j < candles.length; j++) {
+    const b = candles[j]
+    if (b.t * 1000 > end) break
+    const stopped = stance === 'bull' ? b.l <= stop : b.h >= stop
+    const hit = stance === 'bull' ? b.h >= price : b.l <= price
+    if (stopped) return { outcome: 'stopped', stop, at: b.t * 1000, judgedPct: stop / priceAt - 1 }
+    if (hit) return { outcome: 'hit', stop, at: b.t * 1000, judgedPct: price / priceAt - 1 }
+  }
+  if (nowMs >= end) {
+    const k = barIndexAt(candles, end)
+    return { outcome: 'expired', stop, at: null, judgedPct: (k >= 0 ? candles[k].c : priceAt) / priceAt - 1 }
+  }
+  return { outcome: 'open', stop, at: null, judgedPct: candles.length ? candles[candles.length - 1].c / priceAt - 1 : 0 }
+}
+
+/** A target call's verdict: a hit is right, a stop or an expiry is wrong. */
+export const TARGET_VERDICT: Record<TargetOutcome, CallVerdict> = { hit: 'right', stopped: 'wrong', expired: 'wrong', open: 'open' }
+
+/** The level a call names, priced and judged, with the move its verdict reads; null when it names none this chart can price. */
+export function targetFor(span: string | null | undefined, stance: CallStance, moves: CallMoves, candles: readonly Candle[], postedAt: number, nowMs: number, supply: number | null): { target: CallTarget; judgedPct: number } | null {
+  if (!span) return null
+  const level = parseTargetSpan(span)
+  if (!level) return null
+  const price = targetPrice(level, stance, moves.priceAt, supply)
+  if (price === null) return null
+  const j = judgeTarget(candles, postedAt, stance, moves.priceAt, price, nowMs)
+  const stated = level.unit === 'pct' ? `${stance === 'bull' ? '+' : '-'}${+(level.value * 100).toFixed(2)}%` : level.stated
+  return { target: { span, unit: level.unit, stated, price, stop: j.stop, outcome: j.outcome, at: j.at }, judgedPct: j.judgedPct }
+}
+
 const CONVICTION_WEIGHT: Record<Conviction, number> = { 1: 0.6, 2: 1, 3: 1.5 }
 const VERDICT_WEIGHT: Record<CallVerdict, number> = { right: 1, wrong: 1, open: 0.6, flat: 0.25 }
 
@@ -465,7 +608,7 @@ export const STANDING_NOT_VERIFIED = 'Not verified. Plotted by a viewer from pub
 export function standingVerified(handle: string): string {
   return `Verified. @${handle} signed in with X.`
 }
-export const METHOD_LINE = `Posts come from X: its search for a scan, its public post page for a pasted link. A model labels each post bull or bear and must quote the post's own words. The result is this chart's daily close ${JUDGE_DAYS} days after the post.`
+export const METHOD_LINE = `Posts come from X: its search for a scan, its public post page for a pasted link. A model labels each post bull or bear and must quote the post's own words. The result is this chart's daily close ${JUDGE_DAYS} days after the post. A post that names a level is judged on the level instead: it must be reached within ${TARGET_DAYS} days, before the price goes the same distance the other way. A market cap becomes a price with today's circulating supply.`
 /** Said wherever labels are shown. */
 export const LABEL_CAVEAT = 'A model wrote each label, and a label can be wrong.'
 export const DELETED_NOTE = 'A post deleted on X leaves this record.'
@@ -484,9 +627,33 @@ export function fmtMove(p: number): string {
   return `${v > 0 ? '+' : v < 0 ? '-' : ''}${Math.abs(v).toFixed(1)}%`
 }
 
-/** `-29.1% in 30 days` once judged, `+4.0% so far` while open. */
-export function moveLine(c: Pick<CalledCall, 'verdict' | 'judgedPct'>): string {
+type MoveFields = Pick<CalledCall, 'verdict' | 'judgedPct'> & Partial<Pick<CalledCall, 'now' | 'target'>>
+
+/**
+ * What the verdict was read from. `-29.1% in 30 days` · `+4.0% so far` ·
+ * `hit its $5B target 18 Sep 2026` · `-50.0% before its $5B target` ·
+ * `$5B target not reached in 180 days` · `+12.0% so far, $5B target`.
+ */
+export function judgedLine(c: MoveFields): string {
+  const t = c.target
+  if (t) {
+    if (t.outcome === 'hit') return `hit its ${t.stated} target${t.at !== null ? ` ${fmtDay(t.at)}` : ''}`
+    if (t.outcome === 'stopped') return `${fmtMove(c.judgedPct)} before its ${t.stated} target`
+    if (t.outcome === 'expired') return `${t.stated} target not reached in ${TARGET_DAYS} days`
+    return `${fmtMove(c.judgedPct)} so far, ${t.stated} target`
+  }
   return c.verdict === 'open' ? `${fmtMove(c.judgedPct)} so far` : `${fmtMove(c.judgedPct)} in ${JUDGE_DAYS} days`
+}
+
+/** `+14.2% since`: from the post to the last close. Null while the call is open (its move so far already says it) or when `now` is unknown. */
+export function sinceLine(c: MoveFields): string | null {
+  return c.verdict === 'open' || typeof c.now !== 'number' ? null : `${fmtMove(c.now)} since`
+}
+
+/** The judged move, and how it has gone since: `-29.1% in 30 days, +14.2% since`. */
+export function moveLine(c: MoveFields): string {
+  const since = sinceLine(c)
+  return since ? `${judgedLine(c)}, ${since}` : judgedLine(c)
 }
 
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
@@ -544,6 +711,8 @@ export interface BuildRecordInput {
   scanned?: boolean
   /** What those scans read. Left out: derived from the candles' window and `postsRead`, not truncated. */
   coverage?: Coverage | null
+  /** Circulating supply today, for market-cap targets. Null/absent: a market-cap target is not priced and the call is judged on the 30-day close. */
+  supply?: number | null
 }
 
 /** The quote is the post's own words (whitespace aside). The one check between a label and a pin. */
@@ -566,7 +735,9 @@ export function buildRecord(input: BuildRecordInput): CalledRecord {
     const moves = movesFor(candles, p.postedAt, nowMs)
     if (!moves) continue
     seen.add(p.id)
-    const { verdict, judgedPct } = verdictFor(label.stance, moves)
+    const judged = targetFor(label.target, label.stance, moves, candles, p.postedAt, nowMs, input.supply ?? null)
+    const target = judged?.target ?? null
+    const { verdict, judgedPct } = judged ? { verdict: TARGET_VERDICT[judged.target.outcome], judgedPct: judged.judgedPct } : verdictFor(label.stance, moves)
     const conviction = label.conviction
     every.push({
       ...moves,
@@ -581,6 +752,7 @@ export function buildRecord(input: BuildRecordInput): CalledRecord {
       quote: label.quote,
       verdict,
       judgedPct,
+      target,
       impact: impactOf({ conviction, likes: p.likes, judgedPct, verdict }),
       origin: p.origin,
       picked: false,

@@ -263,15 +263,15 @@ export async function postsReadBefore(postIds: readonly string[], beforeMs: numb
 
 /** Every label (`none` included, so a post is never labeled twice) for a handle's posts on one symbol. Gone posts excluded. */
 export async function labelsFor(handle: string, symbol: string): Promise<StoredLabel[]> {
-  const rows = await prisma.$queryRaw<{ post_id: string; symbol: string; stance: string; conviction: number; quote: string | null; model: string | null; origin: string }[]>`
-    SELECT c.post_id, c.symbol, c.stance, c.conviction, c.quote, c.model, c.origin
+  const rows = await prisma.$queryRaw<{ post_id: string; symbol: string; stance: string; conviction: number; quote: string | null; target: string | null; model: string | null; origin: string }[]>`
+    SELECT c.post_id, c.symbol, c.stance, c.conviction, c.quote, c.target, c.model, c.origin
     FROM x_calls c JOIN x_posts p ON p.post_id = c.post_id
     WHERE p.handle = ${h(handle)} AND c.symbol = ${sym(symbol)} AND p.gone_at IS NULL
     ORDER BY c.post_id`
   return rows.map((r) => {
     const stance = r.stance === 'bull' || r.stance === 'bear' ? r.stance : 'none'
     const conviction = stance === 'none' ? 0 : r.conviction === 1 || r.conviction === 2 || r.conviction === 3 ? r.conviction : 0
-    return { postId: r.post_id, symbol: r.symbol, stance, conviction, quote: r.quote, model: r.model, origin: r.origin === 'added' ? 'added' : 'scan' }
+    return { postId: r.post_id, symbol: r.symbol, stance, conviction, quote: r.quote, target: stance === 'none' ? null : r.target, model: r.model, origin: r.origin === 'added' ? 'added' : 'scan' }
   })
 }
 
@@ -285,8 +285,8 @@ export async function saveLabels(labels: readonly SaveLabel[]): Promise<void> {
   for (let i = 0; i < list.length; i += 500) {
     const chunk = list.slice(i, i + 500)
     await prisma.$executeRaw`
-      INSERT INTO x_calls (post_id, symbol, stance, conviction, quote, model, origin, added_by, labeled_at)
-      SELECT t.post_id, t.symbol, t.stance, t.conviction, NULLIF(t.quote, ''), NULLIF(t.model, ''), t.origin, NULLIF(t.added_by, ''), now()
+      INSERT INTO x_calls (post_id, symbol, stance, conviction, quote, target, model, origin, added_by, labeled_at)
+      SELECT t.post_id, t.symbol, t.stance, t.conviction, NULLIF(t.quote, ''), NULLIF(t.target, ''), NULLIF(t.model, ''), t.origin, NULLIF(t.added_by, ''), now()
       FROM unnest(
         ${chunk.map((l) => l.postId)}::text[],
         ${chunk.map((l) => sym(l.symbol))}::text[],
@@ -295,12 +295,13 @@ export async function saveLabels(labels: readonly SaveLabel[]): Promise<void> {
         -- Prisma types a parameter array by its FIRST element: a text array that starts with null is sent as
         -- integers and Postgres refuses the whole chunk (measured 2026-11-11). Nulls ride as '' and come back by NULLIF.
         ${chunk.map((l) => (l.stance === 'none' ? '' : (l.quote ?? '')))}::text[],
+        ${chunk.map((l) => (l.stance === 'none' ? '' : (l.target ?? '')))}::text[],
         ${chunk.map((l) => l.model ?? '')}::text[],
         ${chunk.map((l) => l.origin)}::text[],
         ${chunk.map((l) => l.addedBy ?? '')}::text[]
-      ) AS t(post_id, symbol, stance, conviction, quote, model, origin, added_by)
+      ) AS t(post_id, symbol, stance, conviction, quote, target, model, origin, added_by)
       ON CONFLICT (post_id, symbol) DO UPDATE SET
-        stance = EXCLUDED.stance, conviction = EXCLUDED.conviction, quote = EXCLUDED.quote,
+        stance = EXCLUDED.stance, conviction = EXCLUDED.conviction, quote = EXCLUDED.quote, target = EXCLUDED.target,
         model = EXCLUDED.model, origin = EXCLUDED.origin, labeled_at = now(),
         -- who pasted it stays on the row (the daily count reads it), whatever labels it later
         added_by = COALESCE(EXCLUDED.added_by, x_calls.added_by)`
@@ -337,7 +338,7 @@ export async function reserveAdd<T extends { ok: boolean }>(r: { postId: string;
     if (have) {
       const stance = have.stance === 'bull' || have.stance === 'bear' ? have.stance : 'none'
       const conviction = stance === 'none' ? 0 : have.conviction === 1 || have.conviction === 2 || have.conviction === 3 ? have.conviction : 0
-      return { kind: 'exists' as const, label: { postId: have.postId, symbol: have.symbol, stance, conviction, quote: have.quote, model: have.model, origin: have.origin === 'added' ? 'added' : 'scan' } }
+      return { kind: 'exists' as const, label: { postId: have.postId, symbol: have.symbol, stance, conviction, quote: have.quote, target: have.target ?? null, model: have.model, origin: have.origin === 'added' ? 'added' : 'scan' } }
     }
     const c = await tx.$queryRaw<{ today: number; minute: number }[]>`
       SELECT count(*)::int AS today, count(*) FILTER (WHERE labeled_at >= ${new Date(nowMs - 60_000)})::int AS minute
