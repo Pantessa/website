@@ -220,7 +220,7 @@ export function calledJudgePins(check: Check): void {
   ])
   const r1 = readAnswer(good, posts)!
   check('judge labeler: a valid answer is read per post', r1?.[0].label.stance === 'bear' && r1[1].label.stance === 'bull' && r1[2].label.stance === 'none')
-  check('judge labeler: extra keys are never read (exactly stance/conviction/quote)', r1 && Object.keys(r1[1].label).sort().join() === 'conviction,quote,stance' && r1[1].label.quote === 'Higher from here')
+  check('judge labeler: extra keys are never read (exactly stance/conviction/quote/target; RE-PINNED 2026-11-16 (targets))', r1 && Object.keys(r1[1].label).sort().join() === 'conviction,quote,stance,target' && r1[1].label.target === null && r1[1].label.quote === 'Higher from here')
   const bad = readAnswer(JSON.stringify([{ i: 1, stance: 'bull', conviction: 3, quote: 'Higher from here' }, { i: 2, stance: 'bull', conviction: 3, quote: 'Higher from here' }]), posts)!
   check('judge labeler: a quote that is not in ITS OWN post is dropped', bad[0].label.stance === 'none' && bad[1].label.stance === 'bull')
   const oor = readAnswer(JSON.stringify([{ i: 0, stance: 'bear', conviction: 2, quote: 'Shorting into it' }, { i: 4, stance: 'bull', conviction: 1, quote: 'gm frens' }, { i: 1.5, stance: 'bear', conviction: 2, quote: 'trap' }]), posts)!

@@ -65,14 +65,23 @@ export default function CallCard({ call, n, handle, unit = 'usd' }: CallCardProp
             <dt>Price that day</dt>
             <dd>{fmtCallPrice(call.priceAt, unit)}</dd>
           </div>
+          {call.target && (
+            <div className="is-judged" data-target={call.target.outcome}>
+              <dt>Target</dt>
+              <dd>
+                {call.target.stated}
+                {call.target.unit !== 'price' && ` (${fmtCallPrice(call.target.price, unit)})`}
+              </dd>
+            </div>
+          )}
           {horizons.map(([label, v]) => (
-            <div key={label} className={label.startsWith(String(JUDGE_DAYS)) ? 'is-judged' : undefined}>
+            <div key={label} className={!call.target && label.startsWith(String(JUDGE_DAYS)) ? 'is-judged' : undefined}>
               <dt>{label}</dt>
               <dd>{v === null ? 'not yet' : fmtMove(v)}</dd>
             </div>
           ))}
           <div>
-            <dt>So far</dt>
+            <dt>Since</dt>
             <dd>{fmtMove(call.now)}</dd>
           </div>
         </dl>

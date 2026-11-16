@@ -396,7 +396,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
           `Nobody has plotted ${who} on ${symbol} yet`,
           <p className="xcc__standing">
             {response.canScan
-              ? `A scan reads up to ${SCAN_POST_CAP} of ${who}'s newest public posts about ${symbol}, back as far as ${SCAN_WINDOW_DAYS} days. A model labels each one bullish or bearish from its own words, and each is judged on this chart's daily close ${JUDGE_DAYS} days later.`
+              ? `A scan reads up to ${SCAN_POST_CAP} of ${who}'s newest public posts about ${symbol}, back as far as ${SCAN_WINDOW_DAYS} days. A model labels each one bullish or bearish from its own words, and each is judged on this chart's daily close ${JUDGE_DAYS} days later, or on the level it names.`
               : (response.reason ?? 'Scans are not available here right now.')}
           </p>,
         )}

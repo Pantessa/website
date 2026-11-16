@@ -33,7 +33,7 @@
 // is the only part that touches the chart, through the hand-written types in
 // lib/tv/types (the library itself is licensed and never in this repository).
 
-import { ADDED_MARK, PIN_URL_MAX, VERDICT_WORDS, cmpPostId, fmtDay, moveLine, recordHref, type CallVerdict, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
+import { ADDED_MARK, PIN_URL_MAX, VERDICT_WORDS, cmpPostId, fmtDay, judgedLine, moveLine, recordHref, sinceLine, type CallVerdict, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
 import type { ShapeSnapshot } from './shapes'
 import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvPriceScaleApi, TvShapeOptions, TvWidget } from './types'
 
@@ -209,13 +209,17 @@ export interface PinText {
  * words for it, so every card is the same height at most. No line is ever
  * wider than the card: a long handle or a long result takes two lines.
  */
-export function pinText(call: Pick<CalledCall, 'text' | 'quote' | 'postedAt' | 'verdict' | 'judgedPct'> & { origin?: CalledCall['origin'] }, handle: string, opts: { textWidth: number; measure: Measure; wordLines: number }): PinText {
+export function pinText(call: Pick<CalledCall, 'text' | 'quote' | 'postedAt' | 'verdict' | 'judgedPct'> & Partial<Pick<CalledCall, 'now' | 'target'>> & { origin?: CalledCall['origin'] }, handle: string, opts: { textWidth: number; measure: Measure; wordLines: number }): PinText {
   const fit = (whole: string, parts: string[]) => (opts.measure(whole) <= opts.textWidth ? [whole] : parts)
   const added = call.origin === 'added'
   const head = `@${handle} \u00b7 ${pinDate(call.postedAt)}`
   const result = `${moveLine(call)} \u00b7 ${VERDICT_WORDS[call.verdict]}`
   const headLines = [...fit(head, [`@${handle}`, pinDate(call.postedAt)]), ...(added ? [ADDED_MARK] : [])]
-  const resultLines = fit(result, [moveLine(call), VERDICT_WORDS[call.verdict]])
+  // Too wide for one line: two lines at most, the judged move, then how it has gone since with the verdict's word (a card never grows taller for it).
+  const since = sinceLine(call)
+  let resultLines = fit(result, [judgedLine(call), since ? `${since} \u00b7 ${VERDICT_WORDS[call.verdict]}` : VERDICT_WORDS[call.verdict]])
+  // A card with a mark line and a two-line result would outgrow the rest: there the "since" is left to the Calls list.
+  if (since && headLines.length + 1 + resultLines.length > opts.wordLines + 2) resultLines = fit(`${judgedLine(call)} \u00b7 ${VERDICT_WORDS[call.verdict]}`, [judgedLine(call), VERDICT_WORDS[call.verdict]])
   const spare = Math.max(1, opts.wordLines - (headLines.length - 1) - (resultLines.length - 1))
   const words = wrapWords(clampPost(call.text, call.quote), opts.textWidth, opts.measure, spare)
   const lines = [...headLines, ...words, ...resultLines]
@@ -535,7 +539,7 @@ export function calloutShape(call: Pick<CalledCall, 'barTime' | 'priceAt' | 'ver
 export const CALLED_MARK_PREFIX = 'called:'
 
 /** A mark's tooltip. The library escapes it (measured: a tag is shown as its characters), and it still carries only one line. */
-export function markTooltip(call: Pick<CalledCall, 'text' | 'quote' | 'postedAt' | 'verdict' | 'judgedPct'> & { origin?: CalledCall['origin'] }, handle: string): string {
+export function markTooltip(call: Pick<CalledCall, 'text' | 'quote' | 'postedAt' | 'verdict' | 'judgedPct'> & Partial<Pick<CalledCall, 'now' | 'target'>> & { origin?: CalledCall['origin'] }, handle: string): string {
   return `@${handle} \u00b7 ${pinDate(call.postedAt)}${call.origin === 'added' ? ` \u00b7 ${ADDED_MARK}` : ''} \u00b7 ${moveLine(call)} \u00b7 ${VERDICT_WORDS[call.verdict]}: ${clampPost(call.text, call.quote)}`
 }
 

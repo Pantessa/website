@@ -2145,6 +2145,8 @@ model XCall {
   stance     String
   conviction Int      @default(0)
   quote      String?
+  /// The post's own words naming the level it expects (spec parseTargetSpan reads the number). Null: none, or labeled before 2026-11-16.
+  target     String?
   model      String?
   /// scan | added
   origin     String   @default("scan")
