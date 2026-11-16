@@ -26,3 +26,5 @@
 .xva-note { flex-basis: 100%; color: var(--muted); font-size: 13px; }
 .xva-root[data-variant='line'] .xva-note { display: block; }
 .xva-away { color: var(--muted); }
+/* Flat (the /x splash, 2026-11-16): `className="xva-flat"`. A square outline, no fill. */
+.xva-flat .xva-btn { border-radius: 0; background: transparent; }
