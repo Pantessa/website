@@ -161,8 +161,15 @@ export default function CallFocus({ symbol }: { symbol: string }) {
         ) : null}
       </dl>
 
-      {/* The trade for this market, the app's own sentence (lib/called-it/acts). Nothing renders where nothing can run. */}
-      <CallActs symbol={record.symbol} stance={call.stance} handle={record.handle} postId={call.postId} variant={sheet ? 'stack' : 'row'} className="xca--card" />
+      {/* The trade for this market, the app's own sentence (lib/called-it/acts; nothing renders where nothing can run), and the
+          call's own page, where its share row lives. */}
+      <div className="xca-band" data-sheet={sheet || undefined}>
+        <CallActs symbol={record.symbol} stance={call.stance} handle={record.handle} postId={call.postId} variant={sheet ? 'stack' : 'row'} className="xca--card" />
+        <Link className="xca-share" href={callHref(record.handle, record.symbol, call.postId)} data-journey="called_card_share">
+          <Share2 aria-hidden />
+          Share this call
+        </Link>
+      </div>
 
       <footer className="xcf__foot">
         {call.url ? (
@@ -178,10 +185,6 @@ export default function CallFocus({ symbol }: { symbol: string }) {
           {call.picked ? 'Pinned' : 'Pin'}
         </button>
       </footer>
-      <Link className="xca-share" href={callHref(record.handle, record.symbol, call.postId)} data-journey="called_card_share">
-        <Share2 aria-hidden />
-        Share this call
-      </Link>
     </aside>
   )
 }

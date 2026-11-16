@@ -345,6 +345,9 @@ interface CalledState {
   pendingCall: string | null
   /** The call the address carries (`?call=`): it leaves the address once the card on screen is not it. */
   linkedCall: string | null
+  /** The named call already tried on this page (symbol|handle|id). A back / forward onto an entry that still names it
+   *  (a phone sheet's own history entry pops back to one) never opens it again. */
+  triedCall: string | null
   open(symbol: string, plot: Plot | null, opts?: { fit?: boolean; call?: string | null }): void
   /** The `call` key has left the address. */
   unlinkCall(): void
@@ -500,10 +503,14 @@ export const useCalled = create<CalledState>((set, get) => {
     opened: false,
     pendingCall: null,
     linkedCall: null,
+    triedCall: null,
 
     open(symbol, plot, opts) {
-      const call = plot ? (opts?.call ?? null) : null
-      if (call) set({ pendingCall: call, linkedCall: call })
+      const named = plot ? (opts?.call ?? null) : null
+      const tried = named ? `${symbol}|${plot!.handle}|${named}` : null
+      // ONCE: a call already tried here is not opened again; its key still leaves the address.
+      const call = named && get().triedCall !== tried ? named : null
+      if (named) set({ pendingCall: call, linkedCall: named, ...(call ? { triedCall: tried } : {}) })
       const s = get()
       if (s.symbol === symbol && s.opened && samePlot(s.plot, plot)) {
         // The record is already here (back / forward to the same plot): the named call opens now.
@@ -517,7 +524,7 @@ export const useCalled = create<CalledState>((set, get) => {
       if (s.symbol !== symbol) {
         seq++
         stopPoll()
-        set({ symbol, plot: null, phase: 'idle', response: null, record: null, scanning: false, progress: '', unlabeled: 0, focusId: null, focusBy: null, fitNonce: 0, cards: 0, note: null, opened: true, pendingCall: call, linkedCall: call })
+        set({ symbol, plot: null, phase: 'idle', response: null, record: null, scanning: false, progress: '', unlabeled: 0, focusId: null, focusBy: null, fitNonce: 0, cards: 0, note: null, opened: true, pendingCall: call, linkedCall: named })
       } else set({ opened: true })
       if (!plot) {
         if (get().plot) get().clear()
