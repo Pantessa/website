@@ -20,6 +20,10 @@
 /* Full-width buttons: a phone sheet, a hero. */
 .xca[data-variant='stack'] .xca__chips { flex-direction: column; }
 .xca[data-variant='stack'] .xca__chip { width: 100%; min-height: 44px; }
+/* On a page (the one-call lead, not the chart's card) the trade is the SECOND press: the page's own
+   button onto the live chart is the one filled button, so the buy is an outline in the accent ink. */
+.xca[data-variant='stack']:not(.xca--card) .xca__chip--buy { background: none; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.xca[data-variant='stack']:not(.xca--card) .xca__chip--buy:hover { opacity: 1; border-color: var(--accent); }
 
 /* Inside the call card (CallFocus): one band between the numbers and the foot.
    The trade on the left, "Share this call" on the right; on the phone sheet the
