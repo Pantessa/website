@@ -51,6 +51,14 @@
 /* The span the label quoted reads at full ink; the rest of the post steps back. No block, no underline: the
    post's left rule already carries the verdict's colour. A post with no marked span reads at full ink whole. */
 .xcl-quote { background: none; color: var(--fg); }
+/* A folded post (coordinator, round 2): the whole post opens in place, in the reading face, under the call's words. */
+.xcl-whole { margin-top: var(--sp-2); }
+.xcl-whole > summary { display: inline-flex; align-items: center; min-height: 44px; cursor: pointer; list-style: none; font-family: var(--xrc-ui); font-size: var(--fs-sm); font-weight: 500; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+.xcl-whole > summary::-webkit-details-marker { display: none; }
+.xcl-whole > summary:hover { color: var(--fg); }
+.xcl-whole > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.xcl-whole[open] > summary { color: var(--fg); }
+.xcl-post .xcl-whole p { font-family: var(--xrc-ui); font-weight: 400; font-size: var(--fs-base, 1rem); line-height: 1.5; letter-spacing: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .xcl-post p:not(:has(.xcl-quote)), .xcl-best__text:not(:has(.xcl-quote)) { color: var(--fg); }
 
 .xcl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-4); margin: 0; font-size: var(--fs-md); line-height: 1.4; color: var(--muted); }

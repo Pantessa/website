@@ -27,6 +27,10 @@ import { callHref, chartCallHref } from '@/lib/called-it/gtm'
 import { cleanLine, fmtCallPrice, fmtCount, fmtUtcDate, fmtUtcDateTime, headlineParts, initialOf, linePaths, plotScale, sentenceCase, splitQuote, unreadShare, type ClosePoint } from '@/lib/called-it/card-layout'
 
 type Unit = 'usd' | 'level' | 'yield'
+/** A post longer than this is folded in the lead: the call's own words lead, the whole post opens in place. */
+export const FOLD_AT = 320
+/** With no labeled span to lead with, this much of a folded post is shown. */
+const FOLD_KEEP = 220
 const STANCE_WORDS = { bull: 'Bull', bear: 'Bear' } as const
 const pct = (f: number) => `${Math.round(f * 10000) / 100}%`
 
@@ -117,7 +121,14 @@ export default function CallLead({ record, call, n, avatar, unit = 'usd', closes
   const day = fmtUtcDate(call.postedAt)
   // A long post is set a step smaller, so the tally and the next press stay on a phone's first screen.
   const length = Array.from(call.text).length
-  const size = length > 200 ? 'long' : length > 110 ? 'mid' : 'short'
+  // A very long post (a thread-sized one) is FOLDED (coordinator, round 2): the lead shows the words that carry the
+  // call (the labeled span, between ellipses where the post goes on), and the whole post opens in place with no
+  // script. Unfolded it pushed the tally and the next press several screens down a phone.
+  const folded = length > FOLD_AT
+  const parts = folded ? splitQuote(call.text, call.quote) : null
+  const leadText = !folded ? null : parts ? parts[1] : `${Array.from(call.text).slice(0, FOLD_KEEP).join('').trimEnd()}`
+  const leadLength = leadText === null ? length : Array.from(leadText).length
+  const size = leadLength > 200 ? 'long' : leadLength > 110 ? 'mid' : 'short'
   return (
     <header className={`xcl is-${call.verdict}`} data-xcl="lead" data-call={call.postId} data-verdict={call.verdict} data-origin={call.origin}>
       <p className="xcl-kicker">
@@ -158,10 +169,34 @@ export default function CallLead({ record, call, n, avatar, unit = 'usd', closes
         </span>
       </Link>
 
-      <blockquote className="xcl-post" data-size={size} cite={post ?? undefined}>
-        <p>
-          <PostText call={call} />
-        </p>
+      <blockquote className="xcl-post" data-size={size} data-folded={folded ? 'yes' : undefined} cite={post ?? undefined}>
+        {folded && leadText !== null ? (
+          <>
+            <p>
+              <bdi>
+                {parts ? (
+                  <>
+                    {parts[0].trim() ? '\u2026 ' : ''}
+                    <mark className="xcl-quote">{leadText}</mark>
+                    {parts[2].trim() ? ' \u2026' : ''}
+                  </>
+                ) : (
+                  `${leadText}\u2026`
+                )}
+              </bdi>
+            </p>
+            <details className="xcl-whole">
+              <summary data-journey="called_call_whole_post">Read the whole post</summary>
+              <p>
+                <PostText call={call} />
+              </p>
+            </details>
+          </>
+        ) : (
+          <p>
+            <PostText call={call} />
+          </p>
+        )}
       </blockquote>
 
       <p className="xcl-meta">

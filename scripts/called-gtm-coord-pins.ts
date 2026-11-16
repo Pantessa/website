@@ -61,6 +61,11 @@ export function calledGtmCoordPins(check: Check): void {
     arrivalSourceAllowed('/x/dcinvestor/ETH') && arrivalSourceAllowed('/x/dcinvestor') && !arrivalSourceAllowed('/xx') && !arrivalSourceAllowed('/x?a=1') && !arrivalSourceAllowed('//x') && !arrivalSourceAllowed('/xyz/a') &&
       rec('/x/dcinvestor/ETH', 'Buy $25 of ETH').ok === true && rec('/x/dcinvestor/ETH', 'Send 1 ETH to 0x1234567890abcdef').ok === false && rec('/x/dcinvestor/ETH', 'Buy $25 of ETH at https://evil.example').ok === false,
   )
+  const lead = read('components/called/CallLead.tsx')
+  check(
+    'called-gtm (one-call lead): a post over 320 characters is folded: the call\'s own words lead between ellipses, and the whole post opens in place in a <details> (no script), still through PostText (text nodes only)',
+    /export const FOLD_AT = 320\b/.test(lead) && /const folded = length > FOLD_AT/.test(lead) && /<details className="xcl-whole">[\s\S]{0,260}<PostText call=\{call\} \/>/.test(lead) && !/dangerouslySetInnerHTML/.test(lead),
+  )
   const board = read('lib/called-it/board.ts')
   check(
     'called-gtm (board): the board reads the PUBLIC list only (readPlotted: never an internal run or a hidden handle), holds each entry in a cache, and never passes the background deleted-post check',
