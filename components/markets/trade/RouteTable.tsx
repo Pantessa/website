@@ -46,6 +46,7 @@ import {
   type RoutesResponse,
   type VenueKind,
 } from '@/lib/symbol-venues'
+import { foldGroup, foldToggleLabel, type RouteLine } from '@/lib/route-rows'
 import { canSellAsk, isSellAsk } from '@/lib/sell-gate'
 import { canFill, noVenueNote } from '@/lib/tradability'
 import { useHeld } from '@/lib/use-held'
@@ -133,7 +134,8 @@ export default function RouteTable({
   }
   const [data, setData] = useState<RoutesResponse | null>(null)
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
-  const [filter, setFilter] = useState<VenueKind | 'all'>('all')
+  // Kinds whose other chains are showing (lib/route-rows: one chain leads).
+  const [unfolded, setUnfolded] = useState<ReadonlySet<VenueKind>>(() => new Set())
   const [drawn, setDrawn] = useState<number | null>(null)
   const [why, setWhy] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
@@ -253,22 +255,18 @@ export default function RouteTable({
     const list = buyShut
       ? routes.filter((r) => r.kind !== 'fund')
       : [...routes.filter((r) => r.venue !== 'card'), ...(walletFunding?.routes ?? []), ...routes.filter((r) => r.venue === 'card')]
-    const filtered = filter === 'all' ? list : list.filter((r) => r.kind === filter)
     const groups = new Map<VenueKind, RouteQuote[]>()
     for (const k of VENUE_KIND_ORDER) {
-      const g = filtered.filter((r) => r.kind === k)
+      const g = list.filter((r) => r.kind === k)
       if (g.length) groups.set(k, g)
     }
     // The Fund group stands even with no row in it, to say why.
-    if (!buyShut && (filter === 'all' || filter === 'fund') && !groups.has('fund') && fundNotes.length > 0) groups.set('fund', [])
+    if (!buyShut && !groups.has('fund') && fundNotes.length > 0) groups.set('fund', [])
     return groups
-  }, [routes, filter, walletFunding, fundNotes, buyShut])
+  }, [routes, walletFunding, fundNotes, buyShut])
+  // The chain the spot group calls best leads the limit group too.
+  const bestChainId = useMemo(() => routes.find((r) => r.kind === 'spot' && r.best)?.chainId ?? null, [routes])
 
-  const kindsPresent = useMemo(
-    () => VENUE_KIND_ORDER.filter((k) => routes.some((r) => r.kind === k) || (k === 'fund' && !buyShut && ((walletFunding?.routes.length ?? 0) > 0 || fundNotes.length > 0))),
-    [routes, walletFunding, fundNotes, buyShut],
-  )
-  const hasPerp = routes.some((r) => r.kind === 'perp')
   // A card checkout isn't a dapp; the wallet's funding venues are.
   const venues = useMemo(
     () => new Set([...routes, ...(walletFunding?.routes ?? [])].filter((r) => r.venue !== 'card').map((r) => r.venue)).size,
@@ -281,7 +279,7 @@ export default function RouteTable({
         <div>
           <h2 className="mkt-card__title">Every way to act on {pair.symbol}</h2>
           <span className="mkt-card__eyebrow mono">
-            {venues > 0 ? `${venues} DAPPS · ` : ''}LIVE QUOTES · ONE CHIP EACH · YOUR WALLET SIGNS
+            {venues > 0 ? `${venues} DAPPS · ` : ''}LIVE QUOTES · YOUR WALLET SIGNS
           </span>
         </div>
         <div className="mkt-routes__controls">
@@ -316,35 +314,8 @@ export default function RouteTable({
               />
             </label>
           </div>
-          {hasPerp && (
-            <div className="mkt-routes__presets mkt-routes__lev" role="group" aria-label="Perp leverage">
-              <span className="mkt-order__k mono">LEV</span>
-              {ROUTE_LEVERAGES.map((l) => (
-                <button key={l} type="button" className={`mkt-order__preset ${leverage === l ? 'is-on' : ''}`} onClick={() => setLeverage(l)}>
-                  {l}x
-                </button>
-              ))}
-              <label className="mkt-routes__slider" title="Sets cross leverage venue-side before the order (signed 1/2), then the order (2/2) — never decorative.">
-                <input type="range" min={1} max={LEVERAGE_MAX} step={1} value={leverage} aria-label="Leverage" onChange={(e) => setLeverage(Number(e.target.value))} />
-                <span className="mono">{leverage}x</span>
-              </label>
-            </div>
-          )}
         </div>
       </header>
-
-      {kindsPresent.length > 1 && (
-        <div className="mkt-routes__filters" role="tablist" aria-label="Venue kind">
-          <button type="button" role="tab" aria-selected={filter === 'all'} className={`mkt-routes__filter ${filter === 'all' ? 'is-on' : ''}`} onClick={() => setFilter('all')}>
-            All
-          </button>
-          {kindsPresent.map((k) => (
-            <button key={k} type="button" role="tab" aria-selected={filter === k} className={`mkt-routes__filter ${filter === k ? 'is-on' : ''}`} onClick={() => setFilter(k)}>
-              {VENUE_KIND_LABEL[k]}
-            </button>
-          ))}
-        </div>
-      )}
 
       {state === 'error' && !data && <p className="mkt-card__note">The venue quotes didn’t answer — the map still sends; every build re-quotes before you sign.</p>}
       {state === 'loading' && !data && (
@@ -362,21 +333,33 @@ export default function RouteTable({
 
       {data && (
         <div className="mkt-routes__groups">
-          {[...rows.entries()].map(([kind, list]) => (
-            <div key={kind} className="mkt-routes__group" data-kind={kind}>
+          {[...rows.entries()].map(([kind, list]) => {
+            const fold = foldGroup(kind, list, bestChainId)
+            const isOpen = unfolded.has(kind)
+            const shown = isOpen ? [...fold.lead, ...fold.more] : fold.lead
+            const shownChains = new Set(shown.map((l) => l.primary.chainId))
+            return (
+            <div key={kind} className="mkt-routes__group" data-kind={kind} data-chains={fold.chains} data-folded={fold.more.length > 0 && !isOpen ? '1' : undefined}>
               <div className="mkt-routes__kind mono">
                 <span>{VENUE_KIND_LABEL[kind].toUpperCase()}</span>
-                <span className="mkt-routes__kind-sub">{kindHint(kind)}</span>
+                <span className="mkt-routes__kind-sub">{kindHint(kind, fold.more.length > 0 ? fold.chains : 0)}</span>
                 {kind === 'spot' && list.some((r) => r.best) && (
                   <button type="button" className="mkt-routes__why" title={BEST_OUT_RULE} aria-label="Why this is best" data-rule={BEST_OUT_RULE} onClick={() => setWhy((w) => !w)}>
                     why best?
                   </button>
                 )}
+                {kind === 'perp' && (
+                  <label className="mkt-routes__slider mkt-routes__lev" title="Sets cross leverage venue-side before the order (signed 1/2), then the order (2/2) — never decorative.">
+                    <span className="mkt-order__k mono">LEVERAGE</span>
+                    <input type="range" min={1} max={LEVERAGE_MAX} step={1} value={leverage} aria-label="Leverage" onChange={(e) => setLeverage(Number(e.target.value))} />
+                    <span className="mono">{leverage}x</span>
+                  </label>
+                )}
               </div>
               {kind === 'spot' && why && <p className="mkt-routes__rule">{BEST_OUT_RULE}</p>}
               {kind === 'limit' && drawn != null && data?.last != null && (
                 <ul className="mkt-routes__list mkt-routes__list--level" aria-label="At your drawn line">
-                  {SPOT_CHAINS.filter((c) => c.cow && list.some((r) => r.chainId === c.id))
+                  {SPOT_CHAINS.filter((c) => c.cow && shownChains.has(c.id))
                     .map((c) => ({ c, lvl: limitAtLevel(pair.symbol, c.word, usd, drawn, data.last!) }))
                     .filter((x): x is { c: (typeof SPOT_CHAINS)[number]; lvl: NonNullable<ReturnType<typeof limitAtLevel>> } => !!x.lvl && canSellAsk(x.lvl.ask, held))
                     .map(({ c, lvl }) => (
@@ -394,16 +377,21 @@ export default function RouteTable({
                           <span className="mkt-route__fee mono">{feeLabel(list[0]?.feeBps ?? 0)}</span>
                           <span className="mkt-route__tags"><span className="mkt-route__tag mono">FROM YOUR CHART</span></span>
                         </span>
-                        <button type="button" className={`mkt-route__chip ${lvl.side === 'sell' ? 'mkt-route__chip--sell' : ''}`} title={lvl.ask} data-ask={lvl.ask} onClick={() => onAsk(lvl.ask)}>
-                          {lvl.label}
-                        </button>
+                        <span className="mkt-route__acts">
+                          <button type="button" className={`mkt-route__chip ${lvl.side === 'sell' ? 'mkt-route__chip--sell' : ''}`} title={lvl.ask} data-ask={lvl.ask} onClick={() => onAsk(lvl.ask)}>
+                            {lvl.label}
+                          </button>
+                        </span>
                       </li>
                     ))}
                 </ul>
               )}
               <ul className="mkt-routes__list">
-                {list.map((r) => (
-                  <li key={r.id} className={`mkt-route ${r.best ? 'is-best' : ''} ${r.side === 'sell' ? 'mkt-route--sell' : ''} ${open === r.id ? 'is-open' : ''}`} data-route={r.id}>
+                {shown.map((line: RouteLine) => {
+                  const r = line.primary
+                  const tickets = line.acts.filter((a) => a.ticket)
+                  return (
+                  <li key={line.key} className={`mkt-route ${line.acts.some((a) => a.best) ? 'is-best' : ''} ${r.side === 'sell' ? 'mkt-route--sell' : ''} ${open === line.key ? 'is-open' : ''}`} data-route={r.id} data-acts={line.acts.length}>
                     <span className="mkt-route__mark" aria-hidden="true">
                       <VenueMark venue={r.venue} />
                     </span>
@@ -414,8 +402,12 @@ export default function RouteTable({
                     <span className="mkt-route__num">
                       {r.quote ? (
                         <>
-                          <span className={`mkt-route__val mono ${r.quote.kind === 'none' ? 'mkt-route__val--soft' : ''}`}>{r.quote.label}</span>
-                          {r.quote.sub && <span className="mkt-route__sub mono">{r.quote.sub}</span>}
+                          <span className={`mkt-route__val mono ${r.quote.kind === 'none' ? 'mkt-route__val--soft' : ''}`}>{line.pairLabel ?? r.quote.label}</span>
+                          {line.pairLabel && kind === 'limit' ? (
+                            <span className="mkt-route__sub mono">buy rests under · sell rests over market</span>
+                          ) : (
+                            r.quote.sub && <span className="mkt-route__sub mono">{r.quote.sub}</span>
+                          )}
                         </>
                       ) : (
                         <span className="mkt-route__val mono mkt-route__val--soft" title="No live quote right now — the build re-quotes before you sign">
@@ -428,39 +420,65 @@ export default function RouteTable({
                     <span className="mkt-route__meta">
                       <span className="mkt-route__fee mono" title="Pantessa's fee on this route (lib/fees)">
                         {feeLabel(r.feeBps)}
-                        {r.ticket && (
+                        {tickets.length > 0 && (
                           <>
                             {' '}
-                            <button type="button" className="mkt-route__toggle mono" aria-expanded={open === r.id} aria-controls={`ticket-${r.id}`} onClick={() => setOpen((o) => (o === r.id ? null : r.id))}>
-                              {open === r.id ? 'hide' : "what you'll sign"}
+                            <button type="button" className="mkt-route__toggle mono" aria-expanded={open === line.key} aria-controls={`ticket-${line.key}`} onClick={() => setOpen((o) => (o === line.key ? null : line.key))}>
+                              {open === line.key ? 'hide' : 'details'}
                             </button>
                           </>
                         )}
                       </span>
                       <span className="mkt-route__tags">
-                        {r.best && <span className="mkt-route__tag mkt-route__tag--best mono" title={BEST_OUT_RULE}>BEST OUT</span>}
+                        {line.acts.some((a) => a.best) && <span className="mkt-route__tag mkt-route__tag--best mono" title={BEST_OUT_RULE}>BEST OUT</span>}
                         {/* A sell row only renders for a holder, so it never needs the tag. */}
                         {r.needs === 'position' && !isSellAsk(r.ask) && <span className="mkt-route__tag mono">NEEDS A POSITION</span>}
                       </span>
                     </span>
-                    <button type="button" className={`mkt-route__chip ${r.side === 'sell' ? 'mkt-route__chip--sell' : ''}`} title={r.ask} data-ask={r.ask} onClick={() => onAsk(r.ask)}>
-                      {r.label}
-                    </button>
-                    {r.ticket && open === r.id && (
-                      <dl className="mkt-route__more" id={`ticket-${r.id}`} data-ticket="1">
-                        <div><dt className="mono">YOU SEND</dt><dd>“{r.ask}”</dd></div>
-                        <div><dt className="mono">EST. OUT</dt><dd>{r.ticket.out ?? '— (no live quote; the card quotes it)'}</dd></div>
-                        <div><dt className="mono">PANTESSA FEE</dt><dd>{r.ticket.feeBps > 0 ? `${(r.ticket.feeBps / 100).toFixed(2)}% · $${r.ticket.feeUsd.toFixed(2)} on $${data.amountUsd}` : 'none'}</dd></div>
-                        <div><dt className="mono">{r.ticket.slippageBps != null ? 'MIN RECEIVED' : 'FILL RULE'}</dt><dd>{r.ticket.minOut ?? (r.ticket.slippageBps != null ? `${(r.ticket.slippageBps / 100).toFixed(2)}% bound pinned by the builder` : 'at-or-better')}{r.ticket.slippageBps != null && r.ticket.minOut ? ` · ${(r.ticket.slippageBps / 100).toFixed(2)}% bound` : ''}</dd></div>
-                        <div><dt className="mono">GAS</dt><dd>{r.ticket.gas ?? 'none — no transaction'}</dd></div>
-                        <div><dt className="mono">SETTLES AT</dt><dd>{r.ticket.settles}</dd></div>
-                        <div><dt className="mono">YOU SIGN</dt><dd>{r.ticket.signs}</dd></div>
-                        <span className="mkt-route__ticket-note mono">{r.ticket.note.toUpperCase()}</span>
-                      </dl>
+                    <span className="mkt-route__acts">
+                      {line.acts.map((a) => (
+                        <button key={a.id} type="button" className={`mkt-route__chip ${a.side === 'sell' ? 'mkt-route__chip--sell' : ''}`} title={a.ask} data-ask={a.ask} data-act={a.id} onClick={() => onAsk(a.ask)}>
+                          {a.label}
+                        </button>
+                      ))}
+                    </span>
+                    {tickets.length > 0 && open === line.key && (
+                      <div className="mkt-route__more" id={`ticket-${line.key}`}>
+                        {tickets.map((r) => r.ticket && (
+                          <dl key={r.id} className="mkt-route__ticket" data-ticket="1">
+                            <div><dt className="mono">YOU SEND</dt><dd>“{r.ask}”</dd></div>
+                            <div><dt className="mono">EST. OUT</dt><dd>{r.ticket.out ?? '— (no live quote; the card quotes it)'}</dd></div>
+                            <div><dt className="mono">PANTESSA FEE</dt><dd>{r.ticket.feeBps > 0 ? `${(r.ticket.feeBps / 100).toFixed(2)}% · $${r.ticket.feeUsd.toFixed(2)} on $${data.amountUsd}` : 'none'}</dd></div>
+                            <div><dt className="mono">{r.ticket.slippageBps != null ? 'MIN RECEIVED' : 'FILL RULE'}</dt><dd>{r.ticket.minOut ?? (r.ticket.slippageBps != null ? `${(r.ticket.slippageBps / 100).toFixed(2)}% bound pinned by the builder` : 'at-or-better')}{r.ticket.slippageBps != null && r.ticket.minOut ? ` · ${(r.ticket.slippageBps / 100).toFixed(2)}% bound` : ''}</dd></div>
+                            <div><dt className="mono">GAS</dt><dd>{r.ticket.gas ?? 'none — no transaction'}</dd></div>
+                            <div><dt className="mono">SETTLES AT</dt><dd>{r.ticket.settles}</dd></div>
+                            <div><dt className="mono">YOU SIGN</dt><dd>{r.ticket.signs}</dd></div>
+                            <span className="mkt-route__ticket-note mono">{r.ticket.note.toUpperCase()}</span>
+                          </dl>
+                        ))}
+                      </div>
                     )}
                   </li>
-                ))}
+                  )
+                })}
               </ul>
+              {fold.more.length > 0 && (
+                <button
+                  type="button"
+                  className="mkt-routes__fold mono"
+                  aria-expanded={isOpen}
+                  onClick={() =>
+                    setUnfolded((u) => {
+                      const next = new Set(u)
+                      if (next.has(kind)) next.delete(kind)
+                      else next.add(kind)
+                      return next
+                    })
+                  }
+                >
+                  {foldToggleLabel(new Set(fold.more.map((l) => l.primary.chainId)).size, isOpen)}
+                </button>
+              )}
               {kind === 'fund' && fundNotes.length > 0 && (
                 <ul className="mkt-routes__fundnotes" aria-live="polite" data-fund-state={walletAddress ? (fundPending ? 'pending' : (walletFunding?.state ?? 'unread')) : 'no-wallet'}>
                   {fundNotes.map((n) => (
@@ -471,7 +489,8 @@ export default function RouteTable({
                 </ul>
               )}
             </div>
-          ))}
+            )
+          })}
           {notes.length > 0 && (
             <ul className="mkt-routes__notes" data-shut={shutSides.join('+') || undefined}>
               {notes.map((n) => (
@@ -483,7 +502,7 @@ export default function RouteTable({
           )}
           <p className="mkt-routes__foot mono">
             {data.failed.length > 0 ? `${data.failed.length} quote${data.failed.length > 1 ? 's' : ''} didn’t answer · ` : ''}
-            sized at ${data.amountUsd} · quotes {data.cached ? 'cached ≤30s' : 'live'} · a chip sends the sentence; the guarded build appears below for your wallet
+            sized at ${data.amountUsd} · quotes {data.cached ? 'cached ≤30s' : 'live'} · every build is re-quoted and guarded before your wallet signs
           </p>
         </div>
       )}
@@ -491,10 +510,11 @@ export default function RouteTable({
   )
 }
 
-function kindHint(kind: VenueKind): string {
+/** `chains` > 0 when the group is folded to one of that many chains. */
+function kindHint(kind: VenueKind, chains = 0): string {
   switch (kind) {
     case 'spot':
-      return 'fills now · best out marked'
+      return chains > 0 ? `fills now · the best of ${chains} chains` : 'fills now · best out marked'
     case 'limit':
       return 'rests on CoW · gasless · fills at-or-better'
     case 'stock':

@@ -35,12 +35,6 @@
 .mkt-routes__head { align-items: flex-start; }
 .mkt-routes__controls { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .mkt-routes__presets { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
-.mkt-routes__filters { display: flex; gap: 6px; flex-wrap: wrap; }
-.mkt-routes__filter {
-  min-height: 28px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--line); background: transparent;
-  color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer;
-}
-.mkt-routes__filter.is-on { color: var(--fg); border-color: var(--fg); }
 .mkt-routes__groups { display: flex; flex-direction: column; gap: 26px; }
 .mkt-routes__group { display: flex; flex-direction: column; }
 .mkt-routes__kind { display: flex; align-items: baseline; gap: 10px; font-size: 10px; letter-spacing: 0.14em; color: var(--muted-2); padding: 0 0 10px; }
@@ -346,3 +340,29 @@
   .mkt-ticket__check { min-height: 44px; }
   .mkt-ticket__check input { width: 20px; height: 20px; }
 }
+
+/* ── The fold (2026-11-16, lib/route-rows) ───────────────────────────────
+   A row is a WAY to act, not a chain × side: a buy and its sell share one
+   line (two chips in .mkt-route__acts), a kind quoted on several chains
+   shows its lead chain and folds the rest behind .mkt-routes__fold. The acts
+   box sits in the seat the lone chip had at every width. */
+.mkt-route__acts { grid-column: 3; grid-row: 1; justify-self: end; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+.mkt-route__acts > .mkt-route__chip { flex: 1 1 auto; }
+.mkt-route__more > .mkt-route__ticket { display: contents; }
+.mkt-route__more > .mkt-route__ticket + .mkt-route__ticket > div:first-child { grid-column: 1 / -1; padding-top: 8px; margin-top: 4px; border-top: 1px dashed var(--line); }
+.mkt-route__more .mkt-route__ticket div { margin: 0; }
+.mkt-routes__fold {
+  align-self: flex-start; justify-self: start; margin-top: 10px; min-height: 28px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 10.5px; letter-spacing: 0.06em; cursor: pointer;
+}
+.mkt-routes__fold:hover { color: var(--fg); border-color: var(--fg); }
+.mkt-routes__kind > .mkt-routes__lev { margin-left: auto; text-transform: none; }
+.mkt-routes__kind > .mkt-routes__why + .mkt-routes__lev { margin-left: 12px; }
+@container mkt-routes (min-width: 520px) {
+  .mkt-routes__groups .mkt-route__acts { grid-column: 4; grid-row: 1; justify-self: stretch; flex-wrap: nowrap; }
+}
+@container mkt-routes (min-width: 800px) {
+  .mkt-routes__groups .mkt-route__acts { grid-column: 6; grid-row: 1; }
+  .mkt-routes__groups .mkt-route__acts > .mkt-route__chip { min-width: 108px; }
+}
+@media (hover: none) { .mkt-routes__fold { min-height: 44px; } }
