@@ -1,6 +1,9 @@
 // The pieces of the /x splash: the plot of one scanned account (a price line
 // with a dot per call), the tile that wears it in the grid, the larger panel
-// the hero wears, and the cut-stone bands behind the hero.
+// the hero wears, and the scoreline (the tally drawn as one segmented rule).
+//
+// FLAT (2026-11-16): no card, no shadow, no gradient. Structure is hairlines
+// and type; the one mark is the scoreline, the same on a tile and in the hero.
 //
 // Server components, no script. The line is an SVG stretched over a box whose
 // height is CSS; each dot is a span placed by percentages, so nothing is
@@ -54,6 +57,41 @@ export function Counts({ tally, compact }: { tally: CalledTally; compact?: boole
   )
 }
 
+const SCORE_ORDER = ['right', 'wrong', 'flat', 'open'] as const
+
+/** THE SCORELINE: the tally as one rule, a segment per verdict, as wide as its share of the calls. Decorative: the counts beside it carry the numbers. */
+export function Scoreline({ tally }: { tally: CalledTally }) {
+  if (tally.total < 1) return null
+  return (
+    <span className="xrc-line" aria-hidden>
+      {SCORE_ORDER.filter((k) => tally[k] > 0).map((k) => (
+        <span key={k} className={`xrc-line__seg is-${k}`} style={{ flexGrow: tally[k] }} />
+      ))}
+    </span>
+  )
+}
+
+/** The hero's scorecard: every count the record holds, as a figure over its word, then the scoreline. */
+export function Score({ tally }: { tally: CalledTally }) {
+  return (
+    <div className="xrc-score">
+      <dl className="xrc-score__row">
+        <div>
+          <dd>{tally.total}</dd>
+          <dt>{tally.total === 1 ? 'call' : 'calls'}</dt>
+        </div>
+        {SCORE_ORDER.filter((k) => tally[k] > 0).map((k) => (
+          <div key={k} className={`is-${k}`}>
+            <dd>{tally[k]}</dd>
+            <dt>{VERDICT_WORDS[k]}</dt>
+          </div>
+        ))}
+      </dl>
+      <Scoreline tally={tally} />
+    </div>
+  )
+}
+
 function Who({ summary, avatar, size }: { summary: PlotSummary; avatar: string | null; size: 'sm' | 'md' }) {
   const named = summary.name && summary.name.trim().toLowerCase() !== summary.handle
   return (
@@ -83,6 +121,7 @@ export function Tile({ summary, avatar, now }: { summary: PlotSummary; avatar: s
         <span className="xrc-tile__sym">{summary.symbol}</span>
       </span>
       <Spark summary={summary} size="tile" />
+      <Scoreline tally={summary.tally} />
       <span className="xrc-tile__foot">
         <Counts tally={summary.tally} compact />
         <span className="xrc-tile__when">{agoWords(summary.scannedAt, now)}</span>
@@ -101,7 +140,7 @@ export function Featured({ summary, avatar }: { summary: PlotSummary; avatar: st
         <span className="xrc-feat__sym">on {summary.symbol}</span>
       </div>
       <Spark summary={summary} size="hero" />
-      <Counts tally={summary.tally} />
+      <Score tally={summary.tally} />
       <ul className="xrc-feat__quotes">
         {summary.quotes.map((q) => (
           <li key={q.postId} className={`xrc-quote is-${q.verdict}`}>
@@ -118,27 +157,10 @@ export function Featured({ summary, avatar }: { summary: PlotSummary; avatar: st
       </ul>
       <p className="xrc-feat__more">
         {summary.coverage && <span className="xrc-feat__cov">{summary.coverage}</span>}
-        <Link href={href} className="xrc-btn xrc-btn--wide" prefetch={false} data-journey="called_featured">
+        <Link href={href} className="xrc-go" prefetch={false} data-journey="called_featured">
           Open on the chart
         </Link>
       </p>
     </section>
-  )
-}
-
-/** The Emerald Cut's bands, large and faint, behind the hero: nested rectangles with cut corners. Decorative. */
-export function CutBands() {
-  const band = (inset: number) => {
-    const w = 640 - inset * 2
-    const h = 440 - inset * 2
-    const c = Math.max(8, 72 - inset * 0.55)
-    return `M${inset + c} ${inset}h${w - c * 2}l${c} ${c}v${h - c * 2}l${-c} ${c}h${-(w - c * 2)}l${-c} ${-c}v${-(h - c * 2)}z`
-  }
-  return (
-    <svg className="xrc-bands" viewBox="0 0 640 440" preserveAspectRatio="xMidYMid slice" aria-hidden>
-      {[8, 44, 80, 116, 152].map((inset) => (
-        <path key={inset} d={band(inset)} />
-      ))}
-    </svg>
   )
 }

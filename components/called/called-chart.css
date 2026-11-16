@@ -330,3 +330,23 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
   .xch__tools .xcc-seg__btn { flex: 1 1 0; justify-content: center; }
   .xch__clear { position: absolute; top: 8px; right: 6px; }
 }
+
+/* The door on the /x splash, FLAT (2026-11-16): `className="xcc-door--flat"` from app/x/page.tsx. No box: the handle, the market and the button share one rule. */
+.xcc-door--flat { gap: var(--sp-3); }
+.xcc-door--flat .xcc-door__row { flex-wrap: nowrap; gap: 0; border-bottom: 1px solid var(--fg); transition: border-color var(--dur-1) ease; }
+.xcc-door--flat .xcc-door__row:focus-within { border-bottom-color: var(--accent); }
+.xcc-door--flat .xcc-door__field { flex: 1 1 auto; gap: var(--sp-2); padding: 0; border: 0; border-radius: 0; background: transparent; }
+.xcc-door--flat .xcc-door__input { height: 56px; font-size: var(--fs-xl); }
+.xcc-door--flat .xcc-door__on { flex: none; gap: var(--sp-2); padding-left: var(--sp-3); border-left: 1px solid var(--line); }
+.xcc-door--flat .xcc-door__market { width: 68px; height: 56px; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: var(--fs-md); }
+.xcc-door--flat .xcc-door__market[aria-invalid='true'] { color: var(--sell); }
+.xcc-door--flat .xcc-btn--go { flex: none; align-self: center; min-height: 44px; padding: 0 var(--sp-5); border-radius: 0; font-size: var(--fs-base); }
+.xcc-door--flat .xcc-seg { gap: var(--sp-4); padding: 0; border: 0; border-radius: 0; background: transparent; }
+.xcc-door--flat .xcc-seg__btn { padding: 0; border-radius: 0; border-bottom: 1px solid transparent; }
+.xcc-door--flat .xcc-seg__btn[aria-pressed='true'] { background: transparent; border-bottom-color: var(--accent); }
+.xcc-door--flat .xcc-door__more { gap: var(--sp-1) var(--sp-4); }
+.xcc-door--flat .xcc-door__chips { gap: var(--sp-1) var(--sp-4); }
+.xcc-door--flat .xcc-chip { padding: 0; border: 0; border-radius: 0; text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 5px; }
+.xcc-door--flat .xcc-chip:hover { text-decoration-color: var(--accent); }
+@media (max-width: 767px) { .xcc-door--flat .xcc-seg { gap: var(--sp-2); } .xcc-door--flat .xcc-seg__btn { min-width: 44px; justify-content: center; } }
+@media (prefers-reduced-motion: reduce) { .xcc-door--flat .xcc-door__row { transition: none; } }
