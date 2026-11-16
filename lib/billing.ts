@@ -358,6 +358,41 @@ export async function grantAnswers(owner: string, answers: number, reason: strin
   }
 }
 
+// ── Spending answers on something that is not a chat turn (a Called it scan) ──
+
+/** The two ledger sums a balance is made of. `db` is the client or a transaction. */
+type LedgerDb = Pick<typeof prisma, 'creditLedgerEntry'>
+
+/** What a PROVEN owner can spend now: this month's plan allowance left, and the bank. Reads through `db` so a debit can be decided inside a transaction. Throws on a store error (a spend fails CLOSED, unlike a chat turn). */
+export async function ledgerAnswers(db: LedgerDb, owner: string, allowance: number, monthStart: Date = monthStartUTC()): Promise<{ planLeft: number; bank: number }> {
+  const who = norm(owner)
+  const [planDebits, bankNet] = await Promise.all([
+    db.creditLedgerEntry.aggregate({ where: { ownerAddress: who, createdAt: { gte: monthStart }, delta: { lt: 0 }, OR: [{ pool: 'plan' }, { pool: null }] }, _sum: { delta: true } }),
+    db.creditLedgerEntry.aggregate({ where: { ownerAddress: who, OR: [{ pool: 'bank' }, { pool: null, delta: { gt: 0 } }] }, _sum: { delta: true } }),
+  ])
+  return { planLeft: Math.max(0, allowance + (planDebits._sum.delta ?? 0)), bank: Math.max(0, bankNet._sum.delta ?? 0) }
+}
+
+/** The owner's plan allowance and what is left to spend. An unreadable store reads as nothing to spend. */
+export async function answersLeft(owner: string): Promise<{ allowance: number; planLeft: number; bank: number }> {
+  try {
+    const { plan, row } = await getEffectivePlan(owner)
+    const allowance = planCreditsFor(plan, row?.createdAt ?? null)
+    return { allowance, ...(await ledgerAnswers(prisma, owner, allowance)) }
+  } catch {
+    return { allowance: 0, planLeft: 0, bank: 0 }
+  }
+}
+
+/** How a spend of `price` answers splits: the plan's month first (it resets), then the bank (it never expires). Null when the two together do not cover it. Pure. */
+export function splitAnswerDebit(price: number, planLeft: number, bank: number): { plan: number; bank: number } | null {
+  if (!Number.isInteger(price) || price <= 0) return null
+  const fromPlan = Math.min(Math.max(0, Math.floor(planLeft)), price)
+  const fromBank = price - fromPlan
+  if (fromBank > Math.max(0, Math.floor(bank))) return null
+  return { plan: fromPlan, bank: fromBank }
+}
+
 /** Recent ledger entries for the plan page's activity list. */
 export async function recentCreditEntries(owner: string, take = 12) {
   try {

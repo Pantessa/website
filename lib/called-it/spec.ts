@@ -191,8 +191,11 @@ export type RecordResponse =
   /** Nobody has scanned this handle on this symbol. `canScan` false carries the reason. */
   | { status: 'unscanned'; handle: string; symbol: string; canScan: boolean; reason?: string }
   | { status: 'scanning'; handle: string; symbol: string; scanId: string; progress: string }
-  /** A named refusal. Never a bare one: `next` always offers somewhere to go. */
-  | { status: 'refused'; reason: string; next: { label: string; href: string }[] }
+  /**
+   * A named refusal. Never a bare one: `next` always offers somewhere to go. `pay` (2026-11-16): the scan can run for
+   * that many answers and the wallet has them; asking again with `pay: true` spends them. Answers are never spent without it.
+   */
+  | { status: 'refused'; reason: string; next: { label: string; href: string }[]; pay?: { answers: number; have: number } }
 
 // ── The source and the store (lane SOURCE implements, lane JUDGE consumes) ──
 
@@ -259,11 +262,26 @@ export const X_USER_COST_USD = 0.01
 export const SCAN_WINDOW_DAYS = 365
 /** Posts one scan may read (env XCALLS_SCAN_POST_CAP). 150 posts = $0.75. It was 400 ($2): four real scans cost $2.22, and a prolific account alone read 326 posts. The record says how far back the cap let it read. */
 export const SCAN_POST_CAP = 150
-/** What the house spends on X reads in one UTC day before scans rest (env XCALLS_DAILY_USD_CAP). */
-export const DAILY_USD_CAP = 10
+/**
+ * THE FREE POOL: what the house spends on FREE scans in one UTC day before they rest (env XCALLS_DAILY_USD_CAP). It was
+ * $10 for every scan; since scans can be paid for with answers (2026-11-16) it bounds only the free ones, so one person
+ * using it up no longer stops a scan somebody is paying for.
+ */
+export const DAILY_USD_CAP = 5
+/** The ceiling on X reads PAID FOR WITH ANSWERS in one UTC day (env XCALLS_PAID_DAILY_USD_CAP): a fuse, not a budget. */
+export const PAID_DAILY_USD_CAP = 50
 /** A guest cannot start a NEW scan (it was 2 a day): each one spends real money, and an address is cheap to rotate. Everybody opens every record already scanned, and a guest can still paste a post. */
 export const GUEST_SCANS_PER_DAY = 0
-export const PROVEN_SCANS_PER_DAY = 10
+/** Free new scans a signed-in requester (X or wallet) may start in a UTC day (env XCALLS_FREE_SCANS). It was 10: one person could spend $7.60 of the house's day. */
+export const FREE_SCANS_PER_DAY = 1
+/**
+ * What a new scan costs beyond the free one, in house answers (env XCALLS_SCAN_ANSWERS). A scan costs the house at most
+ * $0.76; 100 answers sell for $1 in the pack (lib/plans ANSWER_PACK), and Plus's month holds six scans. Drawn from the
+ * plan's month first, then the bank, for a wallet session only.
+ */
+export const SCAN_ANSWER_PRICE = 100
+/** Paid scans one wallet may start in a UTC day (under the lookup limit below). */
+export const PAID_SCANS_PER_DAY = 30
 /** Pasted posts one requester may add in a UTC day, and in one minute (review R2: each one is a model call). */
 export const GUEST_ADDS_PER_DAY = 10
 export const PROVEN_ADDS_PER_DAY = 40
@@ -285,6 +303,11 @@ export const ENV = {
   /** Optional: set when the X app is a confidential client. */
   oauthClientSecret: 'X_OAUTH_CLIENT_SECRET',
   dailyUsdCap: 'XCALLS_DAILY_USD_CAP',
+  paidDailyUsdCap: 'XCALLS_PAID_DAILY_USD_CAP',
+  /** Free new scans a signed-in requester may start in a UTC day. Unset: FREE_SCANS_PER_DAY. */
+  freeScans: 'XCALLS_FREE_SCANS',
+  /** Answers one paid scan costs. Unset: SCAN_ANSWER_PRICE. */
+  scanAnswers: 'XCALLS_SCAN_ANSWERS',
   scanPostCap: 'XCALLS_SCAN_POST_CAP',
   /** New scans a guest may start in a UTC day. Unset: GUEST_SCANS_PER_DAY (0). The harness sets it. */
   guestScans: 'XCALLS_GUEST_SCANS',
