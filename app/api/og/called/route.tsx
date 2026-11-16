@@ -1,6 +1,6 @@
 import { loadRecordView } from '@/app/x/_lib/view'
 import { normalizeHandle } from '@/lib/called-it/spec'
-import { CALL_PARAM, callById, parseCallParam } from '@/lib/called-it/gtm'
+import { CALL_PARAM, leadCallOf, parseCallParam } from '@/lib/called-it/gtm'
 import { renderCalledCard, type CalledCardInput, type CalledCardKind } from './card'
 
 // GET /api/og/called?handle=&sym=&side=&pins=  →  the share image of one
@@ -89,7 +89,7 @@ export async function GET(req: Request): Promise<Response> {
       const callId = parseCallParam(q.get(CALL_PARAM))
       if (callId) {
         const whole = await loadRecordView(handleRaw, symRaw, '', '')
-        const call = whole.body.status === 'ready' ? callById(whole.body.record.calls, callId) : null
+        const call = whole.body.status === 'ready' ? leadCallOf(whole.body.record, callId) : null
         if (call && whole.body.status === 'ready') {
           input = { kind: 'call', handle, symbol: whole.body.record.symbol, record: whole.body.record, closes: whole.closes, avatar: whole.avatar, unit: whole.unit, call }
           address = `pantessa.com/x/${handle}/${whole.body.record.symbol}`

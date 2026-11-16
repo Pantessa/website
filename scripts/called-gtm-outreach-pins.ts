@@ -6,9 +6,10 @@
 //   BASE=http://localhost:PORT npx tsx scripts/called-gtm-outreach-pins.ts
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { OUTREACH_TAG, noKitReason, outreachKit, xWeight, type OutreachKit } from '../lib/called-it/outreach'
+import { OUTREACH_DESK_MAX, OUTREACH_TAG, noKitReason, outreachKit, quoteOf, xWeight, type OutreachKit } from '../lib/called-it/outreach'
 import { callHref, type BoardCall, type BoardEntry } from '../lib/called-it/gtm'
 import { parseBatchArgs, parseBatchCsv, scansThatFit } from './called-batch-scan'
+import { parsePublishArgs } from './called-publish'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -114,11 +115,59 @@ export function calledGtmOutreachPins(check: Check): void {
   check('batch: the CSV is cleaned, de-duplicated and bad rows named', csv.pairs.length === 1 && csv.pairs[0].handle === 'cz_binance' && csv.pairs[0].symbol === 'BTC' && csv.bad.length === 2, JSON.stringify(csv))
   try {
     const src = readFileSync(join(__dirname, 'called-batch-scan.ts'), 'utf8')
-    check('batch: runs through the scan route\'s own runScan, as a public run', /import\('\.\.\/lib\/called-it\/scan'\)/.test(src) && /internal: false/.test(src))
+    check(
+      'batch (B2): runs through the scan route\'s own runScan as an INTERNAL run by default (on no list, no board, not on the desk); `--public` is an explicit flag that prints a one-line warning',
+      /import\('\.\.\/lib\/called-it\/scan'\)/.test(src) && /internal: !args\.publicRun/.test(src) && !/internal: false/.test(src) && /publicRun: argv\.includes\('--public'\)/.test(src) && /WARNING --public/.test(src) &&
+        !('error' in dry) && dry.publicRun === false && (() => { const p = parseBatchArgs(['list.csv', '--public']); return !('error' in p) && p.publicRun === true })(),
+    )
     check('batch: the production-host fence', /--host-ok=/.test(src) && /ep-tiny-butterfly/.test(src))
   } catch (e) {
     check('batch: source readable', false, String(e))
   }
+
+  // ── publishing one pair by hand (B2) ──
+  const pub = parsePublishArgs(['@DCInvestor', 'eth'])
+  check(
+    'publish (B2): `called-publish.ts <handle> <symbol>` is a dry run by default, takes a handle and a market and nothing else, refuses a bad handle or a missing market; --apply is the only way to write',
+    !('error' in pub) && pub.handle === 'dcinvestor' && pub.symbol === 'ETH' && pub.apply === false && (() => { const a = parsePublishArgs(['dcinvestor', 'ETH', '--apply']); return !('error' in a) && a.apply })() &&
+      'error' in parsePublishArgs(['dcinvestor']) && 'error' in parsePublishArgs(['this_handle_is_too_long', 'ETH']) && 'error' in parsePublishArgs(['a', 'b', 'c']),
+  )
+  try {
+    const src = readFileSync(join(__dirname, 'called-publish.ts'), 'utf8')
+    check(
+      'publish (B2): the dry run prints the record\'s tally, its best call AND its strongest miss, and its address; --apply only flips is_internal on that pair\'s FINISHED scans (never a free finish\'s lease), behind the production-host fence',
+      /rec\.words\.headline/.test(src) && /line\('Best call', best\)/.test(src) && /line\('Their strongest miss', worst\)/.test(src) && /recordHref\(rec\.handle, rec\.symbol\)/.test(src) &&
+        /updateMany\(\{ where: \{ \.\.\.where, isInternal: true \}, data: \{ isInternal: false \} \}\)/.test(src) && /status: 'done'/.test(src) && /provider: \{ not: FINISH_PROVIDER \}/.test(src) &&
+        src.indexOf('if (!args.apply)') < src.indexOf('updateMany(') && /--host-ok=/.test(src) && /ep-tiny-butterfly/.test(src) && !/\$executeRaw|DELETE|deleteMany/.test(src),
+    )
+  } catch (e) {
+    check('publish: source readable', false, String(e))
+  }
+
+  // ── the desk (B2, F5) ──
+  try {
+    const desk = readFileSync(join(__dirname, '..', 'components/admin/outreach/OutreachDesk.tsx'), 'utf8')
+    check(
+      'desk (B2): every row prints the account\'s strongest miss beside its best call, the same size ("Their strongest miss"), on rows with a hit and rows without',
+      /function Miss\(/.test(desk) && /Their strongest miss: \{worst\.move\}/.test(desk) && (desk.match(/<Miss worst=\{row\.entry\.worst\} \/>/g) ?? []).length === 2 && /className="xod-call is-wrong"/.test(desk),
+    )
+    check(
+      'desk (F5): the desk prints the host its links point at, and a visible warning when that is not the page\'s own origin; it reads OUTREACH_DESK_MAX rows (60) and says so',
+      /Links point at <b>\{hostOf\(data\.origin\)\}<\/b>/.test(desk) && /here && here !== data\.origin/.test(desk) && /This desk reads \{hostOf\(here\)\}&rsquo;s database; the links point at \{hostOf\(data\.origin\)\}\./.test(desk) && /at most \{OUTREACH_DESK_MAX\}/.test(desk) && OUTREACH_DESK_MAX === 60 && !/at most 24/.test(desk),
+    )
+  } catch (e) {
+    check('desk: source readable', false, String(e))
+  }
+
+  // ── a quote that travels (F6) ──
+  const q = quoteOf('Buy the dip @elonmusk told you so https://t.co/abc123 and www.example.com/x ok @someone_else', 200)
+  const kitF6 = outreachKit(entry({ best: call({ quote: 'Buy the dip @elonmusk told you so https://t.co/abc123', text: 'Buy the dip @elonmusk told you so https://t.co/abc123' }) }), ORIGIN)
+  const f6Texts = kitF6 ? [kitF6.reply.text, kitF6.dm.text, kitF6.post.text] : []
+  check(
+    'outreach (F6): a quoted post loses its links entirely and the @ of every mention (the drafts tag only the account being written to): no third account is notified, no half link is printed',
+    q === 'Buy the dip elonmusk told you so and ok someone_else' && f6Texts.length === 3 && f6Texts.every((t) => !/@elonmusk|t\.co\/abc/.test(t)) && f6Texts.some((t) => /elonmusk/.test(t) || /Buy the dip/.test(t)),
+    `${q} || ${f6Texts.join(' || ')}`,
+  )
 }
 
 export async function calledGtmOutreachPinsServed(check: Check, base: string): Promise<void> {

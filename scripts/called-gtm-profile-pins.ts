@@ -159,6 +159,16 @@ export function calledGtmProfilePins(check: Check): void {
       toned.length >= 4 && toned.every((m) => /\.xpf-cell|\.xpf-mark|\.xpf-spark__dot|\.xpf-marks li::before/.test(m[1]) && /(border-top|background): [^;]*var\(--xrc-tone\)/.test(m[2])) &&
       !/\.xpf-(id__name|sec__title|aside__title|cell b|call__quote|mkt__sym)[^{]*\{[^}]*color: var\(--(accent|sell|gold|xrc-tone)\)/.test(css) && /@media \(hover: none\) \{[^@]*min-height: 44px/.test(css) && /\.xpf \.xpf-id__x \{[^}]*width: 44px; height: 44px/.test(css),
   )
+  // ── A taken-down or protected account (review F3) ──
+  const acct = code(read('app/x/[handle]/page.tsx'))
+  const shell = acct.slice(acct.indexOf('const down = takenDown('), acct.indexOf('const { entries, rest, failed } = await loadAccount(handle)'))
+  const meta = acct.slice(acct.indexOf('export async function generateMetadata'), acct.indexOf('function XGlyph'))
+  check(
+    'called-gtm profile (F3): /x/<handle> asks takenDown (the record\'s own rule) before anything is listed, in the page and in its metadata; a taken-down or protected handle gets the record page\'s refusal shell: the reason, a plain door with no handle in it, no "Plot @h" rows, no owner block, and a title without the handle, out of the index',
+    /import \{ takenDown \} from '@\/lib\/called-it\/record'/.test(acct) && /const down = takenDown\(handle, await loadRow\(handle\)\)/.test(acct) && acct.indexOf('const down = takenDown(') < acct.indexOf('const { entries, rest, failed } = await loadAccount(handle)') &&
+      /<h1 className="xrc-headline">\{down\.reason\}<\/h1>/.test(shell) && /<DoorBlock heading="Plot a handle" \/>/.test(shell) && !/initialHandle|PlotDoor|OwnerBlock|STARTERS|xpf-starter/.test(shell) &&
+      /if \(takenDown\(handle, await loadRow\(handle\)\)\)/.test(meta) && meta.indexOf('takenDown(') < meta.indexOf('loadAccount(handle)') && /robots: \{ index: false, follow: false \}/.test(meta),
+  )
 }
 
 // ── Served ──────────────────────────────────────────────────────────────
@@ -285,6 +295,24 @@ export async function calledGtmProfilePinsServed(check: Check, base: string): Pr
         [307, 308].includes(canon.status) && (canon.location ?? '').endsWith('/x/cz_binance'),
       `${none.status} ${bad.status} ${canon.status}→${canon.location}`,
     )
+    // A taken-down handle (review F3), on a row this pin writes and removes (zz_pin_ rows are the harness's own).
+    if (process.env.DATABASE_URL) {
+      const { default: prisma } = await import('../lib/db')
+      const DOWN = 'zz_pin_pf_down'
+      try {
+        await prisma.xHandle.upsert({ where: { handle: DOWN }, create: { handle: DOWN, followers: 250_000, hiddenAt: new Date(), hiddenBy: 'admin' }, update: { hiddenAt: new Date(), hiddenBy: 'admin', isProtected: false } })
+        const d = await page(`/x/${DOWN}`)
+        const dt = textOf(d.html)
+        check(
+          'called-gtm profile (served, F3): a taken-down handle\'s account page says it was taken down and nothing else about it: no "Plot @h" rows, no door prefilled with the handle, no owner block, no "not listed yet", and a title without the handle, out of the index',
+          d.status === 200 && /data-status="refused"/.test(d.html) && dt.includes(`The record for @${DOWN} has been taken down`) && !d.html.includes(`href="/x/${DOWN}/BTC"`) && !dt.includes(`Plot @${DOWN}`) && !dt.includes('No market is listed') &&
+            !d.html.includes(`value="${DOWN}"`) && !d.html.includes('data-xpf="owner"') && !/<title>[^<]*zz_pin_pf_down/.test(d.html) && /noindex/.test(metaOf(d.html, 'robots') ?? ''),
+          `${d.status} ${dt.slice(0, 160)}`,
+        )
+      } finally {
+        await prisma.xHandle.deleteMany({ where: { handle: DOWN } }).catch(() => undefined)
+      }
+    }
     const cssHref = /<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/g
     const sheets = await Promise.all([...p.html.matchAll(cssHref)].map((m) => fetch(new URL(m[1].replace(/&amp;/g, '&'), base), { headers: HEAD }).then((r) => (r.ok ? r.text() : '')).catch(() => '')))
     check('called-gtm profile (served, the sheet): the account page ships the lane\'s own rules', sheets.some((s) => s.includes('.xpf-cell') && s.includes('.xpf-mkt')), `${sheets.length} sheets`)

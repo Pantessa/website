@@ -12,8 +12,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Check, Copy, ExternalLink, MessageCircle, Reply, Send } from 'lucide-react'
-import { fmtDay } from '@/lib/called-it/spec'
-import { OUTREACH_STATUSES, OUTREACH_STATUS_KEY, type OutreachResponse, type OutreachRow, type OutreachStatus, type OutreachText } from '@/lib/called-it/outreach'
+import { LIST_MIN_FOLLOWERS, fmtDay } from '@/lib/called-it/spec'
+import type { BoardCall } from '@/lib/called-it/gtm'
+import { OUTREACH_DESK_MAX, OUTREACH_STATUSES, OUTREACH_STATUS_KEY, type OutreachResponse, type OutreachRow, type OutreachStatus, type OutreachText } from '@/lib/called-it/outreach'
 import './outreach.css'
 
 const fmtFollowers = (n: number | null) => (n === null ? 'followers unknown' : `${n.toLocaleString('en-US')} followers`)
@@ -95,6 +96,32 @@ function Draft({ t }: { t: OutreachText }) {
   )
 }
 
+/** The strongest miss, the same size as the call it is sent about (review B2): read the miss where the send button is. */
+function Miss({ worst }: { worst: BoardCall | null }) {
+  if (!worst) return <p className="xod-miss is-none">Their strongest miss: none. The scan found no call that missed.</p>
+  return (
+    <div className="xod-call is-wrong" data-xod="worst">
+      <div className="xod-call__head">
+        <span className="xod-call__mark" aria-hidden />
+        Their strongest miss: {worst.move}
+      </div>
+      <blockquote className="xod-call__quote">{worst.quote || worst.text}</blockquote>
+      <div className="xod-call__meta">
+        Posted {fmtDay(worst.postedAt)}
+        {worst.url ? (
+          <>
+            {' '}
+            ·{' '}
+            <a href={worst.url} target="_blank" rel="noreferrer">
+              the post on X
+            </a>
+          </>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function StatusPicker({ value, onPick }: { value: OutreachStatus; onPick: (s: OutreachStatus) => void }) {
   return (
     <div className="xod-status" role="group" aria-label="Contact status">
@@ -139,6 +166,7 @@ function HitRow({ row, status, onStatus }: { row: OutreachRow; status: OutreachS
             open the page here
           </Link>
         </div>
+        <Miss worst={row.entry.worst} />
         <div className="xod-link">
           <code title={kit.link}>{kit.link}</code>
           <CopyButton text={kit.link} label="Copy link" main />
@@ -177,7 +205,10 @@ function NoHitRow({ row, status, onStatus }: { row: OutreachRow; status: Outreac
         <Who row={row} />
         <StatusPicker value={status} onPick={onStatus} />
       </div>
-      <p>{row.reason}</p>
+      <div>
+        <p>{row.reason}</p>
+        <Miss worst={row.entry.worst} />
+      </div>
     </article>
   )
 }
@@ -248,6 +279,15 @@ export default function OutreachDesk() {
   const none = data.rows.filter((r) => !r.kit)
   const st = (r: OutreachRow) => statuses[statusKey(r)] ?? 'not contacted'
   const sent = data.rows.filter((r) => st(r) !== 'not contacted').length
+  // Which server's records these are, and where the links point (review F5): a desk on a test server writes links to records prod may not hold.
+  const here = typeof window !== 'undefined' ? window.location.origin : null
+  const hostOf = (u: string) => {
+    try {
+      return new URL(u).host
+    } catch {
+      return u
+    }
+  }
 
   return (
     <div className="xod" data-outreach-desk>
@@ -277,8 +317,16 @@ export default function OutreachDesk() {
           <span>marked past &ldquo;not contacted&rdquo;</span>
         </div>
       </div>
+      <p className="xod__origin" data-xod="origin">
+        Links point at <b>{hostOf(data.origin)}</b>.
+      </p>
+      {here && here !== data.origin && (
+        <p className="xod__warn" role="alert" data-xod="origin-warn">
+          This desk reads {hostOf(here)}&rsquo;s database; the links point at {hostOf(data.origin)}.
+        </p>
+      )}
       <p className="xod__note">
-        The board lists public records only (accounts over 5,000 followers or verified, never an internal run), at most 24. The status buttons are kept in this
+        The board lists public records only (accounts with {LIST_MIN_FOLLOWERS.toLocaleString('en-US')} followers or more, or verified, never an internal run), at most {OUTREACH_DESK_MAX}. The status buttons are kept in this
         browser only, not on the server. Links carry utm_source=x&amp;utm_medium=outreach so an arrival shows in the journey log.
         {data.failed ? ' The list did not load completely: some records may be missing.' : ''}
       </p>

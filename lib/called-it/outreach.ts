@@ -92,9 +92,17 @@ export function tallyWords(headline: string): string {
   return (cut < 0 ? headline : headline.slice(cut + 2)).trim()
 }
 
-/** A quote that can travel: masked, one line, straight quotes swapped, cut on a character budget. */
-function quoteOf(text: string, max: number): string {
-  const one = maskAddresses(text).replace(/[\u0000-\u001f\u007f‎‏‪-‮⁦-⁩]/g, ' ').replace(/\s+/g, ' ').replace(/"/g, "'").trim().replace(/\.+$/, '')
+/** How many accounts the desk reads (review F5). The public board route stays at 24. */
+export const OUTREACH_DESK_MAX = 60
+
+/**
+ * A quote that can travel: no links (review F6: half a link prints, a whole one unfurls somebody else's card), no `@`
+ * (a quoted mention would notify a third account: the drafts tag only the account being written to), masked, one line,
+ * straight quotes swapped, cut on a character budget. Exported for the pin.
+ */
+export function quoteOf(text: string, max: number): string {
+  const bare = text.replace(/(?:https?:\/\/|www\.|\bt\.co\/)\S*/gi, ' ').replace(/[@\uFF20](?=\w)/g, '')
+  const one = maskAddresses(bare).replace(/[\u0000-\u001f\u007f‎‏‪-‮⁦-⁩]/g, ' ').replace(/\s+/g, ' ').replace(/"/g, "'").trim().replace(/\.+$/, '')
   if ([...one].length <= max) return one
   return `${[...one].slice(0, max - 1).join('').trimEnd()}...`
 }

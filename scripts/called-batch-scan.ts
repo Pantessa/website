@@ -2,6 +2,7 @@
 //
 //   DATABASE_URL=... npx tsx scripts/called-batch-scan.ts <handles.csv>                       (dry run: the default)
 //   DATABASE_URL=... npx tsx scripts/called-batch-scan.ts <handles.csv> --apply --max-usd=5   (spends real money on X)
+//   ... --public                                                                               (lists every finished scan at once; see below)
 //
 // The CSV is `handle,symbol` (more columns are ignored; a `handle` header line and `#` lines are skipped).
 //
@@ -9,7 +10,10 @@
 // can cost (budget maxScanCostUsd), and the total. Nothing is read from X, nothing is written.
 //
 // --apply --max-usd=<N>: runs the MISSING scans one at a time through the SAME function the scan route uses
-// (lib/called-it/scan runScan), as a PUBLIC (non-internal) run with its own requester, `ip:outreach-batch`.
+// (lib/called-it/scan runScan), as an INTERNAL run by default (review B2): the record exists and can be read by
+// address, but it is on no list and no board (/x, /t/<SYM> Community, the outreach desk) until a person has read
+// every call on it, hits and misses, and published it with `scripts/called-publish.ts <handle> <symbol> --apply`.
+// `--public` makes the runs public at once (a one-line warning says so); it is never the default. Its own requester is `ip:outreach-batch`.
 // It stops before the total of worst cases could pass --max-usd. The house's own daily caps
 // (lib/called-it/budget, decided under the scan lock) still apply to every scan; a refusal stops the batch.
 // NOTE: `ip:` is a guest requester, and a guest gets XCALLS_GUEST_SCANS free scans a day (0 unless set), so an
@@ -27,6 +31,8 @@ export interface BatchArgs {
   apply: boolean
   maxUsd: number | null
   hostOk: string | null
+  /** Run the scans as public (listed at once). Off unless asked for (review B2). */
+  publicRun: boolean
 }
 
 /** Pure: the command line. `--apply` without a positive `--max-usd` is an error, never a default. */
@@ -39,7 +45,7 @@ export function parseBatchArgs(argv: readonly string[]): BatchArgs | { error: st
   if (!file) return { error: 'usage: tsx scripts/called-batch-scan.ts <handles.csv> [--apply --max-usd=<N>] [--host-ok=<host>]' }
   if (apply && maxUsd === null) return { error: '--apply needs --max-usd=<dollars> (a positive number): the most this batch may spend on X.' }
   if (raw !== null && maxUsd === null) return { error: '--max-usd must be a positive number of dollars.' }
-  return { file, apply, maxUsd, hostOk: val('host-ok') }
+  return { file, apply, maxUsd, hostOk: val('host-ok'), publicRun: argv.includes('--public') }
 }
 
 /** Pure: `handle,symbol` rows from a CSV, cleaned and de-duplicated. Bad rows come back with the reason. */
@@ -111,6 +117,11 @@ async function main() {
   const spent = await Store.spentTodayUsd()
   console.log(`\n${pairs.length} pairs, ${missing.length} to scan, at most $${total.toFixed(2)} on X (${scanPostCap()} posts a scan, $${worst.toFixed(2)} each at worst).`)
   console.log(`House free pool today: $${spent.toFixed(2)} spent of $${dailyUsdCap().toFixed(2)}; every scan is still decided against it under the scan lock.`)
+  console.log(
+    args.publicRun
+      ? 'WARNING --public: every scan this batch finishes is listed at once (/x, the market\'s Community board, the desk) before anybody has read it.'
+      : 'Internal runs (the default): nothing is listed until scripts/called-publish.ts <handle> <symbol> --apply publishes a pair you have read.',
+  )
   if (!args.apply) {
     if (args.maxUsd !== null) console.log(`Under --max-usd=${args.maxUsd}: ${scansThatFit(missing.length, worst, args.maxUsd)} of ${missing.length} would run.`)
     console.log('Dry run: nothing was read from X and nothing was written. --apply --max-usd=<N> runs it (Nate only).')
@@ -123,7 +134,7 @@ async function main() {
   let budgetLeft = args.maxUsd!
   for (const p of missing.slice(0, fit)) {
     if (budgetLeft + 1e-9 < worst) break
-    const outcome = await runScan({ handle: p.handle, symbol: p.symbol, requester: BATCH_REQUESTER, internal: false })
+    const outcome = await runScan({ handle: p.handle, symbol: p.symbol, requester: BATCH_REQUESTER, internal: !args.publicRun })
     if (outcome.kind === 'refused') {
       console.log(`  STOP  @${p.handle} ${p.symbol}: ${outcome.body.reason}`)
       break

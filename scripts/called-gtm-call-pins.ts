@@ -26,7 +26,7 @@ import { join } from 'node:path'
 import type { Candle } from '../lib/charts'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts } from '../lib/called-it/fixture'
 import { ADDED_MARK, STANDING_NOT_VERIFIED, VERDICT_WORDS, buildRecord, fmtDay, moveLine, standingVerified, type CalledCall, type CalledRecord, type CallVerdict, type RecordResponse } from '../lib/called-it/spec'
-import { bestCallOf, callHref, chartCallHref } from '../lib/called-it/gtm'
+import { bestCallOf, callHref, callPlaceOf, chartCallHref, leadCallOf } from '../lib/called-it/gtm'
 import {
   OG_CALL,
   OG_CALL_QUOTE_STEPS,
@@ -213,7 +213,7 @@ export function calledGtmCallPins(check: Check): void {
   const oneCall = code(ogCard).slice(code(ogCard).indexOf('function callPlotSvg'), code(ogCard).indexOf('export async function renderCalledCard'))
   check(
     'called-gtm call (source, the page): `call` is read with the contract\'s parser and the record is then read WHOLE (no side: one call is never set beside half a tally); only a call the record holds leads, anything else is the plain page; the plain page\'s highlight is the contract\'s best call or nothing; a call\'s metadata points its canonical at the record, stays out of the index, and takes the call\'s own image and address',
-    /const callId = parseCallParam\(q\[CALL_PARAM\]\)/.test(page) && /loadRecordView\(rawHandle, rawSymbol, '', first\(q\.pins\)\)/.test(page) && /whole\.body\.status === 'ready' \? callById\(whole\.body\.record\.calls, callId\) : null/.test(page) && /if \(call\) return \{ view: whole/.test(page) &&
+    /const callId = parseCallParam\(q\[CALL_PARAM\]\)/.test(page) && /loadRecordView\(rawHandle, rawSymbol, '', first\(q\.pins\)\)/.test(page) && /whole\.body\.status === 'ready' \? leadCallOf\(whole\.body\.record, callId\) : null/.test(page) && !/callById\(/.test(code(page)) && /if \(call\) return \{ view: whole/.test(page) &&
       /const best = call \? null : bestCallOf\(record\.calls\)/.test(page) && /\{best && <BestCall record=\{record\} call=\{best\}/.test(page) && /alternates: \{ canonical: absoluteUrl\(recordHref\(handle, symbol\)\) \},\s*\n\s*robots: \{ index: false, follow: true \}/.test(page) &&
       /calledImageHref\(handle, symbol, 'all', \[\], call\.postId\)/.test(page) && /url: absoluteUrl\(callHref\(handle, symbol, call\.postId\)\)/.test(page) && /callHeadline\(handle, symbol, call\)/.test(page) && /callDescription\(ready, call, view\.unit\)/.test(page) &&
       /call \? \(mine \? myCalledCallPost\(record, call\) : calledCallPost\(record, call\)\) : mine \? myCalledPost\(record\) : calledPost\(record\)/.test(page) && /kind=\{call \? 'call' : 'record'\}/.test(page) && !/dangerouslySetInnerHTML/.test(code(page)),
@@ -228,7 +228,7 @@ export function calledGtmCallPins(check: Check): void {
   )
   check(
     'called-gtm call (source, the image): the route reads `call` with the contract\'s parser and then the WHOLE record; only a call the record holds is drawn as one, anything else falls through to the record\'s own picture; the call card prints the record\'s own headline pieces and standing line, the verdict in spec\'s word, spec\'s mark on a pasted post, and its drawing takes no text from a post; the fallbacks are untouched',
-    /const callId = parseCallParam\(q\.get\(CALL_PARAM\)\)/.test(ogRoute) && /loadRecordView\(handleRaw, symRaw, '', ''\)/.test(ogRoute) && /callById\(whole\.body\.record\.calls, callId\)/.test(ogRoute) && /kind: 'call'/.test(ogRoute) && /input\.kind !== 'call'/.test(ogRoute) &&
+    /const callId = parseCallParam\(q\.get\(CALL_PARAM\)\)/.test(ogRoute) && /loadRecordView\(handleRaw, symRaw, '', ''\)/.test(ogRoute) && /leadCallOf\(whole\.body\.record, callId\)/.test(ogRoute) && !/callById\(/.test(code(ogRoute)) && /kind: 'call'/.test(ogRoute) && /input\.kind !== 'call'/.test(ogRoute) &&
       /return generic\(\)/.test(ogRoute) && /within\(renderCalledCard\(input, address\), RENDER_BUDGET_MS\)/.test(ogRoute) && /input\.kind === 'call' \|\|/.test(ogRoute) &&
       /headlineParts\(record\.words\.headline\)/.test(oneCall) && /\{record\.words\.standing\}/.test(oneCall) && /sentenceCase\(VERDICT_WORDS\[call\.verdict\]\)/.test(oneCall) && /\{ADDED_MARK\}/.test(oneCall) && /callQuote\(call\.text, call\.quote\)/.test(oneCall) && /unreadShare\(scale, record\.coverage\?\.from\)/.test(oneCall) &&
       !/\.text\b|quote/.test(oneCall.slice(0, oneCall.indexOf('function OneCallCard'))) && !/'called it'|'missed'|radial-gradient|linear-gradient|boxShadow/.test(oneCall),
@@ -258,6 +258,21 @@ export function calledGtmCallPins(check: Check): void {
       /@media \(max-width: 640px\)/.test(css) && /@media \(hover: none\)/.test(css) && /min-height: 44px/.test(css) && /min-height: 52px/.test(css),
     `${classes.filter((c) => !own(c)).slice(0, 5).join(' ')} ${foreign.join(' ')}`,
   )
+  // ── Round 3 (review F1, F2) ──
+  {
+    const k = (postId: string, origin: 'scan' | 'added') => ({ postId, origin })
+    const calls = [k('101', 'scan'), k('102', 'added'), k('103', 'scan'), k('104', 'scan')]
+    check(
+      'called-gtm call (F1): only a call the SCAN found on a SCANNED record leads a one-call page or image: a pasted post\'s id, any id on an unscanned record, an unknown id and no id all answer null (the plain record)',
+      leadCallOf({ scanned: true, calls }, '103')?.postId === '103' && leadCallOf({ scanned: true, calls }, '102') === null && leadCallOf({ scanned: false, calls: [k('102', 'added')] }, '102') === null && leadCallOf({ scanned: false, calls }, '103') === null &&
+        leadCallOf({ scanned: true, calls }, '999') === null && leadCallOf({ scanned: true, calls }, null) === null,
+    )
+    check(
+      'called-gtm call (F2): "This is call N of M" counts the calls the scan found, N and M both (M = the tally\'s total, never a count with a pasted post in it); a pasted call has no place; the lead prints it from callPlaceOf, never from record.calls.length',
+      callPlaceOf(calls, '103')?.n === 2 && callPlaceOf(calls, '103')?.of === 3 && callPlaceOf(calls, '104')?.n === 3 && callPlaceOf(calls, '102') === null &&
+        /const place = callPlaceOf\(record\.calls, call\.postId\)/.test(lead) && /This is call \{place\.n\} of \{place\.of\}/.test(lead) && !/of \{record\.calls\.length\}/.test(lead),
+    )
+  }
   void chartCallHref
   void bestCallOf
 }
@@ -310,6 +325,8 @@ export async function calledGtmCallPinsServed(check: Check, base: string): Promi
       return
     }
     const n = rec.calls.findIndex((c) => c.postId === best.postId) + 1
+    // "call N of M" counts the calls the scan found (review F2): M is the tally's total.
+    const scannedN = rec.calls.filter((c) => c.origin === 'scan').findIndex((c) => c.postId === best.postId) + 1
     const p = await page(callHref(H, 'BTC', best.postId))
     const t = textOf(p.html)
     const html = p.html.replace(/<!--[\s\S]*?-->/g, '')
@@ -318,7 +335,7 @@ export async function calledGtmCallPinsServed(check: Check, base: string): Promi
     check(
       'called-gtm call (served, the fixture\'s hit): the call\'s address answers a page that LEADS with that call: the verdict in spec\'s word as the page\'s one h1, who and the day, the post in full with the labeled span marked, the price that day and the record\'s own move words; then, before the button, the record\'s own headline to the letter and its standing line; then ONE button onto the live chart with this call open; then the whole record as always (every call\'s card, the chart, the toggle, the door, how it is judged)',
       p.status === 200 && html.includes('data-lead="call"') && html.includes(`data-xcl="lead" data-call="${best.postId}" data-verdict="right"`) && (html.match(/<h1[ >]/g) ?? []).length === 1 && /<h1 class="xcl-verdict">.*?<span class="xcl-verdict__word">Called it\.<\/span>/.test(html) &&
-        t.includes(flat(best.text)) && html.includes('<mark class="xcl-quote">') && t.includes(moveLine(best)) && t.includes(rec.words.headline) && t.includes(rec.words.standing) && t.includes(`This is call ${n} of ${rec.calls.length}`) &&
+        t.includes(flat(best.text)) && html.includes('<mark class="xcl-quote">') && t.includes(moveLine(best)) && t.includes(rec.words.headline) && t.includes(rec.words.standing) && t.includes(`This is call ${scannedN} of ${rec.tally.total}`) &&
         at('data-xcl="lead"') > 0 && at('data-xcl="lead"') < at('data-record-headline') && at('data-record-headline') < at('data-standing') && at('data-standing') < at(chartLink) && at(chartLink) < at('<li class="xrc-call ') &&
         (html.match(/<li class="xrc-call /g) ?? []).length === rec.calls.length && (html.match(/data-lead="yes"/g) ?? []).length === 1 && html.includes(`id="call-${n}" data-call="${best.postId}"`) && html.includes('class="xrc-sides"') && html.includes('id="plot"') && t.includes('How this is judged') &&
         !!rec.words.coverage && t.includes(rec.words.coverage) && !/https:\/\/x\.com\/pantessa_test\/status/.test(html) && !t.includes('Open the post on X'),

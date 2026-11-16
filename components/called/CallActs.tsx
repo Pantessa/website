@@ -21,7 +21,7 @@
 import { useCallback, useMemo } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
-import { CALL_ACT_CAPTION, callActsFor } from '@/lib/called-it/acts'
+import { callActCaption, callActsFor } from '@/lib/called-it/acts'
 import { chartPairFor } from '@/lib/charts'
 import { symbolAskApps } from '@/lib/symbol-ask'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
@@ -33,7 +33,7 @@ import './call-acts.css'
 export interface CallActsProps {
   symbol: string
   stance: 'bull' | 'bear'
-  /** Whose call this is, for the journey label only. */
+  /** Whose call this is: the journey label, and the caption's second sentence ("@h has no part in this button", review F7). */
   handle?: string
   postId?: string
   /** `row` = chips in a line (a card's foot); `stack` = full-width buttons (a phone sheet, a hero). */
@@ -82,7 +82,7 @@ export default function CallActs({ symbol, stance, handle, postId, variant = 'ro
           </a>
         ))}
       </div>
-      <p className="xca__note">{CALL_ACT_CAPTION}</p>
+      <p className="xca__note">{callActCaption(handle)}</p>
       {door}
     </div>
   )

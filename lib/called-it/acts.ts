@@ -32,6 +32,14 @@ export const CALL_ACT_USD = 25
 /** The words under the chips. Exact (the lane's brief). */
 export const CALL_ACT_CAPTION = 'Your wallet signs. Pantessa never holds your funds.'
 
+/**
+ * The caption under the chips. With a handle (a button under a named account's call) it gains a second sentence
+ * (review F7): the account has no part in the button, and this is not advice. The first sentence never changes.
+ */
+export function callActCaption(handle?: string | null): string {
+  return handle ? `${CALL_ACT_CAPTION} @${handle} has no part in this button. Not investment advice.` : CALL_ACT_CAPTION
+}
+
 export interface CallAct {
   side: Extract<ExecSide, 'buy' | 'sell' | 'long' | 'short'>
   /** The sentence that is sent, and the button's label. */

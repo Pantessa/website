@@ -9,6 +9,8 @@
 .xod__stat b { display: block; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .xod__stat span { color: var(--muted); font-size: 12px; }
 .xod__note { color: var(--muted-2); font-size: 12px; margin: 0 0 18px; }
+.xod__origin { color: var(--muted); font-size: 12px; margin: 0 0 6px; }
+.xod__warn { font-size: 13px; font-weight: 600; color: var(--sell); border-left: 2px solid var(--sell); padding: 4px 0 4px 10px; margin: 0 0 12px; }
 .xod__group { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 26px 0 0; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
 
 .xod-row { border-bottom: 1px solid var(--line); padding: 16px 0; display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) 300px; gap: 20px; }
@@ -34,6 +36,10 @@
 .xod-call__quote { margin: 6px 0; padding-left: 10px; border-left: 2px solid var(--xod-right); overflow-wrap: anywhere; }
 .xod-call__meta { color: var(--muted); font-size: 12px; }
 .xod-call__meta a { color: var(--accent); }
+.xod-call.is-wrong { margin-top: 12px; }
+.xod-call.is-wrong .xod-call__mark { background: var(--xod-wrong); }
+.xod-call.is-wrong .xod-call__quote { border-left-color: var(--xod-wrong); }
+.xod-miss.is-none { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
 
 .xod-link { display: flex; gap: 6px; align-items: center; margin: 10px 0; }
 .xod-link code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; }

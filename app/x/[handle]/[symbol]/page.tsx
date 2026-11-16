@@ -11,7 +11,7 @@ import ShareRow from '@/components/called/ShareRow'
 import { FIXTURE_HANDLE } from '@/lib/called-it/fixture'
 import { getXIdentity } from '@/lib/called-it/x-auth'
 import { ADDED_MARK, SCAN_WINDOW_DAYS, chartHref, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
-import { CALL_PARAM, bestCallOf, callById, callHref, parseCallParam } from '@/lib/called-it/gtm'
+import { CALL_PARAM, bestCallOf, callHref, leadCallOf, parseCallParam } from '@/lib/called-it/gtm'
 import { callDescription, callHeadline, calledImageHref, cleanLine, fmtCount, headlineParts } from '@/lib/called-it/card-layout'
 import { calledCallPost, calledPost, myCalledCallPost, myCalledPost } from '@/lib/share-posts'
 import { absoluteUrl } from '@/lib/site-url'
@@ -92,7 +92,8 @@ async function viewOf(props: Props): Promise<{ view: RecordView; rawHandle: stri
   const callId = parseCallParam(q[CALL_PARAM])
   if (callId) {
     const whole = await loadRecordView(rawHandle, rawSymbol, '', first(q.pins))
-    const call = whole.body.status === 'ready' ? callById(whole.body.record.calls, callId) : null
+    // Only a call the SCAN found on a SCANNED record leads (review F1): a pasted post's id falls back to the plain record.
+    const call = whole.body.status === 'ready' ? leadCallOf(whole.body.record, callId) : null
     if (call) return { view: whole, rawHandle, rawSymbol, call }
   }
   return { view: await loadRecordView(rawHandle, rawSymbol, first(q.side), first(q.pins)), rawHandle, rawSymbol, call: null }
@@ -321,7 +322,6 @@ export default async function RecordPage(props: Props) {
   const scannedCalls = numbered.filter((c) => c.call.origin === 'scan')
   const addedCalls = numbered.filter((c) => c.call.origin === 'added')
   const pasteOnly = !record.scanned
-  const callN = call ? (numbered.find((c) => c.call.postId === call.postId)?.n ?? 1) : 0
   // The plain page's highlight: the hit the record is shown by. Only a call the scan found, only a hit; otherwise nothing.
   const best = call ? null : bestCallOf(record.calls)
   const facts = (record.words.coverage || record.words.added || unlabeled > 0) && (
@@ -344,7 +344,7 @@ export default async function RecordPage(props: Props) {
             {call ? (
               <>
                 {/* ONE CALL leads: the verdict, the post, the proof, the whole tally, the next press. */}
-                <CallLead record={record} call={call} n={callN} avatar={view.avatar} unit={view.unit} closes={view.closes} />
+                <CallLead record={record} call={call} avatar={view.avatar} unit={view.unit} closes={view.closes} />
                 {/* Then the record, as it always reads. */}
                 <header className="xrc-head xcl-rest" id="record">
                   <Eyebrow jump>
