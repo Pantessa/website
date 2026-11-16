@@ -143,6 +143,8 @@ export interface TvSubscription<F> {
 
 export interface TvPriceScaleApi {
   priceToCoordinate(price: number): number | null
+  isAutoScale?(): boolean
+  setAutoScale?(on: boolean): void
 }
 
 export interface TvPaneApi {
