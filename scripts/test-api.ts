@@ -400,6 +400,12 @@ import { calledAuthPins, calledAuthPinsServed } from './called-auth-pins'
 import { calledChartPins, calledChartPinsServed } from './called-chart-pins'
 import { calledRecordPins, calledRecordPinsServed } from './called-record-pins'
 import { calledFixPins, calledFixPinsServed } from './called-fix-pins'
+import { calledGtmCoordPins, calledGtmCoordPinsServed } from './called-gtm-coord-pins'
+import { calledGtmCallPins, calledGtmCallPinsServed } from './called-gtm-call-pins'
+import { calledGtmProfilePins, calledGtmProfilePinsServed } from './called-gtm-profile-pins'
+import { calledGtmCommunityPins, calledGtmCommunityPinsServed } from './called-gtm-community-pins'
+import { calledGtmTradePins, calledGtmTradePinsServed } from './called-gtm-trade-pins'
+import { calledGtmOutreachPins, calledGtmOutreachPinsServed } from './called-gtm-outreach-pins'
 import { communityFeedPins, communityFeedPinsServed } from './community-feed-pins'
 import { communityGroupPins, communityGroupPinsServed } from './community-group-pins'
 import { communityTelegramPins, communityTelegramPinsServed } from './community-telegram-pins'
@@ -35686,6 +35692,19 @@ async function main() {
   await calledRecordPinsServed(check, BASE)
   calledFixPins(check)
   await calledFixPinsServed(check, BASE)
+  // Squad called-gtm (2026-11-16): one pin file per lane.
+  calledGtmCoordPins(check)
+  await calledGtmCoordPinsServed(check, BASE)
+  calledGtmCallPins(check)
+  await calledGtmCallPinsServed(check, BASE)
+  calledGtmProfilePins(check)
+  await calledGtmProfilePinsServed(check, BASE)
+  calledGtmCommunityPins(check)
+  await calledGtmCommunityPinsServed(check, BASE)
+  calledGtmTradePins(check)
+  await calledGtmTradePinsServed(check, BASE)
+  calledGtmOutreachPins(check)
+  await calledGtmOutreachPinsServed(check, BASE)
   // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
   // sign-in door, never a planner promise to "fetch your tokens".
   {
