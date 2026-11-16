@@ -1,0 +1,151 @@
+/* CALLED IT — ONE CALL (/x/<handle>/<SYMBOL>?call=<postId>) and the record
+   page's highlight. Squad called-gtm, lane CALL, 2026-11-16. Prefix `xcl`
+   (checked against every stylesheet in the repo).
+
+   The page an account is sent about the call it got right, opened on a phone
+   inside X's own browser. One column, in reading order: the verdict, who and
+   the day, the post, the price that day and what it did next, the record's
+   WHOLE tally and its standing line, one button. On a 390px phone all of it
+   is on the first screen for a post of ordinary length.
+
+   FLAT. No shadow, no gradient, no glow, no blur: structure is a hairline and
+   a type size. Every title is one colour and upright. A verdict's colour
+   lives on a small mark (a dot) and a thin rule (the post's left edge, the
+   underline of the labeled span, the day on the line), and the verdict is
+   always also said in words.
+
+   Rides the site's tokens and the record sheet's own (--xrc-tone and the
+   font aliases are set on .xrc, which every element here sits inside), so
+   light mode is the token flip. No literal colour, no px font, no px radius. */
+
+.xcl { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.xcl-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* ── What this is, and the jump to the share row ───────────────────────── */
+.xcl-kicker { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin: 0; min-height: 28px; font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
+.xcl-kicker__ctx { min-width: 0; }
+.xrc .xcl-kicker__jump { flex: none; display: inline-flex; align-items: center; min-height: 28px; padding: 0 var(--sp-3); border: 1px solid var(--line-2); border-radius: var(--r-pill); color: var(--fg); text-decoration: none; letter-spacing: 0.06em; transition: border-color var(--dur-1) ease; }
+.xcl-kicker__jump::after { content: '\2193'; margin-left: 6px; color: var(--accent); }
+.xcl-kicker__jump:hover, .xcl-kicker__jump:focus-visible { border-color: var(--fg); outline: none; }
+
+/* ── The verdict: spec's word, one colour; the mark carries the colour ──── */
+.xcl-verdict { margin: 0; display: flex; align-items: center; gap: 0.28em; font-family: var(--xrc-display); font-weight: 600; font-style: normal; font-size: clamp(2.375rem, 1.7rem + 3.2vw, 4rem); line-height: 1.02; letter-spacing: -0.028em; color: var(--fg); }
+.xcl-verdict__mark { flex: none; width: 0.3em; height: 0.3em; border-radius: 50%; background: var(--xrc-tone); }
+.xcl-verdict__mark.is-added { background: transparent; border: 0.07em solid var(--xrc-tone); }
+
+/* ── Who ───────────────────────────────────────────────────────────────── */
+.xrc .xcl-who { align-self: flex-start; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; max-width: 100%; min-height: 44px; text-decoration: none; }
+.xcl-who__face { flex: none; display: grid; place-items: center; width: 40px; height: 40px; overflow: hidden; border-radius: 50%; border: 1px solid var(--line); background: var(--surf-2); font-family: var(--xrc-display); font-size: var(--fs-lg); font-weight: 600; line-height: 1; }
+.xcl-who__face img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.xcl-who__id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.xcl-who__name { font-size: var(--fs-base); font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xcl-who__handle { font-family: var(--xrc-mono); font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xcl-who:hover .xcl-who__name, .xcl-who:focus-visible .xcl-who__name { text-decoration: underline; text-underline-offset: 0.2em; }
+
+/* ── The post, in full ─────────────────────────────────────────────────── */
+.xcl-post { margin: 0; padding: 2px 0 2px var(--sp-4); border-left: 2px solid var(--xrc-tone); }
+.xcl-post p { margin: 0; color: var(--muted); font-family: var(--xrc-display); font-weight: 500; font-size: clamp(1.3125rem, 1.08rem + 1.1vw, 1.875rem); line-height: 1.3; letter-spacing: -0.012em; white-space: pre-wrap; overflow-wrap: anywhere; }
+.xcl-post[data-size='mid'] p { font-size: clamp(1.1875rem, 1.04rem + 0.7vw, 1.5rem); line-height: 1.34; }
+.xcl-post[data-size='long'] p { font-family: var(--xrc-ui); font-weight: 400; font-size: var(--fs-lg); line-height: 1.45; letter-spacing: 0; }
+/* The span the label quoted reads at full ink; the rest of the post steps back. No block, no underline: the
+   post's left rule already carries the verdict's colour. A post with no marked span reads at full ink whole. */
+.xcl-quote { background: none; color: var(--fg); }
+.xcl-post p:not(:has(.xcl-quote)), .xcl-best__text:not(:has(.xcl-quote)) { color: var(--fg); }
+
+.xcl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-4); margin: 0; font-size: var(--fs-md); line-height: 1.4; color: var(--muted); }
+.xcl-meta__added { padding: 1px var(--sp-2); border: 1px dashed var(--line-2); border-radius: var(--r-pill); color: var(--fg); font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; }
+.xrc .xcl-meta a { color: var(--fg); font-weight: 600; text-decoration: none; }
+.xcl-meta a::after { content: '\2197'; margin-left: 4px; color: var(--accent); }
+.xcl-meta a:hover, .xcl-meta a:focus-visible { text-decoration: underline; text-underline-offset: 0.2em; outline: none; }
+
+/* ── The proof: the price that day, what it did next ───────────────────── */
+.xcl-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-2) var(--sp-5); margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.xcl-facts div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.xcl-facts dt { font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
+.xcl-facts dd { margin: 0; display: flex; flex-wrap: wrap; column-gap: 0.7em; font-family: var(--xrc-mono); font-size: var(--fs-base); line-height: 1.3; color: var(--fg); font-variant-numeric: tabular-nums; }
+.xcl-facts__move dd b { font-weight: 600; color: var(--xrc-tone); }
+.xcl-facts__move dd span { color: var(--muted); }
+
+/* The daily closes with this call's day marked. Every other call is a small dot in its own verdict's colour. */
+.xcl-spark { position: relative; height: clamp(72px, 9vw, 128px); margin-top: var(--sp-5); }
+.xcl-spark svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+.xcl-spark__line { fill: none; stroke: var(--fg); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; opacity: 0.78; }
+.xcl-spark__unread { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--bg) 64%, transparent); border-right: 1px dashed var(--line-2); }
+.xcl-spark__dot { position: absolute; box-sizing: content-box; width: 5px; height: 5px; margin: -4.5px 0 0 -4.5px; border: 2px solid var(--bg); border-radius: 50%; background: var(--xrc-tone); }
+.xcl-spark__dot.is-added { background: var(--bg); outline: 1.5px solid var(--xrc-tone); outline-offset: -2px; }
+.xcl-spark__dot--this { width: 11px; height: 11px; margin: -8.5px 0 0 -8.5px; border-width: 3px; }
+.xcl-spark__day { position: absolute; top: -8px; bottom: 0; width: 1px; margin-left: -0.5px; background: var(--xrc-tone); opacity: 0.8; }
+.xcl-spark__tag { position: absolute; top: -26px; transform: translateX(-50%); font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.xcl-spark__tag[data-edge='start'] { transform: none; margin-left: -4px; }
+.xcl-spark__tag[data-edge='end'] { transform: translateX(-100%); margin-left: 4px; }
+
+/* ── The record this call belongs to: the whole tally, always on the same screen ── */
+.xcl-record { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.xcl-record__label { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); margin: 0; font-family: var(--xrc-mono); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
+.xcl-record__n { letter-spacing: 0.06em; }
+.xcl-record__tally { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-4); margin: 0; font-size: var(--fs-base); font-weight: 600; line-height: 1.3; color: var(--fg); }
+.xcl-record__who { flex: 1 1 100%; font-weight: 500; color: var(--muted); }
+.xcl-count { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.xcl-count::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--xrc-tone); }
+.xcl-count.is-total::before { display: none; }
+.xcl-record__standing { margin: 0; font-size: var(--fs-md); line-height: 1.4; color: var(--muted); }
+.xcl-record__standing.is-verified { color: var(--accent); font-weight: 600; }
+
+/* ── The next press ────────────────────────────────────────────────────── */
+.xcl-go { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-1); }
+.xrc .xcl-btn { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 52px; padding: var(--sp-2) var(--sp-5); border: 1px solid var(--accent); border-radius: var(--r-pill); background: var(--accent); color: var(--ink, var(--bg)); font-family: var(--xrc-ui); font-size: var(--fs-base); font-weight: 600; line-height: 1.2; text-align: center; text-decoration: none; transition: filter var(--dur-1) ease; }
+.xcl-btn::after { content: '\2192'; }
+.xrc .xcl-btn:hover, .xrc .xcl-btn:focus-visible { filter: brightness(1.08); outline: none; }
+
+/* ── Under the lead: the record, as it always reads ────────────────────── */
+.xcl-rest { margin-top: var(--sp-5); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.xcl-rest__title { margin: 0; font-family: var(--xrc-display); font-weight: 600; font-size: clamp(1.375rem, 1.2rem + 0.8vw, 1.75rem); line-height: 1.18; letter-spacing: -0.012em; overflow-wrap: anywhere; }
+.xcl-leadcard__mark { padding: 1px var(--sp-2); border: 1px solid var(--line-2); border-radius: var(--r-pill); color: var(--fg); text-transform: uppercase; letter-spacing: 0.08em; }
+
+/* The card the link unfurls as, shown beside the share row before it is posted. */
+.xrc .xcl-card { display: block; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surf-1); transition: border-color var(--dur-1) ease; }
+.xcl-card img { display: block; width: 100%; height: auto; aspect-ratio: 1200 / 630; }
+.xrc .xcl-card:hover, .xrc .xcl-card:focus-visible { border-color: var(--line-2); outline: none; }
+
+/* ── The record page's highlight: the hit it is shown by, one link to its address ── */
+.xrc .xcl-best { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-1) 0 var(--sp-1) var(--sp-4); border-left: 2px solid var(--xrc-tone); text-decoration: none; }
+.xcl-best__kicker { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-3); font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.xcl-best__kicker b { font-weight: 600; color: var(--fg); }
+.xcl-best__mark { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--xrc-tone); }
+.xcl-best__text { color: var(--muted); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; font-family: var(--xrc-display); font-weight: 500; font-size: var(--fs-xl); line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.xcl-best__foot { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--sp-1) var(--sp-4); font-size: var(--fs-md); }
+.xcl-best__move { font-family: var(--xrc-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.xcl-best__go { font-weight: 600; color: var(--fg); white-space: nowrap; }
+.xcl-best__go::after { content: '\2192'; margin-left: 6px; color: var(--accent); }
+.xcl-best:hover .xcl-best__go, .xcl-best:focus-visible .xcl-best__go { text-decoration: underline; text-underline-offset: 0.2em; }
+.xcl-best:focus-visible { outline: none; }
+
+/* ── From a desk: the share row stands beside the lead, so the jump goes ── */
+@media (min-width: 1024px) {
+  .xcl { gap: var(--sp-4); }
+  .xrc .xcl-kicker__jump { display: none; }
+  .xcl-who__face { width: 48px; height: 48px; }
+  .xcl-who__name { font-size: var(--fs-lg); }
+  .xcl-post { padding-left: var(--sp-5); }
+  .xcl-facts dd { font-size: var(--fs-lg); }
+  .xcl-record__tally { font-size: var(--fs-lg); }
+  .xrc .xcl-btn { align-self: flex-start; min-width: 360px; }
+  .xcl-go { align-items: flex-start; }
+}
+
+/* ── A phone: the first screen is the call, the tally and the button ───── */
+@media (max-width: 640px) {
+  /* The record's own chart is the next thing down the page; the first screen keeps the words and the button. */
+  .xcl-spark { display: none; }
+  .xcl-facts { gap: var(--sp-2) var(--sp-4); }
+}
+@media (hover: none) {
+  .xrc .xcl-kicker__jump { min-height: 44px; padding: 0 var(--sp-4); }
+  .xcl-kicker { min-height: 44px; }
+  .xcl-meta { margin-block: -6px; }
+  .xcl-meta a { display: inline-flex; align-items: center; min-height: 44px; }
+  .xcl-best__go { display: inline-flex; align-items: center; min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xcl-kicker__jump, .xcl-btn, .xcl-card { transition: none; }
+}

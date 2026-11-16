@@ -22,7 +22,7 @@
 //   3. A row holds at most two cards, in date order. When they push apart the
 //      left card only ever moves left of its day and the right card right, so
 //      the two leaders lean away from each other.
-import { VERDICT_WORDS, type CalledCall, type CallVerdict } from './spec'
+import { ADDED_MARK, VERDICT_WORDS, fmtDay, moveLine, type CalledCall, type CallVerdict } from './spec'
 
 // ── Shapes ──────────────────────────────────────────────────────────────
 
@@ -546,10 +546,125 @@ export function avatarFetchUrl(raw: string | null | undefined): string | null {
 
 // ── The image's address ─────────────────────────────────────────────────
 
-/** The share image for a record. `pins` rides along only when the page's URL carried its own. */
-export function calledImageHref(handle: string, symbol: string, side: 'all' | 'bull' | 'bear' = 'all', pins: readonly string[] = []): string {
+/**
+ * The share image for a record. `pins` rides along only when the page's URL
+ * carried its own. With `call` (a post id) it is the image of that ONE call,
+ * and nothing else rides along: a call is always drawn beside the whole
+ * record's tally, both sides, so a side or a viewer's pins have no say in it
+ * (squad called-gtm; lane OUTREACH links this exact shape).
+ */
+export function calledImageHref(handle: string, symbol: string, side: 'all' | 'bull' | 'bear' = 'all', pins: readonly string[] = [], call?: string | null): string {
   const q = new URLSearchParams({ handle, sym: symbol.toUpperCase() })
+  if (call) {
+    q.set('call', call)
+    return `/api/og/called?${q.toString()}`
+  }
   if (side !== 'all') q.set('side', side)
   if (pins.length) q.set('pins', pins.join(','))
   return `/api/og/called?${q.toString()}`
+}
+
+// ── One call (squad called-gtm, lane CALL, 2026-11-16) ──────────────────
+// The page and the image that lead with ONE call (/x/<handle>/<SYM>?call=<id>,
+// /api/og/called?...&call=<id>). The rules that keep them honest live here,
+// pure, so they are pinned:
+//   · the verdict is said in spec's words and no others ("called it" only
+//     when the verdict is right);
+//   · a post's words reach the image as a quote that is either the whole post
+//     as X shows it, or the span the label quoted with an ellipsis on every
+//     side where the post has more words. Never a rewording;
+//   · the text that unfurls (title, description) always carries the record's
+//     whole tally and its standing line.
+
+/** Spec's words standing alone as a sentence: the same words with a capital to open them. */
+export function sentenceCase(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/** `@cz_binance on BTC, 15 Aug 2026: called it.` The title of one call, any verdict, in spec's verdict words. A pasted post says so. */
+export function callHeadline(handle: string, symbol: string, call: Pick<CalledCall, 'postedAt' | 'verdict' | 'origin'>): string {
+  return `@${handle} on ${symbol.toUpperCase()}, ${fmtDay(call.postedAt)}${call.origin === 'added' ? ` (${ADDED_MARK})` : ''}: ${VERDICT_WORDS[call.verdict]}.`
+}
+
+/**
+ * What unfurls under the title: the price that day and the record's own move
+ * words, then the WHOLE tally and the standing line, each in the record's own
+ * words. A call never travels without them.
+ */
+export function callDescription(record: { symbol: string; words: { headline: string; standing: string } }, call: Pick<CalledCall, 'priceAt' | 'verdict' | 'judgedPct'> & Partial<Pick<CalledCall, 'now' | 'target'>>, unit: 'usd' | 'level' | 'yield' = 'usd'): string {
+  return `${record.symbol} was ${fmtCallPrice(call.priceAt, unit)} that day: ${moveLine(call)}. Full record: ${headlineTally(record.words.headline)} ${record.words.standing}`
+}
+
+const LEAD_MENTIONS_RE = /^(?:@[A-Za-z0-9_]{1,15}\s+)+/
+const TRAIL_LINKS_RE = /(?:\s*https?:\/\/t\.co\/[A-Za-z0-9]+)+\s*$/
+
+/**
+ * A post on one line, the way X itself shows it: the accounts a reply opens
+ * with and the t.co links it closes with are X's plumbing (X draws them as
+ * "replying to" and as a card), so they are left off. Not one word between
+ * them is touched. Falls back to the cleaned text when nothing else is left.
+ */
+export function displayPost(text: string): string {
+  const one = text.replace(CONTROL_RE, '').replace(/\s+/g, ' ').trim()
+  return one.replace(LEAD_MENTIONS_RE, '').replace(TRAIL_LINKS_RE, '').trim() || one
+}
+
+/** The longest quote the call image draws, in lowercase-letter widths (its smallest type, six lines). */
+export const OG_CALL_QUOTE_UNITS = 176
+
+/** The quote's type on the call image for a text this wide: big while it is short, never under 34px. `capacity` is what fits at that size. */
+export const OG_CALL_QUOTE_STEPS = [
+  { capacity: 50, size: 60, lines: 3 },
+  { capacity: 84, size: 49, lines: 4 },
+  { capacity: 124, size: 41, lines: 5 },
+  { capacity: OG_CALL_QUOTE_UNITS, size: 34, lines: 6 },
+] as const
+
+export function callQuoteFit(units: number): (typeof OG_CALL_QUOTE_STEPS)[number] {
+  return OG_CALL_QUOTE_STEPS.find((s) => units <= s.capacity) ?? OG_CALL_QUOTE_STEPS[OG_CALL_QUOTE_STEPS.length - 1]
+}
+
+/**
+ * The words the call image quotes. The whole post (displayPost) when it fits
+ * `maxUnits`. Otherwise the span the label quoted, which is the post's own
+ * words, with an ellipsis on each side where the post goes on; a span that is
+ * itself too long is cut on a word with an ellipsis. `cut` says anything was
+ * left out. Never reworded, never reordered.
+ */
+export function callQuote(text: string, quote: string | null | undefined, maxUnits: number = OG_CALL_QUOTE_UNITS): { text: string; cut: boolean } {
+  const shown = displayPost(text)
+  if (textUnits(shown) <= maxUnits) return { text: shown, cut: false }
+  const q = (quote ?? '').replace(CONTROL_RE, '').replace(/\s+/g, ' ').trim()
+  const at = q.length >= 3 ? shown.indexOf(q) : -1
+  if (at < 0) return { text: clampPostWidth(shown, maxUnits), cut: true }
+  const before = at > 0
+  const after = at + q.length < shown.length
+  const budget = maxUnits - (before ? 1.2 : 0) - (after ? 1.2 : 0)
+  const body = textUnits(q) <= budget ? q : clampPostWidth(q, budget)
+  return { text: `${before ? '\u2026' : ''}${body}${after && !body.endsWith('\u2026') ? '\u2026' : ''}`, cut: true }
+}
+
+/** Where things stand on the call image: the words on the left, the price line on the right, the record along the foot. */
+export const OG_CALL = {
+  pad: 56,
+  /** The quote's box (its left edge wears the verdict's rule). */
+  quote: { x: 56, y: 172, w: 632, h: 252 } as Rect,
+  /** The price line's box. */
+  plot: { x: 752, y: 150, w: 392, h: 196 } as Rect,
+  /** The hairline over the record's own tally. */
+  footY: 508,
+} as const
+
+export interface CallPlot {
+  /** THIS call's point on the line. */
+  dot: Pt
+  /** Every other call of the record: drawn small, in its verdict's colour, so the line never shows one call alone. */
+  others: (Pt & { id: string })[]
+}
+
+/** The call image's points, inside `box`. Null with no scale (no chart): the image then draws no line and says so. */
+export function callPlot(scale: PlotScale | null, call: OgCallIn, others: readonly OgCallIn[], box: Rect = OG_CALL.plot): CallPlot | null {
+  if (!scale) return null
+  const at = (c: OgCallIn): Pt => ({ x: round1(box.x + scale.x(c.t) * box.w), y: round1(box.y + scale.y(c.price) * box.h) })
+  return { dot: at(call), others: others.filter((o) => o.id !== call.id).map((o) => ({ id: o.id, ...at(o) })) }
 }

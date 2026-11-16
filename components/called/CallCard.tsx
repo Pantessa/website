@@ -20,11 +20,13 @@ export interface CallCardProps {
   n: number
   handle: string
   unit?: 'usd' | 'level' | 'yield'
+  /** This is the call the page leads with (a call's own address): the card says so, and nothing else about it changes. */
+  lead?: boolean
 }
 
 const STANCE_WORDS = { bull: 'Bull', bear: 'Bear' } as const
 
-export default function CallCard({ call, n, handle, unit = 'usd' }: CallCardProps) {
+export default function CallCard({ call, n, handle, unit = 'usd', lead = false }: CallCardProps) {
   const parts = splitQuote(call.text, call.quote)
   const href = call.url ? postUrl(handle, call.postId) : null
   const horizons: [string, number | null][] = [
@@ -33,7 +35,7 @@ export default function CallCard({ call, n, handle, unit = 'usd' }: CallCardProp
     ['90 days', call.d90],
   ]
   return (
-    <li className={`xrc-call is-${call.verdict}${call.picked ? ' is-picked' : ''}${call.origin === 'added' ? ' is-added' : ''}`} id={`call-${n}`} data-call={call.postId} data-verdict={call.verdict} data-origin={call.origin}>
+    <li className={`xrc-call is-${call.verdict}${call.picked ? ' is-picked' : ''}${call.origin === 'added' ? ' is-added' : ''}${lead ? ' xcl-leadcard' : ''}`} id={`call-${n}`} data-call={call.postId} data-verdict={call.verdict} data-origin={call.origin} data-lead={lead ? 'yes' : undefined}>
       <span className="xrc-call__n" aria-label={`Call ${n}`}>
         {n}
       </span>
@@ -46,6 +48,7 @@ export default function CallCard({ call, n, handle, unit = 'usd' }: CallCardProp
           <span className={`xrc-call__stance is-${call.stance}`}>{STANCE_WORDS[call.stance]}</span>
           <time dateTime={new Date(call.postedAt).toISOString()}>{fmtUtcDateTime(call.postedAt)}</time>
           {call.origin === 'added' && <span className="xrc-call__added">{ADDED_MARK}</span>}
+          {lead && <span className="xcl-leadcard__mark">the call this link is about</span>}
         </p>
         <p className="xrc-call__text">
           <bdi>
