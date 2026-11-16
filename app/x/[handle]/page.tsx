@@ -274,7 +274,7 @@ export default async function HandlePage({ params }: Props) {
 
           <aside className="xrc__side xpf-side">
             {entries.length > 0 && <ProfileShare handle={handle} post={profilePost({ handle, line, markets: entries.length, standing, mine })} mine={mine} />}
-            <PlotDoor heading={plots ? 'Plot anyone' : `Plot @${handle}`} initialHandle={plots ? undefined : handle} />
+            <PlotDoor heading={plots ? 'Plot anyone' : `Plot @${handle}`} initialHandle={plots ? undefined : handle} initialMarket={top?.symbol} />
             <div className="xpf-aside">
               <MethodBlock />
             </div>

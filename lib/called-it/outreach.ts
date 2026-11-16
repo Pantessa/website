@@ -104,7 +104,10 @@ export function quoteOf(text: string, max: number): string {
   const bare = text.replace(/(?:https?:\/\/|www\.|\bt\.co\/)\S*/gi, ' ').replace(/[@\uFF20](?=\w)/g, '')
   const one = maskAddresses(bare).replace(/[\u0000-\u001f\u007f‎‏‪-‮⁦-⁩]/g, ' ').replace(/\s+/g, ' ').replace(/"/g, "'").trim().replace(/\.+$/, '')
   if ([...one].length <= max) return one
-  return `${[...one].slice(0, max - 1).join('').trimEnd()}...`
+  // Cut on a word boundary (QA, round 3): "...forced to sell your c..." read as a typo. A single long word is cut where it stands.
+  const head = [...one].slice(0, max - 1).join('')
+  const at = head.lastIndexOf(' ')
+  return `${(at > max * 0.5 ? head.slice(0, at) : head).trimEnd().replace(/[,;:]$/, '')}...`
 }
 
 /** Append the outreach tag to an absolute link. */

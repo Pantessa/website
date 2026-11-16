@@ -23,6 +23,8 @@ import './called-chart.css'
 export interface HandleDoorProps {
   /** The market to plot on. The page variant may leave it out and ask. */
   symbol?: string
+  /** The market the page variant opens on when `symbol` is left out (the visitor can still change it). Default BTC. */
+  initialMarket?: string
   initialHandle?: string
   side?: CalledSide
   /** `chart` lives on the symbol page and plots in place; `page` lives on /x and navigates to the record. */
@@ -46,10 +48,10 @@ interface Suggestion {
   name: string | null
 }
 
-export default function HandleDoor({ symbol, initialHandle = '', side: sideProp = 'all', variant, onPlot, className }: HandleDoorProps) {
+export default function HandleDoor({ symbol, initialMarket, initialHandle = '', side: sideProp = 'all', variant, onPlot, className }: HandleDoorProps) {
   const [value, setValue] = useState(initialHandle ? `@${initialHandle}` : '')
   const [side, setSide] = useState<CalledSide>(sideProp)
-  const [market, setMarket] = useState(symbol ?? 'BTC')
+  const [market, setMarket] = useState(symbol ?? initialMarket ?? 'BTC')
   const [plotted, setPlotted] = useState<Suggestion[]>([])
   // The account this browser proved with X, if any: "Plot yourself" is then one tap. It is a shortcut to that
   // handle's plot and claims nothing: whether a plot is verified is the record's to say.

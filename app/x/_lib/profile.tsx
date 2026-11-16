@@ -305,13 +305,13 @@ export function ProfileShare({ handle, post, mine }: { handle: string; post: Sha
 }
 
 /** The door, without a second Verify button: the owner's block above carries the one this page needs. */
-export function PlotDoor({ heading = 'Plot anyone', initialHandle }: { heading?: string; initialHandle?: string }) {
+export function PlotDoor({ heading = 'Plot anyone', initialHandle, initialMarket }: { heading?: string; initialHandle?: string; initialMarket?: string }) {
   return (
     <section className="xpf-aside" id="plot" aria-label="Plot a handle" data-xpf="door">
       <h2 className="xpf-aside__title">{heading}</h2>
       <p className="xpf-aside__lede">Type any X handle. Every post where the account took a side is pinned to the day it was posted and judged the same way.</p>
       <div className="xpf-aside__form">
-        <HandleDoor variant="page" initialHandle={initialHandle} />
+        <HandleDoor variant="page" initialHandle={initialHandle} initialMarket={initialMarket} />
       </div>
     </section>
   )
