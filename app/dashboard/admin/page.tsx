@@ -20,7 +20,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowDownRight, ArrowUpRight, Check, Copy, Download, Footprints, Mail, ScrollText, ShieldAlert } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Check, Copy, Download, Footprints, Mail, ScrollText, Send, ShieldAlert } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { isAdminAddress } from '@/lib/admin'
 import { formatEarnedUsd } from '@/lib/fees'
@@ -465,6 +465,10 @@ export default function AdminPage() {
           {/* The agent desk's own log: one row per brokered intent, its legs and receipts. */}
           <Link href="/dashboard/admin/desk" className="inline-flex items-center gap-1.5 text-xs text-[color:var(--accent,#34E0A1)] hover:underline whitespace-nowrap">
             <ScrollText className="w-3.5 h-3.5" /> Desk log
+          </Link>
+          {/* Called it outreach: every scanned account, the call it got right, the one link to send. */}
+          <Link href="/dashboard/admin/outreach" className="inline-flex items-center gap-1.5 text-xs text-[color:var(--accent,#34E0A1)] hover:underline whitespace-nowrap">
+            <Send className="w-3.5 h-3.5" /> Outreach
           </Link>
           <div className="flex rounded-lg border border-[var(--line)] overflow-hidden">
             {GROWTH_WINDOWS.map((d) => (
