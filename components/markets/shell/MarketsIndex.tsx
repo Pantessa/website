@@ -259,6 +259,7 @@ export default function MarketsIndex({
   tour,
   how,
   close,
+  called,
 }: {
   trending?: TrendingRow[]
   /** The measured venue verdicts, read server-side so the index's chips are right on the FIRST paint (lib/tradability-store). */
@@ -282,6 +283,10 @@ export default function MarketsIndex({
   tour?: ReactNode
   how?: ReactNode
   close?: ReactNode
+  /** The Called it shelf (2026-11-16, components/home/CalledShelf): renders
+   *  under the lead (THE READ) and above the tour — three featured records,
+   *  a door to /x. Empty when no record answered. */
+  called?: ReactNode
 }) {
   // Idempotent, and deliberately during render: QuickAct reads the shared
   // store synchronously, so seeding in an effect would flash a chip the
@@ -376,6 +381,13 @@ export default function MarketsIndex({
         {lead && (
           <div className="mk-lead-seat" data-seat="Lead">
             {lead}
+          </div>
+        )}
+
+        {/* ── The called seat: the featured Called it records (components/home/CalledShelf) ── */}
+        {called && (
+          <div className="mk-called-seat" data-seat="Called">
+            {called}
           </div>
         )}
 

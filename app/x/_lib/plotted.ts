@@ -42,7 +42,7 @@ async function strictVerified(handles: readonly string[]): Promise<Set<string>> 
   return out
 }
 
-export async function readPlotted(opts: { limit: number; handle?: string }): Promise<PlottedList> {
+export async function readPlotted(opts: { limit: number; handle?: string; symbol?: string }): Promise<PlottedList> {
   try {
     const listed = await listPlotted(opts)
     const rows = (Array.isArray(listed) ? listed : []).filter(linkable).slice(0, opts.limit)
