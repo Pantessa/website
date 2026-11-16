@@ -17,9 +17,12 @@ export interface ShareRowProps {
   /** What a saved image is called. */
   fileName: string
   className?: string
+  /** What is being shared: the whole record, or ONE call of it (a call's own address). The journey labels say which. */
+  kind?: 'record' | 'call'
 }
 
-export default function ShareRow({ post, imageHref, fileName, className }: ShareRowProps) {
+export default function ShareRow({ post, imageHref, fileName, className, kind = 'record' }: ShareRowProps) {
+  const j = kind === 'call' ? 'called_call_share' : 'called_share'
   const [copied, setCopied] = useState(false)
   // The phone's share sheet (Messages, WhatsApp, Telegram…) exists only in some browsers: known after mount.
   const [native, setNative] = useState(false)
@@ -27,14 +30,14 @@ export default function ShareRow({ post, imageHref, fileName, className }: Share
     setNative(typeof navigator !== 'undefined' && typeof navigator.share === 'function')
   }, [])
   return (
-    <div className={`xrc-sharerow${className ? ` ${className}` : ''}`} data-share="row" data-share-surface="called">
-      <a className="xrc-btn xrc-btn--lead" href={postHref(post)} target="_blank" rel="noopener noreferrer" data-journey="called_share_x">
+    <div className={`xrc-sharerow${className ? ` ${className}` : ''}`} data-share="row" data-share-surface="called" data-share-kind={kind}>
+      <a className="xrc-btn xrc-btn--lead" href={postHref(post)} target="_blank" rel="noopener noreferrer" data-journey={`${j}_x`}>
         Post on X
       </a>
       <button
         type="button"
         className="xrc-btn"
-        data-journey="called_share_copy"
+        data-journey={`${j}_copy`}
         onClick={async () => {
           try {
             await navigator.clipboard.writeText(post.url)
@@ -47,14 +50,14 @@ export default function ShareRow({ post, imageHref, fileName, className }: Share
       >
         {copied ? 'Copied' : 'Copy link'}
       </button>
-      <a className="xrc-btn" href={imageHref} download={fileName} data-journey="called_share_image">
+      <a className="xrc-btn" href={imageHref} download={fileName} data-journey={`${j}_image`}>
         Save image
       </a>
       {native && (
         <button
           type="button"
           className="xrc-btn"
-          data-journey="called_share_sheet"
+          data-journey={`${j}_sheet`}
           onClick={async () => {
             try {
               await navigator.share({ title: post.title, text: post.text, url: post.url })

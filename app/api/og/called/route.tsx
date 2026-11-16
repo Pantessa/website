@@ -1,9 +1,17 @@
 import { loadRecordView } from '@/app/x/_lib/view'
 import { normalizeHandle } from '@/lib/called-it/spec'
+import { CALL_PARAM, callById, parseCallParam } from '@/lib/called-it/gtm'
 import { renderCalledCard, type CalledCardInput, type CalledCardKind } from './card'
 
 // GET /api/og/called?handle=&sym=&side=&pins=  →  the share image of one
-// record, 1200 × 630 PNG (squad called-it, lane RECORD). The landing's
+// record, 1200 × 630 PNG (squad called-it, lane RECORD).
+// GET /api/og/called?handle=&sym=&call=<postId>  →  the image of ONE call of
+// that record (squad called-gtm, lane CALL): the verdict, the post's words,
+// the day marked on the price line, and the record's WHOLE tally along the
+// foot. It reads the whole record (no side, no pins), so one call is never
+// drawn beside half a tally. An id the record does not hold draws the record.
+//
+// The landing's
 // metadata points og:image and twitter:image here with the page's own handle,
 // market, toggle and pins, so what unfurls on X is the record the link opens.
 //
@@ -12,6 +20,7 @@ import { renderCalledCard, type CalledCardInput, type CalledCardKind } from './c
 //
 // Every answer is a picture, never a 500:
 //   a ready record            the scoreboard and the pinned posts
+//   one call of it (`call=`)  that call leading, the whole tally under it
 //   posts a viewer pasted,    the posts, each marked "added by a viewer", and
 //     with no scan behind them  no tally: never drawn as a record
 //   a record with no calls    the line and "no calls found in this window"
@@ -76,6 +85,18 @@ export async function GET(req: Request): Promise<Response> {
       input = { kind: 'handle', handle, symbol: null, record: null, closes: [], avatar: null }
       address = `pantessa.com/x/${handle}`
     } else if (handle) {
+      // One call: read the WHOLE record and lead with the call it holds. Anything else falls through to the record's own picture.
+      const callId = parseCallParam(q.get(CALL_PARAM))
+      if (callId) {
+        const whole = await loadRecordView(handleRaw, symRaw, '', '')
+        const call = whole.body.status === 'ready' ? callById(whole.body.record.calls, callId) : null
+        if (call && whole.body.status === 'ready') {
+          input = { kind: 'call', handle, symbol: whole.body.record.symbol, record: whole.body.record, closes: whole.closes, avatar: whole.avatar, unit: whole.unit, call }
+          address = `pantessa.com/x/${handle}/${whole.body.record.symbol}`
+        }
+      }
+    }
+    if (handle && symRaw && input.kind !== 'call') {
       const view = await loadRecordView(handleRaw, symRaw, q.get('side') ?? '', (q.get('pins') ?? '').slice(0, 400))
       const body = view.body
       if (view.symbol) address = `pantessa.com/x/${handle}/${view.symbol}`
@@ -88,7 +109,7 @@ export async function GET(req: Request): Promise<Response> {
     address = 'pantessa.com/x'
   }
   try {
-    return png(await within(renderCalledCard(input, address), RENDER_BUDGET_MS), input.kind === 'record' || input.kind === 'pasted' || input.kind === 'empty' || input.kind === 'generic' || input.kind === 'handle' ? CACHE_RECORD : CACHE_SHORT, input.kind)
+    return png(await within(renderCalledCard(input, address), RENDER_BUDGET_MS), input.kind === 'record' || input.kind === 'call' || input.kind === 'pasted' || input.kind === 'empty' || input.kind === 'generic' || input.kind === 'handle' ? CACHE_RECORD : CACHE_SHORT, input.kind)
   } catch {
     return generic()
   }
