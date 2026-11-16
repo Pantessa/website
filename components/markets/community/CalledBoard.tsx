@@ -21,7 +21,6 @@ import { useSearchParams } from 'next/navigation'
 import type { BoardEntry } from '@/lib/called-it/gtm'
 import { STANDING_NOT_VERIFIED, fmtDay, type CallVerdict } from '@/lib/called-it/spec'
 import { cleanLine, headlineParts, headlineTally, initialOf } from '@/lib/called-it/card-layout'
-import CallActs from '@/components/called/CallActs'
 import {
   BOARD_DOOR_HREF,
   avatarSrc,
@@ -228,7 +227,7 @@ function BoardCard({ entry: e, onPlot }: { entry: BoardEntry; onPlot: (href: str
           <Link href={fullRecordHref(e)} className="xbd-card__record" data-journey="called_board_record">
             Full record
           </Link>
-          {best && <CallActs symbol={e.symbol} stance={best.stance} handle={e.handle} postId={best.postId} variant="row" />}
+          {/* No trade chip here (coordinator, round 2): this is the symbol page, and its own order ticket sits beside the board. */}
         </div>
       </div>
     </article>
