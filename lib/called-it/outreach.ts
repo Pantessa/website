@@ -143,30 +143,32 @@ export function outreachKit(entry: BoardEntry, origin: string): OutreachKit | nu
   const verdict = best.verdictWords
   const move = best.move
   const mine = entry.verified ? ' The record shows as verified.' : ' If the account is yours, sign in with X on that page to mark the record as yours.'
-  const v = `"${verdict}"`
+  // The verdict in the spec's own words, as a sentence opener ("Called it"). A kit exists only for a hit, so this is always VERDICT_WORDS.right.
+  const V = `${verdict.charAt(0).toUpperCase()}${verdict.slice(1)}`
 
   // The reply: under their own post, so the post itself is the quote.
   const reply = fitX([
-    `This one aged well. ${t}, ${day}: ${v}, ${move}. Your full record on the chart, hits and misses (${tally}): ${link}`,
-    `This one aged well. ${t}, ${day}: ${v}, ${move}. Your full record on the chart, hits and misses: ${link}`,
-    `${t}, ${day}: ${v}. Your full record, hits and misses: ${link}`,
+    `You ${verdict}. ${t}, ${day}: ${move}. It is pinned on the chart beside the rest of your record, hits and misses (${tally}): ${link}`,
+    `You ${verdict}. ${t}, ${day}: ${move}. Pinned on the chart with your full record, hits and misses: ${link}`,
+    `You ${verdict}. ${t}, ${day}. Your full record, hits and misses: ${link}`,
   ])
 
-  // The DM: who is writing, the one call, the whole record.
+  // The DM: who is writing, what this is, the one call, the whole record.
   const dm = fitX([
-    `Hi @${handle}, Nate from Pantessa here. We judged your public ${t} calls on the chart. Your call of ${day} reads ${v}: ${move}. The full record, hits and misses (${tally}): ${link}${mine}`,
-    `Hi @${handle}, Nate from Pantessa here. Your ${t} call of ${day} reads ${v}: ${move}. The full record, hits and misses (${tally}): ${link}${mine}`,
-    `Hi @${handle}, Nate from Pantessa here. Your ${t} call of ${day} reads ${v}: ${move}. The full record, hits and misses (${tally}): ${link}`,
-    `Hi @${handle}, your ${t} call of ${day} reads ${v}. The full record, hits and misses: ${link}`,
+    `Hi @${handle}, Nate from Pantessa here. We pin public market calls to the chart and judge each by what the price did next. Your ${t} call of ${day} ${verdict}: ${move}. Your whole record, hits and misses (${tally}): ${link}${mine}`,
+    `Hi @${handle}, Nate from Pantessa here. We pin public market calls to the chart. Your ${t} call of ${day} ${verdict}: ${move}. Your whole record, hits and misses (${tally}): ${link}${mine}`,
+    `Hi @${handle}, Nate from Pantessa here. Your ${t} call of ${day} ${verdict}: ${move}. Your whole record, hits and misses (${tally}): ${link}${mine}`,
+    `Hi @${handle}, Nate from Pantessa here. Your ${t} call of ${day} ${verdict}: ${move}. Your whole record, hits and misses (${tally}): ${link}`,
+    `Hi @${handle}, your ${t} call of ${day} ${verdict}. Your whole record, hits and misses: ${link}`,
   ])
 
   // The standalone post: the ticker first (never an @mention first: X files that as a reply).
   const q = (n: number) => quoteOf(best.quote || best.text, n)
   const post = fitX([
-    `${t}, ${day}: @${handle} posted "${q(100)}". It reads ${v}: ${move}. The full record, hits and misses (${tally}): ${link}`,
-    `${t}, ${day}: @${handle} posted "${q(50)}". It reads ${v}: ${move}. The full record, hits and misses (${tally}): ${link}`,
-    `${t}, ${day}: @${handle}'s call reads ${v}, ${move}. The full record, hits and misses (${tally}): ${link}`,
-    `${t}, ${day}: @${handle}'s call reads ${v}. The full record, hits and misses: ${link}`,
+    `${t}, ${day}: @${handle} posted "${q(100)}". ${V}: ${move}. The full record, hits and misses (${tally}): ${link}`,
+    `${t}, ${day}: @${handle} posted "${q(50)}". ${V}: ${move}. The full record, hits and misses (${tally}): ${link}`,
+    `${t}, ${day}: @${handle} ${verdict}, ${move}. The full record, hits and misses (${tally}): ${link}`,
+    `${t}, ${day}: @${handle} ${verdict}. The full record, hits and misses: ${link}`,
   ])
 
   const text = (kind: OutreachKind, label: string, s: string): OutreachText => ({ kind, label, text: s, weight: xWeight(s) })
