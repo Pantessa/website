@@ -14,6 +14,11 @@
 // the conversation and the ticket, how a ticket event reads on a turn's row,
 // and the fill a signature paints before the server's 60s fills cache has it.
 // No React, no DOM.
+//
+// 2026-11-16: the panel mounts no ticket any more (a trade it hears opens in
+// the app: `ChartTurn.sent`). The run / ticket / fill rules below stay as the
+// pinned record of that contract; the panel reads only the turn shape,
+// `capTurns` and `historyFor`.
 
 import { chainById } from './chains'
 import { ASK_HISTORY_LINE_MAX, ASK_HISTORY_MAX, ASK_ORDER_ASKS_MAX, ASK_ORDER_TEXT_MAX, cleanContextLine, type AskAnswer, type AskHistoryLine, type AskOrderContext, type OrderStatus } from './markets-ai'
@@ -46,6 +51,9 @@ export interface ChartTurn {
   run?: TicketRun
   /** An ask waiting on a wallet (the connect door is open for it). */
   held?: string
+  /** A trade the panel handed to the app (2026-11-16: trades open in /chat,
+   *  nothing builds on the symbol page). */
+  sent?: string
   relayed?: boolean
   error?: string
 }
@@ -103,6 +111,7 @@ export function advanceStatus(prev: OrderStatus, next: OrderStatus | null): Orde
  *  can be read against it. */
 export function pageSummaryOf(t: ChartTurn): string | null {
   if (t.run) return `${t.run.reading ? 'read that as' : 'built'} in the order ticket: "${t.run.ask}" (${ORDER_STATUS_LABEL[t.run.status].toLowerCase()}${t.run.closed ? ', then cleared' : ''})`
+  if (t.sent) return `opened in the app: "${t.sent}"`
   if (t.held) return `waiting on a wallet to build: "${t.held}"`
   if (t.relayed) return 'passed that to the order ticket'
   if (t.error) return `could not answer (${t.error})`

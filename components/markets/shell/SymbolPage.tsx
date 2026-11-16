@@ -72,13 +72,12 @@ import { composeAsk, sideOf, type TradeAsk } from '@/lib/trade-asks'
 import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { useSession } from '@/lib/session'
-import { useSymbolFills, type FillMarker } from '@/lib/chart-fills'
-import { fillFromSigned, mergeFills, type SignedEvent } from '@/lib/ask-chart-thread'
-import { useAskDoor } from '@/lib/ask-door'
+import { useSymbolFills } from '@/lib/chart-fills'
+import { askDoorNav, useAskDoor } from '@/lib/ask-door'
+import { symbolAskApps, symbolAskNeedsWallet, symbolAskText } from '@/lib/symbol-ask'
 import { useOrderAim } from '@/lib/order-size'
 import GuideSeat from '@/components/guide/GuideSeat'
 import { appScrollTop, scrollAppTo } from '@/lib/app-scroller'
-import type { AskChartIncoming } from '@/components/markets/ai/AskChart'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
@@ -200,8 +199,8 @@ export default function SymbolPage({
     syncMarketTab(tab)
   }, [tab])
   const showChart = chartShowsOn(tab)
-  // A build or an ask that lands in the chart's dock brings Overview back
-  // first (the dock parks with the chart off Overview).
+  // Lines loaded onto the chart (a post's, Ask the chart's) bring a chart tab
+  // back first: the chart parks off Overview.
   const showAChartTab = useCallback(() => setTab((t) => (chartShowsOn(t) ? t : 'overview')), [])
 
   // ── Compare: ?vs=<symbol> (MK2) — same URL discipline as ?tab= ──
@@ -232,31 +231,10 @@ export default function SymbolPage({
       /* default open */
     }
   }, [])
-  // The page's ⌘K door docks in Ask the chart (lib/ask-door `dock`): the pill,
-  // ⌘K and the rail's Ask focus this panel's composer — unfolding it — and a
-  // complete ask handed to the door (a wallet flag's fix) builds in its order
-  // ticket. One conversation per symbol page, never a second chat runtime in
-  // a sheet over it. A page with no chart keeps the sheet.
-  const askDockRef = useRef<HTMLElement | null>(null)
-  const [doorAsk, setDoorAsk] = useState<AskChartIncoming | null>(null)
   const hasPair = !!pair
   // No chart AND no token by that name (a typo, a ticker we don't carry):
   // the page offers search, never a Buy chip that would end in a refusal.
   const unknown = symbolStanding(sym) === 'unknown'
-  useEffect(() => {
-    if (!hasPair) return
-    const { setDock } = useAskDoor.getState()
-    setDock((draft, opts) => {
-      setAskOpen(true)
-      showAChartTab()
-      setDoorAsk({ text: (draft ?? '').trim(), send: !!opts?.send, ...(opts?.mcps?.length ? { mcps: opts.mcps } : {}), at: Date.now() })
-      requestAnimationFrame(() => {
-        const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-        askDockRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' })
-      })
-    })
-    return () => useAskDoor.getState().setDock(null)
-  }, [hasPair, showAChartTab])
   const toggleAsk = useCallback(() => {
     setAskOpen((o) => {
       try {
@@ -276,7 +254,7 @@ export default function SymbolPage({
     return () => document.documentElement.removeAttribute('data-sym-cockpit')
   }, [hasPair])
 
-  // ── The send door: every chip on the page runs in the app ──
+  // ── The send door: every ask on the page runs in the app ──
   // (2026-09-16, Nate: "Buy AMAT goes nowhere… should it open the app page
   // with the prompt fire?") The build used to land in a panel at the foot
   // of the Trade tab, below the order form, the composer and the position
@@ -285,15 +263,25 @@ export default function SymbolPage({
   // of band (lib/arrival-intent: same tab, 60s, one shot) and /chat fires it
   // on arrival with the apps it needs. A fenced ask or no storage falls back
   // to the `?prompt=` prefill, and a URL still never fires a turn.
+  // (2026-11-16, Nate on /t/AAPL: "let's not direct AI chat buys or questions
+  // to an embed, let's send them to the app page and make sure to add the
+  // correct MCPs".) The order ticket, the rail's say row and the ⌘K door had
+  // been building in a chat runtime docked under the chart since 09-24; they
+  // take this door too now, and the handoff NAMES its apps: the sentence's
+  // own plus the venue that trades this symbol (lib/symbol-ask), with any a
+  // caller asked for (a wallet flag's bridge leg).
   const router = useRouter()
   const pathname = usePathname()
   const tabsRef = useRef<HTMLElement | null>(null)
+  const callerAppsRef = useRef<Map<string, string[]>>(new Map())
   const runAsk = useCallback(
     (ask: string) => {
-      const handed = writeArrivalIntent({ text: ask, from: pathname ?? '' })
+      const extra = callerAppsRef.current.get(ask) ?? []
+      callerAppsRef.current.delete(ask)
+      const handed = writeArrivalIntent({ text: ask, from: pathname ?? '', mcps: symbolAskApps(ask, pair, extra) })
       router.push(handed ? ARRIVAL_APP_HREF : promptHref(ask))
     },
-    [pathname, router],
+    [pathname, router, pair],
   )
   // Looking needs no wallet; acting does (2026-09-14, Nate: "only on an
   // action item 'buy $10 of APPLE'"). Every ask on the page comes through
@@ -303,21 +291,36 @@ export default function SymbolPage({
   // (lib/use-connect-to-act).
   const { act, door } = useConnectToAct({ run: runAsk, redirectFor: promptHref })
   const onAsk = useCallback((a: TradeAsk) => act(a.ask), [act])
-  // The order ticket's send (2026-10-06): a SIZED sentence builds on this
-  // page, in Ask the chart's order ticket under the chart (the page's door is
-  // docked there, lib/ask-door) — the chart stays, and the signed fill paints
-  // on it. With no dock (no chart) it runs in the app like any chip.
-  const buildHere = useCallback(
-    (ask: string) => {
-      const dock = useAskDoor.getState().dock
-      if (dock) dock(ask, { send: true })
-      else act(ask)
+  // The order ticket's send: a SIZED sentence runs in the app like every chip
+  // (it built in a runtime docked under the chart from 10-06 to 11-16).
+  const orderToApp = act
+  // Anything SAID on the page (the rail's ask row, the ⌘K door's composer and
+  // chips, a surface that hands the door an ask to run): a chart or markets
+  // ask is a navigation; a question travels without a wallet (looking needs
+  // none) and names its symbol; a trade goes through the connect door.
+  const sayToApp = useCallback(
+    (text: string, opts?: { mcps?: string[] }) => {
+      const said = text.trim()
+      if (!said) return
+      const nav = askDoorNav(said)
+      if (nav) {
+        router.push(nav)
+        return
+      }
+      const ask = symbolAskText(said, pair)
+      if (opts?.mcps?.length) callerAppsRef.current.set(ask, opts.mcps)
+      if (symbolAskNeedsWallet(ask)) act(ask)
+      else runAsk(ask)
     },
-    [act],
+    [act, runAsk, router, pair],
   )
-  // The right column's ask row: a question or a trade with an if, into the
-  // same conversation (the dock brings a chart tab back by itself).
-  const sayHere = buildHere
+  // The page takes the ⌘K door's sends (lib/ask-door `handoff`): the sheet
+  // still opens here as a composer with this symbol's chips, and what it
+  // sends runs in the app, never in a chat runtime over the chart.
+  useEffect(() => {
+    useAskDoor.getState().setHandoff(sayToApp)
+    return () => useAskDoor.getState().setHandoff(null)
+  }, [sayToApp])
   // A chip is a real link (the /chat prefill: no-JS, a new tab); a plain
   // click sends through the act door instead.
   const sendOnClick = (ask: string) => (e: ReactMouseEvent<HTMLAnchorElement>) => {
@@ -350,19 +353,10 @@ export default function SymbolPage({
   // legend under the chart). Public by address; no wallet → no read.
   const { walletAddress } = useSession()
   const serverFills = useSymbolFills(sym, walletAddress)
-  // A trade signed in Ask the chart's order ticket paints on this chart at
-  // once; the fills read (cached 60s per wallet) takes over when it lists
-  // the same transaction (lib/ask-chart-thread mergeFills).
-  const [localFills, setLocalFills] = useState<FillMarker[]>([])
-  useEffect(() => setLocalFills([]), [sym, walletAddress])
-  const fills = useMemo(() => mergeFills(serverFills, localFills), [serverFills, localFills])
-  const onTicketSigned = useCallback(
-    (ev: SignedEvent) => {
-      const f = fillFromSigned(sym, ev, Date.now())
-      if (f) setLocalFills((xs) => (xs.some((x) => x.id === f.id) ? xs : [...xs, f]))
-    },
-    [sym],
-  )
+  // (Until 2026-11-16 a trade signed in Ask the chart's inline ticket was
+  // merged in here at once; trades run in the app now, and the fills read
+  // lists them when the visitor comes back.)
+  const fills = serverFills
   // A chartless token's Sell chip waits on the same rule as every other Sell
   // (lib/sell-gate): the wallet has to hold it.
   const held = useHeld()
@@ -663,7 +657,7 @@ export default function SymbolPage({
             the right column's ticket takes over. */}
         {pair && (
           <div className="sym__exec" data-seat="ExecStrip">
-            <ExecStrip symbol={sym} pair={pair} onAsk={act} onBuild={buildHere} last={stats?.last ?? null} autoOpen={false} />
+            <ExecStrip symbol={sym} pair={pair} onAsk={act} onBuild={orderToApp} last={stats?.last ?? null} autoOpen={false} />
           </div>
         )}
         {/* The guide's one hint card: under the chips on a phone, right under
@@ -730,11 +724,11 @@ export default function SymbolPage({
         {/* A look-only index, on a PHONE: the chart leads, and right under it the page says it is here to read
             and names the closest thing listed (a desktop carries the same card in the rail, where the ticket
             would be — markets' look-only.css shows one per posture). It parks with the chart. */}
-        {pair && lookOnly && showChart && <LookOnlyCard pair={pair} seat="page" onAsk={buildHere} />}
+        {pair && lookOnly && showChart && <LookOnlyCard pair={pair} seat="page" onAsk={orderToApp} />}
 
         {/* ── Ask the chart (AI's AskChart slot), docked under the chart; parks with it ── */}
         {pair && (
-          <section ref={askDockRef} className={`mk-askdock${askOpen ? ' is-open' : ''}${showChart ? '' : ' is-parked'}`} data-askchart={askOpen ? 'open' : 'closed'} aria-label="Ask about this chart" aria-hidden={showChart ? undefined : true}>
+          <section className={`mk-askdock${askOpen ? ' is-open' : ''}${showChart ? '' : ' is-parked'}`} data-askchart={askOpen ? 'open' : 'closed'} aria-label="Ask about this chart" aria-hidden={showChart ? undefined : true}>
             <button type="button" className="mk-askdock__bar" onClick={toggleAsk} aria-expanded={askOpen}>
               <span className="mk-askdock__k mono">ASK THE CHART</span>
               <span className="mk-askdock__hint">
@@ -743,14 +737,14 @@ export default function SymbolPage({
                     ? 'What is on screen is the context. An index is here to read: the answer draws on the chart.'
                     : `Ask about ${sym}: the answer draws on the chart. Nothing here places an order on an index.`
                   : askOpen
-                    ? 'What is on screen is the context — and a trade builds right here.'
-                    : `Ask about ${sym}, or say a trade — it builds right here for your wallet to sign.`}
+                    ? 'What is on screen is the context. A trade you say opens in the app.'
+                    : `Ask about the ${sym} chart: draw a line, set an alert, read a bar. A trade opens in the app.`}
               </span>
               {askOpen ? <ChevronUp className="mk-askdock__icon" aria-hidden /> : <ChevronDown className="mk-askdock__icon" aria-hidden />}
             </button>
             {askOpen && (
               <div className="mk-askdock__body">
-                <AskChart symbol={sym} pair={pair} chartState={chartState ?? undefined} visible={viewport ? { from: viewport.from, to: viewport.to } : undefined} onAsk={act} onChartState={loadChart} incoming={doorAsk} onSigned={onTicketSigned} />
+                <AskChart symbol={sym} pair={pair} chartState={chartState ?? undefined} visible={viewport ? { from: viewport.from, to: viewport.to } : undefined} onAsk={act} onChartState={loadChart} />
               </div>
             )}
           </section>
@@ -784,7 +778,7 @@ export default function SymbolPage({
       {/* ── The right column: the ticket leads, the watchlist follows. The About card that used to sit under
           the watchlist is gone (2026-10-13, Nate: "takes up too much room"); alerts live behind the strip's bell. ── */}
       <MarketsSide label="Order ticket and watchlist">
-        {pair && !unknown && <RailTicket symbol={sym} pair={pair} last={stats?.last ?? null} side={railSide} onSide={setRailSide} onBuild={buildHere} onSay={sayHere} />}
+        {pair && !unknown && <RailTicket symbol={sym} pair={pair} last={stats?.last ?? null} side={railSide} onSide={setRailSide} onBuild={orderToApp} onSay={sayToApp} />}
         <WatchlistSlot current={unknown ? undefined : sym} onAsk={onChartAsk} />
       </MarketsSide>
       {door}

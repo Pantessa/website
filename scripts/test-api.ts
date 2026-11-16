@@ -382,6 +382,7 @@ import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
 import { flyoverPins } from './flyover-pins'
 import { orderTicketPins } from './order-ticket-pins'
+import { symbolAskPins } from './symbol-ask-pins'
 import { cowRefusalLivePins, signStagePins } from './sign-stage-pins'
 import { depthPins } from './depth-pins'
 import { chartTapePins } from './chart-tape-pins'
@@ -24509,7 +24510,8 @@ async function main() {
           (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
           // RE-PINNED 2026-10-06 (order ticket): the strip also takes the page's BUILD door — the ticket's sentence docks in Ask the chart.
           // RE-PINNED 2026-10-13 (cockpit): the strip is the phone's and never auto-opens its ticket (the right column holds the desktop's).
-          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} onBuild=\{buildHere\} last=\{stats\?\.last \?\? null\} autoOpen=\{false\} \/>/.test(symS) &&
+          // RE-PINNED 2026-11-16 (asks to the app): the strip's order door is the act door itself — the sentence runs in /chat, nothing docks.
+          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} onBuild=\{orderToApp\} last=\{stats\?\.last \?\? null\} autoOpen=\{false\} \/>/.test(symS) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
           // Re-pinned by the mobile-native squad (2026-09-24, NAV): the phone
           // posture executes lib/phone-nav (pickPhone), so the door call is
@@ -27012,7 +27014,7 @@ async function main() {
         /\.mk-table__row:hover \.mk-table__quick, \.mk-table__row:focus-within \.mk-table__quick \{ opacity: 1; pointer-events: auto; \}/.test(await readFile('components/markets/markets.css', 'utf8')) &&
         // Re-pinned 2026-09-24: the engine's fills are the wallet's read MERGED
         // with the ones Ask the chart's ticket just signed (lib/ask-chart-thread).
-        symSrc2.includes('const serverFills = useSymbolFills(sym, walletAddress)') && symSrc2.includes('const fills = useMemo(() => mergeFills(serverFills, localFills), [serverFills, localFills])') && /<ChartMount [^>]*fills=\{fills\}/.test(symSrc2),
+        symSrc2.includes('const serverFills = useSymbolFills(sym, walletAddress)') && /* RE-PINNED 2026-11-16 (asks to the app): no trade is signed on this page any more, so the engine's fills are the wallet's read alone. */ symSrc2.includes('const fills = serverFills') && /<ChartMount [^>]*fills=\{fills\}/.test(symSrc2),
     )
     // The one stylesheet import + the slot card rule (QA's request: whoever
     // owns a class ships its rule).
@@ -27754,7 +27756,10 @@ async function main() {
     // talk"): an act no longer leaves the page as a chip for /chat — it BUILDS
     // in the panel's order ticket (the /i runtime, docked), through the
     // connect-to-act door; the wallet signature is the gate (rule 5).
-    check('ai components: AskChart builds an act in its docked order ticket through the connect-to-act door (never a bare /chat hop), applies chart answers through onChartState, posts the alert rule to /api/alerts, and signed-out alerts open the unified door', askSrc.includes("if (reply.kind === 'act') build(id, reply.chip.ask, !reply.typed)") && askSrc.includes('useConnectToAct({ run: runHere') && askSrc.includes('<ChatInterface key={ticket.key} simple docked injectedPrompt={ticket.prompt} onEmbedEvent={onTicketEvent} />') && !askSrc.includes('onAsk(reply.chip.ask)') && askSrc.includes("if (reply.kind === 'chart') onChartState?.(reply.state)") && askSrc.includes("fetch('/api/alerts'") && askSrc.includes('<CreateAccountButton className="mk-ai__cta" label="Sign in to set alerts"'))
+    // RE-PINNED 2026-11-16 (asks to the app; Nate on /t/AAPL: "let's not direct AI chat buys or
+    // questions to an embed, let's send them to the app page"): an act leaves for /chat through the
+    // PAGE's act door (connect to act + the arrival handoff with its apps); the panel mounts no runtime.
+    check('ai components: AskChart hands an act to the page\'s act door (it opens in the app; the panel mounts no chat runtime and owns no connect door), applies chart answers through onChartState, posts the alert rule to /api/alerts, and signed-out alerts open the unified door', askSrc.includes("if (reply.kind === 'act') toApp(id, reply.chip.ask)") && askSrc.includes('onAsk?.(ask)') && !askSrc.includes('useConnectToAct') && !askSrc.includes('<ChatInterface') && askSrc.includes("if (reply.kind === 'chart') onChartState?.(reply.state)") && askSrc.includes("fetch('/api/alerts'") && askSrc.includes('<CreateAccountButton className="mk-ai__cta" label="Sign in to set alerts"'))
     // ── the suggestion row (2026-09-18) ──────────────────────────────────
     // A suggestion that carries a complete ask SENDS on one tap, like every
     // other complete-ask button on the page (memory chip-send-contract). It
@@ -27793,13 +27798,14 @@ async function main() {
       )
       const suggCss = await readFile('components/markets/ai.css', 'utf8')
       check(
-        'ai suggestions: the act chip BUILDS on one tap in the order ticket (a `?prompt=` link is only the no-JS fallback — a URL never fires a turn), question chips still ask the chart lane, and the act chip is styled apart from them',
+        // RE-PINNED 2026-11-16 (asks to the app): the act chip's tap sends to /chat through the page's act door.
+        'ai suggestions: the act chip SENDS to the app on one tap (a `?prompt=` link is only the no-JS fallback — a URL never fires a turn), question chips still ask the chart lane, and the act chip is styled apart from them',
         askSrc.includes("s.kind === 'act' ?") &&
-          askSrc.includes('onClick={buildOnClick(s.label, s.ask)}') &&
+          askSrc.includes('onClick={appOnClick(s.ask)}') &&
           askSrc.includes('href={promptHref(s.ask)}') &&
           askSrc.includes('className="mk-ai__sugg-chip mk-ai__sugg-chip--act"') &&
           askSrc.includes("onClick={() => void ask(s.q, 'chip')}") &&
-          /A TRADE BUILDS RIGHT HERE · YOUR WALLET SIGNS/.test(askSrc) &&
+          /A TRADE OPENS IN THE APP · YOUR WALLET SIGNS/.test(askSrc) &&
           suggCss.includes('.mk-ai__sugg-chip--act {'),
       )
     }
@@ -27835,7 +27841,7 @@ async function main() {
           !mai.relayShortcut('yes?', ord) && !mai.relayShortcut('draw a line at 400', ord) && !mai.relayShortcut('what is the trend', ord) &&
           !mai.relayShortcut('yes', { ...ord!, status: 'ready' }) && !mai.relayShortcut('yes', null))
       const prompt = mai.askUserPrompt({ symbol: 'ETH', name: 'Ethereum', tf: '1h', last: 2500, change24hPct: 1, tech: null, drawings: [], visible: null, position: null, venues: ['price alerts'], question: 'make it $50', history: hist, order: ord })
-      check('ask chat prompt: the model gets <conversation> and <order> blocks as data (no address in either), and the system prompt names relay + the build-here rule', prompt.includes('<conversation>') && prompt.includes('</conversation>') && prompt.includes('<order>') && prompt.includes('asks run in the ticket: "Buy $25 of ETH"') && !/0x[0-9a-fA-F]{6,}/.test(prompt) && mai.ASK_SYSTEM.includes('{"kind":"relay"}') && mai.ASK_SYSTEM.includes('builds right away in the order ticket'))
+      check('ask chat prompt: the model gets <conversation> and <order> blocks as data (no address in either), and the system prompt names relay + the opens-in-the-app rule (RE-PINNED 2026-11-16)', prompt.includes('<conversation>') && prompt.includes('</conversation>') && prompt.includes('<order>') && prompt.includes('asks run in the ticket: "Buy $25 of ETH"') && !/0x[0-9a-fA-F]{6,}/.test(prompt) && mai.ASK_SYSTEM.includes('{"kind":"relay"}') && mai.ASK_SYSTEM.includes('opens in the app right away, where it builds'))
 
       // The thread's pure rules.
       const turns = [
@@ -27855,26 +27861,32 @@ async function main() {
       check('ask chat fill: a signature paints a fill on THIS symbol only (its side tag is the evidence), inked by the venue that built it, and the server\'s row replaces it by explorer link',
         f?.side === 'buy' && f.venue === 'Uniswap v3' && f.venueId === 'uniswap' && f.chainId === 4663 && f.usd === 25 && f.t === 1_700_000_000 && notThis === null && merged.length === 2 && merged[0].id === 'local:2')
 
-      // The door docks on a page with its own conversation.
+      // RE-PINNED 2026-11-16 (asks to the app): the door no longer DOCKS on a symbol page. The page
+      // takes the door's SENDS and carries them to /chat; a bare open is the sheet as a composer.
       const doorCalls: unknown[] = []
-      useAskDoor.getState().setDock((draft, opts) => doorCalls.push([draft, opts]))
+      useAskDoor.getState().setHandoff((text, opts) => doorCalls.push([text, opts]))
       useAskDoor.getState().openDoor('Fix gas on Arbitrum', { send: true, mcps: ['near-intents'] })
+      const sentOpen = useAskDoor.getState().open
       useAskDoor.getState().openDoor()
-      const dockedOpen = useAskDoor.getState().open
-      useAskDoor.getState().setDock(null)
+      const composerOpen = useAskDoor.getState().open
+      useAskDoor.getState().closeDoor()
+      useAskDoor.getState().setHandoff(null)
       useAskDoor.getState().openDoor()
       const sheetOpen = useAskDoor.getState().open
       useAskDoor.getState().closeDoor()
-      check('ask chat door: while a page docks the ⌘K door, every openDoor lands there (a send with its apps, a bare open) and the sheet stays shut; undocked, the sheet opens again', doorCalls.length === 2 && JSON.stringify(doorCalls[0]) === JSON.stringify(['Fix gas on Arbitrum', { send: true, mcps: ['near-intents'] }]) && dockedOpen === false && sheetOpen === true)
+      check('ask chat door: while a page hands its asks to the app, a send handed to the door goes to the page with its apps and the sheet stays shut; a bare open is the sheet as a composer; with no handoff the sheet opens as before', doorCalls.length === 1 && JSON.stringify(doorCalls[0]) === JSON.stringify(['Fix gas on Arbitrum', { mcps: ['near-intents'] }]) && sentOpen === false && composerOpen === true && sheetOpen === true)
 
       // The wiring, at the source.
       const ciSrc = await readFile('components/ChatInterface.tsx', 'utf8')
       const symSrc = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
       const askSrc3 = await readFile('components/markets/ai/AskChart.tsx', 'utf8')
-      check('ask chat wiring: a docked runtime renders no composer, an injected prompt carries its apps, a first-party signed event names its venue + symbols (the embed contract unchanged); the panel relays the user\'s OWN words and opens its own thread in the app; the page docks the door and paints the fill',
+      // RE-PINNED 2026-11-16 (asks to the app): the runtime's side of the contract is unchanged (a docked
+      // runtime, an injected prompt's apps, the signed event); the PANEL no longer uses it — a stray relay
+      // is the visitor's own words for the app, and the page hands the door's sends to /chat.
+      check('ask chat wiring: a docked runtime renders no composer, an injected prompt carries its apps, a first-party signed event names its venue + symbols (the embed contract unchanged); the panel sends the user\'s OWN words (never the model\'s) to the app on a stray relay; the page takes the door\'s sends and reads its fills from the wallet alone',
         ciSrc.includes('{!docked && (') && ciSrc.includes('sendChip(injectedPrompt.text, injectedPrompt.mcps ?? [])') && ciSrc.includes('...(embedded ? {} : { buildPath: info.buildPath, symbols: info.symbols })') &&
-          askSrc3.includes('sendToTicket(said)') && !/sendToTicket\(reply/.test(askSrc3) && askSrc3.includes('`/chat/${encodeURIComponent(ticketChatId)}`') &&
-          symSrc.includes('setDock((draft, opts) =>') && symSrc.includes('mergeFills(serverFills, localFills)') && symSrc.includes('onSigned={onTicketSigned}'))
+          askSrc3.includes("if (reply.kind === 'relay') toApp(id, said)") && !/toApp\(id, reply\.(?!chip\.ask)/.test(askSrc3) &&
+          symSrc.includes('useAskDoor.getState().setHandoff(sayToApp)') && symSrc.includes('const fills = serverFills') && !symSrc.includes('onSigned='))
 
       // The route, against the mocked model.
       const ethOk = ((await (await fetch(`${BASE}/api/charts/candles?symbol=ETH&tf=1h`)).json()) as { candles?: unknown[] }).candles?.length
@@ -27897,7 +27909,7 @@ async function main() {
         const relayYes = await post({ question: 'hmm whichever is cheaper', mockScenario: 'relay', order: liveOrder })
         const short = await post({ question: 'use my USDC on Base', order: liveOrder })
         check('ask chat route: a model relay reaches the ticket only while an order is live (else a plain answer), a relay carries no words, and a plain reply to an asking ticket relays with no model',
-          relayNo.j.kind === 'answer' && /Nothing is building/.test(String(relayNo.j.text)) && relayYes.j.kind === 'relay' && !('text' in relayYes.j) && !('say' in relayYes.j) && short.j.kind === 'relay' && short.j.deterministic === true,
+          relayNo.j.kind === 'answer' && /No order is open on this page/.test(String(relayNo.j.text)) && relayYes.j.kind === 'relay' && !('text' in relayYes.j) && !('say' in relayYes.j) && short.j.kind === 'relay' && short.j.deterministic === true,
           `${relayNo.j.kind}/${relayYes.j.kind}/${short.j.kind}`)
         const amend = await post({ question: 'make it $50', history: [{ role: 'user', text: 'buy $25 of ETH' }, { role: 'page', text: 'built in the order ticket: "Buy $25 of ETH" (ready to sign)' }], order: { ...liveOrder, status: 'ready' } })
         const amendAsk = (amend.j.chip as { ask?: string } | undefined)?.ask ?? ''
@@ -28118,7 +28130,8 @@ async function main() {
       await (async () => {
         const sym = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
         const trade = await readFile('components/markets/tabs/TradeTab.tsx', 'utf8')
-        return /const handed = writeArrivalIntent\(\{ text: ask, from: pathname \?\? '' \}\)\s*\n\s*router\.push\(handed \? ARRIVAL_APP_HREF : promptHref\(ask\)\)/.test(sym) &&
+        // RE-PINNED 2026-11-16 (asks to the app): the handoff names its apps now (lib/symbol-ask symbolAskApps).
+        return /const handed = writeArrivalIntent\(\{ text: ask, from: pathname \?\? '', mcps: symbolAskApps\(ask, pair, extra\) \}\)\s*\n\s*router\.push\(handed \? ARRIVAL_APP_HREF : promptHref\(ask\)\)/.test(sym) &&
           /useConnectToAct\(\{ run: runAsk, redirectFor: promptHref \}\)/.test(sym) &&
           !/const runAsk = useCallback\([\s\S]{0,400}setTab\('trade'\)/.test(sym) &&
           !/ChatInterface/.test(trade.replace(/\/\/[^\n]*/g, ''))
@@ -28146,7 +28159,7 @@ async function main() {
 
     check(
       'arrival/core: a record that outlived its wallet NEVER fires a guest turn racing AppSpine\'s signed-out bounce — settled disconnected, or no address, parks the ask in the composer and drops the record',
-      /if \(walletStatus === 'disconnected' \|\| !effectiveAddress\) \{\s*\n\s*parkAsk\(arrival\.text\)\s*\n\s*setArrival\(null\)\s*\n\s*return\s*\n\s*\}/.test(chatSrcA) &&
+      /if \(walletStatus === 'disconnected' \|\| !effectiveAddress\) \{\s*\n\s*parkAsk\(arrival\.text, arrival\.mcps\)\s*\n\s*setArrival\(null\)\s*\n\s*return\s*\n\s*\}/.test(chatSrcA) &&
         // the guard sits BEFORE the send, and the send is the only setComposerSend the arrival path makes
         chatSrcA.indexOf("walletStatus === 'disconnected' || !effectiveAddress") < chatSrcA.indexOf('setComposerSend({ text: arrival.text'),
     )
@@ -28161,7 +28174,7 @@ async function main() {
     check(
       'arrival/core: "Don\'t run it" is offered ONLY while the row still holds (after the fire there is nothing to call off), and it PARKS the ask in the composer instead of losing it — the pending send is dropped because the fire effect bails on a cleared intent',
       /onDismiss=\{arrivalPhase === 'holding' \? dropArrival : undefined\}/.test(chatSrcA) &&
-        /const dropArrival = \(\) => \{\s*\n\s*if \(arrival\) \{\s*\n\s*parkAsk\(arrival\.text\)\s*\n\s*textareaRef\.current\?\.focus\(\)\s*\n\s*\}\s*\n\s*setArrival\(null\)\s*\n\s*\}/.test(chatSrcA) &&
+        /const dropArrival = \(\) => \{\s*\n\s*if \(arrival\) \{\s*\n\s*parkAsk\(arrival\.text, arrival\.mcps\)\s*\n\s*textareaRef\.current\?\.focus\(\)\s*\n\s*\}\s*\n\s*setArrival\(null\)\s*\n\s*\}/.test(chatSrcA) &&
         /if \(!arrival \|\| arrivalPhase === 'sent'\) return/.test(chatSrcA),
     )
 
@@ -29960,7 +29973,7 @@ async function main() {
         // ⌘K door's `mcps`, docked into /t's Ask the chart ticket.)
         /if \(embedded\) void handleSend\(injectedPrompt\.text\)\s*\n\s*else sendChip\(injectedPrompt\.text, injectedPrompt\.mcps \?\? \[\]\)/.test(chatSrcF) &&
         /\} else parkAsk\(injectedPrompt\.text\)/.test(chatSrcF) &&
-        /if \(text && text === parked && !loading && !pendingPayment\) \{\s*\n\s*parkedAskRef\.current = null\s*\n\s*setInput\(''\)\s*\n\s*sendChip\(text\)/.test(chatSrcF) &&
+        /if \(text && text === parked && !loading && !pendingPayment\) \{\s*\n\s*parkedAskRef\.current = null\s*\n\s*setInput\(''\)\s*\n\s*sendChip\(text, parkedAppsRef\.current\)/.test(chatSrcF) && // RE-PINNED 2026-11-16 (asks to the app): a parked ask keeps the apps its page named
         (chatSrcF.match(/sendComposer\(\)/g) ?? []).length === 2 && !/onClick=\{\(\) => void handleSend\(\)\}/.test(chatSrcF) &&
         /if \(embedded \|\| parseChartAsk\(prompt\)\?\.pair \|\| \(!simple && parseMarketsNavAsk\(prompt\)\)\) \{/.test(chatSrcF) &&
         /const want = opts\.typed \? typedAskAppSlugs\(prompt\) : \[\.\.\.new Set\(\[\.\.\.slugs, \.\.\.askAppSlugs\(prompt\)\]\)\]/.test(chatSrcF),
@@ -35603,6 +35616,7 @@ async function main() {
   spotHomePins(check)
   // The order ticket (2026-10-06): every shape the form composes lands native, the honesty rules, the sizing, the Available line, the wiring.
   orderTicketPins(check)
+  symbolAskPins(check)
   // Only the wallet may be blamed for a wallet rejection (2026-11-11): a CoW order the wallet SIGNED read "Signature rejected in the wallet" when CoW's order book refused it; the stage rule on five sign surfaces, CoW's errorType kept + logged + filed, and one live unfunded throwaway order through the relay.
   signStagePins(check)
   await cowRefusalLivePins(BASE, check)
