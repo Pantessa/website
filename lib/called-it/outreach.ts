@@ -94,7 +94,7 @@ export function tallyWords(headline: string): string {
 
 /** A quote that can travel: masked, one line, straight quotes swapped, cut on a character budget. */
 function quoteOf(text: string, max: number): string {
-  const one = maskAddresses(text).replace(/[\u0000-\u001f\u007f‎‏‪-‮⁦-⁩]/g, ' ').replace(/\s+/g, ' ').replace(/"/g, "'").trim()
+  const one = maskAddresses(text).replace(/[\u0000-\u001f\u007f‎‏‪-‮⁦-⁩]/g, ' ').replace(/\s+/g, ' ').replace(/"/g, "'").trim().replace(/\.+$/, '')
   if ([...one].length <= max) return one
   return `${[...one].slice(0, max - 1).join('').trimEnd()}...`
 }
