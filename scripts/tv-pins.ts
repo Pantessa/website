@@ -196,6 +196,11 @@ export function tvPins(check: Check): void {
     adv.includes('data-tv-attribution') && adv.includes('https://www.tradingview.com/') && !/hide_.*logo|adaptive_logo|move_logo/.test(adv))
   check('tv wiring: the "+" on the price axis drops a level, a drawing event re-reads the plan, and a chip is gated by the same sell and venue gates as every other chip',
     adv.includes("w.subscribe('onPlusClick'") && adv.includes("w.subscribe('drawing_event'") && /canSellAsk\(o\.action\.ask, held\) && canTradeAsk\(o\.action\.ask, tradable\)/.test(adv))
+  const feedSrc = readFileSync('lib/tv/datafeed.ts', 'utf8')
+  check('tv wiring: the range bar ends on "All", and opening the chart, changing its frame or picking a range turns the price axis\'s auto-scale back on (a saved manual scale cut candles off)',
+    /text: '1000y', resolution: '1W'[^}]*title: 'All'/.test(adv) && /scale\.setAutoScale\(true\)/.test(adv) && /fitPrices\(\)\s+chart\.onIntervalChanged\(\)/.test(adv) && /readablePrints\(interval\)\s+fitPrices\(\)/.test(adv) && adv.includes("w.subscribe('timeframe_interval', (() => fitPrices())"))
+  check('tv datafeed: an older-history request reads pages until it reaches the library\'s `from` (the library takes one answer as all of [from, to); one page left a gap a range button never filled)',
+    /for \(let page = 0; page < MAX_PAGES_PER_REQUEST; page\+\+\)/.test(feedSrc) && /if \(bars\[0\]\.time <= period\.from \* 1000\) break/.test(feedSrc) && /cursor = olderPageCursor\(bars\[0\]\.time\)/.test(feedSrc))
 }
 
 export async function tvLivePins(check: Check, base: string): Promise<void> {

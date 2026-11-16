@@ -33,6 +33,8 @@ import type { TvBar, TvDatafeed, TvDatafeedConfig, TvHistoryMeta, TvMark, TvPeri
 /** How often a frame's window is re-read (the built-in chart's cadence). */
 export const TV_POLL_MS: Readonly<Record<ChartTf, number>> = { '10s': 5_000, '1m': 5_000, '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
 const FETCH_TIMEOUT_MS = 12_000
+/** Older pages one history request may read before it answers with what it has. */
+const MAX_PAGES_PER_REQUEST = 12
 
 export interface WindowRead {
   symbol: string
@@ -382,19 +384,37 @@ export function createPantessaDatafeed(hooks: DatafeedHooks): PantessaDatafeed {
     }
 
     if (st.exhausted) return { bars: [], meta: { noData: true } }
-    // Older than what the chart holds: the page that ends where it begins.
-    const cursor = Math.min(period.to, st.oldestMs !== null ? olderPageCursor(st.oldestMs) : period.to)
-    const body = await readOlder(symbol, tf, cursor)
-    if (!body || body.error === 'feed unavailable') throw new Error('feed unavailable')
-    // A page from another tape (a stock's fallback feed) is never spliced on.
-    if (st.feed && body.feed && body.feed !== st.feed) {
-      st.exhausted = true
-      return { bars: [], meta: { noData: true } }
+    // The library asks for EVERY bar in [from, to) and takes the answer as
+    // complete: a range button (5y, All) asks years back in one request, and
+    // one page answered there left the years between as a gap it never asked
+    // for again. So pages are read, oldest first, until the answer reaches
+    // `from` or the venue runs out (bounded: a page is hundreds of bars).
+    const out: TvBar[] = []
+    let cursor = Math.min(period.to, st.oldestMs !== null ? olderPageCursor(st.oldestMs) : period.to)
+    for (let page = 0; page < MAX_PAGES_PER_REQUEST; page++) {
+      const body = await readOlder(symbol, tf, cursor)
+      if (!body || body.error === 'feed unavailable') {
+        if (out.length) break
+        throw new Error('feed unavailable')
+      }
+      // A page from another tape (a stock's fallback feed) is never spliced on.
+      if (st.feed && body.feed && body.feed !== st.feed) {
+        st.exhausted = true
+        break
+      }
+      const bars = barsBefore(toTvBars(body.older ?? [], tf), cursor)
+      if (bars.length) {
+        out.unshift(...bars)
+        st.oldestMs = bars[0].time
+        cursor = olderPageCursor(bars[0].time)
+      }
+      if (body.exhausted || !bars.length) {
+        st.exhausted = true
+        break
+      }
+      if (bars[0].time <= period.from * 1000) break
     }
-    const bars = barsBefore(toTvBars(body.older ?? [], tf), cursor)
-    if (bars.length) st.oldestMs = bars[0].time
-    if (body.exhausted || !bars.length) st.exhausted = true
-    return { bars, meta: st.exhausted ? { noData: true } : {} }
+    return { bars: out, meta: st.exhausted ? { noData: true } : {} }
   }
 
   function push(sub: Sub, bar: TvBar) {

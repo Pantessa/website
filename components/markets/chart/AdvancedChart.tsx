@@ -361,6 +361,8 @@ export default function AdvancedChart({
             { text: '6m', resolution: '1D', description: '6 months in daily bars' },
             { text: '1y', resolution: '1D', description: '1 year in daily bars' },
             { text: '5y', resolution: '1W', description: '5 years in weekly bars' },
+            // The library's own spelling of "everything": a period longer than any market's history.
+            { text: '1000y', resolution: '1W', description: 'All history in weekly bars', title: 'All' },
           ],
           auto_save_delay: 2,
           ...(layout ? { saved_data: layout } : {}),
@@ -404,12 +406,29 @@ export default function AdvancedChart({
             }
           }
           readablePrints(tvResolution(startTf))
+          // A vertical drag turns the price axis's auto-scale off, and the
+          // saved layout keeps it off: the chart then reopened on that old
+          // range with every candle outside it cut off. Opening the chart and
+          // changing its frame fit the price axis to the candles again.
+          const fitPrices = () => {
+            try {
+              const panes = chart.getPanes()
+              const scale = (panes.find((p) => p.hasMainSeries()) ?? panes[0])?.getMainSourcePriceScale()
+              if (scale?.setAutoScale && !scale.isAutoScale?.()) scale.setAutoScale(true)
+            } catch {
+              /* the axis keeps the range it has */
+            }
+          }
+          fitPrices()
           chart.onIntervalChanged().subscribe(null, (interval) => {
             const next = pageTfOfResolution(interval)
             setTf(next)
             onTfRef.current?.(next)
             readablePrints(interval)
+            fitPrices()
           })
+          // A range from the bottom bar (1y, 5y, All) can keep the same frame: fit it too.
+          w.subscribe('timeframe_interval', (() => fitPrices()) as never)
           chart.onVisibleRangeChanged().subscribe(null, (range) => {
             if (range && Number.isFinite(range.from) && Number.isFinite(range.to)) onViewportRef.current?.({ from: Math.floor(range.from), to: Math.floor(range.to), tf: tfRef.current })
           })
