@@ -29,6 +29,7 @@ import Tour from '@/components/home/tour/Tour'
 import HowItWorks from '@/components/home/HowItWorks'
 import ClosingDoors from '@/components/home/ClosingDoors'
 import HomeModeSync from '@/components/home/HomeModeSync'
+import type { ReactNode } from 'react'
 import type { TrendingRow } from '@/app/markets/trending'
 import type { TradabilityMap } from '@/lib/tradability'
 import { EMPTY_READ, type ReadSnapshot } from '@/lib/read'
@@ -42,7 +43,11 @@ import { EMPTY_TOUR, type TourSnapshot } from '@/lib/home-tour'
 // (lib/home-tour-server), a prop so the first paint is the server's.
 // HomeModeSync keeps the stranger / returning posture (lib/home-mode).
 
-export default function HomeSurface({ trending = [], tradable, read = EMPTY_READ, tour = EMPTY_TOUR }: { trending?: TrendingRow[]; tradable?: TradabilityMap; read?: ReadSnapshot; tour?: TourSnapshot }) {
+// `called` is the Called it shelf (2026-11-16, components/home/CalledShelf): a
+// SERVER component page.tsx renders and hands down whole, so its record reads
+// never enter this client bundle.
+
+export default function HomeSurface({ trending = [], tradable, read = EMPTY_READ, tour = EMPTY_TOUR, called }: { trending?: TrendingRow[]; tradable?: TradabilityMap; read?: ReadSnapshot; tour?: TourSnapshot; called?: ReactNode }) {
   return (
     <>
       <HomeModeSync />
@@ -57,6 +62,7 @@ export default function HomeSurface({ trending = [], tradable, read = EMPTY_READ
           </div>
         }
         guide={<AppsRow />}
+        called={called}
         tour={<Tour data={tour} read={read} />}
         how={<HowItWorks data={tour} />}
         close={<ClosingDoors data={tour} />}
