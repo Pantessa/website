@@ -22,6 +22,7 @@ import { create } from 'zustand'
 import { readTokens } from '@/components/markets/chart/chart-tokens'
 import { VERDICT_GLYPH, createCalledPins, type CalledInks, type CalledPinsController } from '@/lib/tv/called-pins'
 import { PIN_URL_MAX, POST_ID_RE, VERDICT_WORDS, normalizeHandle, normalizeSide, postRefFromUrl, type CalledRecord, type CalledSide, type RecordResponse } from './spec'
+import { CALL_PARAM, parseCallParam } from './gtm'
 
 // ── The plot and its address (pure) ─────────────────────────────────────
 
@@ -63,6 +64,44 @@ export function plotUrl(plot: Plot | null, pathname: string, search: string): st
   // A comma between ids reads as a list; the encoded form says the same and reads worse.
   const s = q.toString().replace(/%2C/gi, ',')
   return s ? `${pathname}?${s}` : pathname
+}
+
+// ── One named call in the address (squad called-gtm, lane TRADE) ────────
+//
+// `/t/<SYM>?x=<handle>&call=<postId>` (lib/called-it/gtm chartCallHref) opens
+// the chart with that call's card open, ONCE, after the record has loaded. An
+// id the record does not hold opens nothing and says nothing. The `call` key
+// leaves the address (replaceState, never a navigation) as soon as the card
+// on screen is not that call: closed, or another call opened.
+
+/** The call an address names (`?call=`), or null. */
+export function callFromSearch(search: string): string | null {
+  return parseCallParam(new URLSearchParams(search).get(CALL_PARAM))
+}
+
+/** The address without its `call` key, every other param kept in place. */
+export function withoutCallParam(pathname: string, search: string): string {
+  const q = new URLSearchParams(search)
+  if (!q.has(CALL_PARAM)) return `${pathname}${search}`
+  q.delete(CALL_PARAM)
+  const s = q.toString().replace(/%2C/gi, ',')
+  return s ? `${pathname}?${s}` : pathname
+}
+
+/**
+ * A record has answered while the address names a call: which call opens.
+ * The named one when the record holds it; otherwise whatever was open stays
+ * (when the record still holds it), and the named call is not tried again.
+ */
+export function deepLinkFocus(pending: string | null, record: Pick<CalledRecord, 'calls'> | null, current: string | null): string | null {
+  const holds = (id: string | null) => !!id && !!record && record.calls.some((c) => c.postId === id)
+  if (holds(pending)) return pending
+  return holds(current) ? current : null
+}
+
+/** The `call` key must leave the address: the named call was tried and the card on screen is not it. */
+export function callParamStale(s: { pendingCall: string | null; linkedCall: string | null; focusId: string | null }): boolean {
+  return s.pendingCall === null && s.linkedCall !== null && s.focusId !== s.linkedCall
 }
 
 export function samePlot(a: Plot | null, b: Plot | null): boolean {
@@ -302,7 +341,13 @@ interface CalledState {
   payOffer: { answers: number; have: number } | null
   /** The address has been read on this page (nothing is mirrored before that). */
   opened: boolean
-  open(symbol: string, plot: Plot | null, opts?: { fit?: boolean }): void
+  /** A call the address names, waiting for the record to answer (opened once, then cleared). */
+  pendingCall: string | null
+  /** The call the address carries (`?call=`): it leaves the address once the card on screen is not it. */
+  linkedCall: string | null
+  open(symbol: string, plot: Plot | null, opts?: { fit?: boolean; call?: string | null }): void
+  /** The `call` key has left the address. */
+  unlinkCall(): void
   plotHandle(handle: string, side: CalledSide): void
   setSide(side: CalledSide): void
   togglePin(postId: string): void
@@ -363,7 +408,16 @@ export const useCalled = create<CalledState>((set, get) => {
       unlabeled: body.status === 'ready' ? (body.unlabeled ?? 0) : 0,
       progress: body.status === 'scanning' ? body.progress : '',
       fitNonce: record && opts.fit ? s.fitNonce + 1 : s.fitNonce,
-      focusId: record && s.focusId && record.calls.some((c) => c.postId === s.focusId) ? s.focusId : null,
+      // A call the address named opens here, once; a scan still running keeps it waiting for the record.
+      ...(() => {
+        const focusId = deepLinkFocus(s.pendingCall, record, s.focusId)
+        const linked = !!s.pendingCall && focusId === s.pendingCall
+        return {
+          focusId,
+          focusBy: linked ? ('card' as const) : focusId ? s.focusBy : null,
+          pendingCall: body.status === 'scanning' ? s.pendingCall : null,
+        }
+      })(),
     }))
     stopPoll()
     // Somebody else's scan is running: the answer arrives by asking again.
@@ -444,15 +498,26 @@ export const useCalled = create<CalledState>((set, get) => {
     note: null,
     payOffer: null,
     opened: false,
+    pendingCall: null,
+    linkedCall: null,
 
     open(symbol, plot, opts) {
+      const call = plot ? (opts?.call ?? null) : null
+      if (call) set({ pendingCall: call, linkedCall: call })
       const s = get()
-      if (s.symbol === symbol && s.opened && samePlot(s.plot, plot)) return
+      if (s.symbol === symbol && s.opened && samePlot(s.plot, plot)) {
+        // The record is already here (back / forward to the same plot): the named call opens now.
+        if (call && s.response && s.response.status !== 'scanning') {
+          const focusId = deepLinkFocus(call, s.record, s.focusId)
+          set({ focusId, focusBy: focusId === call ? 'card' : focusId ? s.focusBy : null, pendingCall: null })
+        }
+        return
+      }
       const sameHandle = s.symbol === symbol && !!plot && !!s.plot && s.plot.handle === plot.handle && s.plot.side === plot.side
       if (s.symbol !== symbol) {
         seq++
         stopPoll()
-        set({ symbol, plot: null, phase: 'idle', response: null, record: null, scanning: false, progress: '', unlabeled: 0, focusId: null, focusBy: null, fitNonce: 0, cards: 0, note: null, opened: true })
+        set({ symbol, plot: null, phase: 'idle', response: null, record: null, scanning: false, progress: '', unlabeled: 0, focusId: null, focusBy: null, fitNonce: 0, cards: 0, note: null, opened: true, pendingCall: call, linkedCall: call })
       } else set({ opened: true })
       if (!plot) {
         if (get().plot) get().clear()
@@ -491,7 +556,10 @@ export const useCalled = create<CalledState>((set, get) => {
     clear() {
       seq++
       stopPoll()
-      set({ plot: null, phase: 'idle', response: null, record: null, scanning: false, progress: '', unlabeled: 0, focusId: null, focusBy: null, note: null, cards: 0 })
+      set({ plot: null, phase: 'idle', response: null, record: null, scanning: false, progress: '', unlabeled: 0, focusId: null, focusBy: null, note: null, cards: 0, pendingCall: null })
+    },
+    unlinkCall() {
+      if (get().linkedCall !== null) set({ linkedCall: null })
     },
     focus(postId, by) {
       set({ focusId: postId, focusBy: postId ? by : null })
@@ -596,8 +664,10 @@ export function useCalledAddress(symbol: string): void {
     const read = () => {
       const q = new URLSearchParams(window.location.search)
       const tf = q.get('tf')
-      // A plot opens on daily bars with every call in view, unless the address asks for another frame.
-      useCalled.getState().open(symbol, parsePlotParams(window.location.search), { fit: !tf || tf.toLowerCase() === '1d' })
+      const call = callFromSearch(window.location.search)
+      // A plot opens on daily bars with every call in view, unless the address asks for another frame. A named call
+      // always fits: daily bars with every call on screen is how its bar comes into view.
+      useCalled.getState().open(symbol, parsePlotParams(window.location.search), { fit: !!call || !tf || tf.toLowerCase() === '1d', call })
     }
     read()
     window.addEventListener('popstate', read)
@@ -615,6 +685,15 @@ export function useCalledAddress(symbol: string): void {
     const next = plotUrl(plot, pathname, search)
     if (next !== `${pathname}${search}`) window.history.replaceState(null, '', next)
   }, [plot, opened])
+  // The named call's key leaves the address once the card on screen is not that call (closed, or another opened).
+  const stale = useCalled((s) => s.symbol === symbol && callParamStale(s))
+  useEffect(() => {
+    if (!stale) return
+    const { pathname, search } = window.location
+    const next = withoutCallParam(pathname, search)
+    if (next !== `${pathname}${search}`) window.history.replaceState(window.history.state, '', next)
+    useCalled.getState().unlinkCall()
+  }, [stale])
 }
 
 /** The X identity this browser proved, kept in step with a sign-in or sign-out on the same page. Null until known, and when there is none. */

@@ -1,0 +1,41 @@
+/* The trade buttons beside a call (squad called-gtm, lane TRADE). Prefix `xca`,
+   checked against every stylesheet in the repo. Flat: a hairline and a type
+   size, no shadow, no gradient. The buy wears the accent fill, the sell the
+   sell ink on a hairline; the caption is one quiet line. */
+.xca { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.xca__chips { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.xca__chip {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 38px; padding: 0 14px; max-width: 100%;
+  border: 1px solid var(--line-2); border-radius: 10px; background: none; color: var(--fg);
+  font-size: 13px; font-weight: 600; line-height: 1.2; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer; transition: border-color var(--dur-1, .16s), opacity var(--dur-1, .16s);
+}
+.xca__chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.xca__chip--buy { background: var(--accent); border-color: var(--accent); color: var(--ink, var(--bg)); }
+.xca__chip--buy:hover { opacity: .88; }
+.xca__chip--sell { color: var(--mk-down, var(--sell)); border-color: color-mix(in srgb, var(--mk-down, var(--sell)) 55%, transparent); }
+.xca__chip--sell:hover { border-color: var(--mk-down, var(--sell)); }
+.xca__note { margin: 0; font-size: 11px; line-height: 1.4; color: var(--muted-2, var(--muted)); }
+
+/* Full-width buttons: a phone sheet, a hero. */
+.xca[data-variant='stack'] .xca__chips { flex-direction: column; }
+.xca[data-variant='stack'] .xca__chip { width: 100%; min-height: 44px; }
+
+/* Inside the call card (CallFocus): its own band between the numbers and the foot. */
+.xca.xca--card { flex: none; padding: 10px 12px 2px; border-top: 1px solid var(--line); }
+.xca-share {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; margin: 0 12px 10px; align-self: flex-start;
+  font-size: 12px; font-weight: 500; color: var(--muted); text-decoration: none;
+}
+.xca-share svg { width: 13px; height: 13px; }
+.xca-share:hover { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
+.xca-share:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+@media (hover: none) {
+  .xca__chip { min-height: 44px; }
+  .xca-share { min-height: 44px; }
+}
+@media (max-width: 640px) {
+  .xca__chip { min-height: 44px; }
+  .xca-share { min-height: 44px; }
+}
