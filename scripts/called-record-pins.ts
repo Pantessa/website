@@ -22,6 +22,7 @@
 //   · the addresses: /x is public, the image's address carries the page's side;
 //   · served: every answer is a real page and a real picture.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { featuredOf, quotesOf, sparkOf } from '../app/x/_lib/featured'
 import { PLOT_INTENT_MS, plotIntentMatches, plotIntentValue } from '../lib/called-it/use-record'
 import { join } from 'node:path'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts } from '../lib/called-it/fixture'
@@ -207,6 +208,21 @@ function bars(f: (i: number) => number, n = 400): Candle[] {
 const idAt = (ms: number, seq: number) => ((BigInt(ms - TWITTER_EPOCH_MS) << BigInt(22)) | BigInt(seq)).toString()
 
 export function calledRecordPins(check: Check): void {
+  // ── The /x splash (2026-11-12): what a tile and the hero draw ──
+  {
+    const closes = Array.from({ length: 200 }, (_, i) => ({ t: 1_000_000 + i * 86_400, c: 100 + i }))
+    const call = (i: number, verdict: 'right' | 'wrong' | 'open' | 'flat', impact: number, origin: 'scan' | 'added' = 'scan') => ({ postId: String(1000 + i), barTime: 1_000_000 + i * 86_400, priceAt: 100 + i, verdict, picked: i % 2 === 0, impact, origin, text: `post ${i}`, postedAt: (1_000_000 + i * 86_400) * 1000, stance: 'bull' as const, judgedPct: 0.1 }) as never
+    const sp = sparkOf(closes, [call(50, 'right', 1), call(150, 'wrong', 2)], 1_000_000 + 20 * 86_400)
+    const q = quotesOf([call(10, 'right', 1), call(20, 'right', 5), call(30, 'wrong', 2), call(40, 'wrong', 9, 'added'), call(50, 'open', 8)])
+    const sum = (handle: string, right: number, wrong: number, at: number) => ({ handle, line: 'M0 0', quotes: [{}], tally: { total: right + wrong, right, wrong, flat: 0, open: 0 }, scannedAt: at }) as never
+    check(
+      'called-it splash: a tile draws the record, nothing else. The line and the dots share one box (a dot sits on the line at its day and stays inside the box), the window starts where the record does; the two quoted calls are the strongest hit and the strongest miss the SCAN found (never a pasted post), in date order; the hero shows the account with judged calls on both sides, not just the newest',
+      sp.line.startsWith('M0 ') && sp.dots.length === 2 && sp.dots.every((d) => d.x >= 0 && d.x <= 100 && d.y >= 8 && d.y <= 92) && sp.dots[0].x < sp.dots[1].x && sp.dots[0].y > sp.dots[1].y && sparkOf([], [], 0).line === '' && sparkOf(closes.slice(0, 1), [], 0).line === '' &&
+        q.length === 2 && q[0].postId === '1020' && q[1].postId === '1030' && q[0].verdict === 'right' && q[1].verdict === 'wrong' && quotesOf([call(1, 'open', 3)]).length === 1 && quotesOf([]).length === 0 &&
+        (featuredOf([sum('a', 9, 0, 3), sum('b', 2, 2, 2), sum('c', 1, 0, 1)]) as { handle: string } | null)?.handle === 'b' && featuredOf([]) === null,
+      `${sp.dots.length} dots · ${q.map((x) => x.postId).join()}`,
+    )
+  }
   // ── The landing scans in place (2026-11-12: "does it scan through their tweets or do people need to plot it going forward?") ──
   {
     const page = readFileSync(new URL('../app/x/[handle]/[symbol]/page.tsx', import.meta.url), 'utf8')
@@ -492,7 +508,8 @@ export function calledRecordPins(check: Check): void {
   )
   check(
     'called-it honesty in the source: the word "Verified" reaches a page only as the record\'s own standing line or behind the record\'s own rule (verifiedOf); the tally a page prints is the record\'s headline (a list row prints no count of its own: the list\'s number takes in pasted posts); the landing loads no chart library and opens no sign-in door; the client share row composes nothing and imports nothing of the X sign-in',
-    /\{record\.words\.standing\}/.test(recordPage) && /verifiedOf\(await getHandle\(h\)\)/.test(plotted) && /\{r\.verified \? ' · Verified' : ''\}/.test(doorPage) && !/r\.calls/.test(code(doorPage)) && !/r\.calls/.test(code(handlePage)) && /verified \? standingVerified\(handle\) : STANDING_NOT_VERIFIED/.test(handlePage) &&
+    /\{record\.words\.standing\}/.test(recordPage) && /verifiedOf\(await getHandle\(h\)\)/.test(plotted) && // RE-PINNED 2026-11-12 (the /x splash): a tile says Verified from the list's strict flag (readPlotted → verifiedOf), and the count it prints is the RECORD's own tally (app/x/_lib/featured reads the record), never the list's number.
+      /\{summary\.verified && <span className="xrc-who__verified">Verified<\/span>\}/.test(read('app/x/_lib/splash.tsx')) && /verified: r\.verified/.test(read('app/x/_lib/featured.ts')) && /tally: rec\.tally, headline: rec\.words\.headline/.test(read('app/x/_lib/featured.ts')) && /readSummaries\(list\.rows\)/.test(doorPage) && !/r\.calls/.test(code(doorPage)) && !/r\.calls/.test(code(handlePage)) && /verified \? standingVerified\(handle\) : STANDING_NOT_VERIFIED/.test(handlePage) &&
       /headlineParts\(record\.words\.headline\)/.test(recordPage) && mineSrc.every((s) => !/lightweight-charts|charting_library|components\/markets\/chart|SpineLink/.test(code(s))) &&
       shareRow.startsWith("'use client'") && !/x-auth/.test(shareRow) && !/calledPost|myCalledPost/.test(code(shareRow)) && /mine \? myCalledPost\(record\) : calledPost\(record\)/.test(recordPage),
   )
@@ -632,8 +649,9 @@ export async function calledRecordPinsServed(check: Check, BASE: string): Promis
     const canonAcct = await page('/x/@Pantessa_Test')
     const tn = textOf(nobody.html)
     check(
-      'called-it pages (served): every address answers a real page with the door. /x asks "Whose calls?" and shows what a plot is; an account with no plots offers markets to start on; a handle nobody plotted says so, says what a scan does and links to the live chart with the handle already on it; a string that is not a handle and a string that is not a market are refused in words, with the door, and nothing of the string is echoed as markup; @Name and a lower-case market land on the one canonical address',
-      door.status === 200 && textOf(door.html).includes('Whose calls?') && door.html.includes('id="plot"') && door.html.includes('xrc-schema') && textOf(door.html).includes('Recently plotted') && /<link rel="canonical" href="[^"]*\/x"/.test(door.html) &&
+      'called-it pages (served): every address answers a real page with the door. /x asks "Who actually called it?", shows a real record or what a plot is, lists what was scanned and says how it works; an account with no plots offers markets to start on; a handle nobody plotted says so, says what a scan does and links to the live chart with the handle already on it; a string that is not a handle and a string that is not a market are refused in words, with the door, and nothing of the string is echoed as markup; @Name and a lower-case market land on the one canonical address',
+      // RE-PINNED 2026-11-12 (the /x splash): the hero asks "Who actually called it?" and shows a real record (or the illustration when nothing is listed); the list is "Recently scanned"; the three steps say how it works.
+        door.status === 200 && textOf(door.html).includes('Who actually called it?') && door.html.includes('id="plot"') && (door.html.includes('xrc-schema') || door.html.includes('class="xrc-feat"')) && textOf(door.html).includes('Recently scanned') && textOf(door.html).includes('How it works') && door.html.includes('class="xrc-steps"') && /<link rel="canonical" href="[^"]*\/x"/.test(door.html) &&
         acct.status === 200 && textOf(acct.html).includes(`@${FIXTURE_HANDLE}`) && acct.html.includes('id="plot"') && (acct.html.includes(`href="/x/${FIXTURE_HANDLE}/BTC"`) || acct.html.includes('class="xrc-row"')) &&
         nobody.status === 200 && tn.includes('Nobody has plotted @zz_pin_rec_none on BTC yet.') && tn.includes(`up to ${SCAN_WINDOW_DAYS} days back`) && nobody.html.includes('href="/t/BTC?x=zz_pin_rec_none"') && nobody.html.includes('id="plot"') && /noindex/.test(metaOf(nobody.html, 'robots') ?? '') &&
         script.status === 200 && textOf(script.html).includes('That is not an X handle.') && script.html.includes('id="plot"') && !/<script>alert\(1\)/.test(script.html) && !textOf(script.html).includes('alert(1)') &&

@@ -1,15 +1,19 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import Footer from '@/components/Footer'
-import { recordHref } from '@/lib/called-it/spec'
-import { cleanLine } from '@/lib/called-it/card-layout'
+import HandleDoor from '@/components/called/HandleDoor'
+import VerifyWithX from '@/components/called/VerifyWithX'
+import { JUDGE_DAYS, SCAN_WINDOW_DAYS } from '@/lib/called-it/spec'
 import { avatarDataUri } from './_lib/avatar'
-import { agoWords, readPlotted } from './_lib/plotted'
-import { Avatar, DoorBlock, Eyebrow, MethodBlock, Schematic } from './_lib/parts'
+import { featuredOf, readSummaries } from './_lib/featured'
+import { readPlotted } from './_lib/plotted'
+import { Eyebrow, MethodBlock, Schematic } from './_lib/parts'
+import { CutBands, Featured, Tile } from './_lib/splash'
 import '@/components/called/called-record.css'
 
-// /x — THE DOOR (squad called-it, lane RECORD): "Whose calls?", plot
-// yourself, and the handles other people plotted lately.
+// /x — THE SPLASH (2026-11-12; it was lane RECORD's plain door). A hero that
+// asks the question and shows a REAL record beside the door, then the
+// accounts already scanned as tiles a visitor can open at once (no scan, no
+// cost), then how a call is judged.
 //
 // CACHED, ON PURPOSE (a minute): the page is the same for everybody. It reads
 // no query and no cookie; the door and "Verify with X" are client pieces that
@@ -34,54 +38,82 @@ export const metadata: Metadata = {
   twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION, images: [{ url: IMAGE.url, alt: IMAGE.alt, width: IMAGE.width, height: IMAGE.height, type: IMAGE.type }] },
 }
 
-const LIST_ROWS = 18
-/** Avatars are fetched together under one two-second ceiling; rows past this wear an initial. */
-const AVATAR_ROWS = 12
+const LIST_ROWS = 12
 
 export default async function CalledDoorPage() {
   const list = await readPlotted({ limit: LIST_ROWS })
-  const avatars = await Promise.all(list.rows.map((r, i) => (i < AVATAR_ROWS ? avatarDataUri(r.avatarUrl) : Promise.resolve(null))))
+  const summaries = await readSummaries(list.rows)
+  const avatars = await Promise.all(summaries.map((s) => avatarDataUri(s.avatarUrl)))
+  const featured = featuredOf(summaries)
+  const featuredAvatar = featured ? avatars[summaries.indexOf(featured)] : null
   const now = Date.now()
   return (
     <>
-      <main className="xrc" data-xrc="door" data-plots={list.rows.length}>
-        <div className="xrc__wrap xrc__wrap--door">
-          <div className="xrc__main">
-            <header className="xrc-head">
+      <main className="xrc xrc--splash" data-xrc="door" data-plots={summaries.length}>
+        <section className="xrc-hero">
+          <CutBands />
+          <div className="xrc-hero__in">
+            <div className="xrc-hero__say">
               <Eyebrow />
-            </header>
-            <DoorBlock level={1} heading="Whose calls?" lede="Type an X handle. Every post where the account took a side on a market is pinned to the day it was posted, and judged by what the price did next." />
-            <Schematic />
+              <h1 className="xrc-hero__title">
+                Who actually <em>called it?</em>
+              </h1>
+              <p className="xrc-hero__lede">
+                Type any X handle. Pantessa reads a year of their posts, pins every market call to the day it was posted, and checks it against the price {JUDGE_DAYS} days later.
+              </p>
+              <div className="xrc-hero__door" id="plot">
+                <HandleDoor variant="page" />
+              </div>
+              <ul className="xrc-hero__facts">
+                <li>Their own words, read from X</li>
+                <li>Judged by the chart, not by us</li>
+                <li>One link to share</li>
+              </ul>
+              <div className="xrc-hero__you">
+                <span>Is it your account? Your own record says Verified.</span>
+                <VerifyWithX />
+              </div>
+            </div>
+            <div className="xrc-hero__show">{featured ? <Featured summary={featured} avatar={featuredAvatar} /> : <Schematic />}</div>
           </div>
-          <aside className="xrc__side">
-            <section className="xrc-recent" aria-label="Recently plotted">
-              <h2 className="xrc-recent__title">Recently plotted</h2>
-              {list.rows.length > 0 ? (
-                <ul className="xrc-rows">
-                  {list.rows.map((r, i) => (
-                    <li key={`${r.handle}:${r.symbol}`}>
-                      <Link href={recordHref(r.handle, r.symbol)} className="xrc-row xrc-row--who" prefetch={false} data-journey="called_recent">
-                        <Avatar uri={avatars[i]} name={r.name} handle={r.handle} size="sm" />
-                        <span className="xrc-row__sym">
-                          @{r.handle} <span className="xrc-row__on">on {r.symbol}</span>
-                        </span>
-                        {/* No count here: the list's own number takes in posts viewers pasted, and a tally is what the scan found (the record page prints it). */}
-                        <span className="xrc-row__tally">
-                          {r.name && r.name.trim().toLowerCase() !== r.handle ? <bdi>{cleanLine(r.name, 40)}</bdi> : 'Open the record'}
-                          {r.verified ? ' · Verified' : ''}
-                        </span>
-                        <span className="xrc-row__when">{agoWords(r.scannedAt, now)}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="xrc-recent__none">{list.failed ? 'The list did not load just now. The door still works: type a handle.' : 'Nobody has plotted a handle here yet. Plot one and it is the first on this list.'}</p>
-              )}
-            </section>
-            <MethodBlock />
-          </aside>
-        </div>
+        </section>
+
+        <section className="xrc-gallery" aria-label="Recently scanned">
+          <div className="xrc-gallery__head">
+            <h2 className="xrc-gallery__title">Recently scanned</h2>
+            <p className="xrc-gallery__sub">Already read and judged. Open one: no scan, no wait.</p>
+          </div>
+          {summaries.length > 0 ? (
+            <ul className="xrc-tiles">
+              {summaries.map((s, i) => (
+                <li key={`${s.handle}:${s.symbol}`}>
+                  <Tile summary={s} avatar={avatars[i]} now={now} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="xrc-recent__none">{list.failed ? 'The list did not load just now. The door still works: type a handle.' : 'Nobody has scanned an account here yet. Plot one and it is the first on this list.'}</p>
+          )}
+        </section>
+
+        <section className="xrc-how" aria-label="How it works">
+          <h2 className="xrc-gallery__title">How it works</h2>
+          <ol className="xrc-steps">
+            <li>
+              <h3>Type a handle</h3>
+              <p>Any public X account, on any market Pantessa charts. A record somebody already scanned opens at once.</p>
+            </li>
+            <li>
+              <h3>A year of posts is read</h3>
+              <p>Up to {SCAN_WINDOW_DAYS} days back, only the posts that name the market. A post counts as a call when it says where the price goes or tells people what to do.</p>
+            </li>
+            <li>
+              <h3>Every call is judged the same way</h3>
+              <p>The close on the day it was posted against the close {JUDGE_DAYS} days later. Hits and misses are both on the chart, and every call is counted.</p>
+            </li>
+          </ol>
+          <MethodBlock />
+        </section>
       </main>
       <Footer />
     </>
