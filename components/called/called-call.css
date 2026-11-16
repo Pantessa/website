@@ -148,7 +148,7 @@
 @media (hover: none) {
   .xcl .xcl-kicker__jump { min-height: 44px; padding: 0 var(--sp-4); }
   .xcl-kicker { min-height: 44px; }
-  .xcl-meta { margin-block: -6px; }
+  .xcl-meta:has(a) { margin-block: -6px; }
   .xcl-meta a { display: inline-flex; align-items: center; min-height: 44px; }
   .xcl-you a { display: inline-flex; align-items: center; min-height: 44px; }
 }
