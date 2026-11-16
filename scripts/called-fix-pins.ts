@@ -360,6 +360,40 @@ export async function calledFixPinsDb(check: Check): Promise<void> {
       check('fix R3: a scan whose request died is retired as failed and charged its whole reservation (it may have spent it), then holds nothing', dead?.status === 'failed' && dead.reservedUsd === 0 && Math.abs(dead.costUsd - reserve) < 1e-9, JSON.stringify(dead))
     }
 
+    // ── Paid with answers (2026-11-16): the debit is decided and written under the scan lock; a scan that read nothing gives it back ──
+    {
+      const owner = `0x${'0'.repeat(32)}${Date.now().toString(16).slice(-8).padStart(8, '0')}`
+      const bal = async () => (await prisma.creditLedgerEntry.aggregate({ where: { ownerAddress: owner }, _sum: { delta: true } }))._sum.delta ?? 0
+      try {
+        await prisma.creditLedgerEntry.create({ data: { ownerAddress: owner, delta: 150, reason: 'zz pin grant', pool: 'bank', grantKey: `zzpin-scan:${owner}` } })
+        const seen: number[] = []
+        const open = (k: string) =>
+          Store.openScan({ handle: `${FIX_PREFIX}pay${k}${FIX_TAG}`, symbol: 'BTC', provider: 'x-api', requestedBy: `w:${owner}`, isInternal: true, windowFrom: 0, windowTo: Date.now(), reserveUsd: 0, payer: { owner, allowance: 0 }, decide: (c) => (seen.push(c.answers), c.answers >= 100 ? { ok: true as const, charge: 100 } : { ok: false as const }) })
+        // Two at the same instant with 150 answers: one is charged, the other sees 50 and is refused.
+        const pair = await Promise.all([open('a'), open('b')])
+        const won = pair.filter((o) => o.kind === 'opened')
+        const first = won[0]
+        const row = first?.kind === 'opened' ? await prisma.xScan.findUnique({ where: { id: first.scan.id } }) : null
+        const debits = first?.kind === 'opened' ? await prisma.creditLedgerEntry.findMany({ where: { reason: Store.scanChargeReason(first.scan.id) } }) : []
+        check('scan answers: two paid scans at the same instant with answers for one charge exactly one (100 from the bank, on the row and in the ledger); the other saw what was left and opened nothing', won.length === 1 && pair.filter((o) => o.kind === 'refused').length === 1 && first?.kind === 'opened' && first.charged === 100 && (await bal()) === 50 && row?.answersCharged === 100 && row.paidBy === owner && debits.length === 1 && debits[0].delta === -100 && debits[0].pool === 'bank' && [...seen].sort((x, y) => x - y).join() === '50,150', `won=${won.length} bal=${await bal()} seen=${seen.join()}`)
+        const paidCount = await Store.paidScansToday(owner)
+        const freeCount = await prisma.xScan.count({ where: { requestedBy: `w:${owner}`, answersCharged: 0, status: 'running' } })
+        check('scan answers: a paid scan counts as the wallet\'s paid scan and never as its free one', paidCount === 1 && freeCount === 0, `paid=${paidCount} free=${freeCount}`)
+        if (first?.kind === 'opened') {
+          const back = await Store.refundScan(first.scan.id)
+          const again = await Store.refundScan(first.scan.id)
+          const after = await prisma.xScan.findUnique({ where: { id: first.scan.id } })
+          check('scan answers: a refund returns exactly what the scan was charged, marks the row free, and a second refund returns nothing', back === 100 && again === 0 && (await bal()) === 150 && after?.answersCharged === 0 && after.paidBy === null, `back=${back} again=${again} bal=${await bal()}`)
+          await Store.updateScan(first.scan.id, { status: 'failed', finished: true, costUsd: 0 })
+        }
+        // A decision that charges with nobody to charge opens nothing.
+        const orphan = await Store.openScan({ handle: `${FIX_PREFIX}payc${FIX_TAG}`, symbol: 'BTC', provider: 'x-api', requestedBy: 'x:1', isInternal: true, windowFrom: 0, windowTo: Date.now(), reserveUsd: 0, decide: () => ({ ok: true as const, charge: 100 }) }).then(() => 'opened', () => 'threw')
+        check('scan answers: a charge with no payer behind it opens no scan', orphan === 'threw' && (await prisma.xScan.count({ where: { handle: `${FIX_PREFIX}payc${FIX_TAG}` } })) === 0)
+      } finally {
+        await prisma.creditLedgerEntry.deleteMany({ where: { ownerAddress: owner } }).catch(() => undefined)
+      }
+    }
+
     // ── R4: no spend without a row ──
     {
       const { runScan: run } = await import('@/lib/called-it/scan')
@@ -383,6 +417,35 @@ export async function calledFixPinsDb(check: Check): Promise<void> {
       const xp3 = fakeX(() => ({ status: 200, body: lockedBody }))
       await run({ handle: LOCK, symbol: 'BTC', requester: `ip:zzpinfix${FIX_TAG}p`, internal: true }, mk(new XApiSource({ bearer: X_SECRET, fetch: xp3.fetch, pageGapMs: 0 })))
       check('fix R4b: a protected account is answered from the store for 24 h, then X is asked again', p2.kind === 'refused' && p2.http === 403 && xp.calls.length === 0 && xp3.calls.length === 1)
+      // ── Paid with answers, end to end through runScan (2026-11-16): offered, never spent unasked, returned when nothing was read ──
+      {
+        const owner = `0x${'1'.repeat(32)}${Date.now().toString(16).slice(-8).padStart(8, '0')}`
+        const bal = async () => (await prisma.creditLedgerEntry.aggregate({ where: { ownerAddress: owner }, _sum: { delta: true } }))._sum.delta ?? 0
+        const PAYH = `${FIX_PREFIX}y${FIX_TAG}`
+        const GONE = `${FIX_PREFIX}z${FIX_TAG}`
+        const good = () => new XApiSource({ bearer: X_SECRET, fetch: fakeX((u) => (u.includes('/users/') ? { status: 200, body: xUser(PAYH) } : { status: 200, body: { data: [xTweet(PAYH, 1, 21, 'Buying $BTC here'), xTweet(PAYH, 2, 22)], meta: {} } })).fetch, pageGapMs: 0 })
+        const none = () => new XApiSource({ bearer: X_SECRET, fetch: fakeX(() => ({ status: 200, body: { errors: [{ title: 'Not Found Error' }] } })).fetch, pageGapMs: 0 })
+        const who = { requester: `w:${owner}`, internal: true, owner }
+        try {
+          await prisma.creditLedgerEntry.create({ data: { ownerAddress: owner, delta: 150, reason: 'zz pin grant', pool: 'bank', grantKey: `zzpin-scan-e2e:${owner}` } })
+          await withEnv({ XCALLS_FREE_SCANS: '0' }, async () => {
+            const offer = await run({ handle: PAYH, symbol: 'BTC', ...who }, mk(good()))
+            const offered = offer.kind === 'refused' && offer.http === 402 && offer.body.pay?.answers === 100 && offer.body.pay.have === 150 && (await bal()) === 150 && (await prisma.xScan.count({ where: { handle: PAYH } })) === 0
+            const guest = await run({ handle: PAYH, symbol: 'BTC', requester: `w:${owner}`, internal: true, owner: null, pay: true }, mk(good()))
+            check('scan answers (run): past the free scan the wallet is offered the price (402, the offer on the refusal) and NOTHING is spent or opened; pay with no wallet session behind it opens nothing either', offered && guest.kind === 'refused' && !guest.body.pay && (await bal()) === 150, JSON.stringify(offer).slice(0, 200))
+            const miss = await run({ handle: GONE, symbol: 'BTC', ...who, pay: true }, mk(none()))
+            const missRow = await prisma.xScan.findFirst({ where: { handle: GONE } })
+            check('scan answers (run): a paid scan of an account that does not exist gives the answers back and says so', miss.kind === 'refused' && miss.http === 404 && /100 answers were returned/.test(miss.body.reason) && (await bal()) === 150 && missRow?.answersCharged === 0, JSON.stringify(miss).slice(0, 200))
+            const paid = await run({ handle: PAYH, symbol: 'BTC', ...who, pay: true }, mk(good()))
+            const row = await prisma.xScan.findFirst({ where: { handle: PAYH } })
+            check('scan answers (run): saying pay runs the scan and charges exactly 100 answers to the wallet session, once', paid.kind === 'done' && (await bal()) === 50 && row?.status === 'done' && row.answersCharged === 100 && row.paidBy === owner && row.postsRead > 0, `${JSON.stringify(paid)} bal=${await bal()} row=${JSON.stringify(row)}`.slice(0, 300))
+            const short = await run({ handle: `${FIX_PREFIX}w${FIX_TAG}`, symbol: 'BTC', ...who, pay: true }, mk(good()))
+            check('scan answers (run): with 50 answers left the next paid scan is refused, pointed at /pricing, and nothing is spent', short.kind === 'refused' && short.http === 429 && !short.body.pay && short.body.next.some((n) => n.href === '/pricing') && (await bal()) === 50, JSON.stringify(short).slice(0, 200))
+          })
+        } finally {
+          await prisma.creditLedgerEntry.deleteMany({ where: { ownerAddress: owner } }).catch(() => undefined)
+        }
+      }
       // (c) lookups a requester causes in a day, misses included
       const LREQ = `ip:zzpinfix${FIX_TAG}l`
       await prisma.xScan.createMany({ data: Array.from({ length: GUEST_LOOKUPS_PER_DAY }, (_, k) => ({ id: `xs_zzpinq${FIX_TAG}l${k}`, handle: `${FIX_PREFIX}l${k}${FIX_TAG}`, symbol: 'BTC', status: 'refused', requestedBy: LREQ, isInternal: false, costUsd: 0, startedAt: new Date(Date.now() - 60_000) })) })

@@ -186,7 +186,7 @@ export function calledCoordPins(check: Check): void {
   // ── What a scan may cost (2026-11-12: four real scans cost $2.22) ──
   const guestRefusal = allowanceFor({ requester: 'ip:aa', scansToday: 0, spentTodayUsd: 0, capUsd: 10, postCap: SCAN_POST_CAP, handle: 'jack', symbol: 'BTC' })
   check(
-    'called-it scan cost: a scan reads at most 150 posts ($0.76 with the profile read); the search never asks for replies or retweets; only BTC is searched with the generic market words; a guest cannot START a scan unless the server says so (a sign-in is asked for, in words, with somewhere to go) while a proven requester gets ten; fake mode keeps two for the harness and is off on Vercel',
+    'called-it scan cost: a scan reads at most 150 posts ($0.76 with the profile read); the search never asks for replies or retweets; only BTC is searched with the generic market words; a guest cannot START a scan unless the server says so (a sign-in is asked for, in words, with somewhere to go) while a proven requester gets one free a day (RE-PINNED 2026-11-16 (scan answers): it was ten); fake mode keeps two for the harness and is off on Vercel',
     SCAN_POST_CAP === 150 && maxScanCostUsd(SCAN_POST_CAP) === 0.76 && buildSearchQueries('a', ['$BTC'])[0] === 'from:a -is:retweet -is:reply ($BTC)' &&
       [...MARKET_PROXIES].join() === 'BTC' && marketTermsFor('ETH').length === 0 && marketTermsFor('BTC').length > 0 &&
       GUEST_SCANS_PER_DAY === 0 && guestScansPerDay({}) === 0 && guestScansPerDay({ XCALLS_GUEST_SCANS: '5' }) === 5 && guestScansPerDay({ XCALLS_GUEST_SCANS: 'lots' }) === 0 && guestScansPerDay({ XCALLS_FAKE: '1' }) === 2 && guestScansPerDay({ XCALLS_FAKE: '1', VERCEL: '1' }) === 0,

@@ -24,7 +24,7 @@ import { BadgeCheck, ExternalLink, Heart, Maximize, Pin, Share2, X } from 'lucid
 import { fmtPrice } from '@/components/CandleChart'
 import { SIDES } from '@/components/called/HandleDoor'
 import { chartPairFor, chartUnitOf } from '@/lib/charts'
-import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, GUEST_SCANS_PER_DAY, JUDGE_DAYS, LABEL_CAVEAT, PROVEN_SCANS_PER_DAY, SCAN_POST_CAP, SCAN_WINDOW_DAYS, VERDICT_WORDS, moveLine, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
+import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, FREE_SCANS_PER_DAY, JUDGE_DAYS, LABEL_CAVEAT, SCAN_ANSWER_PRICE, SCAN_POST_CAP, SCAN_WINDOW_DAYS, VERDICT_WORDS, moveLine, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
 import { calledImageHref, fmtCount, headlineParts } from '@/lib/called-it/card-layout'
 import { plotStatus, safeNextHref, sideCounts, useCalled, useCalledAddress, useXViewer, viewerOwns } from '@/lib/called-it/use-record'
 import { calledPost, myCalledPost, postHref } from '@/lib/share-posts'
@@ -372,6 +372,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   const unlabeled = useCalled((s) => s.unlabeled)
   const focusId = useCalled((s) => s.focusId)
   const note = useCalled((s) => s.note)
+  const payOffer = useCalled((s) => s.payOffer)
   const advanced = useCalled((s) => s.advanced)
   const cards = useCalled((s) => s.cards)
   if (!here || !plot) return null
@@ -425,6 +426,14 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
         {note ? (
           <p className="xcc__line xcc__line--note" role="status">
             {note}
+            {payOffer ? (
+              <>
+                {' '}
+                <button type="button" className="xcc-link" onClick={() => void scan({ pay: true })} disabled={scanning} data-journey="called_scan_pay">
+                  Scan for {payOffer.answers} answers
+                </button>
+              </>
+            ) : null}
           </p>
         ) : null}
         {/* What the chart is showing, when it is not a card for every pin (a narrow pane holds fewer; a phone's holds none). */}
@@ -518,7 +527,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
           {response.canScan ? (
             <span className="xcc__allow">
               {response.reason ? `${response.reason} ` : ''}
-              {GUEST_SCANS_PER_DAY} scans a day for a visitor, {PROVEN_SCANS_PER_DAY} once you verify with X or sign in. A handle somebody already plotted costs none.
+              {FREE_SCANS_PER_DAY} new scan a day is free once you verify with X or sign in; more cost {SCAN_ANSWER_PRICE} answers each. A handle somebody already plotted costs none.
             </span>
           ) : (
             <span className="xcc__allow">One post can still be pinned by its link, with no scan.</span>
@@ -538,6 +547,11 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
       <>
         {head(`${who} on ${symbol} was not plotted`, <p className="xcc__standing">{response.reason}</p>)}
         <div className="xcc__actions">
+          {response.pay ? (
+            <button type="button" className="xcc-btn xcc-btn--go" onClick={() => void scan({ pay: true })} disabled={scanning} aria-busy={scanning || undefined} data-journey="called_scan_pay">
+              Scan for {response.pay.answers} answers
+            </button>
+          ) : null}
           {next.map((n) => (
             <a key={`${n.href}:${n.label}`} className="xcc-btn" href={n.href}>
               {n.label}

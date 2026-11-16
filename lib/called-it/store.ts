@@ -15,6 +15,7 @@ import { randomBytes } from 'node:crypto'
 import { stripNul } from './clean'
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
+import { ledgerAnswers, splitAnswerDebit } from '@/lib/billing'
 import { LIST_MIN_FOLLOWERS, fakeModeOn, isFakeXUserId, type Requester, type ScanRow, type StoredLabel, type XPost, type XProfile } from './spec'
 
 export interface StoredHandle extends XProfile {
@@ -422,10 +423,16 @@ export async function finishedScans(handle: string, symbol: string): Promise<Fin
 
 /** The day's counts a scan's allowance is decided on, read inside the budget lock. */
 export interface ScanCounts {
-  /** Finished rows at their cost, running rows at the larger of their reservation and their cost (review R3). */
+  /** THE FREE POOL's spend: finished rows at their cost, running rows at the larger of their reservation and their cost (review R3). Scans paid with answers are not in it. */
   spentTodayUsd: number
-  /** This requester's scans today (the scansToday rules). */
+  /** This requester's FREE scans today (the scansToday rules). */
   scansToday: number
+  /** The spend of scans paid with answers, counted the same way. */
+  paidSpentTodayUsd: number
+  /** The payer's paid scans today (0 with no payer). */
+  paidScansToday: number
+  /** The payer's answers, read under the lock: the plan's month left plus the bank (0 with no payer). */
+  answers: number
   /** This requester's rows today, any status: each one cost a profile read (review R4c). */
   lookupsToday: number
 }
@@ -443,11 +450,25 @@ export const SCAN_BUDGET_LOCK = 'x_scan_budget'
  * another, each seeing the others' reservations, so the day's cap is never
  * crossed by a race. Finishing the row (updateScan finished) releases it.
  */
-export async function openScan<A extends { ok: boolean }>(row: { handle: string; symbol: string; provider: string; requestedBy: Requester; isInternal: boolean; windowFrom: number; windowTo: number; reserveUsd: number; nowMs?: number; decide: (c: ScanCounts) => A }): Promise<{ kind: 'opened'; scan: ScanRow } | { kind: 'joined'; scan: ScanRow } | { kind: 'refused'; allowance: A }> {
+export async function openScan<A extends { ok: boolean; charge?: number }>(row: {
+  handle: string
+  symbol: string
+  provider: string
+  requestedBy: Requester
+  isInternal: boolean
+  windowFrom: number
+  windowTo: number
+  reserveUsd: number
+  nowMs?: number
+  /** The wallet session that may pay with answers, and its plan's monthly allowance. Its balance is read, and debited, inside this transaction. */
+  payer?: { owner: string; allowance: number } | null
+  decide: (c: ScanCounts) => A
+}): Promise<{ kind: 'opened'; scan: ScanRow; charged?: number } | { kind: 'joined'; scan: ScanRow } | { kind: 'refused'; allowance: A }> {
   const handle = h(row.handle)
   const symbol = sym(row.symbol)
   const nowMs = row.nowMs ?? Date.now()
   const fake = fakeModeOn()
+  const payer = row.payer ? { owner: row.payer.owner.toLowerCase(), allowance: row.payer.allowance } : null
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${SCAN_BUDGET_LOCK}))) l`
     const now = new Date(nowMs)
@@ -456,21 +477,56 @@ export async function openScan<A extends { ok: boolean }>(row: { handle: string;
     const running = await tx.xScan.findFirst({ where: { handle, symbol, status: 'running', startedAt: { gte: cutoff } }, orderBy: { startedAt: 'desc' } })
     if (running) return { kind: 'joined' as const, scan: scanRow(running) }
     const day = utcDayStart(nowMs)
-    const c = await tx.$queryRaw<{ spent: number | null; scans: number; lookups: number }[]>`
+    const who = payer?.owner ?? ''
+    const c = await tx.$queryRaw<{ spent: number | null; paid_spent: number | null; scans: number; paid_scans: number; lookups: number }[]>`
       SELECT
-        (SELECT sum(CASE WHEN status = 'running' THEN GREATEST(reserved_usd, cost_usd) ELSE cost_usd END) FROM x_scans WHERE started_at >= ${day})::float8 AS spent,
-        (SELECT count(*) FROM x_scans WHERE requested_by = ${row.requestedBy} AND started_at >= ${day} AND coalesce(provider, '') <> ${FINISH_PROVIDER}
+        (SELECT sum(CASE WHEN status = 'running' THEN GREATEST(reserved_usd, cost_usd) ELSE cost_usd END) FROM x_scans WHERE started_at >= ${day} AND answers_charged = 0)::float8 AS spent,
+        (SELECT sum(CASE WHEN status = 'running' THEN GREATEST(reserved_usd, cost_usd) ELSE cost_usd END) FROM x_scans WHERE started_at >= ${day} AND answers_charged > 0)::float8 AS paid_spent,
+        (SELECT count(*) FROM x_scans WHERE requested_by = ${row.requestedBy} AND started_at >= ${day} AND coalesce(provider, '') <> ${FINISH_PROVIDER} AND answers_charged = 0
            AND (status IN ('running', 'done') OR (status = 'failed' AND posts_read > 0)) AND (${fake} = false OR is_internal = false))::int AS scans,
+        (SELECT count(*) FROM x_scans WHERE ${who} <> '' AND paid_by = ${who} AND started_at >= ${day} AND answers_charged > 0)::int AS paid_scans,
         (SELECT count(*) FROM x_scans WHERE requested_by = ${row.requestedBy} AND started_at >= ${day} AND coalesce(provider, '') <> ${FINISH_PROVIDER}
            AND (${fake} = false OR is_internal = false))::int AS lookups`
-    const allowance = row.decide({ spentTodayUsd: c[0]?.spent ?? 0, scansToday: c[0]?.scans ?? 0, lookupsToday: c[0]?.lookups ?? 0 })
+    // The payer's balance is read under the same lock that serializes every scan, so two paid scans cannot both spend the last answers.
+    const funds = payer ? await ledgerAnswers(tx, payer.owner, payer.allowance) : { planLeft: 0, bank: 0 }
+    const allowance = row.decide({ spentTodayUsd: c[0]?.spent ?? 0, scansToday: c[0]?.scans ?? 0, lookupsToday: c[0]?.lookups ?? 0, paidSpentTodayUsd: c[0]?.paid_spent ?? 0, paidScansToday: c[0]?.paid_scans ?? 0, answers: funds.planLeft + funds.bank })
     if (!allowance.ok) return { kind: 'refused' as const, allowance }
+    const id = scanId()
+    const charge = Math.max(0, Math.floor(allowance.charge ?? 0))
+    if (charge > 0) {
+      // A charge with nobody to charge, or more than the balance, opens nothing (the decision and the debit must agree).
+      const split = payer ? splitAnswerDebit(charge, funds.planLeft, funds.bank) : null
+      if (!payer || !split) throw new Error('scan charge without funds')
+      const reason = scanChargeReason(id)
+      if (split.plan > 0) await tx.creditLedgerEntry.create({ data: { ownerAddress: payer.owner, delta: -split.plan, reason, pool: 'plan' } })
+      if (split.bank > 0) await tx.creditLedgerEntry.create({ data: { ownerAddress: payer.owner, delta: -split.bank, reason, pool: 'bank' } })
+    }
     const created = await tx.xScan.create({
-      data: { id: scanId(), handle, symbol, status: 'running', provider: row.provider, requestedBy: row.requestedBy, isInternal: row.isInternal, windowFrom: new Date(row.windowFrom), windowTo: new Date(row.windowTo), note: 'Starting', startedAt: now, reservedUsd: Math.max(0, row.reserveUsd) },
+      data: { id, handle, symbol, status: 'running', provider: row.provider, requestedBy: row.requestedBy, isInternal: row.isInternal, windowFrom: new Date(row.windowFrom), windowTo: new Date(row.windowTo), note: 'Starting', startedAt: now, reservedUsd: Math.max(0, row.reserveUsd), answersCharged: charge, paidBy: charge > 0 ? payer!.owner : null },
     })
-    return { kind: 'opened' as const, scan: scanRow(created) }
+    return { kind: 'opened' as const, scan: scanRow(created), charged: charge }
     // Requests queue on the lock: give them room to wait (Prisma's defaults are 2 s to get a connection, 5 s to finish).
   }, { maxWait: 15_000, timeout: 20_000 })
+}
+
+/** The ledger reason of a scan's charge: the refund finds its rows by it. */
+export function scanChargeReason(scanId: string): string {
+  return `x-scan:${scanId}`
+}
+
+/**
+ * GIVE THE ANSWERS BACK for a scan that read nothing (X refused, the account does not exist, it failed before a post).
+ * Deletes the scan's own debit rows and marks the row free, in one transaction; a second call finds nothing. Returns
+ * the answers returned.
+ */
+export async function refundScan(id: string): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.xScan.findUnique({ where: { id }, select: { answersCharged: true } })
+    if (!row || row.answersCharged <= 0) return 0
+    await tx.creditLedgerEntry.deleteMany({ where: { reason: scanChargeReason(id), delta: { lt: 0 } } })
+    await tx.xScan.update({ where: { id }, data: { answersCharged: 0, paidBy: null } })
+    return row.answersCharged
+  })
 }
 
 /**
@@ -535,15 +591,27 @@ export async function updateScan(id: string, patch: ScanPatch): Promise<void> {
   await prisma.xScan.update({ where: { id }, data })
 }
 
-/** Dollars spent on X reads since 00:00 UTC, every requester together (internal runs included: the house paid for them too). A running scan counts at its reservation (review R3). */
+/** THE FREE POOL: dollars spent since 00:00 UTC on scans nobody paid answers for, every requester together (internal runs included: the house paid for them too). A running scan counts at its reservation (review R3). */
 export async function spentTodayUsd(nowMs: number = Date.now()): Promise<number> {
   const r = await prisma.$queryRaw<{ spent: number | null }[]>`
-    SELECT sum(CASE WHEN status = 'running' THEN GREATEST(reserved_usd, cost_usd) ELSE cost_usd END)::float8 AS spent FROM x_scans WHERE started_at >= ${utcDayStart(nowMs)}`
+    SELECT sum(CASE WHEN status = 'running' THEN GREATEST(reserved_usd, cost_usd) ELSE cost_usd END)::float8 AS spent FROM x_scans WHERE started_at >= ${utcDayStart(nowMs)} AND answers_charged = 0`
   return r[0]?.spent ?? 0
 }
 
+/** Dollars spent since 00:00 UTC on scans paid with answers, counted the same way. */
+export async function paidSpentTodayUsd(nowMs: number = Date.now()): Promise<number> {
+  const r = await prisma.$queryRaw<{ spent: number | null }[]>`
+    SELECT sum(CASE WHEN status = 'running' THEN GREATEST(reserved_usd, cost_usd) ELSE cost_usd END)::float8 AS spent FROM x_scans WHERE started_at >= ${utcDayStart(nowMs)} AND answers_charged > 0`
+  return r[0]?.spent ?? 0
+}
+
+/** Paid scans this wallet started since 00:00 UTC. */
+export async function paidScansToday(owner: string, nowMs: number = Date.now()): Promise<number> {
+  return prisma.xScan.count({ where: { paidBy: owner.toLowerCase(), startedAt: { gte: utcDayStart(nowMs) }, answersCharged: { gt: 0 } } })
+}
+
 /**
- * Scans this requester started since 00:00 UTC (joined scans do not count:
+ * FREE scans this requester started since 00:00 UTC (joined scans do not count:
  * they open no row; refused rows do not count either, and neither does a
  * scan that failed before it read a post, nor a free finish). In fake mode
  * (spec fakeModeOn: never on Vercel) internal scans do not count, so the
@@ -552,7 +620,7 @@ export async function spentTodayUsd(nowMs: number = Date.now()): Promise<number>
 export async function scansToday(requester: Requester, nowMs: number = Date.now()): Promise<number> {
   const fake = fakeModeOn()
   // A scan that failed before it read a single post was the house's failure (X down, credits spent): it is not the visitor's scan.
-  return prisma.xScan.count({ where: { requestedBy: requester, startedAt: { gte: utcDayStart(nowMs) }, AND: [NOT_FINISH, { OR: [{ status: { in: ['running', 'done'] } }, { status: 'failed', postsRead: { gt: 0 } }] }], ...(fake ? { isInternal: false } : {}) } })
+  return prisma.xScan.count({ where: { requestedBy: requester, startedAt: { gte: utcDayStart(nowMs) }, answersCharged: 0, AND: [NOT_FINISH, { OR: [{ status: { in: ['running', 'done'] } }, { status: 'failed', postsRead: { gt: 0 } }] }], ...(fake ? { isInternal: false } : {}) } })
 }
 
 /** This requester's rows today, any status (each was a billed profile read; review R4c). */

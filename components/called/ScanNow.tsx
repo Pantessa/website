@@ -28,13 +28,13 @@ export interface ScanNowProps {
   auto?: boolean
 }
 
-type Phase = { kind: 'idle' } | { kind: 'scanning'; note: string } | { kind: 'refused'; reason: string; next: { label: string; href: string }[] }
+type Phase = { kind: 'idle' } | { kind: 'scanning'; note: string } | { kind: 'refused'; reason: string; next: { label: string; href: string }[]; pay?: { answers: number; have: number } }
 
 export default function ScanNow({ handle, symbol, label, variant = 'lead', auto = false }: ScanNowProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   const busy = useRef(false)
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (pay = false) => {
     if (busy.current) return
     busy.current = true
     setPhase({ kind: 'scanning', note: '' })
@@ -49,10 +49,10 @@ export default function ScanNow({ handle, symbol, label, variant = 'lead', auto 
         .catch(() => undefined)
     }, 2500)
     try {
-      const res = await fetch('/api/x/scan', { method: 'POST', cache: 'no-store', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ handle, sym: symbol }) })
+      const res = await fetch('/api/x/scan', { method: 'POST', cache: 'no-store', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(pay ? { handle, sym: symbol, pay: true } : { handle, sym: symbol }) })
       const answer = asRecordResponse(await res.json().catch(() => null))
       if (answer?.status === 'refused') {
-        setPhase({ kind: 'refused', reason: answer.reason, next: answer.next.map((n) => ({ label: n.label, href: safeNextHref(n.href) ?? '' })).filter((n) => n.href) })
+        setPhase({ kind: 'refused', reason: answer.reason, next: answer.next.map((n) => ({ label: n.label, href: safeNextHref(n.href) ?? '' })).filter((n) => n.href), pay: answer.pay })
         return
       }
       if (!answer) {
@@ -97,6 +97,11 @@ export default function ScanNow({ handle, symbol, label, variant = 'lead', auto 
       {phase.kind === 'refused' && (
         <span className="xrc-scan__why" role="alert">
           {phase.reason}{' '}
+          {phase.pay && (
+            <button type="button" className="xrc-scan__link" onClick={() => void start(true)} data-journey="called_scan_pay">
+              Scan for {phase.pay.answers} answers
+            </button>
+          )}{' '}
           {phase.next.map((n) => (
             <a key={n.href} href={n.href}>
               {n.label}

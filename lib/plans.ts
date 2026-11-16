@@ -24,6 +24,8 @@
 //
 // Pure config: /pricing, the dashboard and the billing APIs all read this.
 
+import { FREE_SCANS_PER_DAY, SCAN_ANSWER_PRICE } from '@/lib/called-it/spec'
+
 export type PlanId = 'free' | 'plus' | 'growth' | 'scale'
 
 export interface Plan {
@@ -120,6 +122,7 @@ export const PLANS: Plan[] = [
       'Every trade, DCA, guardian and job — no caps',
       `${TASTE.wallet} house answers a day, free`,
       'Every trade you sign earns more answers',
+      `${FREE_SCANS_PER_DAY} Called it scan a day, free; more cost ${SCAN_ANSWER_PRICE} answers each`,
       'Unlimited intent links after your first trade',
       'Bring your own API key: unlimited answers, free',
     ],
@@ -139,6 +142,7 @@ export const PLANS: Plan[] = [
     highlights: [
       'Everything in Free',
       '600 house answers a month, on top of the daily free ones',
+      `Enough for ${Math.floor(600 / SCAN_ANSWER_PRICE)} extra Called it scans a month`,
       'Market briefs and "explain this" without the hourly limit',
       'Earned and bought answers still stack, and never expire',
       'Early access to new agents',

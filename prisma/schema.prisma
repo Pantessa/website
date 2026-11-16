@@ -2185,6 +2185,10 @@ model XScan {
   oldestPostAt DateTime? @map("oldest_post_at") @db.Timestamptz(6)
   /// Held against the day's cap while the scan runs (its worst case), released when it finishes.
   reservedUsd  Float     @default(0) @map("reserved_usd")
+  /// House answers this scan cost its wallet (0 = a free scan, on the house's free pool). Set back to 0 by a refund.
+  answersCharged Int     @default(0) @map("answers_charged")
+  /// The wallet that paid (lower-cased), when answers were charged.
+  paidBy       String?   @map("paid_by")
 
   @@index([handle, symbol, startedAt])
   @@index([startedAt])
