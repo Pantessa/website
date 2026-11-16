@@ -28260,10 +28260,11 @@ async function main() {
     check(
       // RE-PINNED 2026-10-06 (front-door): `/` IS a public markets door now (the splash), so it
       // joins the list — exactly `/`, never `/i`, `/embed`, `/chat` or an empty prefix.
-      'arrival/qa: lib/arrival-fence ARRIVAL_SOURCES lists only public markets doors — `/` (the splash), /markets, /t — never "/i", "/embed", "/chat" or an empty prefix — and ARRIVAL_MAX_TEXT ≤ 280',
+      // RE-PINNED 2026-11-16 (called-gtm): ARRIVAL_SOURCES gained `/x` (the Called it pages hand their trade chips to the app).
+      'arrival/qa: lib/arrival-fence ARRIVAL_SOURCES lists only public markets doors — `/` (the splash), /markets, /t, /x — never "/i", "/embed", "/chat" or an empty prefix — and ARRIVAL_MAX_TEXT ≤ 280',
       ARRIVAL_SOURCES.length > 0 &&
         ARRIVAL_SOURCES.every((s) => typeof s === 'string' && s.startsWith('/')) &&
-        ARRIVAL_SOURCES.every((s) => s === '/' || ['/markets', '/t'].some((allowed) => s === allowed || s.startsWith(allowed + '/'))) &&
+        ARRIVAL_SOURCES.every((s) => s === '/' || ['/markets', '/t', '/x'].some((allowed) => s === allowed || s.startsWith(allowed + '/'))) &&
         !ARRIVAL_SOURCES.some((s) => s === '' || /^\/(i|embed|chat)\b/.test(s)) &&
         ARRIVAL_MAX_TEXT <= 280,
       ARRIVAL_SOURCES.join(' '),

@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { CALL_PARAM, MIN_JUDGED, actSideFor, bestCallOf, callById, callHref, chartCallHref, hitRateOf, hitRateWords, parseCallParam, rankEntries } from '../lib/called-it/gtm'
 import { boardSpark } from '../lib/called-it/board'
+import { arrivalAllowed, arrivalSourceAllowed } from '../lib/arrival-fence'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8')
@@ -52,6 +53,13 @@ export function calledGtmCoordPins(check: Check): void {
     'called-gtm (board, pure): the small line and its dots share one 100 by 100 box with air above and below; a call before the line starts has no dot; under two closes there is no line',
     spark.line.startsWith('M0 92') && spark.dots.length === 1 && spark.dots[0].postId === '9' && spark.dots[0].y > 8 && spark.dots[0].y < 92 && boardSpark(closes.slice(0, 1), [], 0).line === '',
     `${spark.line.slice(0, 12)} ${spark.dots.length}`,
+  )
+  const now = Date.now()
+  const rec = (from: string, text: string) => arrivalAllowed({ v: 1, at: now, from, text }, now)
+  check(
+    'called-gtm (arrival fence): a Called it page may hand its trade chip to the app (/x/<handle>/<SYM>, /x/<handle>); /xx, /x?…, //x do not pass as sources; and the text rules still refuse a transfer, an address or a link arriving from /x',
+    arrivalSourceAllowed('/x/dcinvestor/ETH') && arrivalSourceAllowed('/x/dcinvestor') && !arrivalSourceAllowed('/xx') && !arrivalSourceAllowed('/x?a=1') && !arrivalSourceAllowed('//x') && !arrivalSourceAllowed('/xyz/a') &&
+      rec('/x/dcinvestor/ETH', 'Buy $25 of ETH').ok === true && rec('/x/dcinvestor/ETH', 'Send 1 ETH to 0x1234567890abcdef').ok === false && rec('/x/dcinvestor/ETH', 'Buy $25 of ETH at https://evil.example').ok === false,
   )
   const board = read('lib/called-it/board.ts')
   check(
