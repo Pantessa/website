@@ -27,7 +27,7 @@ const code = (p: string) =>
     .replace(/(^|[^:'"`])\/\/.*$/gm, '$1')
 
 const STATION_ORDER = ['say', 'quote', 'build', 'guard', 'sign', 'receipt']
-const QUIET = ['/leaderboard', '/analytics', '/pricing', '/docs', '/story']
+const QUIET = ['/leaderboard', '/analytics', '/x', '/pricing', '/docs', '/story'] // RE-PINNED 2026-11-16 (home called-it): /x joined the quiet row
 
 /** A side's primary door, as the closing grid picks it. */
 const primaryOf = (doors: { kind: string; href: string; label: string }[]) => doors.find((d) => d.kind === 'primary') ?? doors[0]
@@ -62,7 +62,7 @@ export function landingClosePins(check: Check): void {
   check('close: each cell takes the side’s PRIMARY door', /doors\.find\(\(d\) => d\.kind === 'primary'\)/.test(close))
   check('close: every side has a primary door (the grid never drops a side)', TOUR_SIDES.every((s) => s.doors.some((d) => d.kind === 'primary')), TOUR_SIDES.filter((s) => !s.doors.some((d) => d.kind === 'primary')).map((s) => s.id).join(','))
   const quiet = [...close.matchAll(/href: '([^']+)'/g)].map((m) => m[1])
-  check('close: the quiet row is Leaderboard · Analytics · Pricing · Docs · The story', JSON.stringify(quiet) === JSON.stringify(QUIET), quiet.join(','))
+  check('close: the quiet row is Leaderboard · Analytics · Called it · Pricing · Docs · The story', JSON.stringify(quiet) === JSON.stringify(QUIET), quiet.join(','))
 
   // ── Doors (rule 3): LandingLink or a plain on-page anchor, journey-labelled ──
   for (const [name, src, prefix] of [['how', how, 'How: '], ['closing', close, 'Closing: ']] as const) {
@@ -119,7 +119,7 @@ export async function landingClosePinsServed(check: Check, base: string): Promis
   const want = TOUR_SIDES.map((s) => ({ href: primaryOf(s.doors).href.replace(/&/g, '&amp;'), journey: `Closing: ${s.label}` }))
   check('close (served): eight doors = each side’s primary door, in tour order', JSON.stringify(doors) === JSON.stringify(want), doors.map((d) => d.href).join(','))
   const quiet = [...close.matchAll(/class="closing__quietlink"[^>]*href="([^"]+)"|href="([^"]+)"[^>]*class="closing__quietlink"/g)].map((m) => m[1] ?? m[2])
-  check('close (served): the quiet row is the five public pages', JSON.stringify(quiet) === JSON.stringify(QUIET), quiet.join(','))
+  check('close (served): the quiet row is the six public pages', JSON.stringify(quiet) === JSON.stringify(QUIET), quiet.join(','))
 
   // Every door resolves (a route answers; an anchor names an id on the page).
   const hrefs = new Set<string>()

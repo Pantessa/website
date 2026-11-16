@@ -90,6 +90,7 @@
     "pins:called-auth": "tsx scripts/called-auth-pins.ts",
     "pins:called-chart": "tsx scripts/called-chart-pins.ts",
     "pins:called-record": "tsx scripts/called-record-pins.ts",
+    "pins:called-home": "tsx scripts/called-home-pins.ts",
     "pins:called-fix": "tsx scripts/called-fix-pins.ts",
     "pins:called-gtm-coord": "tsx scripts/called-gtm-coord-pins.ts",
     "pins:called-gtm-call": "tsx scripts/called-gtm-call-pins.ts",

@@ -7,13 +7,19 @@ import { avatarDataUri } from './_lib/avatar'
 import { featuredOf, readSummaries } from './_lib/featured'
 import { readPlotted } from './_lib/plotted'
 import { Eyebrow, MethodBlock, Schematic } from './_lib/parts'
-import { CutBands, Featured, Tile } from './_lib/splash'
+import { Featured, Tile } from './_lib/splash'
 import '@/components/called/called-record.css'
 
 // /x — THE SPLASH (2026-11-12; it was lane RECORD's plain door). A hero that
 // asks the question and shows a REAL record beside the door, then the
 // accounts already scanned as tiles a visitor can open at once (no scan, no
 // cost), then how a call is judged.
+//
+// FLAT (2026-11-16, Nate: "flat no drop shadows, clean elegant modern,
+// minimalist"): no card, no shadow, no gradient, no backdrop. The page is a
+// ruled sheet: hairlines and type, the door is one line to write on, and the
+// scanned accounts sit in a ruled grid. The styles are the `.xrc--splash`
+// block of called-record.css.
 //
 // CACHED, ON PURPOSE (a minute): the page is the same for everybody. It reads
 // no query and no cookie; the door and "Verify with X" are client pieces that
@@ -51,7 +57,6 @@ export default async function CalledDoorPage() {
     <>
       <main className="xrc xrc--splash" data-xrc="door" data-plots={summaries.length}>
         <section className="xrc-hero">
-          <CutBands />
           <div className="xrc-hero__in">
             <div className="xrc-hero__say">
               <Eyebrow />
@@ -62,7 +67,7 @@ export default async function CalledDoorPage() {
                 Type any X handle. Pantessa reads a year of their posts, pins every market call to the day it was posted, and checks it against the price {JUDGE_DAYS} days later.
               </p>
               <div className="xrc-hero__door" id="plot">
-                <HandleDoor variant="page" />
+                <HandleDoor variant="page" className="xcc-door--flat" />
               </div>
               <ul className="xrc-hero__facts">
                 <li>Their own words, read from X</li>
@@ -71,7 +76,7 @@ export default async function CalledDoorPage() {
               </ul>
               <div className="xrc-hero__you">
                 <span>Is it your account? Your own record says Verified.</span>
-                <VerifyWithX />
+                <VerifyWithX className="xva-flat" />
               </div>
             </div>
             <div className="xrc-hero__show">{featured ? <Featured summary={featured} avatar={featuredAvatar} /> : <Schematic />}</div>
@@ -82,6 +87,7 @@ export default async function CalledDoorPage() {
           <div className="xrc-gallery__head">
             <h2 className="xrc-gallery__title">Recently scanned</h2>
             <p className="xrc-gallery__sub">Already read and judged. Open one: no scan, no wait.</p>
+            {summaries.length > 0 && <span className="xrc-gallery__n">{String(summaries.length).padStart(2, '0')}</span>}
           </div>
           {summaries.length > 0 ? (
             <ul className="xrc-tiles">
@@ -97,7 +103,9 @@ export default async function CalledDoorPage() {
         </section>
 
         <section className="xrc-how" aria-label="How it works">
-          <h2 className="xrc-gallery__title">How it works</h2>
+          <div className="xrc-gallery__head">
+            <h2 className="xrc-gallery__title">How it works</h2>
+          </div>
           <ol className="xrc-steps">
             <li>
               <h3>Type a handle</h3>

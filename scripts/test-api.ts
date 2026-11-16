@@ -399,6 +399,7 @@ import { calledJudgePins, calledJudgePinsServed } from './called-judge-pins'
 import { calledAuthPins, calledAuthPinsServed } from './called-auth-pins'
 import { calledChartPins, calledChartPinsServed } from './called-chart-pins'
 import { calledRecordPins, calledRecordPinsServed } from './called-record-pins'
+import { calledHomePins, calledHomePinsServed } from './called-home-pins'
 import { calledFixPins, calledFixPinsServed } from './called-fix-pins'
 import { calledGtmCoordPins, calledGtmCoordPinsServed } from './called-gtm-coord-pins'
 import { calledGtmCallPins, calledGtmCallPinsServed } from './called-gtm-call-pins'
@@ -28409,7 +28410,7 @@ async function main() {
     const marketsAiSrc = await readFile('lib/markets-ai.ts', 'utf8')
     check('arrival fence: lib/markets-ai.ts fenceAsk reads ASK_ADDRESS_RE / ASK_ENS_RE / ASK_URL_RE from lib/arrival-fence (no local copy)', marketsAiSrc.includes("import { ASK_ADDRESS_RE as ADDRESS_RE, ASK_ENS_RE as ENS_RE, ASK_URL_RE as URL_RE } from './arrival-fence'") && !/^const (ADDRESS|ENS|URL)_RE = /m.test(marketsAiSrc) && aiFenceAsk('Buy $25 of 0xbeef', 'AAPL').ok === false && aiFenceAsk('Buy $25 of AAPL for vitalik.eth', 'AAPL').ok === false && aiFenceAsk('Buy $25 of AAPL www.x.y', 'AAPL').ok === false)
     // RE-PINNED 2026-10-06 (front-door): ARRIVAL_SOURCES gained `/` (the splash is a public markets door).
-    check('arrival fence: the module is pure — imports only lib/intent-links (isTransferShaped) + the TTL constant, touches no window / document / storage / fetch, and reads the TTL from CORE\'s module so the two cannot disagree', /^import \{ isTransferShaped \} from '\.\/intent-links'$/m.test(fenceSrc) && /^import \{ ARRIVAL_TTL_MS \} from '\.\/arrival-intent'$/m.test(fenceSrc) && (fenceSrc.match(/^import /gm) ?? []).length === 2 && !/\b(window|document|sessionStorage|localStorage|fetch|navigator)\b/.test(fenceSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, '')) && ARRIVAL_SOURCES.length === 3 && ARRIVAL_SOURCES[0] === '/' && ARRIVAL_SOURCES[1] === '/markets' && ARRIVAL_SOURCES[2] === '/t' && ARRIVAL_MAX_TEXT === 280 && ARRIVAL_MAX_MCPS === 6 && ARRIVAL_FUTURE_SKEW_MS === 5_000)
+    check('arrival fence: the module is pure — imports only lib/intent-links (isTransferShaped) + the TTL constant, touches no window / document / storage / fetch, and reads the TTL from CORE\'s module so the two cannot disagree', /^import \{ isTransferShaped \} from '\.\/intent-links'$/m.test(fenceSrc) && /^import \{ ARRIVAL_TTL_MS \} from '\.\/arrival-intent'$/m.test(fenceSrc) && (fenceSrc.match(/^import /gm) ?? []).length === 2 && !/\b(window|document|sessionStorage|localStorage|fetch|navigator)\b/.test(fenceSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, '')) && ARRIVAL_SOURCES.length === 4 && ARRIVAL_SOURCES[0] === '/' && ARRIVAL_SOURCES[1] === '/markets' && ARRIVAL_SOURCES[2] === '/t' && ARRIVAL_SOURCES[3] === '/x' /* RE-PINNED 2026-11-16 (called-gtm) */ && ARRIVAL_MAX_TEXT === 280 && ARRIVAL_MAX_MCPS === 6 && ARRIVAL_FUTURE_SKEW_MS === 5_000)
     check('arrival fence: arrivalSourceAllowed — `/` (the splash; RE-PINNED 2026-10-06 (front-door)), /markets, /markets/<sub> and /t/<SYM> pass; /marketsx, /markets?q, /markets#h, /tx, /story, /chat, /i/x, /embed do not', arrivalSourceAllowed('/markets') && arrivalSourceAllowed('/markets/') && arrivalSourceAllowed('/markets/earn') && arrivalSourceAllowed('/t/ETH') && arrivalSourceAllowed('/t/AMAT') && !arrivalSourceAllowed('/marketsx') && !arrivalSourceAllowed('/markets?q=1') && !arrivalSourceAllowed('/markets#h') && !arrivalSourceAllowed('/tx') && !arrivalSourceAllowed('/t?x=1') && arrivalSourceAllowed('/') && !arrivalSourceAllowed('//evil.example') && !arrivalSourceAllowed('//') && !arrivalSourceAllowed('/story') && !arrivalSourceAllowed('/chat') && !arrivalSourceAllowed('/i/x') && !arrivalSourceAllowed('/embed') && !arrivalSourceAllowed(''))
 
     // ── The ladder proof ── every sentence a /markets sender can COMPOSE lands
@@ -35691,6 +35692,8 @@ async function main() {
   await calledChartPinsServed(check, BASE)
   calledRecordPins(check)
   await calledRecordPinsServed(check, BASE)
+  calledHomePins(check)
+  await calledHomePinsServed(check, BASE)
   calledFixPins(check)
   await calledFixPinsServed(check, BASE)
   // Squad called-gtm (2026-11-16): one pin file per lane.

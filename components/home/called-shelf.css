@@ -1,0 +1,31 @@
+/* THE CALLED IT SHELF on the home (components/home/CalledShelf). The tiles are
+   /x's own (components/called/called-record.css); this file only seats them in
+   the markets column: no page padding, a head row, and the columns decided by
+   the COLUMN's width (a container query), not the window's — the home's main
+   column sits between the spine and the rail. Prefix `xrc-shelf`, checked
+   against every stylesheet in the repo. */
+
+.xrc.xrc--shelf { padding: 0; container-type: inline-size; display: flex; flex-direction: column; gap: 12px; }
+.xrc-shelf__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.xrc-shelf__say { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.xrc .xrc-shelf__eyebrow { align-self: flex-start; font-family: var(--xrc-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-weight: 600; text-decoration: none; }
+.xrc .xrc-shelf__eyebrow:hover, .xrc .xrc-shelf__eyebrow:focus-visible { text-decoration: underline; text-underline-offset: 0.2em; }
+.xrc-shelf__title { margin: 0; font-family: var(--xrc-display); font-weight: 600; font-size: clamp(1.25rem, 1.05rem + 0.9vw, 1.625rem); line-height: 1.2; letter-spacing: -0.015em; }
+.xrc-shelf__sub { margin: 0; font-size: 13px; line-height: 1.45; color: var(--muted); max-width: 64ch; }
+.xrc .xrc-shelf__go { flex: none; display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: var(--r-pill, 999px); font-size: 13px; font-weight: 600; color: var(--fg); text-decoration: none; white-space: nowrap; transition: border-color var(--dur-1, .16s); }
+.xrc .xrc-shelf__go:hover, .xrc .xrc-shelf__go:focus-visible { border-color: var(--accent); outline: none; }
+.xrc-shelf__go span { color: var(--accent); }
+
+/* Columns by the column's width. The record sheet's window queries are overridden here. */
+.xrc--shelf .xrc-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@container (max-width: 759px) {
+  .xrc--shelf .xrc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* A phone: one row that scrolls sideways, so the shelf costs one tile's height above the boards. */
+@container (max-width: 559px) {
+  .xrc--shelf .xrc-tiles { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 84%; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; margin: 0 -12px; padding: 2px 12px 4px; scroll-padding: 0 12px; }
+  .xrc--shelf .xrc-tiles::-webkit-scrollbar { display: none; }
+  .xrc--shelf .xrc-tiles > li { scroll-snap-align: start; }
+  .xrc-shelf__go { width: 100%; justify-content: center; }
+}
+@media (hover: none) { .xrc .xrc-shelf__go { min-height: 44px; } }

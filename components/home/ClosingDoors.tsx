@@ -20,6 +20,7 @@ import './closing.css'
 export const CLOSING_QUIET = [
   { label: 'Leaderboard', href: '/leaderboard' },
   { label: 'Analytics', href: '/analytics' },
+  { label: 'Called it', href: '/x' },
   { label: 'Pricing', href: '/pricing' },
   { label: 'Docs', href: '/docs' },
   { label: 'The story', href: '/story' },
