@@ -230,12 +230,14 @@ export async function calledGtmProfilePinsServed(check: Check, base: string): Pr
           p.html.includes(`href="${chartHref('cz_binance', cz[0].symbol).replace(/&/g, '&amp;')}"`) && text.includes(`Open the ${cz[0].symbol} chart with these calls`),
         `${p.status} "${sumText.slice(0, 140)}"`,
       )
+      // The JUDGED half of the move words only: the "since" figure follows the live price, and the board's cached entry can turn over between this file's two reads (it did once in a full harness run).
+      const judged = (move: string) => move.replace(/, [^,]* since$/, '')
       const bestHtml = block(p.html, 'best')
       const missHtml = block(p.html, 'misses')
       check(
         "called-gtm profile (served, the calls): each shown hit is the board's own best call for its market (its verdict's word, the market, the day's own move words) and links to that call's own address; the strongest miss is shown the same way under its own label; with the tally above them on the same page, hits and misses both",
-        best.length > 0 && best.every((b) => bestHtml.includes(`href="${callHref('cz_binance', b.symbol, b.call.postId).replace(/&/g, '&amp;')}"`) && textOf(bestHtml).includes(b.call.move) && textOf(bestHtml).includes(VERDICT_WORDS.right)) && textOf(bestHtml).includes('Best calls') &&
-          misses.length > 0 && misses.every((m) => missHtml.includes(`href="${callHref('cz_binance', m.symbol, m.call.postId).replace(/&/g, '&amp;')}"`) && textOf(missHtml).includes(m.call.move) && textOf(missHtml).includes(VERDICT_WORDS.wrong)) && textOf(missHtml).includes('Misses') &&
+        best.length > 0 && best.every((b) => bestHtml.includes(`href="${callHref('cz_binance', b.symbol, b.call.postId).replace(/&/g, '&amp;')}"`) && textOf(bestHtml).includes(judged(b.call.move)) && textOf(bestHtml).includes(VERDICT_WORDS.right)) && textOf(bestHtml).includes('Best calls') &&
+          misses.length > 0 && misses.every((m) => missHtml.includes(`href="${callHref('cz_binance', m.symbol, m.call.postId).replace(/&/g, '&amp;')}"`) && textOf(missHtml).includes(judged(m.call.move)) && textOf(missHtml).includes(VERDICT_WORDS.wrong)) && textOf(missHtml).includes('Misses') &&
           (bestHtml.match(/class="xpf-call"/g) ?? []).length === best.length && (missHtml.match(/class="xpf-call"/g) ?? []).length === misses.length && p.html.indexOf('data-xpf="sum"') < p.html.indexOf('data-xpf="best"'),
         `${best.length} best, ${misses.length} misses`,
       )
