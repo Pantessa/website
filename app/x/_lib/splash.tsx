@@ -6,7 +6,7 @@
 // height is CSS; each dot is a span placed by percentages, so nothing is
 // measured and a dot stays round. A verdict is a colour AND a word everywhere.
 import Link from 'next/link'
-import { VERDICT_WORDS, recordHref, type CalledTally } from '@/lib/called-it/spec'
+import { VERDICT_WORDS, chartHref, type CalledTally } from '@/lib/called-it/spec'
 import { cleanLine, fmtCount, fmtUtcDate } from '@/lib/called-it/card-layout'
 import { agoWords } from './plotted'
 import { Avatar } from './parts'
@@ -74,10 +74,10 @@ function Who({ summary, avatar, size }: { summary: PlotSummary; avatar: string |
   )
 }
 
-/** One scanned account in the grid: who, on what, the tally, the line. The whole tile is the link. */
+/** One scanned account in the grid: who, on what, the tally, the line. The whole tile is the link, straight onto the live chart with the account plotted (the chart wears the record's header; Nate, 2026-11-16). */
 export function Tile({ summary, avatar, now }: { summary: PlotSummary; avatar: string | null; now: number }) {
   return (
-    <Link href={recordHref(summary.handle, summary.symbol)} className="xrc-tile" prefetch={false} data-journey="called_recent" aria-label={summary.headline}>
+    <Link href={chartHref(summary.handle, summary.symbol)} className="xrc-tile" prefetch={false} data-journey="called_recent" aria-label={summary.headline}>
       <span className="xrc-tile__head">
         <Who summary={summary} avatar={avatar} size="sm" />
         <span className="xrc-tile__sym">{summary.symbol}</span>
@@ -93,7 +93,7 @@ export function Tile({ summary, avatar, now }: { summary: PlotSummary; avatar: s
 
 /** The hero's panel: one real record, drawn. Its line, its tally and two of its calls in the account's own words. */
 export function Featured({ summary, avatar }: { summary: PlotSummary; avatar: string | null }) {
-  const href = recordHref(summary.handle, summary.symbol)
+  const href = chartHref(summary.handle, summary.symbol)
   return (
     <section className="xrc-feat" aria-label={`A real record: ${summary.headline}`}>
       <div className="xrc-feat__head">
@@ -119,7 +119,7 @@ export function Featured({ summary, avatar }: { summary: PlotSummary; avatar: st
       <p className="xrc-feat__more">
         {summary.coverage && <span className="xrc-feat__cov">{summary.coverage}</span>}
         <Link href={href} className="xrc-btn xrc-btn--wide" prefetch={false} data-journey="called_featured">
-          Open the record
+          Open on the chart
         </Link>
       </p>
     </section>

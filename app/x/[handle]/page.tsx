@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import Footer from '@/components/Footer'
 import { readRecord } from '@/lib/called-it/record'
-import { STANDING_NOT_VERIFIED, normalizeHandle, recordHref, standingVerified } from '@/lib/called-it/spec'
+import { STANDING_NOT_VERIFIED, chartHref, normalizeHandle, recordHref, standingVerified } from '@/lib/called-it/spec'
 import { cleanLine, headlineTally } from '@/lib/called-it/card-layout'
 import { avatarDataUri } from '../_lib/avatar'
 import { agoWords, readPlotted } from '../_lib/plotted'
@@ -123,9 +123,9 @@ export default async function HandlePage({ params }: Props) {
               <ul className="xrc-rows" aria-label={`Markets @${handle} is plotted on`}>
                 {rows.map((r, i) => (
                   <li key={r.symbol}>
-                    <Link href={recordHref(handle, r.symbol)} className="xrc-row" prefetch={false} data-journey="called_row">
+                    <Link href={chartHref(handle, r.symbol)} className="xrc-row" prefetch={false} data-journey="called_row">
                       <span className="xrc-row__sym">{r.symbol}</span>
-                      <span className="xrc-row__tally">{tallies[i] ?? 'Open the record for its tally.'}</span>
+                      <span className="xrc-row__tally">{tallies[i] ?? 'Open the chart for its tally.'}</span>
                       <span className="xrc-row__when">scanned {agoWords(r.scannedAt, now)}</span>
                     </Link>
                   </li>
