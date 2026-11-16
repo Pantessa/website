@@ -363,7 +363,7 @@ async function tradeRows(engine: Engine) {
       return { n: xs.length, h: minOf(xs, 'h'), w: minOf(xs, 'w') }
     }
     const t = {
-      filters: await q('.mkt-routes__filter'),
+      folds: await q('.mkt-routes__fold'),
       chips: await q('.mkt-route__chip'),
       presets: await q('.mkt-order__preset'),
       custom: await q('.mkt-order__custom'),
@@ -374,7 +374,7 @@ async function tradeRows(engine: Engine) {
     record[`${engine}.trade`] = t
     const line = Object.entries(t).map(([k, v]) => `${k} ${v.n ? `${v.h}px (${v.n})` : 'none'}`).join(' · ')
     if (MEASURE_ONLY || TAG === 'before') note(5, `${engine} /t/ETH Trade tab`, line)
-    else judge(5, `${engine} /t/ETH Trade tab: route filters, route chips, order presets, the amount field, Buy/Sell and Send ≥44px tall`, Object.values(t).every((v) => !v.n || v.h >= 44), line)
+    else judge(5, `${engine} /t/ETH Trade tab: route fold toggles, route chips, order presets, the amount field, Buy/Sell and Send ≥44px tall`, Object.values(t).every((v) => !v.n || v.h >= 44), line)
   } finally {
     await browser.close()
   }
