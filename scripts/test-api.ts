@@ -28130,7 +28130,8 @@ async function main() {
       await (async () => {
         const sym = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
         const trade = await readFile('components/markets/tabs/TradeTab.tsx', 'utf8')
-        return /const handed = writeArrivalIntent\(\{ text: ask, from: pathname \?\? '' \}\)\s*\n\s*router\.push\(handed \? ARRIVAL_APP_HREF : promptHref\(ask\)\)/.test(sym) &&
+        // RE-PINNED 2026-11-16 (asks to the app): the handoff names its apps now (lib/symbol-ask symbolAskApps).
+        return /const handed = writeArrivalIntent\(\{ text: ask, from: pathname \?\? '', mcps: symbolAskApps\(ask, pair, extra\) \}\)\s*\n\s*router\.push\(handed \? ARRIVAL_APP_HREF : promptHref\(ask\)\)/.test(sym) &&
           /useConnectToAct\(\{ run: runAsk, redirectFor: promptHref \}\)/.test(sym) &&
           !/const runAsk = useCallback\([\s\S]{0,400}setTab\('trade'\)/.test(sym) &&
           !/ChatInterface/.test(trade.replace(/\/\/[^\n]*/g, ''))
