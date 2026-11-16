@@ -17,7 +17,9 @@ import {
   fmtDay,
   isFakeXUserId,
   JUDGE_DAYS,
+  GUEST_SCANS_PER_DAY,
   METHOD_LINE,
+  SCAN_POST_CAP,
   MIN_CALL_CONVICTION,
   PICK_MAX,
   STANDING_NOT_VERIFIED,
@@ -47,6 +49,9 @@ import {
 import { additiveRefusal } from './run-ddl'
 import { askDoorPillHidden } from '../lib/ask-door'
 import { coverageOf } from '../lib/called-it/record'
+import { allowanceFor, guestScansPerDay, maxScanCostUsd } from '../lib/called-it/budget'
+import { buildSearchQueries } from '../lib/called-it/source/x-api'
+import { MARKET_PROXIES, marketTermsFor } from '../lib/called-it/terms'
 import { isCallLabel } from '../lib/called-it/scan'
 import { systemPrompt, userPrompt } from '../lib/called-it/classify'
 
@@ -177,6 +182,15 @@ export function calledCoordPins(check: Check): void {
     'called-it labeler: a reply is marked in the request and the instructions say it counts only when its own words state the call in full (the labeler cannot see what it answers); a remark about the asset or about what the author holds is conviction 1, not a call; posts in any language are judged by meaning, unsure means none',
     asked.includes('[1] Top is in.') && asked.includes('[2] (reply) @someone agreed, more over there') && asked.includes('[3] plain') && !asked.includes('[1] (reply)') &&
       /marked \(reply\)/.test(sys) && /own words state the call in full/.test(sys) && /REMARK with no call/.test(sys) && /saying what they own or hold/.test(sys) && /any language/.test(sys) && /When unsure between 1 and 2, choose 1/.test(sys),
+  )
+  // ── What a scan may cost (2026-11-12: four real scans cost $2.22) ──
+  const guestRefusal = allowanceFor({ requester: 'ip:aa', scansToday: 0, spentTodayUsd: 0, capUsd: 10, postCap: SCAN_POST_CAP, handle: 'jack', symbol: 'BTC' })
+  check(
+    'called-it scan cost: a scan reads at most 150 posts ($0.76 with the profile read); the search never asks for replies or retweets; only BTC is searched with the generic market words; a guest cannot START a scan unless the server says so (a sign-in is asked for, in words, with somewhere to go) while a proven requester gets ten; fake mode keeps two for the harness and is off on Vercel',
+    SCAN_POST_CAP === 150 && maxScanCostUsd(SCAN_POST_CAP) === 0.76 && buildSearchQueries('a', ['$BTC'])[0] === 'from:a -is:retweet -is:reply ($BTC)' &&
+      [...MARKET_PROXIES].join() === 'BTC' && marketTermsFor('ETH').length === 0 && marketTermsFor('BTC').length > 0 &&
+      GUEST_SCANS_PER_DAY === 0 && guestScansPerDay({}) === 0 && guestScansPerDay({ XCALLS_GUEST_SCANS: '5' }) === 5 && guestScansPerDay({ XCALLS_GUEST_SCANS: 'lots' }) === 0 && guestScansPerDay({ XCALLS_FAKE: '1' }) === 2 && guestScansPerDay({ XCALLS_FAKE: '1', VERCEL: '1' }) === 0,
+    JSON.stringify(guestRefusal).slice(0, 200),
   )
   // ── Review R1: a pasted post is shown and marked, never counted ──
   const pasted: LabeledPost[] = posts.map((p, i) => (i === 1 || i === 3 ? { ...p, origin: 'added' as const } : p))

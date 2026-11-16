@@ -225,11 +225,12 @@ export const X_POST_COST_USD = 0.005
 export const X_USER_COST_USD = 0.01
 /** A scan reads back as far as the daily chart holds. */
 export const SCAN_WINDOW_DAYS = 365
-/** Posts one scan may read (env XCALLS_SCAN_POST_CAP). 400 posts = $2. */
-export const SCAN_POST_CAP = 400
+/** Posts one scan may read (env XCALLS_SCAN_POST_CAP). 150 posts = $0.75. It was 400 ($2): four real scans cost $2.22, and a prolific account alone read 326 posts. The record says how far back the cap let it read. */
+export const SCAN_POST_CAP = 150
 /** What the house spends on X reads in one UTC day before scans rest (env XCALLS_DAILY_USD_CAP). */
 export const DAILY_USD_CAP = 10
-export const GUEST_SCANS_PER_DAY = 2
+/** A guest cannot start a NEW scan (it was 2 a day): each one spends real money, and an address is cheap to rotate. Everybody opens every record already scanned, and a guest can still paste a post. */
+export const GUEST_SCANS_PER_DAY = 0
 export const PROVEN_SCANS_PER_DAY = 10
 /** Pasted posts one requester may add in a UTC day, and in one minute (review R2: each one is a model call). */
 export const GUEST_ADDS_PER_DAY = 10
@@ -253,6 +254,8 @@ export const ENV = {
   oauthClientSecret: 'X_OAUTH_CLIENT_SECRET',
   dailyUsdCap: 'XCALLS_DAILY_USD_CAP',
   scanPostCap: 'XCALLS_SCAN_POST_CAP',
+  /** New scans a guest may start in a UTC day. Unset: GUEST_SCANS_PER_DAY (0). The harness sets it. */
+  guestScans: 'XCALLS_GUEST_SCANS',
   /** `1` = the harness: the fixture source, the keyword labeler, the fake X sign-in. Never on prod. */
   fake: 'XCALLS_FAKE',
   /** The labeler's own model id (review: it must not follow the markets AI's model when that changes). */

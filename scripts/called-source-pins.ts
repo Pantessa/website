@@ -17,7 +17,10 @@ import { XApiError, XApiSource, buildSearchQueries, mapXPost, mapXUser, quoteTer
 import { failNote } from '../lib/called-it/scan'
 import { FixtureSource, FIXTURE_NO_SUCH_HANDLE } from '../lib/called-it/source/fixture'
 import { FIXTURE_HANDLE, fixturePosts } from '../lib/called-it/fixture'
-import { allowanceFor, isProven, maxScanCostUsd } from '../lib/called-it/budget'
+import { guestScansPerDay, allowanceFor, isProven, maxScanCostUsd } from '../lib/called-it/budget'
+
+// These pins drive guest scans over doubles. Production gives a guest none (spec GUEST_SCANS_PER_DAY = 0, pinned in called-coord-pins); the two the harness always had are set here.
+process.env.XCALLS_GUEST_SCANS ??= '2'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -107,19 +110,19 @@ export function calledSourcePins(check: Check): void {
   check('called-source oembed: script in a post stays text (tags are removed, nothing is kept as HTML)', (() => { const r = mapOembed(REAL_ID, { ...REAL_OEMBED_BODY, html: '<blockquote><p>buy &lt;script&gt;x&lt;/script&gt; <img src=x onerror=1>now</p></blockquote>' }); return r.ok && r.post.text === 'buy <script>x</script> now' })())
 
   // The query builder
-  check('called-source query: multi-word terms are quoted, quotes and parentheses inside a term are dropped, duplicates (case aside) go, retweets never', (() => {
+  check('called-source query: multi-word terms are quoted, quotes and parentheses inside a term are dropped, duplicates (case aside) go, retweets and replies never', (() => {
     const qs = buildSearchQueries('cz_binance', ['$BTC', '#BTC', 'bitcoin', 'all-time high', 'all time high', '$btc', 'say "hi"', '(x)', '  '])
-    return qs.length === 1 && qs[0] === 'from:cz_binance -is:retweet ($BTC OR #BTC OR bitcoin OR "all-time high" OR "all time high" OR "say hi" OR x)'
+    return qs.length === 1 && qs[0] === 'from:cz_binance -is:retweet -is:reply ($BTC OR #BTC OR bitcoin OR "all-time high" OR "all time high" OR "say hi" OR x)'
   })(), JSON.stringify(buildSearchQueries('cz_binance', ['$BTC', '#BTC', 'bitcoin', 'all-time high', 'all time high', '$btc', 'say "hi"', '(x)', '  '])))
   check('called-source query: quoteTerm', quoteTerm('a  b') === '"a b"' && quoteTerm('$ETH') === '$ETH' && quoteTerm('""') === null)
-  check('called-source query: no terms = one query for every original post', JSON.stringify(buildSearchQueries('a', [])) === JSON.stringify(['from:a -is:retweet']))
-  check('called-source query: a long term list splits into queries each under 1,024 characters, every term in exactly one, each query carries from: and -is:retweet', (() => {
+  check('called-source query: no terms = one query for every original post', JSON.stringify(buildSearchQueries('a', [])) === JSON.stringify(['from:a -is:retweet -is:reply']))
+  check('called-source query: a long term list splits into queries each under 1,024 characters, every term in exactly one, each query carries from:, -is:retweet and -is:reply', (() => {
     const terms = Array.from({ length: 200 }, (_, i) => `term number ${i}`)
     const qs = buildSearchQueries('somebody_long1', terms)
     const all = qs.flatMap((q) => [...q.matchAll(/"term number (\d+)"/g)].map((x) => x[1]))
-    return qs.length > 1 && qs.every((q) => q.length <= X_QUERY_MAX && q.startsWith('from:somebody_long1 -is:retweet (')) && all.length === 200 && new Set(all).size === 200
+    return qs.length > 1 && qs.every((q) => q.length <= X_QUERY_MAX && q.startsWith('from:somebody_long1 -is:retweet -is:reply (')) && all.length === 200 && new Set(all).size === 200
   })())
-  check('called-source query: a term too long for any query alone is dropped, not sent broken', (() => { const qs = buildSearchQueries('a', ['x'.repeat(2000), 'btc']); return qs.length === 1 && qs[0] === 'from:a -is:retweet (btc)' })())
+  check('called-source query: a term too long for any query alone is dropped, not sent broken', (() => { const qs = buildSearchQueries('a', ['x'.repeat(2000), 'btc']); return qs.length === 1 && qs[0] === 'from:a -is:retweet -is:reply (btc)' })())
   check('called-source query: the URL sends start_time without since_id, since_id instead of start_time, end_time at least 15 s back, max_results clamped to 10..500, the documented tweet.fields', (() => {
     const now = Date.UTC(2026, 10, 11, 12)
     const a = new URL(searchUrl({ query: 'q', fromMs: now - 86_400_000, toMs: now, maxResults: 9999, nowMs: now }))
@@ -148,9 +151,10 @@ export function calledSourcePins(check: Check): void {
   const base = { scansToday: 0, spentTodayUsd: 0, capUsd: 10, postCap: 400 }
   check('called-source budget: a scan at its cap costs 400 x $0.005 + one user read = $2.01', maxScanCostUsd(400) === 2.01 && maxScanCostUsd(10) === Math.round((10 * X_POST_COST_USD + X_USER_COST_USD) * 1e6) / 1e6)
   check('called-source budget: only x: and w: requesters are proven', isProven('x:123') && isProven('w:0xabc') && !isProven('ip:deadbeef') && !isProven('x:') && !isProven('anything'))
-  check(`called-source budget: a guest gets ${GUEST_SCANS_PER_DAY} a day, a proven requester ${PROVEN_SCANS_PER_DAY}; the next one is refused with a reason and somewhere to go`, (() => {
-    const g1 = allowanceFor({ ...base, requester: 'ip:aa', scansToday: GUEST_SCANS_PER_DAY - 1 })
-    const g2 = allowanceFor({ ...base, requester: 'ip:aa', scansToday: GUEST_SCANS_PER_DAY, handle: 'jack', symbol: 'BTC' })
+  // RE-PINNED 2026-11-12 (scan cost): the guest's number comes from guestScansPerDay() (0 in production, 2 where these pins set XCALLS_GUEST_SCANS).
+  check(`called-source budget: a guest gets ${guestScansPerDay()} a day here (the server's setting), a proven requester ${PROVEN_SCANS_PER_DAY}; the next one is refused with a reason and somewhere to go`, (() => {
+    const g1 = allowanceFor({ ...base, requester: 'ip:aa', scansToday: guestScansPerDay() - 1 })
+    const g2 = allowanceFor({ ...base, requester: 'ip:aa', scansToday: guestScansPerDay(), handle: 'jack', symbol: 'BTC' })
     const p1 = allowanceFor({ ...base, requester: 'x:1', scansToday: PROVEN_SCANS_PER_DAY - 1 })
     const p2 = allowanceFor({ ...base, requester: 'w:0x1', scansToday: PROVEN_SCANS_PER_DAY })
     return g1.ok && g1.scansLeft === 1 && !g2.ok && g2.over === 'requester' && /Verify with X/.test(g2.reason) && g2.next.some((n) => n.href === '/x') && g2.next.some((n) => n.href === '/t/BTC?x=jack') && p1.ok && !p2.ok && /00:00 UTC/.test(p2.reason) && p2.next.length >= 1

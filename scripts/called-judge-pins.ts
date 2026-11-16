@@ -17,7 +17,10 @@ import { allowanceFor, dailyUsdCap, scanPostCap } from '@/lib/called-it/budget'
 import { readRecord, verifiedOf, type RecordDeps } from '@/lib/called-it/record'
 import type { StoredHandle } from '@/lib/called-it/store'
 import { FIXTURE_HANDLE, FIXTURE_PROFILE, fixturePosts } from '@/lib/called-it/fixture'
-import { GUEST_SCANS_PER_DAY, TWITTER_EPOCH_MS, type PostRead, type RecordResponse, type ScanRow, type StoredLabel, type XPost, type XProfile, type XSearchQuery, type XSource } from '@/lib/called-it/spec'
+import { SCAN_POST_CAP, TWITTER_EPOCH_MS, type PostRead, type RecordResponse, type ScanRow, type StoredLabel, type XPost, type XProfile, type XSearchQuery, type XSource } from '@/lib/called-it/spec'
+
+// These pins drive guest scans over doubles. Production gives a guest none (spec GUEST_SCANS_PER_DAY = 0, pinned in called-coord-pins); the two the harness always had are set here.
+process.env.XCALLS_GUEST_SCANS ??= '2'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -192,7 +195,8 @@ export function calledJudgePins(check: Check): void {
   const t = (s: string) => termsFor(s)
   const has = (s: string, term: string) => t(s).some((x) => x.toLowerCase() === term.toLowerCase())
   check('judge terms: BTC cashtag, hashtag, bare, name', ['$BTC', '#BTC', 'BTC', 'Bitcoin'].every((x) => has('BTC', x)), JSON.stringify(t('BTC')))
-  check('judge terms: BTC and ETH carry the market-call words', MARKET_CALL_WORDS.every((w) => has('BTC', w) && has('ETH', w)))
+  // RE-PINNED 2026-11-12 (scan cost): only BTC carries the market-call words; on ETH they added 63% to a real scan and most were not calls on ETH.
+  check('judge terms: BTC carries the market-call words; ETH, SP500 and every other market do not', MARKET_CALL_WORDS.every((w) => has('BTC', w) && !has('ETH', w) && !has('SP500', w)))
   check('judge terms: ETH name + alias, WETH collapses to ETH', has('ETH', 'Ethereum') && has('ETH', 'Ether') && JSON.stringify(t('WETH')) === JSON.stringify(t('ETH')))
   check('judge terms: UNI never bare, has $UNI and Uniswap', !has('UNI', 'UNI') && has('UNI', '$UNI') && has('UNI', '#UNI') && has('UNI', 'Uniswap'), JSON.stringify(t('UNI')))
   check('judge terms: UNI gets no market-call words', !has('UNI', 'bottom') && !has('UNI', 'bull'))
@@ -200,7 +204,7 @@ export function calledJudgePins(check: Check): void {
   check('judge terms: LINK / OP / NEAR / ARB / COMP never bare', ['LINK', 'OP', 'NEAR', 'ARB', 'COMP'].every((s) => !has(s, s) && has(s, `$${s}`)))
   check('judge terms: no English-word ticker is ever a bare term', [...ENGLISH_WORD_TICKERS].every((s) => !t(s).some((x) => x === s)))
   check('judge terms: a name that is an English word is dropped (CRV not "Curve")', !has('CRV', 'Curve') && has('CRV', 'Curve Finance'))
-  check('judge terms: SP500 is a market proxy with its names', has('SP500', 'S&P 500') && has('SP500', 'bottom'))
+  check('judge terms: SP500 is searched by its names', has('SP500', 'S&P 500') && !has('SP500', 'bottom'))
   check('judge terms: no duplicates', ['BTC', 'ETH', 'UNI', 'AAPL', 'SP500'].every((s) => new Set(t(s).map((x) => x.toLowerCase())).size === t(s).length))
 
   // The answer reader
@@ -296,7 +300,7 @@ export async function calledJudgePinsAsync(check: Check): Promise<void> {
     check('judge scan: runs to done over the doubles', out.kind === 'done' && row?.status === 'done' && row.finishedAt !== null, JSON.stringify(out))
     check('judge scan: posts saved, every post labeled once', store.posts.size === 11 && store.labels.size === 11)
     check('judge scan: counts + cost + note on the row', row.postsRead === 11 && row.callsFound > 0 && Math.abs(row.costUsd - 11 * 0.005) < 1e-9 && /^Found \d+ calls? in 11 posts\./.test(row.note ?? ''), JSON.stringify(row))
-    check('judge scan: searched with termsFor and the cap', src.searches[0]?.terms.includes('$BTC') && src.searches[0].cap === 400 && src.searches[0].sinceId === undefined)
+    check('judge scan: searched with termsFor and the cap', src.searches[0]?.terms.includes('$BTC') && src.searches[0].cap === SCAN_POST_CAP && src.searches[0].sinceId === undefined)
     check('judge scan: never leaves a running row', store.scans.every((s) => s.status !== 'running'))
 
     const again = await runScan({ handle: HANDLE, symbol: 'BTC', requester: 'ip:abc', internal: false }, scanDeps(store, src))
@@ -334,10 +338,10 @@ export async function calledJudgePinsAsync(check: Check): Promise<void> {
     // RE-PINNED 2026-11-11 (review R4): the profile read now happens on an open row, so the refusal leaves a `refused` row carrying the read's cost (it used to leave none, and the cent landed nowhere).
     check('judge scan: a protected account is worded apart (403) and remembered', protOut.kind === 'refused' && protOut.http === 403 && /protected/.test(protOut.body.reason) && protStore.handles.get('locked_two')?.isProtected === true && protStore.scans.length === 1 && protStore.scans[0].status === 'refused')
     const spentStore = new MemStore()
-    spentStore.scansTodayOverride = GUEST_SCANS_PER_DAY
+    spentStore.scansTodayOverride = 2
     const capped = await runScan({ handle: HANDLE, symbol: 'BTC', requester: 'ip:x', internal: false }, scanDeps(spentStore, new DoubleSource()))
     check('judge scan: a guest over the allowance is refused, offered plotted handles and paste-a-post', capped.kind === 'refused' && capped.http === 429 && refusedWell(capped.body) && capped.body.next.some((n) => n.href === '/x') && capped.body.next.some((n) => n.href.startsWith(`/t/BTC?x=${HANDLE}`)))
-    spentStore.scansTodayOverride = GUEST_SCANS_PER_DAY
+    spentStore.scansTodayOverride = 2
     const proven = await runScan({ handle: HANDLE, symbol: 'BTC', requester: 'x:42', internal: false }, scanDeps(spentStore, new DoubleSource()))
     check('judge scan: a proven requester has the larger allowance', proven.kind === 'done')
     const houseStore = new MemStore()

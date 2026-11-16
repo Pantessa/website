@@ -13,7 +13,7 @@
 import { getSessionAddress } from '@/lib/auth'
 import { isInternalRun as houseInternalRun } from '@/lib/internal-run'
 import { clientIpFrom, hashIp } from '@/lib/turn-limits'
-import { ADDS_PER_MINUTE, DAILY_USD_CAP, ENV, GUEST_ADDS_PER_DAY, GUEST_LOOKUPS_PER_DAY, GUEST_SCANS_PER_DAY, PROVEN_ADDS_PER_DAY, PROVEN_LOOKUPS_PER_DAY, PROVEN_SCANS_PER_DAY, SCAN_POST_CAP, X_POST_COST_USD, X_USER_COST_USD, chartHref, type Requester } from './spec'
+import { fakeModeOn, ADDS_PER_MINUTE, DAILY_USD_CAP, ENV, GUEST_ADDS_PER_DAY, GUEST_LOOKUPS_PER_DAY, GUEST_SCANS_PER_DAY, PROVEN_ADDS_PER_DAY, PROVEN_LOOKUPS_PER_DAY, PROVEN_SCANS_PER_DAY, SCAN_POST_CAP, X_POST_COST_USD, X_USER_COST_USD, chartHref, type Requester } from './spec'
 import { lookupsToday, scansToday, spentTodayUsd } from './store'
 import { getXIdentity } from './x-auth'
 
@@ -85,10 +85,20 @@ function nextFor(ctx: { handle?: string; symbol?: string }): { label: string; hr
   return next
 }
 
+/**
+ * New scans a guest may start in a UTC day: 0 unless XCALLS_GUEST_SCANS says otherwise. Fake mode (the harness, never a
+ * Vercel deployment) keeps the two it always had, so its guest drives still run.
+ */
+export function guestScansPerDay(env: Record<string, string | undefined> = process.env): number {
+  const raw = env[ENV.guestScans]
+  if (raw !== undefined && /^\d{1,3}$/.test(raw.trim())) return Number(raw.trim())
+  return fakeModeOn(env) ? 2 : GUEST_SCANS_PER_DAY
+}
+
 /** The allowance arithmetic, pure. */
 export function allowanceFor(i: AllowanceInput): Allowance {
   const proven = isProven(i.requester)
-  const perDay = proven ? PROVEN_SCANS_PER_DAY : GUEST_SCANS_PER_DAY
+  const perDay = proven ? PROVEN_SCANS_PER_DAY : guestScansPerDay()
   const usdLeft = Math.max(0, Math.round((i.capUsd - i.spentTodayUsd) * 1e6) / 1e6)
   if (usdLeft < maxScanCostUsd(i.postCap)) {
     return {
@@ -113,7 +123,9 @@ export function allowanceFor(i: AllowanceInput): Allowance {
       over: 'requester',
       reason: proven
         ? `You have used today's ${perDay} scans. They come back at 00:00 UTC.`
-        : `You have used today's ${perDay} free scans. Verify with X or sign in with a wallet for ${PROVEN_SCANS_PER_DAY} a day, or open a handle that is already plotted.`,
+        : perDay === 0
+          ? `Starting a new scan needs a sign-in: verify with X or sign in with a wallet (${PROVEN_SCANS_PER_DAY} scans a day). Every record already scanned opens for everyone, and one post can be pasted by its link.`
+          : `You have used today's ${perDay} free scans. Verify with X or sign in with a wallet for ${PROVEN_SCANS_PER_DAY} a day, or open a handle that is already plotted.`,
       next: nextFor(i),
     }
   }

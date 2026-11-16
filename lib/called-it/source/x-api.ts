@@ -63,7 +63,9 @@ export function quoteTerm(raw: string): string | null {
  * one query for every original post.
  */
 export function buildSearchQueries(handle: string, terms: readonly string[], max = X_QUERY_MAX): string[] {
-  const head = `from:${handle} -is:retweet`
+  // No replies (2026-11-12): measured on five real accounts they were 18% to 60% of the posts a scan paid for, the labeler
+  // cannot see what a reply answers, and a reply counts as a call only when it stands alone. A reply can still be pasted by its link.
+  const head = `from:${handle} -is:retweet -is:reply`
   const seen = new Set<string>()
   const quoted: string[] = []
   for (const raw of terms) {
