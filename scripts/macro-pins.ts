@@ -431,7 +431,7 @@ export function macroPins(check: Check): void {
   check(
     'macro (page): the symbol page reads an index as look-only — its header is the QUOTE (the quotes route, in the index\'s unit, against the previous close) and not the chart\'s 24h number, the Trade tab is not offered and its address opens Overview, the look-only card takes the order ticket\'s seat in the rail (and under the tabs on a phone), the guide is told, and the 24-hour stats read is skipped',
     page.includes('const lookOnly = isLookOnlyPair(pair)') && page.includes('useQuotes(lookOnly ? [sym] : [])') && page.includes("MARKET_TABS.filter((t) => !(lookOnly && t.tab === 'trade'))") && page.includes("lookOnly && t === 'trade' ? DEFAULT_MARKET_TAB : t") &&
-      page.includes('<LookOnlyCard pair={pair} seat="page" onAsk={buildHere} />') && page.includes('lookOnly={lookOnly}') && page.includes('useDayStats(pair && !lookOnly ? pair.symbol : null)') && page.includes('fmtIndexValue(pair, ix.last)') && page.includes('lookOnlyBasis(ix.session)') &&
+      page.includes('<LookOnlyCard pair={pair} seat="page" onAsk={orderToApp} />') && page.includes('lookOnly={lookOnly}') && page.includes('useDayStats(pair && !lookOnly ? pair.symbol : null)') && page.includes('fmtIndexValue(pair, ix.last)') && page.includes('lookOnlyBasis(ix.session)') &&
       rail.includes('if (isLookOnlyPair(pair)) return <LookOnlyCard pair={pair} seat="rail" onAsk={onBuild} onSay={onSay} />') && rail.indexOf('if (isLookOnlyPair(pair)) return <LookOnlyCard') < rail.indexOf('className="mkt-railticket"'),
   )
   check(

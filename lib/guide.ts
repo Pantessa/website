@@ -163,7 +163,7 @@ export const GUIDE_HINTS: readonly GuideHint[] = [
     id: 'chart',
     surfaces: ['symbol'],
     title: 'Ask the chart.',
-    body: 'Type “{ASK}” or “why is it moving?” — the answer builds the order right here, in a ticket beside the chart.',
+    body: 'Type “{ASK}” or “why is it moving?” and it runs in the app, with the apps it needs already on.',
     // The compact row's label: "Why is AAPL moving?" is ~152px and would
     // leave ~40px for the title at 320 (MOBILE's measurement).
     cta: { label: 'Why is {SYM} moving?', short: 'Ask it →', kind: 'door', value: 'Why is {SYM} moving?' },

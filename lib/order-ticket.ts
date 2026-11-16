@@ -11,8 +11,8 @@
 //  the token · presets and a slider over what the wallet actually holds ·
 //  leverage and a stop for a perp · the sentence it composes, printed, and
 //  one button that sends it. Nothing here builds, prices or signs: the
-//  sentence goes through the page's build door (the chart's own order
-//  ticket) exactly like a chip, and the wallet signature is the gate.
+//  sentence goes through the page's order door (it runs in the app)
+//  exactly like a chip, and the wallet signature is the gate.
 //
 //  Every sentence composed here is a parser's own phrasing (memory
 //  chip-send-contract: the chip IS the contract), pinned through the ladder

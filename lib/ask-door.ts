@@ -6,7 +6,8 @@
 // leave. The door is the site-wide composer: a docked pill on every page, an
 // Ask button in the nav, ⌘K anywhere — and the ask RUNS where you are, in a
 // sheet, through the same ChatInterface the /i runtime mounts in `simple`
-// mode. Your wallet signs; nothing else moves.
+// mode. Your wallet signs; nothing else moves. (A symbol page is the one
+// exception since 2026-11-16: its asks run in the app — see `handoff`.)
 //
 // This module is the door's state (a tiny zustand store any surface can open
 // with a prefill) plus the two pure helpers the harness pins:
@@ -23,8 +24,8 @@ import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import { tradeAsks } from '@/lib/trade-asks'
 import { ctaBarStep, type CtaBarState } from '@/lib/cta-bar'
 
-/** A page that hosts its own ask composer takes the door (see `dock`). */
-export type AskDock = (draft: string | undefined, opts?: { send?: boolean; mcps?: string[] }) => void
+/** A page whose asks run in the app takes the door's SENDS (see `handoff`). */
+export type AskHandoff = (text: string, opts?: { mcps?: string[] }) => void
 
 export interface AskDoorChip {
   label: string
@@ -54,14 +55,17 @@ interface AskDoorState {
    *  on. The door's suggestion row merges them in on /t/<sym>. */
   briefChips: { symbol: string; chips: AskDoorChip[] } | null
   setBriefChips: (v: { symbol: string; chips: AskDoorChip[] } | null) => void
-  /** A page with its own conversation (2026-09-24: /t/<sym>'s Ask the chart,
-   *  which builds trades in an order ticket beside it) takes the door while
-   *  it is mounted: ⌘K, the pill, the rail's Ask and every `openDoor` call
-   *  land THERE — a draft focuses its composer, a `send` runs in its ticket.
-   *  One conversation per page, and never two chat runtimes sharing the
-   *  store's current chat. Cleared on unmount; the sheet is the door again. */
-  dock: AskDock | null
-  setDock: (dock: AskDock | null) => void
+  /** A page whose asks run in the APP (2026-11-16: /t/<sym>, Nate: "let's
+   *  not direct AI chat buys or questions to an embed, let's send them to the
+   *  app page"). While it is mounted the door still OPENS here as a composer
+   *  (⌘K, the pill, the rail's Ask, a draft), but nothing runs in the sheet:
+   *  every send (the composer's, a chip's, an `openDoor(…, { send: true })`
+   *  from any surface on the page) goes to the page's handoff, which carries
+   *  it to /chat with the apps it needs. Cleared on unmount; the sheet runs
+   *  asks again. (It replaces `dock`, 2026-09-24, which landed the door in
+   *  Ask the chart's inline order ticket.) */
+  handoff: AskHandoff | null
+  setHandoff: (handoff: AskHandoff | null) => void
 }
 
 export const useAskDoor = create<AskDoorState>()((set, get) => ({
@@ -69,9 +73,10 @@ export const useAskDoor = create<AskDoorState>()((set, get) => ({
   draft: '',
   fire: null,
   openDoor: (draft, opts) => {
-    const dock = get().dock
-    if (dock) {
-      dock(draft, opts)
+    const handoff = get().handoff
+    if (handoff && opts?.send && typeof draft === 'string' && draft.trim()) {
+      set({ open: false })
+      handoff(draft.trim(), opts.mcps?.length ? { mcps: opts.mcps } : undefined)
       return
     }
     set((s) =>
@@ -85,8 +90,8 @@ export const useAskDoor = create<AskDoorState>()((set, get) => ({
   takeFire: () => set({ fire: null }),
   briefChips: null,
   setBriefChips: (briefChips) => set({ briefChips }),
-  dock: null,
-  setDock: (dock) => set({ dock }),
+  handoff: null,
+  setHandoff: (handoff) => set({ handoff }),
 }))
 
 /** Routes the door never renders on: the chat IS the composer, the embed and

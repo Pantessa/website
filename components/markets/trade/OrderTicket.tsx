@@ -12,8 +12,8 @@
 //     so a phone never has to find the rail.
 //   · `card`  — the Trade tab's order card, with its own side tabs.
 // The form never builds, prices or signs. Its one button hands the printed
-// sentence to the page's build door (SymbolPage: the chart's own order
-// ticket in Ask the chart), exactly like a chip — connect to act, and the
+// sentence to the page's order door (SymbolPage: the app, with the apps the
+// sentence needs), exactly like a chip — connect to act, and the
 // wallet signature is the gate. What it adds is the SIZE: dollars or units
 // (converted at the live price), presets, a slider over what the wallet
 // holds (a sell) or the stable it can spend (a buy; lib/use-stable-balances),
@@ -74,7 +74,7 @@ export type OrderTicketProps = {
   onSide: (side: TicketSide) => void
   /** The chart's last close (the header's stats) — sizes units ↔ dollars. */
   last: number | null
-  /** Sends the composed sentence to the page's build door. */
+  /** Sends the composed sentence to the page's order door (the app). */
   onSend: (ask: string) => void
   onClose?: () => void
   seat: 'strip' | 'card'
