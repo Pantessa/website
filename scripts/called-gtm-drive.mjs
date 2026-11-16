@@ -391,7 +391,7 @@ try {
     // (j) the outreach desk as a stranger
     await open('/dashboard/admin/outreach', 3000)
     {
-      const j = await ev(`(() => ({ path: location.pathname, text: document.body.innerText.slice(0, 200).replace(/\\s+/g, ' '), leak: document.body.innerText.includes('${HANDLE}') }))()`)
+      const j = await ev(`(() => ({ path: location.pathname, text: document.body.innerText.slice(0, 200).replace(/\\s+/g, ' '), leak: /Reply on X|Copy DM|Direct message|not contacted/.test(document.body.innerText) || location.pathname.startsWith('/dashboard/admin/outreach') && document.body.innerText.includes('${HANDLE}') }))()`)
       check(`[${tag}] (j) the desk shows a stranger no data`, !j.leak, `${j.path} :: ${j.text}`)
     }
 
