@@ -98,6 +98,8 @@ export function calledGtmCommunityPins(check: Check): void {
   check('community board: the avatar sends no referrer and falls back to an initial', /referrerPolicy="no-referrer"/.test(boardSrc) && /initialOf\(e\.name, e\.handle\)/.test(boardSrc))
   check('community board: a journey label on each press', ['called_board_plot', 'called_board_record', 'called_board_more', 'called_board_door'].every((l) => boardSrc.includes(`data-journey="${l}"`)))
 
+  check('community board: a press re-reads the tab once the address lands (state-less popstate, then the top)', /new PopStateEvent\('popstate', \{ state: null \}\)/.test(boardSrc) && /onClick=\{\(\) => onPlot\(plot\)\}/.test(boardSrc) && /href=\{plot\}/.test(boardSrc))
+
   // ── Words ──
   check('community board: followers line', handleLine(entry()) === '@someone · 12K followers' && handleLine(entry({ followers: null })) === '@someone' && handleLine(entry({ followers: 1 })) === '@someone · 1 follower', handleLine(entry()))
   check('community board: a blank name falls back to the handle', displayName(entry({ name: '   ' })) === '@someone' && displayName(entry({ name: null })) === '@someone')

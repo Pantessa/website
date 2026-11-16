@@ -15,8 +15,9 @@
 // works). Every number is the entry's own; a post and a display name are text
 // nodes, cleaned to one line.
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import type { BoardEntry } from '@/lib/called-it/gtm'
 import { STANDING_NOT_VERIFIED, fmtDay, type CallVerdict } from '@/lib/called-it/spec'
 import { cleanLine, headlineParts, headlineTally, initialOf } from '@/lib/called-it/card-layout'
@@ -46,6 +47,25 @@ type Read = { entries: BoardEntry[]; failed: boolean } | 'loading' | 'error'
 export default function CalledBoard({ symbol }: CalledBoardProps) {
   const [read, setRead] = useState<Read>('loading')
   const [all, setAll] = useState(false)
+
+  // A card's press is a same-page query change (/t/<SYM>?x=&call=). The symbol
+  // page reads its tab from the address only on mount and on popstate, so a
+  // soft navigation would leave this tab open and the chart parked. Once the
+  // address has landed, a state-less popstate (Next's router ignores one with
+  // no state) tells the page to re-read it: no tab in the address = Overview,
+  // where the chart is. Then the reader is taken to the top, to the chart.
+  const search = useSearchParams()
+  const pending = useRef<string | null>(null)
+  useEffect(() => {
+    const want = pending.current
+    if (!want || !addressLanded(want)) return
+    pending.current = null
+    window.dispatchEvent(new PopStateEvent('popstate', { state: null }))
+    window.scrollTo({ top: 0 })
+  }, [search])
+  const onPlot = useCallback((href: string) => {
+    pending.current = href
+  }, [])
 
   useEffect(() => {
     let dead = false
@@ -111,7 +131,7 @@ export default function CalledBoard({ symbol }: CalledBoardProps) {
         <ul className="xbd__grid">
           {shown.map((e) => (
             <li key={`${e.handle}:${e.symbol}`}>
-              <BoardCard entry={e} />
+              <BoardCard entry={e} onPlot={onPlot} />
             </li>
           ))}
         </ul>
@@ -129,18 +149,26 @@ export default function CalledBoard({ symbol }: CalledBoardProps) {
   )
 }
 
+/** The address names the press's page and every one of its params (another hook may reorder or add to them). */
+function addressLanded(want: string): boolean {
+  const u = new URL(want, window.location.origin)
+  const here = new URLSearchParams(window.location.search)
+  return window.location.pathname === u.pathname && [...u.searchParams].every(([k, v]) => here.get(k) === v)
+}
+
 const INK: Record<CallVerdict, string> = { right: 'is-right', wrong: 'is-wrong', flat: 'is-flat', open: 'is-open' }
 
-function BoardCard({ entry: e }: { entry: BoardEntry }) {
+function BoardCard({ entry: e, onPlot }: { entry: BoardEntry; onPlot: (href: string) => void }) {
   const [imgOk, setImgOk] = useState(true)
   const src = avatarSrc(e.avatarUrl)
   const parts = headlineParts(e.headline)
   const best = highlightOf(e)
   const name = displayName(e)
+  const plot = plotHref(e)
 
   return (
     <article className="xbd-card" aria-label={`${name} on ${e.symbol}`}>
-      <Link href={plotHref(e)} className="xbd-card__press" data-journey="called_board_plot">
+      <Link href={plot} className="xbd-card__press" data-journey="called_board_plot" onClick={() => onPlot(plot)}>
         <div className="xbd-card__who">
           <span className="xbd-card__avatar" aria-hidden>
             {src && imgOk ? <img src={src} alt="" width={40} height={40} referrerPolicy="no-referrer" onError={() => setImgOk(false)} /> : initialOf(e.name, e.handle)}
