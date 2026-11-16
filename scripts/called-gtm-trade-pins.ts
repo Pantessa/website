@@ -19,7 +19,7 @@
 //     link, no `scrollIntoView` came back, no advice words.
 
 import { readFileSync } from 'node:fs'
-import { CALL_ACT_CAPTION, CALL_ACT_USD, callActSides, callActsFor } from '../lib/called-it/acts'
+import { CALL_ACT_CAPTION, CALL_ACT_USD, callActCaption, callActSides, callActsFor } from '../lib/called-it/acts'
 import { CALL_PARAM, callHref, chartCallHref } from '../lib/called-it/gtm'
 import { callFromSearch, callParamStale, deepLinkFocus, useCalled, withoutCallParam } from '../lib/called-it/use-record'
 import { chartPairFor } from '../lib/charts'
@@ -78,8 +78,17 @@ export function calledGtmTradePins(check: Check): void {
   const hook = read('lib/called-it/use-record.ts')
   const css = read('components/called/call-acts.css')
   check('called-gtm trade: CallActs sends through connect to act, then the arrival handoff to /chat with the symbol\'s apps (the #1073 door), prefill as the fallback; never raw RainbowKit', /useConnectToAct\(\{ run, redirectFor: promptHref \}\)/.test(acts) && /writeArrivalIntent\(\{ text: ask, from: pathname \?\? '', mcps: symbolAskApps\(ask, pair\) \}\)/.test(acts) && /router\.push\(handed \? ARRIVAL_APP_HREF : promptHref\(ask\)\)/.test(acts) && /act\(a\.ask\)/.test(acts) && !/openConnectModal|useConnectModal|rainbowkit/i.test(acts))
-  check('called-gtm trade: CallActs labels each chip with its sentence, a `called_act_<side>` journey, the caption, and draws nothing before hydration or where nothing runs', /\{a\.ask\}\s*<\/a>/.test(acts) && /data-journey=\{`called_act_\$\{a\.side\}`\}/.test(acts) && /\{CALL_ACT_CAPTION\}/.test(acts) && /hydrated \? callActsFor\(/.test(acts) && /if \(!acts\.length\) return door \? <>\{door\}<\/> : null/.test(acts) && !/\b(follow this|copy this|copy trade)\b/i.test(acts))
+  check('called-gtm trade: CallActs labels each chip with its sentence, a `called_act_<side>` journey, the caption, and draws nothing before hydration or where nothing runs', /\{a\.ask\}\s*<\/a>/.test(acts) && /data-journey=\{`called_act_\$\{a\.side\}`\}/.test(acts) && /\{callActCaption\(handle\)\}/.test(acts) && /hydrated \? callActsFor\(/.test(acts) && /if \(!acts\.length\) return door \? <>\{door\}<\/> : null/.test(acts) && !/\b(follow this|copy this|copy trade)\b/i.test(acts))
   check('called-gtm trade: the call card mounts CallActs (row, a stack on the phone sheet) between the numbers and the foot, keeps "Open the post on X" as the main button, and links "Share this call" to callHref', /<CallActs symbol=\{record\.symbol\} stance=\{call\.stance\} handle=\{record\.handle\} postId=\{call\.postId\} variant=\{sheet \? 'stack' : 'row'\}/.test(card) && card.indexOf('<CallActs') > card.indexOf('</dl>') && card.indexOf('<CallActs') < card.indexOf('<footer className="xcf__foot">') && /className="xcf__x" href=\{call\.url\}/.test(card) && /href=\{callHref\(record\.handle, record\.symbol, call\.postId\)\}/.test(card) && />\s*Share this call\s*</.test(card))
+  check(
+    'called-gtm trade (F7): under a named account\'s call the caption gains a second sentence, "@<handle> has no part in this button. Not investment advice.", after the first sentence\'s exact words; with no handle it is the first sentence alone; both mounts pass the handle',
+    callActCaption('dcinvestor') === 'Your wallet signs. Pantessa never holds your funds. @dcinvestor has no part in this button. Not investment advice.' && callActCaption() === CALL_ACT_CAPTION && callActCaption(null) === CALL_ACT_CAPTION &&
+      callActCaption('cz_binance').startsWith(`${CALL_ACT_CAPTION} `) && /handle=\{record\.handle\}/.test(card) && /<CallActs [^>]*handle=\{handle\}/.test(read('components/called/CallLead.tsx')),
+  )
+  check(
+    'called-gtm trade (F1): "Share this call" is absent on a pasted call\'s card (the card still opens it, marked); a call the scan found keeps the link',
+    /\{call\.origin !== 'added' && \(\s*<Link className="xca-share" href=\{callHref\(record\.handle, record\.symbol, call\.postId\)\}/.test(card),
+  )
   check('called-gtm trade: no `scrollIntoView` came back (the strip, the card, the store); the card never navigates for a named call', !/scrollIntoView/.test(panel) && !/scrollIntoView/.test(card) && !/scrollIntoView/.test(hook) && !/router\.(push|replace)/.test(hook))
   check('called-gtm trade: the `call` key is removed with history.replaceState, read once after mount, and a named call forces the fit (daily bars, every call in view)', /window\.history\.replaceState\(window\.history\.state, '', next\)/.test(hook) && /withoutCallParam\(pathname, search\)/.test(hook) && /const call = callFromSearch\(window\.location\.search\)/.test(hook) && /fit: !!call \|\|/.test(hook) && /pendingCall: body\.status === 'scanning' \? s\.pendingCall : null/.test(hook))
   check('called-gtm trade: call-acts.css is flat (no shadow, gradient, blur) under its own prefix, with 44px targets on a phone', !/box-shadow|gradient|backdrop-filter|text-shadow/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')) && css.replace(/\/\*[\s\S]*?\*\//g, '').match(/^\s*\.[\w-]+/gm)!.every((sel) => /^\s*\.xca/.test(sel)) && /min-height: 44px/.test(css))

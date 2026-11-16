@@ -82,6 +82,25 @@ export function callById<T extends Pick<CalledCall, 'postId'>>(calls: readonly T
   return postId ? (calls.find((c) => c.postId === postId) ?? null) : null
 }
 
+/**
+ * The call a one-call address may LEAD with (review F1): only a call the SCAN
+ * found, only on a SCANNED record. A pasted post's id, or any id on a record
+ * with no scan, answers null, and the page / image falls back to the plain
+ * record (which draws pasted posts with their mark). The chart may still open
+ * a pasted call's card; that is callById.
+ */
+export function leadCallOf<T extends Pick<CalledCall, 'postId' | 'origin'>>(record: { scanned: boolean; calls: readonly T[] }, postId: string | null): T | null {
+  if (!record.scanned) return null
+  return callById(record.calls.filter((c) => c.origin === 'scan'), postId)
+}
+
+/** "This is call N of M" (review F2): N and M both count the calls the scan found, so M is the tally's total. Null for a call the scan did not find. */
+export function callPlaceOf(calls: readonly Pick<CalledCall, 'postId' | 'origin'>[], postId: string): { n: number; of: number } | null {
+  const scanned = calls.filter((c) => c.origin === 'scan')
+  const i = scanned.findIndex((c) => c.postId === postId)
+  return i < 0 ? null : { n: i + 1, of: scanned.length }
+}
+
 /** One call as a board entry carries it: enough to quote it, date it, link it and say how it went. */
 export interface BoardCall {
   postId: string

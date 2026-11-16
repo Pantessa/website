@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { cache } from 'react'
 import Footer from '@/components/Footer'
 import { readBoard } from '@/lib/called-it/board'
+import { takenDown } from '@/lib/called-it/record'
 import { getHandle } from '@/lib/called-it/store'
 import { getXIdentity } from '@/lib/called-it/x-auth'
 import { LIST_MIN_FOLLOWERS, STANDING_NOT_VERIFIED, chartHref, normalizeHandle, recordHref, standingVerified } from '@/lib/called-it/spec'
@@ -58,6 +59,9 @@ function decode(raw: string): string {
   }
 }
 
+/** The handle's own row, once per request (null when it cannot be read). */
+const loadRow = cache(async (handle: string) => getHandle(handle).catch(() => null))
+
 /** One read per request, however many of the metadata and the page ask. */
 const loadAccount = cache(async (handle: string) => {
   const [board, list] = await Promise.all([readBoard({ handle, limit: LIST_ROWS }), readPlotted({ limit: LIST_ROWS, handle })])
@@ -73,6 +77,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const title = 'Called it on Pantessa'
     const description = 'Plot any X handle on a chart: every post where the account took a side, pinned to the day it was posted and judged by what the price did next.'
     return { title, description, robots: { index: false, follow: true }, openGraph: { title, description, siteName: 'Pantessa', type: 'website', images: [{ url: '/api/og/called', width: 1200, height: 630, alt: title, type: 'image/png' }] }, twitter: { card: 'summary_large_image', title, description, images: [{ url: '/api/og/called', alt: title, width: 1200, height: 630, type: 'image/png' }] } }
+  }
+  // A taken-down or protected handle (review F3): a page with no handle in its title, out of the index.
+  if (takenDown(handle, await loadRow(handle))) {
+    const title = 'Called it on Pantessa'
+    const description = 'This record is not shown.'
+    return { title, description, robots: { index: false, follow: false }, openGraph: { title, description, siteName: 'Pantessa', type: 'website', images: [{ url: '/api/og/called', width: 1200, height: 630, alt: title, type: 'image/png' }] }, twitter: { card: 'summary_large_image', title, description, images: [{ url: '/api/og/called', alt: title, width: 1200, height: 630, type: 'image/png' }] } }
   }
   const { entries } = await loadAccount(handle)
   const line = profileLine(handle, entries)
@@ -126,11 +136,42 @@ export default async function HandlePage({ params }: Props) {
   }
   if (raw !== handle) redirect(`/x/${handle}`)
 
+  // Taken down by an admin, or protected (review F3): the record page's refusal shell. No rows, no "Plot @h",
+  // no door prefilled with the handle, no owner block (verifying never lists a hidden handle).
+  const down = takenDown(handle, await loadRow(handle))
+  if (down) {
+    const next = down.next.filter((n) => n.href.startsWith('/') && !n.href.startsWith('//') && n.href !== '/x')
+    return (
+      <>
+        <main className="xrc" data-xrc="handle" data-status="refused">
+          <div className="xrc__wrap xrc__wrap--narrow">
+            <header className="xrc-head">
+              <Eyebrow />
+              <h1 className="xrc-headline">{down.reason}</h1>
+              {next.length > 0 && (
+                <p className="xrc-next">
+                  {next.map((n) => (
+                    <Link key={n.href + n.label} href={n.href} className="xrc-btn" prefetch={false}>
+                      {n.label}
+                    </Link>
+                  ))}
+                </p>
+              )}
+            </header>
+            <DoorBlock heading="Plot a handle" />
+            <MethodBlock />
+          </div>
+        </main>
+        <Footer />
+      </>
+    )
+  }
+
   const { entries, rest, failed } = await loadAccount(handle)
   const top = entries[0] ?? rest[0] ?? null
   const plots = entries.length + rest.length
   const verified = entries.some((e) => e.verified) || rest.some((r) => r.verified)
-  const [avatar, me, row] = await Promise.all([avatarDataUri(top?.avatarUrl), verified ? getXIdentity().catch(() => null) : null, verified ? getHandle(handle).catch(() => null) : null])
+  const [avatar, me, row] = await Promise.all([avatarDataUri(top?.avatarUrl), verified ? getXIdentity().catch(() => null) : null, verified ? loadRow(handle) : null])
   // "This viewer is the owner": the account is verified AND X's user id on the cookie is the account's own. Never the cookie's name.
   const mine = verified && !!me && !!row?.xUserId && me.xUserId === row.xUserId
   const now = Date.now()

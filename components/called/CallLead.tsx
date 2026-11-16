@@ -23,7 +23,7 @@ import Link from 'next/link'
 import { Fragment, type CSSProperties } from 'react'
 import CallActs from '@/components/called/CallActs'
 import { ADDED_MARK, VERDICT_WORDS, judgedLine, postUrl, sinceLine, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
-import { callHref, chartCallHref } from '@/lib/called-it/gtm'
+import { callHref, callPlaceOf, chartCallHref } from '@/lib/called-it/gtm'
 import { cleanLine, fmtCallPrice, fmtCount, fmtUtcDate, fmtUtcDateTime, headlineParts, initialOf, linePaths, plotScale, sentenceCase, splitQuote, unreadShare, type ClosePoint } from '@/lib/called-it/card-layout'
 
 type Unit = 'usd' | 'level' | 'yield'
@@ -99,8 +99,6 @@ function CallSpark({ record, call, closes }: { record: CalledRecord; call: Calle
 export interface CallLeadProps {
   record: CalledRecord
   call: CalledCall
-  /** The call's number on the record (its place by date, from 1): the card under the chart wears the same one. */
-  n: number
   /** The account's avatar as a data URI the server fetched, or null. */
   avatar: string | null
   unit?: Unit
@@ -109,7 +107,7 @@ export interface CallLeadProps {
   share?: boolean
 }
 
-export default function CallLead({ record, call, n, avatar, unit = 'usd', closes, share = true }: CallLeadProps) {
+export default function CallLead({ record, call, avatar, unit = 'usd', closes, share = true }: CallLeadProps) {
   const handle = record.handle
   const symbol = record.symbol
   const added = call.origin === 'added'
@@ -129,6 +127,8 @@ export default function CallLead({ record, call, n, avatar, unit = 'usd', closes
   const leadText = !folded ? null : parts ? parts[1] : `${Array.from(call.text).slice(0, FOLD_KEEP).join('').trimEnd()}`
   const leadLength = leadText === null ? length : Array.from(leadText).length
   const size = leadLength > 200 ? 'long' : leadLength > 110 ? 'mid' : 'short'
+  // Its place among the calls the SCAN found (review F2): M is the tally's total, never a count with pasted posts in it.
+  const place = callPlaceOf(record.calls, call.postId)
   return (
     <header className={`xcl is-${call.verdict}`} data-xcl="lead" data-call={call.postId} data-verdict={call.verdict} data-origin={call.origin}>
       <p className="xcl-kicker">
@@ -233,9 +233,11 @@ export default function CallLead({ record, call, n, avatar, unit = 'usd', closes
       <section className="xcl-record" aria-label="The full record" data-record>
         <h2 className="xcl-record__label">
           <span>The full record</span>
-          <span className="xcl-record__n">
-            This is call {n} of {record.calls.length}
-          </span>
+          {place && (
+            <span className="xcl-record__n">
+              This is call {place.n} of {place.of}
+            </span>
+          )}
         </h2>
         <p className="xcl-record__tally" data-record-headline>
           <RecordTally record={record} />

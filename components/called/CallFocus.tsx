@@ -165,10 +165,13 @@ export default function CallFocus({ symbol }: { symbol: string }) {
           call's own page, where its share row lives. */}
       <div className="xca-band" data-sheet={sheet || undefined}>
         <CallActs symbol={record.symbol} stance={call.stance} handle={record.handle} postId={call.postId} variant={sheet ? 'stack' : 'row'} className="xca--card" />
-        <Link className="xca-share" href={callHref(record.handle, record.symbol, call.postId)} data-journey="called_card_share">
-          <Share2 aria-hidden />
-          Share this call
-        </Link>
+        {/* A pasted post is shown and marked, never a call to share (review F1): its address is the plain record. */}
+        {call.origin !== 'added' && (
+          <Link className="xca-share" href={callHref(record.handle, record.symbol, call.postId)} data-journey="called_card_share">
+            <Share2 aria-hidden />
+            Share this call
+          </Link>
+        )}
       </div>
 
       <footer className="xcf__foot">

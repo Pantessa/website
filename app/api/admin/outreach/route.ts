@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server'
 import { getSessionAddress } from '@/lib/auth'
 import { isAdminAddress } from '@/lib/admin'
 import { readBoard } from '@/lib/called-it/board'
-import { noKitReason, outreachKit, type OutreachResponse, type OutreachRow } from '@/lib/called-it/outreach'
+import { OUTREACH_DESK_MAX, noKitReason, outreachKit, type OutreachResponse, type OutreachRow } from '@/lib/called-it/outreach'
 import { SITE_URL } from '@/lib/site-url'
 
 export const runtime = 'nodejs'
@@ -19,7 +19,7 @@ export async function GET() {
   const admin = await getSessionAddress()
   if (!admin) return json({ error: 'Not signed in.' }, 401)
   if (!isAdminAddress(admin)) return json({ error: 'Forbidden.' }, 403)
-  const board = await readBoard({ limit: 24 })
+  const board = await readBoard({ limit: OUTREACH_DESK_MAX, max: OUTREACH_DESK_MAX })
   const rows: OutreachRow[] = board.entries.map((entry) => ({ entry, kit: outreachKit(entry, SITE_URL), reason: noKitReason(entry) }))
   const handles = new Set(rows.map((r) => r.entry.handle))
   const withHit = new Set(rows.filter((r) => r.kit).map((r) => r.entry.handle))

@@ -83,8 +83,10 @@ export interface BoardQuery {
   symbol?: string
   /** One account: every market it is scanned on. */
   handle?: string
-  /** Rows read from the list (each is a record read on a cold cache). Default 12, never above 24. */
+  /** Rows read from the list (each is a record read on a cold cache). Default 12, never above `max`. */
   limit?: number
+  /** The ceiling on `limit`: 24 for the public route; the admin desk sets its own (review F5). Never above 200 (the store's own cap). */
+  max?: number
 }
 
 export interface BoardAnswer {
@@ -95,8 +97,10 @@ export interface BoardAnswer {
 
 /** The board, ranked (gtm rankEntries). Never throws. */
 export async function readBoard(q: BoardQuery = {}): Promise<BoardAnswer> {
-  const limit = Math.max(1, Math.min(24, Math.floor(q.limit ?? 12)))
-  const list = await readPlotted({ limit: 50, handle: q.handle })
+  const max = Math.max(1, Math.min(200, Math.floor(q.max ?? 24)))
+  const limit = Math.max(1, Math.min(max, Math.floor(q.limit ?? 12)))
+  // The store narrows by market and account BEFORE its limit (review F4).
+  const list = await readPlotted({ limit: Math.max(50, limit), handle: q.handle, symbol: q.symbol })
   const rows = list.rows.filter((r) => (!q.symbol || r.symbol === q.symbol.toUpperCase()) && (!q.handle || r.handle === q.handle)).slice(0, limit)
   const out = await Promise.all(
     rows.map(async (r): Promise<BoardEntry | null> => {

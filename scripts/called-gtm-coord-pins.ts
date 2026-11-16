@@ -71,6 +71,21 @@ export function calledGtmCoordPins(check: Check): void {
     'called-gtm (board): the board reads the PUBLIC list only (readPlotted: never an internal run or a hidden handle), holds each entry in a cache, and never passes the background deleted-post check',
     /readPlotted\(/.test(board) && !/listPlotted\(/.test(board) && /unstable_cache/.test(board) && /refreshGone: undefined/.test(board),
   )
+  const plotted = read('app/x/_lib/plotted.ts')
+  check(
+    'called-gtm (board, F4): a market\'s board is narrowed by market IN THE STORE, before its limit (readPlotted takes `symbol` and hands its options to listPlotted; readBoard passes the symbol and the handle), so an account never falls off a market\'s board for scans on other markets',
+    /export async function readPlotted\(opts: \{ limit: number; handle\?: string; symbol\?: string \}\)/.test(plotted) && /await listPlotted\(opts\)/.test(plotted) && /readPlotted\(\{ limit: [^}]*handle: q\.handle, symbol: q\.symbol \}\)/.test(board),
+  )
+  check(
+    'called-gtm (board, F5): readBoard takes a `max` (default 24, never above the store\'s 200); the public route passes none, the admin desk passes its own',
+    /max\?: number/.test(board) && /Math\.min\(200, Math\.floor\(q\.max \?\? 24\)\)/.test(board) && /Math\.min\(max, Math\.floor\(q\.limit \?\? 12\)\)/.test(board) && !/max:/.test(read('app/api/x/board/route.ts')) &&
+      /readBoard\(\{ limit: OUTREACH_DESK_MAX, max: OUTREACH_DESK_MAX \}\)/.test(read('app/api/admin/outreach/route.ts')),
+  )
+  const robots = read('app/robots.ts')
+  check(
+    'called-gtm (B1): robots.txt lets a crawler fetch the share cards under /api/og/ (X\'s card bot obeys robots: a blocked image unfurls bare) while the rest of /api/ stays disallowed',
+    /allow: \['\/', '\/api\/og\/'\]/.test(robots) && /disallow: \['\/api\/', '\/chat\/', '\/dashboard'\]/.test(robots),
+  )
   const tab = read('components/markets/community/CommunityTab.tsx')
   check('called-gtm (contract): the Community tab mounts the scanned accounts above the rooms strip', tab.indexOf('<CalledBoard symbol={sym} />') > 0 && tab.indexOf('<CalledBoard symbol={sym} />') < tab.indexOf('<RoomsStrip symbol={sym} />'))
 }
@@ -79,6 +94,12 @@ export async function calledGtmCoordPinsServed(check: Check, base: string): Prom
   try {
     const ok = await fetch(`${base}/api/x/board?sym=BTC`)
     const body = (await ok.json()) as { entries?: unknown[]; failed?: boolean }
+    const robotsTxt = await (await fetch(`${base}/robots.txt`)).text()
+    check(
+      'called-gtm (served, B1): /robots.txt allows /api/og/ and still disallows /api/',
+      /^Allow: \/api\/og\/$/m.test(robotsTxt) && /^Disallow: \/api\/$/m.test(robotsTxt),
+      robotsTxt.replace(/\n/g, ' | '),
+    )
     const bad = await fetch(`${base}/api/x/board?handle=not%20a%20handle`)
     const badSym = await fetch(`${base}/api/x/board?sym=${encodeURIComponent('<x>')}`)
     const entries = Array.isArray(body.entries) ? (body.entries as { handle: string; symbol: string; headline: string; tally: { total: number }; best: { verdict: string } | null }[]) : null
