@@ -17,6 +17,9 @@ import {
   PIN_SHAPE_FLAGS,
   PIN_WORDS_MAX,
   VERDICT_GLYPH,
+  CALLOUT_TINT,
+  dockFor,
+  mixInk,
   boxSize,
   boxedIds,
   boxesOverlap,
@@ -170,8 +173,8 @@ export function calledChartPins(check: Check): void {
   const t = pinText({ text: 'Top is in. I sold everything today.', quote: 'Top is in', postedAt: Date.UTC(2026, 0, 10, 15), verdict: 'wrong', judgedPct: -0.291 }, 'pantessa_test', { textWidth: plan.textWidth, measure, wordLines: 2 })
   const tOpen = pinText({ text: 'Buying this dip with size.', quote: 'Buying this dip', postedAt: Date.UTC(2026, 10, 2, 9), verdict: 'open', judgedPct: 0.04 }, 'pantessa_test', { textWidth: plan.textWidth, measure, wordLines: 2 })
   check(
-    'called chart words: a card is three short lines: `@handle . 10 Jan 2026` (the UTC day), the post\'s own words, and the move with the verdict\'s word (`-29.1% in 30 days . missed`; an open call says `so far` and `too early to say`)',
-    t.lines.length === 3 && t.head === `@pantessa_test ${DOT} 10 Jan 2026` && t.words.join(' ') === 'Top is in. I sold everything today.' && t.result === `-29.1% in 30 days ${DOT} missed` && t.text === t.lines.join('\n') && tOpen.result === `+4.0% so far ${DOT} too early to say` && pinDate(Date.UTC(2025, 11, 6, 23, 59)) === '6 Dec 2025',
+    'called chart words (RE-PINNED 2026-11-16 (call card)): a card is three short lines and the VERDICT leads: its glyph, its word and the UTC day (`x missed . 10 Jan 2026`), the post\'s own words, then the move (`-29.1% in 30 days`; an open call says `so far` under `? too early to say`). The handle is not repeated on every card',
+    t.lines.length === 3 && t.head === `${VERDICT_GLYPH.wrong} ${VERDICT_WORDS.wrong} ${DOT} 10 Jan 2026` && !t.text.includes('pantessa_test') && t.words.join(' ') === 'Top is in. I sold everything today.' && t.result === '-29.1% in 30 days' && t.text === t.lines.join('\n') && tOpen.result === '+4.0% so far' && tOpen.head.startsWith(`${VERDICT_GLYPH.open} ${VERDICT_WORDS.open} ${DOT} `) && pinDate(Date.UTC(2025, 11, 6, 23, 59)) === '6 Dec 2025',
     JSON.stringify(t.lines),
   )
 
@@ -215,8 +218,9 @@ export function calledChartPins(check: Check): void {
   const hitShape = calloutShape(hit, pinText(hit, rec.handle, { textWidth: plan.textWidth, measure, wordLines: 2 }), { time: hit.barTime, price: hit.priceAt * 1.1 }, INKS)
   const missShape = calloutShape(miss, pinText(miss, rec.handle, { textWidth: plan.textWidth, measure, wordLines: 2 }), { time: miss.barTime, price: miss.priceAt * 0.9 }, INKS)
   check(
-    'called chart verdict: on a card the verdict is the border (the leader too) and the last line\'s word: a hit and a miss never share either',
-    hit !== miss && hitShape.options.overrides?.bordercolor === INKS.up && missShape.options.overrides?.bordercolor === INKS.down && String(hitShape.options.text).endsWith(`${DOT} ${VERDICT_WORDS.right}`) && String(missShape.options.text).endsWith(`${DOT} ${VERDICT_WORDS.wrong}`),
+    'called chart verdict (RE-PINNED 2026-11-16 (call card)): on a card the verdict is the border (the leader too), a tint of its ink in the fill (a plain #rrggbb the canvas can take, never the bare surface), and the FIRST line\'s glyph and word: a hit and a miss never share any of them',
+    hit !== miss && hitShape.options.overrides?.bordercolor === INKS.up && missShape.options.overrides?.bordercolor === INKS.down && String(hitShape.options.text).startsWith(`${VERDICT_GLYPH.right} ${VERDICT_WORDS.right} ${DOT} `) && String(missShape.options.text).startsWith(`${VERDICT_GLYPH.wrong} ${VERDICT_WORDS.wrong} ${DOT} `) &&
+      hitShape.options.overrides?.backgroundColor === mixInk(INKS.up, INKS.surf, CALLOUT_TINT) && /^#[0-9a-f]{6}$/.test(String(hitShape.options.overrides?.backgroundColor)) && hitShape.options.overrides?.backgroundColor !== missShape.options.overrides?.backgroundColor && hitShape.options.overrides?.backgroundColor !== INKS.surf && mixInk('#ffffff', '#000000', 0.5) === '#808080' && mixInk('rgb(1,2,3)', '#101010', 0.5) === '#101010',
   )
 
   // ── the shapes ────────────────────────────────────────────────────────
@@ -273,8 +277,8 @@ export function calledChartPins(check: Check): void {
   // A handle of fifteen wide letters and a long result: no line is wider than the card.
   const wideText = pinText({ text: 'Top is in.', quote: 'Top is in', postedAt: Date.UTC(2026, 8, 30), verdict: 'open', judgedPct: 1.234, origin: 'added' }, 'WWWWWWWWWWWWWWW', { textWidth: 180, measure, wordLines: 2 })
   check(
-    'called chart words: no line of a card is wider than the card, whatever the handle: a long handle puts the date on its own line, a long result puts the verdict on its own, and the planned box is never narrower than its widest line',
-    wideText.lines.every((l) => measure(l) <= 180) && wideText.lines[0] === '@WWWWWWWWWWWWWWW' && wideText.lines.includes(ADDED_MARK) && boxSize(wideText.lines, measure).w >= Math.max(...wideText.lines.map(measure)) + 20 && boxSize(['a', 'b', 'c'], measure).h === 3 * CALLOUT_FONT_PX + 20,
+    'called chart words: no line of a card is wider than the card, whatever the handle: (RE-PINNED 2026-11-16 (call card)) a head too wide puts the date on its own line, a long result puts the "since" on its own, and the planned box is never narrower than its widest line',
+    wideText.lines.every((l) => measure(l) <= 180) && wideText.lines[0] === `${VERDICT_GLYPH.open} ${VERDICT_WORDS.open}` && wideText.lines[1] === '30 Sep 2026' && wideText.lines.includes(ADDED_MARK) && boxSize(wideText.lines, measure).w >= Math.max(...wideText.lines.map(measure)) + 20 && boxSize(['a', 'b', 'c'], measure).h === 3 * CALLOUT_FONT_PX + 20,
     JSON.stringify(wideText.lines),
   )
 
@@ -593,12 +597,24 @@ export function calledChartPins(check: Check): void {
   }
   for (const d of ['app', 'components']) walk(new URL(`../${d}`, import.meta.url).pathname)
   const others = sheets.filter((f) => !f.endsWith('components/called/called-chart.css'))
-  const foreign = (css.replace(/\/\*[\s\S]*?\*\//g, '').match(/\.[a-zA-Z][\w-]*/g) ?? []).filter((c) => !/^\.(xcc|xch|is-[a-z]+$|sym$|tchart$|tchart--expanded$|mkt-chart__bar$|mkt-chart__right$|mkt-view$|mkt-pool$|mkt-sharebtn$|tchart__fs$|mk-vs__open$|\d)/.test(c))
+  const foreign = (css.replace(/\/\*[\s\S]*?\*\//g, '').match(/\.[a-zA-Z][\w-]*/g) ?? []).filter((c) => !/^\.(xcc|xch|xcf|is-[a-z]+$|sym$|tchart$|tchart--expanded$|mkt-chart__bar$|mkt-chart__right$|mkt-view$|mkt-pool$|mkt-sharebtn$|tchart__fs$|mk-vs__open$|\d)/.test(c))
   check(
-    'called chart css: every class this lane styles wears its own prefix (`xcc`, and `xch` for the band above the chart, RE-PINNED 2026-11-16 (called head); a state class like `is-focus` only ever on one of them), the few host classes it reaches into are the chart bar\'s on a phone and the chart card the band joins, and no other stylesheet in the repo uses either prefix',
-    sheets.length > 20 && others.every((f) => !/\.(xcc|xch)[-_\w]*/.test(readFileSync(f, 'utf8'))) && foreign.length === 0 && !/(^|[\s,>+~])\.is-[a-z]+/m.test(css.replace(/\/\*[\s\S]*?\*\//g, '')),
+    'called chart css: every class this lane styles wears its own prefix (`xcc`, `xch` for the band above the chart and `xcf` for the call card on it, RE-PINNED 2026-11-16 (called head, call card); a state class like `is-focus` only ever on one of them), the few host classes it reaches into are the chart bar\'s on a phone and the chart card the band joins, and no other stylesheet in the repo uses either prefix',
+    sheets.length > 20 && others.every((f) => !/\.(xcc|xch|xcf)[-_\w]*/.test(readFileSync(f, 'utf8'))) && foreign.length === 0 && !/(^|[\s,>+~])\.is-[a-z]+/m.test(css.replace(/\/\*[\s\S]*?\*\//g, '')),
     foreign.slice(0, 8).join(' '),
   )
+
+  // ── The call card: a call opened on the chart never moves the page ─────
+  {
+    const panel = readFileSync(new URL('../components/called/CallsPanel.tsx', import.meta.url), 'utf8')
+    const card = readFileSync(new URL('../components/called/CallFocus.tsx', import.meta.url), 'utf8')
+    const adv = readFileSync(new URL('../components/markets/chart/AdvancedChart.tsx', import.meta.url), 'utf8')
+    const hook = readFileSync(new URL('../lib/called-it/use-record.ts', import.meta.url), 'utf8')
+    check(
+      'called chart call card (2026-11-16): a dot or a bubble pressed on the chart opens that call IN a card on the chart (the whole post, the verdict, the numbers, the post on X in a new tab, older / newer, pin, close) and the page never scrolls for it: no `scrollIntoView` anywhere in the Calls strip (only the list\'s own box moves), the card is mounted inside the chart\'s canvas seat, and a dot pressed twice closes it',
+      !/scrollIntoView/.test(panel) && /list\.scrollTop/.test(panel) && /<CallFocus symbol=\{sym\} \/>/.test(adv) && adv.indexOf('<CallFocus') > adv.indexOf('className="tvx__host"') && /href=\{call\.url\} target="_blank" rel="noopener noreferrer nofollow"/.test(card) && /<PostText call=\{call\} \/>/.test(card) && !/dangerouslySetInnerHTML/.test(card) && /judgedLine\(call\)/.test(card) && /focusId === postId \? null : postId/.test(hook) && /e\.key === 'Escape'/.test(card),
+    )
+  }
 }
 
 // ── The controller, against a chart that is not the library ─────────────
@@ -725,7 +741,8 @@ export async function calledChartControllerPins(check: Check): Promise<void> {
   const picked = rec.calls.filter((c) => c.picked)
   const f = fakeChart(rec, LAPTOP)
   const picks: string[] = []
-  const ctl = createCalledPins({ symbol: 'BTC', inks: () => INKS, onPick: (id) => picks.push(id) })
+  const docks: string[] = []
+  const ctl = createCalledPins({ symbol: 'BTC', inks: () => INKS, onPick: (id) => picks.push(id), onDock: (side) => docks.push(side) })
   ctl.set({ record: rec, focusId: null, fitNonce: 1 })
   ctl.attach(f.widget, f.chart)
   await wait(500)
@@ -751,14 +768,23 @@ export async function calledChartControllerPins(check: Check): Promise<void> {
     JSON.stringify(stored.charts[0].chartProperties),
   )
   const firstCard = callouts[0]
+  const rules = () => [...f.shapes.values()].filter((s) => s.options.shape === 'vertical_line')
   const handled = ctl.event(firstCard.id, 'click')
   const notOurs = ctl.event('USER1', 'click')
   ctl.set({ record: rec, focusId: picks[0] ?? null, fitNonce: 1 })
   await wait(30)
+  const focused = rec.calls.find((c) => c.postId === picks[0]) as CalledCall
   check(
-    'called chart controller: a click on a card names its post to the strip and stops there; a click on the viewer\'s own drawing is not the plot\'s; the call the strip points at wears a thicker card',
-    handled && !notOurs && picks.length === 1 && picked.some((c) => c.postId === picks[0]) && firstCard.props.linewidth === 2 && callouts.slice(1).every((s) => s.props.linewidth === 1),
+    'called chart controller (RE-PINNED 2026-11-16 (call card)): a click on a card names its post and stops there; a click on the viewer\'s own drawing is not the plot\'s; the focused call wears a thicker card, its bar wears ONE dashed rule in the verdict\'s ink (the plot\'s own shape: locked, never saved), and the call card is told to dock on the side of the pane that bar is not on',
+    handled && !notOurs && picks.length === 1 && picked.some((c) => c.postId === picks[0]) && firstCard.props.linewidth === 3 && callouts.slice(1).every((s) => s.props.linewidth === 1) &&
+      rules().length === 1 && rules()[0].points[0].time === focused.barTime && rules()[0].options.overrides?.linecolor === verdictLook(focused.verdict, INKS).ink && rules()[0].options.overrides?.linestyle === 2 && rules()[0].options.lock === true && rules()[0].options.disableSave === true && ctl.owns(rules()[0].id) &&
+      docks.length > 0 && (docks[docks.length - 1] === 'left' || docks[docks.length - 1] === 'right') && dockFor(10, 800) === 'right' && dockFor(700, 800) === 'left' && dockFor(null, 800) === 'right',
+    `${rules().length} rule(s), dock ${docks.join()}`,
   )
+  // The focus let go: the rule leaves with it.
+  ctl.set({ record: rec, focusId: null, fitNonce: 1 })
+  await wait(30)
+  check('called chart controller: when no call is focused the bar\'s rule is gone (and the cards are thin again)', rules().length === 0 && callouts.every((s) => s.props.linewidth === 1), `${rules().length} rule(s)`)
   // A pin toggle: one more card, the same tally.
   const extra = rec.calls.find((c) => !c.picked) as CalledCall
   ctl.set({ record: applyPins(rec, [...picked.map((c) => c.postId), extra.postId]), focusId: null, fitNonce: 1 })

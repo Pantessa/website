@@ -189,11 +189,11 @@ function wrapGreedy(text: string, maxWidth: number, measure: Measure, maxLines: 
 }
 
 export interface PinText {
-  /** `@handle \u00b7 10 Jan 2026` */
+  /** `\u2715 missed \u00b7 10 Jan 2026`: the verdict's glyph and word, then the day. */
   head: string
   /** The post's own words, wrapped. */
   words: string[]
-  /** `-29.1% in 30 days \u00b7 missed` */
+  /** `-29.1% in 30 days, +14.2% since` */
   result: string
   /** A viewer pasted this post (it says so on its own line). */
   added: boolean
@@ -203,23 +203,26 @@ export interface PinText {
 }
 
 /**
- * The lines of a card: who and when, the post's own words (X's text and
- * nothing else), the move with the verdict's word. A post a viewer pasted
- * says so on a line of its own (the spec's mark) and gives up one line of its
- * words for it, so every card is the same height at most. No line is ever
- * wider than the card: a long handle or a long result takes two lines.
+ * The lines of a card (2026-11-16, the call card): the VERDICT first (its
+ * glyph, its word, the day), the post's own words (X's text and nothing
+ * else), then the move. The account is not repeated on every card: the band
+ * above the chart and the line on the pane both say whose plot it is. A post
+ * a viewer pasted says so on a line of its own (the spec's mark) and gives up
+ * one line of its words for it, so every card is the same height at most. No
+ * line is ever wider than the card: a long head or a long result takes two.
  */
-export function pinText(call: Pick<CalledCall, 'text' | 'quote' | 'postedAt' | 'verdict' | 'judgedPct'> & Partial<Pick<CalledCall, 'now' | 'target'>> & { origin?: CalledCall['origin'] }, handle: string, opts: { textWidth: number; measure: Measure; wordLines: number }): PinText {
+export function pinText(call: Pick<CalledCall, 'text' | 'quote' | 'postedAt' | 'verdict' | 'judgedPct'> & Partial<Pick<CalledCall, 'now' | 'target'>> & { origin?: CalledCall['origin'] }, _handle: string, opts: { textWidth: number; measure: Measure; wordLines: number }): PinText {
   const fit = (whole: string, parts: string[]) => (opts.measure(whole) <= opts.textWidth ? [whole] : parts)
   const added = call.origin === 'added'
-  const head = `@${handle} \u00b7 ${pinDate(call.postedAt)}`
-  const result = `${moveLine(call)} \u00b7 ${VERDICT_WORDS[call.verdict]}`
-  const headLines = [...fit(head, [`@${handle}`, pinDate(call.postedAt)]), ...(added ? [ADDED_MARK] : [])]
-  // Too wide for one line: two lines at most, the judged move, then how it has gone since with the verdict's word (a card never grows taller for it).
+  const verdict = `${VERDICT_GLYPH[call.verdict]} ${VERDICT_WORDS[call.verdict]}`
+  const head = `${verdict} \u00b7 ${pinDate(call.postedAt)}`
+  const result = moveLine(call)
+  const headLines = [...fit(head, [verdict, pinDate(call.postedAt)]), ...(added ? [ADDED_MARK] : [])]
+  // Too wide for one line: the judged move, then how it has gone since (a card never grows taller for it).
   const since = sinceLine(call)
-  let resultLines = fit(result, [judgedLine(call), since ? `${since} \u00b7 ${VERDICT_WORDS[call.verdict]}` : VERDICT_WORDS[call.verdict]])
-  // A card with a mark line and a two-line result would outgrow the rest: there the "since" is left to the Calls list.
-  if (since && headLines.length + 1 + resultLines.length > opts.wordLines + 2) resultLines = fit(`${judgedLine(call)} \u00b7 ${VERDICT_WORDS[call.verdict]}`, [judgedLine(call), VERDICT_WORDS[call.verdict]])
+  let resultLines = fit(result, since ? [judgedLine(call), since] : [result])
+  // A card with a mark line and a two-line result would outgrow the rest: there the "since" is left to the call card.
+  if (since && headLines.length + 1 + resultLines.length > opts.wordLines + 2) resultLines = [judgedLine(call)]
   const spare = Math.max(1, opts.wordLines - (headLines.length - 1) - (resultLines.length - 1))
   const words = wrapWords(clampPost(call.text, call.quote), opts.textWidth, opts.measure, spare)
   const lines = [...headLines, ...words, ...resultLines]
@@ -531,9 +534,31 @@ export function calloutShape(call: Pick<CalledCall, 'barTime' | 'priceAt' | 'ver
       // The lines are wrapped here (wrapWords) and the library's own wrap is off: with it on, every box is drawn the full
       // wrap width whatever it says (measured on v33.1.0), and a short post would cover candles for nothing.
       // A pasted post's card is set in italics (and says "added by a viewer" on its first line): a scanned call's never is.
-      overrides: { backgroundColor: inks.surf, bordercolor: look.ink, color: inks.fg, fontsize: CALLOUT_FONT_PX, bold: false, italic: call.origin === 'added', linewidth: opts.focus ? 2 : 1, transparency: 0, wordWrap: false },
+      overrides: { backgroundColor: mixInk(look.ink, inks.surf, CALLOUT_TINT), bordercolor: look.ink, color: inks.fg, fontsize: CALLOUT_FONT_PX, bold: false, italic: call.origin === 'added', linewidth: opts.focus ? 3 : 1, transparency: 0, wordWrap: false },
     },
   }
+}
+
+/** Two opaque `#rrggbb` inks mixed (`t` of the first). Anything else gives the second back: the canvas takes no `color-mix()`. */
+export function mixInk(a: string, b: string, t: number): string {
+  const hex = (c: string) => (/^#[0-9a-f]{6}$/i.test(c) ? [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)) : null)
+  const x = hex(a)
+  const y = hex(b)
+  if (!x || !y) return b
+  return `#${x.map((v, i) => Math.round(v * t + y[i] * (1 - t)).toString(16).padStart(2, '0')).join('')}`
+}
+
+/** How much of the verdict's ink a card's fill carries. */
+export const CALLOUT_TINT = 0.14
+
+/** The focused call's bar, marked: a dashed rule in the verdict's ink, so the call card and its dot read as one. */
+export function focusLineShape(call: Pick<CalledCall, 'verdict'>, inks: CalledInks): TvShapeOptions {
+  return { shape: 'vertical_line', ...PIN_SHAPE_FLAGS, overrides: { linecolor: verdictLook(call.verdict, inks).ink, linestyle: 2, linewidth: 2, showTime: false, extendLine: true } }
+}
+
+/** Which side of the pane the call card docks on: the one its bar is NOT on. A bar that is off screen leaves it on the right. */
+export function dockFor(x: number | null, paneWidth: number): 'left' | 'right' {
+  return x !== null && paneWidth > 0 && x > paneWidth / 2 ? 'left' : 'right'
 }
 
 export const CALLED_MARK_PREFIX = 'called:'
@@ -732,6 +757,8 @@ export interface CalledPinsHooks {
   inks(): CalledInks
   /** A card or a mark was clicked. */
   onPick(postId: string): void
+  /** Which side of the pane the call card should dock on for the focused call (the side its bar is not on). */
+  onDock?(side: 'left' | 'right'): void
   /** How many cards are on the chart (0 = marks only), for the strip's wording. */
   onCards?(count: number): void
   /** This chart can draw the plot (true once attached, false when it goes away): the strip offers "Fit all calls" only then. */
@@ -815,6 +842,8 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   const removing = new Set<string>()
   let labelId: string | null = null
   let labelKey = ''
+  let focusLine: { id: string; key: string } | null = null
+  let focusSeq = 0
   let marks: TvMark[] = []
   let plan: CalloutPlan = calloutPlan({ width: 0, height: 0 })
   let startAbove = true
@@ -1015,14 +1044,45 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     }
   }
 
+  /** The focused call's bar wears a dashed rule; the call card is told which side of the pane that bar is NOT on. */
+  const syncFocus = async (): Promise<void> => {
+    const c = chart
+    const record = plotted()
+    const call = record && input.focusId ? (record.calls.find((x) => x.postId === input.focusId) ?? null) : null
+    const inks = hooks.inks()
+    const key = c && call ? `${call.postId}|${call.barTime}|${verdictLook(call.verdict, inks).ink}` : ''
+    if (call) {
+      try {
+        const pane = paneSize()
+        hooks.onDock?.(dockFor(pane ? xForTime(sampleAxis(pane.width), call.barTime) : null, pane?.width ?? 0))
+      } catch {
+        /* the card keeps the side it has */
+      }
+    }
+    if ((focusLine?.key ?? '') === key) return
+    const my = ++focusSeq
+    if (focusLine) removeShape(focusLine.id)
+    focusLine = null
+    if (!c || !call) return
+    try {
+      const id = await c.createShape({ time: call.barTime }, focusLineShape(call, inks))
+      owned.add(id)
+      if (my !== focusSeq) removeShape(id)
+      else focusLine = { id, key }
+    } catch {
+      /* the card still says which call it is */
+    }
+  }
+
   const applyFocus = () => {
     const c = chart
     if (!c) return
+    void syncFocus()
     for (const d of cards.values()) {
       try {
         const shape = c.getShapeById(d.shapeId)
         const focus = d.postId === input.focusId
-        shape.setProperties({ linewidth: focus ? 2 : 1 })
+        shape.setProperties({ linewidth: focus ? 3 : 1 })
         if (focus) shape.bringToFront()
       } catch {
         /* redrawn on the next render */
@@ -1089,6 +1149,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       marks = []
       drawnKey = ''
       setMargins(null)
+      void syncFocus()
       if (had) refreshMarks()
       hooks.onCards?.(0)
       return
@@ -1162,6 +1223,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     drawnKey = key
     refreshMarks()
     hooks.onCards?.(cards.size)
+    void syncFocus()
     // The scale settles a frame or two after the margins change: place once more.
     scheduleRelayout()
   }
@@ -1234,6 +1296,9 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       }
       try {
         clearShapes()
+        focusSeq++
+        if (focusLine) removeShape(focusLine.id)
+        focusLine = null
         setMargins(null)
       } catch {
         /* the widget is going away */
@@ -1262,6 +1327,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
         // The library's own "remove drawings" took a pin. A pin is the plot's, not a drawing: it comes back.
         owned.delete(id)
         if (labelId === id) labelId = null
+        if (focusLine?.id === id) focusLine = null
         drawnKey = ''
         schedule()
       }

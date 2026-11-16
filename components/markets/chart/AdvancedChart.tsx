@@ -50,6 +50,7 @@ import { linesFromShapes, sameLines, shapeFromLine, type ShapeSnapshot } from '@
 import { externalApplied, layoutForChart, legacyMoved, markExternalApplied, markLegacyMoved, readStoredLayout, writeStoredLayout } from '@/lib/tv/store'
 import { tvCssProperties, tvOverrides, tvStudyOverrides } from '@/lib/tv/theme'
 import type { TvChartApi, TvWidget } from '@/lib/tv/types'
+import CallFocus from '@/components/called/CallFocus'
 import { useCalledPins } from '@/lib/called-it/use-record'
 import { withCalledMarks, withoutCalled } from '@/lib/tv/called-pins'
 import { readTokens, type Tokens } from './chart-tokens'
@@ -721,6 +722,8 @@ export default function AdvancedChart({
 
       <div className={`mkt-chart__canvas tvx__canvas${fill ? ' min-h-0 flex-1' : ''}`} style={fill ? undefined : { height: heightProp }}>
         <div ref={hostRef} className="tvx__host" />
+        {/* One call, opened on the chart: a dot or a bubble pressed never scrolls the page. */}
+        <CallFocus symbol={sym} />
       </div>
 
       {/* THE PLAN: what you drew, as things you can do. */}

@@ -34,7 +34,7 @@ import './called-chart.css'
 const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
 
 /** An avatar is shown only from X's own image hosts (lane SOURCE keeps no other); anything else is an initial. */
-function avatarOf(url: string | null): string | null {
+export function avatarOf(url: string | null): string | null {
   if (!url) return null
   try {
     const u = new URL(url)
@@ -51,7 +51,7 @@ function avatarOf(url: string | null): string | null {
  * reorder the row around it). Both sides are matched with their whitespace
  * collapsed, because the stored quote is whitespace-normalized.
  */
-function PostText({ call }: { call: Pick<CalledCall, 'text' | 'quote'> }) {
+export function PostText({ call }: { call: Pick<CalledCall, 'text' | 'quote'> }) {
   const text = cleanPostText(call.text)
   const quote = cleanPostText(call.quote)
   const at = quote ? text.indexOf(quote) : -1
@@ -122,8 +122,16 @@ function Row({ call, index, px, focused, onFocus, onPin }: { call: CalledCall; i
   const ref = useRef<HTMLLIElement | null>(null)
   const by = useCalled((s) => (focused ? s.focusBy : null))
   useEffect(() => {
-    // A pin clicked on the chart brings its words into view; a row clicked here is already under the pointer.
-    if (focused && by === 'chart') ref.current?.scrollIntoView({ block: 'nearest', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    // A call opened on the chart (a dot, a bubble, the call card's own arrows) is shown THERE, in the call card. The page
+    // never moves for it (2026-11-16: the jump down to this list was disorienting); only the list's own box scrolls, so
+    // the row is in view when the reader comes down to it.
+    const li = ref.current
+    const list = li?.parentElement
+    if (!focused || !li || !list || (by !== 'chart' && by !== 'card') || list.scrollHeight <= list.clientHeight) return
+    const row = li.getBoundingClientRect()
+    const box = list.getBoundingClientRect()
+    if (row.top < box.top) list.scrollTop -= box.top - row.top
+    else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom
   }, [focused, by])
   const word = VERDICT_WORDS[call.verdict]
   return (
@@ -398,7 +406,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
         <header className="xcc__head xcc__head--list">
           <p className="xcc__k mono">
             The calls
-            <span className="xcc__name"> · oldest first · tap one to find it on the chart</span>
+            <span className="xcc__name"> · oldest first · tap one to open it on the chart</span>
           </p>
           {record.words.added ? <p className="xcc__standing xcc__addednote">{record.words.added}</p> : null}
         </header>
@@ -431,7 +439,7 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
         {advanced && pinned > cards && record.calls.length > 0 ? (
           <p className="xcc__line" data-called-cards={cards}>
             {cards === 0
-              ? 'On a chart this narrow every call is a mark on its bar. Tap a mark to find its post here.'
+              ? 'On a chart this narrow every call is a mark on its bar. Tap a mark to open its post.'
               : `The chart has room for ${cards} cards at this width. The other pinned calls are marks on their bars, like the rest.`}
           </p>
         ) : null}

@@ -285,7 +285,9 @@ interface CalledState {
   unlabeled: number
   /** The call the chart and the strip are both pointing at, and who pointed. */
   focusId: string | null
-  focusBy: 'chart' | 'strip' | null
+  focusBy: 'chart' | 'strip' | 'card' | null
+  /** The side of the chart the call card docks on: the one the focused call's bar is not on. */
+  focusDock: 'left' | 'right'
   /** Bumped to ask the chart for "fit all calls". */
   fitNonce: number
   /** Cards the chart is showing (0 = marks only, or the built-in chart). */
@@ -302,7 +304,8 @@ interface CalledState {
   togglePin(postId: string): void
   rulePins(): void
   clear(): void
-  focus(postId: string | null, by: 'chart' | 'strip'): void
+  focus(postId: string | null, by: 'chart' | 'strip' | 'card'): void
+  setDock(side: 'left' | 'right'): void
   fit(): void
   retry(): void
   scan(): Promise<void>
@@ -429,6 +432,7 @@ export const useCalled = create<CalledState>((set, get) => {
     unlabeled: 0,
     focusId: null,
     focusBy: null,
+    focusDock: 'right',
     fitNonce: 0,
     cards: 0,
     advanced: false,
@@ -485,6 +489,9 @@ export const useCalled = create<CalledState>((set, get) => {
     },
     focus(postId, by) {
       set({ focusId: postId, focusBy: postId ? by : null })
+    },
+    setDock(side) {
+      if (get().focusDock !== side) set({ focusDock: side })
     },
     fit() {
       set((s) => ({ fitNonce: s.fitNonce + 1 }))
@@ -634,7 +641,9 @@ export function useCalledPins(symbol: string): CalledPinsController {
     ref.current = createCalledPins({
       symbol,
       inks: inksNow,
-      onPick: (postId) => useCalled.getState().focus(postId, 'chart'),
+      // A dot or a card pressed again closes its call card.
+      onPick: (postId) => useCalled.getState().focus(useCalled.getState().focusId === postId ? null : postId, 'chart'),
+      onDock: (side) => useCalled.getState().setDock(side),
       onCards: (n) => useCalled.getState().setCards(n),
       onAttach: (on) => useCalled.getState().setAdvanced(on),
     })

@@ -330,3 +330,88 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
   .xch__tools .xcc-seg__btn { flex: 1 1 0; justify-content: center; }
   .xch__clear { position: absolute; top: 8px; right: 6px; }
 }
+
+/* ── THE CALL CARD (2026-11-16): one call, opened on the chart. Prefix `xcf`,
+   checked against every stylesheet in the repo. It docks on the side of the
+   chart its bar is not on; on a phone it is a sheet at the foot of the screen. ── */
+.xcf {
+  --xcf-tone: var(--muted);
+  position: absolute; z-index: 6; top: 54px; display: flex; flex-direction: column; width: min(372px, calc(100% - 150px)); max-height: calc(100% - 118px); min-width: 0; overflow: hidden;
+  border-radius: 16px; border: 1px solid color-mix(in srgb, var(--xcf-tone) 45%, var(--line-2)); background: var(--surf-1); color: var(--fg); text-align: left;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 24px 64px rgb(0 0 0 / 0.42), 0 4px 14px rgb(0 0 0 / 0.22);
+  animation: xcf-in .18s cubic-bezier(.2, .8, .2, 1);
+}
+.xcf:focus { outline: 0; }
+.xcf[data-dock='right'] { right: 78px; }
+.xcf[data-dock='left'] { left: 66px; }
+.xcf[data-verdict='right'] { --xcf-tone: var(--mk-up, var(--accent)); }
+.xcf[data-verdict='wrong'] { --xcf-tone: var(--mk-down, var(--sell)); }
+.xcf[data-verdict='open'] { --xcf-tone: var(--gold, #d9a441); }
+/* Movement only: a frame that stalls mid-way (a background tab) must never leave the card see-through over the chart. */
+@keyframes xcf-in { from { transform: translateY(8px) scale(.985); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .xcf { animation: none; } }
+
+/* The verdict leads: a band in its own ink. */
+.xcf__band { flex: none; display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 6px 0 14px; background: color-mix(in srgb, var(--xcf-tone) 15%, var(--surf-1)); border-bottom: 1px solid color-mix(in srgb, var(--xcf-tone) 30%, var(--line)); }
+.xcf__verdict { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.005em; color: var(--xcf-tone); white-space: nowrap; }
+.xcf__verdict::first-letter { text-transform: uppercase; }
+.xcf__glyph { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--xcf-tone); font-style: normal; font-size: 11.5px; line-height: 1; }
+.xcf[data-verdict='right'] .xcf__glyph, .xcf[data-verdict='wrong'] .xcf__glyph { background: var(--xcf-tone); color: var(--bg); }
+.xcf__stance { flex: none; padding: 2px 6px; border-radius: 5px; border: 1px solid var(--line-2); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.xcf__step { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 1px; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.xcf__at { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+.xcf__icon { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; transition: color var(--dur-1, .16s), background var(--dur-1, .16s); }
+.xcf__icon svg { width: 16px; height: 16px; }
+.xcf__icon:hover:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--fg) 9%, transparent); }
+.xcf__icon:disabled { opacity: .3; cursor: default; }
+.xcf__icon:focus-visible, .xcf__x:focus-visible, .xcf__pin:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.xcf__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 14px; }
+.xcf__who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.xcf__avatar { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; background: var(--surf-2); box-shadow: 0 0 0 1px var(--line-2); color: var(--muted); font-size: 15px; font-weight: 600; }
+.xcf__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.xcf__names { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.xcf__name { font-size: 14px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xcf__sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xcf__likes { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted-2); }
+.xcf__likes svg { width: 12px; height: 12px; }
+.xcf__added { margin: 0; align-self: flex-start; padding: 2px 7px; border-radius: 5px; border: 1px dashed var(--line-2); font-size: 10px; color: var(--muted); }
+.xcf__text { margin: 0; font-size: 15px; line-height: 1.5; color: var(--fg); overflow-wrap: anywhere; white-space: pre-line; }
+.xcf__text mark { background: color-mix(in srgb, var(--xcf-tone) 24%, transparent); color: inherit; border-radius: 3px; padding: 1px 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.xcf__level { margin: 0; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); }
+.xcf__level b { margin-left: 6px; font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 600; color: var(--fg); }
+
+/* The numbers the verdict was read from. */
+.xcf__nums { flex: none; margin: 0; display: flex; border-top: 1px solid var(--line); }
+.xcf__num { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px 11px; }
+.xcf__num + .xcf__num { border-left: 1px solid var(--line); }
+.xcf__num:first-child { flex: 0 0 auto; padding-left: 16px; }
+.xcf__num dt { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
+.xcf__num dd { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--fg); }
+.xcf__num.is-judged dd { color: var(--xcf-tone); }
+.xcf__num[data-sign='up'] dd { color: var(--mk-up, var(--accent)); }
+.xcf__num[data-sign='down'] dd { color: var(--mk-down, var(--sell)); }
+
+.xcf__foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--line); }
+.xcf__x {
+  flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--fg); background: var(--fg); color: var(--bg);
+  font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; transition: opacity var(--dur-1, .16s);
+}
+a.xcf__x:hover { opacity: .88; }
+.xcf__x svg { width: 14px; height: 14px; }
+.xcf__x.is-none { border-color: var(--line-2); background: none; color: var(--muted-2); font-weight: 500; font-size: 12px; }
+.xcf__pin { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: none; color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: color var(--dur-1, .16s), border-color var(--dur-1, .16s); }
+.xcf__pin svg { width: 13px; height: 13px; }
+.xcf__pin:hover { color: var(--fg); border-color: var(--fg); }
+.xcf__pin[aria-pressed='true'] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+@media (hover: none) {
+  .xcf__icon { width: 44px; height: 44px; }
+  .xcf__x, .xcf__pin { min-height: 46px; }
+}
+/* A phone: a sheet at the foot of the screen, whichever side the bar is on. */
+@media (max-width: 640px) {
+  .xcf, .xcf[data-dock='left'], .xcf[data-dock='right'] { position: fixed; z-index: 70; top: auto; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); width: auto; max-height: min(72dvh, 560px); box-shadow: 0 -8px 40px rgb(0 0 0 / 0.5), 0 0 0 100vmax rgb(0 0 0 / 0.28); }
+  .xcf__num { padding: 9px 10px 10px; }
+  .xcf__num:first-child { padding-left: 14px; }
+}
