@@ -215,6 +215,16 @@ export default function CallLead({ record, call, n, avatar, unit = 'usd', closes
           Open the live {symbol} chart on this call
         </Link>
         <CallActs symbol={symbol} stance={call.stance} handle={handle} postId={call.postId} variant="stack" />
+        {/* The account itself lands here from a message: say what signing in changes, and where. */}
+        {!record.verified && (
+          <p className="xcl-you">
+            Is this you?{' '}
+            <a href="#plot" data-journey="called_call_jump_verify">
+              Sign in with X
+            </a>{' '}
+            and this record says Verified.
+          </p>
+        )}
       </div>
     </header>
   )

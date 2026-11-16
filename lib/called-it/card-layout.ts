@@ -610,13 +610,17 @@ export function displayPost(text: string): string {
 }
 
 /** The longest quote the call image draws, in lowercase-letter widths (its smallest type, six lines). */
-export const OG_CALL_QUOTE_UNITS = 176
+export const OG_CALL_QUOTE_UNITS = 160
 
-/** The quote's type on the call image for a text this wide: big while it is short, never under 34px. `capacity` is what fits at that size. */
+/**
+ * The quote's type on the call image for a text this wide: big while it is
+ * short, never under 34px. `capacity` is what a size holds with room to spare
+ * (lines break on words, so a size is never filled past four fifths).
+ */
 export const OG_CALL_QUOTE_STEPS = [
-  { capacity: 50, size: 60, lines: 3 },
-  { capacity: 84, size: 49, lines: 4 },
-  { capacity: 124, size: 41, lines: 5 },
+  { capacity: 44, size: 60, lines: 3 },
+  { capacity: 76, size: 49, lines: 4 },
+  { capacity: 112, size: 41, lines: 5 },
   { capacity: OG_CALL_QUOTE_UNITS, size: 34, lines: 6 },
 ] as const
 

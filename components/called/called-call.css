@@ -15,7 +15,8 @@
    always also said in words.
 
    Rides the site's tokens and the record sheet's own (--xrc-tone and the
-   font aliases are set on .xrc, which every element here sits inside), so
+   font aliases are set on the record page's shell, which every element here
+   sits inside; the shell's own class is never named in this sheet), so
    light mode is the token flip. No literal colour, no px font, no px radius. */
 
 .xcl { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
@@ -24,7 +25,7 @@
 /* ── What this is, and the jump to the share row ───────────────────────── */
 .xcl-kicker { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin: 0; min-height: 28px; font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
 .xcl-kicker__ctx { min-width: 0; }
-.xrc .xcl-kicker__jump { flex: none; display: inline-flex; align-items: center; min-height: 28px; padding: 0 var(--sp-3); border: 1px solid var(--line-2); border-radius: var(--r-pill); color: var(--fg); text-decoration: none; letter-spacing: 0.06em; transition: border-color var(--dur-1) ease; }
+.xcl .xcl-kicker__jump { flex: none; display: inline-flex; align-items: center; min-height: 28px; padding: 0 var(--sp-3); border: 1px solid var(--line-2); border-radius: var(--r-pill); color: var(--fg); text-decoration: none; letter-spacing: 0.06em; transition: border-color var(--dur-1) ease; }
 .xcl-kicker__jump::after { content: '\2193'; margin-left: 6px; color: var(--accent); }
 .xcl-kicker__jump:hover, .xcl-kicker__jump:focus-visible { border-color: var(--fg); outline: none; }
 
@@ -34,7 +35,7 @@
 .xcl-verdict__mark.is-added { background: transparent; border: 0.07em solid var(--xrc-tone); }
 
 /* ── Who ───────────────────────────────────────────────────────────────── */
-.xrc .xcl-who { align-self: flex-start; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; max-width: 100%; min-height: 44px; text-decoration: none; }
+.xcl .xcl-who { align-self: flex-start; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; max-width: 100%; min-height: 44px; text-decoration: none; }
 .xcl-who__face { flex: none; display: grid; place-items: center; width: 40px; height: 40px; overflow: hidden; border-radius: 50%; border: 1px solid var(--line); background: var(--surf-2); font-family: var(--xrc-display); font-size: var(--fs-lg); font-weight: 600; line-height: 1; }
 .xcl-who__face img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .xcl-who__id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -54,7 +55,7 @@
 
 .xcl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-4); margin: 0; font-size: var(--fs-md); line-height: 1.4; color: var(--muted); }
 .xcl-meta__added { padding: 1px var(--sp-2); border: 1px dashed var(--line-2); border-radius: var(--r-pill); color: var(--fg); font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; }
-.xrc .xcl-meta a { color: var(--fg); font-weight: 600; text-decoration: none; }
+.xcl .xcl-meta a { color: var(--fg); font-weight: 600; text-decoration: none; }
 .xcl-meta a::after { content: '\2197'; margin-left: 4px; color: var(--accent); }
 .xcl-meta a:hover, .xcl-meta a:focus-visible { text-decoration: underline; text-underline-offset: 0.2em; outline: none; }
 
@@ -74,7 +75,7 @@
 .xcl-spark__dot { position: absolute; box-sizing: content-box; width: 5px; height: 5px; margin: -4.5px 0 0 -4.5px; border: 2px solid var(--bg); border-radius: 50%; background: var(--xrc-tone); }
 .xcl-spark__dot.is-added { background: var(--bg); outline: 1.5px solid var(--xrc-tone); outline-offset: -2px; }
 .xcl-spark__dot--this { width: 11px; height: 11px; margin: -8.5px 0 0 -8.5px; border-width: 3px; }
-.xcl-spark__day { position: absolute; top: -8px; bottom: 0; width: 1px; margin-left: -0.5px; background: var(--xrc-tone); opacity: 0.8; }
+.xcl-spark__day { position: absolute; top: -8px; bottom: 0; width: 1px; background: var(--xrc-tone); }
 .xcl-spark__tag { position: absolute; top: -26px; transform: translateX(-50%); font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 .xcl-spark__tag[data-edge='start'] { transform: none; margin-left: -4px; }
 .xcl-spark__tag[data-edge='end'] { transform: translateX(-100%); margin-left: 4px; }
@@ -93,9 +94,13 @@
 
 /* ── The next press ────────────────────────────────────────────────────── */
 .xcl-go { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-1); }
-.xrc .xcl-btn { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 52px; padding: var(--sp-2) var(--sp-5); border: 1px solid var(--accent); border-radius: var(--r-pill); background: var(--accent); color: var(--ink, var(--bg)); font-family: var(--xrc-ui); font-size: var(--fs-base); font-weight: 600; line-height: 1.2; text-align: center; text-decoration: none; transition: filter var(--dur-1) ease; }
+.xcl .xcl-btn { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 52px; padding: var(--sp-2) var(--sp-5); border: 1px solid var(--accent); border-radius: var(--r-pill); background: var(--accent); color: var(--ink, var(--bg)); font-family: var(--xrc-ui); font-size: var(--fs-base); font-weight: 600; line-height: 1.2; text-align: center; text-decoration: none; transition: filter var(--dur-1) ease; }
 .xcl-btn::after { content: '\2192'; }
-.xrc .xcl-btn:hover, .xrc .xcl-btn:focus-visible { filter: brightness(1.08); outline: none; }
+.xcl .xcl-btn:hover, .xcl .xcl-btn:focus-visible { filter: brightness(1.08); outline: none; }
+
+/* For the account itself: what signing in changes. A quiet line under the buttons. */
+.xcl-you { margin: 0; font-size: var(--fs-md); line-height: 1.4; color: var(--muted); }
+.xcl .xcl-you a { color: var(--fg); font-weight: 600; text-underline-offset: 0.2em; }
 
 /* ── Under the lead: the record, as it always reads ────────────────────── */
 .xcl-rest { margin-top: var(--sp-5); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
@@ -103,12 +108,12 @@
 .xcl-leadcard__mark { padding: 1px var(--sp-2); border: 1px solid var(--line-2); border-radius: var(--r-pill); color: var(--fg); text-transform: uppercase; letter-spacing: 0.08em; }
 
 /* The card the link unfurls as, shown beside the share row before it is posted. */
-.xrc .xcl-card { display: block; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surf-1); transition: border-color var(--dur-1) ease; }
+.xcl-card.xcl-card { display: block; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surf-1); transition: border-color var(--dur-1) ease; }
 .xcl-card img { display: block; width: 100%; height: auto; aspect-ratio: 1200 / 630; }
-.xrc .xcl-card:hover, .xrc .xcl-card:focus-visible { border-color: var(--line-2); outline: none; }
+.xcl-card.xcl-card:hover, .xcl-card.xcl-card:focus-visible { border-color: var(--line-2); outline: none; }
 
 /* ── The record page's highlight: the hit it is shown by, one link to its address ── */
-.xrc .xcl-best { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-1) 0 var(--sp-1) var(--sp-4); border-left: 2px solid var(--xrc-tone); text-decoration: none; }
+.xcl-best.xcl-best { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-1) 0 var(--sp-1) var(--sp-4); border-left: 2px solid var(--xrc-tone); text-decoration: none; }
 .xcl-best__kicker { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-3); font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
 .xcl-best__kicker b { font-weight: 600; color: var(--fg); }
 .xcl-best__mark { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--xrc-tone); }
@@ -123,13 +128,13 @@
 /* ── From a desk: the share row stands beside the lead, so the jump goes ── */
 @media (min-width: 1024px) {
   .xcl { gap: var(--sp-4); }
-  .xrc .xcl-kicker__jump { display: none; }
+  .xcl .xcl-kicker__jump { display: none; }
   .xcl-who__face { width: 48px; height: 48px; }
   .xcl-who__name { font-size: var(--fs-lg); }
   .xcl-post { padding-left: var(--sp-5); }
   .xcl-facts dd { font-size: var(--fs-lg); }
   .xcl-record__tally { font-size: var(--fs-lg); }
-  .xrc .xcl-btn { align-self: flex-start; min-width: 360px; }
+  .xcl .xcl-btn { align-self: flex-start; min-width: 360px; }
   .xcl-go { align-items: flex-start; }
 }
 
@@ -138,13 +143,14 @@
   /* The record's own chart is the next thing down the page; the first screen keeps the words and the button. */
   .xcl-spark { display: none; }
   .xcl-facts { gap: var(--sp-2) var(--sp-4); }
+  .xcl-best__text { -webkit-line-clamp: 2; line-clamp: 2; font-size: var(--fs-lg); }
 }
 @media (hover: none) {
-  .xrc .xcl-kicker__jump { min-height: 44px; padding: 0 var(--sp-4); }
+  .xcl .xcl-kicker__jump { min-height: 44px; padding: 0 var(--sp-4); }
   .xcl-kicker { min-height: 44px; }
   .xcl-meta { margin-block: -6px; }
   .xcl-meta a { display: inline-flex; align-items: center; min-height: 44px; }
-  .xcl-best__go { display: inline-flex; align-items: center; min-height: 44px; }
+  .xcl-you a { display: inline-flex; align-items: center; min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .xcl-kicker__jump, .xcl-btn, .xcl-card { transition: none; }

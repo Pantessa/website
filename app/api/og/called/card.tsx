@@ -434,7 +434,7 @@ function OneCallCard({ input, address }: { input: CalledCardInput; address: stri
       <div style={{ position: 'absolute', left: Q.x, top: Q.y, width: Q.w, height: Q.h, display: 'flex' }}>
         <div style={{ display: 'flex', width: 3, height: '100%', background: tone, flexShrink: 0, borderRadius: 2 }} />
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginLeft: 24, width: Q.w - 27, height: '100%', overflow: 'hidden' }}>
-          <span style={{ color: INK, fontFamily: 'Newsreader', fontSize: fit.size, lineHeight: 1.14, letterSpacing: fit.size > 45 ? -1.2 : -0.6 }}>{`“${quote.text}”`}</span>
+          <span style={{ color: INK, fontFamily: 'Newsreader', fontSize: fit.size, lineHeight: 1.14, letterSpacing: fit.size > 45 ? -1.2 : -0.6, textWrap: 'balance' }}>{`“${quote.text}”`}</span>
         </div>
       </div>
 
