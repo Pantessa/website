@@ -480,7 +480,7 @@ const CORPUS: Entry[] = [
   { ask: 'Swap 20 USDC from base to arbitrum', source: 'mk2 landing venue orbit (NEAR Intents)', expect: 'action' },
   { ask: 'Buy $10 of AAPL', source: 'mk2 landing venue orbit (Robinhood Chain)', expect: 'action' },
   { ask: 'Protect my ETH long with a 5% stop', source: 'mk2 landing venue orbit (Guardian; replaced the DCA card 2026-09-16)', expect: 'action' },
-  { ask: 'Buy $50 of ETH, then stake 0.05 ETH with Lido', source: 'mk2 landing compound (one job)', expect: 'action' },
+  { ask: '2x Long $12 of ETH on Hyperliquid, then protect my ETH long with a 5% stop', source: 'mk2 landing compound (one job; lib/markets-copy VENUE_BAND.compound since 2026-11-17, the old Buy-then-stake sentence never compiled as a job)', expect: 'action' },
 
   // MK2/EXEC (2026-09-15) — the symbol page's venue map, header strip,
   // position exits and compound composer. Every chip on /t/<sym> is one of

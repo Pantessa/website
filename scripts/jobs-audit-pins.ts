@@ -35,10 +35,7 @@ const inInventory = (s: string) => INVENTORY.some((e) => norm(e.ask) === norm(s)
 /** Sentences in the drive that do NOT compile as a job, with the reason
  *  (measured by the drive, 2026-11-17). Remove an entry when its sentence is
  *  fixed or no longer listed. */
-export const KNOWN_NON_JOBS: Record<string, string> = {
-  'Buy $50 of ETH, then stake 0.05 ETH with Lido':
-    'STALE CORPUS ROW: scripts/audit-asks.ts still lists the old VENUE_BAND.compound as "mk2 landing compound (one job)"; lane OFFERS replaced it in lib/markets-copy.ts. A chainless dollar buy has no job segment (the chat answers the stake alone). The coordinator owns that row.',
-}
+export const KNOWN_NON_JOBS: Record<string, string> = {}
 
 export function jobsAuditPins(check: Check) {
   check('jobs audit: the lane\'s pin file is wired into the harness', true)
