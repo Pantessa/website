@@ -39,6 +39,7 @@ import {
   wallsIn,
 } from '../lib/depth'
 import { bookProductFor } from '../lib/depth-feed'
+import { depthCardMeta, depthCurveSvg, depthLean, depthOgPath, depthSourceWords, depthTweetHref, depthWindowWords, parseDepthOgQuery } from '../lib/depth-share'
 import { fmtLimitPrice } from '../lib/order-ticket'
 import { parseViewParam, viewUrl } from '../lib/markets'
 
@@ -226,6 +227,50 @@ export function depthPins(check: Check): void {
       return /aimedRef\.current === aim\.at\) return/.test(ticket) && /patch\(\{ type: 'limit', limitPrice: aim\.limitPrice \}\)/.test(ticket) && /if \(!types\.includes\('limit'\)\) return/.test(ticket) &&
         /setOpen\(true\)\s*onSide\(aim\.side\)/.test(rail) && /if \(!sides\.includes\(aim\.side\)\) return/.test(rail) && /setTicket\(aim\.side\)/.test(strip) && /if \(!sideList\.includes\(aim\.side\)\) return/.test(strip)
     })())
+  // ── Share the depth (2026-11-17): a Depth link names its own card ──
+  {
+    const at = Date.UTC(2026, 10, 17, 14, 5, 30)
+    const href = depthOgPath('UNI', { pct: 10, unit: 'base', overlay: true }, at)
+    const back = parseDepthOgQuery(href.slice(href.indexOf('?')))
+    check('depth share: the image path carries the window + unit, never the overlay, and the page minute (X caches a card by its URL)',
+      href === `/api/og/depth?symbol=UNI&win=10&unit=base&t=${Math.floor(at / 60_000)}` && depthOgPath('ETH', DEFAULT_DEPTH_SETTINGS) === '/api/og/depth?symbol=ETH' &&
+        !!back && back.symbol === 'UNI' && back.settings.pct === 10 && back.settings.unit === 'base' && back.settings.overlay === false, href)
+    check('depth share: the image route refuses a symbol the book routes would refuse',
+      parseDepthOgQuery('?symbol=') === null && parseDepthOgQuery('?symbol=../x') === null && parseDepthOgQuery('?symbol=ABCDEFGHIJKLM') === null && parseDepthOgQuery('?symbol=hype')?.symbol === 'hype')
+    check('depth share: the window in words', depthWindowWords(10) === '±10%' && depthWindowWords(0.5) === '±0.5%' && depthWindowWords(null) === 'the whole book')
+    const lean = (bidUsd: number, askUsd: number) => depthLean({ bidUsd, askUsd })
+    check('depth share: the lean names the heavier side and by how much; about even under 1.1×; one empty side said so',
+      lean(954_000, 410_000).words === '2.3× more bids than asks' && lean(100, 2_500).words === '25× more asks than bids' && lean(100, 105).side === 'even' &&
+        lean(0, 50).words === 'Only asks in this window' && lean(0, 0).words === 'Nothing resting in this window', lean(954_000, 410_000).words)
+    const w = depthWindow(BOOK, 10)!
+    const opt = { width: 1000, height: 200, unit: 'usd' as const, bid: '#0f0', ask: '#f00', bidFill: 'rgba(0,255,0,0.1)', askFill: 'rgba(255,0,0,0.1)', grid: '#222', mid: '#fff' }
+    const c = depthCurveSvg(w, opt)
+    const nums = [...c.svg.matchAll(/ d="([^"]+)"/g)].flatMap((m) => [...m[1].matchAll(/-?\d+(?:\.\d+)?/g)].map((n) => Number(n[0])))
+    check('depth share: the curve is one SVG, both sides stepped and filled to the axis, the mid dashed, every coordinate inside the box',
+      c.svg.startsWith('<svg') && (c.svg.match(/<path /g) ?? []).length === 4 && /stroke-dasharray/.test(c.svg) && / Z"/.test(c.svg) && !/<text/.test(c.svg) &&
+        nums.every((n) => n >= -1 && n <= 1000.5) && c.midX > 0 && c.midX < 1000 && c.top > w.maxCumUsd, c.svg.slice(0, 160))
+    check('depth share: one wall per side, labelled in the unit, placed on its own step; ticks are the two edges and the mid',
+      c.walls.length === 2 && c.walls[0].side === 'bid' && c.walls[0].text === `wall ${fmtDepthUsd(7.1 * 1000)}` && c.walls[0].x < c.midX && c.walls[1].x > c.midX &&
+        depthCurveSvg(w, { ...opt, unit: 'base' }).walls[0].text === `wall ${fmtDepthSize(1000)}` &&
+        c.ticks.length === 3 && c.ticks[0].x === 0 && c.ticks[2].x === 1000 && c.ticks[1].text === fmtDepthPrice(w.mid), JSON.stringify(c.walls))
+    const tweet = new URL(depthTweetHref('UNI', 'https://www.pantessa.com/t/UNI?view=depth&win=10', 10, true))
+    check('depth share: the post on X carries the depth link and only promises a resting order where a level takes one',
+      tweet.searchParams.get('url') === 'https://www.pantessa.com/t/UNI?view=depth&win=10' && /\$UNI order book/.test(tweet.searchParams.get('text') ?? '') && /±10%/.test(tweet.searchParams.get('text') ?? '') &&
+        /rest an order/.test(tweet.searchParams.get('text') ?? '') && !/rest an order/.test(new URL(depthTweetHref('HYPE', 'x', 2, false)).searchParams.get('text') ?? '') &&
+        /rest a limit/.test(depthCardMeta('UNI', DEFAULT_DEPTH_SETTINGS, true).description) && !/limit/.test(depthCardMeta('HYPE', DEFAULT_DEPTH_SETTINGS, false).description))
+    check('depth share: the card foot names the book and the UTC minute', depthSourceWords('coinbase', at) === 'Book · Coinbase level 2 · read 2026-11-17 14:05 UTC' && depthSourceWords('hyperliquid', at).startsWith('Book · Hyperliquid l2Book'))
+    check('depth share, wired: a ?view=depth page names /api/og/depth in og: + twitter: (only then), the route draws the server book and falls back to the symbol card, robots allows /api/og/, the dialog previews the card and posts the depth link',
+      (() => {
+        const page = readFileSync('app/t/[symbol]/page.tsx', 'utf8')
+        const route = readFileSync('app/api/og/depth/route.tsx', 'utf8')
+        const robots = readFileSync('app/robots.ts', 'utf8')
+        const share = readFileSync('components/markets/chart/ChartShare.tsx', 'utf8')
+        return /sp\.view === 'depth'/.test(page) && /depthOgPath\(depth\.symbol, settings, Date\.now\(\)\)/.test(page) && /twitter: \{[^}]*images: \[image\]/.test(page) &&
+          /readServerDepthBook\(q\.symbol\)/.test(route) && /opengraph-image/.test(route) && !/status: 500/.test(route) &&
+          /allow: \['\/', '\/api\/og\/'\]/.test(robots) &&
+          /depthOgPath\(symbol, depth, Date\.now\(\)\)/.test(share) && /depthTweetHref\(symbol, chartUrl, depth\.pct, depthRests\)/.test(share) && /canPublish = lines\.length > 0 && !depth/.test(share)
+      })())
+  }
   check('depth: the view\'s canvas reads its inks from the chart tokens (never a color-mix into a fillStyle), draws nothing it has not measured, and the card gives it the Battlefield\'s room',
     (() => {
       const src = readFileSync('components/markets/chart/DepthChart.tsx', 'utf8')
