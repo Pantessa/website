@@ -13,6 +13,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { INVENTORY, PARSER_BUILDERS, auditAsksThenRows, driveList } from './jobs-audit-drive'
+import { JOB_OFFER_SENTENCES, JOB_OFFER_EXAMPLE } from '../lib/job-offers'
 import { compileJobAsk, JOB_SEGMENT_PARSERS } from '../lib/jobs'
 import { JOBS_DOOR } from '../lib/first-run'
 import { HERO_REEL, VENUE_BAND } from '../lib/markets-copy'
@@ -31,15 +32,12 @@ const norm = (s: string) =>
 const isThen = (s: string) => /,\s*then\b/i.test(s)
 const inInventory = (s: string) => INVENTORY.some((e) => norm(e.ask) === norm(s))
 
-/** Offered sentences that do NOT compile as a job, with what the server does
- *  instead (measured by the drive, 2026-11-17). Listed so the pin stays green
- *  while the OFFERS lane decides their fate; remove an entry when its sentence
- *  is fixed or no longer offered. */
+/** Sentences in the drive that do NOT compile as a job, with the reason
+ *  (measured by the drive, 2026-11-17). Remove an entry when its sentence is
+ *  fixed or no longer listed. */
 export const KNOWN_NON_JOBS: Record<string, string> = {
   'Buy $50 of ETH, then stake 0.05 ETH with Lido':
-    'VENUE_BAND.compound: a chainless "Buy $50 of ETH" has no job segment (dollar-buy needs a chain word); the chat answers the Lido stake alone (funding chips, or a single stake build for a rich wallet) and drops the buy',
-  'Fund Hyperliquid with $15 from Base, then 2x long $12 of HYPE':
-    'desk SDK example (tour snippet + /docs/desk): no parser reads "Fund Hyperliquid"; the chat reads only "2x Long HYPE" and asks for a size, dropping both the $12 and the funding',
+    'STALE CORPUS ROW: scripts/audit-asks.ts still lists the old VENUE_BAND.compound as "mk2 landing compound (one job)"; lane OFFERS replaced it in lib/markets-copy.ts. A chainless dollar buy has no job segment (the chat answers the stake alone). The coordinator owns that row.',
 }
 
 export function jobsAuditPins(check: Check) {
@@ -61,6 +59,13 @@ export function jobsAuditPins(check: Check) {
     ...STARTER_ASKS.filter(isThen).map((a): [string, string] => ['components/typed-asks STARTER_ASKS', a]),
   ]
   for (const [where, ask] of exported) check(`jobs audit: ${where} is in the drive's inventory`, inInventory(ask), ask)
+
+  // 2b. Every sentence lib/job-offers.ts can emit (jobOfferFor's catalog) is in
+  //     the drive, and the text example is one of them.
+  const driven = new Set(driveList(ROOT).map((e) => norm(e.ask)))
+  check('jobs audit: lib/job-offers emits at least one sentence', JOB_OFFER_SENTENCES.length > 0)
+  for (const ask of JOB_OFFER_SENTENCES) check(`jobs audit: job offer "${ask}" is in the drive`, driven.has(norm(ask)), ask)
+  check('jobs audit: JOB_OFFER_EXAMPLE is one of the emitted sentences', JOB_OFFER_SENTENCES.includes(JOB_OFFER_EXAMPLE), JOB_OFFER_EXAMPLE)
 
   // 3. The drive reads the audit-asks corpus' "then" rows (sanity: the regex
   //    still matches the corpus' shape).

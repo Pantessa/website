@@ -39,6 +39,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { JOB_OFFER_ORIGINS, fundBuySentence } from '../lib/job-offers'
 
 // ── the inventory ──────────────────────────────────────────────────────────
 export type InventoryEntry = {
@@ -60,18 +61,19 @@ export type InventoryEntry = {
 
 export const INVENTORY: InventoryEntry[] = [
   // ── empty states / default buttons ──
-  { id: 'jobs-door', kind: 'offered', file: 'lib/first-run.ts', where: 'lib/first-run.ts:27 JOBS_DOOR.ask (the JOBS rail empty state "Try a 4-step job")', names: 'Base', ask: 'Fund Robinhood Chain with $12 from Base including gas, then buy $10 of AAPL', parsers: ['robinhood-funding', 'robinhood-fund-buy'] },
-  { id: 'jobs-panel', kind: 'offered', file: 'components/JobsPanel.tsx', where: 'components/JobsPanel.tsx:78 empty state (text)', names: 'Arbitrum (HL deposit)', ask: 'deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop', parsers: ['hyperliquid', 'guardian'] },
+  { id: 'jobs-door', kind: 'offered', where: 'lib/first-run.ts:37 JOBS_DOOR.ask = lib/job-offers JOB_OFFER_EXAMPLE (shown as TEXT; the rail button is jobOfferFor per wallet)', names: 'Base', ask: 'Fund Robinhood Chain with $12.5 from Base including gas, then buy $10 of AAPL', parsers: ['robinhood-funding', 'robinhood-fund-buy'] },
+  { id: 'p-hl-deposit-stop', kind: 'parser', where: 'lib/jobs.ts hyperliquid deposit + guardian (was the JobsPanel + HL splash empty-state sentence until lane OFFERS removed it)', names: 'Arbitrum (HL deposit)', ask: 'deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop', parsers: ['hyperliquid', 'guardian'] },
   { id: 'api-jobs-example', kind: 'offered', file: 'app/api/jobs/route.ts', where: 'app/api/jobs/route.ts:49 the 400 error example', names: 'Arbitrum (HL deposit)', ask: 'deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop' },
-  { id: 'splash-hl', kind: 'offered', file: 'lib/splash/sources.ts', where: 'lib/splash/sources.ts:1176 Hyperliquid empty-splash chip "Fund + protected long (1 job)"', names: 'Arbitrum (HL deposit)', ask: 'Deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop' },
-  { id: 'nightshift', kind: 'offered', file: 'components/NightShift.tsx', where: 'components/NightShift.tsx:116 the Jobs tile (links /chat?prompt=)', names: 'Base', ask: 'Swap 1 USDC from Base to Arbitrum, then send the 1 USDC on Arbitrum to nate.eth', parsers: ['cross-chain-swap', 'transfer'] },
+  { id: 'nightshift', kind: 'offered', file: 'components/NightShift.tsx', where: 'components/NightShift.tsx:124 the Jobs tile (a link only for a wallet that can run it)', names: 'Base', ask: 'Fund Robinhood Chain with $12.5 from Base including gas, then buy $10 of AAPL' },
+  { id: 'p-bridge-send', kind: 'parser', where: 'lib/jobs.ts cross-chain-swap + transfer (the NightShift tile until lane OFFERS replaced it)', names: 'Base', ask: 'Swap 1 USDC from Base to Arbitrum, then send the 1 USDC on Arbitrum to nate.eth', parsers: ['cross-chain-swap', 'transfer'] },
   // ── landing / hero ──
-  { id: 'hero-reel-fund', kind: 'offered', file: 'lib/markets-copy.ts', where: 'lib/markets-copy.ts:331 HERO_REEL beat 2 (+ app/docs/first-five-minutes/page.tsx:86 runs it)', names: 'Base', ask: 'Fund Robinhood Chain with $50 from Base including gas, then buy $40 of AAPL' },
+  { id: 'hero-reel-fund', kind: 'offered', file: 'lib/markets-copy.ts', where: 'lib/markets-copy.ts:331 HERO_REEL beat 2 (+ app/docs/first-five-minutes/page.tsx:91, now a JobOfferLine example)', names: 'Base', ask: 'Fund Robinhood Chain with $50 from Base including gas, then buy $40 of AAPL' },
   { id: 'hero-reel-hype', kind: 'offered', file: 'lib/markets-copy.ts', where: 'lib/markets-copy.ts:340 HERO_REEL beat 3 (+ components/typed-asks.ts:19 STARTER_ASKS)', ask: '2X long $12 of HYPE, then protect my HYPE long with a 5% stop' },
-  { id: 'venue-band-compound', kind: 'offered', file: 'lib/markets-copy.ts', where: 'lib/markets-copy.ts:393 VENUE_BAND.compound', ask: 'Buy $50 of ETH, then stake 0.05 ETH with Lido' },
+  { id: 'venue-band-compound', kind: 'offered', file: 'lib/markets-copy.ts', where: 'lib/markets-copy.ts:398 VENUE_BAND.compound', ask: '2x Long $12 of ETH on Hyperliquid, then protect my ETH long with a 5% stop' },
   { id: 'house-protected-long', kind: 'offered', file: 'lib/house-links.ts', where: 'lib/house-links.ts:38 house link /i/protected-long (+ lib/machine-runs.ts:167)', ask: 'I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop' },
   { id: 'tour-uni-stop', kind: 'offered', file: 'lib/home-tour/autopilots.ts', where: 'lib/home-tour/autopilots.ts:47 + lib/home-tour/ask.ts:23 (landing tour chips "Long UNI 2x with a stop")', ask: '2x Long $25 of UNI on Hyperliquid, then protect my UNI long with a 10% stop' },
-  { id: 'tour-desk-sdk', kind: 'offered', file: 'components/home/tour/sides/b/snippets.ts', where: 'components/home/tour/sides/b/snippets.ts:56 SDK_SNIPPET (code, not a button) + app/docs/desk/page.tsx:132', names: 'Base', ask: 'Fund Hyperliquid with $15 from Base, then 2x long $12 of HYPE' },
+  { id: 'tour-desk-sdk', kind: 'offered', file: 'components/home/tour/sides/b/snippets.ts', where: 'components/home/tour/sides/b/snippets.ts:56 SDK_SNIPPET (code, not a button) + app/docs/desk/page.tsx:132', ask: '2x Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop' },
+  { id: 'docs-desk-sdk', kind: 'offered', file: 'app/docs/desk/page.tsx', where: 'app/docs/desk/page.tsx:132 the desk SDK example (same sentence as the tour snippet)', ask: '2x Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop' },
   // ── docs ──
   { id: 'docs-index-4step', kind: 'offered', file: 'app/docs/page.tsx', where: 'app/docs/page.tsx:99 docs index (text)', names: 'Base', ask: 'Bridge 5 USDC from Base to Arbitrum, then deposit 5 USDC to Hyperliquid, then long $12 of ETH on Hyperliquid, then protect my ETH long with a 5% stop.' },
   { id: 'docs-index-curl', kind: 'offered', file: 'app/docs/page.tsx', where: 'app/docs/page.tsx:239 docs index curl dryRun example', names: 'Base', ask: 'swap 5 usdc from base to arbitrum, then deposit 5 usdc to hyperliquid' },
@@ -79,9 +81,9 @@ export const INVENTORY: InventoryEntry[] = [
   // ── composers (lib/order-ticket, lib/symbol-venues composeCompound) ──
   { id: 'ticket-long-stop', kind: 'composer', where: 'lib/order-ticket.ts:270 perp + stop shape (UNI, 2x, $25, 10%)', ask: '2x Long $25 of UNI on Hyperliquid, then protect my UNI long with a 10% stop' },
   { id: 'ticket-short-stop', kind: 'composer', where: 'lib/order-ticket.ts:270 perp + stop shape (HYPE short)', ask: 'Short $25 of HYPE on Hyperliquid, then protect my HYPE short with a 5% stop' },
-  { id: 'compound-dep-long-stop', kind: 'composer', where: 'lib/symbol-venues.ts:741 composeCompound preset Deposit → Long → Stop (ETH, 2x, $50)', names: 'Arbitrum (HL deposit)', ask: 'Deposit 25 USDC to Hyperliquid, then 2x long $50 of ETH on Hyperliquid, then protect my ETH long with a 5% stop' },
-  { id: 'compound-buy-stake', kind: 'composer', where: 'lib/symbol-venues.ts:738 composeCompound preset Buy → Stake (ETH)', names: 'Ethereum', ask: 'Swap 50 USDC for ETH on Ethereum, then stake all the swapped ETH on Lido', parsers: ['same-chain-swap'] },
-  { id: 'compound-buy-supply', kind: 'composer', where: 'lib/symbol-venues.ts:740 composeCompound preset Buy → Supply on Aave (LINK)', names: 'Ethereum', ask: 'Swap 50 USDC for LINK on Ethereum, then supply $50 of LINK to Aave', parsers: ['aave-supply'] },
+  { id: 'compound-dep-long-stop', kind: 'composer', where: 'lib/symbol-venues.ts:744 composeCompound preset Deposit → Long → Stop (ETH, 2x, $50)', names: 'Arbitrum (HL deposit)', ask: 'Deposit 25 USDC to Hyperliquid, then 2x long $50 of ETH on Hyperliquid, then protect my ETH long with a 5% stop' },
+  { id: 'compound-buy-stake', kind: 'composer', where: 'lib/symbol-venues.ts:741 composeCompound preset Buy → Stake (ETH)', names: 'Ethereum', ask: 'Swap 50 USDC for ETH on Ethereum, then stake all the swapped ETH on Lido', parsers: ['same-chain-swap'] },
+  { id: 'compound-buy-supply', kind: 'composer', where: 'lib/symbol-venues.ts:743 composeCompound preset Buy → Supply on Aave (LINK)', names: 'Ethereum', ask: 'Swap 50 USDC for LINK on Ethereum, then supply $50 of LINK to Aave', parsers: ['aave-supply'] },
   // ── one representative per segment parser not already covered ──
   { id: 'p-eth-move', kind: 'parser', where: 'lib/jobs.ts robinhood-funding (ETH move); audit-asks funding move chip', names: 'Optimism + Arbitrum', ask: 'Move $6 of ETH from optimism to robinhood chain, then Move $4 of ETH from arbitrum to robinhood chain', parsers: ['robinhood-funding'] },
   { id: 'p-gas-leg', kind: 'parser', where: 'lib/jobs.ts robinhood-funding (gas-only leg); audit-asks funding chip', names: 'Base + Arbitrum', ask: 'Fund robinhood chain gas from base using eth, then Fund robinhood chain with $10.5 from arbitrum, then buy $10 of ETH', parsers: ['robinhood-funding', 'robinhood-fund-buy'] },
@@ -130,18 +132,38 @@ export function auditAsksThenRows(root = process.cwd()): Array<{ ask: string; so
   return out
 }
 
-/** The whole list the drive runs: the hand inventory, then every audit-asks
- *  "then" row not already in it (case-insensitive). */
+/** Every sentence lib/job-offers.ts jobOfferFor can emit (each origin, with
+ *  and without the gas leg), built from its own emitter, never retyped. */
+export function jobOfferEntries(): InventoryEntry[] {
+  return JOB_OFFER_ORIGINS.flatMap((origin) =>
+    [true, false].map((gas): InventoryEntry => ({
+      id: `offer-${origin}-${gas ? 'gas' : 'nogas'}`,
+      kind: 'offered',
+      where: `lib/job-offers.ts fundBuySentence(${origin}, ${gas}) via jobOfferFor (the JOBS rail / JobsPanel / NightShift button for a wallet that can run it)`,
+      ask: fundBuySentence(origin, gas),
+    })),
+  )
+}
+
+/** The whole list the drive runs: the hand inventory, the job-offers catalog,
+ *  then every audit-asks "then" row not already in it (case-insensitive). The
+ *  drive runs a sentence once, under the first id that offers it. */
 export function driveList(root = process.cwd()): InventoryEntry[] {
-  const seen = new Set(INVENTORY.map((e) => e.ask.toLowerCase().replace(/\.$/, '')))
+  const key = (a: string) => a.toLowerCase().replace(/\.$/, '')
+  const seen = new Set<string>()
+  const base: InventoryEntry[] = []
+  for (const e of [...INVENTORY, ...jobOfferEntries()]) {
+    if (seen.has(key(e.ask))) continue
+    seen.add(key(e.ask))
+    base.push(e)
+  }
   const extra: InventoryEntry[] = []
   for (const r of auditAsksThenRows(root)) {
-    const key = r.ask.toLowerCase().replace(/\.$/, '')
-    if (seen.has(key)) continue
-    seen.add(key)
+    if (seen.has(key(r.ask))) continue
+    seen.add(key(r.ask))
     extra.push({ id: `aa-${r.line}`, kind: 'offered', where: `scripts/audit-asks.ts:${r.line} (${r.source})`, ask: r.ask })
   }
-  return [...INVENTORY, ...extra]
+  return [...base, ...extra]
 }
 
 // ── the drive ──────────────────────────────────────────────────────────────
