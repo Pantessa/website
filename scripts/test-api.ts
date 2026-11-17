@@ -403,6 +403,7 @@ import { depthPins } from './depth-pins'
 import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
 import { readPins, readRedirectPins, readServedPins } from './read-pins'
+import { newsFrontPins, newsFrontServedPins } from './news-front-pins'
 import { macroLivePins, macroPins, macroServedPins } from './macro-pins'
 import { homeAppsPins } from './home-apps-pins'
 import { communityCoordPins, communityCoordPinsServed } from './community-coord-pins'
@@ -35691,6 +35692,9 @@ async function main() {
   deckPins(check)
   // THE APPS ROW (2026-10-13): the fleet's marks on the splash in the guide card's old seat, each a door into the chat's apps drawer with that app on — the table, the hrefs, the public chat surface, the wiring.
   homeAppsPins(check)
+  // The News tab as a front page (2026-11-17): the deal, since, the plate, the feed filter.
+  newsFrontPins(check)
+  await newsFrontServedPins(check, BASE)
   // THE READ (2026-11-09): the home's lead — the market as one sentence, the macro line, the chart of the pick; the deck off `/`, the battle views off the nav, the old deck links forwarded.
   readPins(check)
   await readRedirectPins(check)

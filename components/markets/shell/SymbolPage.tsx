@@ -759,7 +759,7 @@ export default function SymbolPage({
               tab === 'overview' ? (
                 <OverviewTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} last={stats?.last ?? null} />
               ) : tab === 'news' ? (
-                <NewsTab symbol={sym} pair={pair} />
+                <NewsTab symbol={sym} pair={pair} onShowChart={showAChartTab} />
               ) : tab === 'community' ? (
                 <CommunityTab symbol={sym} pair={pair} chartState={chartState} onAsk={onChartAsk} onLoadChart={loadChart} />
               ) : tab === 'technicals' ? (
