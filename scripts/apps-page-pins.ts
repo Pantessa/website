@@ -15,6 +15,7 @@ import {
   densityFor,
   dockSuggestions,
   lineFor,
+  needsLeads,
   needsYouRows,
   pageHeadline,
   pageTotalUsd,
@@ -86,6 +87,9 @@ export function appsPagePins(check: Check) {
     page.briefing === briefing && page.recurring === dca && page.bySlug.get('uniswap-free')?.[0] === holdings && page.bySlug.get('snapshot-free')?.[0] === votes && !page.bySlug.has('hyperliquid-free') && !page.bySlug.has('yeetful'))
   check('apps page (needs you): only a briefing row that carries an action asks for you; an observation never raises the strip',
     needsYouRows(briefing).length === 1 && needsYouRows(briefing)[0].label.includes('no stop') && needsYouRows(null).length === 0)
+
+  check('apps page (needs you): the wallet\'s list leads the page with two or more apps or a portfolio app alone; when another app is the whole page, that app leads and the list follows it',
+    needsLeads('side', null) && needsLeads('lines', null) && needsLeads('full', 'uniswap') && needsLeads('full', 'wallet') && !needsLeads('full', 'hyperliquid') && !needsLeads('full', 'snapshot') && !needsLeads('full', 'aave'))
 
   // ── one line per app ──────────────────────────────────────────────────────
   const lh = lineFor([holdings])

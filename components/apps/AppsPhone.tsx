@@ -35,7 +35,7 @@ import { SECTIONS } from '@/components/apps/sections'
 import { useAppSet } from '@/components/apps/useAppSet'
 import { useAppTiles } from '@/components/apps/useAppTiles'
 import { useAppsUi } from '@/lib/apps-page-ui'
-import { appFamily, askPlaceholder, densityEyebrow, dockSuggestions, lineFor, needsYouRows, pageHeadline, pageTotalUsd, quietSentence, splitPageTiles } from '@/lib/apps-page'
+import { appFamily, askPlaceholder, densityEyebrow, dockSuggestions, lineFor, needsLeads, needsYouRows, pageHeadline, pageTotalUsd, quietSentence, splitPageTiles } from '@/lib/apps-page'
 import { askBarSubmit, phoneLayoutFor, phoneSuggestions } from '@/lib/apps-phone'
 import { useYeetfulStore } from '@/lib/store'
 import type { MoneyMap, SplashTile } from '@/lib/splash/types'
@@ -92,6 +92,7 @@ export default function AppsPhone({ address, title }: { address: string; title: 
   const askFor = (slug?: string) => (text: string, opts?: { send?: boolean }) => ask(text, { send: opts?.send, mcps: slug ? [slug] : undefined })
 
   const only = layout === 'full' ? active[0] : null
+  const needsFirst = needsLeads(layout === 'full' ? 'full' : 'side', only ? appFamily(only) : null)
   const onlyModule = only ? SECTIONS[appFamily(only)] : null
   const headline =
     (only && onlyModule?.headline?.({ server: only, tiles: page.bySlug.get(only.slug) ?? [], page, map })) ||
@@ -176,7 +177,7 @@ export default function AppsPhone({ address, title }: { address: string; title: 
             <ChatLoader inline />
           ) : (
             <>
-              <NeedsYou rows={needs} onAsk={askFor()} />
+              {needsFirst && <NeedsYou rows={needs} onAsk={askFor()} />}
 
               <div className={layout === 'lines' ? 'apg-lines apgm-lines' : 'apgm-stack'} data-apps-lines={layout === 'lines' ? '' : undefined} data-apps-cols={active.length}>
                 {shown.map(({ server, family, mod, group, isPending }) => (
@@ -205,6 +206,7 @@ export default function AppsPhone({ address, title }: { address: string; title: 
                 )}
               </div>
 
+              {!needsFirst && <NeedsYou rows={needs} onAsk={askFor()} />}
               {layout !== 'lines' && <Recurring tile={page.recurring} onAsk={askFor()} />}
             </>
           )}

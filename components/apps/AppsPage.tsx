@@ -36,6 +36,7 @@ import {
   densityFor,
   dockSuggestions,
   lineFor,
+  needsLeads,
   needsYouRows,
   pageHeadline,
   pageTotalUsd,
@@ -67,6 +68,7 @@ export default function AppsPage({ address }: { address: string }) {
     sendAsk(text, { send: opts?.send, mcps: slug ? [slug] : undefined })
 
   const only = density === 'full' ? active[0] : null
+  const needsFirst = needsLeads(density, only ? appFamily(only) : null)
   const onlyModule = only ? SECTIONS[appFamily(only)] : null
   const headline =
     (only && onlyModule?.headline?.({ server: only, tiles: page.bySlug.get(only.slug) ?? [], page, map })) ||
@@ -120,7 +122,7 @@ export default function AppsPage({ address }: { address: string }) {
             <ChatLoader inline />
           ) : (
             <>
-              <NeedsYou rows={needs} onAsk={askFor()} />
+              {needsFirst && <NeedsYou rows={needs} onAsk={askFor()} />}
 
               {density === 'lines' ? (
                 <div className="apg-lines" data-apps-lines="">
@@ -169,6 +171,7 @@ export default function AppsPage({ address }: { address: string }) {
                 </div>
               )}
 
+              {!needsFirst && <NeedsYou rows={needs} onAsk={askFor()} />}
               {density !== 'lines' && <Recurring tile={page.recurring} onAsk={askFor()} />}
             </>
           )}

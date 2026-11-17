@@ -143,6 +143,16 @@ export function needsYouRows(briefing: RowsTile | null): StatRow[] {
   return (briefing?.rows ?? []).filter((r) => (r.actions?.length ?? 0) > 0)
 }
 
+/** Where the "needs you" strip sits. It is the WALLET's list, not an app's:
+ *  when one app is the whole page and that app is not the wallet's own
+ *  holdings view, the app leads and the strip follows it (Hyperliquid alone
+ *  opened on a spot-ETH stop and idle USDC before its own first row). With
+ *  two or more apps, or a portfolio app alone, it leads. */
+export function needsLeads(density: AppsDensity, onlyFamily: AppFamily | null): boolean {
+  if (density !== 'full') return true
+  return onlyFamily === 'uniswap' || onlyFamily === 'wallet'
+}
+
 // ── One line per app (the 4+ posture, and the generic fallback) ─────────────
 
 export interface AppLine {
