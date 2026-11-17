@@ -7,6 +7,7 @@
     "build": "prisma generate && node scripts/tv-library.mjs && next build",
     "tv:library": "node scripts/tv-library.mjs",
     "pins:tv": "tsx scripts/tv-pins.ts",
+    "pins:scenario": "tsx scripts/scenario-pins.ts",
     "start": "next start",
     "lint": "next lint",
     "db:generate": "prisma generate",

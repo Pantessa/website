@@ -35,6 +35,8 @@ import { fillLabel, type FillMarker } from '@/lib/chart-fills'
 import { watermarkUrl } from '@/lib/chart-share'
 import { syncTfParam, type ChartView } from '@/lib/markets'
 import { seriesVar } from '@/lib/markets-look'
+import { SCENARIO_DISCLAIMER, recordLine, scenarioDrawing, scenarioOffered, scenarioTfOk, scenarioView, type Scenario, type ScenarioMode, type ScenarioRecord, type ScenarioView } from '@/lib/scenario'
+import { loadScenarioCandles } from '@/lib/scenario-read'
 import { canSellAsk } from '@/lib/sell-gate'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import { useHeld } from '@/lib/use-held'
@@ -103,6 +105,41 @@ function isDark(hex: string): boolean {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5
 }
 
+/** The chart entities the last scenario drew, per symbol: a second press replaces them. */
+const SCENARIO_SHAPES_KEY = 'pantessa.scenario.shapes.v1'
+function readScenarioShapes(symbol: string): string[] {
+  try {
+    const all = JSON.parse(localStorage.getItem(SCENARIO_SHAPES_KEY) ?? '{}') as Record<string, unknown>
+    const ids = all[symbol]
+    return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string').slice(0, 12) : []
+  } catch {
+    return []
+  }
+}
+function writeScenarioShapes(symbol: string, ids: string[]): void {
+  try {
+    const all = JSON.parse(localStorage.getItem(SCENARIO_SHAPES_KEY) ?? '{}') as Record<string, unknown>
+    if (ids.length) all[symbol] = ids
+    else delete all[symbol]
+    localStorage.setItem(SCENARIO_SHAPES_KEY, JSON.stringify(all))
+  } catch {
+    /* the lines stay on the chart as ordinary drawings */
+  }
+}
+
+const SCENARIO_MODES: { mode: ScenarioMode; label: string; title: string }[] = [
+  { mode: 'bull', label: 'Bull', title: 'Draw the bull setup: in at the price now, wrong under the last swing low, aiming at the swing highs above.' },
+  { mode: 'bear', label: 'Bear', title: 'Draw the bear setup: in at the price now, wrong over the last swing high, aiming at the swing lows below.' },
+  { mode: 'both', label: 'Both', title: 'Draw the two levels that decide it: over one the bull case is in play, under the other the bear case.' },
+]
+const SCENARIO_ROLE: Record<Scenario['levels'][number]['role'], string> = { entry: 'Entry', stop: 'Stop', passing: 'On the way', target: 'Target', beyond: 'Then' }
+
+type ScenarioState =
+  | { status: 'idle' }
+  | { status: 'loading'; mode: ScenarioMode }
+  | { status: 'error'; mode: ScenarioMode; error: string }
+  | { status: 'ready'; view: ScenarioView; tf: ChartTf; bars: number }
+
 const QUICK_TOOLS: { tool: string; label: string; title: string; Icon: typeof Minus }[] = [
   { tool: 'horizontal_line', label: 'Level', title: 'A level: click a price. It can carry a buy, a sell or a stop.', Icon: Minus },
   { tool: 'rectangle', label: 'Zone', title: 'A zone: drag a box. Buy at its floor, sell at its ceiling.', Icon: RectangleHorizontal },
@@ -150,6 +187,7 @@ export default function AdvancedChart({
   const [focusId, setFocusId] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(true)
+  const [scn, setScn] = useState<ScenarioState>({ status: 'idle' })
 
   const hostRef = useRef<HTMLDivElement | null>(null)
   const widgetRef = useRef<TvWidget | null>(null)
@@ -648,6 +686,89 @@ export default function AdvancedChart({
     scheduleSync()
   }, [scheduleSync])
 
+  // ── A scenario: one side's setup, drawn by rules (lib/scenario) ───────────
+  // The lines are ordinary drawings once they are on the chart: the plan
+  // above reads them into orders, the layout keeps them, the viewer can move
+  // or delete each one. Only the ids are remembered, so the next press
+  // replaces the last scenario instead of stacking on it.
+  const scnAbortRef = useRef<AbortController | null>(null)
+  const clearScenarioShapes = useCallback(() => {
+    const chart = chartRef.current
+    for (const id of readScenarioShapes(sym)) {
+      try {
+        chart?.removeEntity(id)
+      } catch {
+        /* the viewer already deleted it */
+      }
+    }
+    writeScenarioShapes(sym, [])
+  }, [sym])
+  const runScenario = useCallback(
+    async (mode: ScenarioMode) => {
+      const chart = chartRef.current
+      if (!chart || !pair) return
+      scnAbortRef.current?.abort()
+      const abort = new AbortController()
+      scnAbortRef.current = abort
+      const frame = tfRef.current
+      setScn({ status: 'loading', mode })
+      setPlanOpen(true)
+      try {
+        const candles = await loadScenarioCandles(pair.symbol, frame, abort.signal)
+        if (abort.signal.aborted) return
+        const view = scenarioView(candles, mode, TF_SECONDS[frame])
+        if (!view.bull && !view.bear) {
+          setScn({ status: 'error', mode, error: 'Not enough bars on this frame to read swing highs and lows. Try a longer frame.' })
+          return
+        }
+        const drawing = scenarioDrawing(view, feedRef.current?.pricescale() ?? 10_000)
+        const t = readTokens()
+        const ids: string[] = []
+        applyingRef.current = true
+        try {
+          clearScenarioShapes()
+          if (drawing.box) {
+            const id = await chart.createMultipointShape([{ time: drawing.box.time, price: drawing.box.entry }], {
+              shape: drawing.box.side === 'long' ? 'long_position' : 'short_position',
+              overrides: { stopLevel: drawing.box.stopTicks, profitLevel: drawing.box.profitTicks },
+            })
+            if (id) ids.push(id)
+          }
+          const now = Math.floor(Date.now() / 1000)
+          for (const l of drawing.levels) {
+            const ink = l.label.startsWith('Bull') ? t.up : t.down
+            const id = await chart.createShape({ time: now, price: l.price }, { shape: 'horizontal_line', text: l.label, overrides: { showLabel: true, linecolor: ink, textcolor: ink, linestyle: 2 } })
+            if (id) ids.push(id)
+          }
+        } finally {
+          applyingRef.current = false
+          writeScenarioShapes(sym, ids)
+          syncNow()
+          scheduleSave()
+        }
+        setScn({ status: 'ready', view, tf: frame, bars: candles.length })
+      } catch (err) {
+        if (abort.signal.aborted) return
+        setScn({ status: 'error', mode, error: err instanceof Error && err.message ? err.message : 'The scenario could not be read. Try again.' })
+      }
+    },
+    [pair, sym, clearScenarioShapes, syncNow, scheduleSave],
+  )
+  const clearScenario = useCallback(() => {
+    scnAbortRef.current?.abort()
+    clearScenarioShapes()
+    setScn({ status: 'idle' })
+    scheduleSync()
+    scheduleSave()
+  }, [clearScenarioShapes, scheduleSync, scheduleSave])
+  // Another symbol's scenario is not this one's.
+  useEffect(() => {
+    scnAbortRef.current?.abort()
+    setScn({ status: 'idle' })
+  }, [sym])
+  const scenarioOn = scenarioOffered(pair) && !lookOnly
+  const scenarioFrame = scenarioTfOk(tf)
+
   // The other views live on the built-in chart; the switch looks the same on both.
   const heatCandidate = battlefield && !!pair && pair.source !== 'robinhood' && !isHip3Pair(pair) && !lookOnly
   const heatYear = useHeatYear(pair?.symbol ?? symbol, heatCandidate)
@@ -733,6 +854,25 @@ export default function AdvancedChart({
             <button type="button" className="tvx-plan__title mono" aria-expanded={planOpen} onClick={() => setPlanOpen((o) => !o)}>
               Your drawings{plan.length ? ` · ${plan.length}` : ''}
             </button>
+            {scenarioOn && (
+              <div className="tvx-scn__pick" role="group" aria-label="Draw a scenario">
+                <span className="tvx-scn__lead mono">Scenario</span>
+                {SCENARIO_MODES.map(({ mode, label, title }) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`tvx-tool tvx-tool--${mode} mono`}
+                    data-scenario-pick={mode}
+                    aria-pressed={(scn.status === 'ready' && scn.view.mode === mode) || (scn.status === 'loading' && scn.mode === mode)}
+                    title={scenarioFrame ? title : 'A scenario reads swing highs and lows: pick the 15m frame or a longer one.'}
+                    disabled={!ready || !scenarioFrame || scn.status === 'loading'}
+                    onClick={() => void runScenario(mode)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="tvx-plan__tools" role="group" aria-label="Draw something that can act">
               {QUICK_TOOLS.map(({ tool, label, title, Icon }) => (
                 <button key={tool} type="button" className="tvx-tool mono" title={title} onClick={() => pickTool(tool)} disabled={!ready}>
@@ -742,10 +882,14 @@ export default function AdvancedChart({
               ))}
             </div>
           </header>
+          {planOpen && scn.status !== 'idle' && (
+            <ScenarioCard state={scn} symbol={pair.symbol} priceSign={priceSign} onClear={clearScenario} />
+          )}
           {planOpen &&
             (plan.length === 0 ? (
               <p className="tvx-plan__empty">
                 Draw a level, a zone, a fib or a Long / Short Position and it shows up here as orders you can build in one tap. The <b>+</b> on the price axis drops a level where you point.
+                {scenarioOn ? ' Or press Bull, Bear or Both and the setup is drawn for you from this chart\'s swing highs and lows.' : ''}
                 {missing ? ` ${missing}` : ''}
               </p>
             ) : (
@@ -845,6 +989,110 @@ export default function AdvancedChart({
           Charts by TradingView
         </a>
       </div>
+    </div>
+  )
+}
+
+const TF_WORDS: Record<ChartTf, string> = { '10s': '10s', '1m': '1m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D' }
+
+function ScenarioSide({ s, record, symbol, tfLabel, priceSign }: { s: Scenario; record: ScenarioRecord | null; symbol: string; tfLabel: string; priceSign: string }) {
+  const stopPct = (Math.abs(s.entry - s.stop) / s.entry) * 100
+  return (
+    <div className={`tvx-scn__side tvx-scn__side--${s.bias} tvx-scn__side--split`} data-scenario-side={s.bias}>
+      <ul className="tvx-scn__rows">
+        {s.levels.map((l) => (
+          <li key={`${l.role}:${l.price}`} className="tvx-scn__row">
+            <span className="tvx-row__name mono">{SCENARIO_ROLE[l.role]}</span>
+            <span className="tvx-row__price mono">
+              {priceSign}
+              {fmtPrice(l.price)}
+            </span>
+            <span className="tvx-scn__why">{l.why}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="tvx-scn__read">
+        <p className="tvx-card__note">
+          Reward to risk {s.rr >= 10 ? s.rr.toFixed(0) : s.rr.toFixed(1)} : 1 · stop {stopPct.toFixed(1)}% from entry
+          {s.rr < 1 ? ' · this setup risks more than it aims to make' : ''}
+        </p>
+        {record ? <p className="tvx-scn__record">{recordLine(record, symbol, tfLabel)}</p> : null}
+      </div>
+    </div>
+  )
+}
+
+function ScenarioBreak({ s, record, symbol, tfLabel, priceSign }: { s: Scenario; record: ScenarioRecord | null; symbol: string; tfLabel: string; priceSign: string }) {
+  const bull = s.bias === 'bull'
+  const b = s.breakout
+  return (
+    <div className={`tvx-scn__side tvx-scn__side--${s.bias}`} data-scenario-side={s.bias}>
+      <p className="tvx-scn__case">
+        <b>{bull ? 'Bull case' : 'Bear case'}</b>{' '}
+        {b ? (
+          <>
+            in play on a close {bull ? 'over' : 'under'}{' '}
+            <span className="mono">
+              {priceSign}
+              {fmtPrice(b.trigger)}
+            </span>{' '}
+            ({b.triggerWhy})
+            {b.target !== null ? (
+              <>
+                , aiming at{' '}
+                <span className="mono">
+                  {priceSign}
+                  {fmtPrice(b.target)}
+                </span>{' '}
+                ({b.targetWhy})
+              </>
+            ) : null}
+            .
+          </>
+        ) : (
+          <>has no line to clear: this window holds no swing {bull ? 'high over' : 'low under'} the price.</>
+        )}
+      </p>
+      {record ? <p className="tvx-scn__record">{recordLine(record, symbol, tfLabel)}</p> : null}
+    </div>
+  )
+}
+
+/** What the scenario drew and why, how the same rules did before, and what it is not. */
+function ScenarioCard({ state, symbol, priceSign, onClear }: { state: Exclude<ScenarioState, { status: 'idle' }>; symbol: string; priceSign: string; onClear: () => void }) {
+  const mode = state.status === 'ready' ? state.view.mode : state.mode
+  const name = mode === 'both' ? 'Both cases' : mode === 'bull' ? 'Bull scenario' : 'Bear scenario'
+  const tfLabel = state.status === 'ready' ? TF_WORDS[state.tf] : ''
+  return (
+    <div className="tvx-scn" data-scenario={mode} data-scenario-status={state.status} role="region" aria-label={`${name} on ${symbol}`}>
+      <div className="tvx-scn__head">
+        <span className="tvx-scn__title mono">
+          {name} · {symbol}
+          {tfLabel ? ` ${tfLabel}` : ''}
+        </span>
+        <button type="button" className="tvx-scn__clear mono" onClick={onClear} title="Take the scenario's lines off the chart">
+          Clear
+        </button>
+      </div>
+      {state.status === 'loading' ? <p className="tvx-scn__wait">Reading the swing highs and lows…</p> : null}
+      {state.status === 'error' ? <p className="tvx-scn__wait">{state.error}</p> : null}
+      {state.status === 'ready' ? (
+        <>
+          <div className="tvx-scn__sides">
+            {state.view.mode === 'both' ? (
+              <>
+                {state.view.bull ? <ScenarioBreak s={state.view.bull} record={state.view.bullRecord} symbol={symbol} tfLabel={tfLabel} priceSign={priceSign} /> : null}
+                {state.view.bear ? <ScenarioBreak s={state.view.bear} record={state.view.bearRecord} symbol={symbol} tfLabel={tfLabel} priceSign={priceSign} /> : null}
+              </>
+            ) : state.view.mode === 'bull' && state.view.bull ? (
+              <ScenarioSide s={state.view.bull} record={state.view.bullRecord} symbol={symbol} tfLabel={tfLabel} priceSign={priceSign} />
+            ) : state.view.bear ? (
+              <ScenarioSide s={state.view.bear} record={state.view.bearRecord} symbol={symbol} tfLabel={tfLabel} priceSign={priceSign} />
+            ) : null}
+          </div>
+          <p className="tvx-scn__fine">{SCENARIO_DISCLAIMER}</p>
+        </>
+      ) : null}
     </div>
   )
 }

@@ -376,6 +376,7 @@ import { botUaPins, CRAWL_UAS, PERSON_UA } from './bot-ua-pins'
 import { venueManifestLivePins, venueManifestPins } from './venue-manifest-pins'
 import { chartHeatLivePins, chartHeatPins } from './chart-heat-pins'
 import { tvLivePins, tvPins } from './tv-pins'
+import { scenarioLivePins, scenarioPins } from './scenario-pins'
 import { policyPoolBuilderPins } from './policy-pool-builder-pins'
 import { printAlertPins } from './print-alert-pins'
 import { spotHomePins } from './spot-home-pins'
@@ -35645,6 +35646,9 @@ async function main() {
   // The Advanced chart (TradingView's licensed library on /t, 2026-11-11).
   tvPins(check)
   await tvLivePins(check, BASE)
+  // Scenarios (2026-11-17): the Bull / Bear / Both buttons on the chart draw a setup by fixed rules; the structure, the record, the box the plan reads, the fence.
+  scenarioPins(check)
+  await scenarioLivePins(check, BASE)
   // THE POLICY POOL — the builder (2026-11-02): the v4 pin table, the config, the venue words, the hookData-bearing encoding, the guard over a signed attestation, the hook's revert names, the dispatch sites.
   await policyPoolBuilderPins(check)
   // The /live trigger rules armed on the server (2026-10-13): the body reader, the evaluation over consumed fills, the cursor policy, the notification, the wiring.
