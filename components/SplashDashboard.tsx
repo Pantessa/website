@@ -1002,7 +1002,7 @@ export function PromptChips({
   )
 }
 
-function Avatar({ url, label, size }: { url: string; label: string; size: number }) {
+export function Avatar({ url, label, size }: { url: string; label: string; size: number }) {
   const [failed, setFailed] = useState(false)
   if (failed || !url) {
     return (

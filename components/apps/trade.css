@@ -1,0 +1,93 @@
+/* THE APPS PAGE, TRADE lane: Snapshot, Hyperliquid, CoW Protocol sections.
+   Prefix `apgt-` (checked against every stylesheet in the repo). Flat: hairlines,
+   no shells, the site's tokens only. Built on apps.css (`apg-`). */
+
+.apgt { container-type: inline-size; container-name: apgt; }
+
+/* Two columns from ~900px of section width: the main list left, facts and the
+   side list right. One column below. */
+.apgt-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; align-items: start; }
+@container apgt (min-width: 900px) {
+  .apgt-grid { grid-template-columns: minmax(0, 1.65fr) minmax(260px, 1fr); gap: 48px; }
+}
+.apgt-col { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.apgt-col--side .apg-facts { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 18px 24px; }
+
+/* ── Small type and tones ────────────────────────────────────────────────── */
+.apgt-small { font-size: var(--fs-md); color: var(--muted); }
+.apgt-muted { color: var(--muted-2); }
+.apgt-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.apgt-r { text-align: right; justify-self: end; }
+.apgt-pos { color: var(--accent); }
+.apgt-neg { color: var(--sell, #f0776b); }
+.apgt-warn { color: var(--gold, #e5ae4a); }
+.apgt-lead { margin: 0; font-size: var(--fs-lg); line-height: 1.45; }
+.apgt-foot { margin: 12px 0 0; }
+
+.apgt-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.apgt-acts--row { flex-wrap: nowrap; justify-content: flex-end; }
+.apg-btn.apgt-btn-sm { height: 32px; padding: 0 13px; font-size: var(--fs-md); }
+
+.apgt-empty { display: flex; flex-direction: column; gap: 16px; padding: 4px 0 8px; }
+.apgt-empty > p { margin: 0; max-width: 58ch; font-size: var(--fs-lg); line-height: 1.5; color: var(--muted); }
+
+/* ── Snapshot: the featured vote ─────────────────────────────────────────── */
+.apgt-feature { display: flex; flex-direction: column; gap: 16px; padding: 4px 0 24px; border-bottom: 1px solid var(--line); }
+.apgt-feature__label { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.apgt-feature__label .apg-eyebrow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.apgt-feature__title {
+  margin: 0; font-family: var(--font-chat-display); font-weight: 600;
+  font-size: 24px; line-height: 1.2; letter-spacing: -0.01em; color: var(--fg);
+  text-wrap: balance; overflow-wrap: anywhere;
+}
+.apgt-feature__title--sm { font-size: 19px; }
+.apgt-choices { display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
+.apgt-choice { display: flex; flex-direction: column; gap: 2px; }
+.apgt-choice__row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: var(--fs-base); }
+.apgt-choice__name { color: var(--muted); overflow-wrap: anywhere; }
+.apgt-choice__name--lead { color: var(--fg); font-weight: 600; }
+.apgt-choice .apgt-num { font-size: var(--fs-md); color: var(--muted); white-space: nowrap; }
+
+.apgt-votesub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.apgt-votesub__lead { display: inline-flex; align-items: center; gap: 8px; }
+.apgt-votesub__lead .apgt-num { font-size: var(--fs-xs); white-space: nowrap; }
+.apgt-votesub__bar { display: block; width: 72px; }
+.apgt-votesub__bar > div { margin-top: 0; }
+
+/* ── Tables (positions, markets, place one) ──────────────────────────────── */
+.apgt-tbl { display: flex; flex-direction: column; min-width: 0; }
+.apgt-tbl__row {
+  display: grid; grid-template-columns: var(--apgt-cols); align-items: center; gap: 16px;
+  min-height: 58px; padding: 8px 0; border-top: 1px solid var(--line);
+}
+.apgt-tbl__row:last-child { border-bottom: 1px solid var(--line); }
+.apgt-tbl__head { min-height: 0; padding: 0 0 10px; border-top: 0; }
+.apgt-tbl__row > * { min-width: 0; }
+.apgt-tbl .apgt-num { font-size: var(--fs-md); white-space: nowrap; }
+
+.apgt-tbl--mkt { --apgt-cols: minmax(140px, 1.8fr) minmax(76px, 0.9fr) minmax(60px, 0.6fr) minmax(92px, 0.9fr) 142px; }
+.apgt-tbl--pos { --apgt-cols: minmax(120px, 1.4fr) minmax(76px, 0.8fr) minmax(120px, 1.2fr) minmax(96px, 0.9fr) 164px; }
+.apgt-tbl--place { --apgt-cols: minmax(90px, 1.1fr) minmax(76px, 0.9fr) minmax(90px, 1fr) minmax(96px, 1fr) 124px; }
+
+@container apgt (max-width: 640px) {
+  .apgt-tbl--mkt { --apgt-cols: minmax(110px, 1.6fr) minmax(70px, 0.9fr) minmax(56px, 0.6fr) 130px; }
+  .apgt-tbl--pos { --apgt-cols: minmax(100px, 1.3fr) minmax(70px, 0.8fr) minmax(90px, 1fr) 150px; }
+  .apgt-hide-n { display: none; }
+}
+
+.apgt-mkt { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.apgt-mkt__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.apgt-mkt__name { font-size: var(--fs-base); font-weight: 600; color: var(--fg); }
+.apgt-mkt__text .apgt-small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.apgt-pnl { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
+.apgt-pnlbar { position: relative; flex: 1 1 auto; max-width: 64px; height: 6px; border-radius: 999px; background: var(--surf-2); overflow: hidden; }
+.apgt-pnlbar__mid { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--line-2); }
+.apgt-pnlbar__fill { position: absolute; top: 0; bottom: 0; border-radius: 999px; }
+.apgt-pnlbar__fill--pos { background: var(--accent); }
+.apgt-pnlbar__fill--neg { background: var(--sell, #f0776b); }
+
+/* ── CoW: an order's fill bar under its row ──────────────────────────────── */
+.apgt-ordersub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.apgt-ordersub__bar { display: block; width: 96px; }
+.apgt-ordersub__bar > div { margin-top: 0; }
