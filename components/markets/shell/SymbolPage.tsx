@@ -31,6 +31,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
+import { SymbolSearchTrigger } from '@/components/markets/search/SymbolSearch'
 import ChartMount, { type ChartStats } from '@/components/markets/chart/ChartMount'
 import type { ChartState } from '@/lib/chart-state'
 import { CHART_FEED_LABELS, chartPairFor, chartUnitOf, isChartOnlyPair, isLookOnlyPair, type ChartFeed, type ChartTf } from '@/lib/charts'
@@ -475,6 +476,7 @@ export default function SymbolPage({
                 <div className="sym__titlerow">
                   <h1 className="sym__name truncate">{name}</h1>
                   <span className="sym__sym mono">{sym}</span>
+                  <SymbolSearchTrigger variant="head" />
                 </div>
                 <div className="sym__meta">
                   {lookOnly ? (
