@@ -137,11 +137,14 @@ export function DockEmpty({ count, onPick, phone }: { count: number; onPick: (pr
           ))}
         </div>
       )}
-      <p className="apgd-empty__hint" data-dock-hint="">
-        {DOCK_SHORTCUT_HINT.split('/')[0]}
-        <kbd className="apgd-kbd">/</kbd>
-        {DOCK_SHORTCUT_HINT.split('/').slice(1).join('/')}
-      </p>
+      {/* A phone has no page beside the chat and no "/" key to press. */}
+      {!phone && (
+        <p className="apgd-empty__hint" data-dock-hint="">
+          {DOCK_SHORTCUT_HINT.split('/')[0]}
+          <kbd className="apgd-kbd">/</kbd>
+          {DOCK_SHORTCUT_HINT.split('/').slice(1).join('/')}
+        </p>
+      )}
     </div>
   )
 }
