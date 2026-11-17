@@ -22,11 +22,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   } catch {
     return NextResponse.json({ error: 'Malformed body.' }, { status: 400 })
   }
-  const wallet = (await getAuthAddress(req)) ?? body.wallet
+  const authed = await getAuthAddress(req)
+  const wallet = authed ?? body.wallet
   if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
     return NextResponse.json({ error: 'Connect a wallet first.' }, { status: 401 })
   }
-  const result = await armSpotGuardPolicy(id, wallet, body.permission, body.signature ?? '')
+  // `!!authed`: the wallet is PROVEN, not just named - required when the
+  // permission is already approved on-chain (no signature is checked then).
+  const result = await armSpotGuardPolicy(id, wallet, body.permission, body.signature ?? '', !!authed)
   return NextResponse.json(result.body, { status: result.status })
 }
 

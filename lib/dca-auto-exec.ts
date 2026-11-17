@@ -19,6 +19,7 @@
 //  UNWINDING, holds the schedule's next pulls, and the next pass reconciles.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { ARM_NEEDS_OWNER, armProof } from '@/lib/spend-permission-proof'
 import { spendPermissionManagerAbi } from '@coinbase/cdp-sdk'
 import { encodeFunctionData, erc20Abi } from 'viem'
 import prisma from '@/lib/db'
@@ -364,6 +365,8 @@ export async function armDcaSchedule(
   wallet: string,
   permissionRaw: unknown,
   signature: string,
+  /** The caller authenticated as `wallet` (session or key), not just named it. */
+  provenOwner = false,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const s = await prisma.dcaSchedule.findUnique({ where: { id: scheduleId } })
   if (!s || s.wallet !== wallet.toLowerCase() || s.originEnv !== jobsEnv()) {
@@ -395,6 +398,9 @@ export async function armDcaSchedule(
 
   // Decisive gate: the chain itself must accept this signature.
   const approved = await managerIsApproved(permission)
+  // Already approved = no signature gets checked below: only the owner may
+  // arm then (lib/spend-permission-proof).
+  if (armProof(approved, provenOwner) === 'refused') return { status: 401, body: { error: ARM_NEEDS_OWNER } }
   if (!approved) {
     const sim = await simulateApprove(permission, signature as `0x${string}`, spender)
     if (!sim.ok) {

@@ -35,6 +35,7 @@ import { tokenMark } from '../lib/token-icons'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { createPublicClient, custom, http, HttpRequestError, InvalidAddressError, RpcRequestError, TimeoutError } from 'viem'
 import { base } from 'viem/chains'
+import { ARM_NEEDS_OWNER, armProof } from '../lib/spend-permission-proof'
 import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/dry-run'
 import { createSiweMessage, parseSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
@@ -7361,6 +7362,30 @@ async function main() {
   const del = await fetch(`${BASE}/api/keys/${minted.id}`, { method: 'DELETE', headers: C })
   const afterRevoke = await fetch(`${BASE}/api/grants`, { headers: B })
   check('revoked key → immediate 401', del.status === 200 && afterRevoke.status === 401)
+
+  // 2026-11-17 (arm proof): an autopilot whose permission is already approved
+  // on-chain has no signature to check, so only its proven owner may arm it.
+  {
+    const src = (f: string) => readFileSync(pathJoin(process.cwd(), f), 'utf8')
+    const ordered = (f: string) => {
+      const t = src(f)
+      const approved = t.indexOf('const approved = await managerIsApproved(permission)')
+      const gate = t.indexOf("if (armProof(approved, provenOwner) === 'refused')", approved)
+      const store = t.indexOf("mode: 'auto'", gate) >= 0 ? t.indexOf("mode: 'auto'", gate) : t.indexOf('permissionJson: serializePermission(permission)', gate)
+      return approved > 0 && gate > approved && store > gate
+    }
+    check(
+      'arm proof (pure): a new permission is proven by its signature; an already-approved one needs the proven owner, and a body-named wallet is refused',
+      armProof(false, false) === 'signature' && armProof(false, true) === 'signature' && armProof(true, true) === 'owner' && armProof(true, false) === 'refused' &&
+        /^[\x20-\x7e]+$/.test(ARM_NEEDS_OWNER),
+    )
+    check(
+      'arm proof (source): both arm paths gate on armProof before anything is stored, and both routes pass whether the caller is authenticated',
+      ordered('lib/dca-auto-exec.ts') && ordered('lib/spot-guard-exec.ts') &&
+        /armDcaSchedule\(id, wallet, body\.permission, body\.signature \?\? '', !!authed\)/.test(src('app/api/dca/[id]/arm/route.ts')) &&
+        /armSpotGuardPolicy\(id, wallet, body\.permission, body\.signature \?\? '', !!authed\)/.test(src('app/api/spot-guard/[id]/arm/route.ts')),
+    )
+  }
 
   // ── Chat receipts: meta round-trip + share render ─────────────────────────
   console.log('— chat receipts')
