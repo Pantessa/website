@@ -1356,6 +1356,19 @@ model IntentLinkExpectation {
   chainId   Int      @map("chain_id")
   toAddr    String   @map("to_addr") // lowercased tx.to
   selector  String? // first 4 bytes of calldata ('0x…8 hex'); null = native send
+  // Receipt binding (2026-11-04, lib/link-receipt-verify): the keccak256 of
+  // the EXACT calldata the builder produced — a receipt verifies only against
+  // this. Null = a legacy row (recorded before the binding), which can attest
+  // a {to, selector} match and never verify one.
+  calldataHash  String?   @map("calldata_hash")
+  // When the calldata left this server, and the chain head it saw then: a
+  // receipt must be mined AFTER both (by height when the head is known, else
+  // by block time against recorded_at).
+  recordedAt    DateTime  @default(now()) @map("recorded_at")
+  recordedBlock Int?      @map("recorded_block")
+  // The transaction that spent this build on its first verified use — a
+  // second transaction never verifies against the same build.
+  usedTxHash    String?   @map("used_tx_hash")
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([slug, wallet])

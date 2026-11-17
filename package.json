@@ -140,7 +140,8 @@
     "drive:prints": "tsx scripts/drive-print-alerts.ts",
     "drive:guest-chat": "node scripts/guest-chat-drive.mjs",
     "pins:markets-mobile": "tsx scripts/markets-mobile-pins.ts",
-    "drive:settings-sign-in": "node scripts/settings-sign-in-drive.mjs"
+    "drive:settings-sign-in": "node scripts/settings-sign-in-drive.mjs",
+    "pins:receipt-binding": "tsx scripts/receipt-binding-pins.ts"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.111",
