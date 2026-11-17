@@ -11,7 +11,9 @@ import { PanelLeftClose } from 'lucide-react'
 import { rememberSignInReturn, signedOutJustNow, useSession } from '@/lib/session'
 import { useAppSidebar } from '@/lib/app-sidebar'
 import { FRAME_ATTR, SCROLL_ATTR } from '@/lib/phone-shell'
+import { dashboardGate } from '@/lib/app-entry'
 import AppSpine from '@/components/AppSpine'
+import DashboardSignIn from '@/components/DashboardSignIn'
 import DashAskBar from '@/components/DashAskBar'
 import DashboardSidebar from '@/components/DashboardSidebar'
 import DashboardMobileNav from '@/components/DashboardMobileNav'
@@ -43,32 +45,44 @@ function DashRailHeader() {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const { address, status } = useSession()
+  const { address, status, needsSignIn, signedOut: nobodyHere } = useSession()
 
   // Wallet state is client-only — render nothing until mounted (hydration-safe).
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
-  // Signed out → home. The dashboard is authed-only; there's no in-place gate.
-  // Wait for the session to SETTLE before deciding: `address` is null while
-  // status === 'loading' (before /api/auth/me resolves), so redirecting on that
-  // would bounce a signed-in user mid-hydration. Only 'guest' means truly out.
-  // A visitor who arrived signed out leaves this page to come back to (lib/
-  // session rememberSignInReturn), so a sign-in on the landing lands back
-  // here; one who just signed out here leaves nothing (signedOutJustNow).
-  const signedOut = mounted && status === 'guest' && !address
+  // Who may see the dashboard (lib/app-entry dashboardGate, 2026-11-17). The
+  // dashboard is authed-only, but a CONNECTED wallet with no session is not a
+  // stranger: it gets the sign-in card in place (Nate: "give the user a path
+  // to sign then to dashboard") instead of the trip home it used to take.
+  // Only nobody-here (no wallet, no session, settled: useSession().signedOut)
+  // goes home. A visitor who arrived signed out leaves this page to come back
+  // to (lib/session rememberSignInReturn), so a sign-in on the landing lands
+  // back here; one who just signed out here leaves nothing (signedOutJustNow).
+  const gate = dashboardGate({ mounted, sessionStatus: status, sessionAddress: address, needsSignIn, signedOut: nobodyHere })
+  const signedOut = gate === 'home'
   useEffect(() => {
     if (!signedOut) return
     if (!signedOutJustNow()) rememberSignInReturn(pathname + window.location.search)
     router.replace('/')
   }, [signedOut, pathname, router])
 
-  // Nothing to render until we know the user is authed: through the loading
-  // phase, and through the brief tick before the redirect above lands. On a
-  // phone the FRAME renders at once (an empty one), so the document never has
-  // a moment without the frame's rules while the wallet/session settle (QA saw
-  // a transient scrolling document on the dashboard once; the content still
-  // waits, so nothing of the dashboard shows before auth is known).
+  // Nothing of the dashboard renders until the session is known: through the
+  // loading phase, and through the brief tick before the redirect above
+  // lands. On a phone the FRAME renders at once (an empty one), so the
+  // document never has a moment without the frame's rules while the
+  // wallet/session settle (QA saw a transient scrolling document on the
+  // dashboard once).
+  if (gate === 'sign') {
+    return (
+      <div className="dashshell" {...{ [FRAME_ATTR]: '' }}>
+        <AppSpine surface="dashboard" />
+        <div className="flex-1 min-w-0 min-h-dvh" {...{ [SCROLL_ATTR]: '' }}>
+          <DashboardSignIn />
+        </div>
+      </div>
+    )
+  }
   if (!mounted || !address) return <div className="dashshell" {...{ [FRAME_ATTR]: '' }} />
 
   // Below lg the shell is a PHONE FRAME (squad mobile-native, 2026-09-24;

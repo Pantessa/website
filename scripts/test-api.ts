@@ -24309,6 +24309,35 @@ async function main() {
           /\(redirectTo\?: string\) => \{\s*forgetSignInReturn\(\)\s*if \(!redirectTo\) return/.test(sessS) &&
           !/homeFor|\?next=/.test(spineSrc + dashLayoutS),
       )
+      // SETTINGS WITH A WALLET CONNECTED, NOT SIGNED IN (2026-11-17, Nate: "when I
+      // click settings … it just goes home and not to main dashboard … give the
+      // user a path to sign then to dashboard"). The dashboard's gate is
+      // lib/app-entry dashboardGate: a connected wallet with no session for it
+      // gets the in-place sign-in card; only nobody-here goes home.
+      {
+        const g = (o: Partial<Parameters<typeof ae.dashboardGate>[0]>) =>
+          ae.dashboardGate({ mounted: true, sessionStatus: 'guest', sessionAddress: null, needsSignIn: false, signedOut: false, ...o })
+        check(
+          'dashboard gate: a connected wallet without a session signs in place (never home); a session opens it; only a settled nobody-here goes home; loading and an unmounted render wait',
+          g({ needsSignIn: true }) === 'sign' &&
+            // the wallet switched accounts: useSession() hands the session's address as null, needsSignIn true
+            g({ sessionStatus: 'authed', needsSignIn: true }) === 'sign' &&
+            g({ sessionStatus: 'authed', sessionAddress: '0xabc' }) === 'open' &&
+            g({ signedOut: true }) === 'home' &&
+            // a remembered wallet still reconnecting is not nobody-here yet
+            g({ signedOut: false }) === 'wait' &&
+            g({ sessionStatus: 'loading', needsSignIn: true }) === 'wait' &&
+            g({ mounted: false, signedOut: true }) === 'wait',
+        )
+        const signCardS = await src('components/DashboardSignIn.tsx')
+        check(
+          'dashboard gate wired: the layout decides with dashboardGate, renders DashboardSignIn inside the spine frame for "sign", and the card signs from its button only, aimed at the page it is on (read on press)',
+          /dashboardGate\(\{ mounted, sessionStatus: status, sessionAddress: address, needsSignIn, signedOut: nobodyHere \}\)/.test(dashLayoutS) &&
+            /if \(gate === 'sign'\) \{[\s\S]{0,200}<AppSpine surface="dashboard" \/>[\s\S]{0,200}<DashboardSignIn \/>/.test(dashLayoutS) &&
+            /onClick=\{\(\) => void signIn\(currentAppHref\(\)\)\}/.test(signCardS) &&
+            !/useEffect/.test(signCardS),
+        )
+      }
       // Re-pinned 2026-09-14 (public markets): the spine still sends a settled
       // signed-out visitor home, except on a public app page (the markets
       // surface), where looking needs no wallet.
