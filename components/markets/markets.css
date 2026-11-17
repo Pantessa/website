@@ -674,7 +674,7 @@ button.mk-held:hover { border-color: var(--accent); }
 /* Phone: the strip is two rows — identity + YOU HOLD, then the price and
    the day's high / low. */
 @media (max-width: 640px) {
-  .sym--cockpit .sym__strip { flex-wrap: wrap; gap: 8px 12px; min-height: 0; padding: 16px 0 8px; }
+  .sym--cockpit .sym__strip { flex-wrap: wrap; gap: 8px 12px; min-height: 0; padding: 12px 0 6px; }
   .sym--cockpit .sym__strip > .sym__id { flex: 1 1 auto; order: 1; }
   .sym--cockpit .sym__strip > .mk-held { order: 2; }
   .sym--cockpit .sym__strip > .sym__sep, .sym--cockpit .sym__grow { display: none; }
