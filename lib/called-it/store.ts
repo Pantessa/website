@@ -348,7 +348,7 @@ export async function reserveAdd<T extends { ok: boolean }>(r: { postId: string;
     if (!allowance.ok) return { kind: 'over' as const, allowance }
     await tx.xCall.create({ data: { postId: r.postId, symbol, stance: 'none', conviction: 0, quote: null, model: ADD_PENDING_MODEL, origin: 'added', addedBy: r.requester, labeledAt: new Date(nowMs) } })
     return { kind: 'reserved' as const }
-  })
+  }, { maxWait: 15_000, timeout: 20_000 }) // 2026-11-17 (harness-zero): like the other lock-holding transactions here — a burst from one requester queues on the lock, and Prisma's 5s default expired the tail (P2028 → a 500)
 }
 
 // ── Scans ─────────────────────────────────────────────────────────────────
@@ -393,7 +393,7 @@ export async function startScan(row: { handle: string; symbol: string; provider:
       data: { id: scanId(), handle, symbol, status: 'running', provider: row.provider, requestedBy: row.requestedBy, isInternal: row.isInternal, windowFrom: new Date(row.windowFrom), windowTo: new Date(row.windowTo), note: 'Starting', startedAt: now },
     })
     return { scan: scanRow(created), joined: false }
-  })
+  }, { maxWait: 15_000, timeout: 20_000 }) // 2026-11-17 (harness-zero): like the other lock-holding transactions here — a burst from one requester queues on the lock, and Prisma's 5s default expired the tail (P2028 → a 500)
 }
 
 /** What one finished scan of a handle on a symbol read (reviews R7, R8). */

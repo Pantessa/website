@@ -37,6 +37,14 @@
 //  our own making); the harness's "unfenced" loop now watches it, so a
 //  returning floor goes red instead of reaching a user as a raw 400.
 //
+//  RE-MEASURED 2026-11-17 (same probe, harness-zero): BNB Chain's $1,000 floor —
+//  origin AND destination since 09-22 — is GONE too; the venue prices $5 and $20
+//  both ways. The table is EMPTY now. The machinery stays: a floor that returns
+//  is caught by `venueFloorFromError` at quote time and by the harness's live
+//  "unfenced" loop, which watches BNB Chain from today; re-add it here when the
+//  probe measures one. The pure pins exercise the rules on a fixture table
+//  (every function below takes an optional `table`, defaulting to the real one).
+//
 //  NEAR's changelog is STALE and must not be the source: it lists Optimism
 //  and Avalanche at $1,000 (both price $20 fine today) and said nothing
 //  about the floor applying to the destination side, which it did for
@@ -66,9 +74,8 @@ export interface VenueFloor {
 
 /** Keyed by CANONICAL chain word (lib/chain-lexicon), so the typo aliases
  *  the grammar accepts ("matic", "bsc", "binance") all land here. */
-export const VENUE_FLOORS: Readonly<Record<string, VenueFloor>> = {
-  bnb: { usd: 1000, sides: ['origin', 'destination'] },
-}
+export type FloorTable = Readonly<Record<string, VenueFloor>>
+export const VENUE_FLOORS: FloorTable = {}
 
 /** Stables this layer prices 1:1 — the same set DOLLAR_STABLE_RE reads, so
  *  "swap 20 USDC" is sized here exactly as the grammar sizes "$20 USDC". */
@@ -82,9 +89,9 @@ export function moveUsd(amount: string, token: string): number | null {
   return STABLE_1_TO_1.has(token.toUpperCase()) ? n : null
 }
 
-export function floorFor(chain: string, side: FloorSide): VenueFloor | null {
+export function floorFor(chain: string, side: FloorSide, table: FloorTable = VENUE_FLOORS): VenueFloor | null {
   const key = canonicalChainWord(chain) ?? chain.trim().toLowerCase()
-  const f = VENUE_FLOORS[key]
+  const f = table[key]
   return f && f.sides.includes(side) ? f : null
 }
 
@@ -109,11 +116,11 @@ export interface FloorBlock {
  * The origin end is checked first: when both ends are floored the origin is
  * the one the user can actually change by picking another chain they hold on.
  */
-export function crossChainFloorBlock(p: Pick<CrossChainSwapParams, 'amount' | 'originToken' | 'originChain' | 'destinationChain'>): FloorBlock | null {
+export function crossChainFloorBlock(p: Pick<CrossChainSwapParams, 'amount' | 'originToken' | 'originChain' | 'destinationChain'>, table: FloorTable = VENUE_FLOORS): FloorBlock | null {
   const askUsd = moveUsd(p.amount, p.originToken)
   if (askUsd === null) return null
   for (const [chain, side] of [[p.originChain, 'origin'], [p.destinationChain, 'destination']] as const) {
-    const f = floorFor(chain, side)
+    const f = floorFor(chain, side, table)
     if (f && askUsd < f.usd) {
       return { chain: canonicalChainWord(chain) ?? chain.toLowerCase(), side, usd: f.usd, askUsd }
     }
@@ -146,10 +153,11 @@ export function venueFloorFromError(message: string): number | null {
 export function floorBlockFromError(
   p: Pick<CrossChainSwapParams, 'amount' | 'originToken' | 'originChain' | 'destinationChain'>,
   message: string,
+  table: FloorTable = VENUE_FLOORS,
 ): FloorBlock | null {
   const usd = venueFloorFromError(message)
   if (usd === null) return null
-  const side: FloorSide | null = floorFor(p.originChain, 'origin') ? 'origin' : floorFor(p.destinationChain, 'destination') ? 'destination' : null
+  const side: FloorSide | null = floorFor(p.originChain, 'origin', table) ? 'origin' : floorFor(p.destinationChain, 'destination', table) ? 'destination' : null
   const chain = side === 'destination' ? p.destinationChain : p.originChain
   return {
     chain: canonicalChainWord(chain) ?? chain.toLowerCase(),
@@ -200,7 +208,7 @@ export interface FloorTurn {
  *     is the dead end one step further on.
  * No chips means no chips: the reply then says what the wallet does hold.
  */
-export function floorRefusalTurn(p: CrossChainSwapParams, block: FloorBlock, sources: MoveSource[] | null): FloorTurn {
+export function floorRefusalTurn(p: CrossChainSwapParams, block: FloorBlock, sources: MoveSource[] | null, table: FloorTable = VENUE_FLOORS): FloorTurn {
   const token = p.originToken.toUpperCase()
   const destWord = prettyChainWord(p.destinationChain)
   const originWord = prettyChainWord(p.originChain)
@@ -234,7 +242,7 @@ export function floorRefusalTurn(p: CrossChainSwapParams, block: FloorBlock, sou
   if (block.side === 'origin') {
     for (const s of held
       .filter((s) => norm(s.chainWord) !== norm(block.chain) && norm(s.chainWord) !== norm(p.destinationChain))
-      .filter((s) => !floorFor(s.chainWord, 'origin') && s.balance >= Number(p.amount))
+      .filter((s) => !floorFor(s.chainWord, 'origin', table) && s.balance >= Number(p.amount))
       .sort((a, b) => b.balance - a.balance)
       .slice(0, 3)) {
       const from = prettyChainWord(norm(s.chainWord))
@@ -282,7 +290,7 @@ export function floorRefusalTurn(p: CrossChainSwapParams, block: FloorBlock, sou
           ? `where the limit is`
           : norm(s.chainWord) === norm(p.destinationChain)
             ? `where it's already going`
-            : floorFor(s.chainWord, 'origin')
+            : floorFor(s.chainWord, 'origin', table)
               ? `same limit`
               : `not enough to move ${p.amount}`
       return `${units(token, s.balance)} ${token} on ${w} (${why})`

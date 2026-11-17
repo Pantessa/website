@@ -44,7 +44,7 @@ import { chainById, primaryStable } from '@/lib/chains'
 import type { CompiledJob } from '@/lib/jobs'
 import { NoLifiRouteError } from '@/lib/lifi-venue'
 import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
-import { UnknownTokenError } from '@/lib/token-list'
+import { UnknownTokenError, dynamicTokenCount } from '@/lib/token-list'
 import { NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildGuardedSwap, type GuardedSwapResult, type SwapVenues } from '@/lib/swap-exec'
 
@@ -100,7 +100,11 @@ export function verdictOfSwapResult(r: GuardedSwapResult): VenueFillVerdict {
  * is down — stays `unknown` and proceeds. A definite miss is still confirmed
  * by a second read before it can hide anything (see preflightFundedBuy).
  */
-export function verdictOfThrow(err: unknown): VenueFillVerdict {
+export function verdictOfThrow(err: unknown, chainId?: number): VenueFillVerdict {
+  // 2026-11-17 (harness-zero): an unknown token is a refusal only when the chain's token list is actually IN HAND. When
+  // every list source failed to load, every listed stock reads "unknown" too — recording that as no-venue would hide
+  // the whole board's buttons for a day (the trust window) on one list outage.
+  if (err instanceof UnknownTokenError && chainId !== undefined && dynamicTokenCount(chainId) === 0) return { kind: 'unknown', why: `the token list for chain ${chainId} did not load` }
   if (err instanceof UnknownTokenError) return { kind: 'no-venue', reason: err.message }
   if (err instanceof NoV3PoolError) return { kind: 'no-venue', reason: err.message }
   if (err instanceof NoLifiRouteError) return { kind: 'no-venue', reason: err.message }
@@ -146,7 +150,7 @@ async function onePass(buy: FundedBuy, venues: Partial<SwapVenues>, timeoutMs: n
       }),
     ])
   } catch (err) {
-    return verdictOfThrow(err)
+    return verdictOfThrow(err, buy.chainId)
   } finally {
     if (timer) clearTimeout(timer)
   }

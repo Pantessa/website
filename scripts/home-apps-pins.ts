@@ -83,8 +83,9 @@ export function homeAppsPins(check: Check): void {
   )
   check(
     // RE-PINNED 2026-11-09 (community): six → seven hints (the community surface's `proof` lesson).
-    "guide: the splash's own lesson is gone (the deck IS the live-tape lesson now) — seven hints, no 'pulse', 'home' still a surface in the rulebook",
-    !GUIDE_HINTS.some((h) => (h.id as string) === 'pulse') && GUIDE_HINTS.length === 7 && GUIDE_SURFACES.includes('home'),
+    // RE-PINNED 2026-11-17 (harness-zero): seven → six — the symbol page's "Ask the chart." hint left (6a9553bf, Nate); no 'chart' either.
+    "guide: the splash's own lesson is gone (the deck IS the live-tape lesson now) — six hints, no 'pulse' and no 'chart', 'home' still a surface in the rulebook",
+    !GUIDE_HINTS.some((h) => (h.id as string) === 'pulse' || (h.id as string) === 'chart') && GUIDE_HINTS.length === 6 && GUIDE_SURFACES.includes('home'),
   )
   check(
     "apps row: a thumb gets 44px pills; the phone keeps one scrolling row of pills and drops the head (the guide row's 62px budget — the first board row stays above the bar)",
