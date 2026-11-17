@@ -69,6 +69,7 @@
     "pins:flyover": "tsx scripts/flyover-pins.ts",
     "pins:ticket": "tsx scripts/order-ticket-pins.ts",
     "pins:symbol-ask": "tsx scripts/symbol-ask-pins.ts",
+    "pins:symbol-search": "tsx scripts/symbol-search-pins.ts",
     "drive:symbol-ask": "node scripts/symbol-ask-drive.mjs",
     "pins:sign-stage": "tsx scripts/sign-stage-pins.ts",
     "drive:cow-refusal": "node scripts/cow-refusal-drive.mjs",
