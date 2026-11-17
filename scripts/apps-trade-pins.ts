@@ -160,6 +160,13 @@ export function appsTradePins(check: Check) {
     marks,
   )
   check('trade: place rows: ETH first on the USDC chain, held tokens priced, unpriced dropped', pr.map((r) => r.symbol).join(',') === 'ETH,UNI' && /on Base$/.test(pr[0].buy?.ask ?? '') && pr[0].sell === null && /on Ethereum$/.test(pr[1].sell?.ask ?? ''), pr.map((r) => `${r.symbol}:${r.buy?.ask}|${r.sell?.ask}`).join(' / '))
+  check('trade: place rows: a buy is sized to the USDC held', pr[0].buyUsd === 25 && /for at most 25 USDC/.test(pr[0].buy?.ask ?? ''))
+  const small = placeRows([{ symbol: 'USDC', units: 12.08, valueUsd: 12.08, chainWord: 'Base' }], marks)
+  check('trade: place rows: $12 of USDC buys $12', small[0]?.buyUsd === 12 && /for at most 12 USDC on Base$/.test(small[0]?.buy?.ask ?? ''), small[0]?.buy?.ask)
+  const dust = placeRows([{ symbol: 'USDC', units: 0.4, valueUsd: 0.4, chainWord: 'Base' }], marks)
+  check('trade: place rows: no buy the wallet cannot fund', dust[0]?.buy === null)
+  const native = placeRows([{ symbol: 'ETH', units: 1, valueUsd: 1800, chainWord: 'Base' }], marks)
+  check('trade: place rows: native ETH offers no CoW sell', native[0]?.sell === null && !!native[0]?.buy)
   const noMarks = placeRows([{ symbol: 'UNI', units: 10, valueUsd: 50, chainWord: 'Ethereum' }], new Map())
   check('trade: place rows never invent a price', noMarks.length === 0)
   const weth = placeRows([{ symbol: 'WETH', units: 0.05, valueUsd: 100, chainWord: 'Arbitrum' }], marks)

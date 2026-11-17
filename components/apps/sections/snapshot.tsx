@@ -165,7 +165,7 @@ export function SnapshotSection({ server, tiles, pending, density, onAsk, onRetr
     return (
       <AppLineRow
         server={server}
-        tone={first ? 'needs' : undefined}
+        tone={first ? (first.endsAt * 1000 - Date.now() < 48 * 3_600_000 ? 'needs' : 'idle') : undefined}
         text={snapshotLine(v)}
         act={
           v.error
@@ -210,6 +210,11 @@ export function SnapshotSection({ server, tiles, pending, density, onAsk, onRetr
   const spacesWithVotes = v.spaces.filter((s) => s.open > 0)
   return (
     <SectionFrame server={server} note="read from Snapshot" className="apgt">
+      <FactRow>
+        <Fact value={String(v.proposals.length)} label="Open votes" />
+        <Fact value={String(v.spaces.length)} label={v.spaces.length === 1 ? 'Space voting' : 'Spaces voting'} sub="of the spaces you follow" />
+        <Fact value={timeLeftShort(first.endsAt).replace(/ left$/, '')} label="Next to close" sub={closeDate(first.endsAt)} />
+      </FactRow>
       <div className="apgt-grid">
         <div className="apgt-col">
           <Featured p={first} onAsk={onAsk} />
@@ -220,11 +225,6 @@ export function SnapshotSection({ server, tiles, pending, density, onAsk, onRetr
           </ListBlock>
         </div>
         <aside className="apgt-col apgt-col--side">
-          <FactRow>
-            <Fact value={String(v.proposals.length)} label="Open votes" />
-            <Fact value={String(v.spaces.length)} label={v.spaces.length === 1 ? 'Space voting' : 'Spaces voting'} sub="of the spaces you follow" />
-            <Fact value={timeLeftShort(first.endsAt).replace(/ left$/, '')} label="Next to close" sub={closeDate(first.endsAt)} />
-          </FactRow>
           {spacesWithVotes.length > 0 && (
             <ListBlock title="Spaces">
               {spacesWithVotes.map((s) => (

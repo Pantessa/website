@@ -67,7 +67,9 @@
 
 .apgt-tbl--mkt { --apgt-cols: minmax(140px, 1.8fr) minmax(76px, 0.9fr) minmax(60px, 0.6fr) minmax(92px, 0.9fr) 142px; }
 .apgt-tbl--pos { --apgt-cols: minmax(120px, 1.4fr) minmax(76px, 0.8fr) minmax(120px, 1.2fr) minmax(96px, 0.9fr) 164px; }
-.apgt-tbl--place { --apgt-cols: minmax(90px, 1.1fr) minmax(76px, 0.9fr) minmax(90px, 1fr) minmax(96px, 1fr) 124px; }
+.apgt-tbl--place { --apgt-cols: minmax(90px, 1.1fr) minmax(80px, 0.9fr) minmax(110px, 1fr) minmax(124px, 1fr) 124px; }
+.apgt-tbl--place3 { --apgt-cols: minmax(90px, 1.3fr) minmax(80px, 0.9fr) minmax(110px, 1fr) 124px; }
+.apgt-tbl__head > * { white-space: nowrap; }
 
 @container apgt (max-width: 640px) {
   .apgt-tbl--mkt { --apgt-cols: minmax(110px, 1.6fr) minmax(70px, 0.9fr) minmax(56px, 0.6fr) 130px; }

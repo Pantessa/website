@@ -111,6 +111,12 @@ function PnlBar({ pnl, maxAbs }: { pnl: number; maxAbs: number }) {
   )
 }
 
+/** Green up, red down, plain when it rounds to nothing. */
+function toneOf(pct: number | null): string {
+  if (pct == null || Math.abs(pct) < 0.05) return ''
+  return pct > 0 ? 'apgt-pos' : 'apgt-neg'
+}
+
 function signedUsd(n: number): string {
   return `${n >= 0 ? '+' : '-'}${fmtUsdPlain(Math.abs(n))}`
 }
@@ -199,7 +205,7 @@ function MarketsTable({ rows, onAsk }: { rows: HlMarketRow[]; onAsk: AppSectionP
               </span>
             </span>
             <span className="apgt-num apgt-r" role="cell">{fmtPrice(m.mark)}</span>
-            <span className={`apgt-num apgt-r ${m.changePct == null ? '' : m.changePct >= 0 ? 'apgt-pos' : 'apgt-neg'}`} role="cell">
+            <span className={`apgt-num apgt-r ${toneOf(m.changePct)}`} role="cell">
               {fmtSignedPct(m.changePct)}
             </span>
             <span className="apgt-num apgt-r apgt-hide-n" role="cell" title={m.fundingPerHour >= 0 ? 'paid by longs to shorts' : 'paid by shorts to longs'}>
@@ -246,7 +252,7 @@ function MarketsBlock({ n, compact, onAsk }: { n: number; compact?: boolean; onA
               sub={
                 <span className="apgt-num">
                   {fmtPrice(m.mark)}{' '}
-                  <span className={m.changePct == null ? '' : m.changePct >= 0 ? 'apgt-pos' : 'apgt-neg'}>{fmtSignedPct(m.changePct)}</span>
+                  <span className={toneOf(m.changePct)}>{fmtSignedPct(m.changePct)}</span>
                 </span>
               }
               actions={
@@ -383,7 +389,16 @@ export function HyperliquidSection({ server, tiles, pending, density, onAsk, onR
                 <AskButton onClick={onRetry}>Try again</AskButton>
               </div>
             ) : (
-              <MarketsBlock n={4} compact onAsk={onAsk} />
+              <>
+                {v.noAccount && prompts(tiles)[0] && (
+                  <div className="apgt-acts">
+                    <AskButton onClick={() => onAsk(prompts(tiles)[0].prompt)} title={prompts(tiles)[0].prompt}>
+                      {prompts(tiles)[0].label}
+                    </AskButton>
+                  </div>
+                )}
+                <MarketsBlock n={4} compact onAsk={onAsk} />
+              </>
             )}
           </>
         )}

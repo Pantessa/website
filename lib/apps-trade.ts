@@ -31,7 +31,8 @@ export function fmtPrice(p: number): string {
   if (!Number.isFinite(p) || p <= 0) return ''
   if (p >= 10_000) return `$${Math.round(p).toLocaleString('en-US')}`
   if (p >= 100) return `$${p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  if (p >= 1) return `$${p.toFixed(3).replace(/0$/, '')}`
+  if (p >= 10) return `$${p.toFixed(2)}`
+  if (p >= 1) return `$${p.toFixed(3)}`
   return `$${p.toPrecision(4)}`
 }
 
@@ -439,14 +440,19 @@ export interface PlaceRow {
   price: number
   buy: { ask: string; at: number } | null
   sell: { ask: string; at: number } | null
+  /** The dollars the buy pays: $25, or less when the wallet holds less USDC. */
+  buyUsd: number
 }
 
 /** ETH first (always quotable), then up to two held tokens worth $5 or more
  *  that the marks price. A buy pays USDC on the chain that holds the most of
- *  it; a sell is sized to the holding and rests on its own chain. */
+ *  it, sized to that USDC (at most $25; none under $1, since CoW refuses an
+ *  order the wallet cannot fund); a sell is sized to the holding and rests on
+ *  its own chain. Nothing known about USDC: a $25 buy with no chain named. */
 export function placeRows(held: Held[], marks: ReadonlyMap<string, { markPx: number }>): PlaceRow[] {
   const usdc = held.filter((h) => h.symbol === 'USDC').sort((a, b) => (b.valueUsd ?? b.units) - (a.valueUsd ?? a.units))[0]
   const payChain = usdc?.chainWord ?? null
+  const buyUsd = usdc ? Math.min(25, Math.floor(usdc.units)) : 25
   const rows: PlaceRow[] = []
   const seen = new Set<string>()
   const add = (symbol: string, h: Held | null) => {
@@ -455,9 +461,10 @@ export function placeRows(held: Held[], marks: ReadonlyMap<string, { markPx: num
     const price = marks.get(key)?.markPx
     if (!(price && price > 0)) return
     seen.add(key)
-    const buy = cowBuyLowerAsk(symbol, price, { chainWord: h?.chainWord ?? payChain })
-    const sell = h && (h.valueUsd ?? 0) >= 5 ? cowSellHigherAsk(symbol, price, h.units, { chainWord: h.chainWord }) : null
-    rows.push({ symbol, price, buy, sell })
+    const buy = buyUsd >= 1 ? cowBuyLowerAsk(symbol, price, { usd: buyUsd, chainWord: payChain ?? h?.chainWord ?? null }) : null
+    // Native ETH is not an ERC-20: CoW sells WETH, so a native balance offers no sell.
+    const sell = h && h.symbol !== 'ETH' && (h.valueUsd ?? 0) >= 5 ? cowSellHigherAsk(symbol, price, h.units, { chainWord: h.chainWord }) : null
+    rows.push({ symbol, price, buy, sell, buyUsd })
   }
   const tokens = held
     .filter((h) => !STABLES.has(h.symbol) && (h.valueUsd ?? 0) >= 5)
