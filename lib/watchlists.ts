@@ -9,6 +9,7 @@
 // constant in this file on purpose. Never add one.
 
 import { CHART_INDEXES, chartIndexFor, chartPairFor, chartUnitOf, isLookOnlyPair, normalizeChartSymbol, parseChartAsk, type ChartPair, type ChartSource } from '@/lib/charts'
+import { autoSellLive } from '@/lib/autopilot-live'
 import { ONRAMP_DEFAULT_NETWORK, ONRAMP_LANES_EVERYWHERE, onrampHasLane, type OnrampAsset, type OnrampLane, type OnrampNetwork } from '@/lib/onramp'
 import { ROBINHOOD_TICKERS } from '@/lib/robinhood-tickers'
 import { composeAsk } from '@/lib/trade-asks'
@@ -1085,7 +1086,7 @@ export function alertActionChips(rule: AlertRule, pair: ChartPair | null, sizeUs
   chips.push({ kind: 'sell', label: sellAsk.replace(/ on Hyperliquid$/, ''), ask: sellAsk, runsItself: false })
   if (!pair || price == null) return chips
   if (rule.condition === 'below') {
-    if (pair.source === 'coinbase') {
+    if (pair.source === 'coinbase' && autoSellLive()) {
       chips.push({
         kind: 'protect',
         label: `Spot Guardian: sell my ${sym} if it drops to $${fmtQuotePrice(price)}`,
