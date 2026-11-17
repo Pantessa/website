@@ -19,6 +19,8 @@
 import { X_MENTION } from '@/lib/social'
 import { SITE_URL, absoluteUrl } from '@/lib/site-url'
 import { MARKETS_HREF } from '@/lib/markets'
+import { ADDED_MARK, VERDICT_WORDS, fmtDay, moveLine, type CalledCall } from '@/lib/called-it/spec'
+import { callHref } from '@/lib/called-it/gtm'
 
 /** ?via= values the door accepts (mirrors lib/share-receipts VIA_RE). */
 export const SHARE_VIA_RE = /^[a-z0-9]{4,16}$/
@@ -284,5 +286,67 @@ export function myCalledPost(record: CalledPostInput): SharePost {
     url: calledUrl(record),
     title: record.words.headline,
     text: fitPost([`${lead} ${standing} ${close}`, `${lead} ${standing}`, lead]),
+  }
+}
+
+// ── One call (squad called-gtm, 2026-11-16, lane CALL) ────────────────────
+// The post for ONE call of a record: the link outreach sends an account, and
+// the one a reader shares from /x/<handle>/<SYM>?call=<id>. The house rules
+// and the three above hold, and two more:
+//   · the verdict is spec's word for it and nothing else ("called it" only
+//     when the call was right; a miss is shared as a miss);
+//   · the call never travels alone: the record's whole tally is in the text
+//     (every call found, hits and misses), and where a very long symbol or
+//     target would push that over X's limit, the text says the full record is
+//     at the link instead. A post a viewer pasted says so and that it is not
+//     counted; a record nobody scanned states no counts at all.
+// The link is the call's own address on the WHOLE record (no side: one call
+// is never set beside half a tally).
+
+/** What a one-call post is written from: a CalledCall has all of it. */
+export type CalledCallInput = Pick<CalledCall, 'postId' | 'postedAt' | 'stance' | 'verdict' | 'judgedPct' | 'origin'> & Partial<Pick<CalledCall, 'now' | 'target'>>
+
+/** What a one-call post says when its tally would not fit. No number in it. */
+export const CALLED_FULL_AT_LINK = 'Full record, hits and misses, at the link:'
+
+function calledCallUrl(record: CalledPostInput, call: CalledCallInput): string {
+  return absoluteUrl(callHref(record.handle, record.symbol.toUpperCase(), call.postId))
+}
+
+/** `called it, +24.1% in 30 days, +2.2% since.` Spec's verdict word, then the record's own move words. */
+function calledCallResult(call: CalledCallInput): string {
+  return `${VERDICT_WORDS[call.verdict]}, ${moveLine(call)}.`
+}
+
+/** Somebody else's call: the day, the verdict in spec's word, the move, the whole tally, "Not verified", the link. */
+export function calledCallPost(record: CalledPostInput, call: CalledCallInput): SharePost {
+  const ticker = calledTicker(record.symbol.toUpperCase())
+  const lean = call.stance === 'bull' ? 'Bullish' : 'Bearish'
+  const standing = record.words.standing
+  const short = `${standing.split('. ')[0].replace(/\.$/, '')}.`
+  const close = `Plot any handle with ${X_MENTION}:`
+  const added = call.origin === 'added'
+  const lead = `${lean} ${ticker} ${added ? `post by @${record.handle}, ${ADDED_MARK}` : `call by @${record.handle}`}, ${fmtDay(call.postedAt)}: ${calledCallResult(call)}`
+  const full = record.scanned === false ? CALLED_NO_TALLY : `Full record${added ? ' (this post is not counted)' : ''}: ${calledTally(record)}`
+  return {
+    url: calledCallUrl(record, call),
+    title: `@${record.handle} on ${record.symbol.toUpperCase()}, ${fmtDay(call.postedAt)}: ${VERDICT_WORDS[call.verdict]}.`,
+    text: fitPost([`${lead} ${full} ${standing} ${close}`, `${lead} ${full} ${short} ${close}`, `${lead} ${full} ${short}`, `${lead} ${full}`, `${lead} ${CALLED_FULL_AT_LINK}`]),
+  }
+}
+
+/** The account's own call, signed in with X: first person, the same verdict word, the same whole tally, "Verified", the link. */
+export function myCalledCallPost(record: CalledPostInput, call: CalledCallInput): SharePost {
+  const ticker = calledTicker(record.symbol.toUpperCase())
+  const lean = call.stance === 'bull' ? 'bullish' : 'bearish'
+  const standing = record.words.standing
+  const close = `Plot yours with ${X_MENTION}:`
+  const added = call.origin === 'added'
+  const lead = `My ${lean} ${ticker} ${added ? `post, ${ADDED_MARK}` : 'call'}, ${fmtDay(call.postedAt)}: ${calledCallResult(call)}`
+  const full = record.scanned === false ? CALLED_NO_TALLY : `My full record${added ? ' (this post is not counted)' : ''}: ${calledTally(record)}`
+  return {
+    url: calledCallUrl(record, call),
+    title: `@${record.handle} on ${record.symbol.toUpperCase()}, ${fmtDay(call.postedAt)}: ${VERDICT_WORDS[call.verdict]}.`,
+    text: fitPost([`${lead} ${full} ${standing} ${close}`, `${lead} ${full} ${standing}`, `${lead} ${full}`, `${lead} ${CALLED_FULL_AT_LINK}`]),
   }
 }

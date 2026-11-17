@@ -535,7 +535,8 @@ export function calledRecordPins(check: Check): void {
       if (name === 'node_modules' || name.startsWith('.') || name === 'charting_library') continue
       const rel = `${dir}/${name}`
       if (statSync(join(ROOT, rel)).isDirectory()) walkCss(rel)
-      else if (name.endsWith('.css') && rel !== 'components/called/called-record.css' && /\.xrc[\w-]*/.test(readFileSync(join(ROOT, rel), 'utf8'))) foreign.push(rel)
+      // RE-PINNED 2026-11-16 (called-gtm, after #1075): the home's Called it shelf draws /x's own tile, so its sheet styles `xrc-shelf` under the same prefix on purpose.
+      else if (name.endsWith('.css') && rel !== 'components/called/called-record.css' && rel !== 'components/home/called-shelf.css' && /\.xrc[\w-]*/.test(readFileSync(join(ROOT, rel), 'utf8'))) foreign.push(rel)
     }
   }
   for (const d of ['app', 'components', 'public']) walkCss(d)
