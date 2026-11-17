@@ -66,14 +66,36 @@ export function inflightScanBlocks(i: { cursor: bigint; latest: bigint }): bigin
  *   found    the card's own transaction is mined: follow its receipt.
  *   waiting  the wallet's mined count has not moved: it is still in flight.
  *   cleared  the count moved and the mined transaction was NOT this card's
- *            (something else used the nonce): the step is free to sign. */
-export function inflightVerdict(i: { found: boolean; minedAtStart: number | null; minedNow: number | null; scannedAll: boolean }): 'found' | 'waiting' | 'cleared' {
+ *            (something else used the nonce): the step is free to sign.
+ *   none     NOTHING from this wallet is out: no pending transaction, the
+ *            mined count unmoved, and the card's transaction in no recent
+ *            block. The refusal was the WALLET'S OWN stale nonce (2026-11-17,
+ *            16:05Z: Coinbase's send service signed step 2 on nonce 0 thirteen
+ *            minutes after nonce 0 had mined; "Nonce too low", nothing sent).
+ *            Only the FIRST look may say it, and only once per press: the
+ *            caller re-sends on the chain's own nonce, which can replace a
+ *            transaction this node could not see but can never add a second. */
+export function inflightVerdict(i: {
+  found: boolean
+  minedAtStart: number | null
+  minedNow: number | null
+  scannedAll: boolean
+  /** The wallet's count including its pending transactions (null = unread). */
+  pendingNow?: number | null
+  firstLook?: boolean
+}): 'found' | 'waiting' | 'cleared' | 'none' {
   if (i.found) return 'found'
   if (i.minedAtStart == null || i.minedNow == null) return 'waiting'
   // Only call it cleared when every block since the cursor was read: a look
   // that hit the cap may simply not have reached the block it mined in.
-  return i.minedNow > i.minedAtStart && i.scannedAll ? 'cleared' : 'waiting'
+  if (i.minedNow > i.minedAtStart) return i.scannedAll ? 'cleared' : 'waiting'
+  if (i.firstLook && i.scannedAll && i.pendingNow != null && i.pendingNow === i.minedNow) return 'none'
+  return 'waiting'
 }
+
+/** The nonce a send should carry when the card sets it itself: the chain's
+ *  count INCLUDING pending. Same-nonce means a re-send can only replace. */
+export const explicitNonceTag = 'pending' as const
 
 export const INFLIGHT_COPY = {
   /** Beside the spinner while the earlier transaction is followed. */
@@ -81,6 +103,9 @@ export const INFLIGHT_COPY = {
   button: 'Following your transaction…',
   /** The nonce was used by a different transaction: this step never went out. */
   cleared: 'Another transaction from this wallet was still confirming. It has landed now, so this step is ready to sign.',
+  /** The wallet signed on a stale nonce and nothing went out (a wallet with
+   *  its own confirm sheet: the next press asks it again). */
+  stale: 'The wallet used an out-of-date transaction number, so nothing was sent. Press to sign it again.',
   /** Ten minutes and nothing mined. */
   timeout: 'A transaction from this wallet has been pending for 10 minutes. Check the wallet’s activity on the explorer before sending this step again.',
 } as const

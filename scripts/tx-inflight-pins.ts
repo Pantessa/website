@@ -83,8 +83,16 @@ export function txInflightPins(check: Check): void {
       inflightVerdict({ found: false, minedAtStart: null, minedNow: 1, scannedAll: true }) === 'waiting' &&
       inflightVerdict({ found: false, minedAtStart: 0, minedNow: null, scannedAll: true }) === 'waiting')
 
-  check('tx inflight: the waiting words say nothing new was signed and that the card continues on its own; no copy offers a retry',
-    /Nothing new was signed/.test(INFLIGHT_COPY.waiting) && /continues on its own/.test(INFLIGHT_COPY.waiting) &&
+  check('tx inflight: NOTHING in flight (first look, every block read, no pending transaction, count unmoved) is `none`: the wallet\'s own stale nonce, the 16:05Z "Nonce too low"',
+    inflightVerdict({ found: false, minedAtStart: 1, minedNow: 1, scannedAll: true, pendingNow: 1, firstLook: true }) === 'none')
+  check('tx inflight: `none` is never said while something is pending, on a later look, on a capped look, or when the pending count could not be read',
+    inflightVerdict({ found: false, minedAtStart: 0, minedNow: 0, scannedAll: true, pendingNow: 1, firstLook: true }) === 'waiting' &&
+      inflightVerdict({ found: false, minedAtStart: 1, minedNow: 1, scannedAll: true, pendingNow: 1, firstLook: false }) === 'waiting' &&
+      inflightVerdict({ found: false, minedAtStart: 1, minedNow: 1, scannedAll: false, pendingNow: 1, firstLook: true }) === 'waiting' &&
+      inflightVerdict({ found: false, minedAtStart: 1, minedNow: 1, scannedAll: true, pendingNow: null, firstLook: true }) === 'waiting' &&
+      inflightVerdict({ found: true, minedAtStart: 1, minedNow: 1, scannedAll: true, pendingNow: 1, firstLook: true }) === 'found')
+  check('tx inflight: the waiting words say nothing new was signed and that the card continues on its own; no copy offers a retry; the stale-nonce words say nothing was sent',
+    /Nothing new was signed/.test(INFLIGHT_COPY.waiting) && /continues on its own/.test(INFLIGHT_COPY.waiting) && /nothing was sent/.test(INFLIGHT_COPY.stale) &&
       !Object.values(INFLIGHT_COPY).some((w) => /retry/i.test(w)))
 
   // ── the component ──────────────────────────────────────────────────────
@@ -92,13 +100,19 @@ export function txInflightPins(check: Check): void {
   check('tx inflight: lib/tx-inflight is pure (no react, no wagmi, no window)', !/from 'react'|from 'wagmi'|window\.|document\./.test(lib))
   const btn = readFileSync('components/SendTxButton.tsx', 'utf8')
   check('tx inflight (button): ONE request per card at a time (a ref latch taken before the wallet is asked, released in finally)',
-    /const sending = useRef\(false\)/.test(btn) && /if \(sending\.current\) return\s+sending\.current = true\s+try \{\s+await sendOnce\(\)\s+\} finally \{\s+sending\.current = false/.test(btn))
+    /const sending = useRef\(false\)/.test(btn) && /if \(sending\.current\) return\s+sending\.current = true\s+try \{[\s\S]{0,400}await sendOnce\(true\)[\s\S]{0,60}\} finally \{\s+sending\.current = false/.test(btn))
   check('tx inflight (button): a nonce conflict follows the transaction already out (returns before the red Retry) and keeps the remembered ask',
     /const conflict = isNonceConflict\(msg\)/.test(btn) && /if \(outcomeKey && !conflict\) clearSignOutcome/.test(btn) &&
-      /if \(conflict\) \{\s+await follow\(askedAtMs\)\s+return\s+\}/.test(btn))
+      /if \(conflict\) \{[\s\S]{0,300}return follow\(askedAtMs, /.test(btn))
   check('tx inflight (button): while following, the button is disabled and says so; the found transaction is recorded settled and completes the step',
     /status === 'signing' \|\| status === 'broadcast' \|\| status === 'following'/.test(btn) && /status === 'following'\s+\? INFLIGHT_COPY\.button/.test(btn) &&
       /state: 'settled', askedAt, settledAt: Date\.now\(\), hash: found/.test(btn) && /if \(receipt\.status === 'success'\) onConfirmed\?\.\(found\)/.test(btn))
+  check('tx inflight (button): a Pantessa account\'s send carries the chain\'s own nonce (count including pending), read only for the embedded wallet',
+    /explicitNonceTag = 'pending'/.test(lib) && /if \(embedded && publicClient\) \{\s+nonce = await publicClient\.getTransactionCount\(\{ address: address as `0x\$\{string\}`, blockTag: explicitNonceTag \}\)/.test(btn) &&
+      /\.\.\.\(nonce != null \? \{ nonce \} : \{\}\)/.test(btn) && /const embedded = connector\?\.id === CDP_CONNECTOR_ID/.test(btn))
+  check('tx inflight (button): a stale-nonce refusal re-sends ONCE in the same press (embedded), hands the step back (other wallets), and a second conflict waits, never a third send',
+    /if \(\(await sendOnce\(true\)\) === 'resend'\) await sendOnce\(false\)/.test(btn) &&
+      /return follow\(askedAtMs, !embedded \? 'hand-back' : mayResend \? 'resend' : 'wait'\)/.test(btn) && /verdict === 'none' && onNone !== 'wait'/.test(btn))
 }
 
 // Runnable alone (the harness imports this file, so the run is argv-gated).
