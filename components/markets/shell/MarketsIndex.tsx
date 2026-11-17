@@ -325,14 +325,19 @@ export default function MarketsIndex({
   const [view, setView] = useMarketsView()
   const phone = usePhone()
   const showMap = view === 'map'
-  const showList = view === 'list' || phone
-  // The board tabs in MAP view (2026-11-17): Equities · Crypto · Perps have no
-  // ledger to jump to there (the boards render in the list only), so a tab
+  // The ledgers (Equities · Crypto · Perps) render in BOTH views (2026-11-17,
+  // Nate: "we used to have a crypto section here next to macro along with
+  // stocks"). From 09-15 they rendered in the list only, and a wide screen
+  // opens on the map, so the desktop home showed Macro and Earn with no stock
+  // or crypto board under the map. Now the map is the summary on top and the
+  // boards follow it, the way the phone has always had it; List only drops
+  // the map.
+  // The board tabs in MAP view on a desktop (2026-11-17, #1082): a tab
   // filters the heat map to its section and brings the map in under the
-  // strip. In the list (and on a phone, where the ledger renders under the
-  // map) the tab stays a plain anchor.
+  // strip (the board itself is further down). In the list and on a phone the
+  // tab stays a plain anchor to its board.
   const [mapSection, setMapSection] = useState<MapSection>('all')
-  const boardsAreMapped = showMap && !showList
+  const boardsAreMapped = showMap && !phone
   const pickBoard = useCallback(
     (id: MarketSectionId, e?: { preventDefault: () => void }) => {
       setActive(id)
@@ -471,11 +476,11 @@ export default function MarketsIndex({
                 }}
               />
               <p className="mk-map-seat__hint mono">
-                MAP · size by liquidity, colour by move · <button type="button" className="mk-map-seat__flip" onClick={() => setView('list')}>show the list</button>
+                MAP · size by liquidity, colour by move · the boards follow · <button type="button" className="mk-map-seat__flip" onClick={() => setView('list')}>hide the map</button>
               </p>
             </section>
           )}
-          {showList && sections.map((s) => <Board key={s.id} section={s} onAsk={indexAct} />)}
+          {sections.map((s) => <Board key={s.id} section={s} onAsk={indexAct} />)}
           {/* MACRO — under the tradable boards, in BOTH views (the map sizes by liquidity; an index has none). */}
           <MacroBoard onAsk={indexAct} />
           {/* ── The guide seat (the apps row on the splash): under the markets,
