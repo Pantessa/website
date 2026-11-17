@@ -26,7 +26,7 @@ import { YeetfulMark } from '@/components/Logo'
 /** Which app-shell behaviours apply on the current route for a signed-in user. */
 export function useAppShellMode() {
   const pathname = usePathname()
-  const { address } = useSession()
+  const { address, walletAddress } = useSession()
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
@@ -39,7 +39,9 @@ export function useAppShellMode() {
     // chrome for EVERYONE (2026-09-11 — the nav returns null on /chat
     // unconditionally, the toolbar carries the sign-in door), so its h-dvh
     // shell is right from the server render; dashboard + docs stay authed.
-    chrome: (authed && (onDashboard || onDocs)) || onChat,
+    // A connected wallet on the dashboard is in the app shell too: it sees
+    // the dashboard's sign-in card there (lib/app-entry dashboardGate).
+    chrome: (authed && (onDashboard || onDocs)) || (mounted && !!walletAddress && onDashboard) || onChat,
     // The rail is collapsible via the shared toggle (dashboard + docs only).
     collapsible: authed && (onDashboard || onDocs),
   }

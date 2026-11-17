@@ -55,6 +55,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { Candle, ChartSource, ChartTf } from '@/lib/charts'
+import { autoSellLive } from '@/lib/autopilot-live'
 import { tokenHome } from '@/lib/token-home'
 
 export type Signal = 'buy' | 'neutral' | 'sell'
@@ -735,6 +736,8 @@ export function verdictChips(input: ChipInput): ChartAction[] {
   const sym = input.symbol.toUpperCase()
   const perp = input.source === 'hyperliquid' || !!tokenHome(sym)
   const stock = input.source === 'robinhood' && !perp
+  // A coin's stop is the Spot Guardian: offered only while it can be armed (lib/autopilot-live).
+  const spotStops = perp || autoSellLive()
   const s1 = input.support != null && Number.isFinite(input.support) && input.support > 0 ? askPrice(input.support) : null
   const r1 = input.resistance != null && Number.isFinite(input.resistance) && input.resistance > 0 ? askPrice(input.resistance) : null
   const buy: ChartAction = perp
@@ -762,13 +765,13 @@ export function verdictChips(input: ChipInput): ChartAction[] {
   switch (input.rating) {
     case 'strong_sell':
     case 'sell':
-      return stock ? [sell, sellAll] : [sell, protectPct]
+      return stock || !spotStops ? [sell, sellAll] : [sell, protectPct]
     case 'strong_buy':
     case 'buy':
-      if (stock) return alertR1 ? [buy, alertR1] : [buy]
+      if (stock || !spotStops) return alertR1 ? [buy, alertR1] : [buy]
       return [buy, protectPct]
     default:
-      if (stock) return alertR1 ? [buy, alertR1] : [buy]
+      if (stock || !spotStops) return alertR1 ? [buy, alertR1] : [buy]
       return perp ? [stopAtS1 ?? protectPct, takeProfitR1 ?? buy] : [stopAtS1 ?? protectPct, buy]
   }
 }

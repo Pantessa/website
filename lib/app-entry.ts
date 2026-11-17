@@ -342,3 +342,36 @@ export function sentHomeNotice(homeReturn: string | null): SentHomeNotice | null
   const what = path.startsWith('/wallet') ? 'your wallet page' : path.startsWith('/dashboard') ? 'your dashboard' : ask ? 'that ask' : 'the app'
   return { what, ask }
 }
+
+// ── The dashboard's gate (2026-11-17) ────────────────────────────────────
+// Nate, pressing SETTINGS with a wallet connected but not signed in: "it just
+// goes home and not to main dashboard … give the user a path to sign then to
+// dashboard". The dashboard (settings: creator page, keys, billing) reads the
+// SIWE session, so a connected wallet alone can't open it — but it used to be
+// sent home like a stranger, with no word why. Now it stays and is asked for
+// the one signature, in place; the dashboard opens when the session lands.
+//
+//  · 'wait' — the session or a remembered wallet is still settling (never a
+//    mid-hydration guess), or an orphaned session is being ended.
+//  · 'home' — nobody is here (isSignedOut): no wallet, no session.
+//  · 'sign' — a wallet is connected with no session for it (never signed, or
+//    the wallet switched accounts): the in-place sign-in card.
+//  · 'open' — a session for the connected wallet: the dashboard.
+export type DashboardGate = 'wait' | 'home' | 'sign' | 'open'
+
+export function dashboardGate(s: {
+  mounted: boolean
+  sessionStatus: SessionStatus
+  /** The session's address as useSession() hands it: null when it isn't the connected wallet's. */
+  sessionAddress: string | null
+  /** useSession().needsSignIn: a wallet CONNECTED (not merely reconnecting:
+   *  a signature asked of a wallet wagmi is still restoring answers "Connect
+   *  a wallet first.") with no session for it. */
+  needsSignIn: boolean
+  signedOut: boolean
+}): DashboardGate {
+  if (!s.mounted || s.sessionStatus === 'loading') return 'wait'
+  if (s.sessionAddress) return 'open'
+  if (s.needsSignIn) return 'sign'
+  return s.signedOut ? 'home' : 'wait'
+}

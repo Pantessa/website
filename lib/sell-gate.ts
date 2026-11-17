@@ -33,6 +33,7 @@
 
 import { ROBINHOOD_CHAIN_ID, SPOT_CHAINS } from '@/lib/symbol-venues'
 import { normalizeWatchSymbol, type HeldSymbol } from '@/lib/watchlists'
+import { autoSellLive } from '@/lib/autopilot-live'
 
 /** The chain words a sell sentence ends with ("… on Base"), by id. */
 const CHAIN_WORDS: ReadonlyMap<string, number> = new Map([
@@ -123,7 +124,8 @@ export function spotStopTarget(ask: string): string | null {
  */
 export function canSellAsk(ask: string, held: readonly HeldSymbol[] | null | undefined): boolean {
   const guarded = spotStopTarget(ask)
-  if (guarded) return !!held?.some((x) => x.symbol === guarded && x.amount > 0 && x.guardable === true)
+  // Nothing can arm it while automatic selling is off (lib/autopilot-live).
+  if (guarded) return autoSellLive() && !!held?.some((x) => x.symbol === guarded && x.amount > 0 && x.guardable === true)
   if (!isSellAsk(ask)) return true
   const target = sellTarget(ask)
   if (!target || !held) return false
