@@ -31,9 +31,16 @@ const norm = (s: string) =>
 const isThen = (s: string) => /,\s*then\b/i.test(s)
 const inInventory = (s: string) => INVENTORY.some((e) => norm(e.ask) === norm(s))
 
-/** Sentences that are deliberately NOT a job, with the reason. Empty today:
- *  every sentence the drive runs compiles. Add one only with its reason. */
-export const KNOWN_NON_JOBS: Record<string, string> = {}
+/** Offered sentences that do NOT compile as a job, with what the server does
+ *  instead (measured by the drive, 2026-11-17). Listed so the pin stays green
+ *  while the OFFERS lane decides their fate; remove an entry when its sentence
+ *  is fixed or no longer offered. */
+export const KNOWN_NON_JOBS: Record<string, string> = {
+  'Buy $50 of ETH, then stake 0.05 ETH with Lido':
+    'VENUE_BAND.compound: a chainless "Buy $50 of ETH" has no job segment (dollar-buy needs a chain word); the chat answers the Lido stake alone (funding chips, or a single stake build for a rich wallet) and drops the buy',
+  'Fund Hyperliquid with $15 from Base, then 2x long $12 of HYPE':
+    'desk SDK example (tour snippet + /docs/desk): no parser reads "Fund Hyperliquid"; the chat reads only "2x Long HYPE" and asks for a size, dropping both the $12 and the funding',
+}
 
 export function jobsAuditPins(check: Check) {
   check('jobs audit: the lane\'s pin file is wired into the harness', true)

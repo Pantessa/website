@@ -164,6 +164,8 @@ export type ChatRecord = {
   words: string
   chips: string[]
   buildPath?: string
+  /** Top-level keys of the chat answer (what the client could render). */
+  keys?: string[]
 }
 export type RunRecord = { id: string; ask: string; wallet: WalletKey; dry?: DryRecord; chat?: ChatRecord; bug: boolean }
 
@@ -185,6 +187,9 @@ async function main() {
   const WANT = (process.argv.find((a) => a.startsWith('--wallets='))?.slice(10) ?? 'a,b,c,d').split(',') as WalletKey[]
   const NO_DRY = process.argv.includes('--no-dry')
   const NO_CHAT = process.argv.includes('--no-chat')
+  // --strict: a job CREATED with its first step withheld (unaffordable, waiting)
+  // also counts — the squad's invariant refuses those before creation too.
+  const STRICT = process.argv.includes('--strict')
   const JSON_OUT = process.argv.find((a) => a.startsWith('--json='))?.slice(7)
   const CONC = Number(process.argv.find((a) => a.startsWith('--conc='))?.slice(7) ?? 3)
 
@@ -295,7 +300,7 @@ async function main() {
     const reply = String(j.reply ?? j.error ?? '')
     const clar = (j.clarify as { options?: Array<{ label: string; resume: string; fund?: unknown }> } | undefined)?.options ?? []
     const chips = clar.map((o) => `${o.label}${o.fund ? ' [fund door]' : ''} → "${clip(o.resume, 110)}"`)
-    const rec: ChatRecord = { status: res.status, outcome: '', jobCreated: false, words: clip(reply), chips, buildPath: j.buildPath ? String(j.buildPath) : undefined }
+    const rec: ChatRecord = { status: res.status, outcome: '', jobCreated: false, words: clip(reply), chips, buildPath: j.buildPath ? String(j.buildPath) : undefined, keys: Object.keys(j).filter((x) => j[x] != null && x !== 'reply') }
     const jobId = typeof j.jobId === 'string' ? j.jobId : null
     if (jobId) {
       rec.jobCreated = true
@@ -316,6 +321,7 @@ async function main() {
       }
       rec.outcome = `job · ${rec.firstStep ?? '?'}`
     } else if (j.connectWallet) rec.outcome = 'connect door'
+    else if (j.door) rec.outcome = 'refused + door'
     else if (j.signInRequired || /sign[- ]in/i.test(String(j.gate ?? ''))) rec.outcome = 'sign-in gate'
     else if (j.txChain || j.txRequest || j.orderRequest) rec.outcome = 'single build (no job)'
     else if (clar.length) rec.outcome = clar.some((o) => o.fund) ? 'refused + fund door' : 'refused + chips'
@@ -334,7 +340,7 @@ async function main() {
       const r: RunRecord = { id: e.id, ask: e.ask, wallet: k, bug: false }
       if (!NO_DRY) r.dry = await dryRun(e, k)
       if (!NO_CHAT) r.chat = await chat(e, k)
-      r.bug = (k === 'a' || k === 'b') && !!r.chat?.jobCreated && r.chat.firstStep === 'failed'
+      r.bug = (k === 'a' || k === 'b') && !!r.chat?.jobCreated && (r.chat.firstStep === 'failed' || (STRICT && r.chat.firstStep === 'withheld'))
       records.push(r)
       const d = r.dry ? (r.dry.compiled ? `dry ${r.dry.first}${r.dry.unfillable ? ' (unfillable)' : ''}` : `dry ✗ ${r.dry.status}`) : ''
       console.log(`  ${r.bug ? '❌' : '·'} ${e.id.padEnd(24)} ${k}  ${d.padEnd(22)} chat: ${r.chat?.outcome ?? '-'}${r.chat?.words ? ` — ${clip(r.chat.words, 110)}` : ''}`)
