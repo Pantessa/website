@@ -21,6 +21,13 @@
  *   npm run dev        # in one terminal
  *   npm run test:api   # in another
  */
+
+// The Spot Guardian / DCA autopilot offers follow a BUILD-time stamp
+// (lib/autopilot-live). This process imports the composers directly, where no
+// build stamped it: the harness pins the composers as they are when automatic
+// selling is ON (the shape a CDP_SPEND_NETWORK=base build serves), and
+// scripts/autosell-pins.ts pins both states. Set it to '' to see the OFF shape.
+process.env.NEXT_PUBLIC_SPOT_AUTOSELL ??= '1'
 import { readFile } from 'node:fs/promises'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join as pathJoin } from 'node:path'
