@@ -128,8 +128,11 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   const surfaces = new Set(inv.map((r) => r.surface))
   check(`inventory: ${inv.length} offered sentences over ${surfaces.size} surfaces — 0 fall to the planner`, inv.length > 1500 && surfaces.size >= 20 && planner.length === 0, planner.slice(0, 6).map((r) => `[${r.surface}] ${r.sentence} (${r.why})`).join(' | '))
   check('inventory: 0 bare refusals (every refusal carries a chip that builds)', bare.length === 0, bare.slice(0, 6).map((r) => `[${r.surface}] ${r.sentence}`).join(' | '))
-  for (const surface of ['header strip (execAsks)', 'venue routes (venuesFor)', 'order ticket', 'AI bar question chip', 'ask door chips (/t)', 'guide CTA', 'tape follow', 'pick alert (armSentence)', 'earn board', 'wallet flags', 'alert action chips (lib/watchlists)'])
+  // RE-PINNED 2026-11-17 (harness-zero): 'guide CTA' left the list — the symbol page's chart hint (6a9553bf) was the only hint whose CTA
+  // sends a sentence; every remaining hint's CTA scrolls or links. If a sentence-sending CTA returns, the inventory adds it again.
+  for (const surface of ['header strip (execAsks)', 'venue routes (venuesFor)', 'order ticket', 'AI bar question chip', 'ask door chips (/t)', 'tape follow', 'pick alert (armSentence)', 'earn board', 'wallet flags', 'alert action chips (lib/watchlists)'])
     check(`inventory covers: ${surface}`, surfaces.has(surface))
+  check('inventory: no guide hint\'s CTA sends a sentence today (the chart hint left 2026-11-17), so the guide adds none', !surfaces.has('guide CTA'))
 }
 {
   const { marketReadAsk, marketReadWords, marketReadChips } = require('../lib/market-read') as typeof import('../lib/market-read')
@@ -251,8 +254,9 @@ for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ET
   check('QA-X1: every sign builder the jobs compiler emits has a path', unpathed.length === 0, unpathed.join(','))
   const { VENUE_FLOORS, crossChainFloorBlock } = require('../lib/venue-floor') as typeof import('../lib/venue-floor')
   const cc = (o: string, d: string) => ({ amount: '20', originToken: 'USDC', originChain: o, destinationToken: 'USDC', destinationChain: d })
-  check('QA-X3: Polygon\'s lifted floor no longer refuses a $20 move (probe:venue-floors 2026-10-13); BNB still does', !('polygon' in VENUE_FLOORS) && crossChainFloorBlock(cc('polygon', 'base')) === null && crossChainFloorBlock(cc('base', 'polygon')) === null && crossChainFloorBlock(cc('bnb', 'base'))?.usd === 1000)
-  check('QA-X3: "Swap 20 USDC from Polygon to USDC on Base" builds natively (was refused by our own table)', simulateLadder('Swap 20 USDC from Polygon to USDC on Base').kind === 'action')
+  // RE-PINNED 2026-11-17 (harness-zero): BNB Chain's floor lifted too (probe:venue-floors 2026-11-17) — neither chain is fenced now.
+  check('QA-X3: Polygon\'s and BNB Chain\'s lifted floors no longer refuse a $20 move (probe:venue-floors 2026-10-13 / 2026-11-17)', !('polygon' in VENUE_FLOORS) && !('bnb' in VENUE_FLOORS) && ['polygon', 'bnb'].every((c) => crossChainFloorBlock(cc(c, 'base')) === null && crossChainFloorBlock(cc('base', c)) === null))
+  check('QA-X3: "Swap 20 USDC from Polygon to USDC on Base" and the same from BNB Chain build natively (each was refused by our own table)', simulateLadder('Swap 20 USDC from Polygon to USDC on Base').kind === 'action' && simulateLadder('Swap 20 USDC from BNB Chain to USDC on Base').kind === 'action')
   const { ROBINHOOD_CHAIN_COINS, ROBINHOOD_TICKER_SET } = require('../lib/robinhood-tickers') as typeof import('../lib/robinhood-tickers')
   const { isChartedStock } = require('../lib/charts') as typeof import('../lib/charts')
   check('QA-X2: PONS (and cbBTC) are 4663 COINS — named, kept out of the stock set, never a charted stock — RE-PINNED 2026-10-15 (polish sweep): main (#1003) keeps every live listing in the snapshot and names PONS feedless; the coin set is what keeps it off the equities', ROBINHOOD_CHAIN_COINS.has('PONS') && ROBINHOOD_CHAIN_COINS.has('cbBTC') && !isChartedStock('PONS'))

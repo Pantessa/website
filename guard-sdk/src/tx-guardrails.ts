@@ -1,4 +1,4 @@
-// @canonical lib/tx-guardrails.ts — full copy; scripts/guard-sync-check.ts enforces byte-parity (modulo import lines + this header).
+// @forked from lib/tx-guardrails.ts on 2026-10-30 — the app retired its spend policy (only the kill switch refuses); this package keeps the in-process policy (allowlist, caps, expiry) for agents that pay from their own wallet. Not byte-compared since (scripts/guard-sync-check.ts GUARD_FORKED).
 // ─────────────────────────────────────────────────────────────────────────
 //  Transaction guardrails — the VENUE-NEUTRAL core (a Pantessa tool, per the
 //  taxonomy: Uniswap tools are Uniswap-specific, CoW tools are CoW-specific,

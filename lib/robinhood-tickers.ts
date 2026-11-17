@@ -234,4 +234,5 @@ export const ROBINHOOD_TICKER_SET: ReadonlySet<string> = new Set(ROBINHOOD_TICKE
  *  never a stock: no stock chips, no stock chart, not in the snapshot.
  *  Add a symbol here when the live list gains a non-equity (the harness's
  *  "every live 4663 stock listing" checks go red until it is named). */
-export const ROBINHOOD_CHAIN_COINS: ReadonlySet<string> = new Set(['cbBTC', 'PONS'])
+// 2026-11-17 (harness-zero): the live list gained SFI ("Spice") and W0G ("Wrapped 0G") — coins, not equities.
+export const ROBINHOOD_CHAIN_COINS: ReadonlySet<string> = new Set(['cbBTC', 'PONS', 'SFI', 'W0G'])

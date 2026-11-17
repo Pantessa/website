@@ -14,10 +14,33 @@ import { join } from 'node:path'
 
 /** canonical lib file → its full copy in the package */
 export const GUARD_SYNC_PAIRS: Array<{ lib: string; pkg: string }> = [
-  { lib: 'lib/spend-grant.ts', pkg: 'guard-sdk/src/spend-grant.ts' },
-  { lib: 'lib/tx-guardrails.ts', pkg: 'guard-sdk/src/tx-guardrails.ts' },
   { lib: 'lib/hl-guardian.ts', pkg: 'guard-sdk/src/hl-guardian.ts' },
 ]
+
+/** Declared forks (2026-11-17, harness-zero): the app retired its spend policy on
+ *  2026-10-30 (f43a85b2 — only the kill switch refuses; the commit keeps the grant
+ *  row "for the open-core SDK's own in-process policy"), so these two copies keep
+ *  the policy the app dropped. Each must carry the @forked header naming its lib
+ *  file; `guardForkDrift` pins that the package still enforces what the app retired. */
+export const GUARD_FORKED: Array<{ lib: string; pkg: string }> = [
+  { lib: 'lib/spend-grant.ts', pkg: 'guard-sdk/src/spend-grant.ts' },
+  { lib: 'lib/tx-guardrails.ts', pkg: 'guard-sdk/src/tx-guardrails.ts' },
+]
+
+/** Returns what is wrong with the declared forks (empty = the fork is what it says). */
+export function guardForkDrift(root = process.cwd()): string[] {
+  const out: string[] = []
+  const read = (p: string) => readFileSync(join(root, p), 'utf8')
+  for (const { lib, pkg } of GUARD_FORKED) {
+    if (!read(pkg).startsWith(`// @forked from ${lib} on 2026-10-30`)) out.push(`${pkg}: missing its @forked header`)
+  }
+  const sdkGrant = read('guard-sdk/src/spend-grant.ts')
+  for (const v of ['EXPIRED', 'NOT_ALLOWED', 'OVER_PER_CALL', 'BUDGET_EXCEEDED', 'ACCOUNT_FROZEN', 'REVOKED', 'POLICY_ERROR']) {
+    if (!new RegExp(`\\| '${v}'`).test(sdkGrant)) out.push(`guard-sdk spend-grant lost the ${v} violation`)
+  }
+  if (!/'VALUE_UNKNOWN'/.test(read('guard-sdk/src/tx-guardrails.ts'))) out.push('guard-sdk tx-guardrails lost the unpriceable-value refusal (VALUE_UNKNOWN)')
+  return out
+}
 
 const normalize = (src: string): string =>
   src

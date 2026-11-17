@@ -1,4 +1,4 @@
-// @canonical lib/spend-grant.ts — full copy; scripts/guard-sync-check.ts enforces byte-parity (modulo import lines + this header).
+// @forked from lib/spend-grant.ts on 2026-10-30 — the app retired its spend policy (only the kill switch refuses); this package keeps the in-process policy (allowlist, caps, expiry) for agents that pay from their own wallet. Not byte-compared since (scripts/guard-sync-check.ts GUARD_FORKED).
 // ─────────────────────────────────────────────────────────────────────────
 //  Spend grant — the policy primitive behind the "agent expense account."
 //

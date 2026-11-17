@@ -86,7 +86,7 @@ export default function SpendPolicyPage() {
 
         <h2>Your signature is the consent</h2>
         <p>
-          Every transaction Pantessa builds is offered to <strong>your</strong> wallet to sign —
+          Every transaction Pantessa builds is offered to <strong>your</strong>{' '}wallet to sign —
           built deterministically by the venue layer, re-verified byte for byte against what you
           asked for, priced on the card before you sign. If you don&apos;t sign, nothing moves.
           That is the control; a cap on top of it only ever got in the way.
@@ -101,7 +101,7 @@ export default function SpendPolicyPage() {
 
         <h2>Sales are not spend</h2>
         <p>
-          Actions where your wallet <strong>receives</strong> value — an NFT sale&apos;s proceeds, a
+          Actions where your wallet <strong>receives</strong>{' '}value — an NFT sale&apos;s proceeds, a
           filled listing — were never gated and still aren&apos;t. Only the kill switch applies
           regardless of direction.
         </p>
@@ -136,7 +136,7 @@ export default function SpendPolicyPage() {
             are enforced server-side at the build gate and again at any submit relay.
           </li>
           <li>
-            <strong>External SDK agents</strong> paying from their own wallet — the open-core SDK
+            <strong>External SDK agents</strong>{' '}paying from their own wallet — the open-core SDK
             still enforces whatever grant its operator gave it (an allowlist, caps) in-process.
             That is the operator&apos;s own configuration, not something Pantessa gates.
           </li>

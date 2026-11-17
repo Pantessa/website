@@ -57,7 +57,12 @@ the composed transaction actually does*. Four classes we have caught live:
   the policy row, and today's spend; the package answers. That's why the
   whole suite runs offline in milliseconds: `npm run guard:test`.
 - **The copies can't drift.** In the Pantessa repo, `guard:sync` enforces
-  byte-parity between this package and the modules guarding production.
+  byte-parity between this package's `hl-guardian` and the module guarding
+  production. `spend-grant` and `tx-guardrails` are a declared fork since
+  2026-10-30: the Pantessa app retired its spend policy (every move there is
+  signed by the user, and only the kill switch refuses), while this package
+  keeps the policy (allowlist, per-call and daily caps, expiry) for agents
+  that pay from their own wallet.
 
 ## Quickstart
 
