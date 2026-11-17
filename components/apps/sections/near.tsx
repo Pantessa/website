@@ -9,6 +9,8 @@
 // floor (lib/venue-floor). A balance with no honest move gets no button.
 
 import TokenIcon from '@/components/TokenIcon'
+import { getChainMark } from '@/components/chain-marks'
+import { canonicalChainWord } from '@/lib/chain-lexicon'
 import { AppLineRow, AskButton, Fact, FactRow, ListBlock, ListRow, SectionFrame, SectionPending } from '@/components/apps/parts'
 import { chainGroups, countWord, errorOf, moveAsk, nearHeadline, placedHoldings, previewOf, tokensLine, usdWords, type ChainGroup } from '@/lib/apps-earn'
 import type { AppSectionProps, SectionModule } from './types'
@@ -29,6 +31,12 @@ export function chainMoves(groups: ChainGroup[]) {
   })
 }
 
+/** A chain wears its own mark; one we have no mark for wears its top token's. */
+function ChainLead({ chain, symbol }: { chain: string; symbol: string }) {
+  const Mark = getChainMark(canonicalChainWord(chain))
+  return Mark ? <Mark size={28} /> : <TokenIcon symbol={symbol} size={28} chain={chain} />
+}
+
 function readPage({ page, map }: Pick<AppSectionProps, 'page' | 'map'>) {
   const placed = placedHoldings(page.bySlug, map)
   const groups = chainGroups(placed.rows)
@@ -46,7 +54,9 @@ function NearSection(props: AppSectionProps) {
   if (groups.length === 0) {
     if (density === 'line') {
       const act = prompts[0]
-      return <AppLineRow server={server} text="Moves money between chains in one step." act={act ? { label: act.label, onClick: () => onAsk(act.prompt) } : null} />
+      return (
+        <AppLineRow server={server} text="Moves money between chains in one step." act={act ? { label: act.label, onClick: () => onAsk(act.prompt) } : null} />
+      )
     }
     return (
       <SectionFrame server={server}>
@@ -64,7 +74,14 @@ function NearSection(props: AppSectionProps) {
       <AppLineRow
         server={server}
         text={groups.length === 1 ? nearHeadline(groups) : `Your money sits on ${countWord(groups.length)} chains.`}
-        act={first ? { label: `Move ${first.token.symbol} to ${first.to}`, onClick: () => onAsk(first.ask) } : null}
+        act={
+          first
+            ? {
+                label: `Move ${first.token.symbol} to ${first.to}`,
+                onClick: () => onAsk(first.ask),
+              }
+            : null
+        }
       />
     )
   }
@@ -72,23 +89,27 @@ function NearSection(props: AppSectionProps) {
   const counted =
     placed.source === 'map'
       ? 'Counts ETH and USDC only. Add Uniswap or the wallet to see every token.'
-      : `Chain totals count the ${placed.rows.length} ${placed.rows.length === 1 ? 'position' : 'positions'} this page lists.`
+      : 'Counts the largest positions your apps list here, plus ETH and USDC on every chain read.'
 
   const list = (n: number) => (
     <ListBlock title="Your money by chain" note={groups.length > n ? `${n} of ${groups.length}` : undefined}>
       {moves.slice(0, n).map(({ group, move }) => (
         <ListRow
           key={group.chain}
-          lead={<TokenIcon symbol={group.tokens[0].symbol} size={28} chain={group.chain} />}
+          lead={<ChainLead chain={group.chain} symbol={group.tokens[0].symbol} />}
           main={group.chain}
           sub={tokensLine(group)}
           value={usdWords(group.totalUsd)}
           actions={
-            move ? (
-              <AskButton onClick={() => onAsk(move.ask)} title={move.ask}>
-                {density === 'side' ? `Move ${move.token.symbol}` : `Move ${move.amount.toLocaleString('en-US')} ${move.token.symbol} to ${move.to}`}
-              </AskButton>
-            ) : undefined
+            movable.length > 0 && (
+              <span className={density === 'side' ? 'apge-act apge-act--mid' : 'apge-act apge-act--wide'}>
+                {move && (
+                  <AskButton onClick={() => onAsk(move.ask)} title={move.ask}>
+                    {density === 'side' ? `Move to ${move.to}` : `Move ${move.amount.toLocaleString('en-US')} ${move.token.symbol} to ${move.to}`}
+                  </AskButton>
+                )}
+              </span>
+            )
           }
         />
       ))}
@@ -105,8 +126,15 @@ function NearSection(props: AppSectionProps) {
 
   if (density === 'side') {
     return (
-      <SectionFrame server={server} note={`${countWord(groups.length)} ${groups.length === 1 ? 'chain' : 'chains'}`}>
-        {facts}
+      <SectionFrame server={server} note="cross-chain moves">
+        <FactRow>
+          <Fact
+            value={usdWords(groups.reduce((a, g) => a + g.totalUsd, 0))}
+            label={`On ${countWord(groups.length)} ${groups.length === 1 ? 'chain' : 'chains'}`}
+            sub={placed.source === 'map' ? 'ETH and USDC only' : undefined}
+          />
+          {movable.length > 0 && <Fact value={String(movable.length)} label="Can move now" sub="stablecoins of $5 or more" />}
+        </FactRow>
         {list(4)}
         <EarnFoot>{REFUND_LINE}</EarnFoot>
       </SectionFrame>

@@ -9,6 +9,8 @@ import {
   aaveHeadline,
   aaveOffers,
   aaveViewOf,
+  boardOffers,
+  compactUsd,
   chainGroups,
   fundingHeadline,
   heldBySymbol,
@@ -71,6 +73,9 @@ export function appsEarnPins(check: Check) {
   const offers = aaveOffers(board, new Map([['USDC', 623.97], ['LINK', 0.6], ['AAVE', 50]]))
   check('aave offers: only held, Aave-listed assets with a runnable sentence', offers.length === 1 && offers[0].asset === 'USDC', JSON.stringify(offers))
   check('aave offers: sized to what is held, whole dollars, never more', offers[0]?.ask === 'Supply $623 of USDC to Aave at the best rate')
+  const mOffers = boardOffers(board, new Map([['USDC', 40.9]]), 'morpho')
+  check('morpho offers: the board venue only, its own lend sentence', mOffers.length === 1 && mOffers[0].ask === 'Lend $40 of USDC on Morpho' && mOffers[0].chain === 'Base')
+  check('earn: market sizes read compact ($78.4M)', compactUsd(78_425_920) === '$78M' && compactUsd(9_100_000) === '$9.1M' && compactUsd(1_200_000_000) === '$1.2B')
   check('aave offers: ETH counts WETH holdings', heldBySymbol([{ symbol: 'WETH', chain: 'Base', usd: 10, balance: '0.004' }, { symbol: 'ETH', chain: 'Ethereum', usd: 5, balance: null }]).get('ETH') === 15)
 
   // ── Lido ──────────────────────────────────────────────────────────────────
@@ -124,9 +129,10 @@ export function appsEarnPins(check: Check) {
   }
   const dup = { ...holdingsTile, mcpSlug: 'yeetful-tool-wallet' }
   const placed = placedHoldings(new Map([['uniswap-free', [holdingsTile]], ['yeetful-tool-wallet', [dup]]]), idleMap)
-  check('near: holdings across apps are deduped, chain per row', placed.source === 'holdings' && placed.rows.length === 5)
+  check('near: holdings across apps are deduped, chain per row', placed.source === 'holdings' && placed.rows.filter((r) => r.balance != null).length === 5)
+  check('near: the map adds the ETH/USDC pairs the tile did not list, never twice', placed.rows.length === 6 && placed.rows.filter((r) => r.chain === 'Ethereum' && r.symbol === 'USDC').length === 1 && placed.rows.some((r) => r.chain === 'Base' && r.symbol === 'ETH' && r.balance === null))
   const groups = chainGroups(placed.rows)
-  check('near: grouped by chain, largest first', groups.map((g) => g.chain).join() === 'Optimism,Ethereum,BNB,Base' && groups[0].totalUsd === 1349.04, groups.map((g) => `${g.chain}:${g.totalUsd}`).join())
+  check('near: grouped by chain, largest first', groups.map((g) => g.chain).join() === 'Optimism,Ethereum,Base,BNB' && groups[0].totalUsd === 1349.04, groups.map((g) => `${g.chain}:${g.totalUsd}`).join())
   check('near: headline counts chains in words', nearHeadline(groups) === 'Your money sits on four chains. Move it in one step.')
   const opUsdc = placed.rows.find((r) => r.chain === 'Optimism' && r.symbol === 'USDC') as PlacedHolding
   const ethUsdc = placed.rows.find((r) => r.chain === 'Ethereum') as PlacedHolding

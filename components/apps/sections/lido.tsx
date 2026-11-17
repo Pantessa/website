@@ -35,9 +35,9 @@ function LidoSection(props: AppSectionProps) {
     <FactRow>
       {(view.stEth || view.stakedUsd != null) && (
         <Fact
-          value={view.stEth ? `${view.stEth} stETH` : usdWords(view.stakedUsd!)}
+          value={view.stakedUsd != null ? usdWords(view.stakedUsd) : `${view.stEth} stETH`}
           label="Staked"
-          sub={view.stEth && view.stakedUsd != null ? `worth ${usdWords(view.stakedUsd)}` : undefined}
+          sub={view.stEth && view.stakedUsd != null ? `${view.stEth} stETH` : undefined}
         />
       )}
       {view.aprPct != null && <Fact value={pctWords(view.aprPct)} label="Rate" sub="a year, it moves daily" />}

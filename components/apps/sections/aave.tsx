@@ -27,7 +27,8 @@ import {
   previewOf,
   usdWords,
   yearlyEarn,
-  type AaveOffer,
+  compactUsd,
+  type BoardOffer,
   type EarnBoardRow,
 } from '@/lib/apps-earn'
 import type { SuggestedPrompt } from '@/lib/splash/types'
@@ -126,7 +127,7 @@ function readBoard(): Promise<EarnBoardRow[]> {
   return boardInflight
 }
 
-function useEarnBoard(on: boolean): EarnBoardRow[] | null {
+export function useEarnBoard(on: boolean): EarnBoardRow[] | null {
   const [rows, setRows] = useState<EarnBoardRow[] | null>(boardCache?.rows ?? null)
   useEffect(() => {
     if (!on) return
@@ -139,9 +140,19 @@ function useEarnBoard(on: boolean): EarnBoardRow[] | null {
   return rows
 }
 
-function OffersTable({ offers, onAsk }: { offers: AaveOffer[]; onAsk: AppSectionProps['onAsk'] }) {
+export function OffersTable({
+  offers,
+  onAsk,
+  title = 'Where it could earn on Aave',
+  verb = 'Supply',
+}: {
+  offers: BoardOffer[]
+  onAsk: AppSectionProps['onAsk']
+  title?: string
+  verb?: string
+}) {
   return (
-    <ListBlock title="Where it could earn on Aave" note="your holdings, best rate">
+    <ListBlock title={title} note="for what you hold">
       <div className="apge-tbl apge-tbl--offers" role="table">
         <div className="apge-tbl__head" role="row">
           <span role="columnheader">Asset</span>
@@ -151,20 +162,22 @@ function OffersTable({ offers, onAsk }: { offers: AaveOffer[]; onAsk: AppSection
           <span aria-hidden />
         </div>
         {offers.map((o) => (
-          <div key={o.asset} className="apge-tbl__row" role="row">
+          <div key={`${o.asset}-${o.chain}`} className="apge-tbl__row" role="row">
             <span className="apge-tbl__asset" role="cell">
-              <TokenIcon symbol={o.asset} size={26} chain="Ethereum" />
+              <TokenIcon symbol={o.asset} size={26} chain={o.chain} />
               <span className="apge-tbl__name">
-                <span>{o.asset}</span>
+                <span>
+                  {o.asset} <span className="apge-sub">on {o.chain}</span>
+                </span>
                 <span className="apge-sub">{o.detail}</span>
               </span>
             </span>
             <span role="cell" className="apge-num apge-num--strong">{pctWords(o.apyPct)}</span>
-            <span role="cell" className="apge-num apge-hide-narrow">{o.tvlUsd != null ? usdWords(o.tvlUsd) : ''}</span>
+            <span role="cell" className="apge-num apge-hide-narrow">{o.tvlUsd != null ? compactUsd(o.tvlUsd) : null}</span>
             <span role="cell" className="apge-num">{usdWords(o.heldUsd)}</span>
             <span role="cell" className="apge-tbl__act">
               <AskButton onClick={() => onAsk(o.ask)} title={o.ask}>
-                Supply
+                {verb}
               </AskButton>
             </span>
           </div>
@@ -259,11 +272,15 @@ function AaveSection(props: AppSectionProps) {
           main={`${r.symbol} ${r.side}${r.collateral ? ', as collateral' : ''}`}
           sub={r.sub}
           value={<span className={r.side === 'borrowed' ? 'apge-neg' : undefined}>{r.value}</span>}
-          actions={r.actions.map((a) => (
-            <AskButton key={a.label} onClick={() => onAsk(a.prompt)} title={a.prompt}>
-              {a.label}
-            </AskButton>
-          ))}
+          actions={
+            <span className="apge-act">
+              {r.actions.slice(0, 1).map((a) => (
+                <AskButton key={a.label} onClick={() => onAsk(a.prompt)} title={a.prompt}>
+                  {a.label}
+                </AskButton>
+              ))}
+            </span>
+          }
         />
       ))}
     </ListBlock>

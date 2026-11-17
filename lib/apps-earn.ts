@@ -138,8 +138,9 @@ export interface EarnBoardRow {
   askTemplate: string | null
 }
 
-export interface AaveOffer {
+export interface BoardOffer {
   asset: string
+  chain: string
   apyPct: number
   tvlUsd: number | null
   detail: string
@@ -147,21 +148,33 @@ export interface AaveOffer {
   ask: string
 }
 
-/** What the wallet holds that Aave lists, at Aave's best rate, with the
+/** What the wallet holds that a venue lists, at that venue's rate, with the
  *  board's own sentence sized to what is held (whole dollars, floor). The
- *  board already keeps only reserves the supply layer would accept (active,
- *  canSupply), so every offer is one the chat builds. Highest rate first. */
-export function aaveOffers(board: readonly EarnBoardRow[], held: ReadonlyMap<string, number>, max = 4): AaveOffer[] {
-  const out: AaveOffer[] = []
+ *  board already keeps only markets the build layer would accept (Aave:
+ *  active + canSupply; Morpho: curated with a market id), so every offer is
+ *  one the chat builds. Highest rate first. */
+export function boardOffers(board: readonly EarnBoardRow[], held: ReadonlyMap<string, number>, venue: 'aave' | 'morpho', max = 4): BoardOffer[] {
+  const out: BoardOffer[] = []
   for (const r of board) {
-    if (r.venue !== 'aave' || !r.askTemplate || !r.askTemplate.includes('{usd}')) continue
+    if (r.venue !== venue || !r.askTemplate || !r.askTemplate.includes('{usd}')) continue
     if (typeof r.apyPct !== 'number' || !(r.apyPct > 0)) continue
     const h = held.get(r.asset.toUpperCase()) ?? 0
     const usd = Math.floor(h)
     if (usd < 1) continue
-    out.push({ asset: r.asset, apyPct: r.apyPct, tvlUsd: r.tvlUsd, detail: r.detail, heldUsd: h, ask: r.askTemplate.replace('{usd}', `$${usd}`) })
+    out.push({ asset: r.asset, chain: r.chainLabel, apyPct: r.apyPct, tvlUsd: r.tvlUsd, detail: r.detail, heldUsd: h, ask: r.askTemplate.replace('{usd}', `$${usd}`) })
   }
   return out.sort((a, b) => b.apyPct - a.apyPct).slice(0, max)
+}
+
+export const aaveOffers = (board: readonly EarnBoardRow[], held: ReadonlyMap<string, number>, max = 4) => boardOffers(board, held, 'aave', max)
+
+/** "$78.4M" for a market's size (a table cell, not a balance). */
+export function compactUsd(n: number): string {
+  const abs = Math.abs(n)
+  if (abs >= 1e9) return `$${(n / 1e9).toFixed(abs >= 1e10 ? 0 : 1)}B`
+  if (abs >= 1e6) return `$${(n / 1e6).toFixed(abs >= 1e7 ? 0 : 1)}M`
+  if (abs >= 1e4) return `$${Math.round(n / 1e3)}K`
+  return usdWords(n)
 }
 
 // ── Holdings across the page (for Aave's offers and NEAR's chains) ──────────
@@ -197,14 +210,18 @@ export function placedHoldings(
       }
     }
   }
-  if (rows.length > 0) return { rows, source: 'holdings' }
+  // The holdings tile lists the top few; the money map knows every chain's
+  // ETH and USDC. A pair the tile did not list is added from the map (never
+  // both: the same symbol on the same chain is counted once).
+  const listed = new Set(rows.map((r) => `${r.chain.toLowerCase()}:${r.symbol.toUpperCase()}`))
+  const fromTiles = rows.length
   for (const f of map?.facts ?? []) {
     if ((f.bucket !== 'idle' && f.bucket !== 'spot' && f.bucket !== 'protected') || !(f.usd > 0)) continue
     const m = f.label.match(/^(ETH|USDC) on (.+)$/)
-    if (!m) continue
+    if (!m || listed.has(`${m[2].toLowerCase()}:${m[1]}`)) continue
     rows.push({ symbol: m[1], chain: m[2], usd: f.usd, balance: null })
   }
-  return { rows, source: rows.length > 0 ? 'map' : null }
+  return { rows, source: fromTiles > 0 ? 'holdings' : rows.length > 0 ? 'map' : null }
 }
 
 /** symbol → dollars held across every chain (WETH counts as ETH: the board
