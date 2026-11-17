@@ -256,7 +256,9 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   const appsView = appsViewOn({ narrow: isNarrow, hasWallet: !!address, railTab, railOpen: mcpRailOpen, mainView })
   const appsChatOpen = useAppsUi((s) => s.chatOpen)
   const appsAsk = useAppsUi((s) => s.ask)
-  const injected = appsView && appsAsk && (!urlPrompt || appsAsk.at > urlPrompt.at) ? appsAsk : urlPrompt
+  // On a phone the apps page is the APPS screen (components/apps/AppsPhone):
+  // its asks reach the same conversation, so they ride below lg too.
+  const injected = (appsView || isNarrow) && appsAsk && (!urlPrompt || appsAsk.at > urlPrompt.at) ? appsAsk : urlPrompt
   const dockHidden = appsView && !appsChatOpen
 
   const screenUp = isNarrow && phoneScreen !== 'chat'
