@@ -6,6 +6,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Bot, CheckCircle2, Circle, Loader2, PenLine, XCircle } from 'lucide-react'
+import { JobOfferLine } from '@/components/JobOfferDoor'
+import { JOBS_DOOR } from '@/lib/first-run'
+import { isExpiredJob } from '@/lib/job-offers'
 
 interface StepLite {
   seq: number
@@ -30,7 +33,9 @@ interface JobRow {
 
 const label = 'mono text-[length:var(--fs-xs)] uppercase tracking-wider text-[color:var(--muted-2)]'
 
-function chip(status: string) {
+function chip(status: string, expired = false) {
+  // Offered, never signed, lapsed: not a failure, so not red.
+  if (expired) return <span className="inline-flex items-center rounded-full border border-[color:var(--line-2)] px-2 py-0.5 text-[length:var(--fs-xs)] font-medium text-[color:var(--muted-2)]">expired</span>
   const tone =
     status === 'done'
       ? 'border-emerald-500/40 text-emerald-500'
@@ -74,9 +79,12 @@ export default function JobsPanel() {
   if (!jobs) return <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)]">Loading jobs…</p>
   if (jobs.length === 0) {
     return (
-      <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)]">
-        No jobs yet. Chain steps in one chat ask — “deposit 12 usdc to hyperliquid, then long $12 of eth on
-        hyperliquid, then protect my eth long with a 5% stop” — and the whole run lands here with a receipt per step.
+      <p className="text-[length:var(--fs-md)] text-[color:var(--muted-2)]" data-jobs-empty>
+        No jobs yet. A chat ask with “then” in it is a job: each step is built, guarded and offered to your wallet in
+        turn, and the whole run lands here with a receipt per step. For example:{' '}
+        {/* The example is text. A link appears only when THIS wallet can run a
+            job, and it carries that wallet's own sentence (lib/job-offers). */}
+        <JobOfferLine example={JOBS_DOOR.ask} />
       </p>
     )
   }
@@ -89,7 +97,7 @@ export default function JobsPanel() {
             <span className="text-[length:var(--fs-md)] truncate">{j.title}</span>
             <span className="flex items-center gap-2 flex-shrink-0">
               {j.valueUsd != null && j.valueUsd > 0 && <span className="mono text-[11.5px]">${j.valueUsd.toFixed(2)}</span>}
-              {chip(j.status)}
+              {chip(j.status, isExpiredJob(j))}
               <span className="mono text-[10.5px] text-[color:var(--muted-2)]">{new Date(j.createdAt).toLocaleDateString()}</span>
             </span>
           </button>
@@ -103,7 +111,7 @@ export default function JobsPanel() {
                   <span className={label}>{s.builder.replace('native-', '')}</span>
                 </div>
               ))}
-              {j.failReason && <p className="text-[11.5px] text-red-500 ml-5">{j.failReason.slice(0, 160)}</p>}
+              {j.failReason && <p className={`text-[11.5px] ml-5 ${isExpiredJob(j) ? 'text-[color:var(--muted-2)]' : 'text-red-500'}`}>{j.failReason.slice(0, 160)}</p>}
             </div>
           )}
         </li>

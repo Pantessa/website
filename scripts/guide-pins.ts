@@ -519,7 +519,10 @@ export function guidePins(check: Check): void {
     /role="note"/.test(door) && /useConnectToAct\(/.test(door) && /PantessaMark/.test(door) && /<SpineLink /.test(door) && !/openConnectModal|createPortal|role="dialog"/.test(door),
   )
   const sites: Array<[string, RegExp]> = [
-    ['components/JobsRailTab.tsx', /<EmptyDoor[\s\S]*?id="jobs"[\s\S]*?kind: 'ask'/],
+    // RE-PINNED 2026-11-17 (lane1 offers): the jobs door moved into
+    // components/JobOfferDoor.tsx (JobsEmptyDoor). Its chip still SENDS, but
+    // the sentence is the wallet's own offer (lib/job-offers), never a fixed one.
+    ['components/JobOfferDoor.tsx', /kind: 'ask', label: [^\n]*ask: view\.offer\.ask[\s\S]*?<EmptyDoor[\s\S]*?id="jobs"/],
     ['components/ChatsRailTab.tsx', /<EmptyDoor[\s\S]*?id="chats"/],
     ['components/LinksStudioView.tsx', /<EmptyDoor[\s\S]*?id="links"/],
     ['components/WalletPage.tsx', /<EmptyDoor[\s\S]*?id="wallet"[\s\S]*?walletConnectOnly/],
@@ -533,7 +536,7 @@ export function guidePins(check: Check): void {
   const jobsSrc = src('components/JobsRailTab.tsx')
   check(
     'first-run: the jobs rail no longer answers a stranger with "Sign in with your wallet to see…" and nothing else — both empty branches carry the door, and the chip sends into the chat beside it (setComposerSend), never a prefill',
-    !/Sign in with your wallet to see the jobs/.test(jobsSrc) && !/Nothing running yet\. Protections/.test(jobsSrc) && count(jobsSrc, '<EmptyDoor') === 2 && /setComposerSend\(\{ text, mcps: askAppSlugs\(text\) \}\)/.test(jobsSrc),
+    !/Sign in with your wallet to see the jobs/.test(jobsSrc) && !/Nothing running yet\. Protections/.test(jobsSrc) && /* RE-PINNED 2026-11-17 (lane1 offers): the door is JobsEmptyDoor */ count(jobsSrc, '<JobsEmptyDoor') === 2 && /setComposerSend\(\{ text, mcps: askAppSlugs\(text\) \}\)/.test(jobsSrc),
   )
   const chatsSrc = src('components/ChatsRailTab.tsx')
   check(
