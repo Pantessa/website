@@ -4426,7 +4426,7 @@ async function main() {
       // ellipsized at 390+. Two lines beat an ellipsis over the amount.
       const jobsTab = await readFile(new URL('../components/JobsRailTab.tsx', import.meta.url), 'utf8')
       const funnel = await readFile(new URL('../components/LinkFunnelTable.tsx', import.meta.url), 'utf8')
-      check('mobile: jobs rail titles wrap (line-clamp-2), never truncate', /flex-1 min-w-0 text-xs line-clamp-2', expired && [^)]*\)\} title=\{j\.title\}/.test(jobsTab) /* RE-PINNED 2026-11-17 (lane1): an expired row is muted */ && !/flex-1 min-w-0 text-xs truncate" title=\{j\.title\}/.test(jobsTab))
+      check('mobile: jobs rail titles wrap (line-clamp-2), never truncate', /flex-1 min-w-0 text-xs line-clamp-2', expired && [^}]*\} title=\{j\.title\}/.test(jobsTab) /* RE-PINNED 2026-11-17 (lane1): an expired row is muted */ && !/flex-1 min-w-0 text-xs truncate" title=\{j\.title\}/.test(jobsTab))
       check('mobile: links rail + funnel table asks wrap, never truncate', /block text-\[11px\] line-clamp-2 mt-0\.5">\{l\.ask\}/.test(linksTab) && /line-clamp-2 min-w-0" title=\{l\.ask\}/.test(funnel))
     }
 
