@@ -71,7 +71,9 @@
 .apgp-table { container-type: inline-size; display: flex; flex-direction: column; }
 .apgp-thead, .apgp-tr {
   display: grid; align-items: center; column-gap: 16px;
-  grid-template-columns: minmax(130px, 1.4fr) minmax(70px, 0.8fr) 136px minmax(80px, 0.8fr) minmax(150px, auto);
+  /* Fixed outer columns: every row is its own grid, so an `auto` column
+     would size per row and the values would not line up. */
+  grid-template-columns: minmax(0, 1.4fr) minmax(70px, 0.8fr) 136px minmax(84px, 0.8fr) 216px;
 }
 .apgp-thead {
   padding: 0 0 8px;
@@ -99,7 +101,7 @@
 .apgp-tfoot > :only-child { margin-left: auto; }
 
 @container (max-width: 620px) {
-  .apgp-thead, .apgp-tr { grid-template-columns: minmax(110px, 1fr) minmax(70px, auto) auto; }
+  .apgp-thead, .apgp-tr { grid-template-columns: minmax(0, 1fr) 84px 200px; }
   .apgp-c-amt, .apgp-c-spark { display: none !important; }
   .apgp-band { padding-left: 0; }
 }

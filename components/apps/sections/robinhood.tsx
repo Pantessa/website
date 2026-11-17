@@ -52,6 +52,7 @@ function RobinhoodSection({ server, tiles, pending, density, onAsk, onRetry }: A
       <HoldingsFull
         tile={tile}
         totalLabel="On Robinhood Chain"
+        noun={NOUN}
         onAsk={onAsk}
         facts={stocks != null ? <Fact value={stocks} label={stocks === 1 ? 'Stock' : 'Stocks'} /> : null}
         aside={

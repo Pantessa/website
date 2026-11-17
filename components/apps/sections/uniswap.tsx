@@ -474,12 +474,14 @@ export function HoldingsFull({
   aside,
   onAsk,
   facts,
+  noun = ['position', 'positions'],
 }: {
   tile: HoldingsTile
   totalLabel: string
   aside: ReactNode
   onAsk: Ask
   facts?: ReactNode
+  noun?: [string, string]
 }) {
   const counts = holdingsCounts(tile)
   const big = biggestHolding(tile.holdings)
@@ -493,7 +495,7 @@ export function HoldingsFull({
               <Fact
                 value={usdText(tile.totalUsd)}
                 label={totalLabel}
-                sub={`${counts.positions.toLocaleString('en-US')} ${counts.positions === 1 ? 'position' : 'positions'}`}
+                sub={`${counts.positions.toLocaleString('en-US')} ${counts.positions === 1 ? noun[0] : noun[1]}`}
               />
             )}
             {tile.totalUsd == null && <Fact value={counts.positions.toLocaleString('en-US')} label="Positions" />}
