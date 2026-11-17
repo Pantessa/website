@@ -75,5 +75,8 @@ function RobinhoodSection({ server, tiles, pending, density, onAsk, onRetry }: A
   )
 }
 
-const mod: SectionModule = { Section: RobinhoodSection, headline: ({ tiles }) => sentence(tiles) }
+const mod: SectionModule = {
+  Section: RobinhoodSection,
+  headline: ({ tiles }) => sentence(tiles) ?? (tiles.some((t) => t.render === 'empty') ? 'Nothing on Robinhood Chain in this wallet yet.' : null),
+}
 export default mod

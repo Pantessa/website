@@ -123,13 +123,13 @@ function OpenseaSection({ server, tiles, pending, density, onAsk, onRetry }: App
 
   const selected = tile.nfts.find((n) => idOf(n) === sel) ?? null
   return (
-    <SectionFrame server={server} note={`${counts.shown}${counts.more ? '+' : ''} NFTS`}>
+    <SectionFrame server={server} note={`${counts.total}${counts.more ? '+' : ''} NFTS`}>
       <div className="apgp-fullwrap">
         <div className="apgp-full apgp-full--nfts">
           <div className="apgp-full__facts">
             <FactRow>
-              <Fact value={`${counts.shown}${counts.more ? '+' : ''}`} label="NFTs" sub={counts.more ? 'the most recent shown' : undefined} />
-              <Fact value={counts.collections} label={counts.collections === 1 ? 'Collection' : 'Collections'} />
+              <Fact value={`${counts.total}${counts.more ? '+' : ''}`} label="NFTs" sub={counts.total > counts.shown ? `${counts.shown} shown here` : undefined} />
+              <Fact value={counts.collections} label={counts.collections === 1 ? 'Collection' : 'Collections'} sub={counts.total > counts.shown ? 'among those shown' : undefined} />
               <Fact value={counts.chains} label={counts.chains === 1 ? 'Chain' : 'Chains'} sub={[...new Set(tile.nfts.map((n) => n.chain))].join(', ')} />
             </FactRow>
           </div>
@@ -197,7 +197,9 @@ const mod: SectionModule = {
   Section: OpenseaSection,
   headline: ({ tiles }) => {
     const t = nftsOf(tiles)
-    return t ? `You hold ${nftSentence(nftCounts(t.nfts, t.subtitle)).replace(/^./, (c) => c.toLowerCase())}` : null
+    if (t) return `You hold ${nftSentence(nftCounts(t.nfts, t.subtitle)).replace(/^./, (c) => c.toLowerCase())}`
+    // The scan answered and found none: say so, not the page's money line.
+    return tiles.some((x) => x.render === 'empty') ? 'No NFTs in this wallet yet.' : null
   },
 }
 export default mod
