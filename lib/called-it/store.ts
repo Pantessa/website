@@ -222,6 +222,8 @@ export async function savePosts(posts: readonly (XPost & { xUserId?: string | nu
         x_user_id = COALESCE(NULLIF(EXCLUDED.x_user_id, ''), x_posts.x_user_id),
         -- oEmbed's words are a rebuild from X's HTML: never over a scanned post's own text
         text = CASE WHEN EXCLUDED.source = 'syndication' AND x_posts.source <> 'syndication' THEN x_posts.text ELSE EXCLUDED.text END,
+        -- a pasted post (syndication) a scan later reads for itself becomes a scanned post; never the other way
+        source = CASE WHEN x_posts.source = 'syndication' AND EXCLUDED.source <> 'syndication' THEN EXCLUDED.source ELSE x_posts.source END,
         likes = COALESCE(EXCLUDED.likes, x_posts.likes),
         replies = COALESCE(EXCLUDED.replies, x_posts.replies),
         reposts = COALESCE(EXCLUDED.reposts, x_posts.reposts),
