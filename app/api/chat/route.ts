@@ -90,7 +90,8 @@ import { parseMosaicAsk } from '@/lib/mosaic'
 import { mosaicTurnFor } from '@/lib/mosaic-exec'
 import { isInternalRun } from '@/lib/internal-run'
 import { recordTurn } from '@/lib/journey-server'
-import { gateSignablePayload } from '@/lib/affordability'
+import { AFFORDABILITY_SHORT_PATH, gateSignablePayload } from '@/lib/affordability'
+import { preflightAffordabilityNote, preflightJob } from '@/lib/job-preflight'
 import { runSpotGuardTurn } from '@/lib/spot-guard-exec'
 import {
   aaveAgentOf,
@@ -1415,6 +1416,23 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
         nativeTrace({ type: 'note', level: 'warn', label: `jobs layer: venue pre-flight refuses the funding job — ${jobUnfillable.slice(0, 160)}` })
         return NextResponse.json({ reply: `🛑 ${jobUnfillable}`, buildPath: 'native-job' })
       }
+      // THE JOB PRE-FLIGHT (lib/job-preflight, squad lane1 2026-11-17): a job
+      // whose FIRST step this wallet provably cannot fund is refused before a
+      // row exists, with chips that work for this wallet (the same job from
+      // where its money is, or the card door). On prod a new wallet's "Fund
+      // Robinhood Chain with $12 from Base including gas, then buy $10 of
+      // AAPL" created a job that failed in red at step 1. One balance read;
+      // an unreadable balance creates the job exactly as before.
+      const jobPre = await preflightJob({ wallet: walletAddress, compiled: jobAsk, ask: message, hlOpenChecked: true, trace: nativeTrace })
+      if (jobPre.kind === 'short') {
+        return NextResponse.json({
+          reply: jobPre.reply,
+          ...(jobPre.clarify ? { clarify: jobPre.clarify } : {}),
+          buildPath: AFFORDABILITY_SHORT_PATH,
+          affordability: preflightAffordabilityNote(jobPre.short),
+        })
+      }
+      if (jobPre.kind === 'unknown') nativeTrace({ type: 'note', level: 'warn', label: `jobs pre-flight: unverified (${jobPre.reason}) — creating the job as before` })
       nativeTrace({ type: 'status', label: `jobs layer claimed the turn: ${jobAsk.steps.length}-step job — ${jobAsk.title} — planner bypassed` })
       // C2b closes over jobs: a link-priced turn's compiled swaps carry the
       // same tier its one-shot would (stamped into step params; the runner

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
-import { compileJobAsk } from '@/lib/jobs'
+import { compileJobAsk, type CompiledJob } from '@/lib/jobs'
 import { advanceJob, buildSignArtifact, createJob } from '@/lib/jobs-runner'
 import { isInternalRun } from '@/lib/internal-run'
 import { unfillableFundedBuyReason } from '@/lib/venue-preflight'
+import { preflightJob } from '@/lib/job-preflight'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -69,30 +70,28 @@ export async function POST(req: NextRequest) {
   // plan before committing doesn't get a green light and then a 400.
   const unfillable = await unfillableFundedBuyReason(compiled)
 
-  if (body.dryRun) {
-    const first = compiled.steps.findIndex((s) => s.kind === 'sign')
-    let preview: Record<string, unknown> = {}
-    if (first >= 0) {
-      try {
-        const built = await buildSignArtifact(addr, compiled.steps[first].builder, compiled.steps[first].params)
-        preview = { step: first, artifact: built.artifact, guardReport: built.guardReport ?? null, valueUsd: built.valueUsd }
-      } catch (e) {
-        preview = { step: first, refused: (e as Error).message }
-      }
-    }
-    return NextResponse.json({
-      dryRun: true,
-      title: compiled.title,
-      steps: compiled.steps.map((s, i) => ({ seq: i, kind: s.kind, builder: s.builder, title: s.title, waitPredicate: s.waitPredicate ?? null })),
-      firstSignPreview: preview,
-      ...(unfillable ? { unfillable } : {}),
-      note: unfillable
-        ? `This plan would move money and then fail: ${unfillable} A real POST is refused.`
-        : 'Nothing was created or signed — re-POST without dryRun to run it.',
-    })
-  }
+  if (body.dryRun) return dryRunAnswer(addr, compiled, ask, unfillable)
 
   if (unfillable) return NextResponse.json({ error: unfillable }, { status: 400 })
+
+  // THE JOB PRE-FLIGHT (lib/job-preflight, squad lane1 2026-11-17): a first
+  // step the wallet provably cannot fund never becomes a job row. The answer
+  // names the shortfall and carries the asks that work for this wallet (the
+  // caller re-POSTs one of the resume strings, like the ticker clarify above).
+  // An unreadable balance creates the job as before; the runner withholds.
+  const pre = await preflightJob({ wallet: addr, compiled, ask })
+  if (pre.kind === 'short') {
+    return NextResponse.json(
+      {
+        error: pre.reply,
+        short: pre.short,
+        ...(pre.clarify ? { clarify: pre.clarify } : {}),
+        created: false,
+        note: 'No job was created: the wallet cannot fund the first step. Fund it, or re-POST one of the clarify options\' resume strings as the ask.',
+      },
+      { status: 400 },
+    )
+  }
 
   // Our own harness/drill run (lib/internal-run.ts) — the arc never counts it.
   const job = await createJob(addr, compiled, 'api', { internal: isInternalRun(req.headers, body) })
@@ -100,4 +99,37 @@ export async function POST(req: NextRequest) {
   const fresh = await prisma.job.findUnique({ where: { id: job.id }, include: { steps: { orderBy: { seq: 'asc' } } } })
   const internalRun = isInternalRun(req.headers, body)
   return NextResponse.json({ job: fresh, ...(internalRun ? { internal: true } : {}) }, { status: 201 })
+}
+
+// dryRun=true: the plan preview. Step 1 is built + guard-checked against LIVE
+// venues; nothing is persisted and nothing can be signed.
+async function dryRunAnswer(addr: string, compiled: CompiledJob, ask: string, unfillable: string | null): Promise<NextResponse> {
+  const first = compiled.steps.findIndex((s) => s.kind === 'sign')
+  let preview: Record<string, unknown> = {}
+  if (first >= 0) {
+    try {
+      const built = await buildSignArtifact(addr, compiled.steps[first].builder, compiled.steps[first].params)
+      preview = { step: first, artifact: built.artifact, guardReport: built.guardReport ?? null, valueUsd: built.valueUsd }
+    } catch (e) {
+      preview = { step: first, refused: (e as Error).message }
+    }
+  }
+  // The same pre-flight a real POST runs (lib/job-preflight), reported so an
+  // agent that validates first is not told "re-POST to run it" about a job
+  // the wallet cannot start.
+  const pre = unfillable ? null : await preflightJob({ wallet: addr, compiled, ask })
+  const short = pre?.kind === 'short' ? pre : null
+  return NextResponse.json({
+    dryRun: true,
+    title: compiled.title,
+    steps: compiled.steps.map((s, i) => ({ seq: i, kind: s.kind, builder: s.builder, title: s.title, waitPredicate: s.waitPredicate ?? null })),
+    firstSignPreview: preview,
+    ...(unfillable ? { unfillable } : {}),
+    ...(short ? { preflight: { short: short.short, reply: short.reply, ...(short.clarify ? { clarify: short.clarify } : {}) } } : {}),
+    note: unfillable
+      ? `This plan would move money and then fail: ${unfillable} A real POST is refused.`
+      : short
+        ? 'The wallet cannot fund the first step, so a real POST is refused and no job is created. See preflight for the shortfall and the asks that work for this wallet.'
+        : 'Nothing was created or signed — re-POST without dryRun to run it.',
+  })
 }

@@ -216,10 +216,10 @@ export default function JobDetailOverlay() {
           a step signed here has to move the money metric exactly like
           one signed in the thread. */}
       {jobDetail.type === 'job' && (
-        <JobCard jobId={jobDetail.id} onStepSigned={onStepSigned} />
+        <JobCard jobId={jobDetail.id} onStepSigned={onStepSigned} onFix={prefill} />
       )}
       {jobDetail.type === 'dca' && schedule?.liveJobId && (
-        <JobCard jobId={schedule.liveJobId} onStepSigned={onStepSigned} />
+        <JobCard jobId={schedule.liveJobId} onStepSigned={onStepSigned} onFix={prefill} />
       )}
     </div>
   )
