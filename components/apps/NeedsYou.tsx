@@ -11,9 +11,8 @@
 import type { StatRow } from '@/lib/splash/types'
 import { AskButton, Eyebrow } from '@/components/apps/parts'
 import { Sparkline } from '@/components/splash/Sparkline'
-import { sparkSymbolFor } from '@/components/splash/Hero'
 import TokenIcon from '@/components/TokenIcon'
-import { needsPieces } from '@/lib/apps-portfolio'
+import { needsPieces, rowTokenOf } from '@/lib/apps-portfolio'
 import './portfolio.css'
 
 export default function NeedsYou({ rows, onAsk }: { rows: StatRow[]; onAsk: (text: string) => void }) {
@@ -23,13 +22,13 @@ export default function NeedsYou({ rows, onAsk }: { rows: StatRow[]; onAsk: (tex
       <Eyebrow tone="needs">{rows.length === 1 ? 'Needs you' : `${rows.length} things need you`}</Eyebrow>
       {rows.map((r) => {
         const [first, second] = r.actions ?? []
-        const spark = sparkSymbolFor(r)
+        const token = rowTokenOf(r)
         const p = needsPieces(r)
         return (
           <div key={`${r.label}|${r.sub ?? ''}`} className="apgp-needs__row">
-            {r.chartSymbol ? (
+            {token ? (
               <span className="apgp-needs__mark">
-                <TokenIcon symbol={r.chartSymbol} size={26} />
+                <TokenIcon symbol={token} size={26} />
               </span>
             ) : (
               <span aria-hidden className="apgp-needs__mark apgp-needs__mark--dot">
@@ -41,9 +40,9 @@ export default function NeedsYou({ rows, onAsk }: { rows: StatRow[]; onAsk: (tex
               {p.value && <span className="apgp-needs__value"> {p.value}</span>}
               {p.sub && <span className="apgp-muted"> {p.sub}</span>}
             </p>
-            {spark && (
+            {token && (
               <span className="apgp-needs__spark">
-                <Sparkline symbol={spark} width={84} height={26} />
+                <Sparkline symbol={token} width={84} height={26} />
               </span>
             )}
             <span className="apgp-needs__acts">

@@ -31,7 +31,14 @@ function Thumb({ n, size }: { n: NftRow; size?: number }) {
     )
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={n.imageUrl} alt={n.name} loading="lazy" onError={() => setFailed(true)} className="apgp-thumb" style={size ? { width: size, height: size } : undefined} />
+    <img
+      src={n.imageUrl}
+      alt={n.name}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className="apgp-thumb"
+      style={size ? { width: size, height: size } : undefined}
+    />
   )
 }
 
@@ -90,7 +97,14 @@ function OpenseaSection({ server, tiles, pending, density, onAsk, onRetry }: App
           <p className="apgp-sentence">{text}</p>
           <div className="apgp-thumbs">
             {tile.nfts.slice(0, 3).map((n) => (
-              <a key={idOf(n)} href={n.infoUrl ?? undefined} target="_blank" rel="noopener noreferrer" title={`${n.name}, ${n.collectionName}`} className="apgp-thumbs__cell">
+              <a
+                key={idOf(n)}
+                href={n.infoUrl ?? undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`${n.name}, ${n.collectionName}`}
+                className="apgp-thumbs__cell"
+              >
                 <Thumb n={n} />
               </a>
             ))}
@@ -110,61 +124,69 @@ function OpenseaSection({ server, tiles, pending, density, onAsk, onRetry }: App
   const selected = tile.nfts.find((n) => idOf(n) === sel) ?? null
   return (
     <SectionFrame server={server} note={`${counts.shown}${counts.more ? '+' : ''} NFTS`}>
-      <div className="apgp-full apgp-full--nfts">
-        <div className="apgp-full__facts">
-          <FactRow>
-            <Fact value={`${counts.shown}${counts.more ? '+' : ''}`} label="NFTs" sub={counts.more ? 'the most recent shown' : undefined} />
-            <Fact value={counts.collections} label={counts.collections === 1 ? 'Collection' : 'Collections'} />
-            <Fact value={counts.chains} label={counts.chains === 1 ? 'Chain' : 'Chains'} sub={[...new Set(tile.nfts.map((n) => n.chain))].join(', ')} />
-          </FactRow>
-        </div>
-        <div className="apgp-full__list">
-          <div className="apgp-listhead">
-            <Eyebrow>Gallery</Eyebrow>
-            <span className="apgp-listhead__note">Pick one to sell or send it</span>
+      <div className="apgp-fullwrap">
+        <div className="apgp-full apgp-full--nfts">
+          <div className="apgp-full__facts">
+            <FactRow>
+              <Fact value={`${counts.shown}${counts.more ? '+' : ''}`} label="NFTs" sub={counts.more ? 'the most recent shown' : undefined} />
+              <Fact value={counts.collections} label={counts.collections === 1 ? 'Collection' : 'Collections'} />
+              <Fact value={counts.chains} label={counts.chains === 1 ? 'Chain' : 'Chains'} sub={[...new Set(tile.nfts.map((n) => n.chain))].join(', ')} />
+            </FactRow>
           </div>
-          <div className="apgp-gallery" role="list">
-            {tile.nfts.map((n) => {
-              const id = idOf(n)
-              const on = sel === id
-              return (
-                <button key={id} type="button" role="listitem" aria-pressed={on} onClick={() => setSel(on ? null : id)} className="apgp-gcell" title={`${n.name}, ${n.collectionName}`}>
-                  <Thumb n={n} />
-                  <span className="apgp-gcell__name">{n.name}</span>
-                  <span className="apgp-gcell__sub">{n.floor ?? n.collectionName}</span>
-                </button>
-              )
-            })}
+          <div className="apgp-full__list">
+            <div className="apgp-listhead">
+              <Eyebrow>Gallery</Eyebrow>
+              <span className="apgp-listhead__note">Pick one to sell or send it</span>
+            </div>
+            <div className="apgp-gallery" role="list">
+              {tile.nfts.map((n) => {
+                const id = idOf(n)
+                const on = sel === id
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="listitem"
+                    aria-pressed={on}
+                    onClick={() => setSel(on ? null : id)}
+                    className="apgp-gcell"
+                    title={`${n.name}, ${n.collectionName}`}
+                  >
+                    <Thumb n={n} />
+                    <span className="apgp-gcell__name">{n.name}</span>
+                    <span className="apgp-gcell__sub">{n.floor ?? n.collectionName}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        </div>
-        <div className="apgp-full__aside">
-          <aside className="apgp-only" aria-label="Selected">
-            {selected ? (
-              <div className="apgp-block">
-                <Eyebrow>Selected</Eyebrow>
-                <Detail n={selected} onAsk={onAsk} />
-              </div>
-            ) : (
-              <div className="apgp-block">
-                <Eyebrow>Selected</Eyebrow>
-                <p className="apgp-muted apgp-p">
-                  Nothing yet. Pick one of the {spellCount(counts.shown)} to sell or send it.
-                </p>
-              </div>
-            )}
-            {prompts.length > 0 && (
-              <div className="apgp-block">
-                <Eyebrow>Ask</Eyebrow>
-                <div className="apgp-asks">
-                  {prompts.map((p) => (
-                    <AskButton key={p.prompt} onClick={() => onAsk(p.prompt)} title={p.prompt} className="apgp-btn apgp-btn--wrap">
-                      {p.label}
-                    </AskButton>
-                  ))}
+          <div className="apgp-full__aside">
+            <aside className="apgp-only" aria-label="Selected">
+              {selected ? (
+                <div className="apgp-block">
+                  <Eyebrow>Selected</Eyebrow>
+                  <Detail n={selected} onAsk={onAsk} />
                 </div>
-              </div>
-            )}
-          </aside>
+              ) : (
+                <div className="apgp-block">
+                  <Eyebrow>Selected</Eyebrow>
+                  <p className="apgp-muted apgp-p">Nothing yet. Pick one of the {spellCount(counts.shown)} to sell or send it.</p>
+                </div>
+              )}
+              {prompts.length > 0 && (
+                <div className="apgp-block">
+                  <Eyebrow>Ask</Eyebrow>
+                  <div className="apgp-asks">
+                    {prompts.map((p) => (
+                      <AskButton key={p.prompt} onClick={() => onAsk(p.prompt)} title={p.prompt} className="apgp-btn apgp-btn--wrap">
+                        {p.label}
+                      </AskButton>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </aside>
+          </div>
         </div>
       </div>
     </SectionFrame>

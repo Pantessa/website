@@ -72,12 +72,18 @@ export function RowActs({
   const [first, ...rest] = actions
   if (!first) return null
   return (
-    <span className="apgp-acts">
+    <span className={rest.length > 0 ? 'apgp-acts' : 'apgp-acts apgp-acts--solo'}>
       <AskButton strong={strong} onClick={() => onAsk(first.prompt)} title={first.prompt} className="apgp-btn">
         {first.label}
       </AskButton>
       {rest.length > 0 && (
-        <button type="button" className="apgp-more" aria-expanded={open} onClick={onToggle} title={open ? 'Fewer actions' : `${rest.length} more ${rest.length === 1 ? 'action' : 'actions'}`}>
+        <button
+          type="button"
+          className="apgp-more"
+          aria-expanded={open}
+          onClick={onToggle}
+          title={open ? 'Fewer actions' : `${rest.length} more ${rest.length === 1 ? 'action' : 'actions'}`}
+        >
           <ChevronDown width={14} height={14} aria-hidden className="apgp-more__icon" />
           <span className="apgp-sr">{open ? 'Fewer actions' : 'More actions'}</span>
         </button>
@@ -122,7 +128,7 @@ export function HoldingsTable({ tile, onAsk, total }: { tile: HoldingsTile; onAs
       <div className="apgp-thead" aria-hidden>
         <span>Asset</span>
         <span className="apgp-c-amt">Amount</span>
-        <span className="apgp-c-spark">30 days</span>
+        <span className="apgp-c-spark">30d · 24h</span>
         <span className="apgp-c-val">Value</span>
         <span className="apgp-c-act" />
       </div>
@@ -218,8 +224,25 @@ function scrollToSel(sel: string) {
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function OnlyHere({ tile, activity, page, prompts, onAsk }: { tile: HoldingsTile | null; activity: ActivityTile | null; page: AppSectionProps['page']; prompts: SuggestedPrompt[]; onAsk: Ask }) {
-  const needs = tile ? needsAboutHoldings(page.briefing, tile.holdings.map((h) => h.symbol)) : 0
+function OnlyHere({
+  tile,
+  activity,
+  page,
+  prompts,
+  onAsk,
+}: {
+  tile: HoldingsTile | null
+  activity: ActivityTile | null
+  page: AppSectionProps['page']
+  prompts: SuggestedPrompt[]
+  onAsk: Ask
+}) {
+  const needs = tile
+    ? needsAboutHoldings(
+        page.briefing,
+        tile.holdings.map((h) => h.symbol),
+      )
+    : 0
   const rec = recurringSentence(page.recurring)
   const monthly = recurringMonthly(page.recurring)
   return (
@@ -233,8 +256,10 @@ function OnlyHere({ tile, activity, page, prompts, onAsk }: { tile: HoldingsTile
                 <button type="button" className="apgp-note" onClick={() => scrollToSel('[data-apps-needs]')}>
                   <span aria-hidden className="apg-dot apg-dot--needs" />
                   <span>
-                    {needs === 1 ? 'One of these holdings needs you.' : `${spellCount(needs)} of these holdings need you.`.replace(/^./, (c) => c.toUpperCase())}{' '}
-                    <span className="apgp-muted">It is at the top of the page.</span>
+                    {needs === 1
+                      ? 'One of these holdings needs you.'
+                      : `${spellCount(needs)} of these holdings need you.`.replace(/^./, (c) => c.toUpperCase())}{' '}
+                    <span className="apgp-muted">{needs === 1 ? 'It is' : 'They are'} at the top of the page.</span>
                   </span>
                 </button>
               </li>
@@ -364,7 +389,11 @@ export interface PortfolioWords {
 export function portfolioSentence(tiles: SplashTile[], words: PortfolioWords): string | null {
   const tile = holdingsTileOf(tiles)
   if (!tile) return null
-  return holdingsSentence({ totalUsd: tile.totalUsd, counts: holdingsCounts(tile), lead: words.lead })
+  return holdingsSentence({
+    totalUsd: tile.totalUsd,
+    counts: holdingsCounts(tile),
+    lead: words.lead,
+  })
 }
 
 export function makePortfolioSection(words: PortfolioWords) {
@@ -423,48 +452,76 @@ export function makePortfolioSection(words: PortfolioWords) {
     }
 
     return (
-      <SectionFrame server={server} note={`${counts.positions} ${counts.positions === 1 ? 'POSITION' : 'POSITIONS'}${counts.chains ? ` · ${counts.chains} ${counts.chains === 1 ? 'CHAIN' : 'CHAINS'}` : ''}`}>
-        <HoldingsFull tile={tile} totalLabel={words.totalLabel} aside={<OnlyHere tile={tile} activity={activity} page={page} prompts={prompts.slice(0, 4)} onAsk={onAsk} />} onAsk={onAsk} />
+      <SectionFrame
+        server={server}
+        note={`${counts.positions} ${counts.positions === 1 ? 'POSITION' : 'POSITIONS'}${counts.chains ? ` · ${counts.chains} ${counts.chains === 1 ? 'CHAIN' : 'CHAINS'}` : ''}`}
+      >
+        <HoldingsFull
+          tile={tile}
+          totalLabel={words.totalLabel}
+          aside={<OnlyHere tile={tile} activity={activity} page={page} prompts={prompts.slice(0, 4)} onAsk={onAsk} />}
+          onAsk={onAsk}
+        />
       </SectionFrame>
     )
   }
 }
 
 /** The full page body for any holdings tile: facts, the bar, the list, an aside. */
-export function HoldingsFull({ tile, totalLabel, aside, onAsk, facts }: { tile: HoldingsTile; totalLabel: string; aside: ReactNode; onAsk: Ask; facts?: ReactNode }) {
+export function HoldingsFull({
+  tile,
+  totalLabel,
+  aside,
+  onAsk,
+  facts,
+}: {
+  tile: HoldingsTile
+  totalLabel: string
+  aside: ReactNode
+  onAsk: Ask
+  facts?: ReactNode
+}) {
   const counts = holdingsCounts(tile)
   const big = biggestHolding(tile.holdings)
   const chains = chainLabelsOf(tile)
   return (
-    <div className="apgp-full">
-      <div className="apgp-full__facts">
-        <FactRow>
-          {tile.totalUsd != null && <Fact value={usdText(tile.totalUsd)} label={totalLabel} sub={`${counts.positions.toLocaleString('en-US')} ${counts.positions === 1 ? 'position' : 'positions'}`} />}
-          {tile.totalUsd == null && <Fact value={counts.positions.toLocaleString('en-US')} label="Positions" />}
-          {counts.chains != null && (
-            <Fact
-              value={counts.chains}
-              label={counts.chains === 1 ? 'Chain' : 'Chains'}
-              sub={counts.chainName ?? (chains.length > counts.chains ? `of ${chains.length} read` : undefined)}
-            />
-          )}
-          {big && <Fact value={usdText(big.valueUsd!)} label="Largest" sub={`${big.symbol}${big.chain ? ` on ${big.chain}` : ''}`} />}
-          {facts}
-        </FactRow>
-      </div>
-      {tile.viz?.kind === 'allocation' && (
-        <div className="apgp-full__alloc apgp-alloc">
-          <AllocationViz viz={tile.viz} chain={tile.chain} />
+    <div className="apgp-fullwrap">
+      <div className="apgp-full">
+        <div className="apgp-full__facts">
+          <FactRow>
+            {tile.totalUsd != null && (
+              <Fact
+                value={usdText(tile.totalUsd)}
+                label={totalLabel}
+                sub={`${counts.positions.toLocaleString('en-US')} ${counts.positions === 1 ? 'position' : 'positions'}`}
+              />
+            )}
+            {tile.totalUsd == null && <Fact value={counts.positions.toLocaleString('en-US')} label="Positions" />}
+            {counts.chains != null && counts.chains > 1 && (
+              <Fact
+                value={counts.chains}
+                label={counts.chains === 1 ? 'Chain' : 'Chains'}
+                sub={counts.chainName ?? (chains.length > counts.chains ? `of ${chains.length} read` : undefined)}
+              />
+            )}
+            {big && <Fact value={usdText(big.valueUsd!)} label="Largest" sub={`${big.symbol}${big.chain ? ` on ${big.chain}` : ''}`} />}
+            {facts}
+          </FactRow>
         </div>
-      )}
-      <div className="apgp-full__list">
-        <div className="apgp-listhead">
-          <Eyebrow>Holdings</Eyebrow>
-          <span className="apgp-listhead__note">{counts.chains && counts.chains > 1 ? 'Every chain, one list' : 'Largest first'}</span>
+        {tile.viz?.kind === 'allocation' && (
+          <div className="apgp-full__alloc apgp-alloc">
+            <AllocationViz viz={tile.viz} chain={tile.chain} />
+          </div>
+        )}
+        <div className="apgp-full__list">
+          <div className="apgp-listhead">
+            <Eyebrow>Holdings</Eyebrow>
+            <span className="apgp-listhead__note">{counts.chains && counts.chains > 1 ? 'Every chain, one list' : 'Largest first'}</span>
+          </div>
+          <HoldingsTable tile={tile} onAsk={onAsk} total={counts.positions} />
         </div>
-        <HoldingsTable tile={tile} onAsk={onAsk} total={counts.positions} />
+        <div className="apgp-full__aside">{aside}</div>
       </div>
-      <div className="apgp-full__aside">{aside}</div>
     </div>
   )
 }

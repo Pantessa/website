@@ -163,28 +163,35 @@ export function agoText(unixSec: number, now = Date.now()): string {
 // ── NFTs ────────────────────────────────────────────────────────────────────
 
 export interface NftCounts {
-  /** How many the tile carries. */
+  /** How many the tile carries (the gallery). */
   shown: number
+  /** How many the scan found ("12+" → 12), never fewer than shown. */
+  total: number
   /** True when the scan stopped at its cap ("12+"). */
   more: boolean
+  /** Collections and chains AMONG THE SHOWN ones. */
   collections: number
   chains: number
 }
 
 export function nftCounts(nfts: NftRow[], subtitle?: string): NftCounts {
+  const m = (subtitle ?? '').match(/^\s*(\d+)(\+)?/)
   return {
     shown: nfts.length,
-    more: /^\s*\d+\+/.test(subtitle ?? ''),
+    total: Math.max(m ? Number(m[1]) : 0, nfts.length),
+    more: !!m?.[2],
     collections: new Set(nfts.map((n) => n.collection || n.collectionName)).size,
     chains: new Set(nfts.map((n) => n.chain)).size,
   }
 }
 
-/** "12 or more NFTs in four collections." · "1 NFT in one collection." */
+/** "12 or more NFTs." (the collections of a partial view are not counted) ·
+ *  "3 NFTs in two collections." · "1 NFT in one collection." */
 export function nftSentence(c: NftCounts): string {
-  if (c.shown === 0) return 'No NFTs in this wallet.'
-  const n = `${c.shown}${c.more ? ' or more' : ''} ${c.shown === 1 && !c.more ? 'NFT' : 'NFTs'}`
-  const where = c.collections > 0 ? ` in ${spellCount(c.collections)} ${plural(c.collections, 'collection', 'collections')}` : ''
+  if (c.total === 0) return 'No NFTs in this wallet.'
+  const n = `${c.total}${c.more ? ' or more' : ''} ${c.total === 1 && !c.more ? 'NFT' : 'NFTs'}`
+  const all = c.total === c.shown && !c.more
+  const where = all && c.collections > 0 ? ` in ${spellCount(c.collections)} ${plural(c.collections, 'collection', 'collections')}` : ''
   return `${n}${where}.`
 }
 
@@ -204,7 +211,17 @@ export function needsSentence(r: StatRow): string {
  *  Needs-you strip draws them). */
 export function needsAboutHoldings(briefing: RowsTile | null, symbols: string[]): number {
   const set = new Set(symbols.map((s) => s.toUpperCase()))
-  return (briefing?.rows ?? []).filter((r) => (r.actions?.length ?? 0) > 0 && r.chartSymbol && set.has(r.chartSymbol.toUpperCase())).length
+  // The row's own words name the token ("$158.16 USDC idle on Arbitrum"); its
+  // chartSymbol can be the swap's OTHER side (ETH), so it is not the test.
+  return (briefing?.rows ?? []).filter((r) => (r.actions?.length ?? 0) > 0 && (r.label.match(/[A-Za-z][A-Za-z0-9]{1,9}/g) ?? []).some((w) => set.has(w.toUpperCase()))).length
+}
+
+/** The token a row is ABOUT: its chart symbol when its own words name it
+ *  (the briefing's USDC rows chart ETH, the swap's other side). */
+export function rowTokenOf(r: StatRow): string | null {
+  if (!r.chartSymbol) return null
+  const sym = r.chartSymbol.replace(/[^A-Za-z0-9]/g, '')
+  return new RegExp(`(^|[^A-Za-z])${sym}([^A-Za-z]|$)`, 'i').test(r.label) ? r.chartSymbol : null
 }
 
 // ── Recurring buys ──────────────────────────────────────────────────────────
@@ -229,7 +246,7 @@ export function recurringSentence(tile: RowsTile | null): string | null {
 export function recurringMonthly(tile: RowsTile | null): string | null {
   const v = tile?.viz
   if (!v || v.kind !== 'cadence' || !(v.monthlyUsd > 0)) return null
-  return `${usdText(v.monthlyUsd)} a month`
+  return `$${Math.round(v.monthlyUsd).toLocaleString('en-US')} a month`
 }
 
 /** "2 stocks · 5 total" → 2; a subtitle that does not count stocks → null. */
