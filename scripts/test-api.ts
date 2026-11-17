@@ -1440,7 +1440,7 @@ async function main() {
   // stranger (loopback is exempt, like every fence). Start the server with
   // TASTE_GUEST_DAILY=1 to keep this to ONE model call; it holds either way.
   {
-    const ip = `198.51.100.${1 + Math.floor(Math.random() * 250)}`
+    const ip = `2001:db8:${Math.floor(Math.random() * 0xffff).toString(16)}:${Math.floor(Math.random() * 0xffff).toString(16)}::${Date.now().toString(16).slice(-4)}` // RE-PINNED 2026-11-17 (harness-zero): unique per run — a shared TEST DB's hourly buckets outlive one run
     const askHouse = async (extra: Record<string, unknown> = {}) => {
       const r = await fetch(`${BASE}/api/chat`, {
         method: 'POST',
@@ -27786,7 +27786,10 @@ async function main() {
       // A fresh documentation-range IP per run: the bucket is an hourly window
       // on the shared TEST DB, and another lane's run of this very pin would
       // otherwise have filled it already.
-      const fenceIp = `203.0.113.${1 + Math.floor(Math.random() * 250)}`
+      // RE-PINNED 2026-11-17 (harness-zero): 250 addresses were too few — three sessions ran this harness inside one hour on
+      // the shared TEST DB and the final run drew a bucket another run had already filled (wall ×5). A random address in
+      // the IPv6 documentation range (2001:db8::/32) is unique per run.
+      const fenceIp = `2001:db8:${Math.floor(Math.random() * 0xffff).toString(16)}:${Math.floor(Math.random() * 0xffff).toString(16)}::${Date.now().toString(16).slice(-4)}`
       // RE-PINNED 2026-11-09 (bot fence): a platform caller now wears a
       // person's browser (PERSON_UA). Node's own UA ("node") from a platform
       // IP reads as automated and gets the bot wall before the IP counter.
@@ -27801,7 +27804,7 @@ async function main() {
       // before the per-IP counter, so its calls never fill that bucket; a
       // person on the same IP right after still reaches the model.
       {
-        const botIp = `198.51.100.${1 + Math.floor(Math.random() * 250)}`
+        const botIp = `2001:db8:${Math.floor(Math.random() * 0xffff).toString(16)}:${Math.floor(Math.random() * 0xffff).toString(16)}::${Date.now().toString(16).slice(-4)}` // RE-PINNED 2026-11-17 (harness-zero): unique per run, like fenceIp
         const botModels: string[] = []
         for (const ua of [CRAWL_UAS[0], CRAWL_UAS[7], 'Lightpanda/1.0', CRAWL_UAS[5]]) {
           const r = await askRoute({ symbol: 'ETH', tf: '1h', question: `what happened on screen ${Math.random().toString(36).slice(2, 8)}?` }, { 'x-forwarded-for': botIp, 'user-agent': ua })
