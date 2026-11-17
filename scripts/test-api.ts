@@ -406,6 +406,7 @@ import { calledGtmCoordPins, calledGtmCoordPinsServed } from './called-gtm-coord
 import { calledGtmCallPins, calledGtmCallPinsServed } from './called-gtm-call-pins'
 import { calledGtmProfilePins, calledGtmProfilePinsServed } from './called-gtm-profile-pins'
 import { calledGtmCommunityPins, calledGtmCommunityPinsServed } from './called-gtm-community-pins'
+import { suggestionsPins, suggestionsPinsServed } from './suggestions-pins'
 import { calledGtmTradePins, calledGtmTradePinsServed } from './called-gtm-trade-pins'
 import { calledGtmOutreachPins, calledGtmOutreachPinsServed } from './called-gtm-outreach-pins'
 import { communityFeedPins, communityFeedPinsServed } from './community-feed-pins'
@@ -35707,6 +35708,8 @@ async function main() {
   await calledGtmProfilePinsServed(check, BASE)
   calledGtmCommunityPins(check)
   await calledGtmCommunityPinsServed(check, BASE)
+  suggestionsPins(check)
+  await suggestionsPinsServed(check, BASE)
   calledGtmTradePins(check)
   await calledGtmTradePinsServed(check, BASE)
   calledGtmOutreachPins(check)

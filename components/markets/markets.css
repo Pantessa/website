@@ -533,6 +533,7 @@ button.mk-held:hover { border-color: var(--accent); }
 .mk-tour-seat:not(:empty) { margin-top: 12px; }
 .mk-how-seat:not(:empty) { margin-top: 12px; }
 .mk-close-seat:not(:empty) { margin-top: 12px; }
+.mk-suggest-seat:not(:empty) { margin-top: 12px; }
 /* The Called it shelf (2026-11-16): margins only, like the seats above. */
 .mk-called-seat:not(:empty) { margin-top: 16px; }
 /* ONE gap above the band, every width: THE SEAT OWNS IT, the band none while
