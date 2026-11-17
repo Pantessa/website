@@ -30,15 +30,21 @@ import {
   levelAt,
   limitAimAt,
   parseCoinbaseL2,
+  parseCoinbaseTicker,
+  parseHlBbo,
   parseDepthSettings,
   parseHlL2Book,
   printAlpha,
   printOnBook,
   printRadius,
   printWords,
+  topQuote,
+  topQuoteKey,
   wallsIn,
+  withExactMid,
 } from '../lib/depth'
 import { bookProductFor } from '../lib/depth-feed'
+import { depthCardMeta, depthCurveSvg, depthLean, depthOgPath, depthSourceWords, depthTweetHref, depthWindowWords, parseDepthOgQuery } from '../lib/depth-share'
 import { fmtLimitPrice } from '../lib/order-ticket'
 import { parseViewParam, viewUrl } from '../lib/markets'
 
@@ -226,12 +232,93 @@ export function depthPins(check: Check): void {
       return /aimedRef\.current === aim\.at\) return/.test(ticket) && /patch\(\{ type: 'limit', limitPrice: aim\.limitPrice \}\)/.test(ticket) && /if \(!types\.includes\('limit'\)\) return/.test(ticket) &&
         /setOpen\(true\)\s*onSide\(aim\.side\)/.test(rail) && /if \(!sides\.includes\(aim\.side\)\) return/.test(rail) && /setTicket\(aim\.side\)/.test(strip) && /if \(!sideList\.includes\(aim\.side\)\) return/.test(strip)
     })())
+  // ── Share the depth (2026-11-17): a Depth link names its own card ──
+  {
+    const at = Date.UTC(2026, 10, 17, 14, 5, 30)
+    const href = depthOgPath('UNI', { pct: 10, unit: 'base', overlay: true }, at)
+    const back = parseDepthOgQuery(href.slice(href.indexOf('?')))
+    check('depth share: the image path carries the window + unit, never the overlay, and the page minute (X caches a card by its URL)',
+      href === `/api/og/depth?symbol=UNI&win=10&unit=base&t=${Math.floor(at / 60_000)}` && depthOgPath('ETH', DEFAULT_DEPTH_SETTINGS) === '/api/og/depth?symbol=ETH' &&
+        !!back && back.symbol === 'UNI' && back.settings.pct === 10 && back.settings.unit === 'base' && back.settings.overlay === false, href)
+    check('depth share: the image route refuses a symbol the book routes would refuse',
+      parseDepthOgQuery('?symbol=') === null && parseDepthOgQuery('?symbol=../x') === null && parseDepthOgQuery('?symbol=ABCDEFGHIJKLM') === null && parseDepthOgQuery('?symbol=hype')?.symbol === 'hype')
+    check('depth share: the window in words', depthWindowWords(10) === '±10%' && depthWindowWords(0.5) === '±0.5%' && depthWindowWords(null) === 'the whole book')
+    const lean = (bidUsd: number, askUsd: number) => depthLean({ bidUsd, askUsd })
+    check('depth share: the lean names the heavier side and by how much; about even under 1.1×; one empty side said so',
+      lean(954_000, 410_000).words === '2.3× more bids than asks' && lean(100, 2_500).words === '25× more asks than bids' && lean(100, 105).side === 'even' &&
+        lean(0, 50).words === 'Only asks in this window' && lean(0, 0).words === 'Nothing resting in this window', lean(954_000, 410_000).words)
+    const w = depthWindow(BOOK, 10)!
+    const opt = { width: 1000, height: 200, unit: 'usd' as const, bid: '#0f0', ask: '#f00', bidFill: 'rgba(0,255,0,0.1)', askFill: 'rgba(255,0,0,0.1)', grid: '#222', mid: '#fff' }
+    const c = depthCurveSvg(w, opt)
+    const nums = [...c.svg.matchAll(/ d="([^"]+)"/g)].flatMap((m) => [...m[1].matchAll(/-?\d+(?:\.\d+)?/g)].map((n) => Number(n[0])))
+    check('depth share: the curve is one SVG, both sides stepped and filled to the axis, the mid dashed, every coordinate inside the box',
+      c.svg.startsWith('<svg') && (c.svg.match(/<path /g) ?? []).length === 4 && /stroke-dasharray/.test(c.svg) && / Z"/.test(c.svg) && !/<text/.test(c.svg) &&
+        nums.every((n) => n >= -1 && n <= 1000.5) && c.midX > 0 && c.midX < 1000 && c.top > w.maxCumUsd, c.svg.slice(0, 160))
+    check('depth share: one wall per side, labelled in the unit, placed on its own step; ticks are the two edges and the mid',
+      c.walls.length === 2 && c.walls[0].side === 'bid' && c.walls[0].text === `wall ${fmtDepthUsd(7.1 * 1000)}` && c.walls[0].x < c.midX && c.walls[1].x > c.midX &&
+        depthCurveSvg(w, { ...opt, unit: 'base' }).walls[0].text === `wall ${fmtDepthSize(1000)}` &&
+        c.ticks.length === 3 && c.ticks[0].x === 0 && c.ticks[2].x === 1000 && c.ticks[1].text === fmtDepthPrice(w.mid), JSON.stringify(c.walls))
+    const tweet = new URL(depthTweetHref('UNI', 'https://www.pantessa.com/t/UNI?view=depth&win=10', 10, true))
+    check('depth share: the post on X carries the depth link and only promises a resting order where a level takes one',
+      tweet.searchParams.get('url') === 'https://www.pantessa.com/t/UNI?view=depth&win=10' && /\$UNI order book/.test(tweet.searchParams.get('text') ?? '') && /±10%/.test(tweet.searchParams.get('text') ?? '') &&
+        /rest an order/.test(tweet.searchParams.get('text') ?? '') && !/rest an order/.test(new URL(depthTweetHref('HYPE', 'x', 2, false)).searchParams.get('text') ?? '') &&
+        /rest a limit/.test(depthCardMeta('UNI', DEFAULT_DEPTH_SETTINGS, true).description) && !/limit/.test(depthCardMeta('HYPE', DEFAULT_DEPTH_SETTINGS, false).description))
+    check('depth share: the card foot names the book and the UTC minute', depthSourceWords('coinbase', at) === 'Book · Coinbase level 2 · read 2026-11-17 14:05 UTC' && depthSourceWords('hyperliquid', at).startsWith('Book · Hyperliquid l2Book'))
+    check('depth share, wired: a ?view=depth page names /api/og/depth in og: + twitter: (only then), the route draws the server book and falls back to the symbol card, robots allows /api/og/, the dialog previews the card and posts the depth link',
+      (() => {
+        const page = readFileSync('app/t/[symbol]/page.tsx', 'utf8')
+        const route = readFileSync('app/api/og/depth/route.tsx', 'utf8')
+        const robots = readFileSync('app/robots.ts', 'utf8')
+        const share = readFileSync('components/markets/chart/ChartShare.tsx', 'utf8')
+        return /sp\.view === 'depth'/.test(page) && /depthOgPath\(depth\.symbol, settings, Date\.now\(\)\)/.test(page) && /twitter: \{[^}]*images: \[image\]/.test(page) &&
+          /readServerDepthBook\(q\.symbol\)/.test(route) && /opengraph-image/.test(route) && !/status: 500/.test(route) &&
+          /allow: \['\/', '\/api\/og\/'\]/.test(robots) &&
+          /depthOgPath\(symbol, depth, Date\.now\(\)\)/.test(share) && /depthTweetHref\(symbol, chartUrl, depth\.pct, depthRests\)/.test(share) && /canPublish = lines\.length > 0 && !depth/.test(share)
+      })())
+  }
   check('depth: the view\'s canvas reads its inks from the chart tokens (never a color-mix into a fillStyle), draws nothing it has not measured, and the card gives it the Battlefield\'s room',
     (() => {
       const src = readFileSync('components/markets/chart/DepthChart.tsx', 'utf8')
       const css = readFileSync('components/markets/markets.css', 'utf8')
       return !/color-mix\(/.test(src.replace(/\/\/.*$/gm, '').replace(/\/\*[^]*?\*\//g, '')) && /waiting for the first print/.test(src) && /tokens\.up/.test(src) && /tokens\.down/.test(src) && /openBookFeed\(plan\.main, pair/.test(src) &&
         /\.mkt-chart__canvas\.is-depth \{ height: 460px; \}/.test(css) && /:has\(\.mkt-chart__canvas\.is-depth\) \{ height: clamp\(/.test(css)
+    })())
+
+  // ── The top of the book: the header's price (2026-11-10) ──
+  // Verbatim frames, read keyless off the venues on 2026-11-10.
+  const CB_TICKER = '{"channel":"ticker","timestamp":"2026-11-10T15:18:14.83315177Z","sequence_num":4,"events":[{"type":"update","tickers":[{"type":"ticker","product_id":"UNI-USD","price":"7.0606","volume_24_h":"1355095.094263","low_24_h":"6.7178","high_24_h":"7.152","low_52_w":"2.316","high_52_w":"10.9321","price_percent_chg_24_h":"1.68646935983294","best_bid":"7.0524","best_ask":"7.0563","best_bid_quantity":"14.76","best_ask_quantity":"14.76"}]}]}'
+  const CB_HEARTBEAT = '{"channel":"heartbeats","timestamp":"2026-11-10T15:18:13.930829509Z","sequence_num":3,"events":[{"current_time":"2026-11-10 15:18:13.929490649 +0000 UTC m=+4837.242219631","heartbeat_counter":4837}]}'
+  const HL_BBO = '{"channel":"bbo","data":{"coin":"HYPE","time":1794323893837,"bbo":[{"px":"73.677","sz":"0.22","n":1},{"px":"73.678","sz":"9.25","n":4}]}}'
+  const HL_BBO_XYZ = '{"channel":"bbo","data":{"coin":"xyz:SP500","time":1794323893837,"bbo":[{"px":"7527.1","sz":"3.265","n":1},{"px":"7527.4","sz":"8.972","n":1}]}}'
+  const cbq = parseCoinbaseTicker(JSON.parse(CB_TICKER), 'UNI-USD')
+  check('top of book: a Coinbase ticker frame is the best bid and ask as of the match, its mid, the last trade, stamped with the venue\'s own time; another product, a heartbeat or garbage is no quote',
+    !!cbq && cbq.bid === 7.0524 && cbq.ask === 7.0563 && Math.abs(cbq.mid - 7.05435) < 1e-9 && cbq.last === 7.0606 && cbq.at === Date.parse('2026-11-10T15:18:14.83315177Z') &&
+      parseCoinbaseTicker(JSON.parse(CB_TICKER), 'ETH-USD') === null && parseCoinbaseTicker(JSON.parse(CB_HEARTBEAT), 'UNI-USD') === null && parseCoinbaseTicker(null, 'UNI-USD') === null && parseCoinbaseTicker('x', 'UNI-USD') === null,
+    JSON.stringify(cbq))
+  const hlq = parseHlBbo(JSON.parse(HL_BBO), 'HYPE')
+  const xyzq = parseHlBbo(JSON.parse(HL_BBO_XYZ), 'xyz:SP500')
+  check('top of book: a Hyperliquid bbo frame is the exact best bid and ask (a builder dex\'s too), no last trade, the venue\'s time; another coin or a one-sided bbo is no quote',
+    !!hlq && hlq.bid === 73.677 && hlq.ask === 73.678 && Math.abs(hlq.mid - 73.6775) < 1e-9 && hlq.last === null && hlq.at === 1794323893837 &&
+      !!xyzq && Math.abs(xyzq.mid - 7527.25) < 1e-9 && parseHlBbo(JSON.parse(HL_BBO), 'UNI') === null &&
+      parseHlBbo({ channel: 'bbo', data: { coin: 'HYPE', time: 1, bbo: [null, { px: '73.678' }] } }, 'HYPE') === null,
+    JSON.stringify({ hlq, xyzq }))
+  check('top of book: a crossed or locked book, a missing side or a non-number is no quote (the header keeps the one it had); a bad last is dropped, not the quote',
+    topQuote(7.06, 7.05, null, 1) === null && topQuote(7.05, 7.05, null, 1) === null && topQuote(0, 7.05, null, 1) === null && topQuote(NaN, 7.05, null, 1) === null &&
+      topQuote(7.04, 7.05, NaN, 1)?.last === null && topQuote(7.04, 7.05, 0, 1)?.last === null && topQuoteKey('coinbase', 'UNI-USD') === 'coinbase:UNI-USD')
+  const coarse = bookFromLevels([{ px: 73.6, size: 100 }, { px: 73.5, size: 50 }], [{ px: 73.7, size: 80 }], 1)
+  check('top of book: Hyperliquid\'s coarse depth book takes the exact bbo mid when it lies between the coarse best bid and ask (73.661, not 73.65 — measured), keeps its own outside them, and returns the SAME book when nothing changes',
+    coarse.mid === 73.65 && withExactMid(coarse, 73.661).mid === 73.661 && withExactMid(coarse, 73.661).bids === coarse.bids &&
+      withExactMid(coarse, 73.59) === coarse && withExactMid(coarse, 73.71) === coarse && withExactMid(coarse, null) === coarse && withExactMid(coarse, 73.65) === coarse && withExactMid(EMPTY_BOOK, 73.66) === EMPTY_BOOK &&
+      depthWindow(withExactMid(coarse, 73.661), 2)?.mid === 73.661)
+  check('top of book: wired — the chart opens the light feed (Coinbase ticker + heartbeats, Hyperliquid bbo) on its own venue only, publishes to lib/top-quote, and the depth view reports the MID it draws on a Coinbase book (a Hyperliquid header keeps the exact bbo), takes HL\'s exact mid for its line, and labels the venue\'s last trade',
+    (() => {
+      const feed = readFileSync('lib/depth-feed.ts', 'utf8')
+      const mc = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
+      const dc = readFileSync('components/markets/chart/DepthChart.tsx', 'utf8')
+      return /channel: 'ticker'/.test(feed) && /channel: 'heartbeats'/.test(feed) && /type: 'bbo', coin: product/.test(feed) && /onQuote\(null\)/.test(feed) &&
+        /openTopOfBook\(topVenue, pair,/.test(mc) && /publishTopQuote\(key, q\)/.test(mc) && /emitMid\('book', sym, q\?\.mid \?\? null\)/.test(mc) && /onMid=\{onDepthMid\}/.test(mc) &&
+        /pair\.source === 'coinbase' \? 'coinbase' : pair\.source === 'hyperliquid' \? 'hyperliquid' : null/.test(mc) && /lookOnly \|\| !pair \? null/.test(mc) &&
+        /withExactMid\(main, exactMid\)/.test(dc) && /plan\.main === 'hyperliquid' \? \(top\?\.mid \?\? null\) : null/.test(dc) && /onMidRef\.current\?\.\(pair\.symbol, drawnMid\)/.test(dc) && /const drawnMid = plan\.main === 'coinbase' \? \(win\?\.mid \?\? null\) : null/.test(dc) && /last \$\{fmtDepthPrice\(lastShown\)\}/.test(dc)
     })())
 }
 

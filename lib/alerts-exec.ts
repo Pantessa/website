@@ -19,7 +19,7 @@ import { mintSlug } from '@/lib/intent-links'
 import { sendEmail } from '@/lib/email'
 import { SITE_URL } from '@/lib/site-url'
 import { readQuotes, type QuoteMap } from '@/lib/quotes'
-import { alertFires, alertLabel, fmtQuotePrice, groupAlertsBySymbol, type AlertCondition } from '@/lib/watchlists'
+import { alertFires, alertLabel, fmtSymbolPrice, groupAlertsBySymbol, type AlertCondition } from '@/lib/watchlists'
 
 /** Escape for an HTML mail body — every interpolated field is either
  *  user-authored (actionAsk) or derived from one; the mail must never carry
@@ -111,10 +111,11 @@ export async function runAlertSweep(opts: SweepOptions = {}): Promise<SweepSumma
         data: { status: 'fired', firedAt: now, firedPrice: price, lastChecked: now, lastPrice: price },
       })
       if (flipped.count === 0) continue // a concurrent pass got it
-      const title = `${alertLabel(rule)} — hit $${fmtQuotePrice(price)}`
+      // The price in the symbol's own unit (lib/watchlists fmtSymbolPrice): a yield or an index level wears no dollar sign.
+      const title = `${alertLabel(rule)} — hit ${fmtSymbolPrice(symbol, price)}`
       const body = a.actionAsk
-        ? `Your alert fired at $${fmtQuotePrice(price)}. The action you set up is ready to send — it moves nothing until you sign.`
-        : `Your alert fired at $${fmtQuotePrice(price)}.`
+        ? `Your alert fired at ${fmtSymbolPrice(symbol, price)}. The action you set up is ready to send — it moves nothing until you sign.`
+        : `Your alert fired at ${fmtSymbolPrice(symbol, price)}.`
       await notifyAlertFired({ owner: a.owner, alertId: a.id, symbol, title, body, actionAsk: a.actionAsk, price, isInternal: a.isInternal, email: a.email })
       fired.push({ id: a.id, symbol, price, owner: a.owner })
     }

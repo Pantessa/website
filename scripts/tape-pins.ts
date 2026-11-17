@@ -55,7 +55,7 @@ import {
   duneQueryKey,
 } from '../lib/dune'
 import { simulateLadder } from './ask-ladder'
-import { LIVE_TAIL_TFS, PRINT_KEEP_MS, applyPrint, barsFromPrints, bucketOf, chartLiveFeed, livePriceStats, printOf, seedThenPrints, tailIsLive, tailWords } from '../lib/chart-live'
+import { LIVE_PRINT_FRESH_MS, LIVE_TAIL_TFS, PRINT_KEEP_MS, applyPrint, barsFromPrints, bucketOf, chartLiveFeed, livePriceStats, pickLivePrice, printOf, seedThenPrints, tailIsLive, tailWords } from '../lib/chart-live'
 import { fmtLivePrice, isLiveTabTitle, liveTabTitle } from '../lib/markets-quotes'
 import { printFromCoinbase, printFromHl, trimPrints } from '../lib/venue-trades'
 import { PRINT_BAR_SPACING, engineRightOffset, fitMarginBars, printOpeningView } from '../lib/chart-viewport'
@@ -310,7 +310,7 @@ export function tapePins(check: Check): void {
     pb.length === 3 && pb[0].t === Math.floor((TP + 100) / 1000) && pb[0].c === 7.4 && pb[1].o === 7.45 && pb[1].h === 7.45 && pb[1].l === 7.3 && pb[1].c === 7.3 && pb[1].v === 4 && pb[2].o === 7.5 && pb.every((b, i) => i === 0 || b.t > pb[i - 1].t), JSON.stringify(pb))
   check('print frame: the frame is a shareable address — ?tf= set for every frame but the default, which drops it, other params kept',
     tfUrl('10s', '1d', '/t/HYPE', '') === '/t/HYPE?tf=10s' && tfUrl('1d', '1d', '/t/HYPE', '?tf=10s&tab=trade') === '/t/HYPE?tab=trade' && tfUrl('15m', '1d', '/t/UNI', '?vs=ETH') === '/t/UNI?vs=ETH&tf=15m')
-  check('print frame: the relay remembers each venue\'s last minutes of prints (an UPDATE replaces its block) and hands them to a `?backfill=1` reader before the live ones; the adapter delivers them as onBackfill; the chart asks for them on a print frame or for the executions strip (2026-11-02), polls the venue for the header\'s numbers alone, re-derives its bars once a second, and the symbol page hands the chart the URL\'s frame and mirrors it back',
+  check('print frame: the relay remembers each venue\'s last minutes of prints (an UPDATE replaces its block) and hands them to a `?backfill=1` reader before the live ones; the adapter delivers them as onBackfill; the chart asks for them on a print frame polls the venue for the header\'s numbers alone, re-derives its bars once a second, and the symbol page hands the chart the URL\'s frame and mirrors it back',
     (() => {
       const server = readFileSync('lib/dune-feed-server.ts', 'utf8')
       const route = readFileSync('app/api/live/stream/route.ts', 'utf8')
@@ -321,7 +321,7 @@ export function tapePins(check: Check): void {
       return /remember\(u, parsed\.op, parsed\.block, parsed\.fills\)/.test(server) && /ring\.filter\(\(f: TapeFill\) => f\.block !== block\)/.test(server) && /export function duneBackfill/.test(server) &&
         /sp\.get\('backfill'\) === '1'/.test(route) && /type: 'backfill', venue: v, fills: b\.fills/.test(route) && route.indexOf("type: 'backfill'") < route.indexOf('unsub = subscribeDune') &&
         /addEventListener\('backfill'/.test(feed) && /handlers\.onBackfill\?\.\(e\.fills, e\.sinceMs\)/.test(feed) &&
-        /backfill: print \|\| stripOn \}/.test(chart) && /barsFromPrints\(seedThenPrints\(venuePrintsRef\.current, printsRef\.current\.map\(printOf\), Date\.now\(\)\), FRAME_SEC\[tf\]\)/.test(chart) && /tf=\$\{isPrintTf\(tf\) \? '1m' : tf\}/.test(chart) && /setInterval\(\(\) => rebuildPrintsRef\.current\(\), 1_000\)/.test(chart) && /secondsVisible: isPrintTf\(tf\)/.test(chart) && /if \(urlTf\) syncTfParam\(tf, DEFAULT_CHART_TF\)/.test(chart) &&
+        /* RE-PINNED 2026-11-10 (chart-heat): the executions strip is gone, the backfill is the print frame's alone */ /backfill: print \}/.test(chart) && /barsFromPrints\(seedThenPrints\(venuePrintsRef\.current, printsRef\.current\.map\(printOf\), Date\.now\(\)\), FRAME_SEC\[tf\]\)/.test(chart) && /tf=\$\{isPrintTf\(tf\) \? '1m' : tf\}/.test(chart) && /setInterval\(\(\) => rebuildPrintsRef\.current\(\), 1_000\)/.test(chart) && /secondsVisible: isPrintTf\(tf\)/.test(chart) && /if \(urlTf\) syncTfParam\(tf, DEFAULT_CHART_TF\)/.test(chart) &&
         /defaultTf=\{initialTf\} urlTf/.test(page) && /if \(isPrintTf\(tf\)\) return NextResponse\.json/.test(candles)
     })())
   // 2026-10-15 (Nate: "draw using other data for the line parts but then start drawing with dune realtime data").
@@ -354,10 +354,10 @@ export function tapePins(check: Check): void {
   check('chart tail: the pill says where the prints come from and whether the tail is live, says "polled" by name for a frame or an instrument that polls, and names a keyless relay',
     tailWords('live', hype, '15m') === 'Hyperliquid prints · live' && tailWords('live', uni, '1m') === 'DEX prints · live' && tailWords('live', hype, '1d') === 'polled · prints on 1m–1H' && tailWords('live', null, '1m') === 'polled' && tailWords('unconfigured', hype, '1m') === 'polled · relay has no key' && tailWords('reconnecting', uni, '1h') === 'DEX prints · reconnecting')
   // RE-PINNED 2026-10-13 (depth): the stream opens for the Depth view on any frame too; the engine's bar still moves only on a live frame.
-  check('chart tail: MarketChart opens the relay filtered to the instrument\'s own prints only on a live frame (or for the Depth view, the Tape, or the executions strip beside positioning — 2026-11-02), updates the engine\'s last bar in place (never setData per print), re-applies a live bar the poll has not reached yet, and a stock never asks for 1m',
+  check('chart tail: MarketChart opens the relay filtered to the instrument\'s own prints only on a live frame (or for the Depth view, or the Tape), updates the engine\'s last bar in place (never setData per print), re-applies a live bar the poll has not reached yet, and a stock never asks for 1m',
     (() => {
       const src = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
-      return /openDuneTape\(liveFeed\.markets/.test(src) && /\{ venues: liveFeed\.venues, filter: true, backfill: print \|\| stripOn \}/.test(src) && /if \(!liveFeed \|\| !\(tailIsLive\(tf, liveFeed\) \|\| depthOn \|\| tapeOn \|\| stripOn\)\)/.test(src) /* RE-PINNED 2026-10-20 (chart-tape): the Tape view reads the stream too; 2026-11-02: the executions strip too */ && /if \(!tailLive\) return/.test(src) && /applyPrint\(tailRef\.current, printOf\(f\), tfSec\)/.test(src) && /cs\.update\(\{ time: r\.bar\.t as UTCTimestamp/.test(src) && /tailRef\.current = bars\[bars\.length - 1\] \?\? null/.test(src) && /tfsForSource\(pair\?\.source\)/.test(src) && /pair\?\.source === 'robinhood' && tf === '1m'/.test(src) && /data-tail=\{/.test(src)
+      return /openDuneTape\(liveFeed\.markets/.test(src) && /\{ venues: liveFeed\.venues, filter: true, backfill: print \}/.test(src) && /if \(!liveFeed \|\| !\(tailIsLive\(tf, liveFeed\) \|\| depthOn \|\| tapeOn\)\)/.test(src) /* RE-PINNED 2026-10-20 (chart-tape): the Tape view reads the stream too; 2026-11-02: the executions strip too; RE-PINNED 2026-11-10 (chart-heat): the strip is gone */ && /if \(!tailLive\) return/.test(src) && /applyPrint\(tailRef\.current, printOf\(f\), tfSec\)/.test(src) && /cs\.update\(\{ time: r\.bar\.t as UTCTimestamp/.test(src) && /tailRef\.current = bars\[bars\.length - 1\] \?\? null/.test(src) && /tfsForSource\(pair\?\.source\)/.test(src) && /pair\?\.source === 'robinhood' && tf === '1m'/.test(src) && /data-tail=\{/.test(src)
     })())
 
   // ── Formats ───────────────────────────────────────────────────────────
@@ -427,14 +427,25 @@ export function tapePins(check: Check): void {
   check('header: the tab\'s title leads with the price in the header\'s own decimals — `$7.1329 · UNI · Pantessa`; no price → null (the SEO title stays)',
     liveTabTitle('UNI', 7.1329) === '$7.1329 · UNI · Pantessa' && liveTabTitle('ETH', 2365.123) === '$2,365.12 · ETH · Pantessa' && liveTabTitle('UNI', null) === null && liveTabTitle('UNI', 0) === null &&
       isLiveTabTitle('$7.1329 · UNI · Pantessa') && !isLiveTabTitle('UNI live chart — trade Uniswap from the chart | Pantessa Markets') && !isLiveTabTitle(null))
-  check('header: the strip and the tab share the formatter and the chart re-states the header from every print path (the live tail, the print frame\'s rebuild), throttled, with the poll keeping a fresh print over its own close',
+  // RE-PINNED 2026-11-10 (live-mid): the header follows the venue's book center first (the light top-of-book
+  // feed, or the depth view's own MID), a fresh print only when no book speaks, the poll's close otherwise.
+  check('header: the strip and the tab share the formatter and the chart re-states the header from the book\'s center and every print path (the live tail, the print frame\'s rebuild), throttled, stamped with the symbol, with the poll keeping a live price over its own close',
     (() => {
       const sp = readFileSync('components/markets/shell/SymbolPage.tsx', 'utf8')
       const mc = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
       return sp.includes('${fmtLivePrice(stats.last)}') && sp.includes('liveTabTitle(sym, liveLast)') && sp.includes('document.title = title') && !sp.includes('fmtPrice(stats.last)') &&
         sp.includes('mo.observe(document.head') && sp.includes("statsFor?.sym === sym ? statsFor.stats : null") &&
-        (mc.match(/emitLivePrice\(/g) ?? []).length === 2 && (mc.match(/emitPollStats\(\{/g) ?? []).length === 2 && !mc.includes('onStatsRef.current?.({') && mc.includes('LIVE_EMIT_MS = 250') && mc.includes('livePriceStats(s, lp.price)')
+        (mc.match(/emitLivePrice\(/g) ?? []).length === 2 && (mc.match(/emitPollStats\(\{/g) ?? []).length === 2 && !mc.includes('onStatsRef.current?.({') && mc.includes('LIVE_EMIT_MS = 250') &&
+        mc.includes('livePriceStats(s, p)') && mc.includes('pickLivePrice({ mid, print: l.print }, Date.now())') && mc.includes('depthOnRef.current && l.depth != null ? l.depth : l.book') &&
+        mc.includes('if (!prev || prev.sym !== symRef.current) return') && mc.includes('if (sym !== symRef.current) return') && !/const LIVE_PRINT_FRESH_MS/.test(mc)
     })())
+  check('header: the book\'s center wins while its feed is open, on every frame and view, and is never aged out (a quiet book is still the book); a print speaks only with no book, and only while fresh; otherwise null (the poll\'s close stands)',
+    pickLivePrice({ mid: 7.0914, print: { price: 7.0806, at: 1_000_000 } }, 1_000_100) === 7.0914 &&
+      pickLivePrice({ mid: 7.0914, print: null }, 9e12) === 7.0914 &&
+      pickLivePrice({ mid: null, print: { price: 7.0806, at: 1_000_000 } }, 1_000_000 + LIVE_PRINT_FRESH_MS - 1) === 7.0806 &&
+      pickLivePrice({ mid: null, print: { price: 7.0806, at: 1_000_000 } }, 1_000_000 + LIVE_PRINT_FRESH_MS) === null &&
+      pickLivePrice({ mid: 0, print: null }, 1) === null && pickLivePrice({ mid: NaN, print: { price: 7.1, at: 10 } }, 11) === 7.1 && pickLivePrice({ mid: null, print: { price: -1, at: 10 } }, 11) === null &&
+      LIVE_PRINT_FRESH_MS === 60_000)
 
 }
 

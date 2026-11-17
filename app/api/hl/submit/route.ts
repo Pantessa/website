@@ -5,18 +5,22 @@ import { getActiveDelegation, retireDelegation, signL1ActionWithDelegation } fro
 import {
   fetchHlSnapshot,
   guardHlBuilderFeeApproval,
+  guardHlDexTransfer,
   guardHlExecBuild,
   guardHlLeverageBuild,
   HL_NONCE_MAX_AGE_MS,
   canonicalizeHlAction,
   hlActionTypedData,
   hlApproveBuilderFeeTypedData,
+  hlCoinLabel,
   hlConsentMessage,
+  hlSendAssetTypedData,
   HL_EXEC_POLICY_HOST,
   type HlWireAction,
   type HlWireApproveBuilderFeeAction,
   type HlWireLeverageAction,
   type HlWireOrderAction,
+  type HlWireSendAssetAction,
 } from '@/lib/hyperliquid-exec'
 import { policyCheck } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
@@ -46,9 +50,16 @@ export const dynamic = 'force-dynamic'
 //               No delegation → 409 { code: 'delegation-required' } and the
 //               client offers the one-time "enable trading" approval.
 // Both converge on the same guard + policy + venue relay below.
+//
+// Two USER-SIGNED actions ride the same relay (typed data on the wallet's OWN
+// chain, so every wallet signs them; never delegated): the one-time
+// builder-fee cap approval, and the move of USDC from the wallet's main perp
+// balance into a builder dex (a standard account keeps a separate balance per
+// dex — lib/hyperliquid-exec guardHlDexTransfer pins it to the signer's own
+// account, a dex we place orders on, and USDC).
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
-    action?: HlWireAction | HlWireApproveBuilderFeeAction
+    action?: HlWireAction | HlWireApproveBuilderFeeAction | HlWireSendAssetAction
     nonce?: number
     signature?: string
     mode?: 'direct' | 'delegated'
@@ -65,18 +76,22 @@ export async function POST(req: NextRequest) {
   const action = (body.action ? canonicalizeHlAction(body.action as HlWireAction) : body.action) as
     | HlWireAction
     | HlWireApproveBuilderFeeAction
+    | HlWireSendAssetAction
     | undefined
   const { nonce, from, expected } = body
   const delegated = body.mode === 'delegated'
   const isFeeApproval = (action as { type?: string } | undefined)?.type === 'approveBuilderFee'
+  const isDexTransfer = (action as { type?: string } | undefined)?.type === 'sendAsset'
+  // Signed by the wallet itself on its own chain — never by the agent.
+  const isUserSigned = isFeeApproval || isDexTransfer
   const proof = delegated ? body.consentSignature : body.signature
   if (
     !action ||
     typeof nonce !== 'number' ||
     typeof proof !== 'string' ||
     typeof from !== 'string' ||
-    (!isFeeApproval && !expected?.coin) ||
-    (delegated && isFeeApproval)
+    (!isUserSigned && !expected?.coin) ||
+    (delegated && isUserSigned)
   ) {
     return NextResponse.json(
       { error: delegated ? 'action, nonce, consentSignature, from and expected are required.' : 'action, nonce, signature, from and expected are required.' },
@@ -85,7 +100,7 @@ export async function POST(req: NextRequest) {
   }
   const signature = proof
   const isLeverage = action.type === 'updateLeverage'
-  if (!isFeeApproval) {
+  if (!isUserSigned) {
     if (isLeverage) {
       if (typeof expected?.leverage !== 'number') {
         return NextResponse.json({ error: 'expected.leverage is required for a leverage update.' }, { status: 400 })
@@ -156,6 +171,79 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ status: 'builder-fee-approved', maxFeeRate: fa.maxFeeRate })
   }
+  // ── Builder-dex collateral move — USER-SIGNED, the wallet's own account ──
+  // Same recovery discipline as the fee approval: the typed data is derived
+  // from the action (signatureChainId rides inside the signed bytes), the
+  // recovered signer must be `from`, and the guard pins destination = the
+  // signer, source = the main perp balance, a dex we build on, and USDC —
+  // against the main balance read live. Nothing here can send funds to
+  // anyone else: a foreign destination never reaches the venue.
+  if (isDexTransfer) {
+    const xfer = action as HlWireSendAssetAction
+    const td = hlSendAssetTypedData(xfer)
+    let xferSigner: string
+    try {
+      xferSigner = await recoverTypedDataAddress({
+        domain: td.domain as Parameters<typeof recoverTypedDataAddress>[0]['domain'],
+        types: td.types,
+        primaryType: td.primaryType,
+        message: td.message,
+        signature: signature as `0x${string}`,
+      })
+    } catch {
+      return NextResponse.json({ error: 'Signature does not verify against this transfer.' }, { status: 403 })
+    }
+    if (xferSigner.toLowerCase() !== from.toLowerCase()) {
+      return NextResponse.json({ error: 'Signature recovers to a different wallet than `from`.' }, { status: 403 })
+    }
+    if (xfer.nonce !== nonce || Math.abs(Date.now() - nonce) > HL_NONCE_MAX_AGE_MS) {
+      return NextResponse.json({ error: 'This transfer is stale — ask again for a fresh build.' }, { status: 400 })
+    }
+    const xferApiUrl = isTestnet ? 'https://api.hyperliquid-testnet.xyz' : 'https://api.hyperliquid.xyz'
+    // What the main perp balance has free RIGHT NOW (unread → the venue has
+    // the last word on the amount; every other field is still pinned).
+    const mainFree = await fetch(`${xferApiUrl}/info`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'clearinghouseState', user: from.toLowerCase() }),
+    })
+      .then((r) => (r.ok ? (r.json() as Promise<{ withdrawable?: string }>) : null))
+      .then((j) => (j && Number.isFinite(Number(j.withdrawable)) ? Number(j.withdrawable) : null))
+      .catch(() => null)
+    const xferGuard = guardHlDexTransfer(xfer, { from, isTestnet, mainWithdrawableUsd: mainFree })
+    if (!xferGuard.ok) {
+      const bad = xferGuard.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note)
+      return NextResponse.json({ error: `Refused at submit: ${bad.join(' ')}` }, { status: 403 })
+    }
+    const xferGrant = await getActiveGrant(from.toLowerCase())
+    if (xferGrant?.paused) {
+      await recordLedger({ grantId: xferGrant.id, host: HL_EXEC_POLICY_HOST, amountUsd: 0, ok: false, note: 'blocked: ACCOUNT_FROZEN (hl dex transfer)', orgId: xferGrant.orgId ?? undefined })
+      return NextResponse.json({ error: 'Your account kill switch is ON — unpause it to trade.' }, { status: 403 })
+    }
+    const xferRes = await fetch(`${xferApiUrl}/exchange`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: xfer, nonce, signature: splitSignature(signature) }),
+    })
+    const xferVenue = (await xferRes.json().catch(() => null)) as { status?: string; response?: unknown } | null
+    if (!xferRes.ok || xferVenue?.status !== 'ok') {
+      const msg = typeof xferVenue?.response === 'string' ? xferVenue.response : `venue rejected the transfer (HTTP ${xferRes.status})`
+      return NextResponse.json({ error: msg }, { status: 502 })
+    }
+    // Not money moved — the USDC changed ledgers inside the wallet's own account.
+    if (xferGrant) {
+      await recordLedger({
+        grantId: xferGrant.id,
+        host: HL_EXEC_POLICY_HOST,
+        serviceName: 'Hyperliquid',
+        amountUsd: 0,
+        ok: true,
+        note: `hl collateral moved: $${xfer.amount} USDC main perp balance -> ${xfer.destinationDex} dex (own account)`,
+        orgId: xferGrant.orgId ?? undefined,
+      }).catch(() => {})
+    }
+    return NextResponse.json({ status: 'dex-transfer-done', dex: xfer.destinationDex, amount: xfer.amount })
+  }
   if (!expected?.coin) {
     return NextResponse.json({ error: 'expected is required.' }, { status: 400 })
   }
@@ -214,23 +302,28 @@ export async function POST(req: NextRequest) {
   // 2 — re-guard against the live market. Leverage updates get their own
   //     guard (asset/mode/multiple pinned vs live meta); orders the full
   //     market re-check.
-  const coin = expected.coin.toUpperCase()
+  // The coin as the ask named it (`SP500`, `xyz:SP500`, `HYPE`): the snapshot
+  // resolves it to the venue's market the same way the build did — the main
+  // book first, then the builder dexes we place orders on — and the guard
+  // then holds the action's asset id to THAT market's live id.
+  const coin = hlCoinLabel(expected.coin)
   let snap
   try {
     snap = await fetchHlSnapshot(coin, from, isTestnet, expected.kind === 'open' ? expected.isBuy : undefined)
   } catch (e) {
     return NextResponse.json({ error: `Hyperliquid read failed: ${(e as Error).message}` }, { status: 502 })
   }
+  const market = { dex: snap.dex ?? null, dexIndex: snap.dexIndex ?? null, localIndex: snap.localIndex, isTestnet }
   const guard = isLeverage
     ? guardHlLeverageBuild(
         { kind: 'open', coin, leverage: expected.leverage },
         action as HlWireLeverageAction,
-        { assetIndex: snap.assetIndex, maxLeverage: snap.maxLeverage },
+        { assetIndex: snap.assetIndex, maxLeverage: snap.maxLeverage, marginMode: snap.marginMode, ...market },
       )
     : guardHlExecBuild(
         { kind: expected.kind as 'open' | 'close', coin, isBuy: expected.isBuy },
         action as HlWireOrderAction,
-        { markPx: snap.markPx, assetIndex: snap.assetIndex, withdrawableUsd: snap.withdrawableUsd, positionSzi: snap.positionSzi },
+        { markPx: snap.markPx, assetIndex: snap.assetIndex, withdrawableUsd: snap.withdrawableUsd, positionSzi: snap.positionSzi, szDecimals: snap.szDecimals, ...market },
       )
   if (!guard.ok) {
     const bad = guard.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note)
@@ -316,7 +409,7 @@ export async function POST(req: NextRequest) {
         serviceName: 'Hyperliquid',
         amountUsd: 0,
         ok: true,
-        note: `hl leverage set: ${coin} ${expected.leverage}x cross${delegation ? ' (delegated agent)' : ''}`,
+        note: `hl leverage set: ${coin} ${expected.leverage}x ${(action as HlWireLeverageAction).isCross ? 'cross' : 'isolated'}${delegation ? ' (delegated agent)' : ''}`,
         orgId: grant.orgId ?? undefined,
       }).catch(() => {})
     }
@@ -347,6 +440,7 @@ export async function POST(req: NextRequest) {
     status: filled ? 'filled' : 'unfilled',
     filled,
     valueUsd: guard.valueUsd,
-    explorerUrl: `https://app.hyperliquid${isTestnet ? '-testnet' : ''}.xyz/trade/${coin}`,
+    // The venue's own market name — a builder-dex market is `xyz:SP500` there.
+    explorerUrl: `https://app.hyperliquid${isTestnet ? '-testnet' : ''}.xyz/trade/${snap.coin ?? coin}`,
   })
 }

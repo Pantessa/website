@@ -12,14 +12,15 @@
 // whatever the pair honestly offers through the two gates, nothing to sell →
 // no Sell (lib/sell-gate), a shut venue → no Buy (lib/trade-venue-gate)).
 // It never builds, prices or signs: its button hands the printed sentence to
-// the page's build door (SymbolPage: Ask the chart's ticket under the chart,
-// connect to act, the wallet signature is the gate).
+// the page's order door (SymbolPage: it runs in the app with the apps it
+// needs, connect to act, the wallet signature is the gate).
 //
 // Two things ride under it. A fold (remembered per browser) that collapses
 // the form to its header so the watchlist gets the column back; and the ask
-// row — "Or just say it" — which hands a sentence to the same conversation
-// the chart carries (Ask the chart), so the one column holds everything you
-// DO on the page while the floating ask pill steps aside on this surface.
+// row — "Or just say it" — which sends a question or a trade to the app
+// (2026-11-16; it fed Ask the chart's inline ticket before), so the one
+// column holds everything you DO on the page while the floating ask pill
+// steps aside on this surface.
 //
 // The strip in the header (ExecStrip + its own ticket) is the PHONE's: below
 // the rail-docking width this component is hidden by markets.css and the
@@ -29,7 +30,8 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ChevronDown, ChevronUp, CornerDownLeft } from 'lucide-react'
-import type { ChartPair } from '@/lib/charts'
+import { isChartOnlyPair, isLookOnlyPair, type ChartPair } from '@/lib/charts'
+import LookOnlyCard from '@/components/markets/shell/LookOnlyCard'
 import OrderTicket from '@/components/markets/trade/OrderTicket'
 import { execAsks } from '@/lib/trade-asks'
 import { canSellAsk } from '@/lib/sell-gate'
@@ -38,6 +40,7 @@ import { useOrderAim } from '@/lib/order-size'
 import { canTradeAsk, tradeTarget } from '@/lib/trade-venue-gate'
 import { useTradable } from '@/lib/use-tradable'
 import { noVenueNote } from '@/lib/tradability'
+import { hip3Refusal } from '@/lib/venue-capability'
 import { fallbackSide, type TicketSide } from '@/lib/order-ticket'
 
 /** The fold, remembered per browser ('0' = folded to its header). */
@@ -59,9 +62,9 @@ export default function RailTicket({
   /** The side the page wants shown (the YOU HOLD pill aims Sell); null = the lead side. */
   side: TicketSide | null
   onSide: (side: TicketSide) => void
-  /** The page's build door: the sentence builds on this page. */
+  /** The page's order door: the sentence runs in the app. */
   onBuild: (ask: string) => void
-  /** The ask row: a sentence for Ask the chart (a question or a trade with an if). */
+  /** The ask row: a question or a trade with an if, sent to the app. */
   onSay: (text: string) => void
 }) {
   const held = useHeld()
@@ -123,6 +126,10 @@ export default function RailTicket({
     setSay('')
   }
 
+  // A look-only index (lib/charts isLookOnlyPair): no ticket and no "ACT ON".
+  // The seat says it is here to read and names the closest thing listed.
+  if (isLookOnlyPair(pair)) return <LookOnlyCard pair={pair} seat="rail" onAsk={onBuild} onSay={onSay} />
+
   return (
     <section className="mkt-railticket" data-slot="order-ticket" data-open={open ? '1' : '0'} data-side={shown ?? undefined} data-acts={asks.length} aria-label={`Act on ${pair.symbol}`}>
       <div className="mkt-railticket__head">
@@ -137,7 +144,7 @@ export default function RailTicket({
           <OrderTicket key={pair.symbol} symbol={symbol} pair={pair} sides={sides} side={shown} onSide={onSide} last={last} onSend={onBuild} seat="card" />
         ) : (
           <p className="mkt-railticket__shut" data-shut={shut.join('+') || 'none'}>
-            {shut.length > 0 ? noVenueNote(pair.symbol, shut) : `Nothing to act on for ${pair.symbol} yet — the ticket comes back when a venue lists it.`}
+            {shut.length > 0 ? noVenueNote(pair.symbol, shut) : isChartOnlyPair(pair) ? hip3Refusal(pair.symbol) : `Nothing to act on for ${pair.symbol} yet — the ticket comes back when a venue lists it.`}
           </p>
         ))}
       <form className="mkt-railticket__say" onSubmit={submit} data-say="">
@@ -150,7 +157,7 @@ export default function RailTicket({
           autoComplete="off"
           spellCheck={false}
         />
-        <button type="submit" className="mkt-railticket__go" aria-label="Send to Ask the chart" title="Send" disabled={!say.trim()}>
+        <button type="submit" className="mkt-railticket__go" aria-label="Send to the app" title="Send" disabled={!say.trim()}>
           <CornerDownLeft className="h-3.5 w-3.5" />
         </button>
       </form>

@@ -16,6 +16,7 @@
 // harness; the aside keeps its class + label.
 
 import MarketsTopStrip from '@/components/markets/shell/MarketsTopStrip'
+import SymbolSearch from '@/components/markets/search/SymbolSearch'
 import { AlertsContext } from '@/components/markets/watchlist/alerts-context'
 import { useAlerts } from '@/components/markets/watchlist/useWatchlists'
 import { useSession } from '@/lib/session'
@@ -27,6 +28,7 @@ export default function MarketsSide({ label, children }: { label: string; childr
     <AlertsContext.Provider value={alerts}>
       <div className="mkt-frame__side">
         <MarketsTopStrip />
+        <SymbolSearch />
         <aside className="mkt-frame__rail" aria-label={label}>
           {children}
         </aside>

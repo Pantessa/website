@@ -87,7 +87,8 @@ export async function GET(req: NextRequest) {
 
   // A perp chart or a coin whose home isn't an EVM chain has no spot buy for
   // money to land on — the venue map lists no funding for it either.
-  if (pair.source === 'hyperliquid' || (pair.source !== 'robinhood' && tokenHome(sym))) {
+  // …and a look-only index has no buy at all.
+  if (pair.source === 'hyperliquid' || pair.source === 'index' || (pair.source !== 'robinhood' && tokenHome(sym))) {
     return reply({ routes: [], notes: [], state: 'none', failed: [] })
   }
 
@@ -130,7 +131,7 @@ async function compoundLegs(
   if (buyRaw !== null && buyRaw !== '0' && buyRaw !== '1') return NextResponse.json({ error: 'buy must be 0 or 1.' }, { status: 400 })
   const stock = pair.source === 'robinhood'
   const buy = stock || buyRaw !== '0'
-  const perpOnly = pair.source === 'hyperliquid' || (!stock && !!tokenHome(sym))
+  const perpOnly = pair.source === 'hyperliquid' || pair.source === 'index' || (!stock && !!tokenHome(sym))
   const destChainId = perpOnly ? null : stock ? ROBINHOOD_CHAIN_ID : (chainId ?? fundDestChainFor(sym))
 
   const reply = (plan: FundLegsPlan, cached = false) =>

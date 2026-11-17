@@ -14,6 +14,7 @@ import { YeetfulMark } from '@/components/Logo'
 import { AskDoorTrigger } from '@/components/AskDoor'
 import { isMarketsPath, MARKETS_HREF } from '@/lib/markets'
 import { isProgressPath } from '@/lib/progress'
+import { isCommunityPath } from '@/lib/app-entry'
 import SiteAccount, { signInLabel, signInPill } from '@/components/SiteAccount'
 import SpineLink from '@/components/SpineLink'
 import Sheet from '@/components/mobile/Sheet'
@@ -66,7 +67,7 @@ export default function Navigation() {
   // yeetful.com; once inside /dashboard the top nav drops the brochure tabs —
   // navigation moves to the dashboard's left rail. A signed-in (or
   // wallet-connected) visitor on the brochure sees the account control.
-  const { address: sessionAddress } = useSession()
+  const { address: sessionAddress, walletAddress } = useSession()
 
   // /embed renders inside third-party iframes — no site chrome at all.
   // (After every hook, so the hook order stays stable across routes.)
@@ -89,6 +90,10 @@ export default function Navigation() {
   // full brochure nav there. mounted-gated so SSR keeps the nav.
   const onAppSurface = pathname.startsWith('/dashboard') || pathname.startsWith('/docs')
   if (mounted && !!sessionAddress && onAppSurface) return null
+  // A connected wallet with no session on the dashboard sees its sign-in card
+  // inside the app shell (lib/app-entry dashboardGate, 2026-11-17): the spine
+  // is its navigation there too.
+  if (mounted && !!walletAddress && pathname.startsWith('/dashboard')) return null
 
   // The app (/chat) has no brochure nav for ANYONE (2026-09-11, Nate:
   // "remove the header in the App if they are not logged in and move the
@@ -104,6 +109,8 @@ export default function Navigation() {
   if (isMarketsPath(pathname)) return null
   // The public progress pages (2026-10-15): the spine is their navigation too.
   if (isProgressPath(pathname)) return null
+  // The community surface (/community and every room under /g/ — squad community, 2026-11-09): the spine is its navigation too.
+  if (isCommunityPath(pathname)) return null
 
   const inDashboard = pathname.startsWith('/dashboard')
   const showDashboardCta = mounted && (isConnected || !!sessionAddress)
@@ -211,9 +218,10 @@ export default function Navigation() {
   return (
     <header className={`nav ${inDashboard ? 'nav--fluid' : ''}`}>
       <div className="nav__inner">
-        {/* Logged in, the logo leads back into the app; otherwise to the
-            brochure. mounted-gated (via showDashboardCta) keeps SSR at "/". */}
-        <Link className="logo" href={showDashboardCta ? '/dashboard' : '/'}>
+        {/* The logo goes to the market home `/`, signed in or out
+            (2026-11-09, Nate: signed in, the logo goes back to the main
+            market home). The Dashboard button on the right is the way in. */}
+        <Link className="logo" href="/">
           {/* The gem's ink box is 112×88 in the 128 grid, so a nominal size
               renders ~0.69× that in visual height — retuned from the pangolin
               era's 34 to keep the same visual weight. */}

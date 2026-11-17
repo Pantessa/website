@@ -37,7 +37,7 @@ import { hlUnsizedChips, parseHlIntent, type HlIntent, type HlOrderIntent } from
 import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
 import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 
-import { hlPerpUniverseCached } from '@/lib/hl-universe'
+import { hlOrderListingsCached, hlPerpUniverseCached } from '@/lib/hl-universe'
 import { lidoStakeSizeLabel, parseLidoStake } from '@/lib/lido-stake'
 import { parseSpotGuardArm } from '@/lib/spot-guard'
 import { primaryStable, chainById } from '@/lib/chains'
@@ -933,7 +933,7 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       // instead of compiling a guardian step no runner can arm. Sync: the
       // route warms the cached universe before compiling; cold falls back to
       // the static stock fence.
-      const fence = fenceGuardianCoin(parsed, hlPerpUniverseCached())
+      const fence = fenceGuardianCoin(parsed, hlPerpUniverseCached(), hlOrderListingsCached().dexes)
       if (!fence.ok) return { problem: fence.problem }
       const arm = { ...parsed, coin: fence.coin }
       const title = `Arm ${arm.kind

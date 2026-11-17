@@ -36,6 +36,9 @@ import JobsRailTab from '@/components/JobsRailTab'
 import LinksRailTab, { JourneyStrip } from '@/components/LinksRailTab'
 import TeamRailTab from '@/components/TeamRailTab'
 import LinksWorkspace from '@/components/LinksWorkspace'
+import AppsPhone from '@/components/apps/AppsPhone'
+import { useAccount } from 'wagmi'
+import { phoneAppsPageOn } from '@/lib/apps-phone'
 
 /** The screen headings, the same words the desktop drawer uses. */
 export const PHONE_SCREEN_TITLES: Record<Exclude<PhoneScreenName, 'chat'>, string> = {
@@ -133,16 +136,26 @@ function LinksScreen() {
   )
 }
 
+/** APPS (squad apps-page, 2026-11-17): for a connected wallet the screen
+ *  IS the apps page (components/apps/AppsPhone, which owns its own panel so
+ *  the ask bar can sit outside the scroller); with no wallet it stays the
+ *  plain list of apps it always was. */
+function AppsScreen() {
+  const { address } = useAccount()
+  if (phoneAppsPageOn(!!address) && address) return <AppsPhone address={address} title={PHONE_SCREEN_TITLES.apps} />
+  return (
+    <PhoneScreen name="apps" title={PHONE_SCREEN_TITLES.apps}>
+      <AppsRailTab flat />
+    </PhoneScreen>
+  )
+}
+
 export default function PhoneScreens({ screen }: { screen: Exclude<PhoneScreenName, 'chat'> }) {
   const { setPhoneScreen } = useYeetfulStore()
   const toChat = () => setPhoneScreen('chat')
   switch (screen) {
     case 'apps':
-      return (
-        <PhoneScreen name="apps" title={PHONE_SCREEN_TITLES.apps}>
-          <AppsRailTab flat />
-        </PhoneScreen>
-      )
+      return <AppsScreen />
     case 'jobs':
       return (
         <PhoneScreen name="jobs" title={PHONE_SCREEN_TITLES.jobs}>

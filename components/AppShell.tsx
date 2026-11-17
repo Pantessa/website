@@ -8,8 +8,8 @@
 //    height layout, no top-nav gap) and html[data-rail-collapsed], and renders
 //    the floating reopen toggle when the rail is collapsed.
 //  • AppRailHeader — the ChatGPT-style header pinned to the TOP of a collapsible
-//    rail (dashboard/docs): a collapse toggle + the yeetful mark linking home to
-//    the dashboard.
+//    rail (dashboard/docs): a collapse toggle + the mark linking home to the
+//    market home `/` (2026-11-09: the logo always goes home, never /dashboard).
 //
 // Collapse applies to dashboard + docs (their rails share useAppSidebar). Chat
 // manages its own conversation sidebar, so it only gets the top-nav removal and
@@ -26,7 +26,7 @@ import { YeetfulMark } from '@/components/Logo'
 /** Which app-shell behaviours apply on the current route for a signed-in user. */
 export function useAppShellMode() {
   const pathname = usePathname()
-  const { address } = useSession()
+  const { address, walletAddress } = useSession()
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
@@ -39,7 +39,9 @@ export function useAppShellMode() {
     // chrome for EVERYONE (2026-09-11 — the nav returns null on /chat
     // unconditionally, the toolbar carries the sign-in door), so its h-dvh
     // shell is right from the server render; dashboard + docs stay authed.
-    chrome: (authed && (onDashboard || onDocs)) || onChat,
+    // A connected wallet on the dashboard is in the app shell too: it sees
+    // the dashboard's sign-in card there (lib/app-entry dashboardGate).
+    chrome: (authed && (onDashboard || onDocs)) || (mounted && !!walletAddress && onDashboard) || onChat,
     // The rail is collapsible via the shared toggle (dashboard + docs only).
     collapsible: authed && (onDashboard || onDocs),
   }
@@ -55,7 +57,7 @@ export function AppRailHeader() {
       <button className="apprail__toggle" onClick={toggle} aria-label="Collapse sidebar" title="Collapse sidebar">
         <PanelLeftClose width={17} height={17} />
       </button>
-      <Link href="/dashboard" className="apprail__home" aria-label="Dashboard home">
+      <Link href="/" className="apprail__home" aria-label="Pantessa home">
         <YeetfulMark size={25} />
         <span className="apprail__word">pantessa</span>
       </Link>
@@ -71,7 +73,7 @@ function AppRailReopen() {
       <button className="apprail__toggle" onClick={toggle} aria-label="Open sidebar" title="Open sidebar">
         <PanelLeft width={17} height={17} />
       </button>
-      <Link href="/dashboard" className="apprail__homeicon" aria-label="Dashboard home">
+      <Link href="/" className="apprail__homeicon" aria-label="Pantessa home">
         <YeetfulMark size={25} />
       </Link>
     </div>

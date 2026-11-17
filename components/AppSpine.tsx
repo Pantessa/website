@@ -7,8 +7,8 @@
 // bottom. Below lg the SAME destinations render as a fixed bottom TAB BAR —
 // the phone-native shape of the same spine. One component, one badge poll,
 // two postures. There is no new-chat seat (2026-09-11, Nate: adding fresh
-// MCPs is not a big thing anymore): the brand seat opens a fresh /chat, and
-// the CHATS drawer leads with New Chat.
+// MCPs is not a big thing anymore): the CHATS drawer leads with New Chat.
+// The brand seat goes home to the market home `/` (2026-11-09).
 //
 // It is also the app's door: a signed-out visitor on a surface that mounts
 // it is sent home, except on the public markets surface, where looking needs
@@ -47,9 +47,9 @@
 import { useCallback, useEffect, useState, useRef, type MouseEvent } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { BookOpen, Boxes, CandlestickChart, ChartColumn, Ellipsis, Link2, ListChecks, MessageSquare, Settings, Trophy, Users, Wallet } from 'lucide-react'
+import { BookOpen, Boxes, CandlestickChart, ChartColumn, Ellipsis, Flame, Link2, ListChecks, MessageSquare, Settings, Trophy, Users, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { isPublicAppPath } from '@/lib/app-entry'
+import { COMMUNITY_HREF, isCommunityPath, isPublicAppPath } from '@/lib/app-entry'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { DEFAULT_TAB, parseTabParam, syncTabParam, tabUrl } from '@/lib/app-tab-url'
 import { PHONE_MQ } from '@/lib/phone-shell'
@@ -100,12 +100,18 @@ const WALLET_TITLE = 'Wallet — balances on every chain, gas, send and receive'
 // phone they fold behind MORE (the bar is full at 375px).
 const LEADERBOARD_TITLE = 'Leaderboard — the links, creators and wallets that moved the most money'
 const ANALYTICS_TITLE = 'Analytics — money moved, links shared and new wallets, in the open'
+// THE COMMUNITY (squad community, 2026-11-09, Nate: "like reddit, where sharing
+// chart ideas videos, lines is easy to join like a telegram channel and easy
+// to share with prove on trades"). A public destination PAGE, seated directly
+// above LEADERS; on a phone it folds behind MORE with them. It lights by PATH
+// (/community and every room under /g/, lib/app-entry isCommunityPath), not by the
+// `surface` prop: a room page mounts the markets frame and still lights it.
+const COMMUNITY_TITLE = 'Community: chart ideas, videos and trades with proof, and the rooms that share them'
 
 export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'dashboard' | 'markets' | 'wallet' | 'leaderboard' | 'analytics' }) {
   const router = useRouter()
   const { railTab, setRailTab, mainView, setMainView, mcpRailOpen, setMcpRailOpen, phoneScreen, setPhoneScreen } = useYeetfulStore()
   const onDashboard = surface === 'dashboard'
-  const onMarkets = surface === 'markets'
   const onWallet = surface === 'wallet'
   const onLeaderboard = surface === 'leaderboard'
   const onAnalytics = surface === 'analytics'
@@ -144,6 +150,10 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // leaves nothing to come back to (lib/session signedOutJustNow).
   const pathname = usePathname()
   const publicPage = isPublicAppPath(pathname)
+  // The community rides the markets frame, so the path decides which of the
+  // two seats is lit (never both).
+  const onCommunity = isCommunityPath(pathname)
+  const onMarkets = surface === 'markets' && !onCommunity
   useEffect(() => {
     if (!signedOut || publicPage) return
     if (!signedOutJustNow()) rememberSignInReturn(pathname + window.location.search)
@@ -462,7 +472,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // What MORE holds on a phone, and whether it wears the "you are here" tick
   // (the settings page, or the TEAM screen showing over the chat).
   const moreTab = TABS.find((t) => PHONE_MORE_TABS.has(t.tab))
-  const moreLit = moreLitFor(surface, phoneScreen)
+  const moreLit = moreLitFor(surface, phoneScreen) || onCommunity
   // The one sheet-row class (components/mobile/Sheet SHEET_ROW, polish R1):
   // every lane's sheet list wears it, so MORE is the reference.
   const moreItem = SHEET_ROW
@@ -480,28 +490,19 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         )}
         aria-label="Workspace"
       >
-        {/* Brand seat — signed in, it opens a fresh chat. Signed out, the
-            logo goes home: `/` is public (the markets splash), and a logo
-            must never be a sign-in wall (2026-10-06, Nate: "only ask them
-            to sign in if a transaction is needed or deeper bits"). */}
-        <SpineLink
-          href={signedOut ? '/' : '/chat'}
-          title={signedOut ? 'Pantessa — home' : 'Pantessa — chat'}
-          aria-label={signedOut ? 'Pantessa home' : 'Pantessa chat'}
-          // Inside the chat the URL is already /chat, so the link alone did
-          // nothing on /chat?tab=links|jobs|… (the mirror wrote the tab
-          // straight back). The home mark means "back to the chat": drop the
-          // destination and hand the main screen to the conversation, then
-          // let the link navigate as before (pre-gtm FINISH).
-          onClick={signedOut || offChat ? undefined : (e: MouseEvent<HTMLAnchorElement>) => {
-            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-            setRailTab(DEFAULT_TAB)
-            setMainView('chat')
-          }}
+        {/* Brand seat — the logo goes home, signed in or out: `/` is the
+            market home (2026-11-09, Nate: "when signed in, if the user
+            clicks the logo it should go back to the main market home page,
+            not the apps page"; it used to open /chat, which lands on APPS).
+            `/` is public, so a logo is never a sign-in wall (2026-10-06). */}
+        <Link
+          href="/"
+          title="Pantessa — home"
+          aria-label="Pantessa home"
           className="grid place-items-center w-full h-14 flex-shrink-0 border-b border-[var(--line)] text-white hover:bg-[var(--surf-2)] transition-colors"
         >
           <YeetfulMark size={25} />
-        </SpineLink>
+        </Link>
 
         <div className="flex flex-col items-center gap-1 pt-2 w-full px-1">
           {/* MARKETS is a destination PAGE (/markets → /t/<symbol>), not a
@@ -558,6 +559,26 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               the system's progress in the open, seated under the personal
               work and above DOCS. Plain links — the pages are public, so
               there is no door to open. Each lights on its own page. */}
+          {/* COMMUNITY (2026-11-09): the feed and the rooms, public, directly
+              above LEADERS. A plain link; lit on /community and every room. */}
+          <Link
+            href={COMMUNITY_HREF}
+            title={COMMUNITY_TITLE}
+            aria-label="COMMUNITY"
+            aria-current={onCommunity ? 'page' : undefined}
+            className={cn(
+              'relative w-12 flex flex-col items-center gap-0.5 py-1.5 rounded-lg transition-colors',
+              onCommunity
+                ? 'bg-[var(--surf-2)] text-white'
+                : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)]',
+            )}
+          >
+            {onCommunity && (
+              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+            )}
+            <Flame className="w-[18px] h-[18px]" />
+            <span className="mono text-[8px] font-medium tracking-normal">COMMUNITY</span>
+          </Link>
           <Link
             href={LEADERBOARD_HREF}
             title={LEADERBOARD_TITLE}
@@ -672,6 +693,19 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         </SpineLink>
         {TABS_BELOW_WALLET.map(mobileTab)}
         <Link
+          href={COMMUNITY_HREF}
+          title={COMMUNITY_TITLE}
+          aria-label="COMMUNITY"
+          aria-current={onCommunity ? 'page' : undefined}
+          className={cn(PHONE_SEAT, 'max-sm:hidden', onCommunity ? 'text-white' : 'text-[color:var(--muted)]')}
+        >
+          {onCommunity && (
+            <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+          )}
+          <Flame className="w-[18px] h-[18px]" />
+          <span className="mono text-[10px] font-medium tracking-wide">COMMUNITY</span>
+        </Link>
+        <Link
           href={LEADERBOARD_HREF}
           title={LEADERBOARD_TITLE}
           aria-label="LEADERS"
@@ -729,7 +763,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <button
             type="button"
             onClick={() => setMoreOpen((o) => !o)}
-            title="More — leaderboard, analytics, docs and settings"
+            title="More — community, leaderboard, analytics, docs and settings"
             aria-label="More"
             aria-haspopup="dialog"
             aria-expanded={moreOpen}
@@ -764,6 +798,13 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               </span>
             </button>
           )}
+          <Link href={COMMUNITY_HREF} role="menuitem" aria-current={onCommunity ? 'page' : undefined} onClick={() => setMoreOpen(false)} className={moreItem}>
+            <Flame className="w-[18px] h-[18px] flex-shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-[15px] font-medium text-[color:var(--fg)]">Community</span>
+              <span className="block text-[12px] truncate">Chart ideas, videos and trades with proof</span>
+            </span>
+          </Link>
           <Link href={LEADERBOARD_HREF} role="menuitem" aria-current={onLeaderboard ? 'page' : undefined} onClick={() => setMoreOpen(false)} className={moreItem}>
             <Trophy className="w-[18px] h-[18px] flex-shrink-0" />
             <span className="min-w-0">

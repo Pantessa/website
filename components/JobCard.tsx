@@ -16,6 +16,8 @@ import SignHlActionButton from '@/components/SignHlActionButton'
 import SignNftListingButton from '@/components/SignNftListingButton'
 import SpendPolicyFix, { type PolicyBlockInfo } from '@/components/SpendPolicyFix'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
+import PostProofDoor from '@/components/community/PostProofDoor'
+import { jobProofDoorHref } from '@/components/community/feed-rules'
 import { orderRequestOf, txChainOf, txRequestOf } from '@/lib/transaction-layer'
 import { feeBpsOfArtifact } from '@/lib/fees'
 import { chainById } from '@/lib/chains'
@@ -411,6 +413,8 @@ export default function JobCard({
                 </span>
                 {/* the aha moment, one tap from leaving the app as a link */}
                 <ShareReceiptButton kind="job" refId={jobId} />
+                {/* only when a step built a same-chain swap and left its mined transaction */}
+                <PostProofDoor href={jobProofDoorHref(job.steps, (s) => jobStepBuildPath(s.builder, s.artifact))} />
               </span>
             ) : (
               <span className="text-[11px] text-[color:var(--muted-2)]">

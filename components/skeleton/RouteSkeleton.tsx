@@ -1,9 +1,12 @@
 import MarketsShell from '@/components/markets/shell/MarketsShell'
+import ArriveAtTop from './ArriveAtTop'
 import './skeleton.css'
 
 // Route skeletons (squad pre-gtm POLISH, 2026-10-07): what every loading.tsx a
-// stranger can reach renders. Server components, no client JS — they paint
-// before hydration. Each wears the page's own silhouette so the real page
+// stranger can reach renders. Server components — they paint before
+// hydration; the one client piece, ArriveAtTop, renders nothing and does the
+// scroll-to-top Next skips on a skeleton (2026-11-11, its header says why).
+// Each wears the page's own silhouette so the real page
 // lands in place (no layout jump), says in words what is loading (the
 // polite live region), and never spins forever: Next swaps it out the moment
 // the segment resolves, and a failure falls to app/error.tsx's named state.
@@ -46,6 +49,7 @@ function SideColumn() {
 export function SymbolSkeleton() {
   return (
     <MarketsShell sym>
+      <ArriveAtTop />
       <main className="sym skel skel--sym" aria-busy="true">
         <p className="sr-only" role="status">Loading the chart…</p>
         <div className="skel__head">
@@ -77,6 +81,7 @@ export function SymbolSkeleton() {
 export function BoardSkeleton({ said = 'Opening the live tape' }: { said?: string }) {
   return (
     <MarketsShell>
+      <ArriveAtTop />
       <main className="mkt-frame__main skel skel--board" aria-busy="true">
         <p className="sr-only" role="status">{said}…</p>
         <div className="skel__row" style={{ justifyContent: 'space-between' }}>

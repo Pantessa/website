@@ -9,8 +9,9 @@
 // through the page's act door (`onAskText`).
 
 import { useEffect, useState } from 'react'
-import type { Candle, ChartPair } from '@/lib/charts'
-import { stats24h } from '@/lib/markets'
+import { chartUnitOf, isLookOnlyPair, type Candle, type ChartPair } from '@/lib/charts'
+import { fmtIndexStat } from '@/lib/macro'
+import { lastSessionStats, stats24h } from '@/lib/markets'
 import PerformanceTiles from '@/components/markets/chart/PerformanceTiles'
 import { fmtQuotePrice } from '@/lib/markets-quotes'
 import type { TradeAsk } from '@/lib/trade-asks'
@@ -75,18 +76,28 @@ export default function OverviewTab({
   }, [pair.symbol])
 
   const last = hourly?.length ? hourly[hourly.length - 1].c : daily?.length ? daily[daily.length - 1].c : null
-  const day = hourly ? stats24h(hourly) : null
+  // A look-only index (lib/charts isLookOnlyPair): its numbers in its own
+  // unit, its latest SESSION rather than a mostly-closed 24 hours, no volume
+  // (an index has none to state), and neither the money-flow panel nor the
+  // venue table — nothing on-chain holds or trades an index.
+  const lookOnly = isLookOnlyPair(pair)
+  const unit = chartUnitOf(pair)
+  const day = hourly ? (lookOnly ? lastSessionStats(hourly) : stats24h(hourly)) : null
+  const dayVolume = !lookOnly && hourly ? (stats24h(hourly)?.volume ?? 0) : 0
+  const money = (v: number) => (lookOnly ? fmtIndexStat(pair, v) : `${unit === 'usd' ? '$' : ''}${fmtQuotePrice(v)}`)
 
   return (
-    <div className="mkt-overview mk-overview">
+    <div className="mkt-overview mk-overview" data-look-only={lookOnly ? '' : undefined}>
       {/* The brief leads (AI) */}
       <div className="mk-overview__lead">
         <AiBrief symbol={symbol} pair={pair} onAsk={ask} />
       </div>
       {/* Where the money lives (VIZ) */}
-      <div className="mk-overview__flow">
-        <FlowPanel symbol={symbol} pair={pair} />
-      </div>
+      {!lookOnly && (
+        <div className="mk-overview__flow">
+          <FlowPanel symbol={symbol} pair={pair} />
+        </div>
+      )}
       {/* Performance tiles */}
       <section className="mkt-card" aria-label="Performance">
         <header className="mkt-card__head">
@@ -101,32 +112,36 @@ export default function OverviewTab({
       <section className="mkt-card" aria-label="Key stats">
         <header className="mkt-card__head">
           <h2 className="mkt-card__title">Key stats</h2>
-          <span className="mkt-card__eyebrow mono">LAST 24H · HOURLY BARS</span>
+          <span className="mkt-card__eyebrow mono">{lookOnly ? 'LATEST SESSION · HOURLY BARS · DELAYED' : 'LAST 24H · HOURLY BARS'}</span>
         </header>
         <dl className="mkt-kv mkt-kv--grid">
           <div>
             <dt>Last</dt>
-            <dd className="mono">{last != null ? `$${fmtQuotePrice(last)}` : hourly === null ? '…' : '—'}</dd>
+            <dd className="mono">{last != null ? money(last) : hourly === null ? '…' : '—'}</dd>
           </div>
           <div>
-            <dt>24h high</dt>
-            <dd className="mono">{day ? `$${fmtQuotePrice(day.high)}` : hourly === null ? '…' : '—'}</dd>
+            <dt>{lookOnly ? 'Session high' : '24h high'}</dt>
+            <dd className="mono">{day ? money(day.high) : hourly === null ? '…' : '—'}</dd>
           </div>
           <div>
-            <dt>24h low</dt>
-            <dd className="mono">{day ? `$${fmtQuotePrice(day.low)}` : hourly === null ? '…' : '—'}</dd>
+            <dt>{lookOnly ? 'Session low' : '24h low'}</dt>
+            <dd className="mono">{day ? money(day.low) : hourly === null ? '…' : '—'}</dd>
           </div>
-          <div>
-            <dt>24h volume</dt>
-            <dd className="mono">{day && day.volume > 0 ? fmtVolume(day.volume, last) : hourly === null ? '…' : '—'}</dd>
-          </div>
+          {!lookOnly && (
+            <div>
+              <dt>24h volume</dt>
+              <dd className="mono">{dayVolume > 0 ? fmtVolume(dayVolume, last) : hourly === null ? '…' : '—'}</dd>
+            </div>
+          )}
         </dl>
       </section>
 
-      {/* Every venue, one chip each (EXEC) */}
-      <div className="mk-overview__routes">
-        <RouteTable symbol={symbol} pair={pair} onAsk={ask} last={lastProp ?? last ?? null} />
-      </div>
+      {/* Every venue, one chip each (EXEC). An index has no venue: the page's look-only card says so, with the closest thing listed. */}
+      {!lookOnly && (
+        <div className="mk-overview__routes">
+          <RouteTable symbol={symbol} pair={pair} onAsk={ask} last={lastProp ?? last ?? null} />
+        </div>
+      )}
     </div>
   )
 }

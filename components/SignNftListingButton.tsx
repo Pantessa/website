@@ -14,7 +14,7 @@ import { useState } from 'react'
 import { useAccount, usePublicClient, useSendTransaction, useSignTypedData, useSwitchChain } from 'wagmi'
 import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import type { Eip712OrderRequest } from '@/lib/transaction-layer'
-import { reportWalletRefusal, walletErrorWords } from '@/lib/wallet-refusal'
+import { reportWalletRefusal, signStageError, walletErrorWords } from '@/lib/wallet-refusal'
 import { oneMethodPerTap } from '@/lib/sign-round-trip'
 import { usePlatform } from '@/lib/use-sign-round-trip'
 import SignatureWaitOpenApp from '@/components/SignatureWaitOpenApp'
@@ -126,15 +126,17 @@ export default function SignNftListingButton({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ chainId, parameters: typedData.message, signature, from: address }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Listing rejected.')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `OpenSea refused the listing (HTTP ${res.status}). Nothing was listed.`)
       const url = typeof data.openseaUrl === 'string' ? data.openseaUrl : null
       const orderHash = typeof data.orderHash === 'string' ? data.orderHash : null
       setOpenseaUrl(url)
       setStatus('live')
       onPlaced?.({ orderUid: orderHash, explorerUrl: url })
     } catch (e) {
-      const msg = e instanceof Error ? walletErrorWords(e) : 'Signing failed.'
+      // The relay's answer is OpenSea's, shown as written; walletErrorWords
+      // is for what a WALLET threw.
+      const msg = phase === 'relay' ? (e instanceof Error ? e.message : '') : e instanceof Error ? walletErrorWords(e) : 'Signing failed.'
       // The WALLET refused a built + guarded approve or listing: a
       // /dashboard/failures row like every other sign surface files (a human
       // "no" is dropped inside the beacon). Relay errors are OpenSea's.
@@ -145,7 +147,7 @@ export default function SignNftListingButton({
           ask: `${summary ?? 'OpenSea listing'} (${phase})`, detail: msg,
         })
       }
-      setError(/rejected|denied/i.test(msg) ? 'Rejected in the wallet — nothing was listed. (If you didn’t cancel: check the wallet network.)' : msg)
+      setError(signStageError(phase === 'relay' ? 'server' : 'wallet', msg, 'Rejected in the wallet — nothing was listed. (If you didn’t cancel: check the wallet network.)'))
       setStatus('error')
     }
   }

@@ -23,7 +23,7 @@ import { marketSections } from '@/lib/markets'
 import { preflightFundedBuy } from '@/lib/venue-preflight'
 import { callMcpTool } from '@/lib/mcp-call'
 import { AAVE_MCP } from '@/lib/aave-exec'
-import { hlPerpUniverse } from '@/lib/hl-universe'
+import { hlOrderListings } from '@/lib/hl-universe'
 import { aaveCapability, aaveRefusal, capabilityLegsFor, perpCapability, perpRefusal, type CapabilityLeg, type ReserveListing } from '@/lib/venue-capability'
 import {
   LEG_SIDES,
@@ -209,18 +209,24 @@ export async function refreshListings(opts: { known?: Map<string, number>; force
           () => null,
         )
       : null,
-    wantHl ? hlPerpUniverse().catch(() => null) : null,
+    // The main book AND the builder dexes orders are placed on (lib/hl-dex):
+    // a perp leg is listed where the order layer would resolve it.
+    wantHl ? hlOrderListings().catch(() => null) : null,
   ])
   if (wantAave && !aaveR) out.failed.push('aave')
-  if (wantHl && !hl) out.failed.push('hyperliquid')
+  if (wantHl && !hl?.main) out.failed.push('hyperliquid')
 
   const writes: Promise<void>[] = []
   for (const leg of legs) {
     let ok: boolean
     let reason: string
     if (leg.side === 'perp') {
-      if (!hl) continue
-      ok = perpCapability(hl, leg.symbol)
+      if (!hl?.main) continue
+      ok = perpCapability({ listed: hl.main }, leg.symbol, hl.dexes)
+      // "Not listed" is only a measurement when every dex the order layer
+      // would look on answered: a builder dex that did not is a leg left
+      // unread (stale → its chips come back), never a written refusal.
+      if (!ok && !hl.complete) continue
       reason = perpRefusal(leg.symbol)
     } else {
       if (!aaveR) continue

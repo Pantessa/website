@@ -1,0 +1,166 @@
+/* CALLED IT — the account page (/x/<handle>).
+   Squad called-gtm, lane PROFILE, 2026-11-16. Prefix `xpf` (checked against
+   every stylesheet in the repo: no other sheet names it).
+
+   FLAT, on purpose (the squad's rule 3): no shadow, no gradient, no glow, no
+   blur. Structure is a hairline and a type size. Every headline is one
+   colour and upright. A verdict's colour is carried by a small mark or a
+   thin rule, and its word is always printed beside it; the figures and the
+   posts themselves are all the page's own ink.
+
+   Rides the record sheet's root element (its verdict tones, --xrc-tone via
+   is-right / is-wrong / is-flat / is-open, and its three type families) and
+   the site's tokens only, so light mode is the token flip. It names none of
+   that sheet's classes: where one of its parts needs a different size here,
+   the page gives the part a seat of this sheet's own.
+
+   A phone first (rule 4): one column in reading order, 44px targets, the
+   tally and the press onto the chart on the first screen. From 1024px the
+   record sheet's frame puts Share, the door and the method beside it. */
+
+.xpf { --xpf-gap: var(--sp-5); }
+.xpf .xpf-main, .xpf .xpf-side { gap: var(--xpf-gap); }
+
+/* ── Who ───────────────────────────────────────────────────────────────── */
+.xpf-head { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.xpf-id { display: flex; align-items: center; gap: var(--sp-4); min-width: 0; }
+.xpf-id__face { flex: 0 0 auto; display: flex; }
+.xpf .xpf-id__face > span { width: 64px; height: 64px; font-size: var(--fs-2xl); }
+.xpf-id__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.xpf-id__name { margin: 0; font-family: var(--xrc-display); font-weight: 600; font-size: clamp(1.625rem, 1.3rem + 1.7vw, 2.375rem); line-height: 1.1; letter-spacing: -0.015em; color: var(--fg); overflow-wrap: anywhere; }
+.xpf-id__meta { margin: 0; display: flex; flex-wrap: wrap; gap: 0 var(--sp-3); font-family: var(--xrc-mono); font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); }
+.xpf-id__meta span { white-space: nowrap; }
+.xpf .xpf-id__x { flex: 0 0 auto; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 50%; color: var(--fg); transition: border-color var(--dur-1) ease; }
+.xpf-id__x svg { width: 15px; height: 15px; fill: currentColor; }
+.xpf .xpf-id__x:hover, .xpf .xpf-id__x:focus-visible { border-color: var(--fg); outline: none; }
+
+.xpf-standing { margin: 0; display: flex; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-md); line-height: 1.45; color: var(--muted); }
+.xpf-standing::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); transform: translateY(-1px); }
+.xpf-standing.is-verified { color: var(--fg); }
+.xpf-standing.is-verified::before { background: var(--accent); }
+
+/* ── The one line across markets: figures on a row, a thin rule per verdict ── */
+.xpf-sum { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-4); border-top: 1px solid var(--line); }
+.xpf-sum__who { margin: 0; font-size: var(--fs-md); line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
+.xpf-cells { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: var(--sp-3) var(--sp-3); }
+.xpf-cell { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); padding-top: var(--sp-2); border-top: 2px solid var(--xrc-tone); }
+.xpf-cell.is-total { border-top-color: var(--fg); }
+.xpf-cell b { font-family: var(--xrc-display); font-weight: 600; font-size: clamp(1.75rem, 1.45rem + 1.5vw, 2.375rem); line-height: 1; letter-spacing: -0.02em; color: var(--fg); font-variant-numeric: tabular-nums; }
+.xpf-cell__w { font-size: var(--fs-sm); line-height: 1.25; color: var(--muted); }
+.xpf-sum__rate { margin: 0; font-size: var(--fs-md); line-height: 1.45; color: var(--fg); }
+
+/* ── Buttons and links ─────────────────────────────────────────────────── */
+.xpf-acts { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); }
+.xpf .xpf-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 44px; padding: 0 var(--sp-5); border: 1px solid var(--line-2); border-radius: var(--r-pill); background: transparent; color: var(--fg); font-family: var(--xrc-ui); font-size: var(--fs-base); font-weight: 600; line-height: 1.15; text-align: center; text-decoration: none; transition: border-color var(--dur-1) ease, filter var(--dur-1) ease; }
+.xpf .xpf-btn:hover, .xpf .xpf-btn:focus-visible { border-color: var(--fg); outline: none; }
+.xpf .xpf-btn--lead { background: var(--accent); border-color: var(--accent); color: var(--ink, var(--bg)); }
+.xpf .xpf-btn--lead::after { content: '\2192'; }
+.xpf .xpf-btn--lead:hover, .xpf .xpf-btn--lead:focus-visible { border-color: var(--accent); filter: brightness(1.08); }
+.xpf .xpf-btn--wide { min-height: 48px; }
+/* A tile's own press: the same door as the page's one filled button, in outline, so a page of tiles is not a page of fills. */
+.xpf .xpf-btn--main { border-color: var(--fg); }
+.xpf .xpf-btn--main::after { content: '\2192'; color: var(--accent); }
+.xpf .xpf-link { color: var(--fg); font-weight: 600; text-decoration: underline; text-decoration-color: var(--line-2); text-decoration-thickness: 1px; text-underline-offset: 0.25em; }
+.xpf .xpf-link:hover, .xpf .xpf-link:focus-visible { text-decoration-color: var(--fg); outline: none; }
+
+/* ── A section: a hairline, a title, a line of why ─────────────────────── */
+.xpf-sec { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-5); border-top: 1px solid var(--line); }
+.xpf-sec__title, .xpf-aside__title { margin: 0; font-family: var(--xrc-display); font-weight: 600; font-size: var(--fs-xl); line-height: 1.2; letter-spacing: -0.01em; color: var(--fg); }
+.xpf-sec__lede, .xpf-aside__lede { margin: 0; max-width: 60ch; font-size: var(--fs-md); line-height: 1.5; color: var(--muted); }
+
+/* ── The calls that carry the record: hits and misses, the same row ────── */
+.xpf-callgroups { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--xpf-gap); }
+.xpf-calls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.xpf-calls > li + li { border-top: 1px solid var(--line); }
+.xpf .xpf-call { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) 0 var(--sp-4); text-decoration: none; }
+.xpf-calls > li:first-child .xpf-call { padding-top: var(--sp-1); }
+.xpf-calls > li:last-child .xpf-call { padding-bottom: 0; }
+.xpf-call__top { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-3); font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.xpf-call__verdict { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font-weight: 600; }
+.xpf-mark { flex: 0 0 auto; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--xrc-tone); }
+.xpf-call__quote { font-family: var(--xrc-display); font-size: clamp(1.125rem, 1.05rem + 0.4vw, 1.3125rem); font-weight: 500; line-height: 1.32; letter-spacing: -0.005em; color: var(--fg); overflow-wrap: anywhere; }
+.xpf-call__quote bdi::before { content: '\201C'; }
+.xpf-call__quote bdi::after { content: '\201D'; }
+.xpf-call__foot { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
+.xpf-call__move { font-family: var(--xrc-mono); font-size: var(--fs-md); color: var(--fg); font-variant-numeric: tabular-nums; }
+.xpf-call__go { font-size: var(--fs-md); font-weight: 600; color: var(--muted); white-space: nowrap; transition: color var(--dur-1) ease; }
+.xpf-call__go::after { content: '\2192'; margin-left: 6px; color: var(--accent); }
+.xpf-call:hover .xpf-call__go, .xpf-call:focus-visible .xpf-call__go { color: var(--fg); }
+.xpf .xpf-call:focus-visible { outline: 1px solid var(--line-2); outline-offset: 4px; }
+
+/* ── Market by market ──────────────────────────────────────────────────── */
+.xpf-mkts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
+.xpf-mkt { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); align-content: start; padding: var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-md); }
+.xpf-mkt > * { min-width: 0; }
+.xpf-mkt__head { margin: 0; display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
+.xpf-mkt__sym { font-family: var(--xrc-display); font-weight: 600; font-size: var(--fs-2xl); line-height: 1; letter-spacing: -0.01em; color: var(--fg); overflow-wrap: anywhere; }
+.xpf-mkt__when { font-family: var(--xrc-mono); font-size: var(--fs-xs); color: var(--muted-2); white-space: nowrap; }
+.xpf-mkt__note { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); }
+.xpf-mkt__acts { margin: var(--sp-1) 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); }
+
+/* The price line is stretched over a box whose height is CSS; every dot is placed by a percentage, so it stays round. */
+.xpf-spark { position: relative; height: 112px; margin: var(--sp-1) 5px; }
+.xpf-spark svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+.xpf-spark path { fill: none; stroke: var(--fg); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; opacity: 0.8; }
+.xpf-spark__dot { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--xrc-tone); outline: 2px solid var(--bg); }
+.xpf-spark--none { height: auto; margin: 0; padding: var(--sp-4) 0; border-top: 1px dashed var(--line-2); border-bottom: 1px dashed var(--line-2); font-size: var(--fs-sm); color: var(--muted-2); }
+
+.xpf-marks { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); font-size: var(--fs-md); line-height: 1.5; color: var(--fg); font-variant-numeric: tabular-nums; }
+.xpf-marks li { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.xpf-marks li::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--xrc-tone); }
+.xpf-marks li.is-total { font-weight: 600; }
+.xpf-marks li.is-total::before { content: none; }
+
+/* ── For the account's owner: quiet, at the foot ───────────────────────── */
+.xpf-owner__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); margin-top: var(--sp-1); }
+.xpf-owner__item { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
+.xpf-owner__item h3 { margin: 0; font-family: var(--xrc-ui); font-size: var(--fs-base); font-weight: 600; line-height: 1.3; color: var(--fg); }
+.xpf-owner__item p { margin: 0; font-size: var(--fs-md); line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.xpf-owner__links { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); }
+
+/* ── Beside the record: share it, plot somebody else ───────────────────── */
+.xpf-aside { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-5); border-top: 1px solid var(--line); scroll-margin-top: 84px; }
+.xpf-aside__form { min-width: 0; }
+
+/* ── Nothing listed yet ────────────────────────────────────────────────── */
+.xpf-empty__title { margin: 0; font-family: var(--xrc-display); font-weight: 600; font-size: var(--fs-xl); line-height: 1.25; letter-spacing: -0.01em; color: var(--fg); }
+.xpf-empty__lede { margin: 0; max-width: 60ch; font-size: var(--fs-md); line-height: 1.5; color: var(--muted); }
+.xpf-starters { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.xpf-starters > li { border-bottom: 1px solid var(--line); }
+.xpf .xpf-starter { display: flex; align-items: center; gap: var(--sp-4); min-height: 56px; padding: var(--sp-2) 0; text-decoration: none; }
+.xpf-starter__sym { flex: 0 0 64px; font-family: var(--xrc-display); font-weight: 600; font-size: var(--fs-xl); line-height: 1; color: var(--fg); }
+.xpf-starter__say { flex: 1 1 auto; min-width: 0; font-size: var(--fs-base); color: var(--muted); overflow-wrap: anywhere; transition: color var(--dur-1) ease; }
+.xpf-starter::after { content: '\2192'; flex: 0 0 auto; color: var(--accent); }
+.xpf-starter:hover .xpf-starter__say, .xpf-starter:focus-visible .xpf-starter__say { color: var(--fg); }
+.xpf .xpf-starter:focus-visible { outline: 1px solid var(--line-2); outline-offset: 2px; }
+
+/* ── Wider than a phone ────────────────────────────────────────────────── */
+@media (min-width: 720px) {
+  .xpf-callgroups[data-groups='2'] { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--sp-6); }
+  .xpf-mkts[data-many] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* One market: its line stands beside its facts. */
+  .xpf-mkts:not([data-many]) .xpf-mkt { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); column-gap: var(--sp-5); padding: var(--sp-5); }
+  .xpf-mkts:not([data-many]) .xpf-mkt > * { grid-column: 2; }
+  .xpf-mkts:not([data-many]) .xpf-spark { grid-column: 1; grid-row: 1 / span 5; height: auto; min-height: 168px; align-self: stretch; }
+  .xpf-owner__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-5); }
+  .xpf .xpf-btn--wide { min-width: 320px; }
+}
+@media (min-width: 1024px) {
+  .xpf { --xpf-gap: var(--sp-6); }
+  .xpf .xpf-id__face > span { width: 76px; height: 76px; }
+  /* Beside the record the first block needs no rule above it. */
+  .xpf .xpf-side > .xpf-aside:first-child { padding-top: 0; border-top: 0; }
+}
+
+/* ── A phone ───────────────────────────────────────────────────────────── */
+@media (max-width: 719px) {
+  .xpf .xpf-btn--wide { width: 100%; }
+  .xpf-mkt__acts .xpf-btn { flex: 1 1 auto; }
+}
+@media (hover: none) {
+  .xpf .xpf-link { display: inline-flex; align-items: center; min-height: 44px; }
+  .xpf .xpf-btn { min-height: 48px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xpf .xpf-btn, .xpf .xpf-id__x, .xpf-call__go, .xpf-starter__say { transition: none; }
+}

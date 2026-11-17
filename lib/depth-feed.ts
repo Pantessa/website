@@ -16,7 +16,7 @@
 //
 // Pure rules live in lib/depth (the parsers, the deltas); this file is I/O.
 
-import { applyL2Changes, bookFromRoute, parseCoinbaseL2, parseHlL2Book, type BookFeedStatus, type DepthBook, type DepthVenue, EMPTY_BOOK } from '@/lib/depth'
+import { applyL2Changes, bookFromRoute, parseCoinbaseL2, parseCoinbaseTicker, parseHlBbo, parseHlL2Book, type BookFeedStatus, type DepthBook, type DepthVenue, EMPTY_BOOK, type TopQuote } from '@/lib/depth'
 
 export const COINBASE_WS_URL = 'wss://advanced-trade-ws.coinbase.com'
 export const HL_WS_URL = 'wss://api.hyperliquid.xyz/ws'
@@ -186,6 +186,83 @@ export function openBookFeed(venue: DepthVenue, pair: { symbol: string; source: 
       if (retry) clearTimeout(retry)
       if (ping) clearInterval(ping)
       stopPoll?.()
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) ws.close()
+    },
+  }
+}
+
+/** Socket attempts in a row before the top-of-book feed gives up (the header
+ *  then follows the prints, then the poll — lib/chart-live pickLivePrice). */
+const TOP_TRIES = 5
+
+/**
+ * The venue's best bid and ask for the header (lib/depth TopQuote): Coinbase
+ * Advanced Trade `ticker` (+ `heartbeats`, or a quiet product's subscription
+ * closes inside ~90s) or Hyperliquid `bbo` (pinged, like the book). Every
+ * quote goes to `onQuote`; `onQuote(null)` when the socket drops, so the
+ * header never holds a price the feed no longer vouches for. It stays open
+ * while the tab is hidden: the tab's title is what a hidden tab shows.
+ */
+export function openTopOfBook(venue: DepthVenue, pair: { symbol: string; source: string; pair: string }, onQuote: (q: TopQuote | null) => void): BookFeedHandle {
+  const product = bookProductFor(venue, pair)
+  let ws: WebSocket | null = null
+  let closed = false
+  let fails = 0
+  let retry: ReturnType<typeof setTimeout> | null = null
+  let ping: ReturnType<typeof setInterval> | null = null
+  const open = () => {
+    if (closed) return
+    let sock: WebSocket
+    try {
+      sock = new WebSocket(venue === 'coinbase' ? COINBASE_WS_URL : HL_WS_URL)
+    } catch {
+      return
+    }
+    ws = sock
+    let quoted = false
+    sock.onopen = () => {
+      if (venue === 'coinbase') {
+        sock.send(JSON.stringify({ type: 'subscribe', product_ids: [product], channel: 'ticker' }))
+        sock.send(JSON.stringify({ type: 'subscribe', channel: 'heartbeats' }))
+      } else {
+        sock.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'bbo', coin: product } }))
+        ping = setInterval(() => {
+          if (sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ method: 'ping' }))
+        }, 50_000)
+      }
+    }
+    sock.onmessage = (ev) => {
+      let msg: unknown
+      try {
+        msg = JSON.parse(String(ev.data))
+      } catch {
+        return
+      }
+      const q = venue === 'coinbase' ? parseCoinbaseTicker(msg, product) : parseHlBbo(msg, product)
+      if (!q || closed) return
+      quoted = true
+      fails = 0
+      onQuote(q)
+    }
+    sock.onclose = () => {
+      if (ping) clearInterval(ping)
+      ping = null
+      if (closed) return
+      onQuote(null)
+      if (!quoted) fails++
+      if (fails >= TOP_TRIES) return
+      retry = setTimeout(open, Math.min(15_000, 500 * 2 ** Math.min(fails, 5)))
+    }
+    sock.onerror = () => {
+      /* onclose follows */
+    }
+  }
+  open()
+  return {
+    close: () => {
+      closed = true
+      if (retry) clearTimeout(retry)
+      if (ping) clearInterval(ping)
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) ws.close()
     },
   }

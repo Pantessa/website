@@ -10,7 +10,10 @@ export const dynamic = 'force-dynamic'
 // 'roster' joined in the doors run (lib/roster-observe writes it; the
 // failures page offers the filter — QA integration fix: the allowlist had
 // lagged, so ?kind=roster silently nulled).
-const KINDS = new Set(['planner-answer', 'native-wall', 'blocked', 'error', 'wallet-refused', 'roster'])
+// Every kind the page labels (app/dashboard/failures KIND_LABEL): withheld,
+// refunded and launch-dropped were missing, so their filter buttons were
+// silently nulled; venue-refused is app/api/cow/submit's (2026-11-11).
+const KINDS = new Set(['planner-answer', 'native-wall', 'blocked', 'error', 'wallet-refused', 'withheld', 'refunded', 'launch-dropped', 'venue-refused', 'roster'])
 
 /**
  * The ask-failure feed — money-shaped asks that ended in a wall, newest

@@ -13,7 +13,7 @@
 // PURE. Mirrored in scripts/ask-ladder.ts (gate 'starter'); every chip is
 // pinned through the ladder by scripts/deadends-pins.ts and audit:asks.
 
-import { chartPairFor, chartSymbolByName, isMoneyAssetWord, normalizeChartSymbol } from '@/lib/charts'
+import { chartPairFor, chartSymbolByName, isLookOnlySymbol, isMoneyAssetWord, normalizeChartSymbol } from '@/lib/charts'
 import type { ClarifyRequest } from '@/lib/clarify'
 
 export interface StarterTurn {
@@ -78,6 +78,16 @@ export function starterDoor(message: string): StarterTurn | null {
   const bare = text.replace(ASSET_TAIL, '').replace(/[?!.]+$/, '').trim()
   if (!/\s/.test(bare)) {
     const sym = assetOf(bare)
+    // A look-only index ("vix", "dxy"): the chart is the whole answer — no
+    // buy chip for a thing nothing listed here trades (lib/charts).
+    if (sym && isLookOnlySymbol(sym)) {
+      return {
+        kind: 'asset',
+        buildPath: 'native-starter',
+        reply: `📈 ${sym} is an index — here to read. Open its chart: the frames, the drawing tools and alerts all work, and nothing on it is an order.`,
+        clarify: { question: `${sym}: what next?`, options: [{ label: `Show me the ${sym} chart`, resume: `Show me the ${sym} chart` }] },
+      }
+    }
     if (sym) {
       const wantsChart = /\b(?:price|chart)\b/i.test(text)
       return {

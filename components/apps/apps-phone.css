@@ -1,0 +1,113 @@
+/* THE APPS PAGE ON A PHONE (components/apps/AppsPhone). Prefix `apgm-`,
+   checked against every stylesheet in the repo. The panel mirrors
+   components/phone/PhoneScreen (absolute over the conversation, a header,
+   ONE scroller) and adds the pinned ask bar as its last row, OUTSIDE the
+   scroller. Flat like the desktop page: hairlines, no shells. */
+
+.apgm {
+  position: absolute; inset: 0; z-index: 45;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  font-family: var(--font-chat-body);
+  color: var(--fg);
+}
+
+.apgm-top {
+  flex: none; display: flex; align-items: center; gap: 8px;
+  min-height: 48px; padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.apgm-top__title {
+  flex: 1 1 auto; min-width: 0; margin: 0;
+  font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.apgm-scroll {
+  flex: 1 1 0; min-height: 0;
+  overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex; flex-direction: column;
+}
+
+/* ── The app row: one sideways row, on-chips first, then Add ──────────────── */
+.apgm-chips {
+  flex: none; display: flex; align-items: center; gap: 8px;
+  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+}
+.apgm-chips::-webkit-scrollbar { display: none; }
+.apgm-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 8px;
+  min-height: 44px; padding: 0 14px;
+  border: 1px solid var(--line); border-radius: 999px;
+  font-size: var(--fs-md); color: var(--muted);
+  background: none; cursor: pointer; white-space: nowrap;
+}
+.apgm-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.apgm-chip--on { border-color: var(--fg); color: var(--fg); }
+.apgm-chip__x { color: var(--muted-2); padding-left: 2px; }
+.apgm-chip--add { border-style: dashed; gap: 6px; }
+
+/* ── The page ─────────────────────────────────────────────────────────────── */
+.apgm-inner { width: 100%; min-width: 0; padding: 22px 16px 28px; display: flex; flex-direction: column; gap: 24px; }
+.apgm-headline { font-size: clamp(24px, 7vw, 30px); max-width: none; }
+.apgm-empty { margin: 0; font-size: var(--fs-lg); line-height: 1.5; }
+.apgm-stack { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.apgm-stack > * { min-width: 0; }
+
+/* The page's shared pieces, sized for a thumb (44px targets). */
+.apgm .apg-btn { min-height: 44px; height: auto; }
+.apgm .apg-needs__text { flex-basis: 100%; }
+.apgm .apg-needs__row .apg-btn { margin-left: auto; }
+.apgm .apg-line { gap: 8px 16px; padding: 16px 0; }
+.apgm .apg-line__app { flex: 1 1 100%; }
+.apgm .apg-line__text { flex: 1 1 100%; font-size: var(--fs-base); }
+.apgm .apg-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
+.apgm .apg-fact__value { font-size: 24px; }
+.apgm .apg-appmark { min-height: 44px; }
+/* A phone's touch rule for everything on the page, the sections' own
+   controls included (prompt pills, a holding row's toggle) and the header's
+   chain picker: nothing tappable under 44px. */
+.apgm-scroll button, .apgm-top button { min-height: 44px; }
+.apgm .apg-row__acts { flex-wrap: wrap; }
+
+/* ── The pinned ask bar: the panel's last row, above the tab bar ──────────── */
+.apgm-ask {
+  flex: none; display: flex; flex-direction: column; gap: 8px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+.apgm-ask__sugs {
+  display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  margin: 0 -12px; padding: 0 12px;
+}
+.apgm-ask__sugs::-webkit-scrollbar { display: none; }
+/* Typing: the keyboard takes the room, the suggestions step aside. */
+.apgm-ask[data-keyboard] .apgm-ask__sugs { display: none; }
+.apgm-sug {
+  flex: none; min-height: 44px; padding: 0 14px;
+  border: 1px solid var(--line-2); border-radius: 999px;
+  font-size: var(--fs-md); color: var(--fg); background: none; white-space: nowrap; cursor: pointer;
+}
+.apgm-sug:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.apgm-ask__pill {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 52px; padding: 0 6px 0 16px;
+  border: 1px solid var(--line-2); border-radius: 16px;
+  background: var(--surf-1);
+}
+.apgm-ask__pill:focus-within { border-color: var(--fg); }
+.apgm-ask__icon { flex: none; color: var(--muted); }
+.apgm-ask__input {
+  flex: 1 1 auto; min-width: 0; height: 44px;
+  background: none; border: 0; outline: none; color: var(--fg);
+  font: inherit; font-size: 16px; /* 16px: iOS never zooms the page on focus */
+}
+.apgm-ask__input::placeholder { color: var(--muted-2); }
+.apgm-ask__send {
+  flex: none; width: 44px; height: 44px; border-radius: 999px; border: 0;
+  background: var(--surf-2); color: var(--fg); display: grid; place-items: center; cursor: pointer;
+}
+.apgm-ask__send:disabled { opacity: 0.4; cursor: default; }

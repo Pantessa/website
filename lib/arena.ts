@@ -178,11 +178,12 @@ export function pickSheetTitle(seat: PickSheetSeat): string {
   return seat === 'battle' ? 'Pick your armies' : 'Pick your markets'
 }
 
-/** Under the title: what one tap does, and the slice the field marches. */
+/** Under the title: what one tap does — and, on a battle view, the slice the
+ *  field marches (the other seats name no battle view since 2026-11-09). */
 export function pickSheetBlurb(seat: PickSheetSeat): string {
   return seat === 'battle'
     ? `One tap fills the field. The first ${ARMY_SLICE} march; the row holds ${MAX_PICK}.`
-    : `One tap fills the row (up to ${MAX_PICK}). The Front and The Siege march the first ${ARMY_SLICE}.`
+    : `One tap fills the row (up to ${MAX_PICK}). The tape and the pulse follow it.`
 }
 
 /** The deck's bar seat is the PHONE's trigger only (a 36px pill beside the channel chips, the bar's own

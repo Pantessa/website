@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { autoSellLive } from '@/lib/autopilot-live'
 import { isAddress } from 'viem'
 import prisma from '@/lib/db'
 import type { McpServer } from '@/lib/store'
@@ -44,7 +45,7 @@ async function dcaTileFor(address: string): Promise<RowsTile | null> {
         ...(due ? [{ label: chip.label, prompt: chip.prompt }] : []),
         ...(armed
           ? [{ label: 'Turn off autopilot', prompt: `turn off my ${s.buyToken} dca autopilot` }]
-          : s.status === 'active' && s.chainId === 8453
+          : s.status === 'active' && s.chainId === 8453 && autoSellLive()
             ? [{ label: 'Make it autonomous', prompt: `make my ${s.buyToken} dca autonomous` }]
             : []),
         s.status === 'paused'
@@ -120,7 +121,7 @@ function mcpBaseOf(endpoint: string | null, childUrl: string | null): string | n
  * no spend, no auth. The chat UI paints this before the first keystroke.
  */
 export async function POST(req: Request) {
-  let body: { address?: string; servers?: Pick<McpServer, 'slug'>[]; manualSlugs?: string[]; chain?: string; serversOnly?: boolean }
+  let body: { address?: string; servers?: Pick<McpServer, 'slug'>[]; manualSlugs?: string[]; chain?: string; serversOnly?: boolean; wide?: boolean }
   try {
     body = await req.json()
   } catch {
@@ -205,6 +206,8 @@ export async function POST(req: Request) {
           endpoint: base,
           exampleQueries: r.exampleQueries,
           forceShow: manual.has(r.slug),
+          // The apps page's scan: the whole holdings list, not the card's five.
+          wide: body.wide === true,
           featuredEndpoints: (featuredByServer.get(r.id) ?? []).map((f) => ({
             url: f.url,
             description: f.description,

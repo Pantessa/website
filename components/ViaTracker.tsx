@@ -20,6 +20,10 @@ export default function ViaTracker() {
 
   useEffect(() => {
     if (!via || !VIA_RE.test(via)) return
+    // A ROOM's invite link (/g/<slug>?via=<invite code>) spells its code the
+    // same way, and it is a different thing: it credits a member inside one
+    // room (community_invites), never a sharer in wallet_arrivals.
+    if (pathname === '/g' || pathname.startsWith('/g/') || pathname === '/tg') return
     // First touch wins: an existing cookie is never overwritten, so a later
     // click on someone else's link can't steal an earlier referral.
     if (document.cookie.split('; ').some((c) => c.startsWith('yf_via='))) return

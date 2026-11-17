@@ -96,14 +96,9 @@ export function sourceOf(input: { referrer?: string | null; utm?: string | null;
 
 // ── who is on the other end ───────────────────────────────────────────────
 
-const BOT_UA =
-  /bot\b|bot\/|crawl|spider|slurp|headless|phantomjs|puppeteer|playwright|lighthouse|pagespeed|preview|facebookexternalhit|embedly|python-requests|python-urllib|aiohttp|curl\/|wget|go-http-client|okhttp|axios|node-fetch|undici|java\/|libwww|scrapy|httpclient|monitor|uptime|pingdom|datadog|vercel-screenshot|google-inspectiontool|chrome-lighthouse|stripebot|yak\/|trendiction/i
-
-/** Pure: does this user agent name an automated client? An empty one does. */
-export function isBotUa(ua: string | null | undefined): boolean {
-  if (!ua || ua.length < 20) return true
-  return BOT_UA.test(ua)
-}
+// The tells live in lib/bot-ua (shared with the model fence and the
+// analytics tag); re-exported here for the callers that already read it.
+export { isBotUa } from './bot-ua'
 
 /** "mobile · iOS · Safari" from a user agent. Families only: a full UA string
  *  is close to a fingerprint, and nothing here needs more than the family. */

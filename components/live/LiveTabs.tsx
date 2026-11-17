@@ -2,7 +2,10 @@
 
 // The /live views (2026-10-06): Tape · The Front · The Siege · The Map (and
 // The Flyover, 2026-10-15, which keeps its window and lens as `w` / `lens`). One
-// strip, rendered in each view's own bar. A tab is a real link (`?view=`),
+// strip, rendered in each view's own bar. Since 2026-11-09 the TAPE offers no
+// view tabs (lib/battle liveTabsFor: the battle views and The Flyover are
+// reached by their URLs, and a visitor on one of them still gets the whole
+// strip to move between them and back). A tab is a real link (`?view=`),
 // so a view can be shared and the back button works; the armies, the window
 // and the pick mode ride along when a battle view hands off to another.
 // The battle views keep those in the URL with replaceState, which the
@@ -11,7 +14,7 @@
 
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { LIVE_VIEWS, type LiveView } from '@/lib/battle'
+import { liveTabsFor, type LiveView } from '@/lib/battle'
 import ShareLive from '@/components/live/ShareLive'
 
 const CARRIED = ['t', 'since', 'pick', 'w', 'lens'] as const
@@ -33,8 +36,8 @@ export default function LiveTabs({ view }: { view: LiveView }) {
   const params = useSearchParams()
   const rendered = params?.toString() ?? ''
   return (
-    <nav className="live__views" aria-label="Live views">
-      {LIVE_VIEWS.map((v) => (
+    <nav className="live__views" aria-label="Live views" data-tabs={liveTabsFor(view).length}>
+      {liveTabsFor(view).map((v) => (
         <Link
           key={v.id}
           href={hrefFor(v.id, rendered)}

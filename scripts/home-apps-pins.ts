@@ -82,8 +82,9 @@ export function homeAppsPins(check: Check): void {
       /if \(new URLSearchParams\(window\.location\.search\)\.get\('mcps'\)\) return/.test(workspace),
   )
   check(
-    "guide: the splash's own lesson is gone (the deck IS the live-tape lesson now) — six hints, no 'pulse', 'home' still a surface in the rulebook",
-    !GUIDE_HINTS.some((h) => (h.id as string) === 'pulse') && GUIDE_HINTS.length === 6 && GUIDE_SURFACES.includes('home'),
+    // RE-PINNED 2026-11-09 (community): six → seven hints (the community surface's `proof` lesson).
+    "guide: the splash's own lesson is gone (the deck IS the live-tape lesson now) — seven hints, no 'pulse', 'home' still a surface in the rulebook",
+    !GUIDE_HINTS.some((h) => (h.id as string) === 'pulse') && GUIDE_HINTS.length === 7 && GUIDE_SURFACES.includes('home'),
   )
   check(
     "apps row: a thumb gets 44px pills; the phone keeps one scrolling row of pills and drops the head (the guide row's 62px budget — the first board row stays above the bar)",

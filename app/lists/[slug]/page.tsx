@@ -4,9 +4,9 @@ import { notFound } from 'next/navigation'
 import Footer from '@/components/Footer'
 import TokenIcon from '@/components/TokenIcon'
 import FollowListButton from '@/components/markets/watchlist/FollowListButton'
-import { chartPairFor } from '@/lib/charts'
+import { chartPairFor, isLookOnlyPair } from '@/lib/charts'
 import { readQuotes } from '@/lib/quotes'
-import { fmtQuotePrice, sectionedRows, symbolName } from '@/lib/watchlists'
+import { fmtSymbolPrice, sectionedRows, symbolName } from '@/lib/watchlists'
 import { publicWatchlistBySlug } from '@/lib/watchlists-store'
 import ShareActions from '@/components/ShareActions'
 import { listPost } from '@/lib/share-posts'
@@ -82,11 +82,14 @@ export default async function PublicListPage({ params }: Params) {
                         <span className="lists__sym">{sym}</span>
                         <span className="lists__name">{pair ? symbolName(sym) : 'no chart yet'}</span>
                       </span>
-                      <span className="lists__last">{q ? `$${fmtQuotePrice(q.last)}` : '—'}</span>
+                      <span className="lists__last">{q ? fmtSymbolPrice(sym, q.last) : '—'}</span>
                       <span className={`lists__chg${cls}`}>{q ? `${q.chgPct > 0 ? '+' : ''}${q.chgPct.toFixed(2)}%` : ''}</span>
-                      <span className="wl__chip wl__chip--accent" title="prefills chat · you send it">
-                        Buy $10
-                      </span>
+                      {/* A look-only index (lib/charts isLookOnlyPair) is watched, never bought: its row wears no buy chip. */}
+                      {!isLookOnlyPair(pair) && (
+                        <span className="wl__chip wl__chip--accent" title="prefills chat · you send it">
+                          Buy $10
+                        </span>
+                      )}
                     </SpineLink>
                   )
                 })}

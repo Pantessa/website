@@ -45,6 +45,10 @@ export async function signSession(address: string): Promise<string> {
 async function verifySessionToken(token: string): Promise<string | null> {
   try {
     const { payload } = await jwtVerify(token, secret())
+    // A wallet session carries NO audience. A token minted for anything else
+    // under the same secret (the community identity cookie has one) is never
+    // a wallet session, whatever claims it carries (QA-SECURITY S21).
+    if (payload.aud !== undefined) return null
     return typeof payload.address === 'string' ? payload.address : null
   } catch {
     return null

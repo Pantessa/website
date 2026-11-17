@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { WorkingContext } from './working-context'
+import { autoSellLive } from './autopilot-live'
 import { canonicalChainWord, chainMentions, normalizeArrows, normalizeWorth, wordDistance } from './chain-lexicon'
 import { buysNativeEth, chainById } from './chains'
 
@@ -317,7 +318,7 @@ function parseSwapIntentInner(message: string): SwapIntent {
         sellToken: pt[2],
         ...(pt[1] ? { sellAmountHuman: pt[1] } : {}),
         limitPriceUsd: price,
-        problem: `A sell at a named price is a limit order — say it as one: “limit order: sell 0.1 ${pt[2].toUpperCase()} for at least ${Number((0.1 * Number(price)).toFixed(2))} USDC”. (If $${price} is BELOW today's price, that's a stop — “protect my spot ${pt[2].toUpperCase()} if it drops to $${price}”.)`,
+        problem: `A sell at a named price is a limit order — say it as one: “limit order: sell 0.1 ${pt[2].toUpperCase()} for at least ${Number((0.1 * Number(price)).toFixed(2))} USDC”.${autoSellLive() ? ` (If $${price} is BELOW today's price, that's a stop — “protect my spot ${pt[2].toUpperCase()} if it drops to $${price}”.)` : ''}`,
       }
     }
   }
@@ -502,7 +503,7 @@ export function swapClarify(intent: SwapIntent, opts: { targets?: string[] } = {
       resume: `limit order: sell ${units} ${sell} for at least ${Number((units * price).toFixed(2))} USDC`,
     })
     return {
-      reply: `A sell at a named price is a **limit order** (CoW fills it if the market gets there; nothing moves until then). Pick a size at $${price}, or say one — “limit order: sell 0.1 ${sell} for at least ${Number((0.1 * price).toFixed(2))} USDC”. If $${price} is below today's price, you want a stop instead: “protect my spot ${sell} if it drops to $${price}”.`,
+      reply: `A sell at a named price is a **limit order** (CoW fills it if the market gets there; nothing moves until then). Pick a size at $${price}, or say one — “limit order: sell 0.1 ${sell} for at least ${Number((0.1 * price).toFixed(2))} USDC”.${autoSellLive() ? ` If $${price} is below today's price, you want a stop instead: “protect my spot ${sell} if it drops to $${price}”.` : ''}`,
       question: `Sell how much ${sell} at $${price}?`,
       options: sizes.length === 1 ? [opt(sizes[0]), { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }] : sizes.map(opt),
     }

@@ -51,6 +51,18 @@ export const LIVE_VIEWS: readonly LiveViewDef[] = [
   { id: 'flyover', label: 'The Flyover', blurb: 'every market as land: buys raise it, sells sink it, color is the move' },
 ]
 
+/**
+ * The tabs /live's strip offers from a view (2026-11-09 — Nate: "the flyover
+ * and the front just seem a bit too gimmicky"): NONE from the tape — /live is
+ * the tape, and nothing on it points at the battle views any more — and every
+ * view from a battle view or The Flyover, so someone who arrived by a link can
+ * hop between them and back to the tape. Every `?view=` URL still opens its
+ * view; what changed is that no page advertises them.
+ */
+export function liveTabsFor(view: LiveView): readonly LiveViewDef[] {
+  return view === 'tape' ? [] : LIVE_VIEWS
+}
+
 export function parseLiveView(raw: string | null | undefined): LiveView {
   return LIVE_VIEWS.some((v) => v.id === raw) ? (raw as LiveView) : 'tape'
 }

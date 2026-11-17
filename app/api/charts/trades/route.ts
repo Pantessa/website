@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
   const pair = await resolveChartPair(symbolRaw)
   if (!pair) return NextResponse.json({ symbol: symbolRaw.toUpperCase(), prints: [], error: 'no chart for this symbol' }, { status: 404, headers: NO_STORE })
   if (pair.source === 'robinhood') return NextResponse.json({ symbol: pair.symbol, source: pair.source, prints: [], error: 'a stock has no print frame' }, { status: 400, headers: NO_STORE })
+  if (pair.source === 'index') return NextResponse.json({ symbol: pair.symbol, source: pair.source, prints: [], error: 'an index has no print frame' }, { status: 400, headers: NO_STORE })
   const key = `${pair.source}:${pair.pair}`
   const hit = cache.get(key)
   if (hit && Date.now() - hit.at < CACHE_MS) return NextResponse.json({ symbol: pair.symbol, source: pair.source, prints: hit.prints }, { headers: NO_STORE })

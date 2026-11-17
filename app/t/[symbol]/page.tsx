@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import { CHART_TFS, HL_PERPS_HANDOFF_GLOBAL, chartSymbolByName, isLiveOnlyHlPair, liveHlPerpNames, normalizeChartSymbol, resolveChartPair, type ChartTf } from '@/lib/charts'
 import { parseMarketTab, parseVsParam } from '@/lib/markets'
 import { symbolPageSeo } from '@/lib/markets-seo'
+import { depthPlanFor, parseDepthSettings } from '@/lib/depth'
+import { depthCardMeta, depthOgPath } from '@/lib/depth-share'
 import Footer from '@/components/Footer'
 import SymbolPage from '@/components/markets/shell/SymbolPage'
 import { readTradability } from '@/lib/tradability-store'
@@ -28,12 +30,32 @@ export const dynamic = 'force-dynamic'
 
 type Params = { params: Promise<{ symbol: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }
 
-export async function generateMetadata({ params }: Params): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Params): Promise<Metadata> {
   const { symbol } = await params
+  const sp = await searchParams
   // Warm the live perp table first (a miss on a cold process → one universe
   // read), so a perp the venue lists is titled and indexed as a chart.
   await resolveChartPair(symbol)
   const seo = symbolPageSeo(symbol)
+  // A Depth link (`?view=depth`, the chart's Share from the Depth view) names
+  // its own card: the book as X reads it (app/api/og/depth). Setting `images`
+  // here outranks the folder's opengraph-image file; every other link keeps
+  // the candle card (the key is left off, so the file wins).
+  const depth = typeof sp.view === 'string' && sp.view === 'depth' && seo.pair && depthPlanFor(seo.pair, false).main ? seo.pair : null
+  if (depth) {
+    const q = new URLSearchParams()
+    for (const [k, v] of Object.entries(sp)) if (typeof v === 'string') q.set(k, v)
+    const settings = parseDepthSettings(q.toString())
+    const card = depthCardMeta(depth.symbol, settings, depth.source === 'coinbase')
+    const image = { url: depthOgPath(depth.symbol, settings, Date.now()), width: 1200, height: 630, alt: card.alt }
+    return {
+      title: seo.title,
+      description: seo.description,
+      alternates: { canonical: seo.canonical },
+      openGraph: { title: card.title, description: card.description, url: seo.canonical, type: 'website', images: [image] },
+      twitter: { card: 'summary_large_image', title: card.title, description: card.description, images: [image] },
+    }
+  }
   return {
     title: seo.title,
     description: seo.description,

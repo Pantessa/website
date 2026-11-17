@@ -106,6 +106,9 @@ const ALIASES: Record<string, string> = { WETH: 'ETH', WBTC: 'BTC', CBBTC: 'BTC'
  *  used for the read and never written anywhere. Fail-soft: an unreadable
  *  chain is simply absent. */
 export async function readPosition(address: `0x${string}`, pair: ChartPair, last: number | null, change24hPct: number | null): Promise<PositionContext> {
+  // A wallet cannot hold a look-only index: no reader is asked (a token that
+  // merely wears the name "VIX" is not the VIX).
+  if (pair.source === 'index') return { symbol: pair.symbol, last, change24hPct, rows: [], perp: null }
   const rows: PositionContext['rows'] = []
   try {
     const { getWalletViewCached } = await import('./wallet-view')

@@ -123,7 +123,7 @@ export default function LinkEconomy() {
             </div>
             <div>
               <dt className="mono">$0</dt>
-              <dd>on bridges, funding legs and NFT sales — fee-free routes stay free</dd>
+              <dd>on funding legs and NFT sales — fee-free routes stay free</dd>
             </div>
           </dl>
         </div>

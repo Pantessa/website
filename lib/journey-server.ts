@@ -16,7 +16,8 @@ import { moneyShaped } from '@/lib/ask-failure'
 import { isInternalRun } from '@/lib/internal-run'
 import { MAX_AGO_MS, scrub, type CleanEvent } from '@/lib/journey-events'
 import { bumpAndCheckJourney } from '@/lib/journey-limits'
-import { deviceOf, externalReferrerHost, isBotUa, replyShape } from '@/lib/user-flows'
+import { deviceOf, externalReferrerHost, replyShape } from '@/lib/user-flows'
+import { isAutomatedUa } from '@/lib/bot-ua'
 import { optedOut, visitorFrom } from '@/lib/visitor-id'
 import { clientIpFrom } from '@/lib/turn-limits'
 
@@ -56,7 +57,9 @@ async function baseFor(headers: Headers, wallet: string | null, opts: { team?: b
     isTeam: isAdminAddress(opts.sessionAddress) || isTestWallet(opts.sessionAddress),
     teamClaimed: opts.team === true || isTestWallet(wallet) || isAdminAddress(wallet),
     isInternal: who.local || !isPublicHost(host) || isInternalRun(headers, opts.body),
-    isBot: isBotUa(ua),
+    // A named crawler OR a desktop browser years out of date (lib/bot-ua):
+    // the 2026-11 daily crawl wore 2023 browsers and counted as people.
+    isBot: isAutomatedUa(ua),
   }
 }
 

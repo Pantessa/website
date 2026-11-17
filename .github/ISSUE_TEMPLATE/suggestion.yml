@@ -1,0 +1,30 @@
+name: Suggestion
+description: An idea for Pantessa, a market you want, or something that should work better.
+title: "Suggestion: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping build Pantessa. Open suggestions and closed ones are listed on the home page at https://www.pantessa.com.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Say it the way you would tell a friend. A sentence is enough.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help you?
+      description: What were you trying to do when you thought of it?
+    validations:
+      required: false
+  - type: input
+    id: where
+    attributes:
+      label: Where on the site?
+      description: A page address, if it is about one (for example https://www.pantessa.com/t/ETH).
+    validations:
+      required: false

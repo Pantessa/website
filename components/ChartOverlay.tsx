@@ -14,7 +14,7 @@ import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { ExternalLink, X } from 'lucide-react'
 import { useYeetfulStore } from '@/lib/store'
-import { CHART_FEED_LABELS, chartPairFor, type ChartFeed } from '@/lib/charts'
+import { CHART_FEED_LABELS, chartPairFor, chartUnitOf, isLookOnlyPair, type ChartFeed } from '@/lib/charts'
 import { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import MarketChart from '@/components/markets/chart/MarketChart'
 import TokenIcon from '@/components/TokenIcon'
@@ -75,6 +75,13 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
   const chg = stats?.changePct24h ?? null
   const chgClass = chg === null ? 'tok__chg--flat' : chg > 0 ? 'tok__chg--up' : chg < 0 ? 'tok__chg--down' : 'tok__chg--flat'
   const chgLabel = chg === null ? '24h —' : `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg).toFixed(2)}% 24h`
+  // A look-only index (lib/charts): its value in its own unit (no dollar
+  // sign; a yield in percent) and no order — the chips below are gated the
+  // same way every chip is (lib/trade-venue-gate refuses an order on one).
+  const lookOnly = isLookOnlyPair(pair)
+  const unit = chartUnitOf(pair)
+  const priceSign = unit === 'usd' ? '$' : ''
+  const priceTail = unit === 'yield' ? '%' : ''
 
   const canBuy = !!pair && canTradeAsk(`Buy $50 of ${pair.symbol}`, tradable)
   const canSell = !!pair && canSellAsk(`Sell $50 of ${pair.symbol}`, held) && canTradeAsk(`Sell $50 of ${pair.symbol}`, tradable)
@@ -125,7 +132,7 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
             <div className="flex items-center justify-between gap-3 pb-2">
               {stats?.last != null ? (
                 <span>
-                  <span className="mono text-[17px] font-semibold tabular-nums">${fmtPrice(stats.last)}</span>
+                  <span className="mono text-[17px] font-semibold tabular-nums">{priceSign}{fmtPrice(stats.last)}{priceTail}</span>
                   <span className={`tok__chg ml-2 !text-[12px] ${chgClass}`}>{chgLabel}</span>
                 </span>
               ) : (
@@ -180,7 +187,7 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
               </div>
               {stats?.last != null && (
                 <div className="mr-1 text-right">
-                  <span className="mono text-[15px] font-semibold tabular-nums">${fmtPrice(stats.last)}</span>
+                  <span className="mono text-[15px] font-semibold tabular-nums">{priceSign}{fmtPrice(stats.last)}{priceTail}</span>
                   <span className={`tok__chg ml-2 !text-[11px] ${chgClass}`}>{chgLabel}</span>
                 </div>
               )}
@@ -229,7 +236,7 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
                   </button>
                 )}
                 <span className="mono ml-auto text-[9.5px] uppercase tracking-widest text-[color:var(--muted-2)]">
-                  sends the ask · your wallet signs
+                  {lookOnly ? 'index data · delayed · here to read' : 'sends the ask · your wallet signs'}
                 </span>
               </div>
             </div>

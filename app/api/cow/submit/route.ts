@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import {
   buildCowSubmitBody,
   describeCowOrder,
@@ -9,6 +9,11 @@ import {
 } from '@/lib/cow'
 import { orderValueUsd, policyCheck, COW_POLICY_HOST } from '@/lib/cow-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
+import { cowRefusalOf, cowRefusalWords, type CowRefusal } from '@/lib/cow-refusal'
+import { VENUE_REFUSED_KIND } from '@/lib/wallet-refusal'
+import { isInternalRun } from '@/lib/internal-run'
+import { bumpAndCheckBrokerCall, clientIpFrom } from '@/lib/turn-limits'
+import prisma from '@/lib/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -93,6 +98,45 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Relay to the order book ────────────────────────────────────────────────
+  // A refusal AFTER the wallet signed is the venue's answer, never the
+  // wallet's: it keeps CoW's errorType, says so in plain words (lib/cow-
+  // refusal), lands in the logs, and files a `venue-refused` row on
+  // /dashboard/failures. Until 2026-11-11 it was one 502 with no log line,
+  // which the button printed as "Signature rejected in the wallet".
+  const refused = (refusal: CowRefusal, words: string) => {
+    console.warn(
+      '[cow/submit] order book refused a signed order',
+      JSON.stringify({ chainId, from: from.toLowerCase(), mode, status: refusal.status, errorType: refusal.errorType, description: refusal.description }),
+    )
+    if (req.headers.get('x-yf-no-ask-log') !== '1') {
+      const internal = isInternalRun(req.headers, body)
+      const ip = clientIpFrom(req.headers)
+      after(async () => {
+        if (await bumpAndCheckBrokerCall(ip)) return
+        await prisma.askFailure
+          .create({
+            data: {
+              wallet: from.toLowerCase(),
+              prompt: `[cow-order] ${describeCowOrder({ chainId, from, order }, mode)}`.slice(0, 300),
+              reply: words.slice(0, 400),
+              kind: VENUE_REFUSED_KIND,
+              buildPath: 'native-swap-cow',
+              // The guardrails read the balance at build; CoW's own answer
+              // is the only thing that says otherwise.
+              hadFunds: refusal.errorType === 'InsufficientBalance' ? false : null,
+              fundsUsd: valueUsd != null && valueUsd > 0 ? Math.round(valueUsd * 100) / 100 : null,
+              fundsDetail: `order book refused after signing · chain ${chainId}${refusal.errorType ? ` · ${refusal.errorType}` : ''} — the wallet signed; CoW's order book was the wall, nothing was placed.`,
+              isInternal: internal,
+            },
+          })
+          .catch(() => {})
+      })
+    }
+    return NextResponse.json(
+      { error: words, stage: 'order-book', venue: 'cow', errorType: refusal.errorType },
+      { status: 502 },
+    )
+  }
   try {
     const res = await fetch(`${apiBase}/api/v1/orders`, {
       method: 'POST',
@@ -101,10 +145,8 @@ export async function POST(req: NextRequest) {
     })
     const data = await res.json().catch(() => null)
     if (!res.ok) {
-      const detail =
-        (data && typeof data === 'object' && 'description' in data && String((data as { description?: unknown }).description)) ||
-        `HTTP ${res.status}`
-      return NextResponse.json({ error: `CoW order book rejected the order: ${detail}` }, { status: 502 })
+      const refusal = cowRefusalOf(res.status, data)
+      return refused(refusal, cowRefusalWords(refusal))
     }
     const orderUid = typeof data === 'string' ? data : String(data)
     const explorerUrl = `https://explorer.cow.fi/${COW_EXPLORER_CHAIN[chainId] ?? chainId}/orders/${orderUid}`
@@ -126,6 +168,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ orderUid, explorerUrl })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'submission failed'
-    return NextResponse.json({ error: `Couldn't reach the CoW order book: ${msg}` }, { status: 502 })
+    console.warn('[cow/submit] could not reach the order book', JSON.stringify({ chainId, from: from.toLowerCase(), error: msg.slice(0, 200) }))
+    return NextResponse.json(
+      { error: `Couldn't reach CoW's order book (${msg.slice(0, 160)}). The wallet signed; nothing was placed.`, stage: 'relay', venue: 'cow' },
+      { status: 502 },
+    )
   }
 }

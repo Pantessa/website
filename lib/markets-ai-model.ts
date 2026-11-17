@@ -43,6 +43,9 @@ export interface ModelCall {
   apiKey?: string
   /** Who the meter attributes the call to (lowercased wallet), if anyone. */
   owner?: string | null
+  /** The model this call asks for (and the meter records). Absent: MARKETS_AI_MODEL, as before. Added for the
+   *  Called-it labeler (squad called-it, lane FIX), which keeps its own small model. */
+  model?: string
   /** Harness-only scenario the mock reads (ignored on a real call). */
   mock?: { scenario?: string | null; menu?: AiChip[] }
 }
@@ -52,7 +55,7 @@ function headers(key: string): Record<string, string> {
 }
 
 const meter = (call: ModelCall, usage: ModelUsage, ok: boolean) =>
-  recordInferenceCall({ surface: call.surface, model: MARKETS_AI_MODEL, keySource: call.apiKey ? 'byok' : 'house', owner: call.owner, usage, ok })
+  recordInferenceCall({ surface: call.surface, model: call.model ?? MARKETS_AI_MODEL, keySource: call.apiKey ? 'byok' : 'house', owner: call.owner, usage, ok })
 
 /**
  * Stream the model's text. Yields text deltas; throws on a non-2xx (the
@@ -75,7 +78,7 @@ export async function* streamModelText(call: ModelCall): AsyncGenerator<string, 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: headers(key),
-      body: JSON.stringify({ model: MARKETS_AI_MODEL, max_tokens: call.maxTokens, stream: true, system: call.system, messages: [{ role: 'user', content: call.user }] }),
+      body: JSON.stringify({ model: call.model ?? MARKETS_AI_MODEL, max_tokens: call.maxTokens, stream: true, system: call.system, messages: [{ role: 'user', content: call.user }] }),
       signal: ctrl.signal,
     })
     if (!res.ok || !res.body) {
@@ -128,7 +131,7 @@ export async function modelText(call: ModelCall): Promise<string | null> {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: headers(key),
-      body: JSON.stringify({ model: MARKETS_AI_MODEL, max_tokens: call.maxTokens, system: call.system, messages: [{ role: 'user', content: call.user }] }),
+      body: JSON.stringify({ model: call.model ?? MARKETS_AI_MODEL, max_tokens: call.maxTokens, system: call.system, messages: [{ role: 'user', content: call.user }] }),
       signal: call.signal ?? AbortSignal.timeout(TIMEOUT_MS),
     })
     if (!res.ok) {

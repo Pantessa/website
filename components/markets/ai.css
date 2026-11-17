@@ -114,9 +114,9 @@
 .mk-ai__ghost--sm { width: 22px; height: 22px; margin-left: auto; }
 .mk-ai__ghost--sm .mk-ai__ico { width: 12px; height: 12px; }
 
-/* ── Ask the chart: the conversation + its order ticket (2026-09-24) ────────
-   The panel talks on the left and builds on the right: a trade it hears
-   lands in the order ticket beside it (ChatInterface simple + docked). The
+/* ── Ask the chart: the chart conversation (2026-09-24) ─────────────────────
+   One column since 2026-11-16: a trade the panel hears opens in the app, so
+   there is no order ticket beside the talk any more. The
    card's own width picks the layout (a size container on the section — a
    container query styles descendants only, and never an ancestor of the
    chart), so the docked /t column and a phone both read. */
@@ -182,51 +182,10 @@
 .mk-ai__cta:hover:not(:disabled) { filter: brightness(1.06); }
 .mk-ai__cta:disabled { opacity: .6; cursor: default; }
 
-/* The order ticket. */
-.mk-ask__ticket {
-  display: flex; flex-direction: column; min-width: 0; overflow: hidden;
-  border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--line)); border-radius: 14px;
-  background: var(--bg); animation: mk-ask-in .28s ease-out both;
-}
-@keyframes mk-ask-in { from { opacity: 0; transform: translateY(6px); } }
-.mk-ask__ticket-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 9px 10px 9px 14px; border-bottom: 1px solid var(--line); background: var(--surf-1); }
-.mk-ask__ticket-k { font-size: 10px; letter-spacing: 0.16em; color: var(--accent); }
-.mk-ask__pill { padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line-2); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
-.mk-ask__pill[data-status='ready'] { color: var(--ink); background: var(--accent); border-color: var(--accent); }
-.mk-ask__pill[data-status='asked'] { color: var(--gold); border-color: color-mix(in oklab, var(--gold) 55%, var(--line)); }
-.mk-ask__pill[data-status='refused'], .mk-ask__pill[data-status='error'] { color: var(--sell); border-color: color-mix(in oklab, var(--sell) 55%, var(--line)); }
-.mk-ask__pill[data-status='signed'], .mk-ask__pill[data-status='settled'] { color: var(--done, var(--accent)); border-color: color-mix(in oklab, var(--done, var(--accent)) 55%, var(--line)); }
-.mk-ask__ticket-acts { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
-.mk-ask__ghost {
-  display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 999px; border: 1px solid var(--line);
-  background: transparent; color: var(--muted); font-size: 12px; text-decoration: none; cursor: pointer; white-space: nowrap;
-}
-.mk-ask__ghost:hover { color: var(--fg); border-color: var(--line-2); }
-.mk-ask__ghost .mk-ai__ico { width: 13px; height: 13px; }
-.mk-ask__runtime { display: flex; flex-direction: column; height: clamp(420px, 62dvh, 620px); min-height: 0; }
-.mk-ask__runtime > div { height: 100%; min-height: 0; }
-.mk-ask__ticket-foot { margin: 0; padding: 7px 12px 9px; border-top: 1px solid var(--line); font-size: 9.5px; letter-spacing: 0.14em; color: var(--muted-2); text-align: center; }
-
-/* Wide card: talk beside the ticket, the same height, the log filling it. */
-@container mk-ask (min-width: 820px) {
-  .mk-ask:has(> .mk-ask__ticket) { grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr); align-items: stretch; }
-  .mk-ask:has(> .mk-ask__ticket) .mk-ask__talk { min-height: 0; }
-  .mk-ask:has(> .mk-ask__ticket) .mk-ask__log { flex: 1 1 auto; max-height: none; min-height: 0; }
-  .mk-ask:has(> .mk-ask__ticket) .mk-ask__talk { max-height: calc(clamp(420px, 62dvh, 620px) + 88px); }
-}
+/* A trade handed to the app (2026-11-16: the inline order ticket is gone). */
+.mk-ask__run[data-status='sent'] .mk-ask__dot { background: var(--accent); }
+.mk-ask__run[data-status='sent'] .mk-ask__run-status { color: var(--accent); display: inline-flex; align-items: center; gap: 4px; }
 @container mk-ask (max-width: 520px) {
-  .mk-ask__ticket-head { padding-left: 12px; }
-  .mk-ask__ghost span { display: none; }
-  .mk-ask__ghost { padding: 6px; }
-  .mk-ask__runtime { height: clamp(420px, 72dvh, 640px); }
   .mk-ask__log { max-height: 320px; }
-  /* A narrow ticket reads like the /i runtime on a phone (components/
-     intent-runtime.css): the reply owns the gutter, no hover-era icons
-     float over the bubbles. */
-  .mk-ask__runtime [data-bubble='assistant'] { background: transparent; border-color: transparent; padding: 0; max-width: 100%; }
-  .mk-ask__runtime [data-avatar='user'], .mk-ask__runtime [data-turn-tools] { display: none; }
 }
-/* A live ticket IS the page's composer: the floating Ask pill would sit on
-   top of it (it docks here anyway; ⌘K and the rail's Ask still work). */
-body:has(.mk-ai--ask[data-ticket='live']) .askdoor-pill { display: none; }
-@media (prefers-reduced-motion: reduce) { .mk-ask__run[data-status='building'] .mk-ask__dot { animation: none; } .mk-ask__ticket { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .mk-ask__run[data-status='building'] .mk-ask__dot { animation: none; } }

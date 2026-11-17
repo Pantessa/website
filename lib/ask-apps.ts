@@ -52,10 +52,11 @@ export function askAppSlugs(ask: string): string[] {
 export function typedAskAppSlugs(ask: string): string[] {
   if (!moneyShaped(ask)) return []
   const slugs = askAppSlugs(ask)
-  return isCrossChainAsk(ask) ? slugs : slugs.filter((s) => !NEAR_SLUGS.has(s))
+  return isCrossChainAsk(ask) ? slugs : slugs.filter((s) => !NEAR_APP_SLUGS.has(s))
 }
 
-const NEAR_SLUGS = new Set(['near-intents-mcp-yeetful', 'near-intents-free', 'near-intents'])
+/** NEAR Intents on every spelling the databases use: the funding companion. */
+export const NEAR_APP_SLUGS: ReadonlySet<string> = new Set(['near-intents-mcp-yeetful', 'near-intents-free', 'near-intents'])
 
 /**
  * The first-party FREE apps a send may turn on without asking. The catalog

@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
   if (!/^[A-Za-z0-9]{1,12}$/.test(raw)) return NextResponse.json({ error: 'bad symbol' }, { status: 400, headers: { 'cache-control': 'no-store' } })
   const pair = await resolveChartPair(raw)
   if (!pair) return NextResponse.json({ error: 'no chart for that symbol' }, { status: 404, headers: { 'cache-control': 'no-store' } })
+  // A look-only index has no order book anywhere: refused by name, no venue asked.
+  if (pair.source === 'index') return NextResponse.json({ error: 'an index has no order book' }, { status: 400, headers: { 'cache-control': 'no-store' } })
   const coin = pair.source === 'hyperliquid' ? pair.pair : pair.symbol
   const hit = cache.get(coin)
   if (hit && Date.now() - hit.at < TTL_MS) return NextResponse.json(hit.body, { headers: { 'cache-control': 'public, max-age=5' } })

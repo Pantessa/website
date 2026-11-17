@@ -14,7 +14,9 @@
 // asks) and becomes the runtime once you send: the SAME ChatInterface the
 // intent-link runtime mounts in `simple` mode takes the ask as an injected
 // prompt, so the guarded build and the sign card appear right here, over the
-// page you were reading. Connect to act, sign in to keep (rule 6 — every
+// page you were reading (a symbol page is the exception since 2026-11-16:
+// there the sheet is only the composer and the send runs in the app,
+// lib/ask-door `handoff`). Connect to act, sign in to keep (rule 6 — every
 // sign-in CTA inside ChatInterface is the unified door). Chart / markets
 // asks never burn a turn: the door navigates to /t/<symbol>, which is the
 // better answer (chart + tabs + order panel) for a visitor who isn't in the
@@ -70,12 +72,11 @@ function usePhonePosture(): boolean {
 
 /** QA's drive contract (squad mobile-native): a labeled tap that opens THE
  *  Sheet wears `data-sheet-open="<the Sheet's id>"`. The door is a Sheet only
- *  on a phone and only when no page has docked it (on /t it lands in Ask the
- *  chart instead), so the attribute is there exactly then. */
+ *  on a phone (on /t too since 2026-11-16: it opens there as a composer and
+ *  its send goes to the app), so the attribute is there exactly then. */
 function useDoorSheetOpener(): { 'data-sheet-open'?: 'ask' } {
   const phone = usePhonePosture()
-  const docked = useAskDoor((s) => !!s.dock)
-  return phone && !docked ? { 'data-sheet-open': 'ask' } : {}
+  return phone ? { 'data-sheet-open': 'ask' } : {}
 }
 
 /** The nav / drawer / markets-rail trigger. Renders nothing where the door
@@ -300,6 +301,15 @@ function AskDoorSheet() {
         return
       }
       analytics.askDoor(text, 'run', pathname)
+      // A page whose asks run in the app (lib/ask-door `handoff`: a symbol
+      // page) takes the send: the sheet was only the composer.
+      const handoff = useAskDoor.getState().handoff
+      if (handoff) {
+        setDraft('')
+        closeDoor()
+        handoff(text)
+        return
+      }
       setCurrentChatId(null)
       setDraft('')
       setPrompt({ text, send: true, at: Date.now() })

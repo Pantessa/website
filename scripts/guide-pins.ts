@@ -40,8 +40,6 @@ import {
   type GuideSurface,
 } from '../lib/guide'
 import { CREATOR_FEE_SPLIT, LINK_FEE_PCT, LINK_SWAP_FEE_BPS, SWAP_FEE_PCT, feePctLabel } from '../lib/fees'
-import { composeAsk } from '../lib/trade-asks'
-import { chartPairFor } from '../lib/charts'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { WALLET_PAGE_HREF } from '../lib/wallet-page'
 import { isPublicAppPath } from '../lib/app-entry'
@@ -62,8 +60,8 @@ const deepEq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(
 function busyState(): GuideState {
   let s = freshGuideState()
   s = markShown(s, 'links', NOW - 5_000)
-  s = markShown(s, 'chart', NOW - 4_000)
-  s = markDismissed(s, 'chart', 'symbol', NOW - 3_000)
+  s = markShown(s, 'alerts', NOW - 4_000)
+  s = markDismissed(s, 'alerts', 'symbol', NOW - 3_000)
   s = noteEvent(s, 'visited:home', NOW - 6_000)
   s = noteEvent(s, 'visited:jobs', NOW - 2_000)
   s = noteEvent(s, 'chip', NOW - 1_500)
@@ -77,19 +75,27 @@ export function guidePins(check: Check): void {
   // RE-PINNED 2026-10-13 (apps row): the splash's own lesson ("pulse" → the live tape) left — the deck at the
   // top of `/` IS that lesson and the apps row took the card's seat. Six hints; the splash mounts no seat.
   check(
-    'guide: six hints in the brief\'s priority order (chart · triggers · links · jobs · wallet · alerts — the splash\'s pulse lesson retired 2026-10-13, the deck is it), ids unique, every surface a GuideSurface, the storage key fixed',
-    ids.join(',') === 'chart,triggers,links,jobs,wallet,alerts' &&
+    // RE-PINNED 2026-11-09 (squad community, lane SHARE): a seventh hint, `proof`, on the new `community` surface (/community and a room).
+    // RE-PINNED 2026-11-17 (drop chart hint): the symbol page's "Ask the chart." lesson left (Nate) — six hints.
+    'guide: six hints in priority order (triggers · links · jobs · wallet · alerts · proof — the splash\'s pulse lesson retired 2026-10-13, the symbol page\'s ask-the-chart lesson 2026-11-17; proof is the community feed\'s one lesson, 2026-11-09), ids unique, every surface a GuideSurface, the storage key fixed',
+    ids.join(',') === 'triggers,links,jobs,wallet,alerts,proof' &&
       new Set(ids).size === 6 &&
       GUIDE_TOTAL === 6 &&
+      hint('proof').surfaces.join(',') === 'community' &&
+      GUIDE_SURFACES.join(',') === 'home,symbol,live,chat,wallet,community' &&
+      /what the chain confirmed/.test(hint('proof').body) &&
+      !/verified/i.test(`${hint('proof').title} ${hint('proof').body}`) &&
+      guideCta(hint('proof'), {})?.kind === 'href' &&
+      guideCta(hint('proof'), {})?.value === '?compose=trade' &&
       GUIDE_HINTS.every((h) => h.surfaces.length > 0 && h.surfaces.every((s) => GUIDE_SURFACES.includes(s))) &&
       GUIDE_STORAGE_KEY === 'pantessa.guide.v1' &&
-      guideIndexOf('chart') === 1 &&
-      guideIndexOf('alerts') === 6,
+      guideIndexOf('triggers') === 1 &&
+      guideIndexOf('alerts') === 5,
     ids.join(','),
   )
   check(
-    'guide: a fresh browser leads with the surface\'s own lesson — ask-the-chart on a symbol, triggers on the tape, links in the chat and on the wallet page; the splash has no first lesson any more (its seat is the apps row, and every home hint waits for an act or a return)',
-    first('home', GUIDE_FRESH) === null && first('symbol', GUIDE_FRESH) === 'chart' && first('live', GUIDE_FRESH) === 'triggers' && first('chat', GUIDE_FRESH) === 'links' && first('wallet', GUIDE_FRESH) === 'links',
+    'guide: a fresh browser leads with the surface\'s own lesson — triggers on the tape, links in the chat and on the wallet page; the splash and the symbol page have no first lesson any more (the splash\'s seat is the apps row; ask-the-chart left 2026-11-17), and every hint there waits for an act or a return',
+    first('home', GUIDE_FRESH) === null && first('symbol', GUIDE_FRESH) === null && first('live', GUIDE_FRESH) === 'triggers' && first('chat', GUIDE_FRESH) === 'links' && first('wallet', GUIDE_FRESH) === 'links',
     [first('home', GUIDE_FRESH), first('symbol', GUIDE_FRESH), first('live', GUIDE_FRESH), first('chat', GUIDE_FRESH), first('wallet', GUIDE_FRESH)].join(','),
   )
 
@@ -121,32 +127,17 @@ export function guidePins(check: Check): void {
   )
 
   // ── Honesty: every sentence the copy quotes as an ask builds natively ──
-  const ladderRows: string[] = []
-  for (const sym of ['AAPL', 'ETH', 'HYPE']) {
-    const pair = chartPairFor(sym)
-    if (!pair) {
-      ladderRows.push(`${sym}:no-pair`)
-      continue
-    }
-    const ask = composeAsk(pair, 'buy', { usd: 25 })
-    const out = simulateLadder(ask)
-    const body = renderGuideText(hint('chart').body, { symbol: sym, ask })
-    ladderRows.push(`${sym}:${out.kind}:${out.gate}:${body.includes(ask) ? 'quoted' : 'MISSING'}`)
-  }
+  // RE-PINNED 2026-11-17 (drop chart hint): the chart hint was the one hint quoting the page's own buy sentence
+  // ({ASK}); a hint that quotes it again must bring the stock / coin / perp ladder replay back with it.
   check(
-    'guide: the chart hint quotes the symbol page\'s own buy sentence, and for a stock, a coin and a perp that sentence lands on a native gate as an action (the ladder replica) — a hint never teaches a dead end',
-    ladderRows.length === 3 && ladderRows.every((r) => /:action:[^:]+:quoted$/.test(r)),
-    ladderRows.join(' '),
+    'guide: no hint quotes {ASK} today (the chart hint left 2026-11-17); a hint that does must restore the ladder replay',
+    GUIDE_HINTS.every((h) => !`${h.title} ${h.body}`.includes('{ASK}')),
   )
   const askCtas = GUIDE_HINTS.flatMap((h) => [false, true].map((connected) => guideCta(h, { symbol: 'ETH', ask: 'Buy $25 of ETH', connected }))).filter((c) => c?.kind === 'ask')
   check(
     'guide: an ask-kind CTA (none shipped today; the kind exists for the next hint) must itself be an action on the ladder',
     askCtas.every((c) => c && simulateLadder(c.value).kind === 'action'),
     askCtas.map((c) => c?.value).join(' | '),
-  )
-  check(
-    'guide: the chart CTA is a DOOR with a question as a draft (nothing fires), and it names the symbol',
-    guideCta(hint('chart'), { symbol: 'TSLA' })?.kind === 'door' && guideCta(hint('chart'), { symbol: 'TSLA' })?.value === 'Why is TSLA moving?' && guideCta(hint('chart'), { symbol: 'TSLA' })?.label === 'Why is TSLA moving?',
   )
 
   // ── The CTAs lead where the brief says ────────────────────────────────
@@ -174,7 +165,6 @@ export function guidePins(check: Check): void {
 
   // ── requires ──────────────────────────────────────────────────────────
   let s = freshGuideState()
-  s = markDismissed(s, 'chart', null, NOW - 100_000)
   const later = NOW + GUIDE_QUIET_MS + 1
   check(
     'guide: links waits for a chip on the splash and on a chart (or an earlier chart visit); any time in the chat and on the wallet page',
@@ -219,14 +209,15 @@ export function guidePins(check: Check): void {
 
   // ── The pick rules ────────────────────────────────────────────────────
   // RE-PINNED 2026-10-13 (apps row): the retire rule on the symbol page's own lesson (the splash has none now).
+  // RE-PINNED 2026-11-17 (drop chart hint): the tape's own lesson carries the rule now (the symbol page has no first lesson).
   let twice = freshGuideState()
-  for (let i = 0; i < GUIDE_MAX_SHOWS; i++) twice = markShown(twice, 'chart', NOW - 1_000 * (i + 1))
+  for (let i = 0; i < GUIDE_MAX_SHOWS; i++) twice = markShown(twice, 'triggers', NOW - 1_000 * (i + 1))
   check(
-    `guide: a hint shown ${GUIDE_MAX_SHOWS} times retires on its own (a symbol page falls silent on a fresh browser once ask-the-chart has had its turns), and a dismissed hint never returns however much later`,
-    first('symbol', markShown(freshGuideState(), 'chart', NOW - 1_000)) === 'chart' &&
-      first('symbol', twice) === null &&
-      first('symbol', markDismissed(freshGuideState(), 'chart', null, NOW - 100_000), {}, NOW + 365 * 86_400_000) === null &&
-      first('symbol', markDismissed(freshGuideState(), 'chart', 'symbol', NOW - 100_000), {}, NOW + 365 * 86_400_000) === null,
+    `guide: a hint shown ${GUIDE_MAX_SHOWS} times retires on its own (the tape falls silent on a fresh browser once its trigger lesson has had its turns), and a dismissed hint never returns however much later`,
+    first('live', markShown(freshGuideState(), 'triggers', NOW - 1_000)) === 'triggers' &&
+      first('live', twice) === null &&
+      first('live', markDismissed(freshGuideState(), 'triggers', null, NOW - 100_000), {}, NOW + 365 * 86_400_000) === null &&
+      first('live', markDismissed(freshGuideState(), 'triggers', 'live', NOW - 100_000), {}, NOW + 365 * 86_400_000) === null,
   )
   const dismissedHome = noteEvent(markDismissed(freshGuideState(), 'links', 'home', NOW), 'visited:home', NOW - 10)
   check(
@@ -234,7 +225,7 @@ export function guidePins(check: Check): void {
     first('home', dismissedHome, {}, NOW + 1_000) === null &&
       first('home', dismissedHome, {}, NOW + GUIDE_QUIET_MS - 1) === null &&
       first('home', dismissedHome, {}, NOW + GUIDE_QUIET_MS) === 'alerts' &&
-      first('symbol', dismissedHome, {}, NOW + 1_000) === 'chart' &&
+      first('symbol', noteEvent(dismissedHome, 'chip'), {}, NOW + 1_000) === 'jobs' &&
       first('live', dismissedHome, {}, NOW + 1_000) === 'triggers' &&
       GUIDE_QUIET_MS === 10 * 60_000,
   )
@@ -260,7 +251,7 @@ export function guidePins(check: Check): void {
     'guide: the record round-trips byte-for-byte through localStorage (seen counts, dismissals, visits, acts, the quiet stamp), the first stamp of a visit or an act is the one kept, and GUIDE_FRESH is a frozen v1',
     deepEq(round, busy) &&
       round.seen.links?.n === 1 &&
-      round.dismissed.chart === NOW - 3_000 &&
+      round.dismissed.alerts === NOW - 3_000 &&
       round.quiet.symbol === NOW - 3_000 &&
       round.visited.jobs === NOW - 2_000 &&
       round.acted.chip === NOW - 1_500 &&
@@ -298,12 +289,14 @@ export function guidePins(check: Check): void {
     garbage.filter((g) => !deepEq(readGuideState(g), fresh)).map(String).join(' | '),
   )
   const retired = readGuideState('{"v":1,"seen":{"retired":{"n":1,"at":1}},"dismissed":{"retired":1},"off":false,"visited":{"attic":1,"home":7},"acted":{}}')
-  const noQuiet = readGuideState('{"v":1,"seen":{"chart":{"n":1,"at":7}},"dismissed":{},"off":false,"visited":{},"acted":{}}')
+  const noQuiet = readGuideState('{"v":1,"seen":{"links":{"n":1,"at":7}},"dismissed":{},"off":false,"visited":{},"acted":{}}')
+  // RE-PINNED 2026-11-17 (drop chart hint): `chart` is a retired hint now — its stamps drop, the rest reads.
+  const sawChart = readGuideState('{"v":1,"seen":{"chart":{"n":2,"at":7}},"dismissed":{"chart":9},"off":false,"visited":{"symbol":7},"acted":{}}')
   // RE-PINNED 2026-10-13 (apps row): `pulse` IS a retired hint now — a browser that saw it keeps reading.
   const sawPulse = readGuideState('{"v":1,"seen":{"pulse":{"n":2,"at":7}},"dismissed":{"pulse":9},"off":false,"visited":{"home":7},"acted":{}}')
   check(
     'guide: a record from a retired hint or place is kept, not reset (the unknown keys drop — a browser that saw the splash\'s retired pulse lesson keeps its visits), and a record written before `quiet` existed still reads',
-    deepEq(retired.seen, {}) && deepEq(retired.dismissed, {}) && retired.visited.home === 7 && noQuiet.seen.chart?.n === 1 && deepEq(noQuiet.quiet, {}) && deepEq(sawPulse.seen, {}) && deepEq(sawPulse.dismissed, {}) && sawPulse.visited.home === 7,
+    deepEq(retired.seen, {}) && deepEq(retired.dismissed, {}) && retired.visited.home === 7 && noQuiet.seen.links?.n === 1 && deepEq(noQuiet.quiet, {}) && deepEq(sawChart.seen, {}) && deepEq(sawChart.dismissed, {}) && sawChart.visited.symbol === 7 && deepEq(sawPulse.seen, {}) && deepEq(sawPulse.dismissed, {}) && sawPulse.visited.home === 7,
   )
 
   // ── The dots ──────────────────────────────────────────────────────────
@@ -361,8 +354,10 @@ export function guidePins(check: Check): void {
       /Don’t show tips/.test(card),
   )
   check(
-    'guide: the compact row is for the SPLASH and the SYMBOL page (GUIDE_COMPACT_SURFACES = home + symbol; GuideSeat passes compactOnPhone(surface)); /live, /chat and /wallet keep the full card on a phone — nothing there competes for the first screen',
-    GUIDE_COMPACT_SURFACES.join(',') === 'home,symbol' &&
+    // RE-PINNED 2026-11-09 (squad community, lane SHARE): the community feed's seat is compact on a phone too (the first post stays on the first screen).
+    'guide: the compact row is for the SPLASH, the SYMBOL page and the COMMUNITY feed (GUIDE_COMPACT_SURFACES = home + symbol + community; GuideSeat passes compactOnPhone(surface)); /live, /chat and /wallet keep the full card on a phone — nothing there competes for the first screen',
+    GUIDE_COMPACT_SURFACES.join(',') === 'home,symbol,community' &&
+      compactOnPhone('community') &&
       compactOnPhone('home') &&
       compactOnPhone('symbol') &&
       !compactOnPhone('live') &&
@@ -373,11 +368,9 @@ export function guidePins(check: Check): void {
   )
   const compactCtas = GUIDE_HINTS.filter((h) => h.surfaces.some((s) => compactOnPhone(s))).flatMap((h) => [false, true].map((connected) => guideCta(h, { connected, symbol: 'ETH' })))
   check(
-    'guide: every hint that can sit on a compacting surface carries a SHORT CTA label (≤12 characters, an arrow) — the chart hint\'s is "Ask it →" ("Why is AAPL moving?" is ~152px and would leave ~40px for the title at 320); the full label stands wider than 640px',
+    'guide: every hint that can sit on a compacting surface carries a SHORT CTA label (≤12 characters, an arrow); the full label stands wider than 640px',
     compactCtas.length > 0 &&
-      compactCtas.every((c) => !!c && !!c.short && c.short.length <= 12 && /→$/.test(c.short) && c.short.length <= c.label.length) &&
-      guideCta(hint('chart'), { symbol: 'AAPL' })?.short === 'Ask it →' &&
-      guideCta(hint('chart'), { symbol: 'AAPL' })?.label === 'Why is AAPL moving?',
+      compactCtas.every((c) => !!c && !!c.short && c.short.length <= 12 && /→$/.test(c.short) && c.short.length <= c.label.length),
     compactCtas.map((c) => c?.short ?? '∅').join(' | '),
   )
   check(
@@ -404,13 +397,16 @@ export function guidePins(check: Check): void {
       (card.match(/\{words\}/g) ?? []).length === 5 &&
       !/aria-label=\{cta/.test(card),
   )
+  // RE-PINNED 2026-11-10 (landing): the home's claim no longer reads the guide's record — its one-line version is the posture
+  // attribute now (lib/home-mode + components/home/hero.css, lane HERO), with a visits record of its own. `visited.home` stays a
+  // key of the guide's (the spine's dots and the home seat still use it); what is pinned is that nobody else leans on it.
   check(
-    'guide: the record\'s `visited.home` is a contract — SPLASH\'s claim reads it once at mount through getGuideState() (components/home/SplashClaim.tsx) — so the key stays, round-trips, and is written by the home seat after its pick',
+    'guide: the record\'s `visited.home` stays, round-trips, and is the GUIDE\'s alone — the home\'s claim reads nothing from it (its posture is lib/home-mode\'s, set before first paint)',
     (GUIDE_VISITS as readonly string[]).includes('home') &&
       readGuideState(serializeGuideState(noteEvent(freshGuideState(), 'visited:home', NOW))).visited.home === NOW &&
       (() => {
-        const claim = src('components/home/SplashClaim.tsx')
-        return /import \{ getGuideState \} from '@\/lib\/guide'/.test(claim) && /getGuideState\(\)\.visited\.home/.test(claim)
+        const claim = src('components/home/SplashClaim.tsx').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+        return !/getGuideState|useGuideState|lib\/guide/.test(claim)
       })(),
   )
   check(
@@ -467,7 +463,10 @@ export function guidePins(check: Check): void {
     !/<GuideSeat/.test(home) &&
       /guide=\{<AppsRow \/>\}/.test(home) &&
       /noteGuideEvent\('visited:home'\)/.test(src('components/home/AppsRow.tsx')) &&
-      /\{pair && <GuideSeat surface="symbol" symbol=\{sym\} ask=\{composeAsk\(pair, 'buy', \{ usd: 25 \}\)\} \/>\}/.test(symbol) &&
+      // RE-PINNED 2026-11-09 (builder market): a chart that takes no order here hands the seat no order to quote and says so (chartOnly); every other page still quotes its own buy sentence.
+      // RE-PINNED 2026-11-09 (hip3 orders): "takes no order" is lib/charts isChartOnlyPair now — a builder dex the order layer builds on (xyz) quotes its own long sentence like any perp page.
+      // RE-PINNED 2026-11-09 (macro board): a look-only index (lib/charts isLookOnlyPair — US10Y, VIX…) hands it no order either and says so in its own words (lookOnly).
+      /\{pair && <GuideSeat surface="symbol" symbol=\{sym\} ask=\{isChartOnlyPair\(pair\) \|\| lookOnly \? null : composeAsk\(pair, 'buy', \{ usd: 25 \}\)\} chartOnly=\{isChartOnlyPair\(pair\)\} lookOnly=\{lookOnly\} \/>\}/.test(symbol) &&
       symbol.indexOf('data-seat="ExecStrip"') < symbol.indexOf('<GuideSeat surface="symbol"') &&
       count(live, '<GuideSeat surface="live" posture="phone" />') === 1 &&
       count(live, '<GuideSeat surface="live" posture="desktop" />') === 1 &&

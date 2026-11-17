@@ -40,11 +40,17 @@ export function curatedSymbolFor(chainId: number, address: string): string | nul
 
 type CuratedLookup = (chainId: number, address: string) => string | null
 
+/** The charted coin or perp a held token's symbol names, or null. Never a
+ *  stock (those are matched by address below) and never a look-only index: a
+ *  token that merely wears the name "VIX" or "DOW" is not the index, and a
+ *  wallet cannot hold one (lib/charts isLookOnlyPair). */
+function heldCoinSymbol(symbol: string): string | null {
+  const pair = chartPairFor(symbol)
+  return pair && pair.source !== 'robinhood' && pair.source !== 'index' ? pair.symbol : null
+}
+
 function watchSymbolForRow(chainId: number, h: HoldingRow, curated: CuratedLookup, stocks: ReadonlySet<string>): string | null {
-  if (h.native) {
-    const pair = chartPairFor(h.symbol || 'ETH')
-    return pair && pair.source !== 'robinhood' ? pair.symbol : null
-  }
+  if (h.native) return heldCoinSymbol(h.symbol || 'ETH')
   const addr = h.address.toLowerCase()
   if (chainId === STOCK_CHAIN_ID && stocks.has(addr)) {
     const sym = normalizeWatchSymbol(curated(chainId, addr) ?? h.symbol)
@@ -52,8 +58,7 @@ function watchSymbolForRow(chainId: number, h: HoldingRow, curated: CuratedLooku
   }
   const listed = curated(chainId, addr)
   if (!listed) return null
-  const pair = chartPairFor(listed)
-  return pair && pair.source !== 'robinhood' ? pair.symbol : null
+  return heldCoinSymbol(listed)
 }
 
 /** Wallet rows → the watchable symbols they hold, richest first (ties keep

@@ -226,8 +226,27 @@ export function stockNewsName(symbol: string): string | null {
   return raw.replace(/,?\s+(Inc\.?|Corp(oration)?\.?|Co\.?|Ltd\.?|PLC|Holdings|Group|Company|Class [A-C])(\s|$)/gi, ' ').replace(/\s+/g, ' ').trim() || null
 }
 
+/** Google News indexes a quote page like a story: Yahoo's "AAPL Nov 2026
+ *  510.000 call (AAPL261118C00510000) Stock Price, News, Quote & History"
+ *  filled half the AAPL feed on 2026-11-17. A quote page is not a headline. */
+export function isQuotePage(title: string): boolean {
+  return /\bStock Price, News, Quote (&|and) History\b/i.test(title) || /\b(call|put) \([A-Z]{1,6}\d{6}[CP]\d{8}\)/.test(title)
+}
+
 function googleNewsUrl(q: string): string {
   return `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`
+}
+
+/** What the news search asks for each look-only index (lib/charts
+ *  CHART_INDEXES): the phrase a markets desk uses, quoted, so the headlines
+ *  are about the index and not a ticker that shares three letters with it. */
+const INDEX_NEWS_QUERY: Readonly<Record<string, string>> = {
+  US10Y: '"10-year Treasury yield" OR "Treasury yields"',
+  VIX: '"VIX" volatility index',
+  DXY: '"dollar index" OR "DXY"',
+  NDX: '"Nasdaq 100"',
+  DJI: '"Dow Jones Industrial Average" OR "the Dow"',
+  RUT: '"Russell 2000"',
 }
 
 /** The ordered hops for a charted symbol. Pure — the harness pins it. */
@@ -240,7 +259,7 @@ export function newsLadderFor(pair: ChartPair): NewsHop[] {
     // it is the fallback, filtered by its own tickers tag.
     const name = stockNewsName(sym)
     return [
-      { feed: 'google-news', url: googleNewsUrl(name ? `"${sym}" OR "${name}" stock when:14d` : `"${sym}" stock when:14d`) },
+      { feed: 'google-news', url: googleNewsUrl(name ? `"${sym}" OR "${name}" stock when:14d` : `"${sym}" stock when:14d`), keep: (r) => !isQuotePage(r.title) },
       {
         feed: 'nasdaq',
         url: `https://www.nasdaq.com/feed/rssoutbound?symbol=${encodeURIComponent(sym)}`,
@@ -248,6 +267,10 @@ export function newsLadderFor(pair: ChartPair): NewsHop[] {
         browserUa: true,
       },
     ]
+  }
+  if (pair.source === 'index') {
+    // A look-only index: the markets desk's own words for it, never "crypto".
+    return [{ feed: 'google-news', url: googleNewsUrl(`${INDEX_NEWS_QUERY[sym] ?? `"${pair.label}"`} when:7d`) }]
   }
   const hops: NewsHop[] = []
   const tagSlug = COINTELEGRAPH_TAGS[sym]

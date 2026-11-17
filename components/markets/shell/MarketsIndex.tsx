@@ -31,13 +31,13 @@ import {
   type MarketSectionId,
   type MarketsView,
 } from '@/lib/markets'
-import { chgClass, fmtPct, fmtQuotePrice, useQuotes } from '@/lib/markets-quotes'
-import MarketTable from '@/components/markets/shell/MarketTable'
+import { chgClass, fmtPct, fmtQuotePrice, useQuotes, type QuoteMap } from '@/lib/markets-quotes'
+import { MACRO_ROWS, MACRO_SECTION, MACRO_SYMBOLS, macroBoardRows, macroRow, macroRowTag } from '@/lib/macro'
+import MarketTable, { type TableRow } from '@/components/markets/shell/MarketTable'
+import './macro.css'
 import TickerSearch from '@/components/markets/shell/TickerSearch'
 import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
-import SessionStrip from '@/components/markets/shell/SessionStrip'
-import MoversTape from '@/components/markets/slots/MoversTape'
 import MarketMap from '@/components/markets/slots/MarketMap'
 import EarnBoard from '@/components/markets/earn/EarnBoard'
 import MorningTape from '@/components/markets/ai/MorningTape'
@@ -46,6 +46,23 @@ import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import type { TrendingRow } from '@/app/markets/trending'
 import type { TradabilityMap } from '@/lib/tradability'
 import { seedTradable } from '@/lib/tradable-read'
+import type { MapSection } from '@/lib/viz/market-map'
+
+/** A board tab's section as the heat map names it (the map says "stocks"). */
+const mapSectionOf = (id: MarketSectionId): MapSection => (id === 'equities' ? 'stocks' : id)
+const boardOfMap = (s: MapSection): MarketSectionId | null => (s === 'all' ? null : s === 'stocks' ? 'equities' : s)
+
+/** Scroll an element in under the sticky tool strip — where the strip will
+ *  sit once stuck (its sticky `top` + its height, read on press: the height
+ *  changes with the posture), not where it sits before the page moves. */
+function scrollUnderBar(el: Element | null) {
+  if (!el) return
+  const bar = document.querySelector('.mkt-frame__bar')
+  const barBottom = bar ? (parseFloat(getComputedStyle(bar).top) || 0) + bar.getBoundingClientRect().height : 0
+  const top = el.getBoundingClientRect().top + window.scrollY - barBottom - 12
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  window.scrollTo({ top: Math.max(0, top), behavior: reduce ? 'auto' : 'smooth' })
+}
 
 // Rows before "show all" — a folded board leads with the household names.
 const FOLD_AT = 24
@@ -77,6 +94,46 @@ function Board({ section, onAsk }: { section: MarketSection; onAsk?: (ask: strin
           {open ? 'SHOW FEWER' : `SHOW ALL ${section.rows.length}`}
         </button>
       )}
+    </section>
+  )
+}
+
+/**
+ * THE MACRO BOARD (2026-11-09, Nate: "lacking view of many other stocks and
+ * indexes like the US10Y"): the look-only indexes (the 10-year yield, the
+ * VIX, the dollar index, the Nasdaq 100, the Dow, the Russell 2000) beside
+ * the Hyperliquid macro markets the app already charted and listed nowhere
+ * (the S&P 500, long Treasuries, the euro, the yen, gold, silver, crude,
+ * natural gas). The same terminal table as the other boards, each row in its
+ * own unit (a yield in percent, moved in basis points; a level with no
+ * dollar sign), a word beside the name for what kind of number it is, and
+ * every row the link to its full chart. The rows are static (lib/macro), so
+ * the server and the browser render the same fourteen; a market the venue
+ * stops listing leaves once the quotes read says so. Renders in both views:
+ * the heat map sizes by liquidity, and an index has none.
+ */
+function MacroBoard({ onAsk }: { onAsk?: (ask: string) => void }) {
+  const { quotes, unlisted } = useQuotes(MACRO_SYMBOLS)
+  const rows = useMemo(() => macroBoardRows(unlisted), [unlisted])
+  const tagFor = useCallback((row: TableRow, quote: QuoteMap[string]) => {
+    const macro = macroRow(row.symbol)
+    return macro ? macroRowTag(macro, quote?.session) : null
+  }, [])
+  return (
+    <section className="mkt-sec" id={MACRO_SECTION.id} aria-label={MACRO_SECTION.title} data-board="macro">
+      <header className="mkt-sec__head">
+        <div>
+          <h2 className="mkt-sec__title">{MACRO_SECTION.title}</h2>
+          <p className="mkt-sec__blurb">{MACRO_SECTION.blurb}</p>
+        </div>
+        <span className="mkt-sec__count mono">{rows.length} LISTED</span>
+      </header>
+      <div className="mk-board">
+        <MarketTable rows={rows} quotes={quotes} section={MACRO_SECTION.id} onAsk={onAsk} changeLabel="Change" tagFor={tagFor} />
+      </div>
+      <p className="mk-macro__legend mono">
+        <b>Change</b>: over 24 hours for a market that never closes; since the last close for an index, or over its last session once it has closed. A yield moves in basis points.
+      </p>
     </section>
   )
 }
@@ -118,8 +175,8 @@ function Trending({ rows }: { rows: TrendingRow[] }) {
 }
 
 /** The board under the tool strip — its tab lights as the data scrolls. */
-/** A board the tab strip can light: the three market sections + the Earn board. */
-type BoardId = MarketSectionId | 'earn'
+/** A board the tab strip can light: the three market sections, the Macro board and the Earn board. */
+type BoardId = MarketSectionId | 'macro' | 'earn'
 
 function useActiveBoard(ids: readonly BoardId[]) {
   const [active, setActive] = useState<BoardId | null>(ids[0] ?? null)
@@ -216,14 +273,19 @@ export default function MarketsIndex({
   lead,
   guide,
   claim,
+  tour,
+  how,
+  close,
+  called,
+  suggest,
 }: {
   trending?: TrendingRow[]
   /** The measured venue verdicts, read server-side so the index's chips are right on the FIRST paint (lib/tradability-store). */
   tradable?: TradabilityMap
-  /** THE FRONT DOOR's seats (squad front-door, 2026-10-06): `lead` renders
-   *  under the tool strip, above the session clocks (the live pulse on the
-   *  splash); `guide` renders under the movers tape (the guide card). The
-   *  index never decides what fills them. */
+  /** THE FRONT DOOR's seats (squad front-door, 2026-10-06; re-seated
+   *  2026-11-09): `lead` renders under the tool strip (THE READ on the
+   *  splash); `guide` renders under the market boards, above Earn (the apps
+   *  row). The index never decides what fills them. */
   lead?: ReactNode
   guide?: ReactNode
   /** The splash's claim block (SPLASH lane, components/home/SplashClaim):
@@ -231,6 +293,21 @@ export default function MarketsIndex({
    *  carries the page's visible h1 — so when it is given, the index's own
    *  sr-only "Markets" h1 steps aside (one h1 per page). */
   claim?: ReactNode
+  /** THE LANDING's seats (squad landing, 2026-11-10): `tour` renders under
+   *  the lead and above the market data (components/home/tour/Tour — the
+   *  eight sides of the product); `how` REPLACES the small "How a chart
+   *  executes" card under the boards (components/home/HowItWorks); `close`
+   *  renders last in the data column (components/home/ClosingDoors). */
+  tour?: ReactNode
+  how?: ReactNode
+  close?: ReactNode
+  /** The Called it shelf (2026-11-16, components/home/CalledShelf): renders
+   *  under the lead (THE READ) and above the tour — three featured records,
+   *  a door to /x. Empty when no record answered. */
+  called?: ReactNode
+  /** Suggestions (2026-11-17, components/home/SuggestionsBoard): open and
+   *  closed GitHub issues and the door to make one. Renders above `close`. */
+  suggest?: ReactNode
 }) {
   // Idempotent, and deliberately during render: QuickAct reads the shared
   // store synchronously, so seeding in an effect would flash a chip the
@@ -240,13 +317,51 @@ export default function MarketsIndex({
   const pathname = usePathname()
   const sections = useMemo(() => marketSections(), [])
   const ids = useMemo(() => sections.map((s) => s.id), [sections])
-  const allRows = useMemo(() => sections.flatMap((s) => s.rows), [sections])
-  const boardIds = useMemo<readonly BoardId[]>(() => [...ids, 'earn'], [ids])
+  // The search box finds the macro rows too (by symbol, name or a word a
+  // desk uses: "treasury", "dow", "crude"); the boards' own rows stay first.
+  const allRows = useMemo(() => [...sections.flatMap((s) => s.rows), ...MACRO_ROWS], [sections])
+  const boardIds = useMemo<readonly BoardId[]>(() => [...ids, 'macro', 'earn'], [ids])
   const [active, setActive] = useActiveBoard(boardIds)
   const [view, setView] = useMarketsView()
   const phone = usePhone()
   const showMap = view === 'map'
-  const showList = view === 'list' || phone
+  // The ledgers (Equities · Crypto · Perps) render in BOTH views (2026-11-17,
+  // Nate: "we used to have a crypto section here next to macro along with
+  // stocks"). From 09-15 they rendered in the list only, and a wide screen
+  // opens on the map, so the desktop home showed Macro and Earn with no stock
+  // or crypto board under the map. Now the map is the summary on top and the
+  // boards follow it, the way the phone has always had it; List only drops
+  // the map.
+  // The board tabs in MAP view on a desktop (2026-11-17, #1082): a tab
+  // filters the heat map to its section and brings the map in under the
+  // strip (the board itself is further down). In the list and on a phone the
+  // tab stays a plain anchor to its board.
+  const [mapSection, setMapSection] = useState<MapSection>('all')
+  const boardsAreMapped = showMap && !phone
+  const pickBoard = useCallback(
+    (id: MarketSectionId, e?: { preventDefault: () => void }) => {
+      setActive(id)
+      if (!boardsAreMapped) return
+      e?.preventDefault()
+      setMapSection(mapSectionOf(id))
+      try {
+        window.history.replaceState(window.history.state, '', `#${id}`)
+      } catch {
+        /* the filter still applies */
+      }
+      scrollUnderBar(document.querySelector('.mk-map-seat'))
+    },
+    [boardsAreMapped, setActive],
+  )
+  // Arriving on /#crypto with the map remembered: the map opens on Crypto.
+  useEffect(() => {
+    if (!boardsAreMapped) return
+    const id = window.location.hash.slice(1) as MarketSectionId
+    if (ids.includes(id)) {
+      setMapSection(mapSectionOf(id))
+      setActive(id)
+    }
+  }, [boardsAreMapped, ids, setActive])
   const open = useCallback((symbol: string) => router.push(`/t/${symbol}`), [router])
   // ONE act door for the index: the rail's Morning tape (AI) and every row's
   // QuickAct chips (EXEC) run in the app the way the rail's own chips do —
@@ -296,12 +411,18 @@ export default function MarketsIndex({
                 href={`#${s.id}`}
                 className={`mkt-frame__tab${active === s.id ? ' is-on' : ''}`}
                 aria-current={active === s.id ? 'location' : undefined}
-                onClick={() => setActive(s.id)}
+                onClick={(e) => pickBoard(s.id, e)}
+                data-tab={s.id}
               >
                 {TAB_LABELS[s.id]}
                 <span className="mkt-frame__tabcount mono">{s.rows.length}</span>
               </a>
             ))}
+            {/* Macro (2026-11-09): the indexes, the 10-year, the dollar and commodities. Its board renders in both views. */}
+            <a href="#macro" className={`mkt-frame__tab${active === 'macro' ? ' is-on' : ''}`} aria-current={active === 'macro' ? 'location' : undefined} onClick={() => setActive('macro')} data-tab="macro">
+              Macro
+              <span className="mkt-frame__tabcount mono">{MACRO_ROWS.length}</span>
+            </a>
             <a href="#earn" className={`mkt-frame__tab${active === 'earn' ? ' is-on' : ''}`} aria-current={active === 'earn' ? 'location' : undefined} onClick={() => setActive('earn')} data-tab="earn">
               Earn
               <span className="mkt-frame__tabcount mono">3</span>
@@ -321,55 +442,95 @@ export default function MarketsIndex({
           </div>
         )}
 
-        {/* ── The clocks: NYSE bell countdown · tokens 24/7 · HL funding tick ── */}
-        <SessionStrip />
-
-        {/* ── The movers tape (VIZ) in a MARKETS seat ── */}
-        <div className="mk-tape-seat" data-seat="MoversTape">
-          <MoversTape onOpen={open} />
-        </div>
-
-        {/* ── The guide seat: one card that teaches as you go (components/guide) ── */}
-        {guide && (
-          <div className="mk-guide-seat" data-seat="Guide">
-            {guide}
+        {/* ── The called seat: the featured Called it records (components/home/CalledShelf) ── */}
+        {called && (
+          <div className="mk-called-seat" data-seat="Called">
+            {called}
           </div>
         )}
+
+        {/* ── The tour seat: everything it does, a door into each side (components/home/tour) ── */}
+        {tour && (
+          <div className="mk-tour-seat" data-seat="Tour">
+            {tour}
+          </div>
+        )}
+
+        {/* The session strip and the movers tape rode here until 2026-11-09: the
+            lead (THE READ, components/home/TheRead) now says the bell in its
+            eyebrow and names the day's movers in its own line, so the first
+            screen is the read and then the map. */}
 
         {/* ── The market data ── */}
         <div className="mkt-frame__data">
           <Trending rows={trending} />
           {showMap && (
             <section className="mk-map-seat" data-seat="MarketMap" aria-label="Market map">
-              <MarketMap section="all" onOpen={open} />
+              <MarketMap
+                section={mapSection}
+                onOpen={open}
+                onSectionChange={(next) => {
+                  setMapSection(next)
+                  const board = boardOfMap(next)
+                  if (board) setActive(board)
+                }}
+              />
               <p className="mk-map-seat__hint mono">
-                MAP · size by liquidity, colour by move · <button type="button" className="mk-map-seat__flip" onClick={() => setView('list')}>show the list</button>
+                MAP · size by liquidity, colour by move · the boards follow · <button type="button" className="mk-map-seat__flip" onClick={() => setView('list')}>hide the map</button>
               </p>
             </section>
           )}
-          {showList && sections.map((s) => <Board key={s.id} section={s} onAsk={indexAct} />)}
+          {sections.map((s) => <Board key={s.id} section={s} onAsk={indexAct} />)}
+          {/* MACRO — under the tradable boards, in BOTH views (the map sizes by liquidity; an index has none). */}
+          <MacroBoard onAsk={indexAct} />
+          {/* ── The guide seat (the apps row on the splash): under the markets,
+              above the yield board — the markets lead, the apps follow (2026-11-09). ── */}
+          {guide && (
+            <div className="mk-guide-seat" data-seat="Guide">
+              {guide}
+            </div>
+          )}
           {/* EARN — the yield board: where an asset earns across dapps, one chip per
               row through the same connect-to-act door as the ledgers. Renders in
               both views (the map has no rates). */}
           <EarnBoard onAsk={indexAct} />
-          <section className="mkt-card mkt-frame__how" aria-labelledby="mkt-how">
-            <h2 id="mkt-how" className="mkt-card__title">
-              How a chart executes
-            </h2>
-            <ol className="mkt-frame__steps">
-              <li>Pick a symbol. The candles are live and keyless.</li>
-              <li>Tap a chip or write the sentence — “Buy $10 of AAPL”.</li>
-              <li>Pantessa builds the guarded transaction. No model writes calldata.</li>
-              <li>Your wallet signs. That signature is the only gate.</li>
-            </ol>
-            <p className="mkt-card__note">
-              Non-custodial. No broker account, no KYC to look. <Link href="/docs" className="mkt-link">How it works →</Link>
-            </p>
-            <p className="mk-keys mono" aria-label="Keyboard">
-              <kbd>j</kbd>
-              <kbd>k</kbd> move · <kbd>↵</kbd> open · <kbd>⌘K</kbd> ask
-            </p>
-          </section>
+          {/* ── The how seat (the landing's trust section) or the index's own small card ── */}
+          {how ? (
+            <div className="mk-how-seat" data-seat="How">
+              {how}
+            </div>
+          ) : (
+            <section className="mkt-card mkt-frame__how" aria-labelledby="mkt-how">
+              <h2 id="mkt-how" className="mkt-card__title">
+                How a chart executes
+              </h2>
+              <ol className="mkt-frame__steps">
+                <li>Pick a symbol. The candles are live and keyless.</li>
+                <li>Tap a chip or write the sentence — “Buy $10 of AAPL”.</li>
+                <li>Pantessa builds the guarded transaction. No model writes calldata.</li>
+                <li>Your wallet signs. That signature is the only gate.</li>
+              </ol>
+              <p className="mkt-card__note">
+                Non-custodial. No broker account, no KYC to look. <Link href="/docs" className="mkt-link">How it works →</Link>
+              </p>
+            </section>
+          )}
+          {/* ── The suggest seat: what people asked us to build (components/home/SuggestionsBoard) ── */}
+          {suggest && (
+            <div className="mk-suggest-seat" data-seat="Suggest">
+              {suggest}
+            </div>
+          )}
+          {/* ── The close seat: the ways in, once more (components/home/ClosingDoors) ── */}
+          {close && (
+            <div className="mk-close-seat" data-seat="Close">
+              {close}
+            </div>
+          )}
+          <p className="mk-keys mono" aria-label="Keyboard">
+            <kbd>j</kbd>
+            <kbd>k</kbd> move · <kbd>↵</kbd> open · <kbd>⌘K</kbd> ask
+          </p>
         </div>
       </main>
 

@@ -32,6 +32,8 @@ import {
 import { canSellAsk } from '../lib/sell-gate'
 import { canTradeAsk } from '../lib/trade-venue-gate'
 import type { HeldSymbol } from '../lib/watchlists'
+import { foldGroup, foldToggleLabel, routeLines } from '../lib/route-rows'
+import { venuesFor, type RouteQuote } from '../lib/symbol-venues'
 import { followOrderSize, orderSizeOf, ROUTE_USD_PRESETS, routeSizeView, routeUsdOf, sameOrderSize, useOrderSize } from '../lib/order-size'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -164,9 +166,11 @@ export function orderTicketPins(check: Check): void {
   // RE-PINNED 2026-10-13 (cockpit): the card seat moved from the Trade tab
   // into the right column (RailTicket) — the Trade tab carries no ticket.
   const rtk = rf('components/markets/trade/RailTicket.tsx')
-  check('order ticket (wired): SymbolPage hands both seats a build door that docks the sentence in Ask the chart\'s order ticket (lib/ask-door dock, send: true) and falls back to the act door; the right column\'s ticket IS the card seat (RailTicket, every tab) and the Trade tab carries none',
-    sp.includes('const dock = useAskDoor.getState().dock') && sp.includes('if (dock) dock(ask, { send: true })') && sp.includes('onBuild={buildHere} last={stats?.last ?? null} autoOpen={false} />') && (sp.match(/onBuild=\{buildHere\}/g) ?? []).length === 2 &&
-      sp.includes('<RailTicket symbol={sym} pair={pair} last={stats?.last ?? null} side={railSide} onSide={setRailSide} onBuild={buildHere} onSay={sayHere} />') &&
+  // RE-PINNED 2026-11-16 (asks to the app): the ticket's sentence no longer docks in Ask the chart's
+  // inline order ticket — both seats take the act door and the sentence runs in /chat (scripts/symbol-ask-pins).
+  check('order ticket (wired): SymbolPage hands both seats the act door as their order door (the sentence runs in the app, never in a runtime docked on the page); the right column\'s ticket IS the card seat (RailTicket, every tab) and the Trade tab carries none',
+    sp.includes('const orderToApp = act') && !sp.includes('useAskDoor.getState().dock') && sp.includes('onBuild={orderToApp} last={stats?.last ?? null} autoOpen={false} />') && (sp.match(/onBuild=\{orderToApp\}/g) ?? []).length === 2 &&
+      sp.includes('<RailTicket symbol={sym} pair={pair} last={stats?.last ?? null} side={railSide} onSide={setRailSide} onBuild={orderToApp} onSay={sayToApp} />') &&
       rtk.includes('seat="card"') && rtk.includes('onSend={onBuild}') && rtk.includes('data-slot="order-ticket"') && !tt.includes('OrderTicket') && tt.includes('aria-label={`Trade ${symbol}`} data-shut={shutSides.join(\'+\')}'))
   check('order ticket (wired): the form\'s box is a decimal keyboard, its button sends the composed sentence and nothing else, the live quote is the venue map\'s own read (never a build), and the CSS is one size container with 44px targets on touch',
     ot.includes('inputMode="decimal"') && ot.includes('onSend(out.ask)') && ot.includes("fetch(`/api/markets/routes?") && !ot.includes('/api/chat') && ot.includes('disabled={!out.ok || !allowed}') &&
@@ -237,6 +241,45 @@ export function orderTicketPins(check: Check): void {
   check('order ticket (column seat): between 420 and 640px of ticket width the size row is box + presets on one line, the estimate and the slider under (grid order, no named areas), the button keeps the row, and the × keeps the corner while the available line takes its own',
     css.includes('@container mkt-ticket (min-width: 420px) and (max-width: 639.98px) {') && css.includes('.mkt-ticket__size > .mkt-ticket__presets { order: 1; justify-content: flex-end; }') &&
       css.includes('.mkt-ticket__eq { order: 2; grid-column: 1 / -1; }') && (css.split('@container mkt-ticket (max-width: 639.98px) {')[1]?.split('\n}')[0] ?? '').includes('.mkt-ticket__x { margin-left: auto; }'))
+
+  // ── The route table's fold (2026-11-16, lib/route-rows) ──
+  // "Every way to act" printed a row per chain per side (UNI: 6 spot + 6
+  // limit + 2 perp). A row is a way now: buy + sell share a line, one chain
+  // leads, the others fold. Nothing is dropped or re-priced.
+  {
+    const uni = chartPairFor('UNI')!
+    const q = (r: ReturnType<typeof venuesFor>[number], label: string, best = false): RouteQuote => ({ ...r, feeBps: 20, quote: { kind: 'price', value: 5, label }, ...(best ? { best: true as const } : {}) })
+    const all = venuesFor('UNI', uni, { usd: 50, last: 5.16 }).map((r) =>
+      q(r, r.kind === 'limit' ? (r.side === 'sell' ? '$5.21' : '$5.11') : '$5.16', r.id === 'spot:uniswap:8453:buy'))
+    const spot = all.filter((r) => r.kind === 'spot')
+    const limit = all.filter((r) => r.kind === 'limit')
+    const perp = all.filter((r) => r.kind === 'perp')
+    const fs = foldGroup('spot', spot, null)
+    const fl = foldGroup('limit', limit, fs.leadChainId)
+    const fp = foldGroup('perp', perp, null)
+    const ids = (ls: { acts: RouteQuote[] }[]) => ls.flatMap((l) => l.acts.map((a) => a.id))
+    check('route fold (pure): spot leads with the best-out chain as ONE line carrying its buy and its sell (buy first), the other chains fold; limit leads with the same chain and shows both resting prices; a perp\'s long and short share a line; every row that went in is on exactly one line with its own ask',
+      spot.length === 6 && fs.leadChainId === 8453 && fs.lead.length === 1 && fs.lead[0].acts.map((a) => a.id).join() === 'spot:uniswap:8453:buy,spot:uniswap:8453:sell' && fs.more.length === 2 && fs.chains === 3 && fs.lead[0].pairLabel === null &&
+        fl.leadChainId === 8453 && fl.lead.length === 1 && fl.lead[0].pairLabel === '$5.11 / $5.21' && fl.more.length === limit.length / 2 - 1 &&
+        fp.lead.length === 1 && fp.lead[0].acts.length === 2 && fp.more.length === 0 &&
+        [...ids(fs.lead), ...ids(fs.more)].sort().join() === spot.map((r) => r.id).sort().join() && [...ids(fl.lead), ...ids(fl.more)].sort().join() === limit.map((r) => r.id).sort().join() &&
+        [...fs.lead, ...fs.more, ...fl.lead, ...fl.more, ...fp.lead].every((l) => l.acts.every((a) => all.find((r) => r.id === a.id)!.ask === a.ask)),
+      `spot lead ${fs.leadChainId} +${fs.more.length} · limit lead ${fl.leadChainId} ${fl.lead[0]?.pairLabel}`)
+    const sellOnly = spot.filter((r) => r.chainId !== 8453 || r.side === 'sell').map((r) => ({ ...r, best: undefined }))
+    const lend = all.filter((r) => r.kind === 'lend' || r.kind === 'protect')
+    check('route fold (pure): with no best row the first chain leads (a preferred chain the kind is not quoted on is ignored); a sell with no buy beside it is its own line; one chain never folds; loans and stops never pair; the toggle counts chains',
+      foldGroup('spot', sellOnly, 10).leadChainId === sellOnly[0].chainId && routeLines(sellOnly.filter((r) => r.chainId === 8453)).length === 1 &&
+        foldGroup('spot', spot.filter((r) => r.chainId === 1), null).more.length === 0 &&
+        routeLines(lend).length === lend.length &&
+        foldToggleLabel(2, false) === 'Compare 2 more chains' && foldToggleLabel(1, false) === 'Compare 1 more chain' && foldToggleLabel(2, true) === 'Show the best chain only')
+    const rtSrc = rf('components/markets/trade/RouteTable.tsx')
+    const tcss = rf('components/markets/trade/trade.css')
+    check('route fold (wired): the table folds every group through lib/route-rows, renders one chip per act (each with its own data-ask), keeps a line\'s tickets behind one "details" toggle, puts leverage on the perp group, and carries no kind filter tabs',
+      rtSrc.includes('const fold = foldGroup(kind, list, bestChainId)') && rtSrc.includes('{line.acts.map((a) => (') && rtSrc.includes('data-ask={a.ask} data-act={a.id} onClick={() => onAsk(a.ask)}') &&
+        rtSrc.includes("{open === line.key ? 'hide' : 'details'}") && rtSrc.includes("{kind === 'perp' && (") && rtSrc.includes('className="mkt-routes__fold mono"') &&
+        !rtSrc.includes('mkt-routes__filter') && !rtSrc.includes('ONE CHIP EACH') && !tcss.includes('.mkt-routes__filter') &&
+        tcss.includes('.mkt-routes__groups .mkt-route__acts { grid-column: 6; grid-row: 1; }'))
+  }
 }
 
 // Runnable alone (the harness imports this file, so the run is argv-gated).

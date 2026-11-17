@@ -368,6 +368,86 @@ export function depthPlanFor(pair: Pick<ChartPair, 'source' | 'symbol'> | null, 
   return { main: null, other: null, why: `${pair.symbol} on Robinhood Chain trades against a Uniswap pool, not a resting order book — there is no depth to stack. Coinbase does not list it.` }
 }
 
+// ── The top of the book (the header's price) ─────────────────────────────
+//
+// THE HEADER IS THE BOOK'S CENTER (2026-11-10, Nate on /t/UNI's depth view,
+// the header at $7.1335 under a MID of $7.0914: "the big $7.13 and tab of
+// $7.13 should be updating to the last bid center in realtime always keeping
+// to the most up to date real price, same for candle stick mode"). The full
+// book is too heavy to hold on every symbol page for one number (measured
+// 2026-11-10, Advanced Trade `level2`: UNI ~28 KB/s, ETH ~150 KB/s, BTC
+// ~260 KB/s, snapshots to ~1 MB), so outside the depth view the header reads
+// the venue's light top-of-book feed:
+//   • Coinbase Advanced Trade `ticker` — best bid and ask as of each match
+//     (~2.5 KB/s; it trails the book between matches by up to ~3 bps);
+//   • Hyperliquid `bbo` — the exact best bid and ask on every change (~1.4
+//     KB/s; the builder dexes too: `xyz:SP500` answers).
+// Inside the depth view the header is the MID the chart draws.
+
+/** The best bid and ask a venue reports, and its last trade when it says. */
+export interface TopQuote {
+  bid: number
+  ask: number
+  mid: number
+  /** The venue's last trade (Coinbase's ticker carries it; HL's bbo does not). */
+  last: number | null
+  at: number
+}
+
+/** A quote from a bid and an ask. A missing side, or a crossed book (the
+ *  venue mid-update), is no quote: the caller keeps the one it had. */
+export function topQuote(bid: number, ask: number, last: number | null, at: number): TopQuote | null {
+  if (!finitePos(bid) || !finitePos(ask) || bid >= ask) return null
+  return { bid, ask, mid: (bid + ask) / 2, last: last != null && finitePos(last) ? last : null, at }
+}
+
+/** Coinbase Advanced Trade `ticker` (measured 2026-11-10): `{channel:'ticker',
+ *  timestamp, events:[{type:'snapshot'|'update', tickers:[{product_id, price,
+ *  best_bid, best_ask, …}]}]}`. The newest ticker for the product in the frame. */
+export function parseCoinbaseTicker(raw: unknown, product: string, now = Date.now()): TopQuote | null {
+  const m = raw as { channel?: unknown; timestamp?: unknown; events?: unknown } | null
+  if (!m || typeof m !== 'object' || m.channel !== 'ticker' || !Array.isArray(m.events)) return null
+  const stamped = typeof m.timestamp === 'string' ? Date.parse(m.timestamp) : NaN
+  let out: TopQuote | null = null
+  for (const ev of m.events as { tickers?: unknown }[]) {
+    if (!ev || !Array.isArray(ev.tickers)) continue
+    for (const t of ev.tickers as { product_id?: unknown; price?: unknown; best_bid?: unknown; best_ask?: unknown }[]) {
+      if (!t || t.product_id !== product) continue
+      out = topQuote(Number(t.best_bid), Number(t.best_ask), Number(t.price), Number.isFinite(stamped) ? stamped : now) ?? out
+    }
+  }
+  return out
+}
+
+/** Hyperliquid `bbo` (measured 2026-11-10): `{channel:'bbo', data:{coin,
+ *  time, bbo:[{px,sz,n} | null, {px,sz,n} | null]}}`. */
+export function parseHlBbo(raw: unknown, coin: string): TopQuote | null {
+  const m = raw as { channel?: unknown; data?: { coin?: unknown; time?: unknown; bbo?: unknown } } | null
+  if (!m || typeof m !== 'object' || m.channel !== 'bbo' || !m.data || m.data.coin !== coin || !Array.isArray(m.data.bbo)) return null
+  const [b, a] = m.data.bbo as ({ px?: unknown } | null)[]
+  const at = Number(m.data.time)
+  return topQuote(Number(b?.px), Number(a?.px), null, Number.isFinite(at) && at > 0 ? at : Date.now())
+}
+
+/** One store key per venue + product (lib/top-quote). */
+export function topQuoteKey(venue: DepthVenue, product: string): string {
+  return `${venue}:${product}`
+}
+
+/**
+ * Hyperliquid's depth book is COARSE (`nSigFigs: 3`: HYPE at $73 rungs every
+ * dime), so its own mid sat a cent off the real one (73.65 against 73.661,
+ * measured). The exact mid from `bbo` replaces it when it lies inside the
+ * coarse best bid and ask, which it always did (40 of 40 samples): the venue
+ * rounds a bid down and an ask up. Outside them it is a stale quote, and the
+ * book keeps its own. Same book back when nothing changes.
+ */
+export function withExactMid(book: DepthBook, mid: number | null | undefined): DepthBook {
+  if (mid == null || !finitePos(mid) || book.mid === mid || !book.bids.length || !book.asks.length) return book
+  if (mid < book.bids[0].px || mid > book.asks[0].px) return book
+  return { ...book, mid }
+}
+
 // ── Words and numbers ────────────────────────────────────────────────────
 
 export type BookFeedStatus = 'idle' | 'connecting' | 'live' | 'polling' | 'reconnecting' | 'missing' | 'closed'

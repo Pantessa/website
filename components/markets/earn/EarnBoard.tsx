@@ -88,7 +88,7 @@ export default function EarnBoard({ onAsk }: { onAsk?: (ask: string) => void }) 
       <header className="mkt-sec__head">
         <div>
           <h2 className="mkt-sec__title">Earn</h2>
-          <p className="mkt-sec__blurb">Where your assets earn across dapps — Lido, Aave and Morpho, live rates, one chip each. The sentence is the order; your wallet signs.</p>
+          <p className="mkt-sec__blurb">What an asset can earn today on Lido, Aave and Morpho: each venue&rsquo;s live rate, the same for everyone, not your holdings. Pick an amount and tap a row; the sentence is the order, your wallet signs.</p>
         </div>
         <span className="mkt-sec__count mono">{all.length ? `${all.length} WAYS TO EARN` : data ? 'NO READ' : 'READING…'}</span>
       </header>
@@ -96,7 +96,7 @@ export default function EarnBoard({ onAsk }: { onAsk?: (ask: string) => void }) 
       {ladder.length > 0 && (
         <div className="mk-earn__ladder" aria-label="Best rate per asset">
           <div className="mk-earn__ladderhead mono">
-            <span>YIELD LADDER · best rate we list per asset</span>
+            <span>BEST RATE PER ASSET · yearly, highest first</span>
             <span className="mk-earn__legend">
               {VENUE_LABELS.filter((v) => v.id !== 'all').map((v) => (
                 <span key={v.id} className="mk-earn__legenditem">
@@ -126,7 +126,7 @@ export default function EarnBoard({ onAsk }: { onAsk?: (ask: string) => void }) 
             ))}
           </div>
           <div className="mk-earn__chips mk-earn__amounts" role="group" aria-label="Amount">
-            <span className="mono">FOR</span>
+            <span className="mono">AMOUNT</span>
             {EARN_AMOUNTS.map((a) => (
               <button key={a} type="button" className={`mk-earn__chip${usd === a ? ' is-on' : ''}`} aria-pressed={usd === a} onClick={() => setUsd(a)}>
                 ${a}
@@ -139,7 +139,7 @@ export default function EarnBoard({ onAsk }: { onAsk?: (ask: string) => void }) 
             [
               ['featured', 'Familiar first'],
               ['apy', 'Rate'],
-              ['tvl', 'Earning there'],
+              ['tvl', 'Deposited'],
               ['asset', 'Asset'],
             ] as [EarnSortKey, string][]
           ).map(([k, label]) => (
@@ -171,7 +171,7 @@ export default function EarnBoard({ onAsk }: { onAsk?: (ask: string) => void }) 
                   {fmtApy(r.apyPct)}
                   {r.best && <span className="mk-earn__best mono">BEST</span>}
                 </div>
-                <div className="mk-earn__tvl mono">{r.tvlUsd == null ? <span className="mk-table__dash">—</span> : fmtCompact(r.tvlUsd, { usd: true })}</div>
+                <div className="mk-earn__tvl mono" title="Deposited at this venue by everyone">{r.tvlUsd == null ? <span className="mk-table__dash">—</span> : fmtCompact(r.tvlUsd, { usd: true })}</div>
                 <div className="mk-earn__act">
                   {ask ? (
                     <button type="button" className="mkt-exec__chip mk-earn__go" onClick={() => onAsk?.(ask)} title={ask} disabled={!onAsk}>

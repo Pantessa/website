@@ -1,0 +1,437 @@
+/* CALLED IT on the symbol page (squad called-it, lane CHART): the door on the
+   chart's bar, its popover, the form (also mounted on /x by lane RECORD) and
+   the Calls strip under the chart. Prefix `xcc-` / `.xcc`, checked against
+   every stylesheet in the repo on 2026-11-11 (Next's CSS is global once a
+   chunk loads). Site tokens only, so both themes follow. */
+
+/* ── Shared small parts ── */
+.xcc-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 0 11px; border-radius: var(--r-sm, 8px);
+  border: 1px solid var(--line-2); background: transparent; color: var(--fg); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; cursor: pointer;
+  transition: border-color var(--dur-1, .16s), background var(--dur-1, .16s), color var(--dur-1, .16s);
+}
+.xcc-btn:hover:not(:disabled) { border-color: var(--fg); }
+.xcc-btn:disabled { opacity: .45; cursor: default; }
+.xcc-btn--go { border-color: var(--accent); background: var(--accent); color: var(--ink, #04130c); }
+.xcc-btn--go:hover:not(:disabled) { border-color: var(--accent); filter: brightness(1.08); }
+.xcc-btn:focus-visible, .xcc-chip:focus-visible, .xcc-seg__btn:focus-visible, .xcc-open:focus-visible, .xcc-pin:focus-visible, .xcc-row__main:focus-visible, .xcc-link:focus-visible, .xcc__clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.xcc-link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.xcc-link:disabled { color: var(--muted); cursor: default; }
+
+/* All · Bull · Bear */
+.xcc-seg { display: inline-flex; padding: 2px; border-radius: var(--r-sm, 8px); border: 1px solid var(--line); background: var(--bg); }
+.xcc-seg__btn {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted);
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; transition: color var(--dur-1, .16s), background var(--dur-1, .16s);
+}
+.xcc-seg__btn:hover { color: var(--fg); }
+.xcc-seg__btn[aria-pressed='true'] { background: var(--surf-2); color: var(--fg); }
+.xcc-seg__n { font-size: 9.5px; letter-spacing: 0; color: var(--muted-2); }
+.xcc-seg[aria-busy='true'] { opacity: .7; }
+
+.xcc-chip {
+  display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px; border-radius: var(--r-pill, 999px); border: 1px solid var(--line-2); background: transparent; color: var(--fg);
+  font-size: 12px; white-space: nowrap; cursor: pointer; transition: border-color var(--dur-1, .16s), color var(--dur-1, .16s);
+}
+.xcc-chip:hover { border-color: var(--accent); color: var(--accent); }
+.xcc-chip--you { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+/* The verdict: a color AND a word (and a glyph where there is no room for the word). */
+.xcc-v { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.xcc-v__g { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; border: 1px solid currentColor; font-style: normal; font-size: 9.5px; line-height: 1; flex: none; }
+.xcc-v--right { color: var(--mk-up, var(--accent)); }
+.xcc-v--wrong { color: var(--mk-down, var(--sell)); }
+.xcc-v--flat, .xcc-v--open { color: var(--muted); }
+.xcc-v--right .xcc-v__g { background: var(--mk-up, var(--accent)); color: var(--bg); border-color: var(--mk-up, var(--accent)); }
+.xcc-v--wrong .xcc-v__g { background: var(--mk-down, var(--sell)); color: var(--bg); border-color: var(--mk-down, var(--sell)); }
+
+/* ── The door's seat on the chart bar ── */
+.xcc-seat { position: relative; display: inline-flex; }
+.xcc-open {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; max-width: 190px; padding: 0 10px; border-radius: var(--r-pill, 999px);
+  border: 1px solid var(--accent); background: transparent; color: var(--accent); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer;
+  transition: background var(--dur-1, .16s), color var(--dur-1, .16s);
+}
+.xcc-open:hover, .xcc-open[aria-expanded='true'] { background: var(--accent); color: var(--ink, #04130c); }
+.xcc-open.is-on { background: color-mix(in srgb, var(--accent) 14%, transparent); letter-spacing: 0.04em; text-transform: none; font-size: 11px; }
+.xcc-open.is-on:hover, .xcc-open.is-on[aria-expanded='true'] { background: var(--accent); }
+.xcc-open__icon { width: 12px; height: 12px; flex: none; }
+.xcc-open__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The plot's state on the pill, and a note under it when the chart has no pins to speak for the plot. */
+.xcc-open.is-on { max-width: 280px; }
+.xcc-open__state { flex: none; padding-left: 7px; border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent); font-size: 10px; letter-spacing: 0.02em; opacity: 0.85; white-space: nowrap; }
+.xcc-seat[data-called-status='scanning'] .xcc-open__state { animation: xcc-pulse 1.2s ease-in-out infinite; }
+@keyframes xcc-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .xcc-seat[data-called-status='scanning'] .xcc-open__state { animation: none; } }
+.xcc-note {
+  position: absolute; z-index: 39; top: calc(100% + 8px); right: 0; width: min(320px, calc(100vw - 32px)); padding: 10px 12px 10px; border-radius: 12px;
+  border: 1px solid var(--line-2); background: var(--surf-1); box-shadow: 0 14px 36px rgb(0 0 0 / 0.3); text-align: left;
+}
+.xcc-note__line { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--fg); text-transform: none; letter-spacing: 0; }
+.xcc-note__acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+.xcc-note__acts:empty { display: none; }
+
+.xcc-pop {
+  position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; width: min(340px, calc(100vw - 32px)); padding: 12px 14px 14px; border-radius: 14px;
+  border: 1px solid var(--line-2); background: var(--surf-1); box-shadow: 0 18px 48px rgb(0 0 0 / 0.34); text-align: left;
+}
+.xcc-pop__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.xcc-pop__title { margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-family: var(--font-mono, ui-monospace, monospace); }
+.xcc-pop__x { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 7px; background: none; color: var(--muted-2); cursor: pointer; }
+.xcc-pop__x:hover { color: var(--fg); background: var(--surf-2); }
+.xcc-pop__lede { margin: 4px 0 10px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+
+/* ── The form ── */
+.xcc-door { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.xcc-door > .xcc-seg { align-self: flex-start; }
+.xcc-door__row { display: flex; align-items: stretch; gap: 6px; min-width: 0; }
+.xcc-door__field {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: var(--r-sm, 8px); border: 1px solid var(--line-2); background: var(--bg); cursor: text;
+}
+.xcc-door__field:focus-within { border-color: var(--accent); }
+.xcc-door__at { width: 14px; height: 14px; flex: none; color: var(--muted-2); }
+.xcc-door__input { flex: 1 1 auto; min-width: 0; height: 36px; border: 0; outline: 0; background: transparent; color: var(--fg); font-size: 14px; }
+.xcc-door__input::placeholder { color: var(--muted-2); }
+.xcc-door__on { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.xcc-door__market { width: 74px; height: 38px; padding: 0 8px; border-radius: var(--r-sm, 8px); border: 1px solid var(--line-2); background: var(--bg); color: var(--fg); font-size: 12px; text-transform: uppercase; }
+.xcc-door__market:focus { outline: 0; border-color: var(--accent); }
+.xcc-door__market[aria-invalid='true'] { border-color: var(--sell); }
+.xcc-door .xcc-btn--go { min-height: 38px; padding: 0 16px; font-size: 13px; }
+.xcc-door__err { margin: 0; font-size: 12px; line-height: 1.4; color: var(--sell); }
+.xcc-door__more { display: flex; align-items: baseline; gap: 6px 10px; flex-wrap: wrap; min-width: 0; }
+.xcc-door__k { flex: none; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+.xcc-door__chips, .xcc-door__you { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; font-size: 12.5px; }
+.xcc-door__verify { font-size: 12.5px; }
+/* Signed in, the button's own parts (the handle, its two links) run together on one line: give them air here. */
+.xcc-door__verify > * + * { margin-left: 10px; }
+/* On its own page the form may breathe, and on a phone the market and Plot take a row of their own. */
+.xcc-door--page { gap: 12px; }
+.xcc-door--page .xcc-door__row { flex-wrap: wrap; }
+.xcc-door--page .xcc-door__field { flex: 1 1 230px; }
+@media (max-width: 480px) { .xcc-door--page .xcc-btn--go { flex: 1 1 auto; } }
+.xcc-door--page .xcc-door__input { height: 44px; font-size: 16px; }
+.xcc-door--page .xcc-door__market { height: 46px; }
+.xcc-door--page .xcc-btn--go { min-height: 46px; }
+.xcc-door--page .xcc-seg__btn { min-height: 34px; padding: 0 14px; }
+.xcc-door--page .xcc-chip { min-height: 34px; padding: 0 12px; }
+
+/* ── The Calls strip ── */
+.xcc { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px 14px 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--surf-1); }
+.sym .xcc.is-parked { display: none; }
+.xcc__head { display: flex; align-items: flex-start; gap: 10px 12px; min-width: 0; }
+.xcc__avatar {
+  flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; border: 1px solid var(--line-2); background: var(--surf-2);
+  color: var(--muted); font-size: 15px; font-weight: 600;
+}
+.xcc__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.xcc__who { flex: 1 1 auto; min-width: 0; }
+.xcc__k { margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+.xcc__name { letter-spacing: 0.02em; text-transform: none; color: var(--muted-2); }
+.xcc__headline { margin: 2px 0 0; font-size: 15px; line-height: 1.3; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+.xcc__standing { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+.xcc__standing[data-verified] { color: var(--accent); }
+.xcc__coverage { color: var(--fg); }
+.xcc__headtools { flex: none; display: flex; align-items: center; gap: 8px; }
+.xcc__clear { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 6px; border: 0; border-radius: 7px; background: none; color: var(--muted-2); font-size: 11.5px; cursor: pointer; }
+.xcc__clear:hover { color: var(--sell); background: var(--surf-2); }
+.xcc__line { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+.xcc__line--note { color: var(--fg); }
+.xcc__progress { color: var(--muted-2); }
+.xcc__empty { margin: 0; padding: 10px 0 2px; font-size: 13px; line-height: 1.5; color: var(--muted); max-width: 72ch; }
+.xcc__actions { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.xcc__allow { flex: 1 1 260px; min-width: 0; font-size: 12px; line-height: 1.45; color: var(--muted-2); }
+.xcc__spin { display: inline-block; width: 10px; height: 10px; margin-right: 7px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: xcc-spin .8s linear infinite; vertical-align: -1px; }
+@keyframes xcc-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .xcc__spin { animation: none; } }
+
+.xcc__rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-height: 268px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border-top: 1px solid var(--line); }
+.xcc-row { display: flex; align-items: stretch; gap: 8px; min-width: 0; border-bottom: 1px solid var(--line); border-left: 2px solid transparent; }
+.xcc-row:hover { background: color-mix(in srgb, var(--fg) 3%, transparent); }
+.xcc-row.is-focus { background: color-mix(in srgb, var(--accent) 9%, transparent); border-left-color: var(--accent); }
+.xcc-row__main {
+  flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: 22px 88px 138px minmax(0, 1fr) auto; align-items: baseline; gap: 4px 10px; padding: 8px 0 8px 8px;
+  border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.xcc-row__n { font-size: 10px; color: var(--muted-2); }
+.xcc-row__when { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.xcc-row .xcc-v { font-size: 10.5px; letter-spacing: 0.02em; }
+.xcc-row__text { min-width: 0; font-size: 13px; line-height: 1.4; color: var(--fg); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
+.xcc-row.is-focus .xcc-row__text { display: block; overflow: visible; }
+.xcc-row__stance { margin-right: 7px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line-2); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); vertical-align: 1px; }
+.xcc-row__added { margin-right: 7px; padding: 1px 5px; border-radius: 4px; border: 1px dashed var(--line-2); font-size: 9px; letter-spacing: 0.06em; color: var(--muted); vertical-align: 1px; white-space: nowrap; }
+.xcc-quote { background: color-mix(in srgb, var(--accent) 20%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; }
+.xcc-row:not(.is-focus) .xcc-row__added { margin-right: 7px; padding: 1px 5px; border-radius: 4px; border: 1px dashed var(--line-2); font-size: 9px; letter-spacing: 0.06em; color: var(--muted); vertical-align: 1px; white-space: nowrap; }
+.xcc-quote { background: none; padding: 0; }
+.xcc-row__nums { display: inline-flex; align-items: baseline; gap: 10px; font-size: 11px; white-space: nowrap; }
+.xcc-row__price { color: var(--muted); }
+.xcc-row__side { flex: none; display: inline-flex; align-items: center; gap: 4px; padding-right: 6px; }
+.xcc-row__likes { display: inline-flex; align-items: center; gap: 4px; min-width: 46px; font-size: 10.5px; color: var(--muted-2); }
+.xcc-row__icon { width: 12px; height: 12px; flex: none; }
+.xcc-pin { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; border: 1px solid transparent; background: none; color: var(--muted-2); cursor: pointer; }
+.xcc-pin:hover { color: var(--fg); border-color: var(--line-2); }
+.xcc-pin[aria-pressed='true'] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.xcc-row__x { display: inline-flex; align-items: center; gap: 4px; min-width: 74px; justify-content: flex-end; font-size: 11px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
+.xcc-row__x.is-none { color: var(--muted-2); font-size: 10px; letter-spacing: 0.06em; }
+
+.xcc__foot { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.xcc-add { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; min-width: 0; }
+.xcc-add__k { flex: none; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+.xcc-add__input { flex: 1 1 220px; min-width: 0; height: 30px; padding: 0 9px; border-radius: var(--r-sm, 8px); border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 12.5px; }
+.xcc-add__input:focus { outline: 0; border-color: var(--accent); }
+.xcc-add__input::placeholder { color: var(--muted-2); }
+.xcc-add__said { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--accent); }
+.xcc-add__said.is-no { color: var(--sell); }
+.xcc__tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.xcc-share { position: relative; display: inline-flex; margin-left: auto; }
+.xcc-share__menu { position: absolute; z-index: 30; right: 0; bottom: calc(100% + 6px); display: flex; flex-direction: column; min-width: 190px; padding: 4px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surf-1); box-shadow: 0 14px 36px rgb(0 0 0 / 0.3); }
+.xcc-share__item { display: flex; align-items: center; min-height: 34px; padding: 0 10px; border: 0; border-radius: 7px; background: none; color: var(--fg); font-size: 12.5px; text-align: left; text-decoration: none; cursor: pointer; }
+.xcc-share__item:hover { background: var(--surf-2); }
+.xcc__method { margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted-2); max-width: 110ch; }
+.xcc__legend { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; margin-right: 12px; font-size: 10px; vertical-align: -2px; }
+
+/* A touch screen: every control a thumb can hit. */
+@media (hover: none) {
+  .xcc-btn { min-height: 44px; padding: 0 14px; }
+  .xcc-seg__btn, .xcc-door--page .xcc-seg__btn { min-height: 44px; padding: 0 13px; }
+  .xcc-chip, .xcc-door--page .xcc-chip { min-height: 44px; padding: 0 13px; }
+  .xcc-pin, .xcc-pop__x { width: 44px; height: 44px; }
+  .xcc__clear { min-height: 44px; padding: 0 10px; }
+  .xcc-add__input { height: 44px; font-size: 16px; }
+  .xcc-door__input { height: 44px; font-size: 16px; }
+  .xcc-door .xcc-btn--go { min-height: 46px; }
+  .xcc-share__item { min-height: 44px; }
+  .xcc-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; }
+  .xcc-row__x:not(.is-none) { min-height: 44px; min-width: 44px; }
+}
+
+/* ── A narrow column (a phone, a tablet's rail-less page): rows stack ── */
+@media (max-width: 760px) {
+  .xcc__head { flex-wrap: wrap; }
+  .xcc__headtools { flex-basis: 100%; justify-content: space-between; }
+  .xcc__rows { max-height: none; }
+  .xcc-row { flex-direction: column; gap: 0; }
+  .xcc-row__main { grid-template-columns: 20px auto 1fr; padding: 10px 8px 4px; }
+  .xcc-row__text { grid-column: 1 / -1; -webkit-line-clamp: 3; }
+  .xcc-row__nums { grid-column: 1 / -1; }
+  .xcc-row__side { padding: 0 4px 6px 8px; justify-content: space-between; }
+  .xcc-row__likes { min-width: 0; margin-right: auto; }
+  .xcc-add__k { flex-basis: 100%; }
+  .xcc-add__input { flex: 1 1 140px; }
+  .xcc__tools .xcc-btn { flex: 1 1 auto; }
+  .xcc-share { margin-left: 0; flex: 1 1 auto; }
+  .xcc-share > .xcc-btn { width: 100%; }
+  .xcc-share__menu { left: 0; right: 0; }
+}
+
+/* ── The phone's chart bar: the door shares Compare's row ──
+   markets.css gives every other child of the bar's right cluster a full row
+   (its selectors are seven classes deep), so these name the same path and one
+   class more. A stock's pool pill keeps its own status line. */
+@media (max-width: 640px) {
+  .sym .mkt-chart__bar:has(.xcc-seat) { position: relative; }
+  .sym .mkt-chart__bar > .mkt-chart__right > .xcc-seat { position: static; order: 5; margin-top: 8px; }
+  .sym .mkt-chart__bar:has(> .mkt-view) > .mkt-chart__right:not(:has(.mkt-pool)):has(.xcc-seat) > .xcc-seat:not(.mkt-sharebtn):not(.tchart__fs),
+  .sym .mkt-chart__bar > .mkt-chart__right:not(:has(.mkt-pool)):has(.xcc-seat) > .xcc-seat:not(.mkt-sharebtn):not(.tchart__fs),
+  .sym .mkt-chart__bar:has(> .mkt-view) > .mkt-chart__right:not(:has(.mkt-pool)):has(.xcc-seat) > .mk-vs__open:not(.mkt-sharebtn):not(.tchart__fs),
+  .sym .mkt-chart__bar > .mkt-chart__right:not(:has(.mkt-pool)):has(.xcc-seat) > .mk-vs__open:not(.mkt-sharebtn):not(.tchart__fs) { flex: 1 1 0; flex-basis: calc(50% - 4px); min-width: 0; }
+  .sym .mkt-chart__bar > .mkt-chart__right:has(.xcc-seat) > .mk-vs__open { order: 5; margin-top: 8px; height: 36px; justify-content: center; }
+  .sym .mkt-chart__bar > .mkt-chart__right > .xcc-seat > .xcc-open { width: 100%; max-width: none; height: 36px; justify-content: center; position: relative; }
+  .sym .mkt-chart__bar > .mkt-chart__right > .xcc-seat > .xcc-open::after { content: ''; position: absolute; inset: -4px 0; }
+  .xcc-pop { top: calc(100% + 6px); left: 0; right: 0; width: auto; }
+}
+
+/* ── THE BAND above the chart (2026-11-16): the record's header, joined to the
+   chart card. Prefix `xch`, checked against every stylesheet in the repo. ── */
+.xch-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.sym .xch {
+  position: relative; margin-top: 14px; min-width: 0; border: 1px solid var(--line); border-bottom: 0; border-radius: 14px 14px 0 0;
+  background: linear-gradient(100deg, color-mix(in srgb, var(--accent) 9%, var(--surf-1)) 0%, var(--surf-1) 46%);
+}
+.sym .xch.is-parked { display: none; }
+/* The chart card under it gives up its top corners and its gap: one card. */
+.sym .xch:not(.is-parked) + .tchart:not(.tchart--expanded) { margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; border-top-color: transparent; }
+.xch__row { display: flex; align-items: center; gap: 12px 22px; min-width: 0; padding: 14px 16px 13px; }
+
+.xch__id { flex: none; display: flex; align-items: center; gap: 12px; min-width: 0; max-width: 100%; color: inherit; text-decoration: none; }
+.xch__id:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 10px; }
+.xch__avatar {
+  flex: none; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; overflow: hidden; background: var(--surf-2); color: var(--muted); font-size: 22px; font-weight: 600;
+  box-shadow: 0 0 0 1px var(--line-2), 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.xch__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.xch__idtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.xch__k { font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); white-space: nowrap; }
+.xch__ksym { color: var(--muted-2); }
+.xch__name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-family: var(--font-chat-display, Georgia, serif); font-size: 21px; line-height: 1.15; font-weight: 600; letter-spacing: -0.012em; color: var(--fg); overflow-wrap: anywhere; }
+.xch__id:hover .xch__name { text-decoration: underline; text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
+.xch__verified { display: inline-grid; color: var(--accent); }
+.xch__vicon { width: 17px; height: 17px; }
+.xch__sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.xch__tally { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 7px; padding-left: 22px; border-left: 1px solid var(--line); }
+.xch__counts { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; font-weight: 600; line-height: 1.2; }
+.xch__count {
+  --xch-tone: var(--muted);
+  display: inline-flex; align-items: center; min-height: 28px; padding: 0 11px; border-radius: var(--r-pill, 999px); white-space: nowrap; font-variant-numeric: tabular-nums;
+  border: 1px solid color-mix(in srgb, var(--xch-tone) 42%, transparent); background: color-mix(in srgb, var(--xch-tone) 13%, transparent); color: var(--xch-tone);
+}
+.xch__count.is-total { border-color: var(--line-2); background: transparent; color: var(--fg); }
+.xch__count.is-right, .xch__seg.is-right { --xch-tone: var(--mk-up, var(--accent)); }
+.xch__count.is-wrong, .xch__seg.is-wrong { --xch-tone: var(--mk-down, var(--sell)); }
+.xch__count.is-flat, .xch__seg.is-flat { --xch-tone: var(--muted); }
+.xch__count.is-open, .xch__seg.is-open { --xch-tone: var(--gold, #d9a441); }
+.xch__headline { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 16px; line-height: 1.3; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+.xch__state { display: inline-flex; align-items: center; min-height: 22px; padding: 0 9px; border-radius: var(--r-pill, 999px); border: 1px solid var(--line-2); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.xch__state:empty { display: none; }
+.xch__facts { margin: 0; font-size: 12px; line-height: 1.45; color: var(--muted); max-width: 86ch; }
+.xch__facts:empty { display: none; }
+.xch__standing { color: var(--muted-2); }
+.xch__standing[data-verified] { color: var(--accent); font-weight: 600; }
+
+.xch__tools { flex: none; display: flex; align-items: center; gap: 8px; align-self: flex-start; }
+.xch__tools .xcc-share { margin-left: 0; }
+.xch__tools .xcc-share__menu { top: calc(100% + 6px); bottom: auto; z-index: 41; }
+.xch__clear { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid transparent; border-radius: var(--r-sm, 8px); background: none; color: var(--muted-2); cursor: pointer; transition: color var(--dur-1, .16s), border-color var(--dur-1, .16s); }
+.xch__clear:hover { color: var(--sell); border-color: var(--line-2); }
+.xch__clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The seam between the band and the chart: the tally, as proportions. */
+.xch__bar { display: flex; gap: 2px; height: 3px; background: var(--line); }
+.xch__seg { flex: 1 1 0; min-width: 3px; background: var(--xch-tone); }
+.xch__seg.is-flat { opacity: .55; }
+
+/* The strip under the chart: words only now (the band carries who and the tally). */
+.xcc__head--list { flex-direction: column; gap: 3px; }
+
+@media (hover: none) {
+  .xch__clear { width: 44px; height: 44px; }
+  .xch__count { min-height: 30px; }
+}
+/* A laptop with the rail docked, a tablet: the controls take their own row under the tally. */
+@media (max-width: 1180px) {
+  .xch__row { flex-wrap: wrap; }
+  .xch__tally { flex: 1 1 320px; }
+  .xch__tools { flex: 1 1 100%; align-self: auto; }
+  .xch__tools .xcc-share { margin-left: auto; }
+  .xch__tools .xcc-share__menu { right: 0; left: auto; }
+}
+/* A phone: who (with Clear at its corner), then the chips, then the controls. */
+@media (max-width: 760px) {
+  .sym .xch { margin-top: 10px; }
+  .xch__row { padding: 12px 12px 11px; gap: 11px; }
+  .xch__id { flex: 1 1 100%; padding-right: 44px; }
+  .xch__avatar { width: 46px; height: 46px; font-size: 18px; box-shadow: 0 0 0 1px var(--line-2), 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+  .xch__name { font-size: 18px; }
+  .xch__tally { flex: 1 1 100%; padding-left: 0; border-left: 0; }
+  .xch__count { padding: 0 9px; font-size: 12.5px; }
+  .xch__tools { gap: 8px; }
+  .xch__tools .xcc-seg { flex: 1 1 auto; }
+  .xch__tools .xcc-seg__btn { flex: 1 1 0; justify-content: center; }
+  .xch__clear { position: absolute; top: 8px; right: 6px; }
+}
+
+/* The door on the /x splash, FLAT (2026-11-16): `className="xcc-door--flat"` from app/x/page.tsx. No box: the handle, the market and the button share one rule. */
+.xcc-door--flat { gap: var(--sp-3); }
+.xcc-door--flat .xcc-door__row { flex-wrap: nowrap; gap: 0; border-bottom: 1px solid var(--fg); transition: border-color var(--dur-1) ease; }
+.xcc-door--flat .xcc-door__row:focus-within { border-bottom-color: var(--accent); }
+.xcc-door--flat .xcc-door__field { flex: 1 1 auto; gap: var(--sp-2); padding: 0; border: 0; border-radius: 0; background: transparent; }
+.xcc-door--flat .xcc-door__input { height: 56px; font-size: var(--fs-xl); }
+.xcc-door--flat .xcc-door__on { flex: none; gap: var(--sp-2); padding-left: var(--sp-3); border-left: 1px solid var(--line); }
+.xcc-door--flat .xcc-door__market { width: 68px; height: 56px; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: var(--fs-md); }
+.xcc-door--flat .xcc-door__market[aria-invalid='true'] { color: var(--sell); }
+.xcc-door--flat .xcc-btn--go { flex: none; align-self: center; min-height: 44px; padding: 0 var(--sp-5); border-radius: 0; font-size: var(--fs-base); }
+.xcc-door--flat .xcc-seg { gap: var(--sp-4); padding: 0; border: 0; border-radius: 0; background: transparent; }
+.xcc-door--flat .xcc-seg__btn { padding: 0; border-radius: 0; border-bottom: 1px solid transparent; }
+.xcc-door--flat .xcc-seg__btn[aria-pressed='true'] { background: transparent; border-bottom-color: var(--accent); }
+.xcc-door--flat .xcc-door__more { gap: var(--sp-1) var(--sp-4); }
+.xcc-door--flat .xcc-door__chips { gap: var(--sp-1) var(--sp-4); }
+.xcc-door--flat .xcc-chip { padding: 0; border: 0; border-radius: 0; text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 5px; }
+.xcc-door--flat .xcc-chip:hover { text-decoration-color: var(--accent); }
+@media (max-width: 767px) { .xcc-door--flat .xcc-seg { gap: var(--sp-2); } .xcc-door--flat .xcc-seg__btn { min-width: 44px; justify-content: center; } }
+@media (prefers-reduced-motion: reduce) { .xcc-door--flat .xcc-door__row { transition: none; } }
+
+/* ── THE CALL CARD (2026-11-16): one call, opened on the chart. Prefix `xcf`,
+   checked against every stylesheet in the repo. It docks on the side of the
+   chart its bar is not on; on a phone it is a sheet at the foot of the screen. ── */
+.xcf {
+  --xcf-tone: var(--muted);
+  position: absolute; z-index: 6; top: 54px; display: flex; flex-direction: column; width: min(372px, calc(100% - 150px)); max-height: calc(100% - 118px); min-width: 0; overflow: hidden;
+  border-radius: 16px; border: 1px solid color-mix(in srgb, var(--xcf-tone) 45%, var(--line-2)); background: var(--surf-1); color: var(--fg); text-align: left;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 24px 64px rgb(0 0 0 / 0.42), 0 4px 14px rgb(0 0 0 / 0.22);
+  animation: xcf-in .18s cubic-bezier(.2, .8, .2, 1);
+}
+.xcf:focus { outline: 0; }
+.xcf[data-dock='right'] { right: 78px; }
+.xcf[data-dock='left'] { left: 66px; }
+.xcf[data-verdict='right'] { --xcf-tone: var(--mk-up, var(--accent)); }
+.xcf[data-verdict='wrong'] { --xcf-tone: var(--mk-down, var(--sell)); }
+.xcf[data-verdict='open'] { --xcf-tone: var(--gold, #d9a441); }
+/* Movement only: a frame that stalls mid-way (a background tab) must never leave the card see-through over the chart. */
+@keyframes xcf-in { from { transform: translateY(8px) scale(.985); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .xcf { animation: none; } }
+
+/* The verdict leads: a band in its own ink. */
+.xcf__band { flex: none; display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 6px 0 14px; background: color-mix(in srgb, var(--xcf-tone) 15%, var(--surf-1)); border-bottom: 1px solid color-mix(in srgb, var(--xcf-tone) 30%, var(--line)); }
+.xcf__verdict { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.005em; color: var(--xcf-tone); white-space: nowrap; }
+.xcf__verdict::first-letter { text-transform: uppercase; }
+.xcf__glyph { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--xcf-tone); font-style: normal; font-size: 11.5px; line-height: 1; }
+.xcf[data-verdict='right'] .xcf__glyph, .xcf[data-verdict='wrong'] .xcf__glyph { background: var(--xcf-tone); color: var(--bg); }
+.xcf__stance { flex: none; padding: 2px 6px; border-radius: 5px; border: 1px solid var(--line-2); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.xcf__step { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 1px; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.xcf__at { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+.xcf__icon { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; transition: color var(--dur-1, .16s), background var(--dur-1, .16s); }
+.xcf__icon svg { width: 16px; height: 16px; }
+.xcf__icon:hover:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--fg) 9%, transparent); }
+.xcf__icon:disabled { opacity: .3; cursor: default; }
+.xcf__icon:focus-visible, .xcf__x:focus-visible, .xcf__pin:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.xcf__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 14px; }
+.xcf__who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.xcf__avatar { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; background: var(--surf-2); box-shadow: 0 0 0 1px var(--line-2); color: var(--muted); font-size: 15px; font-weight: 600; }
+.xcf__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.xcf__names { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.xcf__name { font-size: 14px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xcf__sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xcf__likes { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted-2); }
+.xcf__likes svg { width: 12px; height: 12px; }
+.xcf__added { margin: 0; align-self: flex-start; padding: 2px 7px; border-radius: 5px; border: 1px dashed var(--line-2); font-size: 10px; color: var(--muted); }
+.xcf__text { margin: 0; font-size: 15px; line-height: 1.5; color: var(--fg); overflow-wrap: anywhere; white-space: pre-line; }
+.xcf__text mark { background: color-mix(in srgb, var(--xcf-tone) 24%, transparent); color: inherit; border-radius: 3px; padding: 1px 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.xcf__level { margin: 0; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); }
+.xcf__level b { margin-left: 6px; font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 600; color: var(--fg); }
+
+/* The numbers the verdict was read from. */
+.xcf__nums { flex: none; margin: 0; display: flex; border-top: 1px solid var(--line); }
+.xcf__num { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px 11px; }
+.xcf__num + .xcf__num { border-left: 1px solid var(--line); }
+.xcf__num:first-child { flex: 0 0 auto; padding-left: 16px; }
+.xcf__num dt { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
+.xcf__num dd { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--fg); }
+.xcf__num.is-judged dd { color: var(--xcf-tone); }
+.xcf__num[data-sign='up'] dd { color: var(--mk-up, var(--accent)); }
+.xcf__num[data-sign='down'] dd { color: var(--mk-down, var(--sell)); }
+
+.xcf__foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--line); }
+.xcf__x {
+  flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--fg); background: var(--fg); color: var(--bg);
+  font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; transition: opacity var(--dur-1, .16s);
+}
+a.xcf__x:hover { opacity: .88; }
+.xcf__x svg { width: 14px; height: 14px; }
+.xcf__x.is-none { border-color: var(--line-2); background: none; color: var(--muted-2); font-weight: 500; font-size: 12px; }
+.xcf__pin { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: none; color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: color var(--dur-1, .16s), border-color var(--dur-1, .16s); }
+.xcf__pin svg { width: 13px; height: 13px; }
+.xcf__pin:hover { color: var(--fg); border-color: var(--fg); }
+.xcf__pin[aria-pressed='true'] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+@media (hover: none) {
+  .xcf__icon { width: 44px; height: 44px; }
+  .xcf__x, .xcf__pin { min-height: 46px; }
+}
+/* A phone: a sheet at the foot of the screen, whichever side the bar is on. */
+@media (max-width: 640px) {
+  .xcf, .xcf[data-dock='left'], .xcf[data-dock='right'] { position: fixed; z-index: 70; top: auto; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); width: auto; max-height: min(72dvh, 560px); box-shadow: 0 -8px 40px rgb(0 0 0 / 0.5), 0 0 0 100vmax rgb(0 0 0 / 0.28); }
+  .xcf__num { padding: 9px 10px 10px; }
+  .xcf__num:first-child { padding-left: 14px; }
+}

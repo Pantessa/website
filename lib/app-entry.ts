@@ -166,7 +166,47 @@ export function isPublicAppPath(href: string): boolean {
   const path = href.split(/[?#]/)[0]
   // …and the public progress pages (/leaderboard, /analytics — 2026-10-15).
   // …and the policy pool's public ledger (/policy-pool — squad policy-pool, 2026-11-02).
-  return isMarketsPath(path) || isProgressPath(path) || path === '/chat' || path === '/chat/' || path === '/policy-pool' || path === '/policy-pool/'
+  // …and the community: the feed, every room, and Telegram's Mini App entry (squad community, 2026-11-09).
+  // …and Called it: the door, every account and every record (squad called-it, 2026-11-11).
+  return isMarketsPath(path) || isProgressPath(path) || isCommunityPath(path) || isTelegramEntryPath(path) || isCalledPath(path) || path === '/chat' || path === '/chat/' || path === '/policy-pool' || path === '/policy-pool/'
+}
+
+// ── Called it (squad called-it, 2026-11-11) ─────────────────────────────
+// /x (the door), /x/<handle> (an account) and /x/<handle>/<SYMBOL> (a record)
+// are share landings: a stranger arrives from X with no wallet and no session,
+// so a link to them is always a plain link and nothing there sends a visitor
+// home. Exactly `/x` and what is under it: `/x402`, `/xyz` are not it. Pure;
+// pinned in scripts/called-record-pins.ts.
+
+export const CALLED_HREF = '/x'
+
+export function isCalledPath(pathname: string): boolean {
+  const path = pathname.split(/[?#]/)[0]
+  return path === CALLED_HREF || path.startsWith(`${CALLED_HREF}/`)
+}
+
+// ── The community surface (squad community, 2026-11-09) ─────────────────
+// The feed (/community) and the rooms (/g, /g/<slug>, /g/new) are public to
+// LOOK at, like the markets pages: reading needs no wallet, joining needs a
+// proven identity (never a wallet), and an action asks at the action. The
+// spine is their navigation (the COMMUNITY seat lights by this path, whatever
+// frame mounts it) and the brochure nav hides (components/Navigation).
+// /tg is Telegram's Mini App entry: a member arriving from a group has
+// Telegram's signature and no wallet, so the spine's gate must never send
+// them home. Pure; pinned in scripts/community-feed-pins.ts.
+
+export const COMMUNITY_HREF = '/community'
+
+/** /community (+ anything under it) and every room path: /g, /g/<slug>, /g/new. */
+export function isCommunityPath(pathname: string): boolean {
+  const path = pathname.split(/[?#]/)[0]
+  return path === COMMUNITY_HREF || path.startsWith(`${COMMUNITY_HREF}/`) || path === '/g' || path.startsWith('/g/')
+}
+
+/** Telegram's Mini App entry (/tg, with its start parameter in the query). */
+export function isTelegramEntryPath(pathname: string): boolean {
+  const path = pathname.split(/[?#]/)[0]
+  return path === '/tg' || path.startsWith('/tg/')
 }
 
 export type SessionStatus = 'loading' | 'authed' | 'guest'
@@ -301,4 +341,37 @@ export function sentHomeNotice(homeReturn: string | null): SentHomeNotice | null
   }
   const what = path.startsWith('/wallet') ? 'your wallet page' : path.startsWith('/dashboard') ? 'your dashboard' : ask ? 'that ask' : 'the app'
   return { what, ask }
+}
+
+// ── The dashboard's gate (2026-11-17) ────────────────────────────────────
+// Nate, pressing SETTINGS with a wallet connected but not signed in: "it just
+// goes home and not to main dashboard … give the user a path to sign then to
+// dashboard". The dashboard (settings: creator page, keys, billing) reads the
+// SIWE session, so a connected wallet alone can't open it — but it used to be
+// sent home like a stranger, with no word why. Now it stays and is asked for
+// the one signature, in place; the dashboard opens when the session lands.
+//
+//  · 'wait' — the session or a remembered wallet is still settling (never a
+//    mid-hydration guess), or an orphaned session is being ended.
+//  · 'home' — nobody is here (isSignedOut): no wallet, no session.
+//  · 'sign' — a wallet is connected with no session for it (never signed, or
+//    the wallet switched accounts): the in-place sign-in card.
+//  · 'open' — a session for the connected wallet: the dashboard.
+export type DashboardGate = 'wait' | 'home' | 'sign' | 'open'
+
+export function dashboardGate(s: {
+  mounted: boolean
+  sessionStatus: SessionStatus
+  /** The session's address as useSession() hands it: null when it isn't the connected wallet's. */
+  sessionAddress: string | null
+  /** useSession().needsSignIn: a wallet CONNECTED (not merely reconnecting:
+   *  a signature asked of a wallet wagmi is still restoring answers "Connect
+   *  a wallet first.") with no session for it. */
+  needsSignIn: boolean
+  signedOut: boolean
+}): DashboardGate {
+  if (!s.mounted || s.sessionStatus === 'loading') return 'wait'
+  if (s.sessionAddress) return 'open'
+  if (s.needsSignIn) return 'sign'
+  return s.signedOut ? 'home' : 'wait'
 }

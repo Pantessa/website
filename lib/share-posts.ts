@@ -19,6 +19,8 @@
 import { X_MENTION } from '@/lib/social'
 import { SITE_URL, absoluteUrl } from '@/lib/site-url'
 import { MARKETS_HREF } from '@/lib/markets'
+import { ADDED_MARK, VERDICT_WORDS, fmtDay, moveLine, type CalledCall } from '@/lib/called-it/spec'
+import { callHref } from '@/lib/called-it/gtm'
 
 /** ?via= values the door accepts (mirrors lib/share-receipts VIA_RE). */
 export const SHARE_VIA_RE = /^[a-z0-9]{4,16}$/
@@ -104,6 +106,16 @@ export function marketsPost(): SharePost {
   }
 }
 
+/** The read (2026-11-09): the home's own sentence about the market (lib/read
+ *  readHeadlineText), ready to post — the line leads, as it was composed. */
+export function readPost(line: string): SharePost {
+  return {
+    url: absoluteUrl(MARKETS_HREF),
+    title: 'The read on Pantessa',
+    text: `${line}\n\nThe market in one sentence, and every word is a button. Via ${X_MENTION}:`,
+  }
+}
+
 /** A public watchlist. Up to four tickers lead as cashtags. */
 export function listPost(list: { slug: string; name: string; symbols: string[] }): SharePost {
   const tags = list.symbols.slice(0, 4).map((s) => `$${s.toUpperCase()}`)
@@ -170,4 +182,171 @@ export const LIST_CARD_ROWS = 9
 export function listCardRows(symbols: string[]): { rows: string[]; more: number } {
   const rows = symbols.slice(0, LIST_CARD_ROWS)
   return { rows, more: Math.max(0, symbols.length - rows.length) }
+}
+
+// ── Called it (squad called-it, 2026-11-11, lane RECORD) ──────────────────
+// The post for one record: an X handle's calls on one market, pinned to the
+// days they were posted (lib/called-it). The house rules above hold: the
+// ticker leads as a cashtag, the handle is tagged INSIDE the sentence (a post
+// that opens with an @mention is filed as a reply), no hashtags, one link,
+// last. Three more, from the squad's honesty rules:
+//   · the tally is the record's own words (the headline's second half: every
+//     call found, in numbers, never a pick of them);
+//   · the standing line is the record's own ("Not verified…" for a plot of
+//     somebody else, "Verified…" only for the account itself);
+//   · everything is ASCII, one line, and fits X's 280 with the link counted
+//     as X counts it (23). A long symbol or a five-digit tally drops the
+//     closing sentence, then the standing line's second half, before it would
+//     ever run over;
+//   · a record nobody has scanned (its posts were pasted by viewers) is never
+//     written up as a record: the post states no counts at all, and says
+//     there is no tally (squad review R1).
+
+/**
+ * What a called-it post is written from: a CalledRecord (lib/called-it/spec)
+ * has all of it. Only the HANDLE names the account: a display name comes from
+ * X, can carry emoji or a right-to-left override, and never enters a post.
+ */
+export interface CalledPostInput {
+  handle: string
+  symbol: string
+  side: 'all' | 'bull' | 'bear'
+  words: { headline: string; standing: string }
+  /** False = no scan has finished: the posts on the page were pasted by viewers and there is NO tally to state. Left out = scanned. */
+  scanned?: boolean
+}
+
+/** X's limit, and what X charges a link whatever its length. */
+export const X_POST_MAX = 280
+export const X_LINK_WEIGHT = 23
+
+/** What a prefilled post weighs on X: the text, one space, the link. (ASCII text: one per character.) */
+export function xPostWeight(text: string): number {
+  return text.length + 1 + X_LINK_WEIGHT
+}
+
+/** Printable ASCII, one line: what a share intent may receive. */
+export const SHARE_ASCII_RE = /^[\x20-\x7e]*$/
+
+/** `$BTC` where X draws a cashtag (one to six letters); the plain symbol where it would not. */
+function calledTicker(symbol: string): string {
+  return /^[A-Z]{1,6}$/.test(symbol) ? `$${symbol}` : symbol
+}
+
+/** The tally half of the record's headline: "10 calls, 5 called it, 3 missed." */
+function calledTally(record: CalledPostInput): string {
+  const cut = record.words.headline.indexOf(': ')
+  return cut < 0 ? record.words.headline : record.words.headline.slice(cut + 2)
+}
+
+/** The fullest of `variants` that fits a post; the last one whatever it weighs (it is the shortest we write). */
+function fitPost(variants: string[]): string {
+  return variants.find((t) => xPostWeight(t) <= X_POST_MAX) ?? variants[variants.length - 1]
+}
+
+function calledUrl(record: CalledPostInput): string {
+  return absoluteUrl(`/x/${record.handle}/${encodeURIComponent(record.symbol.toUpperCase())}${record.side === 'all' ? '' : `?side=${record.side}`}`)
+}
+
+/** What a post says in place of a tally when no scan has finished. No number in it. */
+export const CALLED_NO_TALLY = 'No scan yet, so no tally.'
+
+/** Somebody else's handle: their calls on a market, the tally in numbers, "Not verified", the link. */
+export function calledPost(record: CalledPostInput): SharePost {
+  const lean = record.side === 'bull' ? 'Bullish ' : record.side === 'bear' ? 'Bearish ' : ''
+  const ticker = calledTicker(record.symbol.toUpperCase())
+  const standing = record.words.standing
+  const short = `${standing.split('. ')[0].replace(/\.$/, '')}.`
+  const close = `Plot any handle with ${X_MENTION}:`
+  if (record.scanned === false) {
+    // Pasted posts only: what they are, and that nothing was counted.
+    const lead = `${lean}${ticker} posts by @${record.handle}, pinned by a viewer to the day each was posted. ${CALLED_NO_TALLY}`
+    return { url: calledUrl(record), title: record.words.headline, text: fitPost([`${lead} ${short} ${close}`, `${lead} ${short}`, lead]) }
+  }
+  const lead = `${lean}${ticker} calls by @${record.handle}, each pinned to the day it was posted: ${calledTally(record)}`
+  return {
+    url: calledUrl(record),
+    title: record.words.headline,
+    text: fitPost([`${lead} ${standing} ${close}`, `${lead} ${short} ${close}`, `${lead} ${short}`, lead]),
+  }
+}
+
+/** The account's own record, signed in with X: first person, the same tally, "Verified", the link. */
+export function myCalledPost(record: CalledPostInput): SharePost {
+  const lean = record.side === 'bull' ? 'bullish ' : record.side === 'bear' ? 'bearish ' : ''
+  const ticker = calledTicker(record.symbol.toUpperCase())
+  const standing = record.words.standing
+  const close = `Plot yours with ${X_MENTION}:`
+  if (record.scanned === false) {
+    const lead = `My ${lean}${ticker} posts, each pinned to the day I posted it. ${CALLED_NO_TALLY}`
+    return { url: calledUrl(record), title: record.words.headline, text: fitPost([`${lead} ${standing} ${close}`, `${lead} ${standing}`, lead]) }
+  }
+  const lead = `My ${lean}${ticker} calls, each pinned to the day I posted it: ${calledTally(record)}`
+  return {
+    url: calledUrl(record),
+    title: record.words.headline,
+    text: fitPost([`${lead} ${standing} ${close}`, `${lead} ${standing}`, lead]),
+  }
+}
+
+// ── One call (squad called-gtm, 2026-11-16, lane CALL) ────────────────────
+// The post for ONE call of a record: the link outreach sends an account, and
+// the one a reader shares from /x/<handle>/<SYM>?call=<id>. The house rules
+// and the three above hold, and two more:
+//   · the verdict is spec's word for it and nothing else ("called it" only
+//     when the call was right; a miss is shared as a miss);
+//   · the call never travels alone: the record's whole tally is in the text
+//     (every call found, hits and misses), and where a very long symbol or
+//     target would push that over X's limit, the text says the full record is
+//     at the link instead. A post a viewer pasted says so and that it is not
+//     counted; a record nobody scanned states no counts at all.
+// The link is the call's own address on the WHOLE record (no side: one call
+// is never set beside half a tally).
+
+/** What a one-call post is written from: a CalledCall has all of it. */
+export type CalledCallInput = Pick<CalledCall, 'postId' | 'postedAt' | 'stance' | 'verdict' | 'judgedPct' | 'origin'> & Partial<Pick<CalledCall, 'now' | 'target'>>
+
+/** What a one-call post says when its tally would not fit. No number in it. */
+export const CALLED_FULL_AT_LINK = 'Full record, hits and misses, at the link:'
+
+function calledCallUrl(record: CalledPostInput, call: CalledCallInput): string {
+  return absoluteUrl(callHref(record.handle, record.symbol.toUpperCase(), call.postId))
+}
+
+/** `called it, +24.1% in 30 days, +2.2% since.` Spec's verdict word, then the record's own move words. */
+function calledCallResult(call: CalledCallInput): string {
+  return `${VERDICT_WORDS[call.verdict]}, ${moveLine(call)}.`
+}
+
+/** Somebody else's call: the day, the verdict in spec's word, the move, the whole tally, "Not verified", the link. */
+export function calledCallPost(record: CalledPostInput, call: CalledCallInput): SharePost {
+  const ticker = calledTicker(record.symbol.toUpperCase())
+  const lean = call.stance === 'bull' ? 'Bullish' : 'Bearish'
+  const standing = record.words.standing
+  const short = `${standing.split('. ')[0].replace(/\.$/, '')}.`
+  const close = `Plot any handle with ${X_MENTION}:`
+  const added = call.origin === 'added'
+  const lead = `${lean} ${ticker} ${added ? `post by @${record.handle}, ${ADDED_MARK}` : `call by @${record.handle}`}, ${fmtDay(call.postedAt)}: ${calledCallResult(call)}`
+  const full = record.scanned === false ? CALLED_NO_TALLY : `Full record${added ? ' (this post is not counted)' : ''}: ${calledTally(record)}`
+  return {
+    url: calledCallUrl(record, call),
+    title: `@${record.handle} on ${record.symbol.toUpperCase()}, ${fmtDay(call.postedAt)}: ${VERDICT_WORDS[call.verdict]}.`,
+    text: fitPost([`${lead} ${full} ${standing} ${close}`, `${lead} ${full} ${short} ${close}`, `${lead} ${full} ${short}`, `${lead} ${full}`, `${lead} ${CALLED_FULL_AT_LINK}`]),
+  }
+}
+
+/** The account's own call, signed in with X: first person, the same verdict word, the same whole tally, "Verified", the link. */
+export function myCalledCallPost(record: CalledPostInput, call: CalledCallInput): SharePost {
+  const ticker = calledTicker(record.symbol.toUpperCase())
+  const lean = call.stance === 'bull' ? 'bullish' : 'bearish'
+  const standing = record.words.standing
+  const close = `Plot yours with ${X_MENTION}:`
+  const added = call.origin === 'added'
+  const lead = `My ${lean} ${ticker} ${added ? `post, ${ADDED_MARK}` : 'call'}, ${fmtDay(call.postedAt)}: ${calledCallResult(call)}`
+  const full = record.scanned === false ? CALLED_NO_TALLY : `My full record${added ? ' (this post is not counted)' : ''}: ${calledTally(record)}`
+  return {
+    url: calledCallUrl(record, call),
+    title: `@${record.handle} on ${record.symbol.toUpperCase()}, ${fmtDay(call.postedAt)}: ${VERDICT_WORDS[call.verdict]}.`,
+    text: fitPost([`${lead} ${full} ${standing} ${close}`, `${lead} ${full} ${standing}`, `${lead} ${full}`, `${lead} ${CALLED_FULL_AT_LINK}`]),
+  }
 }

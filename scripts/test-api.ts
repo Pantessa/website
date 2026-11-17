@@ -21,6 +21,13 @@
  *   npm run dev        # in one terminal
  *   npm run test:api   # in another
  */
+
+// The Spot Guardian / DCA autopilot offers follow a BUILD-time stamp
+// (lib/autopilot-live). This process imports the composers directly, where no
+// build stamped it: the harness pins the composers as they are when automatic
+// selling is ON (the shape a CDP_SPEND_NETWORK=base build serves), and
+// scripts/autosell-pins.ts pins both states. Set it to '' to see the OFF shape.
+process.env.NEXT_PUBLIC_SPOT_AUTOSELL ??= '1'
 import { readFile } from 'node:fs/promises'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join as pathJoin } from 'node:path'
@@ -368,22 +375,70 @@ import { buildAutoBuy } from '../lib/dca-auto-exec'
 import { ADDRESS_THIS, NoV3PoolError, SWAP_ROUTER_02_ABI, guardUniswapV3Build, type V3GuardExpectations } from '../lib/uniswap-venue'
 import { creatorSplitPins } from './creator-split-pins'
 import { actionGateLivePins, actionGatePins } from './action-gate-pins'
+import { runAutosellPins } from './autosell-pins'
+import { hlHip3LivePins, hlHip3Pins, hlHip3ServedPins, hlHip3SignPins } from './hl-hip3-pins'
 import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
+import { botUaPins, CRAWL_UAS, PERSON_UA } from './bot-ua-pins'
 import { venueManifestLivePins, venueManifestPins } from './venue-manifest-pins'
-import { execStripLivePins, execStripPins } from './exec-strip-pins'
+import { chartHeatLivePins, chartHeatPins } from './chart-heat-pins'
+import { tvLivePins, tvPins } from './tv-pins'
+import { scenarioLivePins, scenarioPins } from './scenario-pins'
 import { policyPoolBuilderPins } from './policy-pool-builder-pins'
 import { printAlertPins } from './print-alert-pins'
 import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
 import { flyoverPins } from './flyover-pins'
 import { orderTicketPins } from './order-ticket-pins'
+import { symbolAskPins } from './symbol-ask-pins'
+import { appsPagePins } from './apps-page-pins'
+import { appsPortfolioPins } from './apps-portfolio-pins'
+import { appsTradePins } from './apps-trade-pins'
+import { appsEarnPins } from './apps-earn-pins'
+import { appsDockPins } from './apps-dock-pins'
+import { appsPhonePins } from './apps-phone-pins'
+import { symbolSearchPins } from './symbol-search-pins'
+import { cowRefusalLivePins, signStagePins } from './sign-stage-pins'
 import { depthPins } from './depth-pins'
 import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
+import { readPins, readRedirectPins, readServedPins } from './read-pins'
+import { newsFrontPins, newsFrontServedPins } from './news-front-pins'
+import { macroLivePins, macroPins, macroServedPins } from './macro-pins'
 import { homeAppsPins } from './home-apps-pins'
 import { receiptBindingLivePins, receiptBindingPins } from './receipt-binding-pins'
+import { communityCoordPins, communityCoordPinsServed } from './community-coord-pins'
+import { communityCorePins, communityCorePinsServed } from './community-core-pins'
+import { calledCoordPins, calledCoordPinsServed } from './called-coord-pins'
+import { calledTargetPins } from './called-target-pins'
+import { calledSourcePins, calledSourcePinsServed } from './called-source-pins'
+import { calledJudgePins, calledJudgePinsServed } from './called-judge-pins'
+import { calledAuthPins, calledAuthPinsServed } from './called-auth-pins'
+import { calledChartPins, calledChartPinsServed } from './called-chart-pins'
+import { calledRecordPins, calledRecordPinsServed } from './called-record-pins'
+import { calledHomePins, calledHomePinsServed } from './called-home-pins'
+import { calledFixPins, calledFixPinsServed } from './called-fix-pins'
+import { calledGtmCoordPins, calledGtmCoordPinsServed } from './called-gtm-coord-pins'
+import { calledGtmCallPins, calledGtmCallPinsServed } from './called-gtm-call-pins'
+import { calledGtmProfilePins, calledGtmProfilePinsServed } from './called-gtm-profile-pins'
+import { calledGtmCommunityPins, calledGtmCommunityPinsServed } from './called-gtm-community-pins'
+import { suggestionsPins, suggestionsPinsServed } from './suggestions-pins'
+import { calledGtmTradePins, calledGtmTradePinsServed } from './called-gtm-trade-pins'
+import { calledGtmOutreachPins, calledGtmOutreachPinsServed } from './called-gtm-outreach-pins'
+import { communityFeedPins, communityFeedPinsServed } from './community-feed-pins'
+import { communityGroupPins, communityGroupPinsServed } from './community-group-pins'
+import { communityTelegramPins, communityTelegramPinsServed } from './community-telegram-pins'
+import { communityDiscordPins, communityDiscordPinsServed } from './community-discord-pins'
+import { landingCoordPins, landingCoordPinsServed } from './landing-coord-pins'
+import { landingHeroPins, landingHeroPinsServed } from './landing-hero-pins'
+import { landingStagePins, landingStagePinsServed } from './landing-stage-pins'
+import { landingSidesAPins, landingSidesAPinsServed } from './landing-sides-a-pins'
+import { landingSidesBPins, landingSidesBPinsServed } from './landing-sides-b-pins'
+import { landingDataPins, landingDataPinsServed } from './landing-data-pins'
+import { landingClosePins, landingClosePinsServed } from './landing-close-pins'
+import { landingStoryPins, landingStoryPinsServed } from './landing-story-pins'
+import { landingMobilePins, landingMobilePinsServed } from './landing-mobile-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -11566,12 +11621,12 @@ async function main() {
       const seatOrder = (h: string, tag: 'aside' | 'nav') =>
         Array.from(
           (h.match(new RegExp(`<${tag} [^>]*aria-label="Workspace"[\\s\\S]*?</${tag}>`))?.[0] ?? '').matchAll(
-            /aria-label="(MARKETS|APPS|JOBS|LINKS|WALLET|TEAM|CHATS|LEADERS|ANALYTICS|DOCS|Settings)"/g,
+            /aria-label="(MARKETS|APPS|JOBS|LINKS|WALLET|TEAM|CHATS|COMMUNITY|LEADERS|ANALYTICS|DOCS|Settings)"/g,
           ),
           (m) => m[1],
         ).join(' ')
       // RE-PINNED 2026-10-15 (progress): LEADERS + ANALYTICS, the public progress pages, seat under CHATS and above DOCS.
-      const SPINE_SEATS = /^MARKETS APPS JOBS LINKS WALLET (TEAM )?CHATS LEADERS ANALYTICS DOCS Settings$/
+      const SPINE_SEATS = /^MARKETS APPS JOBS LINKS WALLET (TEAM )?CHATS COMMUNITY LEADERS ANALYTICS DOCS Settings$/
       check(
         'spine: the WALLET seat sits right under LINKS in both postures on /chat, /markets and /wallet (MARKETS · APPS · JOBS · LINKS · WALLET · TEAM · CHATS · LEADERS · ANALYTICS · DOCS · Settings; a page link, lit only on its own page); isWalletPath is exactly /wallet + /wallet/*',
         [wpChat, wpMarkets, wpHtml].every(
@@ -23488,9 +23543,18 @@ async function main() {
 
     // The engine on /t: the Apache-2.0 attribution notice + tools in the HTML.
     const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    // RE-PINNED 2026-11-11 (advanced chart): a build that ships TradingView's
+    // Advanced Charts serves THAT chart's shell on /t (its own credit line and
+    // the plan's quick tools); a build without the library serves the built-in
+    // engine exactly as before. Either way the page credits TradingView with a link.
+    const tAaplAdvanced = tAapl.includes('data-engine="advanced"')
     check(
-      '/t/AAPL: MarketChart server-renders the license attribution (the NOTICE line + a tradingview.com link, the ONLY credit now that attributionLogo is off), the drawing toolbar and the performance tiles',
-      tAapl.includes('Charts by TradingView Lightweight Charts') && tAapl.includes('2025 TradingView, Inc.') && /class="mkt-attrib" href="https:\/\/www\.tradingview\.com\/"/.test(tAapl) && tAapl.includes('Horizontal level') && tAapl.includes('mkt-perf'),
+      '/t/AAPL: the chart server-renders its license attribution (a tradingview.com link; on the built-in engine the NOTICE line, the ONLY credit now that attributionLogo is off), its drawing tools and the performance tiles',
+      /class="mkt-attrib" href="https:\/\/www\.tradingview\.com\/"/.test(tAapl) &&
+        tAapl.includes('mkt-perf') &&
+        (tAaplAdvanced
+          ? tAapl.includes('Charts by TradingView') && tAapl.includes('data-tv-attribution') && tAapl.includes('A level: click a price')
+          : tAapl.includes('Charts by TradingView Lightweight Charts') && tAapl.includes('2025 TradingView, Inc.') && tAapl.includes('Horizontal level')),
     )
 
     // Pool-price honesty: stocks only; everything else says why.
@@ -24079,7 +24143,7 @@ async function main() {
           [2, route === '/t/AAPL' ? 4 : 2].includes((html.match(/aria-label="MARKETS" aria-current="page"/g) ?? []).length) &&
           !/<header class="nav/.test(html) && !html.includes('nav__tabs') && !html.includes('data-ask-door="nav"') &&
           // RE-PINNED 2026-10-13 (rail-declutter): the alerts bell (RailAlerts, data-slot="alerts") sits between Ask and the account seat; it is in the server HTML, its popover is not.
-          /<div class="mkt-frame__side"><div class="mkt-frame__top" data-slot="top-strip"><button[^>]*data-ask-door="rail"[^>]*>[\s\S]*?<\/button><div class="mkt-frame__alerts" data-slot="alerts"><button type="button" class="mkt-frame__bell" aria-label="Alerts"[^>]*aria-expanded="false"[^>]*>[\s\S]*?<\/button><\/div><div class="mkt-frame__acct"><\/div><\/div><aside class="mkt-frame__rail"/.test(html) &&
+          /<div class="mkt-frame__side"><div class="mkt-frame__top" data-slot="top-strip"><button[^>]*data-ask-door="rail"[^>]*>[\s\S]*?<\/button><button type="button" class="ssx-lens"[^>]*data-symbol-search="strip"[^>]*>[\s\S]*?<\/button><div class="mkt-frame__alerts" data-slot="alerts"><button type="button" class="mkt-frame__bell" aria-label="Alerts"[^>]*aria-expanded="false"[^>]*>[\s\S]*?<\/button><\/div><div class="mkt-frame__acct"><\/div><\/div><aside class="mkt-frame__rail"/.test(html) &&
           !html.includes('mkt-alertpop') &&
           html.includes('data-ask-door="pill"'),
         `workspace=${(html.match(/aria-label="Workspace"/g) ?? []).length} nav=${/<header class="nav/.test(html)}`,
@@ -24323,11 +24387,40 @@ async function main() {
           /\(redirectTo\?: string\) => \{\s*forgetSignInReturn\(\)\s*if \(!redirectTo\) return/.test(sessS) &&
           !/homeFor|\?next=/.test(spineSrc + dashLayoutS),
       )
+      // SETTINGS WITH A WALLET CONNECTED, NOT SIGNED IN (2026-11-17, Nate: "when I
+      // click settings … it just goes home and not to main dashboard … give the
+      // user a path to sign then to dashboard"). The dashboard's gate is
+      // lib/app-entry dashboardGate: a connected wallet with no session for it
+      // gets the in-place sign-in card; only nobody-here goes home.
+      {
+        const g = (o: Partial<Parameters<typeof ae.dashboardGate>[0]>) =>
+          ae.dashboardGate({ mounted: true, sessionStatus: 'guest', sessionAddress: null, needsSignIn: false, signedOut: false, ...o })
+        check(
+          'dashboard gate: a connected wallet without a session signs in place (never home); a session opens it; only a settled nobody-here goes home; loading and an unmounted render wait',
+          g({ needsSignIn: true }) === 'sign' &&
+            // the wallet switched accounts: useSession() hands the session's address as null, needsSignIn true
+            g({ sessionStatus: 'authed', needsSignIn: true }) === 'sign' &&
+            g({ sessionStatus: 'authed', sessionAddress: '0xabc' }) === 'open' &&
+            g({ signedOut: true }) === 'home' &&
+            // a remembered wallet still reconnecting is not nobody-here yet
+            g({ signedOut: false }) === 'wait' &&
+            g({ sessionStatus: 'loading', needsSignIn: true }) === 'wait' &&
+            g({ mounted: false, signedOut: true }) === 'wait',
+        )
+        const signCardS = await src('components/DashboardSignIn.tsx')
+        check(
+          'dashboard gate wired: the layout decides with dashboardGate, renders DashboardSignIn inside the spine frame for "sign", and the card signs from its button only, aimed at the page it is on (read on press)',
+          /dashboardGate\(\{ mounted, sessionStatus: status, sessionAddress: address, needsSignIn, signedOut: nobodyHere \}\)/.test(dashLayoutS) &&
+            /if \(gate === 'sign'\) \{[\s\S]{0,200}<AppSpine surface="dashboard" \/>[\s\S]{0,200}<DashboardSignIn \/>/.test(dashLayoutS) &&
+            /onClick=\{\(\) => void signIn\(currentAppHref\(\)\)\}/.test(signCardS) &&
+            !/useEffect/.test(signCardS),
+        )
+      }
       // Re-pinned 2026-09-14 (public markets): the spine still sends a settled
       // signed-out visitor home, except on a public app page (the markets
       // surface), where looking needs no wallet.
       check(
-        'spine: no NEW seat in either posture (the brand seat opens a fresh /chat; CHATS leads with New Chat), and the spine sends a settled signed-out visitor home with replace, except on a public app page',
+        'spine: no NEW seat in either posture (CHATS leads with New Chat), and the spine sends a settled signed-out visitor home with replace, except on a public app page',
         !/>NEW</.test(spineSrc) && !/Start a new chat/.test(spineSrc) &&
           !chatHtml.includes('Start a new chat') && !mkHtml.includes('Start a new chat') &&
           /const \{ walletAddress, signedOut, connectAndSignIn \} = useSession\(\)/.test(spineSrc) &&
@@ -24340,11 +24433,53 @@ async function main() {
       )
       // 2026-10-06, Nate: a stranger on /t/<sym> clicked the logo to go home
       // and got the sign-in door — the brand seat pointed at /chat. Signed out,
-      // the logo goes to the public home; signed in, it still opens a chat.
-      check(
-        'spine: the brand seat (logo) sends a signed-out visitor home to the public `/`, never into the sign-in door; signed in it opens a fresh /chat',
-        /href=\{signedOut \? '\/' : '\/chat'\}/.test(spineSrc) && (await import('../lib/app-entry')).isPublicAppPath('/'),
-      )
+      // the logo goes to the public home.
+      // RE-PINNED 2026-11-09 (logo-home): signed in, the logo goes home too
+      // (Nate: "it should go back to the main market home page, not the apps
+      // page"). Every logo that links somewhere links to `/`, never /chat or
+      // /dashboard: the spine's brand seat, the brochure nav, the docs rail.
+      {
+        const navSrcL = readFileSync('components/Navigation.tsx', 'utf8')
+        const shellSrcL = readFileSync('components/AppShell.tsx', 'utf8')
+        const brand = spineSrc.match(/\{\/\* Brand seat[\s\S]*?\*\/\}\s*(<[\s\S]*?<YeetfulMark size=\{25\} \/>)/)?.[1] ?? ''
+        check(
+          'logo goes home: the spine\'s brand seat, the brochure nav\'s logo and the docs rail\'s mark all link to the market home `/` signed in or out (never /chat, which opens on APPS, nor /dashboard); `/` is public, so the logo is never a sign-in wall',
+          /<Link\s+href="\/"\s+title="Pantessa — home"\s+aria-label="Pantessa home"/.test(brand) &&
+            !/\/chat|signedOut|SpineLink|onClick/.test(brand) &&
+            /<Link className="logo" href="\/">/.test(navSrcL) && !/className="logo" href=\{/.test(navSrcL) &&
+            /<Link href="\/" className="apprail__home" aria-label="Pantessa home">/.test(shellSrcL) &&
+            /<Link href="\/" className="apprail__homeicon" aria-label="Pantessa home">/.test(shellSrcL) &&
+            !/href="\/dashboard" className="apprail__home/.test(shellSrcL) &&
+            (await import('../lib/app-entry')).isPublicAppPath('/'),
+        )
+      }
+      // 2026-11-11, Nate: a Macro row clicked low on `/` opened /t/<sym>
+      // scrolled to the bottom. Next's LoadingBoundary renders a loading.tsx's
+      // stylesheet links BEFORE the skeleton; React hoists them into <head>, so
+      // Next's scroll-to-top finds no visible first node, gives up, and never
+      // retries when the page streams in. The route skeletons carry
+      // ArriveAtTop, which does that scroll on a client navigation only.
+      {
+        const skelSrc = readFileSync('components/skeleton/RouteSkeleton.tsx', 'utf8')
+        const arriveSrc = readFileSync('components/skeleton/ArriveAtTop.tsx', 'utf8')
+        const chatLoaderSrc = readFileSync('components/ChatLoader.tsx', 'utf8')
+        const nextRouterSrc = readFileSync('node_modules/next/dist/client/components/layout-router.js', 'utf8')
+        const loadingFiles = ['app/t/[symbol]/loading.tsx', 'app/live/loading.tsx', 'app/chat/loading.tsx', 'app/chat/[id]/loading.tsx']
+        const loadings = loadingFiles.map((f) => readFileSync(f, 'utf8'))
+        check(
+          'arrive at top: both route skeletons (/t/<sym>, /live) mount ArriveAtTop, which scrolls the window to 0 on a client navigation only (not the first load, not a #hash, not a back/forward), because Next renders a loading fallback\'s stylesheets first and its scroll-to-top bails on the hoisted <link>; the chat loaders import no stylesheet, so Next scrolls those itself',
+          /import ArriveAtTop from '\.\/ArriveAtTop'/.test(skelSrc) &&
+            (skelSrc.match(/<MarketsShell(?: sym)?>\s*<ArriveAtTop \/>/g) ?? []).length === 2 &&
+            /^'use client'/.test(arriveSrc) &&
+            /const \[byNavigation\] = useState\(hydrated\)/.test(arriveSrc) &&
+            /if \(!byNavigation\) return\s*if \(window\.location\.hash\) return\s*if \(performance\.now\(\) - poppedAt < POP_GRACE_MS\) return\s*if \(window\.scrollY > 0\) window\.scrollTo\(\{ top: 0, left: 0, behavior: 'instant' \}\)/.test(arriveSrc) &&
+            /addEventListener\('popstate'/.test(arriveSrc) &&
+            /SymbolSkeleton/.test(loadings[0]) && /BoardSkeleton/.test(loadings[1]) &&
+            loadings.slice(2).every((s) => /ChatLoader/.test(s)) &&
+            !/^import ['"][^'"]+\.css['"]/m.test(chatLoaderSrc) &&
+            /fallback: \/\*#__PURE__\*\/ \(0, _jsxruntime\.jsxs\)\(_jsxruntime\.Fragment, \{\s*children: \[\s*loadingStyles,\s*loadingScripts,\s*loadingRsc\s*\]/.test(nextRouterSrc),
+        )
+      }
       check(
         "SpineLink: a plain click by a settled signed-out visitor opens the sign-in door aimed at the link's own target; modified clicks, everyone else, and every link to a public app page (the markets surface) get the plain link",
         /if \(e\.defaultPrevented \|\| !signedOut \|\| isPublicAppPath\(href\)\) return/.test(spineLinkS) &&
@@ -24497,7 +24632,8 @@ async function main() {
           (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
           // RE-PINNED 2026-10-06 (order ticket): the strip also takes the page's BUILD door — the ticket's sentence docks in Ask the chart.
           // RE-PINNED 2026-10-13 (cockpit): the strip is the phone's and never auto-opens its ticket (the right column holds the desktop's).
-          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} onBuild=\{buildHere\} last=\{stats\?\.last \?\? null\} autoOpen=\{false\} \/>/.test(symS) &&
+          // RE-PINNED 2026-11-16 (asks to the app): the strip's order door is the act door itself — the sentence runs in /chat, nothing docks.
+          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} onBuild=\{orderToApp\} last=\{stats\?\.last \?\? null\} autoOpen=\{false\} \/>/.test(symS) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
           // Re-pinned by the mobile-native squad (2026-09-24, NAV): the phone
           // posture executes lib/phone-nav (pickPhone), so the door call is
@@ -24506,7 +24642,9 @@ async function main() {
           (spineS.match(/if \(!isPublicAppPath\(href\) && openDoorFor\(href\)\) return/g) ?? []).length === 1 &&
           (spineS.match(/if \(!isPublicAppPath\(action\.href\) && openDoorFor\(action\.href\)\) return/g) ?? []).length === 1 &&
           /\{doorTo && <span hidden data-spine-door-to=\{doorTo\} \/>\}/.test(spineS) &&
-          (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
+          // RE-PINNED 2026-11-09 (logo-home): 5 → 4. The brand seat links to
+          // the public `/` now, so it is a plain Link, not a SpineLink.
+          (spineS.match(/<SpineLink\b/g) ?? []).length === 4 &&
           // MORE's Settings: the menu unmounts as it closes, so its door is the spine's
           /if \(plain && openDoorFor\('\/dashboard'\)\) e\.preventDefault\(\)/.test(spineS) &&
           /<CreateAccountModal onClose=\{\(\) => setDoorTo\(null\)\} redirectTo=\{doorTo\} \/>/.test(spineS) &&
@@ -25828,11 +25966,17 @@ async function main() {
 
     // The page: the overlay bar server-renders with the 50 and the 200 lit.
     const tMa = flat(await (await fetch(`${BASE}/t/ETH`)).text())
+    // RE-PINNED 2026-11-11 (advanced chart): a build that ships TradingView's
+    // Advanced Charts serves that chart's shell on /t, where the indicators are
+    // the library's own (no overlay chips of ours in the HTML); a build without
+    // it serves the built-in bar exactly as before.
     check(
-      '/t/ETH: the overlay bar server-renders SMA 50 and SMA 200 lit (swatch first, painted from the chart tokens) and SMA 20 off',
-      /aria-pressed="true"[^>]*style="--ind-sw:var\(--chart-ma-50\)"><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 50</.test(tMa) &&
-        /aria-pressed="true"[^>]*style="--ind-sw:var\(--chart-ma-200\)"><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 200</.test(tMa) &&
-        /aria-pressed="false"[^>]*><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 20</.test(tMa),
+      '/t/ETH: the overlay bar server-renders SMA 50 and SMA 200 lit (swatch first, painted from the chart tokens) and SMA 20 off — or, on a build with the Advanced chart, its shell and none of our overlay chips',
+      tMa.includes('data-engine="advanced"')
+        ? !tMa.includes('mkt-ind__sw') && tMa.includes('Your drawings')
+        : /aria-pressed="true"[^>]*style="--ind-sw:var\(--chart-ma-50\)"><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 50</.test(tMa) &&
+            /aria-pressed="true"[^>]*style="--ind-sw:var\(--chart-ma-200\)"><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 200</.test(tMa) &&
+            /aria-pressed="false"[^>]*><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 20</.test(tMa),
     )
   }
 
@@ -26775,8 +26919,9 @@ async function main() {
       return !!m && m[1].trim().length > 0
     }
     check(
-      'mk2/markets: /markets server-renders the movers tape seat, the Map · List toggle (SSR = list, every row present), the terminal tables with a sort bar (symbol · last · 24h) and j/k row links',
-      seat(mkHtml, 'mk-tape-seat" data-seat="MoversTape') &&
+      // RE-PINNED 2026-11-09 (the read): the movers tape left the index (the lead names the day's movers); the lead seat is filled instead.
+      'mk2/markets: /markets server-renders a filled lead seat (the read), the Map · List toggle (SSR = list, every row present), the terminal tables with a sort bar (symbol · last · 24h) and j/k row links',
+      seat(mkHtml, 'mk-lead-seat" data-seat="Lead') && !mkHtml.includes('data-seat="MoversTape"') &&
         /<main class="mkt-frame__main" data-view="list">/.test(mkHtml) &&
         /class="mk-view__btn is-on" aria-pressed="true"[^>]*title="Terminal list"/.test(mkHtml) &&
         /<table class="mk-table" data-section="equities" data-sort="none">/.test(mkHtml) &&
@@ -26955,12 +27100,27 @@ async function main() {
         mk.fmtCountdown(0) === '1m' && mk.fmtCountdown(360) === '6h' && mk.fmtCountdown(2850) === '1d 23h' && mk.fmtCountdown(95) === '1h 35m',
     )
     check(
-      'mk2/markets: /markets server-renders the session strip (NYSE open|closed · TOKENS 24/7 · HL FUNDING) above the movers seat, and under 640px the map view keeps the map AND renders the ledger under it',
-      /<div class="mk-session" role="status" aria-label="Market sessions" data-nyse="(open|closed)">/.test(mkHtml) &&
-        mkHtml.indexOf('class="mk-session"') < mkHtml.indexOf('class="mk-tape-seat"') &&
-        /NYSE (OPEN|CLOSED)/.test(mkHtml) && mkHtml.includes('TOKENS 24/7') && mkHtml.includes('HL FUNDING') &&
-        (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes("const showList = view === 'list' || phone"),
+      // RE-PINNED 2026-11-09 (the read): the session strip left the index — the read's eyebrow says the bell (a browser clock, so it is not in the server HTML) and that tokens and perps trade 24/7.
+      'mk2/markets: /markets no longer server-renders the session strip (the read\'s eyebrow carries the bell and the 24/7 line), and the map view keeps the map AND renders the ledgers under it at every width',
+      !mkHtml.includes('class="mk-session"') && /class="read__eyebrow mono"/.test(mkHtml) && /tokens and perps here trade 24\/7/.test(mkHtml) &&
+        (await readFile('components/home/TheRead.tsx', 'utf8')).includes('sessionStripFor(now)') &&
+        // RE-PINNED 2026-11-17 (boards-under-map): the ledgers render under the map at EVERY width now, not only under 640px.
+        (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes('{sections.map((s) => <Board key={s.id} section={s} onAsk={indexAct} />)}'),
     )
+    {
+      // 2026-11-17: in MAP view Equities · Crypto · Perps had no ledger to jump to (the
+      // boards render in the list only) and did nothing. A board tab now filters the heat
+      // map to its section; the map's own tabs report back so the two stay in step.
+      const boardSrc = await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')
+      const mapSrc = await readFile('components/markets/viz/MarketMap.tsx', 'utf8')
+      check(
+        'markets: in map view a board tab (Equities / Crypto / Perps) filters the heat map to its section and scrolls the map in; the map\'s own tabs keep the board tab in step',
+        boardSrc.includes('onClick={(e) => pickBoard(s.id, e)}') && boardSrc.includes('const boardsAreMapped = showMap && !phone') /* RE-PINNED 2026-11-17 (boards-under-map): the ledgers render in both views */ &&
+          boardSrc.includes('setMapSection(mapSectionOf(id))') && /<MarketMap\s+section=\{mapSection\}/.test(boardSrc) &&
+          boardSrc.includes("id === 'equities' ? 'stocks' : id") &&
+          mapSrc.includes('onSectionChange?.(t.id)') && mapSrc.includes('useEffect(() => setFilter(section), [section])'),
+      )
+    }
     const tableSrc = await readFile('components/markets/shell/MarketTable.tsx', 'utf8')
     const sparksSrc = await readFile('components/markets/shell/useSparks.ts', 'utf8')
     check(
@@ -26991,7 +27151,7 @@ async function main() {
         /\.mk-table__row:hover \.mk-table__quick, \.mk-table__row:focus-within \.mk-table__quick \{ opacity: 1; pointer-events: auto; \}/.test(await readFile('components/markets/markets.css', 'utf8')) &&
         // Re-pinned 2026-09-24: the engine's fills are the wallet's read MERGED
         // with the ones Ask the chart's ticket just signed (lib/ask-chart-thread).
-        symSrc2.includes('const serverFills = useSymbolFills(sym, walletAddress)') && symSrc2.includes('const fills = useMemo(() => mergeFills(serverFills, localFills), [serverFills, localFills])') && /<ChartMount [^>]*fills=\{fills\}/.test(symSrc2),
+        symSrc2.includes('const serverFills = useSymbolFills(sym, walletAddress)') && /* RE-PINNED 2026-11-16 (asks to the app): no trade is signed on this page any more, so the engine's fills are the wallet's read alone. */ symSrc2.includes('const fills = serverFills') && /<ChartMount [^>]*fills=\{fills\}/.test(symSrc2),
     )
     // The one stylesheet import + the slot card rule (QA's request: whoever
     // owns a class ships its rule).
@@ -27656,12 +27816,32 @@ async function main() {
       // on the shared TEST DB, and another lane's run of this very pin would
       // otherwise have filled it already.
       const fenceIp = `203.0.113.${1 + Math.floor(Math.random() * 250)}`
+      // RE-PINNED 2026-11-09 (bot fence): a platform caller now wears a
+      // person's browser (PERSON_UA). Node's own UA ("node") from a platform
+      // IP reads as automated and gets the bot wall before the IP counter.
       const fenced: string[] = []
       for (let i = 0; i < 5; i++) {
-        const r = await askRoute({ symbol: 'ETH', tf: '1h', question: `what happened on screen ${i}?` }, { 'x-forwarded-for': fenceIp })
+        const r = await askRoute({ symbol: 'ETH', tf: '1h', question: `what happened on screen ${i}?` }, { 'x-forwarded-for': fenceIp, 'user-agent': PERSON_UA })
         fenced.push(String(r.j.model))
       }
       check('ai fence: a platform IP trips the per-IP model cap (MARKETS_AI_IP_HOURLY_CAP=3 on the server under test) with a polite answer, never a 429; the deterministic doors never count', fenced.slice(0, 3).every((m) => m === 'mock') && fenced.slice(3).every((m) => m === 'wall'), fenced.join(','))
+      // The bot fence (2026-11-09): a signed-out platform caller whose user
+      // agent reads as automated (the November crawl's own list) is walled
+      // before the per-IP counter, so its calls never fill that bucket; a
+      // person on the same IP right after still reaches the model.
+      {
+        const botIp = `198.51.100.${1 + Math.floor(Math.random() * 250)}`
+        const botModels: string[] = []
+        for (const ua of [CRAWL_UAS[0], CRAWL_UAS[7], 'Lightpanda/1.0', CRAWL_UAS[5]]) {
+          const r = await askRoute({ symbol: 'ETH', tf: '1h', question: `what happened on screen ${Math.random().toString(36).slice(2, 8)}?` }, { 'x-forwarded-for': botIp, 'user-agent': ua })
+          botModels.push(String(r.j.model))
+        }
+        const person = await askRoute({ symbol: 'ETH', tf: '1h', question: `what happened on screen ${Math.random().toString(36).slice(2, 8)}?` }, { 'x-forwarded-for': botIp, 'user-agent': PERSON_UA })
+        check('ai bot fence: a platform caller wearing the crawl\'s user agents (Chrome 118, Firefox 120, Lightpanda, Edge 119) is walled every time, and four walled calls leave the IP\'s bucket untouched — a person on it next still gets the model', botModels.every((m) => m === 'wall') && String(person.j.model) === 'mock', `${botModels.join(',')} → ${person.j.model}`)
+        const replay = await fetch(`${BASE}/api/markets/brief`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': botIp, 'user-agent': 'Lightpanda/1.0' }, body: JSON.stringify({ symbol: 'ETH', tf: '1h' }) })
+        const replayEv = (await replay.text()).split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l) as Ev)
+        check('ai bot fence: a cached brief still replays to an automated caller (it costs nothing); only a new write is walled', replay.status === 200 && replayEv.find((e) => e.type === 'meta')?.cached === true && replayEv.some((e) => e.type === 'text'), replayEv.map((e) => e.type).join(','))
+      }
       const pos = await fetch(`${BASE}/api/markets/brief`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ symbol: 'ETH', tf: '1h', part: 'position', address: '0x000000000000000000000000000000000000dEaD' }) })
       const posJ = (await pos.json().catch(() => ({}))) as { text?: string; held?: boolean }
       check('ai brief position: the address-keyed paragraph is its own uncached JSON call (an unfunded address reads as not held, no address in the text)', pos.status === 200 && typeof posJ.text === 'string' && !/0x[0-9a-fA-F]{6,}/.test(posJ.text) && pos.headers.get('cache-control') === 'no-store', `held=${posJ.held} text=${posJ.text?.slice(0, 60)}`)
@@ -27713,7 +27893,10 @@ async function main() {
     // talk"): an act no longer leaves the page as a chip for /chat — it BUILDS
     // in the panel's order ticket (the /i runtime, docked), through the
     // connect-to-act door; the wallet signature is the gate (rule 5).
-    check('ai components: AskChart builds an act in its docked order ticket through the connect-to-act door (never a bare /chat hop), applies chart answers through onChartState, posts the alert rule to /api/alerts, and signed-out alerts open the unified door', askSrc.includes("if (reply.kind === 'act') build(id, reply.chip.ask, !reply.typed)") && askSrc.includes('useConnectToAct({ run: runHere') && askSrc.includes('<ChatInterface key={ticket.key} simple docked injectedPrompt={ticket.prompt} onEmbedEvent={onTicketEvent} />') && !askSrc.includes('onAsk(reply.chip.ask)') && askSrc.includes("if (reply.kind === 'chart') onChartState?.(reply.state)") && askSrc.includes("fetch('/api/alerts'") && askSrc.includes('<CreateAccountButton className="mk-ai__cta" label="Sign in to set alerts"'))
+    // RE-PINNED 2026-11-16 (asks to the app; Nate on /t/AAPL: "let's not direct AI chat buys or
+    // questions to an embed, let's send them to the app page"): an act leaves for /chat through the
+    // PAGE's act door (connect to act + the arrival handoff with its apps); the panel mounts no runtime.
+    check('ai components: AskChart hands an act to the page\'s act door (it opens in the app; the panel mounts no chat runtime and owns no connect door), applies chart answers through onChartState, posts the alert rule to /api/alerts, and signed-out alerts open the unified door', askSrc.includes("if (reply.kind === 'act') toApp(id, reply.chip.ask)") && askSrc.includes('onAsk?.(ask)') && !askSrc.includes('useConnectToAct') && !askSrc.includes('<ChatInterface') && askSrc.includes("if (reply.kind === 'chart') onChartState?.(reply.state)") && askSrc.includes("fetch('/api/alerts'") && askSrc.includes('<CreateAccountButton className="mk-ai__cta" label="Sign in to set alerts"'))
     // ── the suggestion row (2026-09-18) ──────────────────────────────────
     // A suggestion that carries a complete ask SENDS on one tap, like every
     // other complete-ask button on the page (memory chip-send-contract). It
@@ -27752,13 +27935,14 @@ async function main() {
       )
       const suggCss = await readFile('components/markets/ai.css', 'utf8')
       check(
-        'ai suggestions: the act chip BUILDS on one tap in the order ticket (a `?prompt=` link is only the no-JS fallback — a URL never fires a turn), question chips still ask the chart lane, and the act chip is styled apart from them',
+        // RE-PINNED 2026-11-16 (asks to the app): the act chip's tap sends to /chat through the page's act door.
+        'ai suggestions: the act chip SENDS to the app on one tap (a `?prompt=` link is only the no-JS fallback — a URL never fires a turn), question chips still ask the chart lane, and the act chip is styled apart from them',
         askSrc.includes("s.kind === 'act' ?") &&
-          askSrc.includes('onClick={buildOnClick(s.label, s.ask)}') &&
+          askSrc.includes('onClick={appOnClick(s.ask)}') &&
           askSrc.includes('href={promptHref(s.ask)}') &&
           askSrc.includes('className="mk-ai__sugg-chip mk-ai__sugg-chip--act"') &&
           askSrc.includes("onClick={() => void ask(s.q, 'chip')}") &&
-          /A TRADE BUILDS RIGHT HERE · YOUR WALLET SIGNS/.test(askSrc) &&
+          /A TRADE OPENS IN THE APP · YOUR WALLET SIGNS/.test(askSrc) &&
           suggCss.includes('.mk-ai__sugg-chip--act {'),
       )
     }
@@ -27794,7 +27978,7 @@ async function main() {
           !mai.relayShortcut('yes?', ord) && !mai.relayShortcut('draw a line at 400', ord) && !mai.relayShortcut('what is the trend', ord) &&
           !mai.relayShortcut('yes', { ...ord!, status: 'ready' }) && !mai.relayShortcut('yes', null))
       const prompt = mai.askUserPrompt({ symbol: 'ETH', name: 'Ethereum', tf: '1h', last: 2500, change24hPct: 1, tech: null, drawings: [], visible: null, position: null, venues: ['price alerts'], question: 'make it $50', history: hist, order: ord })
-      check('ask chat prompt: the model gets <conversation> and <order> blocks as data (no address in either), and the system prompt names relay + the build-here rule', prompt.includes('<conversation>') && prompt.includes('</conversation>') && prompt.includes('<order>') && prompt.includes('asks run in the ticket: "Buy $25 of ETH"') && !/0x[0-9a-fA-F]{6,}/.test(prompt) && mai.ASK_SYSTEM.includes('{"kind":"relay"}') && mai.ASK_SYSTEM.includes('builds right away in the order ticket'))
+      check('ask chat prompt: the model gets <conversation> and <order> blocks as data (no address in either), and the system prompt names relay + the opens-in-the-app rule (RE-PINNED 2026-11-16)', prompt.includes('<conversation>') && prompt.includes('</conversation>') && prompt.includes('<order>') && prompt.includes('asks run in the ticket: "Buy $25 of ETH"') && !/0x[0-9a-fA-F]{6,}/.test(prompt) && mai.ASK_SYSTEM.includes('{"kind":"relay"}') && mai.ASK_SYSTEM.includes('opens in the app right away, where it builds'))
 
       // The thread's pure rules.
       const turns = [
@@ -27814,26 +27998,32 @@ async function main() {
       check('ask chat fill: a signature paints a fill on THIS symbol only (its side tag is the evidence), inked by the venue that built it, and the server\'s row replaces it by explorer link',
         f?.side === 'buy' && f.venue === 'Uniswap v3' && f.venueId === 'uniswap' && f.chainId === 4663 && f.usd === 25 && f.t === 1_700_000_000 && notThis === null && merged.length === 2 && merged[0].id === 'local:2')
 
-      // The door docks on a page with its own conversation.
+      // RE-PINNED 2026-11-16 (asks to the app): the door no longer DOCKS on a symbol page. The page
+      // takes the door's SENDS and carries them to /chat; a bare open is the sheet as a composer.
       const doorCalls: unknown[] = []
-      useAskDoor.getState().setDock((draft, opts) => doorCalls.push([draft, opts]))
+      useAskDoor.getState().setHandoff((text, opts) => doorCalls.push([text, opts]))
       useAskDoor.getState().openDoor('Fix gas on Arbitrum', { send: true, mcps: ['near-intents'] })
+      const sentOpen = useAskDoor.getState().open
       useAskDoor.getState().openDoor()
-      const dockedOpen = useAskDoor.getState().open
-      useAskDoor.getState().setDock(null)
+      const composerOpen = useAskDoor.getState().open
+      useAskDoor.getState().closeDoor()
+      useAskDoor.getState().setHandoff(null)
       useAskDoor.getState().openDoor()
       const sheetOpen = useAskDoor.getState().open
       useAskDoor.getState().closeDoor()
-      check('ask chat door: while a page docks the ⌘K door, every openDoor lands there (a send with its apps, a bare open) and the sheet stays shut; undocked, the sheet opens again', doorCalls.length === 2 && JSON.stringify(doorCalls[0]) === JSON.stringify(['Fix gas on Arbitrum', { send: true, mcps: ['near-intents'] }]) && dockedOpen === false && sheetOpen === true)
+      check('ask chat door: while a page hands its asks to the app, a send handed to the door goes to the page with its apps and the sheet stays shut; a bare open is the sheet as a composer; with no handoff the sheet opens as before', doorCalls.length === 1 && JSON.stringify(doorCalls[0]) === JSON.stringify(['Fix gas on Arbitrum', { mcps: ['near-intents'] }]) && sentOpen === false && composerOpen === true && sheetOpen === true)
 
       // The wiring, at the source.
       const ciSrc = await readFile('components/ChatInterface.tsx', 'utf8')
       const symSrc = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
       const askSrc3 = await readFile('components/markets/ai/AskChart.tsx', 'utf8')
-      check('ask chat wiring: a docked runtime renders no composer, an injected prompt carries its apps, a first-party signed event names its venue + symbols (the embed contract unchanged); the panel relays the user\'s OWN words and opens its own thread in the app; the page docks the door and paints the fill',
+      // RE-PINNED 2026-11-16 (asks to the app): the runtime's side of the contract is unchanged (a docked
+      // runtime, an injected prompt's apps, the signed event); the PANEL no longer uses it — a stray relay
+      // is the visitor's own words for the app, and the page hands the door's sends to /chat.
+      check('ask chat wiring: a docked runtime renders no composer, an injected prompt carries its apps, a first-party signed event names its venue + symbols (the embed contract unchanged); the panel sends the user\'s OWN words (never the model\'s) to the app on a stray relay; the page takes the door\'s sends and reads its fills from the wallet alone',
         ciSrc.includes('{!docked && (') && ciSrc.includes('sendChip(injectedPrompt.text, injectedPrompt.mcps ?? [])') && ciSrc.includes('...(embedded ? {} : { buildPath: info.buildPath, symbols: info.symbols })') &&
-          askSrc3.includes('sendToTicket(said)') && !/sendToTicket\(reply/.test(askSrc3) && askSrc3.includes('`/chat/${encodeURIComponent(ticketChatId)}`') &&
-          symSrc.includes('setDock((draft, opts) =>') && symSrc.includes('mergeFills(serverFills, localFills)') && symSrc.includes('onSigned={onTicketSigned}'))
+          askSrc3.includes("if (reply.kind === 'relay') toApp(id, said)") && !/toApp\(id, reply\.(?!chip\.ask)/.test(askSrc3) &&
+          symSrc.includes('useAskDoor.getState().setHandoff(sayToApp)') && symSrc.includes('const fills = serverFills') && !symSrc.includes('onSigned='))
 
       // The route, against the mocked model.
       const ethOk = ((await (await fetch(`${BASE}/api/charts/candles?symbol=ETH&tf=1h`)).json()) as { candles?: unknown[] }).candles?.length
@@ -27856,7 +28046,7 @@ async function main() {
         const relayYes = await post({ question: 'hmm whichever is cheaper', mockScenario: 'relay', order: liveOrder })
         const short = await post({ question: 'use my USDC on Base', order: liveOrder })
         check('ask chat route: a model relay reaches the ticket only while an order is live (else a plain answer), a relay carries no words, and a plain reply to an asking ticket relays with no model',
-          relayNo.j.kind === 'answer' && /Nothing is building/.test(String(relayNo.j.text)) && relayYes.j.kind === 'relay' && !('text' in relayYes.j) && !('say' in relayYes.j) && short.j.kind === 'relay' && short.j.deterministic === true,
+          relayNo.j.kind === 'answer' && /No order is open on this page/.test(String(relayNo.j.text)) && relayYes.j.kind === 'relay' && !('text' in relayYes.j) && !('say' in relayYes.j) && short.j.kind === 'relay' && short.j.deterministic === true,
           `${relayNo.j.kind}/${relayYes.j.kind}/${short.j.kind}`)
         const amend = await post({ question: 'make it $50', history: [{ role: 'user', text: 'buy $25 of ETH' }, { role: 'page', text: 'built in the order ticket: "Buy $25 of ETH" (ready to sign)' }], order: { ...liveOrder, status: 'ready' } })
         const amendAsk = (amend.j.chip as { ask?: string } | undefined)?.ask ?? ''
@@ -28077,7 +28267,8 @@ async function main() {
       await (async () => {
         const sym = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
         const trade = await readFile('components/markets/tabs/TradeTab.tsx', 'utf8')
-        return /const handed = writeArrivalIntent\(\{ text: ask, from: pathname \?\? '' \}\)\s*\n\s*router\.push\(handed \? ARRIVAL_APP_HREF : promptHref\(ask\)\)/.test(sym) &&
+        // RE-PINNED 2026-11-16 (asks to the app): the handoff names its apps now (lib/symbol-ask symbolAskApps).
+        return /const handed = writeArrivalIntent\(\{ text: ask, from: pathname \?\? '', mcps: symbolAskApps\(ask, pair, extra\) \}\)\s*\n\s*router\.push\(handed \? ARRIVAL_APP_HREF : promptHref\(ask\)\)/.test(sym) &&
           /useConnectToAct\(\{ run: runAsk, redirectFor: promptHref \}\)/.test(sym) &&
           !/const runAsk = useCallback\([\s\S]{0,400}setTab\('trade'\)/.test(sym) &&
           !/ChatInterface/.test(trade.replace(/\/\/[^\n]*/g, ''))
@@ -28105,7 +28296,7 @@ async function main() {
 
     check(
       'arrival/core: a record that outlived its wallet NEVER fires a guest turn racing AppSpine\'s signed-out bounce — settled disconnected, or no address, parks the ask in the composer and drops the record',
-      /if \(walletStatus === 'disconnected' \|\| !effectiveAddress\) \{\s*\n\s*parkAsk\(arrival\.text\)\s*\n\s*setArrival\(null\)\s*\n\s*return\s*\n\s*\}/.test(chatSrcA) &&
+      /if \(walletStatus === 'disconnected' \|\| !effectiveAddress\) \{\s*\n\s*parkAsk\(arrival\.text, arrival\.mcps\)\s*\n\s*setArrival\(null\)\s*\n\s*return\s*\n\s*\}/.test(chatSrcA) &&
         // the guard sits BEFORE the send, and the send is the only setComposerSend the arrival path makes
         chatSrcA.indexOf("walletStatus === 'disconnected' || !effectiveAddress") < chatSrcA.indexOf('setComposerSend({ text: arrival.text'),
     )
@@ -28120,7 +28311,7 @@ async function main() {
     check(
       'arrival/core: "Don\'t run it" is offered ONLY while the row still holds (after the fire there is nothing to call off), and it PARKS the ask in the composer instead of losing it — the pending send is dropped because the fire effect bails on a cleared intent',
       /onDismiss=\{arrivalPhase === 'holding' \? dropArrival : undefined\}/.test(chatSrcA) &&
-        /const dropArrival = \(\) => \{\s*\n\s*if \(arrival\) \{\s*\n\s*parkAsk\(arrival\.text\)\s*\n\s*textareaRef\.current\?\.focus\(\)\s*\n\s*\}\s*\n\s*setArrival\(null\)\s*\n\s*\}/.test(chatSrcA) &&
+        /const dropArrival = \(\) => \{\s*\n\s*if \(arrival\) \{\s*\n\s*parkAsk\(arrival\.text, arrival\.mcps\)\s*\n\s*textareaRef\.current\?\.focus\(\)\s*\n\s*\}\s*\n\s*setArrival\(null\)\s*\n\s*\}/.test(chatSrcA) &&
         /if \(!arrival \|\| arrivalPhase === 'sent'\) return/.test(chatSrcA),
     )
 
@@ -28200,10 +28391,11 @@ async function main() {
     check(
       // RE-PINNED 2026-10-06 (front-door): `/` IS a public markets door now (the splash), so it
       // joins the list — exactly `/`, never `/i`, `/embed`, `/chat` or an empty prefix.
-      'arrival/qa: lib/arrival-fence ARRIVAL_SOURCES lists only public markets doors — `/` (the splash), /markets, /t — never "/i", "/embed", "/chat" or an empty prefix — and ARRIVAL_MAX_TEXT ≤ 280',
+      // RE-PINNED 2026-11-16 (called-gtm): ARRIVAL_SOURCES gained `/x` (the Called it pages hand their trade chips to the app).
+      'arrival/qa: lib/arrival-fence ARRIVAL_SOURCES lists only public markets doors — `/` (the splash), /markets, /t, /x — never "/i", "/embed", "/chat" or an empty prefix — and ARRIVAL_MAX_TEXT ≤ 280',
       ARRIVAL_SOURCES.length > 0 &&
         ARRIVAL_SOURCES.every((s) => typeof s === 'string' && s.startsWith('/')) &&
-        ARRIVAL_SOURCES.every((s) => s === '/' || ['/markets', '/t'].some((allowed) => s === allowed || s.startsWith(allowed + '/'))) &&
+        ARRIVAL_SOURCES.every((s) => s === '/' || ['/markets', '/t', '/x'].some((allowed) => s === allowed || s.startsWith(allowed + '/'))) &&
         !ARRIVAL_SOURCES.some((s) => s === '' || /^\/(i|embed|chat)\b/.test(s)) &&
         ARRIVAL_MAX_TEXT <= 280,
       ARRIVAL_SOURCES.join(' '),
@@ -28348,7 +28540,7 @@ async function main() {
     const marketsAiSrc = await readFile('lib/markets-ai.ts', 'utf8')
     check('arrival fence: lib/markets-ai.ts fenceAsk reads ASK_ADDRESS_RE / ASK_ENS_RE / ASK_URL_RE from lib/arrival-fence (no local copy)', marketsAiSrc.includes("import { ASK_ADDRESS_RE as ADDRESS_RE, ASK_ENS_RE as ENS_RE, ASK_URL_RE as URL_RE } from './arrival-fence'") && !/^const (ADDRESS|ENS|URL)_RE = /m.test(marketsAiSrc) && aiFenceAsk('Buy $25 of 0xbeef', 'AAPL').ok === false && aiFenceAsk('Buy $25 of AAPL for vitalik.eth', 'AAPL').ok === false && aiFenceAsk('Buy $25 of AAPL www.x.y', 'AAPL').ok === false)
     // RE-PINNED 2026-10-06 (front-door): ARRIVAL_SOURCES gained `/` (the splash is a public markets door).
-    check('arrival fence: the module is pure — imports only lib/intent-links (isTransferShaped) + the TTL constant, touches no window / document / storage / fetch, and reads the TTL from CORE\'s module so the two cannot disagree', /^import \{ isTransferShaped \} from '\.\/intent-links'$/m.test(fenceSrc) && /^import \{ ARRIVAL_TTL_MS \} from '\.\/arrival-intent'$/m.test(fenceSrc) && (fenceSrc.match(/^import /gm) ?? []).length === 2 && !/\b(window|document|sessionStorage|localStorage|fetch|navigator)\b/.test(fenceSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, '')) && ARRIVAL_SOURCES.length === 3 && ARRIVAL_SOURCES[0] === '/' && ARRIVAL_SOURCES[1] === '/markets' && ARRIVAL_SOURCES[2] === '/t' && ARRIVAL_MAX_TEXT === 280 && ARRIVAL_MAX_MCPS === 6 && ARRIVAL_FUTURE_SKEW_MS === 5_000)
+    check('arrival fence: the module is pure — imports only lib/intent-links (isTransferShaped) + the TTL constant, touches no window / document / storage / fetch, and reads the TTL from CORE\'s module so the two cannot disagree', /^import \{ isTransferShaped \} from '\.\/intent-links'$/m.test(fenceSrc) && /^import \{ ARRIVAL_TTL_MS \} from '\.\/arrival-intent'$/m.test(fenceSrc) && (fenceSrc.match(/^import /gm) ?? []).length === 2 && !/\b(window|document|sessionStorage|localStorage|fetch|navigator)\b/.test(fenceSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, '')) && ARRIVAL_SOURCES.length === 4 && ARRIVAL_SOURCES[0] === '/' && ARRIVAL_SOURCES[1] === '/markets' && ARRIVAL_SOURCES[2] === '/t' && ARRIVAL_SOURCES[3] === '/x' /* RE-PINNED 2026-11-16 (called-gtm) */ && ARRIVAL_MAX_TEXT === 280 && ARRIVAL_MAX_MCPS === 6 && ARRIVAL_FUTURE_SKEW_MS === 5_000)
     check('arrival fence: arrivalSourceAllowed — `/` (the splash; RE-PINNED 2026-10-06 (front-door)), /markets, /markets/<sub> and /t/<SYM> pass; /marketsx, /markets?q, /markets#h, /tx, /story, /chat, /i/x, /embed do not', arrivalSourceAllowed('/markets') && arrivalSourceAllowed('/markets/') && arrivalSourceAllowed('/markets/earn') && arrivalSourceAllowed('/t/ETH') && arrivalSourceAllowed('/t/AMAT') && !arrivalSourceAllowed('/marketsx') && !arrivalSourceAllowed('/markets?q=1') && !arrivalSourceAllowed('/markets#h') && !arrivalSourceAllowed('/tx') && !arrivalSourceAllowed('/t?x=1') && arrivalSourceAllowed('/') && !arrivalSourceAllowed('//evil.example') && !arrivalSourceAllowed('//') && !arrivalSourceAllowed('/story') && !arrivalSourceAllowed('/chat') && !arrivalSourceAllowed('/i/x') && !arrivalSourceAllowed('/embed') && !arrivalSourceAllowed(''))
 
     // ── The ladder proof ── every sentence a /markets sender can COMPOSE lands
@@ -28550,6 +28742,17 @@ async function main() {
       fam[0].asset === 'USDC' && fam[fam.length - 1].asset === 'MXNB' && earnSort([...ranked, exotic], 'apy', 'desc')[0].asset === 'MXNB' && earnSort([...ranked, exotic], 'featured', 'desc')[0].asset === 'USDC',
       fam.map((r) => `${r.asset}:${r.apyPct}`).join(' '),
     )
+    // The ladder (2026-11-09, Nate: "is it my portfolio? what are the bars?"):
+    // WHICH assets get a bar stays familiar-first, but the bars are DRAWN
+    // highest rate first, so they read as a ranking, never a zig-zag.
+    const ladder2 = earnLadder([...ranked, exotic], 2)
+    const ladder3 = earnLadder([...ranked, exotic], 3)
+    check(
+      'earn (ladder): the bars are picked familiar-first (at 2 slots the 17.6% peso coin is left out for USDC + ETH) and drawn highest rate first (at 3 slots: MXNB 17.6 · USDC 11.38 · ETH 2.27)',
+      ladder2.map((r) => r.asset).join(',') === 'USDC,ETH' && ladder3.map((r) => r.asset).join(',') === 'MXNB,USDC,ETH' &&
+        ladder3.every((r, i, a) => i === 0 || (a[i - 1].apyPct ?? 0) >= (r.apyPct ?? 0)),
+      ladder3.map((r) => `${r.asset}:${r.apyPct}`).join(' '),
+    )
     const wire = earnToWire(ranked, 2500)
     const back = earnFromWire(wire)
     check(
@@ -28583,6 +28786,15 @@ async function main() {
     check(
       'earn (SSR): /markets carries the Earn tab in the board strip and the EarnBoard seat (section#earn) in the server render, after the three market boards',
       /data-tab="earn"/.test(earnHtml) && /data-seat="EarnBoard"/.test(earnHtml) && /id="earn"/.test(earnHtml) && earnHtml.indexOf('id="perps"') < earnHtml.indexOf('id="earn"'),
+    )
+    // Not a portfolio (2026-11-09): the served blurb says these are the
+    // venues' rates and not the visitor's holdings; the ladder's head says
+    // what a bar is and its order; the TVL column says "Deposited".
+    const earnSrc = readFileSync(pathJoin(process.cwd(), 'components/markets/earn/EarnBoard.tsx'), 'utf8')
+    check(
+      'earn (copy): the served blurb says "not your holdings" (the old "Where your assets earn" is gone), the ladder head reads "BEST RATE PER ASSET · yearly, highest first", and the TVL column is "Deposited"',
+      /not your holdings/.test(earnHtml) && !/Where your assets earn/.test(earnHtml) &&
+        earnSrc.includes('BEST RATE PER ASSET · yearly, highest first') && earnSrc.includes("['tvl', 'Deposited']") && !earnSrc.includes('Earning there'),
     )
     // Map: unquoted cells draw small, still listed; wide screens open on the map.
     const secs = earnSections()
@@ -28983,9 +29195,14 @@ async function main() {
     const dayEth = flat(await (await fetch(`${BASE}/t/ETH`)).text())
     const dayTech = flat(await (await fetch(`${BASE}/t/AMAT?tab=technicals`)).text())
     // RE-PINNED 2026-10-13 (polish-qa): #913 (09fee064) gave each timeframe button a keyboard title after aria-pressed ("1D bars (press 4 over the chart)"); the reader allows trailing attributes — 1D is still the one pressed frame.
+    // RE-PINNED 2026-11-11 (advanced chart): on a build with TradingView's
+    // Advanced Charts the frame buttons are the library's (drawn in the browser,
+    // opened on 1D by lib/tv — pinned in scripts/tv-pins), so the served shell
+    // carries none of ours; without the library the built-in bar is as before.
+    const dayAdvanced = dayAapl.includes('data-engine="advanced"') && dayEth.includes('data-engine="advanced"')
     check(
-      '/t/AAPL + /t/ETH: the chart ships in the server HTML with 1D pressed (and only 1D); the Technicals tab renders on 1d too; no Sell chip in either header for a visitor with no wallet',
-      sgTfPressed(dayAapl).join() === '1D' && sgTfPressed(dayEth).join() === '1D' && /data-technicals="AMAT" data-tf="1d"/.test(dayTech) &&
+      '/t/AAPL + /t/ETH: the chart ships in the server HTML with 1D pressed (and only 1D; on a build with the Advanced chart, its shell and no frame buttons of ours); the Technicals tab renders on 1d too; no Sell chip in either header for a visitor with no wallet',
+      (dayAdvanced ? sgTfPressed(dayAapl).length === 0 && sgTfPressed(dayEth).length === 0 : sgTfPressed(dayAapl).join() === '1D' && sgTfPressed(dayEth).join() === '1D') && /data-technicals="AMAT" data-tf="1d"/.test(dayTech) &&
         !/>Sell AAPL</.test(dayAapl) && !/>Sell ETH</.test(dayEth) && /sym__act-chip--buy"[^>]*>Buy AAPL</.test(dayAapl),
       `AAPL pressed=${sgTfPressed(dayAapl).join() || 'none'} · ETH pressed=${sgTfPressed(dayEth).join() || 'none'}`,
     )
@@ -29894,7 +30111,7 @@ async function main() {
         // ⌘K door's `mcps`, docked into /t's Ask the chart ticket.)
         /if \(embedded\) void handleSend\(injectedPrompt\.text\)\s*\n\s*else sendChip\(injectedPrompt\.text, injectedPrompt\.mcps \?\? \[\]\)/.test(chatSrcF) &&
         /\} else parkAsk\(injectedPrompt\.text\)/.test(chatSrcF) &&
-        /if \(text && text === parked && !loading && !pendingPayment\) \{\s*\n\s*parkedAskRef\.current = null\s*\n\s*setInput\(''\)\s*\n\s*sendChip\(text\)/.test(chatSrcF) &&
+        /if \(text && text === parked && !loading && !pendingPayment\) \{\s*\n\s*parkedAskRef\.current = null\s*\n\s*setInput\(''\)\s*\n\s*sendChip\(text, parkedAppsRef\.current\)/.test(chatSrcF) && // RE-PINNED 2026-11-16 (asks to the app): a parked ask keeps the apps its page named
         (chatSrcF.match(/sendComposer\(\)/g) ?? []).length === 2 && !/onClick=\{\(\) => void handleSend\(\)\}/.test(chatSrcF) &&
         /if \(embedded \|\| parseChartAsk\(prompt\)\?\.pair \|\| \(!simple && parseMarketsNavAsk\(prompt\)\)\) \{/.test(chatSrcF) &&
         /const want = opts\.typed \? typedAskAppSlugs\(prompt\) : \[\.\.\.new Set\(\[\.\.\.slugs, \.\.\.askAppSlugs\(prompt\)\]\)\]/.test(chatSrcF),
@@ -34402,8 +34619,8 @@ async function main() {
     )
     // RE-PINNED 2026-10-13 (polish-qa): #911's phone polish (35fd5a80) put a status line between the timeframes and the overlays: the overlays are order 5 with the tools order 6 right after them, and their width rule (row minus the tools) is its own line.
     check(
-      'native markets: on a phone the /t plot keeps 260px however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
-      /\.sym \.tchart:not\(\.tchart--expanded\) \.mkt-chart__canvas \{ flex: 0 0 auto; height: 260px; \}/.test(nmMk) &&
+      'native markets: on a phone the /t plot keeps 320px (RE-PINNED 2026-11-10 (chart-heat): 260 → 320, the strips under it are gone) however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
+      /\.sym \.tchart:not\(\.tchart--expanded\) \.mkt-chart__canvas \{ flex: 0 0 auto; height: 320px; \}/.test(nmMk) &&
         /\.sym \.mkt-chart__bar > \.mkt-chart__ind \{ order: 5; \}/.test(nmMk) && /\.sym \.mkt-chart__bar > \.mkt-chart__tools \{ order: 6; \}/.test(nmMk) &&
         /\.sym \.mkt-chart__bar > \.mkt-chart__ind \{ flex: 1 1 calc\(100% - 200px\); \}/.test(nmMk) &&
         /\.sym \.mkt-chart__tools > \.mkt-tool:first-child \{ display: none; \}/.test(nmMk) &&
@@ -34842,8 +35059,13 @@ async function main() {
     check(
       'native nav: ChatWorkspace is the phone frame (data-app-frame), mounts the screen BEFORE ChatInterface so its scroller is the first data-app-scroll, makes the conversation inert under a screen, and belts the desktop "show the studio" pair into the LINKS screen',
       /<div data-app-frame="" className=\{`relative flex \$\{chrome/.test(nnWs) && !/max-lg:pb-\[calc\(48px/.test(nnWsCode) &&
-        nnWs.indexOf('<PhoneScreens screen={phoneScreen} />') < nnWs.indexOf('<ChatInterface injectedPrompt={urlPrompt} />') &&
-        /inert=\{screenUp \|\| undefined\} aria-hidden=\{screenUp \|\| undefined\}/.test(nnWs) &&
+        // RE-PINNED 2026-11-17 (apps-page): the conversation now receives the
+        // newest of the page's ask and the URL's (`injected`) and sits beside the
+        // apps page (`beside`); a closed dock is inert too. Still mounted AFTER
+        // the screen, still inert + aria-hidden under a screen.
+        nnWs.indexOf('<PhoneScreens screen={phoneScreen} />') >= 0 &&
+        nnWs.indexOf('<PhoneScreens screen={phoneScreen} />') < nnWs.indexOf("<ChatInterface injectedPrompt={injected} beside={besideApps ? 'apps' : undefined} />") &&
+        /inert=\{screenUp \|\| dockHidden \|\| undefined\}\s*aria-hidden=\{screenUp \|\| dockHidden \|\| undefined\}/.test(nnWs) &&
         /if \(!isNarrow \|\| mainView !== 'links' \|\| railTab !== 'links'\) return\s*setMainView\('chat'\)\s*setPhoneScreen\('links'\)/.test(nnWs),
     )
     check(
@@ -34851,7 +35073,10 @@ async function main() {
       /<section data-phone-panel=\{name\} aria-label=\{title\} className="absolute inset-0 z-\[45\] flex flex-col bg-\[var\(--bg\)\]">/.test(nnScreen) &&
         // The main area names its screen in EVERY state (the squad drive's
         // contract: main[data-phone-screen="chat|history|apps|jobs|links|team"]).
-        /<main className="relative flex-1 min-w-0 min-h-0 flex flex-col" data-phone-screen=\{isNarrow \? phoneScreen : undefined\}>/.test(nnWs) &&
+        // RE-PINNED 2026-11-17 (apps-page): main is a column, or a row when the
+        // desktop apps page sits beside the docked chat; it still names its
+        // screen below lg.
+        /<main\s+className=\{`relative flex-1 min-w-0 min-h-0 flex \$\{appsView \? 'flex-row' : 'flex-col'\}`\}\s+data-phone-screen=\{isNarrow \? phoneScreen : undefined\}/.test(nnWs) &&
         /<div ref=\{scrollerRef\} data-app-scroll="" className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain/.test(nnScreen) &&
         // Scroll position remembered per screen (invariant 3): the scroller's
         // offset is saved on unmount and restored on the next mount.
@@ -34859,7 +35084,11 @@ async function main() {
     )
     check(
       'native nav: the screens — APPS, JOBS, TEAM, HISTORY render the extracted bodies flat; a navigation from JOBS/HISTORY returns to the conversation; LINKS is the studio with "Your list" (aria-haspopup="dialog") opening the rail list as a Sheet whose Mint / Name-your-page land ON the studio',
-      /case 'apps':[\s\S]*?<AppsRailTab flat \/>/.test(nnScreens) &&
+      // RE-PINNED 2026-11-17 (apps-page): APPS is AppsScreen, which keeps the
+      // flat AppsRailTab for a visitor with no wallet (a connected wallet gets
+      // the apps page, components/apps/AppsPhone).
+      /case 'apps':\s*return <AppsScreen \/>/.test(nnScreens) &&
+        /function AppsScreen\(\)[\s\S]*?<PhoneScreen name="apps" title=\{PHONE_SCREEN_TITLES\.apps\}>\s*<AppsRailTab flat \/>/.test(nnScreens) &&
         /case 'jobs':[\s\S]*?<JobsRailTab flat onNavigate=\{toChat\} \/>/.test(nnScreens) &&
         /case 'team':[\s\S]*?<TeamRailTab flat \/>/.test(nnScreens) &&
         /case 'history':[\s\S]*?<ChatsRailTab flat onNavigate=\{toChat\} \/>/.test(nnScreens) &&
@@ -35489,17 +35718,50 @@ async function main() {
   creatorSplitPins(check)
   actionGatePins(check)
   await actionGateLivePins(check)
+  // No automatic sell is offered unless it can be armed (2026-11-17): the Spot Guardian + DCA autopilot
+  // offers read lib/autopilot-live, OFF and ON (scripts/autosell-pins).
+  {
+    const r = runAutosellPins()
+    check(`autosell: ${r.pass} pins, the offers follow the switch`, r.fail === 0, r.failures.join(' ; '))
+  }
+  // Orders on Hyperliquid's builder-deployed (HIP-3) dexes (2026-11-09): "Long $25 of SP500 on Hyperliquid"
+  // builds a guarded order on `xyz:SP500`. Pure pins over the venue's own answers (asset ids, the market
+  // lookup, the order / leverage / move guards, the collateral rule), the typed data round trip, the rules
+  // against the venue read-only, and the served half — the sentence through /api/chat (with the harness
+  // wallet when .env.local carries one: a funded Hyperliquid account gets the order, any other the funding
+  // path) and the chips back on /t/SP500, /t/GOLD and /t/CL.
+  hlHip3Pins(check)
+  await hlHip3SignPins(check)
+  await hlHip3LivePins(check)
+  {
+    const fsMod = await import('node:fs')
+    const pk = (() => {
+      try {
+        return fsMod.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+      } catch {
+        return null
+      }
+    })()
+    await hlHip3ServedPins(check, BASE, pk ? privateKeyToAccount((pk.startsWith('0x') ? pk : `0x${pk}`) as `0x${string}`).address : undefined)
+  }
   // Drawing gestures, the share picture's words, a stamped call (pure).
   chartCallsPins(check)
   battlefieldPins(check)
   // The live tape (2026-10-06): the venue row parse, flow classes, buckets, tiles, follow asks, triggers, the page's door.
   tapePins(check)
+  botUaPins(check)
   // The venue manifest (2026-11-02): pinned contracts, selectors, guards and bounds per venue, read from the builders' own constants; the served route + page agree.
   venueManifestPins(check)
   await venueManifestLivePins(check, BASE)
-  // The executions strip (2026-11-02): Dune's live fills for the symbol on screen, beside positioning, off the chart's one relay stream; the served page carries it for a covered and an uncovered market.
-  execStripPins(check)
-  await execStripLivePins(check, BASE)
+  // The Heatmap view (2026-11-10): the Dune executions strip is gone, the year of positioning is a chart view in the Tape's seat, the candles take the card. (Replaced the executions-strip pins.)
+  chartHeatPins(check)
+  await chartHeatLivePins(check, BASE)
+  // The Advanced chart (TradingView's licensed library on /t, 2026-11-11).
+  tvPins(check)
+  await tvLivePins(check, BASE)
+  // Scenarios (2026-11-17): the Bull / Bear / Both buttons on the chart draw a setup by fixed rules; the structure, the record, the box the plan reads, the fence.
+  scenarioPins(check)
+  await scenarioLivePins(check, BASE)
   // THE POLICY POOL — the builder (2026-11-02): the v4 pin table, the config, the venue words, the hookData-bearing encoding, the guard over a signed attestation, the hook's revert names, the dispatch sites.
   await policyPoolBuilderPins(check)
   // The /live trigger rules armed on the server (2026-10-13): the body reader, the evaluation over consumed fills, the cursor policy, the notification, the wiring.
@@ -35513,6 +35775,18 @@ async function main() {
   spotHomePins(check)
   // The order ticket (2026-10-06): every shape the form composes lands native, the honesty rules, the sizing, the Available line, the wiring.
   orderTicketPins(check)
+  symbolAskPins(check)
+  // The apps page (squad apps-page, 2026-11-17): one pin file per lane.
+  appsPagePins(check)
+  appsPortfolioPins(check)
+  appsTradePins(check)
+  appsEarnPins(check)
+  appsDockPins(check)
+  appsPhonePins(check)
+  symbolSearchPins(check)
+  // Only the wallet may be blamed for a wallet rejection (2026-11-11): a CoW order the wallet SIGNED read "Signature rejected in the wallet" when CoW's order book refused it; the stage rule on five sign surfaces, CoW's errorType kept + logged + filed, and one live unfunded throwaway order through the relay.
+  signStagePins(check)
+  await cowRefusalLivePins(BASE, check)
   // The Depth chart (2026-10-13): the book model and its deltas, the venue wire shapes, the window, the curve, the hover's numbers, the act at a level, the plan per chart, the words, the view's URL and wiring.
   depthPins(check)
   chartTapePins(check)
@@ -35520,6 +35794,85 @@ async function main() {
   deckPins(check)
   // THE APPS ROW (2026-10-13): the fleet's marks on the splash in the guide card's old seat, each a door into the chat's apps drawer with that app on — the table, the hrefs, the public chat surface, the wiring.
   homeAppsPins(check)
+  // The News tab as a front page (2026-11-17): the deal, since, the plate, the feed filter.
+  newsFrontPins(check)
+  await newsFrontServedPins(check, BASE)
+  // THE READ (2026-11-09): the home's lead — the market as one sentence, the macro line, the chart of the pick; the deck off `/`, the battle views off the nav, the old deck links forwarded.
+  readPins(check)
+  await readRedirectPins(check)
+  await readServedPins(check, BASE)
+  // MACRO (2026-11-09): the look-only index pages (/t/US10Y · VIX · DXY · NDX · DJI · RUT — a full chart, no order anywhere) and the Macro board beside the Hyperliquid macro markets: the table, the "no side" rule on every surface, the chip gate and the door, the index host's payload, a yield in basis points, the static board.
+  macroPins(check)
+  await macroLivePins(check)
+  await macroServedPins(check, BASE)
+
+  // ── squad landing (2026-11-10): the landing on `/` — the tour of eight sides, the stranger's hero, the trust section, the closing doors. One pin file per lane, wired once here. ──
+  landingCoordPins(check)
+  await landingCoordPinsServed(check, BASE)
+  landingHeroPins(check)
+  await landingHeroPinsServed(check, BASE)
+  landingStagePins(check)
+  await landingStagePinsServed(check, BASE)
+  landingSidesAPins(check)
+  await landingSidesAPinsServed(check, BASE)
+  landingSidesBPins(check)
+  await landingSidesBPinsServed(check, BASE)
+  landingDataPins(check)
+  await landingDataPinsServed(check, BASE)
+  landingClosePins(check)
+  await landingClosePinsServed(check, BASE)
+  landingStoryPins(check)
+  await landingStoryPinsServed(check, BASE)
+  landingMobilePins(check)
+  await landingMobilePinsServed(check, BASE)
+
+  // ── squad community (2026-11-09): one pin file per lane, wired once here ──
+  communityCoordPins(check)
+  await communityCoordPinsServed(check, BASE)
+  communityCorePins(check)
+  await communityCorePinsServed(check, BASE)
+  communityFeedPins(check)
+  await communityFeedPinsServed(check, BASE)
+  communityGroupPins(check)
+  await communityGroupPinsServed(check, BASE)
+  communityTelegramPins(check)
+  await communityTelegramPinsServed(check, BASE)
+  communityDiscordPins(check)
+  await communityDiscordPinsServed(check, BASE)
+
+  // ── squad called-it (2026-11-11): one pin file per lane, wired once here ──
+  calledCoordPins(check)
+  await calledCoordPinsServed(check, BASE)
+  calledTargetPins(check)
+  calledSourcePins(check)
+  await calledSourcePinsServed(check, BASE)
+  calledJudgePins(check)
+  await calledJudgePinsServed(check, BASE)
+  calledAuthPins(check)
+  await calledAuthPinsServed(check, BASE)
+  calledChartPins(check)
+  await calledChartPinsServed(check, BASE)
+  calledRecordPins(check)
+  await calledRecordPinsServed(check, BASE)
+  calledHomePins(check)
+  await calledHomePinsServed(check, BASE)
+  calledFixPins(check)
+  await calledFixPinsServed(check, BASE)
+  // Squad called-gtm (2026-11-16): one pin file per lane.
+  calledGtmCoordPins(check)
+  await calledGtmCoordPinsServed(check, BASE)
+  calledGtmCallPins(check)
+  await calledGtmCallPinsServed(check, BASE)
+  calledGtmProfilePins(check)
+  await calledGtmProfilePinsServed(check, BASE)
+  calledGtmCommunityPins(check)
+  await calledGtmCommunityPinsServed(check, BASE)
+  suggestionsPins(check)
+  await suggestionsPinsServed(check, BASE)
+  calledGtmTradePins(check)
+  await calledGtmTradePinsServed(check, BASE)
+  calledGtmOutreachPins(check)
+  await calledGtmOutreachPinsServed(check, BASE)
   // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
   // sign-in door, never a planner promise to "fetch your tokens".
   {

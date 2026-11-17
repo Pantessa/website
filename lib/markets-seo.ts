@@ -12,11 +12,16 @@
 //      issuer of AAPL or ETH, and claiming an offer we don't make is exactly
 //      the kind of structured lie that gets a domain flagged;
 //    · a stock title says 24/7 and Robinhood Chain — that is what trades
-//      here — and the description names the tape.
+//      here — and the description names the tape;
+//    · a look-only index (US10Y, VIX… lib/charts) is titled as a chart and
+//      described as delayed data nothing here trades. It gets the breadcrumb
+//      and NO Dataset: the series is someone else's index, read through an
+//      unofficial host — not ours to publish as a dataset.
 //  Server-safe and client-safe (pure; no fetch, no env beyond SITE_URL).
 // ─────────────────────────────────────────────────────────────────────────
 
 import { chartPairFor, normalizeChartSymbol, type Candle, type ChartPair } from '@/lib/charts'
+import { macroName } from '@/lib/macro'
 import { ROBINHOOD_TICKER_NAMES } from '@/lib/robinhood-tickers'
 import { FEATURED, MARKETS_HREF, marketSections, symbolStanding, type MarketSectionId } from '@/lib/markets'
 import { SITE_URL } from '@/lib/site-url'
@@ -42,7 +47,7 @@ const MARKETS_URL = new URL(MARKETS_HREF, SITE_URL).href.replace(/\/$/, '')
  *  the coin's name for crypto, the symbol itself when we have no name. */
 export function symbolName(symbol: string): string {
   const s = normalizeChartSymbol(symbol)
-  return ROBINHOOD_TICKER_NAMES[s] ?? COIN_NAMES[s] ?? s
+  return ROBINHOOD_TICKER_NAMES[s] ?? COIN_NAMES[s] ?? macroName(s) ?? s
 }
 
 export interface SymbolSeo {
@@ -62,6 +67,7 @@ const FEED_LINE: Record<ChartPair['source'], string> = {
   robinhood: 'Robinhood’s 24/7 market-data tape — the print the on-chain token tracks',
   coinbase: 'Coinbase spot',
   hyperliquid: 'Hyperliquid perps',
+  index: 'delayed index data',
 }
 
 export function symbolPageSeo(symbolRaw: string): SymbolSeo {
@@ -79,6 +85,9 @@ export function symbolPageSeo(symbolRaw: string): SymbolSeo {
   } else if (!pair) {
     title = `${symbol || 'Token'} — Pantessa Markets`
     description = `No live chart for ${symbol || 'this token'} yet. You can still trade it from one sentence in chat — guarded, signed only by your wallet.`
+  } else if (pair.source === 'index') {
+    title = `${symbol} chart — ${name} | Pantessa Markets`
+    description = `${name} (${symbol}) on a full chart: 15-minute to daily candles, drawing tools and alerts. Index data, delayed up to 15 minutes. It is here to read — nothing on Pantessa trades an index.`
   } else if (pair.source === 'robinhood') {
     title = `${symbol} 24/7 — trade ${name} on Robinhood Chain | Pantessa Markets`
     description = `Live ${symbol} chart from ${FEED_LINE.robinhood}. Buy or sell ${name} from the chart — guarded transactions, signed only by your wallet. Unlimited watchlists and alerts, free.`
@@ -98,7 +107,7 @@ export function symbolPageSeo(symbolRaw: string): SymbolSeo {
       { '@type': 'ListItem', position: 2, name: symbol, item: canonical },
     ],
   }
-  const dataset = pair
+  const dataset = pair && pair.source !== 'index'
     ? {
         '@context': 'https://schema.org',
         '@type': 'Dataset',
@@ -123,7 +132,7 @@ export function symbolPageSeo(symbolRaw: string): SymbolSeo {
     title,
     description,
     canonical,
-    ogAlt: pair ? `${symbol} live chart — ${name} on Pantessa Markets` : `${symbol} on Pantessa Markets`,
+    ogAlt: pair ? (pair.source === 'index' ? `${symbol} chart — ${name} on Pantessa Markets` : `${symbol} live chart — ${name} on Pantessa Markets`) : `${symbol} on Pantessa Markets`,
     jsonLd: JSON.stringify(dataset ? [dataset, crumbs] : [crumbs]),
   }
 }

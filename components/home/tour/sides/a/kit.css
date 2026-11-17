@@ -1,0 +1,47 @@
+/* THE TOUR · SIDES-A's shared pieces (squad landing, 2026-11-10): the small
+   parts the Charts, Ask, Links and Earn miniatures have in common, so four
+   panels read as one hand. Rides the markets look and the ONE SCALE exactly
+   as components/home/read.css does: no literal colour, no px font size, no
+   px radius. Every miniature root is its own size container (`ta`), so a
+   panel answers to the frame it is given and never to the viewport. */
+
+.ta { container-type: inline-size; container-name: ta; display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; font-family: var(--mk-font-ui); color: var(--fg); }
+.ta .is-up { --ta-tone: var(--mk-up, var(--accent)); }
+.ta .is-down { --ta-tone: var(--mk-down, var(--sell)); }
+.ta .is-flat { --ta-tone: var(--muted); }
+
+/* The small caps line over a part. */
+.ta-eyebrow { margin: 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.ta-note { margin: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--muted); }
+.ta-rule { height: 1px; margin: 0; border: 0; background: var(--line); }
+
+/* A specimen says it is one. */
+.ta-tag { display: inline-flex; align-items: center; height: 18px; padding: 0 var(--sp-2); border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent); border-radius: var(--r-sm); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); white-space: nowrap; }
+
+/* A segmented choice. */
+.ta-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--r-pill); max-width: 100%; }
+.ta-seg__opt { min-width: 44px; height: 28px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-pill); background: transparent; color: var(--muted); font-size: var(--fs-sm); letter-spacing: 0.02em; white-space: nowrap; cursor: pointer; outline: none; transition: color var(--dur-1) ease, background var(--dur-1) ease; }
+.ta-seg__opt:hover { color: var(--fg); }
+.ta-seg__opt:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.ta-seg__opt.is-on { background: var(--fg); color: var(--bg); font-weight: 600; }
+
+/* A labelled control: the label rides the left of its choice. */
+.ta-field { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
+
+/* The one button that runs a sentence. */
+.ta-run { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 40px; padding: 0 var(--sp-4); border: 1px solid var(--accent); border-radius: var(--r-pill); background: var(--accent); color: var(--ink, var(--bg)); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; white-space: nowrap; cursor: pointer; outline: none; transition: background var(--dur-1) ease; }
+.ta-run:hover { background: color-mix(in srgb, var(--accent) 86%, var(--fg)); }
+.ta-run:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+
+/* A quiet door inside a miniature. */
+.ta-door { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 32px; font-size: var(--fs-md); font-weight: 600; color: var(--fg); text-decoration: none; outline: none; white-space: nowrap; transition: color var(--dur-1) ease; }
+.ta-door span { color: var(--accent); }
+.ta-door:hover, .ta-door:focus-visible { color: var(--accent); }
+
+@media (pointer: coarse) {
+  .ta-seg__opt { height: 44px; min-width: 52px; }
+  .ta-run, .ta-door { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ta-seg__opt, .ta-run, .ta-door { transition: none; }
+}

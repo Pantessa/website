@@ -245,7 +245,16 @@ export default function TechnicalsTab({
     )
   }
 
-  const feedNote = data?.feed === 'yahoo' ? "Yahoo Finance's tape (Robinhood's feed is down)" : data?.source === 'robinhood' ? "Robinhood's 24/7 tape" : data?.feedLabel ? `${data.feedLabel}'s tape` : 'our own tape'
+  const feedNote =
+    data?.source === 'index'
+      ? 'delayed index data'
+      : data?.feed === 'yahoo'
+        ? "Yahoo Finance's tape (Robinhood's feed is down)"
+        : data?.source === 'robinhood'
+          ? "Robinhood's 24/7 tape"
+          : data?.feedLabel
+            ? `${data.feedLabel}'s tape`
+            : 'our own tape'
 
   return (
     <section className="mx-auto w-full max-w-5xl px-4 pb-10 pt-4" data-technicals={sym} data-tf={tf}>
@@ -291,9 +300,10 @@ export default function TechnicalsTab({
         <div className="order-1 md:order-2">
           <RatingGauge title="Summary" gauge={data?.summary ?? null} size="lg" loading={loading} />
           {data && <VerdictChips chips={data.chips} onAsk={onAsk} />}
+          {/* The caption belongs to the chips: a verdict that carries none (a look-only index) says what it is instead. */}
           {data && (
             <p className="mono mt-2 text-center text-[9.5px] uppercase tracking-[0.14em] text-[color:var(--muted-2)]">
-              {onAsk ? 'sends the ask · your wallet signs' : 'prefills chat · you send it'}
+              {data.chips.length === 0 && pair.source === 'index' ? 'a reading · nothing here trades an index' : onAsk ? 'sends the ask · your wallet signs' : 'prefills chat · you send it'}
             </p>
           )}
         </div>
@@ -322,7 +332,8 @@ export default function TechnicalsTab({
       {/* Fundamentals (DefiLlama) — crypto only: a tokenized stock's chart is
           its tape, not a TVL curve. Independent of the technicals read, so a
           short tape still gets its fundamentals. */}
-      {pair.source !== 'robinhood' && <Fundamentals symbol={sym} />}
+      {/* …and not an index either: it has no protocol to measure. */}
+      {pair.source !== 'index' && pair.source !== 'robinhood' && <Fundamentals symbol={sym} />}
     </section>
   )
 }

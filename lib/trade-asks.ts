@@ -4,8 +4,9 @@
 // contract), and the default chip row. Shared by the Trade panel, the symbol
 // page's header strip, the site-wide ask door and the harness.
 
-import type { ChartPair } from '@/lib/charts'
+import { isChartOnlyPair, isHip3Pair, type ChartPair } from '@/lib/charts'
 import { tokenHome } from '@/lib/token-home'
+import { autoSellLive } from '@/lib/autopilot-live'
 
 // No DCA side (2026-09-16, Nate): a recurring buy in confirm mode only
 // reminds the wallet to sign each period, so no chart surface offers one.
@@ -49,10 +50,18 @@ export const STOPS = [5, 10, 15] as const
  *  answers with the Hyperliquid door) and drop the protect chip that could
  *  only ever guard a Base squat (lib/token-home). */
 export function sidesFor(pair: ChartPair): TradeSide[] {
+  // A builder-dex perp the order layer does not build on charts here and takes no order (lib/charts isChartOnlyPair).
+  if (isChartOnlyPair(pair)) return []
+  // One it DOES build on (`xyz:SP500`, lib/hl-dex): long and short. No protect — the Guardian's
+  // watcher reads the main book's ledger only, so it could never see the position.
+  if (isHip3Pair(pair)) return ['buy', 'sell']
   if (pair.source === 'robinhood') return ['buy', 'sell']
   if (pair.source === 'hyperliquid') return ['buy', 'sell', 'protect']
+  // A look-only index (US10Y, VIX…): nothing listed here trades it, so it offers no side (lib/charts isLookOnlyPair).
+  if (pair.source === 'index') return []
   if (tokenHome(pair.symbol)) return ['buy', 'sell']
-  return ['buy', 'sell', 'protect']
+  // A coin's protect is the Spot Guardian: only while it can be armed (lib/autopilot-live).
+  return autoSellLive() ? ['buy', 'sell', 'protect'] : ['buy', 'sell']
 }
 
 /** Compose the sentence for a side. Every string here is a parser's own
@@ -114,14 +123,20 @@ import { hasAaveReserveCold, hasPerpCold } from '@/lib/symbol-venues'
  *  Sell · Long · Short (if the venue lists a perp) · Stake (ETH) · Supply
  *  (Aave reserve) · Protect. */
 export function execSidesFor(pair: ChartPair): ExecSide[] {
+  // A builder-dex perp the order layer does not build on: no side, so no strip, no ticket, no suggestion.
+  if (isChartOnlyPair(pair)) return []
+  // One it builds on: Long · Short. No Protect (the Guardian watches the main book only).
+  if (isHip3Pair(pair)) return ['long', 'short']
   if (pair.source === 'robinhood') return ['buy', 'sell']
   if (pair.source === 'hyperliquid') return ['long', 'short', 'protect']
+  // A look-only index: no side, so no strip, no ticket, no suggestion.
+  if (pair.source === 'index') return []
   if (tokenHome(pair.symbol)) return ['long', 'short']
   const out: ExecSide[] = ['buy', 'sell']
   if (hasPerpCold(pair.symbol)) out.push('long', 'short')
   if (pair.symbol === 'ETH') out.push('stake')
   if (hasAaveReserveCold(pair.symbol)) out.push('supply')
-  out.push('protect')
+  if (autoSellLive()) out.push('protect')
   return out
 }
 

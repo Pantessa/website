@@ -12,7 +12,7 @@ import ViaTracker from '@/components/ViaTracker'
 import JourneyTracker from '@/components/JourneyTracker'
 import PhoneShellMount from '@/components/mobile/PhoneShellMount'
 import { THEME_COLORS } from '@/lib/phone-shell'
-import { Analytics } from "@vercel/analytics/next"
+import SiteAnalytics from '@/components/SiteAnalytics'
 
 
 // Matches the SITE convention used by robots.ts / sitemap.ts / blog.
@@ -141,7 +141,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </Providers>
         {/* Vercel Analytics only ships events when deployed on Vercel; mounting
             it in dev just logs "Failed to fetch" against the missing endpoint. */}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        {process.env.NODE_ENV === 'production' && <SiteAnalytics />}
       </body>
     </html>
   )

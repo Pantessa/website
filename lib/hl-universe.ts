@@ -13,6 +13,7 @@
 // readTapeUniverse reads for the live tape, which primes these caches from
 // its own answer (primeHlUniverse) so a browser on /live never pays twice.
 import type { HlUniverse } from '@/lib/hl-guardian-fence'
+import { HL_BUILDER_DEX_NAMES } from '@/lib/hl-dex'
 
 const HL_INFO_URL = 'https://api.hyperliquid.xyz/info'
 const TTL_MS = 10 * 60_000
@@ -111,6 +112,44 @@ export async function hlPerpUniverse(dex: HlDex = 'main'): Promise<HlUniverse | 
 export async function hlUniverses(): Promise<Record<HlDex, HlUniverse | null>> {
   const [main, xyz] = await Promise.all([hlPerpUniverse('main'), hlPerpUniverse('xyz')])
   return { main, xyz }
+}
+
+/** What lib/hl-dex resolveHlCoin reads: the main book's listed coins and each
+ *  ORDERABLE builder dex's (the registry in lib/hl-dex). `complete` is false
+ *  while any of those reads is missing — a coin that resolves nowhere is then
+ *  "not looked up yet", never "not a Hyperliquid perp". */
+export interface HlOrderListings {
+  main: ReadonlySet<string> | null
+  dexes: Record<string, ReadonlySet<string> | null>
+  complete: boolean
+}
+
+const isCachedDex = (dex: string): dex is HlDex => (HL_DEXES as readonly string[]).includes(dex)
+
+function orderListingsFrom(read: (dex: HlDex) => HlUniverse | null): HlOrderListings {
+  const main = read('main')?.listed ?? null
+  const dexes: Record<string, ReadonlySet<string> | null> = {}
+  let complete = main !== null
+  for (const dex of HL_BUILDER_DEX_NAMES) {
+    // A registry dex this cache does not read yet stays unread (never guessed).
+    const listed = isCachedDex(dex) ? (read(dex)?.listed ?? null) : null
+    dexes[dex] = listed
+    if (!listed) complete = false
+  }
+  return { main, dexes, complete }
+}
+
+/** The order layer's listings, from the cached universes (one read per dex per
+ *  10 min, as above). Never throws. */
+export async function hlOrderListings(): Promise<HlOrderListings> {
+  const universes = await hlUniverses()
+  return orderListingsFrom((dex) => universes[dex])
+}
+
+/** The same from whatever is cached right now — sync, for pure-ish callers
+ *  (the jobs compiler, a client gate). */
+export function hlOrderListingsCached(): HlOrderListings {
+  return orderListingsFrom((dex) => hlPerpUniverseCached(dex))
 }
 
 /** Test seam: forget every dex's cache and backoff (the harness primes a

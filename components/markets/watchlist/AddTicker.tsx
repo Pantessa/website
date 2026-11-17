@@ -10,7 +10,7 @@ import { Plus, Search } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import { searchTickers, type TickerHit } from '@/lib/watchlists'
 
-const KIND_LABEL: Record<TickerHit['kind'], string> = { stock: 'Robinhood Chain · 24/7', coin: 'Coinbase spot', perp: 'HL perp' }
+const KIND_LABEL: Record<TickerHit['kind'], string> = { stock: 'Robinhood Chain · 24/7', coin: 'Coinbase spot', perp: 'HL perp', index: 'Index · delayed' }
 
 export default function AddTicker({
   onAdd,

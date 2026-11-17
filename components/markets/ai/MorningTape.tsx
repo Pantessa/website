@@ -19,6 +19,7 @@ import { TAPE_FOOTNOTE } from '@/lib/markets-copy'
 import { firstSentenceOf, tapeSymbols, type AiChip, type BriefEvent } from '@/lib/markets-ai'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
+import { useHumanInput } from '@/lib/human-input'
 import '../ai.css'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import { useTradable } from '@/lib/use-tradable'
@@ -40,6 +41,7 @@ export default function MorningTape({ symbols: symbolsProp, onAsk, title = 'Morn
   // The tape's chips span symbols; each Sell shows only while the connected
   // wallet holds that symbol (lib/sell-gate reads it from the sentence).
   const held = useHeld()
+  const human = useHumanInput()
   const tradable = useTradable()
   const shown = useMemo(() => chips.filter((c) => canSellAsk(c.ask, held) && canTradeAsk(c.ask, tradable)), [chips, held, tradable])
   const [meta, setMeta] = useState<{ cached: boolean; model: string; feed: string | null } | null>(null)
@@ -74,6 +76,8 @@ export default function MorningTape({ symbols: symbolsProp, onAsk, title = 'Morn
       setChips([])
       return
     }
+    // The model writes for a person (lib/human-input): wait for a hand.
+    if (!human) return
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
@@ -121,7 +125,7 @@ export default function MorningTape({ symbols: symbolsProp, onAsk, title = 'Morn
       }
     })()
     return () => ctrl.abort()
-  }, [key, nonce])
+  }, [key, nonce, human])
 
   if (!key) return null
   const streaming = phase === 'streaming'

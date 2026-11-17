@@ -8,6 +8,15 @@ import { LINK_FEE_PCT } from '@/lib/fees'
 import { HOME_DESCRIPTION, HOME_TITLE } from '@/lib/markets-copy'
 import { readTradability } from '@/lib/tradability-store'
 import { readTrending } from '@/app/markets/trending'
+import { readSnapshotForRender } from '@/lib/read-server'
+import { readTourSnapshotForRender } from '@/lib/home-tour-server'
+import { HOME_MODE_BOOTSTRAP } from '@/lib/home-mode'
+import HlPerpsPrime from '@/components/markets/shell/HlPerpsPrime'
+import { HL_PERPS_HANDOFF_GLOBAL, liveHlPerpNames } from '@/lib/charts'
+import CalledShelf from '@/components/home/CalledShelf'
+import { readCalledShelf } from '@/app/x/_lib/home-shelf'
+import SuggestionsBoard from '@/components/home/SuggestionsBoard'
+import { readSuggestions } from '@/lib/suggestions-server'
 
 // `/` — THE FRONT DOOR IS THE APP (squad front-door, 2026-10-06, Nate: "the
 // landing page falls a bit flat and our new live page feels more alive …
@@ -15,11 +24,11 @@ import { readTrending } from '@/app/markets/trending'
 // combine the live feed with the markets page as the splash page").
 //
 // The splash is the markets index in the app shell (the spine on the left,
-// the watchlist rail on the right, the phone frame below lg) with the live
-// pulse on top of the main column — the venue's fills aggregated into a
-// calm band, every number a button (components/home/PulseSlot) — and the
-// guide that teaches links, jobs, the wallet and the AI door as the visitor
-// moves (components/guide/GuideSeat). Looking needs no wallet (lib/app-entry
+// the watchlist rail on the right, the phone frame below lg) with THE READ
+// on top of the main column (2026-11-09, components/home/TheRead + lib/read):
+// the market as one sentence whose clauses are buttons, a macro line of nine
+// tiles and the chart of the pick. The snapshot behind it is read HERE, so
+// the headline is in the server HTML. Looking needs no wallet (lib/app-entry
 // isPublicAppPath: `/` is a markets path); the wallet is asked for at the
 // action (lib/use-connect-to-act). /markets redirects here (next.config);
 // the brochure that used to be `/` is /story.
@@ -91,16 +100,47 @@ export default async function HomePage() {
   // Both reads are fail-soft and cached per server: the strip, and which
   // rows can actually be acted on (lib/tradability-store — an empty answer
   // offers everything).
-  const [trending, tradable] = await Promise.all([readTrending(), readTradability()])
+  // …and the read's snapshot (lib/read-server readSnapshotForRender: through
+  // the data cache so this page stays ISR, fail-soft per feed, capped in
+  // time, never a throw — an empty one renders "Reading the markets" and the
+  // browser fills it).
+  // …and THE TOUR's snapshot (squad landing, 2026-11-10; lib/home-tour-server:
+  // counts and fees from the registries, the live part through the data
+  // cache — the same ISR rule as the read's).
+  // …and the Called it shelf (2026-11-16, app/x/_lib/home-shelf): three
+  // featured records, capped in time, never a throw; none → no shelf.
+  // …and the suggestions (2026-11-17, lib/suggestions-server): open and closed
+  // GitHub issues on the repo through the data cache, capped in time.
+  const [trending, tradable, read, tour, called, suggestions] = await Promise.all([readTrending(), readTradability(), readSnapshotForRender(), readTourSnapshotForRender(), readCalledShelf(), readSuggestions()])
+  // THE VENUE'S LIVE TABLE, HANDED DOWN (2026-11-10). The Macro board lists
+  // Hyperliquid builder markets only the venue's live universe knows (SP500,
+  // GOLD, SILVER, CL, NATGAS, EUR, JPY, TLT). A server that has read the
+  // universe once resolves them and draws their Long / Short chips; a browser's
+  // table is cold, so its first render drew none — React threw #418 on `/` and
+  // re-rendered the whole page on the client (measured on prod and on a warm
+  // local server: eight rows' chips in the HTML, none in the browser). The
+  // symbol page already hands the names down (app/t/[symbol]/page.tsx); the
+  // home now does the same: an inline script the browser runs at parse time,
+  // and HlPerpsPrime for a soft navigation. Synchronous (the process's own
+  // table; null on a cold server, where neither side draws the chips), so the
+  // page stays static.
+  const hlPerps = liveHlPerpNames()
+  const hlHandoff = hlPerps ? `window.${HL_PERPS_HANDOFF_GLOBAL}=${JSON.stringify(hlPerps).replace(/</g, '\\u003c')}` : null
   return (
     <>
+      {hlHandoff && <script dangerouslySetInnerHTML={{ __html: hlHandoff }} />}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
-      <MarketsShell>
-        <HomeSurface trending={trending} tradable={tradable} />
-        <div className="mkt-frame__foot">
-          <Footer />
-        </div>
-      </MarketsShell>
+      {/* The home's posture, before first paint (lib/home-mode): a returning
+          visitor's page is folded by CSS before a pixel is drawn. */}
+      <script dangerouslySetInnerHTML={{ __html: HOME_MODE_BOOTSTRAP }} />
+      <HlPerpsPrime hlPerps={hlPerps}>
+        <MarketsShell>
+          <HomeSurface trending={trending} tradable={tradable} read={read} tour={tour} called={called.summaries.length ? <CalledShelf data={called} /> : undefined} suggest={<SuggestionsBoard data={suggestions} />} />
+          <div className="mkt-frame__foot">
+            <Footer />
+          </div>
+        </MarketsShell>
+      </HlPerpsPrime>
     </>
   )
 }

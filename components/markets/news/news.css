@@ -1,0 +1,337 @@
+/* The News tab as a front page (2026-11-17). Prefix `gaz` (checked against
+   every stylesheet in the repo; Next's CSS is global once a chunk loads).
+
+   Flat on purpose: no cards, no fills. A newspaper is rules and type, so the
+   page is the site's own surface, hairline column rules, Fraunces for every
+   headline (upright, one colour), mono for kickers and datelines. All sizes
+   key off the tab's OWN width (container `gaz`), because the tab sits beside
+   a rail on some postures and alone on others. */
+
+.gaz {
+  container: gaz / inline-size;
+  --gaz-serif: 'Fraunces', 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --gaz-mono: 'Geist Mono', ui-monospace, monospace;
+  --gaz-gut: 28px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ── Masthead ── */
+.gaz__mast {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 6px 20px;
+  padding: 4px 0 14px;
+  border-bottom: 4px double color-mix(in oklch, var(--fg) 62%, transparent);
+}
+.gaz__dateline,
+.gaz__via,
+.gaz__strip {
+  font-family: var(--gaz-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.gaz__dateline { margin: 0 0 5px; }
+.gaz__name {
+  margin: 0;
+  font-family: var(--gaz-serif);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: clamp(25px, 3.5cqi, 46px);
+  line-height: 1;
+  letter-spacing: -0.024em;
+  color: var(--fg);
+  text-align: center;
+  text-wrap: balance;
+}
+.gaz__ed { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; margin-bottom: 1px; }
+.gaz__via { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gaz__refresh {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px;
+  font-size: 11.5px; color: var(--muted); background: transparent; white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.gaz__refresh svg { width: 12px; height: 12px; }
+.gaz__refresh:hover:not(:disabled) { color: var(--fg); border-color: var(--line-2); }
+.gaz__refresh:disabled { opacity: 0.55; cursor: default; }
+.gaz__spin { animation: gaz-spin 0.9s linear infinite; }
+@keyframes gaz-spin { to { transform: rotate(360deg); } }
+
+.gaz__strip {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap;
+  padding: 8px 0; border-bottom: 1px solid var(--line);
+}
+.gaz__stripvia { display: none; }
+.gaz__marks { display: inline-flex; align-items: center; gap: 10px; color: var(--accent); }
+.gaz__tochart {
+  display: inline-flex; align-items: center; gap: 4px;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--fg);
+  background: transparent; border: 0; padding: 0; cursor: pointer;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
+  text-decoration-color: var(--line-2);
+}
+.gaz__tochart:hover { text-decoration-color: var(--fg); }
+.gaz__tochart svg { width: 11px; height: 11px; }
+
+.gaz > .mkc__err,
+.gaz > .mkc__empty { margin-top: 20px; }
+
+/* ── Section label: a short heavy bar sitting on a hairline ── */
+.gaz__label {
+  margin: 0;
+  border-top: 1px solid var(--line-2);
+  font-family: var(--gaz-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+.gaz__label span { display: inline-block; margin-top: -1px; padding-top: 9px; border-top: 2px solid var(--fg); }
+.gaz__sec { margin-top: 40px; }
+
+/* ── A story, in any seat ── */
+.gaz__story { position: relative; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.gaz__text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gaz__kicker {
+  margin: 0; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0;
+  font-family: var(--gaz-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted-2);
+}
+.gaz__src { color: var(--muted); }
+.gaz__story.is-on .gaz__src { color: var(--accent); }
+.gaz__hed {
+  margin: 0;
+  font-family: var(--gaz-serif);
+  font-optical-sizing: auto;
+  font-weight: 560;
+  font-size: 17.5px;
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+  color: var(--fg);
+  text-wrap: balance;
+}
+.gaz__link { color: inherit; text-decoration: none; }
+/* The whole story is the link: the headline's anchor is stretched over it. */
+.gaz__link::after { content: ''; position: absolute; inset: 0; z-index: 1; }
+.gaz__link:focus-visible { outline: none; }
+.gaz__story:has(.gaz__link:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+.gaz__out { display: inline; width: 0.62em; height: 0.62em; margin-left: 0.22em; color: var(--muted); opacity: 0; transition: opacity .15s; }
+.gaz__deck {
+  margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); text-wrap: pretty;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+}
+@media (hover: hover) {
+  .gaz__story:hover .gaz__link {
+    text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.16em;
+    text-decoration-color: color-mix(in oklch, var(--fg) 50%, transparent);
+  }
+  .gaz__story:hover .gaz__out { opacity: 0.85; }
+  .gaz__story:hover .gaz__img { transform: scale(1.03); }
+}
+
+.gaz__foot { display: flex; align-items: center; gap: 10px; min-height: 26px; margin-top: 3px; }
+.gaz__since { font-family: var(--gaz-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
+.gaz__since b { font-weight: 500; color: var(--muted); }
+.gaz__since.is-up b { color: var(--accent); }
+.gaz__since.is-down b { color: var(--sell); }
+.gaz__pin {
+  position: relative; z-index: 2; margin-left: auto; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px;
+  font-family: var(--gaz-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-2); background: var(--bg); white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.gaz__pin svg { width: 11px; height: 11px; }
+.gaz__pin:hover { color: var(--fg); border-color: var(--line-2); }
+.gaz__pin.is-on { color: var(--accent); border-color: var(--accent); }
+
+/* ── Pictures ── */
+.gaz__fig { position: relative; overflow: hidden; border-radius: 3px; aspect-ratio: 16 / 9; background: var(--surf-1); flex-shrink: 0; }
+.gaz__img { object-fit: cover; transition: transform .6s cubic-bezier(.2, .7, .2, 1); }
+
+/* The plate: the symbol's tape around the story, for a lead with no picture. */
+.gaz__fig--plate { background: transparent; border: 1px solid var(--line); display: grid; place-items: center; }
+.gaz__plate { position: absolute; inset: 0; }
+.gaz__plate svg { display: block; width: 100%; height: 100%; }
+.gaz__plateline { fill: none; stroke: var(--muted-2); stroke-width: 1.25; opacity: 0.6; }
+.gaz__platetail { fill: none; stroke: var(--muted); stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; }
+.gaz__platearea { fill: color-mix(in oklch, var(--muted) 9%, transparent); }
+.gaz__plate.is-up .gaz__platetail { stroke: var(--accent); }
+.gaz__plate.is-up .gaz__platearea { fill: color-mix(in oklch, var(--accent) 11%, transparent); }
+.gaz__plate.is-down .gaz__platetail { stroke: var(--sell); }
+.gaz__plate.is-down .gaz__platearea { fill: color-mix(in oklch, var(--sell) 11%, transparent); }
+.gaz__platemark { stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.gaz__platedot { position: absolute; width: 9px; height: 9px; border-radius: 50%; background: var(--fg); transform: translate(-50%, -50%); box-shadow: 0 0 0 3px var(--bg); }
+.gaz__platecap {
+  position: absolute; left: 10px; top: 8px; right: 10px;
+  font-family: var(--gaz-mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* ── The front: lead, seconds, in brief ── */
+.gaz__front { display: grid; grid-template-columns: minmax(0, 1fr); margin-top: 22px; }
+.gaz__leadcol, .gaz__seconds, .gaz__briefs { min-width: 0; }
+
+.gaz__story--lead { gap: 18px; }
+.gaz__story--lead .gaz__text { gap: 10px; }
+.gaz__story--lead .gaz__fig--plate { aspect-ratio: 5 / 2; }
+.gaz__story--lead .gaz__kicker { font-size: 11px; }
+.gaz__story--lead .gaz__hed { font-weight: 600; font-size: clamp(27px, 3.3cqi, 46px); line-height: 1.06; letter-spacing: -0.024em; }
+.gaz__story--lead .gaz__deck { font-size: clamp(15px, 1.25cqi, 18px); line-height: 1.5; max-width: 64ch; color: color-mix(in oklch, var(--fg) 72%, var(--muted)); -webkit-line-clamp: 5; }
+.gaz__story--lead .gaz__foot { margin-top: 6px; }
+
+.gaz__seconds { display: flex; flex-direction: column; }
+.gaz__seconds > * + * { margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
+.gaz__story--second .gaz__hed { font-size: clamp(18px, 1.55cqi, 23px); line-height: 1.16; letter-spacing: -0.016em; }
+
+.gaz__brieflist { display: flex; flex-direction: column; }
+.gaz__story--brief { padding: 15px 0 13px; }
+.gaz__story--brief + .gaz__story--brief { border-top: 1px solid var(--line); }
+.gaz__story--brief .gaz__hed { font-size: 16.5px; line-height: 1.24; }
+.gaz__story--brief .gaz__deck { font-size: 13px; }
+/* In brief is type only, except where it runs across under the lead. */
+.gaz__story--brief .gaz__fig { display: none; }
+
+/* Icon-only pin where the column is narrow: in brief, the archive, and every
+   row of a one-column page (the labelled pill stays on the lead). */
+.gaz__story:not(.gaz__story--lead) .gaz__pinlabel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.gaz__story:not(.gaz__story--lead) .gaz__pin { padding: 0; width: 26px; height: 26px; }
+.gaz__story:not(.gaz__story--lead) .gaz__pin svg { width: 12px; height: 12px; }
+
+/* Phone and narrow column: one column, the seconds as rows with the picture on the right. */
+.gaz__seconds { margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
+.gaz__briefs { margin-top: 28px; }
+.gaz__story--second,
+.gaz__story--feature { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 14px; align-items: start; }
+.gaz__story--second:not(.has-fig),
+.gaz__story--feature:not(.has-fig) { grid-template-columns: minmax(0, 1fr); }
+.gaz__story--second .gaz__fig,
+.gaz__story--feature .gaz__fig { order: 2; aspect-ratio: 4 / 3; }
+.gaz__story--second .gaz__deck,
+.gaz__story--feature .gaz__deck { display: none; }
+
+@container gaz (min-width: 720px) {
+  .gaz__front[data-cols='2'],
+  .gaz__front[data-cols='3'] { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); grid-template-areas: 'lead seconds' 'briefs briefs'; }
+  .gaz__leadcol { grid-area: lead; }
+  .gaz__front[data-cols='1'] .gaz__leadcol { grid-area: auto; max-width: 980px; }
+  .gaz__front:not([data-cols='1']) .gaz__leadcol { padding-right: var(--gaz-gut); border-right: 1px solid var(--line); }
+  .gaz__seconds { grid-area: seconds; margin-top: 0; padding-top: 0; border-top: 0; padding-left: var(--gaz-gut); }
+  .gaz__briefs { grid-area: briefs; margin-top: 32px; }
+  .gaz__story--second { display: flex; align-items: stretch; }
+  .gaz__story.gaz__story--second .gaz__pinlabel { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+  .gaz__story.gaz__story--second .gaz__pin { padding: 4px 9px; width: auto; height: auto; }
+  .gaz__story.gaz__story--second .gaz__pin svg { width: 11px; height: 11px; }
+  .gaz__story--second .gaz__fig { order: 0; aspect-ratio: 16 / 9; }
+  .gaz__story--second .gaz__deck { display: -webkit-box; }
+  /* In brief runs across, under the lead, as ruled columns. */
+  .gaz__brieflist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: calc(var(--gaz-gut) * 2); overflow: hidden; }
+  .gaz__story--brief + .gaz__story--brief { border-top: 0; }
+  .gaz__story--brief .gaz__fig { display: block; }
+  .gaz__story--brief::before { content: ''; position: absolute; top: 15px; bottom: 13px; left: calc(var(--gaz-gut) * -1); width: 1px; background: var(--line); }
+  .gaz__story--brief:nth-child(n + 3) { border-top: 1px solid var(--line); }
+}
+@container gaz (min-width: 960px) {
+  .gaz__brieflist { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .gaz__story--brief:nth-child(n + 3) { border-top: 0; }
+}
+/* Wide: the classic three columns. In brief | the lead | the seconds. */
+@container gaz (min-width: 1180px) {
+  .gaz__front[data-cols='3'] { grid-template-columns: minmax(0, 1fr) minmax(0, 2.15fr) minmax(0, 1.08fr); grid-template-areas: 'briefs lead seconds'; }
+  .gaz__front[data-cols='3'] .gaz__leadcol { padding-inline: var(--gaz-gut); border-inline: 1px solid var(--line); }
+  .gaz__front[data-cols='3'] .gaz__briefs { margin-top: 0; padding-right: var(--gaz-gut); }
+  .gaz__front[data-cols='3'] .gaz__brieflist { display: flex; overflow: visible; }
+  .gaz__front[data-cols='3'] .gaz__story--brief::before { content: none; }
+  /* The side column is type only: the pictures belong to the lead and the seconds. */
+  .gaz__front[data-cols='3'] .gaz__story--brief .gaz__fig { display: none; }
+  .gaz__front[data-cols='3'] .gaz__story--brief + .gaz__story--brief { border-top: 1px solid var(--line); }
+  .gaz__front[data-cols='3'] .gaz__story--brief .gaz__deck { -webkit-line-clamp: 4; }
+}
+
+/* ── More headlines: the picture grid, ruled ── */
+.gaz__grid { display: grid; grid-template-columns: minmax(0, 1fr); overflow: hidden; }
+.gaz__story--feature { padding: 16px 0; }
+.gaz__story--feature + .gaz__story--feature { border-top: 1px solid var(--line); }
+@container gaz (min-width: 560px) {
+  .gaz__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: calc(var(--gaz-gut) * 1.5); }
+  .gaz__story--feature { display: flex; align-items: stretch; padding: 22px 0 20px; }
+  .gaz__story.gaz__story--feature .gaz__pinlabel { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+  .gaz__story.gaz__story--feature .gaz__pin { padding: 4px 9px; width: auto; height: auto; }
+  .gaz__story.gaz__story--feature .gaz__pin svg { width: 11px; height: 11px; }
+  .gaz__story--feature + .gaz__story--feature { border-top: 0; }
+  .gaz__story--feature .gaz__fig { order: 0; aspect-ratio: 16 / 10; }
+  .gaz__story--feature .gaz__deck { display: -webkit-box; -webkit-line-clamp: 2; font-size: 13px; }
+  /* Column rule in the gutter (the first column's is clipped by the grid),
+     row rule one pixel above the cell (the first row's is clipped too). */
+  .gaz__story--feature::before { content: ''; position: absolute; top: 22px; bottom: 20px; left: calc(var(--gaz-gut) * -0.75); width: 1px; background: var(--line); }
+  .gaz__story--feature::after { content: ''; position: absolute; top: -1px; left: calc(var(--gaz-gut) * -1.5); right: calc(var(--gaz-gut) * -1.5); height: 1px; background: var(--line); }
+}
+@container gaz (min-width: 860px) {
+  .gaz__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container gaz (min-width: 1180px) {
+  .gaz__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* ── Earlier: the archive, in newspaper columns ── */
+.gaz__archive { columns: 1; column-gap: calc(var(--gaz-gut) * 2); column-rule: 1px solid var(--line); }
+.gaz__story--archive {
+  break-inside: avoid;
+  display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 14px; align-items: start;
+  padding: 14px 0 12px; border-bottom: 1px solid var(--line);
+}
+.gaz__story--archive:not(.has-fig) { grid-template-columns: minmax(0, 1fr); }
+.gaz__story--archive .gaz__fig { aspect-ratio: 1; }
+.gaz__story--archive .gaz__hed { font-size: 15.5px; line-height: 1.26; font-weight: 540; }
+.gaz__story--archive .gaz__deck { font-size: 12.5px; -webkit-line-clamp: 2; color: var(--muted-2); }
+/* With a mouse the archive's pin rides the kicker's line, top right. */
+@media (hover: hover) {
+  .gaz__story--archive .gaz__foot { position: absolute; top: 8px; right: 0; margin: 0; min-height: 0; }
+  .gaz__story--archive .gaz__kicker { padding-right: 34px; }
+}
+@container gaz (min-width: 720px) { .gaz__archive { columns: 2; } }
+@container gaz (min-width: 1180px) { .gaz__archive { columns: 3; } }
+
+/* ── Pinned by the community ── */
+.gaz__community { display: flex; flex-direction: column; gap: 14px; }
+.gaz__community .gaz__archive { margin-top: -8px; }
+
+/* ── Loading: the page's own shape, empty ── */
+.gaz__bone { border-radius: 3px; background: var(--surf-1); animation: gaz-pulse 1.4s ease-in-out infinite; }
+.gaz__bone--fig { aspect-ratio: 16 / 9; }
+.gaz__bone--hed { height: 30px; margin-top: 16px; }
+.gaz__bone--line { height: 13px; margin-top: 12px; }
+.gaz__bonebrief { padding: 6px 0 18px; }
+@keyframes gaz-pulse { 50% { opacity: 0.45; } }
+
+/* ── Under a thumb: 44px floors. An icon pin keeps its small ring and takes
+   the floor as a hit area around it, so a column of rows stays quiet. ── */
+@media (hover: none) {
+  .gaz__refresh { min-height: 44px; padding-inline: 14px; }
+  .gaz__tochart { min-height: 44px; }
+  .gaz__story--lead .gaz__pin { min-height: 44px; padding-inline: 14px; }
+  .gaz__story:not(.gaz__story--lead) .gaz__pin::after { content: ''; position: absolute; inset: -9px; }
+  .gaz__foot { min-height: 30px; }
+}
+
+/* ── Narrow masthead: the nameplate leads, flush left ── */
+@container gaz (max-width: 719px) {
+  .gaz__mast { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name name' 'date ed'; align-items: center; }
+  .gaz__name { grid-area: name; text-align: left; font-size: clamp(27px, 8cqi, 34px); margin-bottom: 4px; }
+  .gaz__dateline { grid-area: date; margin: 0; }
+  .gaz__ed { grid-area: ed; }
+  .gaz__via { display: none; }
+  .gaz__stripvia { display: inline; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gaz__img, .gaz__out, .gaz__pin, .gaz__refresh { transition: none; }
+  .gaz__spin, .gaz__bone { animation: none; }
+  .gaz__story:hover .gaz__img { transform: none; }
+}

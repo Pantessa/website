@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { CROSS_SITE_REFUSAL, sameOrigin, sameOriginJson } from '@/lib/community/origin'
 import prisma from '@/lib/db'
 import { getSessionAddress } from '@/lib/auth'
 import { parseChartState } from '@/lib/chart-state'
@@ -15,6 +16,8 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  // S7: our own page made this request (the identity cookie can be SameSite=None).
+  if (!sameOrigin(req.headers)) return NextResponse.json(CROSS_SITE_REFUSAL, { status: 403 })
   const caller = await getSessionAddress().catch(() => null)
   if (!caller) return NextResponse.json({ error: 'Sign in to mint this idea as a link.' }, { status: 401 })
   const { id } = await ctx.params

@@ -67,6 +67,8 @@ import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
+import PostProofDoor from '@/components/community/PostProofDoor'
+import { proofDoorHref } from '@/components/community/feed-rules'
 import { signedTxsOf } from '@/components/SignedTxLines'
 import XchainSettlement from '@/components/XchainSettlement'
 import { REFUNDED_KIND, reportWalletRefusal } from '@/lib/wallet-refusal'
@@ -75,6 +77,8 @@ import EmbedThisChat from '@/components/EmbedThisChat'
 import ChainPicker from '@/components/ChainPicker'
 import { chainById } from '@/lib/chains'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
+import { DockControls, DockEmpty, DockScope, DockShortcut } from '@/components/apps/Dock'
+import { askPlaceholder } from '@/lib/apps-page'
 import LinksWorkspace from '@/components/LinksWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
 import { claimJobStepReport, jobStepSignedInfo } from '@/lib/job-step-telemetry'
@@ -395,9 +399,17 @@ interface ChatInterfaceProps {
    *  page keeps ONE place to type. Every card, chip and connect door inside
    *  the thread still works. */
   docked?: boolean
+  /** Beside the apps page (components/apps, squad apps-page): this chat is
+   *  the dock in a column next to the page. The page IS the dashboard, so no
+   *  splash cards mint here and the empty state is the dock's own; the
+   *  toolbar names the apps the chat is scoped to and carries the dock's
+   *  expand / close controls. Everything else — the thread, every card, the
+   *  composer, the send path — is unchanged. First-party /chat only. */
+  beside?: 'apps'
 }
 
-export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin, embedSession, intentLinkSlug, simple = false, docked = false }: ChatInterfaceProps = {}) {
+export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin, embedSession, intentLinkSlug, simple = false, docked = false, beside }: ChatInterfaceProps = {}) {
+  const besideApps = beside === 'apps' && !embedded && !simple && !docked
   const {
     servers,
     setServers,
@@ -479,9 +491,14 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // with its apps (sendChip below); a single edited character makes it a
   // typed ask.
   const parkedAskRef = useRef<string | null>(null)
-  const parkAsk = (text: string) => {
+  // The apps the page that parked it asked for (2026-11-16: a symbol page's
+  // handoff names the venue that trades its symbol, lib/symbol-ask — a
+  // visitor with no wallet gets the ask parked, and it must not lose them).
+  const parkedAppsRef = useRef<string[]>([])
+  const parkAsk = (text: string, apps: readonly string[] = []) => {
     setInput(text)
     parkedAskRef.current = text.trim() || null
+    parkedAppsRef.current = [...apps]
   }
 
   // A rail row's action (a due recurring buy, a pause/cancel verb) lands in
@@ -594,6 +611,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // always gets a card (preview when there's no activity).
   const splashEligible =
     !simple &&
+    !besideApps &&
     !!effectiveAddress &&
     !autoRouter &&
     activeServers.some((s) => splashCapable(s) || manualSlugs.includes(s.slug))
@@ -621,7 +639,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
 
   // Simple mode has no splash surface at all — batches never mint, so the
   // link runtime stays a single focused thread (cards were "too much info").
-  const splashableServers = simple
+  const splashableServers = simple || besideApps
     ? []
     : activeServers.filter((s) => splashCapable(s) || manualSlugs.includes(s.slug))
   const splashableKey = splashableServers.map((s) => s.id).sort().join(',')
@@ -707,7 +725,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // orphan the header).
   const splashChromeBatchId = splashBatches.find((b) => splashCounts[b.id] !== 0)?.id
 
-  const renderSplashBatch = (b: SplashBatch, opts: { chrome: boolean; hint: boolean }) => (
+  const renderSplashBatch = (b: SplashBatch, opts: { chrome: boolean; hint: boolean }) => besideApps ? null : (
     <SplashDashboard
       key={b.id}
       address={effectiveAddress}
@@ -911,7 +929,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // and a guest turn fired here would race AppSpine's signed-out bounce.
     // The ask parks in the composer instead; nothing runs unasked.
     if (walletStatus === 'disconnected' || !effectiveAddress) {
-      parkAsk(arrival.text)
+      parkAsk(arrival.text, arrival.mcps)
       setArrival(null)
       return
     }
@@ -928,7 +946,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // nothing to call off, and the row retires itself after the reply lands.
   const dropArrival = () => {
     if (arrival) {
-      parkAsk(arrival.text)
+      parkAsk(arrival.text, arrival.mcps)
       textareaRef.current?.focus()
     }
     setArrival(null)
@@ -1932,7 +1950,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     if (text && text === parked && !loading && !pendingPayment) {
       parkedAskRef.current = null
       setInput('')
-      sendChip(text)
+      sendChip(text, parkedAppsRef.current)
       return
     }
     if (text && !loading && !pendingPayment) parkedAskRef.current = null
@@ -1979,6 +1997,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             breakpoint — the spine column owns them ≥lg and the bottom bar
             owns them below (the old chip row was the mobile header's
             horizontal-overflow bug: nine flex-shrink-0 items vs 375px). */}
+        {besideApps ? (
+          <DockScope servers={activeServers} />
+        ) : (
         <div className="flex-1 min-w-0 flex items-center">
           {/* Auto Router is DISABLED for now — the toggle is hidden and the
               feature behaves as if it never existed (forced off in the store);
@@ -2004,6 +2025,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             )
           )}
           </div>
+        )}
           {autoRouter && (
             <button
               onClick={() => setEngineWindowOpen(!engineWindowOpen)}
@@ -2021,14 +2043,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           )}
           {/* The Chat|App ModeToggle came off the toolbar (nav rethink,
               2026-07-17) — App Mode stays in-tree behind ?mode=app. */}
-          <ChainPicker />
+          {!besideApps && <ChainPicker />}
           {/* Embedding is a desk job — the control stays off the phone
               header (Share keeps its seat everywhere; sharing is mobile). */}
+          {!besideApps && (
           <div className="max-lg:hidden flex-shrink-0">
             <EmbedThisChat slugs={activeServers.map((s) => s.slug)} />
           </div>
+          )}
           <ShareButton />
-          {showAppChrome && (
+          {/* Beside the apps page the account pill lives on the page's row
+              (components/apps/AppsPage), so the dock's one-line header keeps
+              its room for the names it is scoped to. */}
+          {showAppChrome && !besideApps && (
             <div className="flex-shrink-0 pl-1">
               {/* The site's account door (SiteAccount): "Sign in" for a guest
                   — the brochure nav is gone on /chat for everyone, so this seat
@@ -2041,6 +2068,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <SiteAccount />
             </div>
           )}
+          {besideApps && <DockControls />}
+          {besideApps && <DockShortcut />}
         </div>
       )}
 
@@ -2149,7 +2178,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                 layout out from under the just-sent message (the "glitchy
                 scroll" report). Mid-conversation batches (anchor > 0) still
                 render inline with their message below. */}
-            {(splashEligible || splashBatches.length > 0) && (
+            {!besideApps && (splashEligible || splashBatches.length > 0) && (
               <>
                 {/* The batch effect hasn't committed yet (first paint after
                     connect / chat-load) — hold with the loader, same as a
@@ -2169,7 +2198,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               </>
             )}
             {!currentChat || currentChat.messages.length === 0 ? (
-              splashEligible || splashBatches.length > 0 ? (
+              besideApps ? (
+                // Beside the apps page the dashboard is the page: the dock's
+                // empty state says what the chat is for and offers the open
+                // apps' own asks.
+                <DockEmpty count={activeServers.length} onPick={runExample} phone={isNarrow} />
+              ) : splashEligible || splashBatches.length > 0 ? (
                 splashSettledEmpty ? (
                   <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} guestBannerPad={!embedded && !simple && sessionStatus === 'guest'} />
                 ) : null
@@ -2624,6 +2658,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         <div className="mt-2 pt-1.5 border-t border-[var(--line)] flex items-center gap-2">
                           <span className="text-[10.5px] mono text-[color:var(--muted-2)]">✍️ signed &amp; settled</span>
                           <ShareReceiptButton kind="tx" chatId={currentChatId} messageId={msg.dbId} />
+                          {/* One quiet door into the community: shown only when
+                              this turn built a same-chain swap and the receipt
+                              holds its mined transaction (never an order, a
+                              send, a bridge or a cross-chain deposit). A new
+                              tab, so this thread stays mounted. */}
+                          {!embedded && <PostProofDoor href={proofDoorHref(signedTxsOf(msg.meta), buildPathOf(msg.meta))} />}
                           {/* The aha→link loop closes itself: the receipt that
                               just proved the ask offers to become an intent
                               link, minted in place (same modal as the
@@ -2899,7 +2939,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           sit over the newest card or the composer, and needs no bar math
           (squad mobile-native — the old absolute offset counted a fixed tab
           bar that is now the frame's in-flow last row). */}
-      {firstParty && <div data-chat-gate-banner-slot="" className="flex-shrink-0 lg:hidden" />}
+      {firstParty && <div data-chat-gate-banner-slot="" className={cn('flex-shrink-0', !besideApps && 'lg:hidden')} />}
       {/* Input area — the command bar. First-party chat and the /i runtime
           float it as a free-standing pill: no full-width border-t (the pill
           itself is the boundary; the rule read as a stray line) and the
@@ -2952,6 +2992,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             placeholder={
               simple
                 ? 'Ask a follow-up…'
+                : besideApps && !isNarrow
+                  ? `${askPlaceholder(activeServers.map((s) => cleanServerName(s.name)))}…`
                 : // A phone: "Ask your 4 agents anything…" wrapped in the
                   // 190px field at 360 and showed only "anything…" (the
                   // #872 /i lesson, now on /chat — squad mobile-native).

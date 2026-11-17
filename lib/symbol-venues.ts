@@ -39,10 +39,14 @@
 //    spokes + the stETH contract) — one chain, said out loud;
 //  • a limit row and a stake row need a PRICE to size honestly (units, not
 //    dollars, are what those grammars read) — pass `last` from the live
-//    quote; without it those rows are omitted rather than guessed.
+//    quote; without it those rows are omitted rather than guessed;
+//  • a look-only index (US10Y, VIX, NDX… lib/charts isLookOnlyPair) has NO
+//    venue: the map is empty for it, and the note says it is here to read.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { ChartPair } from '@/lib/charts'
+import { builderDexOfPair, isChartOnlyPair, isHip3Pair, lookOnlyRefusal, type ChartPair } from '@/lib/charts'
+import { autoSellLive } from '@/lib/autopilot-live'
+import { HL_BUILDER_DEXES } from '@/lib/hl-dex'
 import { spotChainsFor, tokenHome } from '@/lib/token-home'
 import { fmtAskPrice, fmtAskUnits } from '@/lib/chart-actions'
 import { ONRAMP_DEFAULT_NETWORK } from '@/lib/onramp'
@@ -187,7 +191,7 @@ export function cardBuyAsk(symbol: string, pair: ChartPair, usd: number): string
  *  stock (4663, named by inference) and for a page with no spot buy. */
 export function cardBuyChain(symbol: string, pair: ChartPair): (typeof SPOT_CHAINS)[number] | null {
   const sym = (pair?.symbol ?? symbol).toUpperCase()
-  if (pair.source === 'robinhood' || pair.source === 'hyperliquid' || tokenHome(sym)) return null
+  if (pair.source === 'robinhood' || pair.source === 'hyperliquid' || pair.source === 'index' || tokenHome(sym)) return null
   return SPOT_CHAINS.find((c) => c.id === (sym === 'ETH' ? CARD_LANE_CHAIN_ID : fundDestChainFor(sym))) ?? null
 }
 
@@ -230,6 +234,9 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
   const lev = opts.leverage && opts.leverage > 1 ? `${opts.leverage}x ` : ''
   const last = opts.last && Number.isFinite(opts.last) && opts.last > 0 ? opts.last : null
   const out: VenueRoute[] = []
+
+  // ── A look-only index: nothing listed here trades it — no row of any kind ──
+  if (pair.source === 'index') return out
 
   // ── Tokenized stocks: Robinhood Chain only ──
   if (pair.source === 'robinhood') {
@@ -294,22 +301,31 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
     }
   }
 
-  // ── Perps (Hyperliquid) ──
-  if (isPerpChart || hasPerpCold(sym)) {
+  // ── Perps (Hyperliquid) ── on a builder dex only where the order layer
+  // builds (lib/charts isChartOnlyPair — the registry in lib/hl-dex is the gate).
+  if ((isPerpChart && !isChartOnlyPair(pair)) || hasPerpCold(sym)) {
+    // A builder-dex market (`xyz:SP500`): same sentence, same venue, its own
+    // dex — and no Guardian row (the watcher reads the main book's ledger).
+    const builderDex = builderDexOfPair(pair)
+    const dexLabel = builderDex ? (HL_BUILDER_DEXES[builderDex]?.label ?? builderDex) : null
     out.push({
       id: `perp:hyperliquid:long`, kind: 'perp', venue: 'hyperliquid', chainId: HL_SIGNING_CHAIN_ID, side: 'buy', fee: 'hl',
       label: `${lev ? `${lev}long` : 'Long'} ${sym}`, ask: `${lev}Long ${usdWord(usd)} of ${sym} on Hyperliquid`, mcp: 'hyperliquid-free',
-      note: lev ? `Sets ${lev.trim()} cross leverage venue-side first (signed 1/2), then the order (2/2).` : 'Fills at market (IOC) at the account’s current leverage.',
+      note: dexLabel
+        ? `Trades on Hyperliquid’s ${dexLabel} builder dex. ${lev ? `Sets ${lev.trim()} leverage venue-side first, then the order` : 'Fills at market (IOC) at the account’s current leverage'}; if your collateral sits in the main perp balance, the card moves it into the dex first (its own signature).`
+        : lev ? `Sets ${lev.trim()} cross leverage venue-side first (signed 1/2), then the order (2/2).` : 'Fills at market (IOC) at the account’s current leverage.',
     })
     out.push({
       id: `perp:hyperliquid:short`, kind: 'perp', venue: 'hyperliquid', chainId: HL_SIGNING_CHAIN_ID, side: 'sell', fee: 'hl',
       label: `${lev ? `${lev}short` : 'Short'} ${sym}`, ask: `${lev}Short ${usdWord(usd)} of ${sym} on Hyperliquid`, mcp: 'hyperliquid-free',
     })
-    out.push({
-      id: `protect:hyperliquid`, kind: 'protect', venue: 'hyperliquid', chainId: HL_SIGNING_CHAIN_ID, fee: 'none', needs: 'position',
-      label: 'Guardian stop', ask: `Protect my ${sym} long with a ${stopPct}% stop`, mcp: 'hyperliquid-free',
-      note: 'The Guardian watches the venue every minute and closes the position at your stop — delegated, never custodial.',
-    })
+    if (!builderDex) {
+      out.push({
+        id: `protect:hyperliquid`, kind: 'protect', venue: 'hyperliquid', chainId: HL_SIGNING_CHAIN_ID, fee: 'none', needs: 'position',
+        label: 'Guardian stop', ask: `Protect my ${sym} long with a ${stopPct}% stop`, mcp: 'hyperliquid-free',
+        note: 'The Guardian watches the venue every minute and closes the position at your stop — delegated, never custodial.',
+      })
+    }
   }
 
   if (home) return out // non-EVM home: perps are the honest whole
@@ -340,8 +356,8 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
     }
   }
 
-  // ── Standing: the Spot Guardian ──
-  if (!isPerpChart) {
+  // ── Standing: the Spot Guardian (only while it can be armed — lib/autopilot-live) ──
+  if (!isPerpChart && autoSellLive()) {
     out.push({
       id: `protect:spot:${SPOT_GUARD_CHAIN_ID}`, kind: 'protect', venue: 'pantessa', chainId: SPOT_GUARD_CHAIN_ID, fee: 'none', needs: 'position',
       label: 'Spot stop on Base', ask: `Protect my ${sym} in my wallet with a ${stopPct}% stop`,
@@ -358,12 +374,30 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
   return out
 }
 
+/** What a builder-dex perp page says about itself: where it trades, what
+ *  builds, and the one thing that does not (a Guardian stop). */
+export const builderDexNote = (symbol: string, dex: string): string =>
+  `${symbol.toUpperCase()} trades on Hyperliquid’s ${HL_BUILDER_DEXES[dex]?.label ?? dex} builder dex: long and short build here, signed by your wallet. No spot, lending or resting book — and no Guardian stop yet (it watches the main book only).`
+
 /** Why a kind is missing for this pair — named on the page, never silent. */
 export function missingVenueNotes(symbol: string, pair: ChartPair): string[] {
   const sym = (pair?.symbol ?? symbol).toUpperCase()
   const notes: string[] = []
+  if (pair.source === 'index') {
+    notes.push(lookOnlyRefusal(sym))
+    return notes
+  }
   if (pair.source === 'robinhood') {
     notes.push('No perp, lending or resting book for a tokenized stock — buys and sells fill at market on Robinhood Chain.')
+    return notes
+  }
+  if (isChartOnlyPair(pair)) {
+    notes.push(`${sym} is a Hyperliquid builder market: the chart is live, and Pantessa does not place orders there yet.`)
+    return notes
+  }
+  const builderDex = builderDexOfPair(pair)
+  if (builderDex) {
+    notes.push(builderDexNote(sym, builderDex))
     return notes
   }
   const home = tokenHome(sym)
@@ -565,9 +599,14 @@ const SPOT_CHAIN_OF = (sym: string): number => spotChainsOf(sym)[0]
 /** Which leg kinds a pair can chain, in the order they may appear. */
 export function compoundLegKindsFor(symbol: string, pair: ChartPair): CompoundLegKind[] {
   const sym = (pair?.symbol ?? symbol).toUpperCase()
+  // A look-only index chains nothing.
+  if (pair.source === 'index') return []
   if (pair.source === 'robinhood') return ['fund', 'buy']
   const home = tokenHome(sym)
-  const perp = pair.source === 'hyperliquid' || hasPerpCold(sym)
+  const perp = (pair.source === 'hyperliquid' && !isChartOnlyPair(pair)) || hasPerpCold(sym)
+  // A builder-dex perp chains the deposit and the order; no protect leg (the
+  // Guardian's watcher reads the main book's ledger only).
+  if (isHip3Pair(pair)) return perp ? ['deposit', 'long', 'short'] : []
   if (home || pair.source === 'hyperliquid') return perp ? ['deposit', 'long', 'short', 'protect'] : []
   const out: CompoundLegKind[] = ['fund', 'buy']
   if (sym === 'ETH') out.push('stake')
@@ -615,6 +654,9 @@ export function composeCompound(symbol: string, pair: ChartPair, kinds: Compound
   const lev = opts.leverage && opts.leverage > 1 ? `${opts.leverage}x ` : ''
   const want = new Set(kinds)
   const legs: CompoundLeg[] = []
+
+  // A look-only index has no leg, whatever was asked for.
+  if (pair.source === 'index') return finish(legs)
 
   if (pair.source === 'robinhood') {
     // A stock chains fund → buy only. The buy is the order size and the fund
@@ -672,9 +714,13 @@ export function composeCompound(symbol: string, pair: ChartPair, kinds: Compound
     const side = want.has('short') && !want.has('long') ? 'short' : 'long'
     legs.push({
       kind: side, label: `${lev ? `${lev}` : ''}${side === 'long' ? 'Long' : 'Short'} $${usd} of ${sym}`, segment: `${lev}${side} $${usd} of ${sym} on Hyperliquid`,
-      builders: ['native-hl-exec'], hint: lev ? `Sets ${lev.trim()} cross leverage venue-side first, then the order (IOC at market).` : 'IOC at market at the account’s current leverage.',
+      builders: ['native-hl-exec'],
+      hint: isHip3Pair(pair)
+        ? `${lev ? `Sets ${lev.trim()} leverage venue-side first, then the order` : 'IOC at market at the account’s current leverage'} — on the builder dex this market trades on; collateral in the main perp balance moves there as its own signed step.`
+        : lev ? `Sets ${lev.trim()} cross leverage venue-side first, then the order (IOC at market).` : 'IOC at market at the account’s current leverage.',
     })
-    if (want.has('protect')) {
+    // No Guardian leg on a builder-dex market: its watcher reads the main book's ledger only.
+    if (want.has('protect') && !isHip3Pair(pair)) {
       legs.push({ kind: 'protect', label: `Guardian ${stopPct}% stop`, segment: `protect my ${sym} ${side} with a ${stopPct}% stop`, builders: ['native-hl-guardian'], hint: 'The HL Guardian watches every minute and closes the position at the stop — delegated, never custodial.' })
     }
   }

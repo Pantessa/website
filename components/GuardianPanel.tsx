@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useChainId, useSignTypedData } from 'wagmi'
 import { ShieldCheck, ShieldOff, Pause, Play, Trash2 } from 'lucide-react'
 import { friendlyError } from '@/lib/friendly-error'
+import { signStageError, walletErrorWords, type SignStage } from '@/lib/wallet-refusal'
 
 interface Delegation {
   id: string
@@ -131,6 +132,9 @@ export default function GuardianPanel() {
   const approve = async () => {
     setBusy(true)
     setError('')
+    // server → wallet → server: only the wallet's own throw reads as a
+    // "declined" (the fallback below says "rejected" and used to match).
+    let stage: SignStage = 'server'
     try {
       const created = await fetch('/api/guardian/delegation', {
         method: 'POST',
@@ -141,7 +145,9 @@ export default function GuardianPanel() {
       const { id, typedData } = (await created.json()) as { id: string; typedData: { domain: object; types: object; primaryType: string; message: Record<string, unknown> } }
       // uint64 nonce must go to the wallet as a BigInt.
       const message = { ...typedData.message, nonce: BigInt(typedData.message.nonce as number) }
+      stage = 'wallet'
       const signature = await signTypedDataAsync({ ...typedData, message } as Parameters<typeof signTypedDataAsync>[0])
+      stage = 'server'
       const activated = await fetch('/api/guardian/delegation', {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
@@ -151,8 +157,8 @@ export default function GuardianPanel() {
       setNotice('Guardian agent approved — it can trade this account, never withdraw from it.')
       await load()
     } catch (e) {
-      const msg = e instanceof Error ? e.message : ''
-      setError(/rejected|denied/i.test(msg) ? 'Signature request declined.' : msg || 'Approval failed.')
+      const msg = stage === 'wallet' ? walletErrorWords(e) : e instanceof Error ? e.message : ''
+      setError(signStageError(stage, msg, 'Signature request declined.') || 'Approval failed.')
     } finally {
       setBusy(false)
     }

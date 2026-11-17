@@ -5,8 +5,8 @@
 // each may show, what has to have happened first, the storage record and
 // the journey events. Pure: no DOM at import time, so the harness pins it.
 //
-// The shape of it: ONE card, ONE rule module, five seats (`/`, `/t`, `/live`,
-// `/chat`, `/wallet`). A seat asks `pickHintForLoad(surface, ctx)` once when
+// The shape of it: ONE card, ONE rule module, six seats (`/`, `/t`, `/live`,
+// `/chat`, `/wallet`, and the community feed: `/community` and a room). A seat asks `pickHintForLoad(surface, ctx)` once when
 // it mounts and shows what comes back, or nothing. The rules:
 //   · one hint per surface per page load (a remount shows the same one and
 //     counts it once);
@@ -29,7 +29,7 @@ import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
 
 /** The surfaces a hint can sit on. */
-export type GuideSurface = 'home' | 'symbol' | 'live' | 'chat' | 'wallet'
+export type GuideSurface = 'home' | 'symbol' | 'live' | 'chat' | 'wallet' | 'community'
 
 /** Per-browser memory of what the guide has shown (localStorage). */
 export const GUIDE_STORAGE_KEY = 'pantessa.guide.v1'
@@ -42,7 +42,7 @@ export type GuideVisit = GuideSurface | 'jobs' | 'links'
 /** The spine seats that wear the unseen-dot. */
 export type GuideDotTab = 'jobs' | 'links' | 'wallet'
 
-export const GUIDE_SURFACES: readonly GuideSurface[] = ['home', 'symbol', 'live', 'chat', 'wallet']
+export const GUIDE_SURFACES: readonly GuideSurface[] = ['home', 'symbol', 'live', 'chat', 'wallet', 'community']
 export const GUIDE_VISITS: readonly GuideVisit[] = [...GUIDE_SURFACES, 'jobs', 'links']
 
 /** After a dismiss, the surface it happened on stays quiet this long. */
@@ -59,26 +59,39 @@ export const GUIDE_RECORD_MAX_BYTES = 8_192
  *  GUIDE_COMPACT_MQ): the splash (MOBILE's budget on `/`, R1) and the symbol
  *  page (the full 174px card under the act strip pushed the chart's plot top
  *  421 → 613 at 375×812 — the chart stays primary, R3). /live, /chat and
- *  /wallet keep the full card: nothing there competes for the first screen. */
-export const GUIDE_COMPACT_SURFACES: readonly GuideSurface[] = ['home', 'symbol']
+ *  /wallet keep the full card: nothing there competes for the first screen.
+ *  The community feed (/community and a room, 2026-11-09) is compact too: the
+ *  first post stays on the first screen. */
+export const GUIDE_COMPACT_SURFACES: readonly GuideSurface[] = ['home', 'symbol', 'community']
 
 export function compactOnPhone(surface: GuideSurface): boolean {
   return GUIDE_COMPACT_SURFACES.includes(surface)
 }
 
-export type GuideHintId = 'chart' | 'triggers' | 'links' | 'jobs' | 'wallet' | 'alerts'
+export type GuideHintId = 'triggers' | 'links' | 'jobs' | 'wallet' | 'alerts' | 'proof'
 
 /** What the seat knows that the record does not: where it is, which symbol
- *  (the chart hint names it), the example ask the page's own grammar
+ *  ({SYM} names it), the example ask the page's own grammar
  *  composes, and whether a wallet is connected right now. */
 export interface GuideCtx {
   surface?: GuideSurface
   symbol?: string | null
   /** The symbol page's own "buy" sentence for this pair (lib/trade-asks
-   *  composeAsk) — the chart hint quotes it, so the example is always a
+   *  composeAsk) — {ASK} quotes it (no hint does since the chart hint left,
+   *  2026-11-17), so the example is always a
    *  sentence the ladder builds. */
   ask?: string | null
   connected?: boolean
+  /** The page's chart takes no order here (a Hyperliquid builder-dex market
+   *  the order layer does not build on — lib/charts isChartOnlyPair): no
+   *  hint reads it since the chart hint left (2026-11-17); a hint must never quote an order the page
+   *  cannot build. A builder-dex market that DOES take orders (`xyz:SP500`)
+   *  is an ordinary page: it quotes its own long sentence. */
+  chartOnly?: boolean
+  /** The page's chart is a look-only index (lib/charts isLookOnlyPair —
+   *  US10Y, VIX…): nothing listed here trades it, so no hint may promise an
+   *  order or an alert that "does the trade" there (2026-11-09). */
+  lookOnly?: boolean
 }
 
 /** What the card's one action does. `href` is a plain link (a public page);
@@ -146,16 +159,11 @@ export const CREATOR_SPLIT_WORD: string =
 // seat; the other hints keep 'home' in their surfaces as the rulebook's
 // vocabulary (lib/guide knows the splash as a surface — the claim block reads
 // `visited.home`), and teach on /t, /live, /chat and /wallet.
+// The symbol page's "Ask the chart." lesson left on 2026-11-17 (Nate: "remove the Ask
+// the chart flag"): a fresh browser's /t opens with no card; the later lessons (links,
+// jobs, alerts) still reach it once their `requires` hold. A stored record that names
+// it reads its stamps away (unknown ids are dropped, readGuideState).
 export const GUIDE_HINTS: readonly GuideHint[] = [
-  {
-    id: 'chart',
-    surfaces: ['symbol'],
-    title: 'Ask the chart.',
-    body: 'Type “{ASK}” or “why is it moving?” — the answer builds the order right here, in a ticket beside the chart.',
-    // The compact row's label: "Why is AAPL moving?" is ~152px and would
-    // leave ~40px for the title at 320 (MOBILE's measurement).
-    cta: { label: 'Why is {SYM} moving?', short: 'Ask it →', kind: 'door', value: 'Why is {SYM} moving?' },
-  },
   {
     id: 'triggers',
     surfaces: ['live'],
@@ -206,6 +214,18 @@ export const GUIDE_HINTS: readonly GuideHint[] = [
     // visit, so a visit on file means an earlier page load.
     requires: (s, ctx) => !!s.visited[ctx.surface],
   },
+  // The community feed's one lesson (squad community, lane SHARE, 2026-11-09):
+  // what a trade post proves. It says only what the chain read gives (the
+  // amount and the chain of one transaction); the market is the author's tag
+  // and the hint never calls it confirmed. The action opens the composer on
+  // the trade tab of the page the reader is on (the feed, or the room).
+  {
+    id: 'proof',
+    surfaces: ['community'],
+    title: 'Trades here come with proof.',
+    body: 'A trade post shows what the chain confirmed, and a reader can do the same trade from the card.',
+    cta: { label: 'Post a trade with proof →', short: 'Post one →', kind: 'href', value: '?compose=trade' },
+  },
 ]
 
 export const GUIDE_TOTAL = GUIDE_HINTS.length
@@ -224,6 +244,23 @@ export function renderGuideText(text: string, ctx: GuideCtx = {}): string {
   const sym = ctx.symbol || 'it'
   const ask = ctx.ask || `Buy $25 of ${ctx.symbol || 'ETH'}`
   return text.replace(/\{SYM\}/g, sym).replace(/\{ASK\}/g, ask)
+}
+
+/** The alerts hint on a look-only index: an alert there TELLS you. It hands
+ *  over no chip, because there is no trade to hand over. */
+export const GUIDE_LOOK_ONLY_ALERT_TITLE = 'An alert here tells you.'
+export const GUIDE_LOOK_ONLY_ALERT_BODY = 'Set a level on {SYM}. When it hits, you are told. Nothing here trades an index, so the alert carries no order.'
+
+/** A hint's title for this ctx, text filled. */
+export function guideTitle(hint: GuideHint, ctx: GuideCtx = {}): string {
+  return renderGuideText(hint.id === 'alerts' && ctx.lookOnly ? GUIDE_LOOK_ONLY_ALERT_TITLE : hint.title, ctx)
+}
+
+/** A hint's body for this ctx, text filled: no hint promises an order on a
+ *  look-only index. */
+export function guideBody(hint: GuideHint, ctx: GuideCtx = {}): string {
+  if (ctx.lookOnly && hint.id === 'alerts') return renderGuideText(GUIDE_LOOK_ONLY_ALERT_BODY, ctx)
+  return renderGuideText(hint.body, ctx)
 }
 
 /** The hint's action for this ctx, text filled. */

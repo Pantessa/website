@@ -36,6 +36,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { ChartSource } from './charts'
+import { autoSellLive } from './autopilot-live'
 import type { ChartAction, ChartActionKind } from './chart-state'
 import { tokenHome } from './token-home'
 
@@ -99,14 +100,21 @@ const usdLabel = (usd: number) => (Number.isInteger(usd) ? `$${usd}` : `$${usd.t
  *  composes a DCA any more (2026-09-16): a recurring buy only reminds the
  *  wallet to sign each period. */
 export function actionKindsFor(symbol: string, source: ChartSource): ReadonlySet<ChartActionKind> {
+  // A look-only index: a level is a note or an alert, never an order.
+  if (source === 'index') return new Set<ChartActionKind>()
   if (source === 'hyperliquid') return new Set<ChartActionKind>(['buy', 'sell', 'stop', 'protect'])
   if (source === 'robinhood') return new Set<ChartActionKind>(['buy', 'sell'])
   if (tokenHome(symbol)) return new Set<ChartActionKind>(['buy', 'sell'])
-  return new Set<ChartActionKind>(['buy', 'sell', 'stop', 'limit', 'protect'])
+  // 'stop' on a coin is the Spot Guardian: only while it can be armed (lib/autopilot-live).
+  return new Set<ChartActionKind>(autoSellLive() ? ['buy', 'sell', 'stop', 'limit', 'protect'] : ['buy', 'sell', 'limit', 'protect'])
 }
+
+/** Why a drawn level on a look-only index carries no order. */
+export const LOOK_ONLY_LEVEL_NOTE = 'An index is here to read: a level is a note or an alert, never an order.'
 
 /** Why a level can't do the thing a trader expects — named, never silent. */
 export function missingActionNote(symbol: string, source: ChartSource): string | null {
+  if (source === 'index') return LOOK_ONLY_LEVEL_NOTE
   if (source === 'robinhood') return 'No resting orders on Robinhood Chain yet — buys and sells fill at market, so a level can’t trigger a trade here.'
   if (source === 'hyperliquid') return 'Perp levels arm the Guardian (stop / take-profit on your live position); entries fill at market (IOC).'
   if (tokenHome(symbol)) return `${symbol} lives on ${tokenHome(symbol)} — levels open Hyperliquid perps; no spot limit or stop here.`
@@ -125,6 +133,8 @@ export function composeLineActions(input: ComposeLineInput): LineActionOffer[] {
   const price = input.price
   const last = input.last
   if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(last) || last <= 0) return []
+  // A level on a look-only index carries no order (lib/charts isLookOnlyPair).
+  if (source === 'index') return []
   const below = price < last
   const above = price > last
   const px = fmtAskPrice(price)
@@ -188,7 +198,7 @@ export function composeLineActions(input: ComposeLineInput): LineActionOffer[] {
       hint: `A CoW limit order: ${units} ${sym} at $${px} — fills at-or-better when the market reaches it.`,
     })
   }
-  if (below) {
+  if (below && autoSellLive()) {
     out.push({
       action: { kind: 'stop', ask: `Protect my spot ${sym} if it drops to $${px}` },
       label: 'Stop under this',
@@ -222,6 +232,7 @@ export function composeZoneActions(input: ComposeZoneInput): LineActionOffer[] {
   const lo = Math.min(input.p1, input.p2)
   const hi = Math.max(input.p1, input.p2)
   if (!Number.isFinite(lo) || lo <= 0 || !Number.isFinite(hi) || hi <= lo || !Number.isFinite(last) || last <= 0) return []
+  if (source === 'index') return []
   const kinds = actionKindsFor(symbol, source)
   const out: LineActionOffer[] = []
   if (kinds.has('limit')) {

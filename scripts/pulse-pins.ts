@@ -227,8 +227,9 @@ export function pulsePins(check: Check): void {
   // RE-PINNED 2026-10-13 (deck): the band mounts in THE DECK (components/home/Deck, the splash's
   // lead seat) in its stage seat; alone it is still the framed band, no props needed.
   const deck = readFileSync('components/home/Deck.tsx', 'utf8')
-  check('pulse: the band mounts in the splash\'s lead seat through the deck (HomeSurface → Deck → PulseSlot seat="stage"); alone it is the framed band (the seat defaults to band, no props needed), and `/` is a public markets path (looking needs no wallet)',
-    /<Deck \/>/.test(home) && /<PulseSlot seat="stage"/.test(deck) && /export default function PulseSlot\(\{ seat = 'band'/.test(slot) && /\}: PulseSlotProps = \{\}\)/.test(slot) && isMarketsPath('/') && isPublicAppPath('/'))
+  // RE-PINNED 2026-11-09 (the read): the deck left the splash (HomeSurface seats THE READ); the band still mounts in the deck's stage seat, the deck is simply unmounted.
+  check('pulse: the band mounts through the deck (Deck → PulseSlot seat="stage"), which the splash no longer seats (HomeSurface → TheRead since 2026-11-09); alone it is the framed band (the seat defaults to band, no props needed), and `/` is a public markets path (looking needs no wallet)',
+    !/<Deck \/>/.test(home) && /<TheRead /.test(home) && /<PulseSlot seat="stage"/.test(deck) && /export default function PulseSlot\(\{ seat = 'band'/.test(slot) && /\}: PulseSlotProps = \{\}\)/.test(slot) && isMarketsPath('/') && isPublicAppPath('/'))
   check('pulse: the door and the views are links in the band\'s head (a URL never fires a turn): /live with prefetch off, and the three views from PULSE_VIEW_LINKS — drawn in the band seat; the deck carries the doors on its own bar and foot in the stage seat (RE-PINNED 2026-10-13 (deck))',
     /href=\{pulseLiveHref\(lens\)\}/.test(slot) /* RE-PINNED 2026-10-13 (gtm3h): the door carries the pick's lens, never a peek */ && pulseLiveHref(null) === PULSE_LIVE_HREF && /PULSE_VIEW_LINKS\.map/.test(slot) && !/openDoor\([^)]*PULSE_LIVE_HREF/.test(slot) && slot.indexOf('PULSE_VIEW_LINKS.map') < slot.indexOf('</header>') && /data-markets=\{aim\.length\}/.test(slot) &&
       (slot.match(/\{seat === 'band' && \(/g) ?? []).length === 2 && slot.indexOf("{seat === 'band' && (") < slot.indexOf('<header className="pulse__head">'))

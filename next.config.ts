@@ -1,6 +1,28 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { NextConfig } from 'next'
+import { autoSellStamp } from './lib/autopilot-live'
+
+// TradingView's Advanced Charts is licensed and never committed here:
+// scripts/tv-library.mjs copies it into public/charting_library/ before the
+// build, when the build can get it. The version found there is stamped into
+// the bundle (lib/tv/config reads it); no files, an empty stamp, and every
+// chart is the built-in one.
+function tvLibraryVersion(): string {
+  try {
+    const dir = join(process.cwd(), 'public', 'charting_library')
+    if (!existsSync(join(dir, 'charting_library.standalone.js'))) return ''
+    const desc = String(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).description ?? '')
+    return /v(\d+\.\d+(?:\.\d+)?)/.exec(desc)?.[1] ?? ''
+  } catch {
+    return ''
+  }
+}
 
 const nextConfig: NextConfig = {
+  // NEXT_PUBLIC_SPOT_AUTOSELL: is a spot stop / DCA autopilot armable here?
+  // Same condition the builders check (lib/autopilot-live).
+  env: { NEXT_PUBLIC_TV_LIBRARY: tvLibraryVersion(), NEXT_PUBLIC_SPOT_AUTOSELL: autoSellStamp(process.env) },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**' },
@@ -40,6 +62,12 @@ const nextConfig: NextConfig = {
       // /markets/opengraph-image is the root card now, so a client that
       // cached the old image URL still gets a picture.
       { source: '/markets/:card(opengraph-image|twitter-image)', destination: '/:card', permanent: true },
+      // THE DECK left `/` on 2026-11-09 (THE READ leads the splash now), and its
+      // channels were addresses people could share: `/?view=front&t=ZK,OP`.
+      // Each is /live's own URL in the same words, so a deck link already in
+      // the world opens the view it names (Next carries the query through).
+      // Temporary on purpose: `/` may speak `?view=` again one day.
+      { source: '/', has: [{ type: 'query', key: 'view', value: '(?:tape|front|siege|map|flyover)' }], destination: '/live', permanent: false },
     ]
   },
   // Design system lives as static files in public/design-system/. Next doesn't
@@ -55,6 +83,12 @@ const nextConfig: NextConfig = {
       {
         source: '/embed',
         headers: [{ key: 'Content-Security-Policy', value: 'frame-ancestors *' }],
+      },
+      // The chart library's bundles are content-hashed files: cache them hard.
+      // (Its entry script is requested with ?v=<version>, lib/tv/loader.)
+      {
+        source: '/charting_library/bundles/:file*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
       },
     ]
   },
