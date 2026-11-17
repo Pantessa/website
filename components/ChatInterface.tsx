@@ -565,7 +565,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const [pendingPayment, setPendingPayment] = useState<{
     userMsg: string
     chatId: string
-    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown }
+    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown; message?: unknown; ticket?: unknown }
     history: { role: string; content: string }[]
     workingContext?: WorkingContext
   } | null>(null)
@@ -1748,7 +1748,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     workingContext?: WorkingContext,
   ): Promise<
     | { kind: 'reply'; content: string; receipts?: unknown; payer?: string; voteRequest?: unknown; voteProposal?: unknown; routeReport?: unknown; routerTrace?: unknown; orderRequest?: unknown; txRequest?: unknown; txChain?: unknown; clarify?: unknown; workingContext?: unknown; portfolio?: unknown; buildPath?: unknown; jobId?: unknown; jobToken?: unknown; guardianPolicyId?: unknown; dcaArm?: unknown; spotGuardArm?: unknown; guardWarnings?: unknown; builtBy?: unknown }
-    | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown } }
+    | { kind: 'plan'; data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown; message?: unknown; ticket?: unknown } }
   > => {
     clearRouterTrace()
     setEngineWindowOpen(true) // show the engine working as soon as a turn starts
@@ -1804,6 +1804,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               listedOnly: event.listedOnly ?? [],
               notes: event.notes,
               turnId: event.turnId, // group the execute-phase receipts with this plan in the live feed
+              message: event.message, // the message the plan was written for
+              ticket: event.ticket, // the server runs only a plan it vouches for (lib/plan-ticket)
             },
           }
         } else if (event.type === 'reply') {
@@ -1846,7 +1848,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   /** Sign each x402 payment with the connected wallet, then run the calls. */
   const payWithWalletThenAnswer = async (
     userMsg: string,
-    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown },
+    data: { plan: unknown; payments: PaymentToSign[]; listedOnly: unknown; notes?: unknown; turnId?: unknown; capabilities?: unknown; message?: unknown; ticket?: unknown },
     history: { role: string; content: string }[] = [],
     workingContext?: WorkingContext,
   ): Promise<{ reply: string; receipts?: unknown[]; payer?: string; portfolio?: unknown }> => {
@@ -1881,7 +1883,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         phase: 'execute',
-        message: userMsg,
+        // The message phase 1 planned for, and its ticket: the server runs
+        // only the plan it wrote (lib/plan-ticket).
+        message: typeof data.message === 'string' ? data.message : userMsg,
+        ticket: data.ticket,
         plan: data.plan,
         signatures,
         listedOnly: data.listedOnly,

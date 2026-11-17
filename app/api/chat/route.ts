@@ -4,6 +4,7 @@ import { fenceToolOutput, toolOutputNonce, toolOutputRule } from '@/lib/tool-out
 import { contentOriginOf, hardenReportForOrigin, isThirdPartyOrigin, outboundToThirdParty, rawAddressTokenRefusal, type ContentOrigin } from '@/lib/content-origin'
 import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
 import { recordTurnExpectations } from '@/lib/link-receipt-verify'
+import { PLAN_TICKET_REFUSAL, signPlanTicket, verifyPlanTicket } from '@/lib/plan-ticket'
 import { erc20Abi, formatEther, formatUnits, getAddress, isAddress, parseEther, parseUnits } from 'viem'
 import { openseaEnabled, openseaSlugOf } from '@/lib/opensea'
 import { getPaidFetch, hasAgentWallet } from '@/lib/agent-wallet'
@@ -654,9 +655,20 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
 
     // ── Phase 2 (wallet): execute with client-provided signatures ────────────
     if (body.phase === 'execute') {
+      // Phase 2 runs ONLY a plan phase 1 wrote (lib/plan-ticket). It used to
+      // trust the echoed plan: the URLs it fetched and the house answer it
+      // produced were the body's word, ahead of the turn fence and the gate.
+      const execPlan = Array.isArray(body.plan) ? (body.plan as PlannedCall[]) : []
+      const vouched = verifyPlanTicket(body.ticket, {
+        message: String(body.message ?? ''),
+        history: sanitizeHistory(body.history),
+        capabilities: typeof body.capabilities === 'string' ? body.capabilities.slice(0, 4000) : '',
+        plan: execPlan,
+      })
+      if (!vouched) return NextResponse.json({ reply: PLAN_TICKET_REFUSAL, planTicket: 'refused' })
       return await executeWithSignatures(
         String(body.message ?? ''),
-        Array.isArray(body.plan) ? (body.plan as PlannedCall[]) : [],
+        execPlan,
         (body.signatures ?? {}) as Record<string, string>,
         Array.isArray(body.listedOnly) ? (body.listedOnly as McpServer[]) : [],
         Array.isArray(body.notes) ? (body.notes as string[]).filter((n) => typeof n === 'string').slice(0, 8) : [],
@@ -6646,6 +6658,9 @@ async function planWalletPayments(
       signing: c.prepared!.signing as SigningRequest,
     }))
 
+  // Grounds "what can I do?" in the connected set when synthesis runs in
+  // phase 2 (executeWithSignatures). Echoed back by the client, like `notes`.
+  const capabilities = capabilitiesBlock([inference, ...dataServers, ...mcpDataServers, ...listedOnly], smart)
   return NextResponse.json({
     phase: 'awaiting-signatures',
     message,
@@ -6653,9 +6668,10 @@ async function planWalletPayments(
     payments,
     listedOnly: stillListedOnly,
     notes,
-    // Grounds "what can I do?" in the connected set when synthesis runs in
-    // phase 2 (executeWithSignatures). Echoed back by the client, like `notes`.
-    capabilities: capabilitiesBlock([inference, ...dataServers, ...mcpDataServers, ...listedOnly], smart),
+    capabilities,
+    // Phase 2 runs only what this vouches for (lib/plan-ticket): this
+    // message, this history, these capabilities, this plan.
+    ticket: signPlanTicket({ message, history, capabilities: capabilities.slice(0, 4000), plan }),
   })
 }
 
@@ -7642,7 +7658,9 @@ export function streamAutoRouter(
           // Carry the turnId so the wallet's execute phase persists its
           // settlements under THIS turn → they show in the live feed, grouped
           // with the plan trace.
-          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: [...decision.notes, ...wNotes], turnId })
+          // The ticket vouches for exactly this plan (lib/plan-ticket); the
+          // wallet's execute phase is refused without it.
+          send({ type: 'plan', plan: wPlan, payments, listedOnly: [], notes: [...decision.notes, ...wNotes], turnId, message, ticket: signPlanTicket({ message, history, capabilities: '', plan: wPlan }) })
           recordTurn({ payer: 'your wallet', shortlisted: shortlistedOf(decision), picks: picksOf(decision), intent: intentOf(decision) })
           return finish()
         }

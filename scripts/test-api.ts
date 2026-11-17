@@ -38,6 +38,7 @@ import { base } from 'viem/chains'
 import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/dry-run'
 import { createSiweMessage, parseSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
+import { planTicketPins, planTicketServedPins } from './plan-ticket-pins'
 import { LINK_FEE_PCT, SWAP_FEE_PCT } from '../lib/fees'
 import {
   claimJobStepReport,
@@ -7206,6 +7207,10 @@ async function main() {
     body: JSON.stringify({ message: 'hi' }),
   })
   check('engine: /api/route without Bearer → 401', routeNoAuth.status === 401)
+
+  // 2026-11-17: the wallet's execute phase runs only a plan the server wrote.
+  planTicketPins(check)
+  await planTicketServedPins(check, BASE)
 
   // `minted` sits at its per-key daily budget (0.05/0.05 from the agent tests) →
   // the per-key pre-gate refuses before any spend.
