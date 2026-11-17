@@ -17,6 +17,7 @@ import {
   lineFor,
   needsYouRows,
   pageHeadline,
+  pageTotalUsd,
   quietSentence,
   sectionDensityFor,
   splitPageTiles,
@@ -100,6 +101,11 @@ export function appsPagePins(check: Check) {
     pageHeadline({ count: 0, totalUsd: null, needs: 0 }) === 'Pick an app to start.' &&
       pageHeadline({ count: 5, totalUsd: 6306.4, needs: 1 }) === 'You have $6,306 on this page. One thing needs you.' &&
       pageHeadline({ count: 2, totalUsd: null, needs: 2 }) === 'Two things need you.' && pageHeadline({ count: 2, totalUsd: 0, needs: 0 }) === 'Nothing needs you right now.')
+
+  check('apps page (headline): the total the headline names is never less than what a section on the same page prints (the money map read $20 beside a $28 portfolio); nothing priced is null, never $0',
+    pageTotalUsd({ facts: [{ bucket: 'spot', usd: 20, label: 'x' }], readChains: [], failedChains: [] }, [{ ...holdings, totalUsd: 28.4 } as SplashTile]) === 28.4 &&
+      pageTotalUsd({ facts: [{ bucket: 'spot', usd: 90, label: 'x' }], readChains: [], failedChains: [] }, [holdings]) === 6306.4 &&
+      pageTotalUsd({ facts: [{ bucket: 'spot', usd: 90, label: 'x' }], readChains: [], failedChains: [] }, [votes]) === 90 && pageTotalUsd(null, [votes]) === null)
 
   // ── the dock ──────────────────────────────────────────────────────────────
   const sug = dockSuggestions([[{ label: 'a1', prompt: 'a1' }, { label: 'a2', prompt: 'a2' }], [{ label: 'b1', prompt: 'b1' }], []])

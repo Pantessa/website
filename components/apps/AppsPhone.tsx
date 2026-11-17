@@ -35,9 +35,8 @@ import { SECTIONS } from '@/components/apps/sections'
 import { useAppSet } from '@/components/apps/useAppSet'
 import { useAppTiles } from '@/components/apps/useAppTiles'
 import { useAppsUi } from '@/lib/apps-page-ui'
-import { appFamily, askPlaceholder, densityEyebrow, dockSuggestions, lineFor, needsYouRows, pageHeadline, quietSentence, splitPageTiles } from '@/lib/apps-page'
+import { appFamily, askPlaceholder, densityEyebrow, dockSuggestions, lineFor, needsYouRows, pageHeadline, pageTotalUsd, quietSentence, splitPageTiles } from '@/lib/apps-page'
 import { askBarSubmit, phoneLayoutFor, phoneSuggestions } from '@/lib/apps-phone'
-import { mergeMoneyMap, summarizeMoneyMap } from '@/lib/splash/money-map'
 import { useYeetfulStore } from '@/lib/store'
 import type { MoneyMap, SplashTile } from '@/lib/splash/types'
 import { cleanServerName } from '@/lib/utils'
@@ -78,8 +77,7 @@ export default function AppsPhone({ address, title }: { address: string; title: 
   const names = active.map((s) => cleanServerName(s.name))
   const page = useMemo(() => splitPageTiles(tiles ?? [], active.map((s) => s.slug)), [tiles, active])
   const needs = needsYouRows(page.briefing)
-  const merged = useMemo(() => mergeMoneyMap(map, tiles ?? []), [map, tiles])
-  const totalUsd = merged ? summarizeMoneyMap(merged).totalUsd : null
+  const totalUsd = useMemo(() => pageTotalUsd(map, tiles ?? []), [map, tiles])
 
   // The same suggestions the desktop dock offers (the page publishes them).
   useEffect(() => {

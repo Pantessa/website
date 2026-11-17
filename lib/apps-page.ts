@@ -16,7 +16,8 @@
 // SplashTile, lib/splash): this file only decides shape and words. No React,
 // no fetch, no store — everything here is pinned in scripts/apps-page-pins.ts.
 
-import type { ProposalsTile, RowsTile, SplashTile, StatRow, SuggestedPrompt } from '@/lib/splash/types'
+import type { MoneyMap, ProposalsTile, RowsTile, SplashTile, StatRow, SuggestedPrompt } from '@/lib/splash/types'
+import { mergeMoneyMap, summarizeMoneyMap } from '@/lib/splash/money-map'
 
 // ── Density ─────────────────────────────────────────────────────────────────
 
@@ -191,6 +192,21 @@ export function quietSentence(names: string[]): string {
   if (names.length === 0) return ''
   if (names.length === 1) return `Nothing new from ${names[0]}.`
   return `Nothing new from ${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}.`
+}
+
+// ── The page's one total ────────────────────────────────────────────────────
+
+/** The dollars the headline may name: never less than what a section on the
+ *  same page prints. The money map counts only what its buckets can place
+ *  (a wallet read $20 there beside a portfolio section showing $28), so the
+ *  page takes the larger of the map and the biggest holdings total on it.
+ *  null when nothing on the page carries a dollar. */
+export function pageTotalUsd(map: MoneyMap | null | undefined, tiles: SplashTile[]): number | null {
+  const merged = mergeMoneyMap(map, tiles)
+  const mapTotal = merged ? summarizeMoneyMap(merged).totalUsd : 0
+  const held = tiles.reduce((m, t) => (t.render === 'holdings' && t.totalUsd != null && t.totalUsd > m ? t.totalUsd : m), 0)
+  const total = Math.max(mapTotal, held)
+  return total > 0 ? total : null
 }
 
 // ── The headline ────────────────────────────────────────────────────────────

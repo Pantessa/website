@@ -38,11 +38,11 @@ import {
   lineFor,
   needsYouRows,
   pageHeadline,
+  pageTotalUsd,
   quietSentence,
   sectionDensityFor,
   splitPageTiles,
 } from '@/lib/apps-page'
-import { mergeMoneyMap, summarizeMoneyMap } from '@/lib/splash/money-map'
 import { cleanServerName } from '@/lib/utils'
 import './apps.css'
 
@@ -56,8 +56,7 @@ export default function AppsPage({ address }: { address: string }) {
   const names = active.map((s) => cleanServerName(s.name))
   const page = useMemo(() => splitPageTiles(tiles ?? [], active.map((s) => s.slug)), [tiles, active])
   const needs = needsYouRows(page.briefing)
-  const merged = useMemo(() => mergeMoneyMap(map, tiles ?? []), [map, tiles])
-  const totalUsd = merged ? summarizeMoneyMap(merged).totalUsd : null
+  const totalUsd = useMemo(() => pageTotalUsd(map, tiles ?? []), [map, tiles])
 
   // The dock's empty state offers the open apps' own first asks.
   useEffect(() => {

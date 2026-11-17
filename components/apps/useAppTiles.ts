@@ -26,9 +26,17 @@ export interface AppTiles {
   retry: () => void
 }
 
+/** The last settled scan, kept for the session. The page unmounts whenever
+ *  another tab or the full-width conversation takes the main area; coming
+ *  back to the SAME wallet, apps and chain paints this at once and re-reads
+ *  quietly behind it, instead of sending the whole page back to the loader. */
+let LAST: { key: string; tiles: SplashTile[]; map: MoneyMap | null } | null = null
+
 export function useAppTiles(address: string | undefined, servers: McpServer[]): AppTiles {
-  const [tiles, setTiles] = useState<SplashTile[] | null>(null)
-  const [map, setMap] = useState<MoneyMap | null>(null)
+  const selectedChainId0 = useYeetfulStore.getState().selectedChainId
+  const key0 = `${address ?? ''}|${servers.map((s) => s.id).sort().join(',')}|${selectedChainId0 ? chainById(selectedChainId0)?.key ?? '' : ''}`
+  const [tiles, setTiles] = useState<SplashTile[] | null>(() => (LAST && LAST.key === key0 ? LAST.tiles : null))
+  const [map, setMap] = useState<MoneyMap | null>(() => (LAST && LAST.key === key0 ? LAST.map : null))
   const [loading, setLoading] = useState(false)
   const [pending, setPending] = useState<McpServer[]>([])
   const [reload, setReload] = useState(0)
@@ -39,7 +47,7 @@ export function useAppTiles(address: string | undefined, servers: McpServer[]): 
   const key = `${address ?? ''}|${servers.map((s) => s.id).sort().join(',')}|${chainKey}`
 
   const coveredRef = useRef<{ base: string; byId: Map<string, string> } | null>(null)
-  const tilesRef = useRef<SplashTile[] | null>(null)
+  const tilesRef = useRef<SplashTile[] | null>(tiles)
   const commit = (next: SplashTile[] | null) => {
     tilesRef.current = next
     setTiles(next)
@@ -61,8 +69,12 @@ export function useAppTiles(address: string | undefined, servers: McpServer[]): 
     lastReloadRef.current = reload
 
     if (forceFull || !covered || covered.base !== base) {
-      setLoading(true)
-      commit(null)
+      // A remembered scan of this exact page is on screen: re-read behind it.
+      const warm = !forceFull && !covered && LAST?.key === key && tilesRef.current !== null
+      if (!warm) {
+        setLoading(true)
+        commit(null)
+      }
       setPending([])
       const scanned = servers.map((s) => [s.id, s.slug] as const)
       fetch('/api/splash', {
@@ -78,9 +90,9 @@ export function useAppTiles(address: string | undefined, servers: McpServer[]): 
           commit(Array.isArray(data.tiles) ? data.tiles : [])
         })
         .catch(() => {
-          // Transport failure: settle empty and leave `covered` unset, so the
-          // next change retries the whole scan.
-          if (alive) commit([])
+          // Transport failure: settle empty (or keep the remembered page) and
+          // leave `covered` unset, so the next change retries the whole scan.
+          if (alive && !warm) commit([])
         })
         .finally(() => {
           if (alive) setLoading(false)
@@ -134,6 +146,12 @@ export function useAppTiles(address: string | undefined, servers: McpServer[]): 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, reload])
+
+  // Remember every settled page (a full scan, a delta add, a removal).
+  useEffect(() => {
+    if (address && tiles && !loading && pending.length === 0 && servers.length > 0) LAST = { key, tiles, map }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tiles, map, loading, pending.length, key])
 
   return { tiles, map, loading, pending, retry: () => setReload((n) => n + 1) }
 }
