@@ -34937,8 +34937,13 @@ async function main() {
     check(
       'native nav: ChatWorkspace is the phone frame (data-app-frame), mounts the screen BEFORE ChatInterface so its scroller is the first data-app-scroll, makes the conversation inert under a screen, and belts the desktop "show the studio" pair into the LINKS screen',
       /<div data-app-frame="" className=\{`relative flex \$\{chrome/.test(nnWs) && !/max-lg:pb-\[calc\(48px/.test(nnWsCode) &&
-        nnWs.indexOf('<PhoneScreens screen={phoneScreen} />') < nnWs.indexOf('<ChatInterface injectedPrompt={urlPrompt} />') &&
-        /inert=\{screenUp \|\| undefined\} aria-hidden=\{screenUp \|\| undefined\}/.test(nnWs) &&
+        // RE-PINNED 2026-11-17 (apps-page): the conversation now receives the
+        // newest of the page's ask and the URL's (`injected`) and sits beside the
+        // apps page (`beside`); a closed dock is inert too. Still mounted AFTER
+        // the screen, still inert + aria-hidden under a screen.
+        nnWs.indexOf('<PhoneScreens screen={phoneScreen} />') >= 0 &&
+        nnWs.indexOf('<PhoneScreens screen={phoneScreen} />') < nnWs.indexOf("<ChatInterface injectedPrompt={injected} beside={besideApps ? 'apps' : undefined} />") &&
+        /inert=\{screenUp \|\| dockHidden \|\| undefined\}\s*aria-hidden=\{screenUp \|\| dockHidden \|\| undefined\}/.test(nnWs) &&
         /if \(!isNarrow \|\| mainView !== 'links' \|\| railTab !== 'links'\) return\s*setMainView\('chat'\)\s*setPhoneScreen\('links'\)/.test(nnWs),
     )
     check(
@@ -34946,7 +34951,10 @@ async function main() {
       /<section data-phone-panel=\{name\} aria-label=\{title\} className="absolute inset-0 z-\[45\] flex flex-col bg-\[var\(--bg\)\]">/.test(nnScreen) &&
         // The main area names its screen in EVERY state (the squad drive's
         // contract: main[data-phone-screen="chat|history|apps|jobs|links|team"]).
-        /<main className="relative flex-1 min-w-0 min-h-0 flex flex-col" data-phone-screen=\{isNarrow \? phoneScreen : undefined\}>/.test(nnWs) &&
+        // RE-PINNED 2026-11-17 (apps-page): main is a column, or a row when the
+        // desktop apps page sits beside the docked chat; it still names its
+        // screen below lg.
+        /<main\s+className=\{`relative flex-1 min-w-0 min-h-0 flex \$\{appsView \? 'flex-row' : 'flex-col'\}`\}\s+data-phone-screen=\{isNarrow \? phoneScreen : undefined\}/.test(nnWs) &&
         /<div ref=\{scrollerRef\} data-app-scroll="" className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain/.test(nnScreen) &&
         // Scroll position remembered per screen (invariant 3): the scroller's
         // offset is saved on unmount and restored on the next mount.
@@ -34954,7 +34962,11 @@ async function main() {
     )
     check(
       'native nav: the screens — APPS, JOBS, TEAM, HISTORY render the extracted bodies flat; a navigation from JOBS/HISTORY returns to the conversation; LINKS is the studio with "Your list" (aria-haspopup="dialog") opening the rail list as a Sheet whose Mint / Name-your-page land ON the studio',
-      /case 'apps':[\s\S]*?<AppsRailTab flat \/>/.test(nnScreens) &&
+      // RE-PINNED 2026-11-17 (apps-page): APPS is AppsScreen, which keeps the
+      // flat AppsRailTab for a visitor with no wallet (a connected wallet gets
+      // the apps page, components/apps/AppsPhone).
+      /case 'apps':\s*return <AppsScreen \/>/.test(nnScreens) &&
+        /function AppsScreen\(\)[\s\S]*?<PhoneScreen name="apps" title=\{PHONE_SCREEN_TITLES\.apps\}>\s*<AppsRailTab flat \/>/.test(nnScreens) &&
         /case 'jobs':[\s\S]*?<JobsRailTab flat onNavigate=\{toChat\} \/>/.test(nnScreens) &&
         /case 'team':[\s\S]*?<TeamRailTab flat \/>/.test(nnScreens) &&
         /case 'history':[\s\S]*?<ChatsRailTab flat onNavigate=\{toChat\} \/>/.test(nnScreens) &&
