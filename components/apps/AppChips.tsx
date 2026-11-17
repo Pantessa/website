@@ -13,17 +13,19 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Info, Plus } from 'lucide-react'
+import { Info, LayoutGrid, Plus } from 'lucide-react'
 import BrandIcon from '@/components/BrandIcon'
 import AddMcpModal from '@/components/AddMcpModal'
 import { cleanServerName, cn } from '@/lib/utils'
-import { fitOffered, offeredApps, trayApps, trayLine, trayPrice, type TrayView } from '@/lib/apps-dock'
+import { offeredApps, rowPlan, trayApps, trayLine, trayPrice, type TrayView } from '@/lib/apps-dock'
 import type { McpServer } from '@/lib/store'
 import { useAppSet } from '@/components/apps/useAppSet'
 import './dock.css'
 
 /** The list's flex gap, px (dock.css `.apgd-list`). */
 const CHIP_GAP = 8
+/** "Browse all" as its icon alone, px (dock.css). */
+const BROWSE_COMPACT = 38
 
 export default function AppChips({ right }: { right?: React.ReactNode }) {
   const { servers, active, toggle } = useAppSet()
@@ -48,20 +50,30 @@ export default function AppChips({ right }: { right?: React.ReactNode }) {
 
   // ── One line: measure what fits ─────────────────────────────────────────
   const listRef = useRef<HTMLDivElement>(null)
-  const [fit, setFit] = useState(0)
-  const [overflowing, setOverflowing] = useState(false)
+  const [plan, setPlan] = useState({ compact: false, fit: 0, overflowing: false })
+  const { compact, fit, overflowing } = plan
   const measure = useCallback(() => {
     const list = listRef.current
     if (!list) return
     const on = [...list.querySelectorAll<HTMLElement>('[data-chip-kind="on"]')]
     const off = [...list.querySelectorAll<HTMLElement>('[data-chip-kind="off"]')]
     const browse = list.querySelector<HTMLElement>('[data-chip-kind="browse"]')
-    // The on-chips and "Browse all" always show; each offered chip that
-    // fits adds its width and one gap.
-    const fixed = on.reduce((sum, el) => sum + el.offsetWidth + CHIP_GAP, 0) + (browse?.offsetWidth ?? 0)
-    const room = list.clientWidth - fixed
-    setFit(fitOffered(room, off.map((el) => el.offsetWidth), CHIP_GAP))
-    setOverflowing(room < -1)
+    const isCompact = list.hasAttribute('data-compact')
+    // A compact chip keeps its name in the DOM, out of the flow but still
+    // measurable, so both widths are known in either state (one flex gap
+    // sits between the mark and the name).
+    const nameW = (el: HTMLElement) => (el.querySelector<HTMLElement>('.apgd-chip__name')?.offsetWidth ?? 0) + CHIP_GAP
+    const next = rowPlan({
+      width: list.clientWidth,
+      onFull: on.map((el) => (isCompact ? el.offsetWidth + nameW(el) : el.offsetWidth)),
+      onCompact: on.map((el) => (isCompact ? el.offsetWidth : el.offsetWidth - nameW(el))),
+      // "Browse all" keeps its words measurable too (padding 14 + border 1 a side).
+      browse: (browse?.querySelector<HTMLElement>('.apgd-browse__label')?.offsetWidth ?? 60) + 30,
+      browseCompact: BROWSE_COMPACT,
+      offered: off.map((el) => el.offsetWidth),
+      gap: CHIP_GAP,
+    })
+    setPlan((p) => (p.compact === next.compact && p.fit === next.fit && p.overflowing === next.overflowing ? p : next))
   }, [])
   useLayoutEffect(() => {
     measure()
@@ -107,6 +119,7 @@ export default function AppChips({ right }: { right?: React.ReactNode }) {
           role="group"
           aria-label="Apps on this page"
           data-overflowing={overflowing ? '' : undefined}
+          data-compact={compact ? '' : undefined}
           data-apps-fit={fit}
         >
           {active.map((s) => (
@@ -116,19 +129,20 @@ export default function AppChips({ right }: { right?: React.ReactNode }) {
               aria-pressed="true"
               onClick={() => remove(s)}
               title={`${cleanServerName(s.name)} is on this page. Click to remove it.`}
+              aria-label={cleanServerName(s.name)}
               className="apg-chip apg-chip--on"
               data-apps-chip={s.slug}
               data-chip-kind="on"
             >
               <BrandIcon server={s} size={16} />
-              <span>{cleanServerName(s.name)}</span>
+              <span className="apgd-chip__name">{cleanServerName(s.name)}</span>
               <span aria-hidden className="apg-chip__x">
                 ×
               </span>
             </button>
           ))}
           {offered.map((s, i) => {
-            const shown = i < fit && !overflowing
+            const shown = i < fit && !overflowing && !compact
             return (
               <button
                 key={s.id}
@@ -159,8 +173,11 @@ export default function AppChips({ right }: { right?: React.ReactNode }) {
             className={cn('apg-chip apg-chip--browse apgd-browse', trayOpen && 'apg-chip--open')}
             data-apps-browse=""
             data-chip-kind="browse"
+            aria-label={trayOpen ? 'Close the list of apps' : 'Browse all apps'}
+            title={trayOpen ? 'Close' : 'Browse all apps'}
           >
-            {trayOpen ? 'Close' : 'Browse all'}
+            <LayoutGrid width={15} height={15} aria-hidden className="apgd-browse__icon" />
+            <span className="apgd-browse__label">{trayOpen ? 'Close' : 'Browse all'}</span>
           </button>
         </div>
         {right && <div className="apg-chips__right">{right}</div>}

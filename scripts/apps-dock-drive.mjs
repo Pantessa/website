@@ -14,6 +14,7 @@
 //     --asks='What is my biggest position?||Swap $5 of ETH to USDC on Base' \
 //     --out=/abs/dir/prefix          (writes <prefix>-1.png, -2.png, …)
 //     --timeout=60000                (ms to wait for each answer)
+//     --shortcut                     (first: close the dock, press "/", expect it open + focused)
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -187,9 +188,21 @@ try {
     }
   })()`
 
+  const bad = []
+  if (arg('shortcut')) {
+    await ev(`document.querySelector('[data-dock-close]').click()`)
+    await sleep(500)
+    const closed = await ev(`document.querySelector('[data-apps-page]').getAttribute('data-chat')`)
+    await ev(`document.activeElement && document.activeElement.blur()`)
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: '/', code: 'Slash', windowsVirtualKeyCode: 191, text: '/' }, sessionId)
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: '/', code: 'Slash', windowsVirtualKeyCode: 191 }, sessionId)
+    await sleep(600)
+    const after = await ev(`({ chat: document.querySelector('[data-apps-page]').getAttribute('data-chat'), focused: document.activeElement === document.querySelector('[data-chat-dock] [data-composer-input]'), value: document.querySelector('[data-chat-dock] [data-composer-input]').value })`)
+    console.log(JSON.stringify({ shortcut: { closedFirst: closed, ...after } }))
+    if (closed !== 'closed' || after.chat !== 'open' || !after.focused || after.value !== '') bad.push(`"/" did not open the dock with the composer focused and empty: ${JSON.stringify(after)}`)
+  }
   const asks = String(arg('asks', 'What is my biggest position?')).split('||').map((a) => a.trim()).filter(Boolean)
   const TIMEOUT = Number(arg('timeout', 60000))
-  const bad = []
   let n = 0
   for (const ask of asks) {
     n += 1

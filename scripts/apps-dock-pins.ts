@@ -6,7 +6,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { fitOffered, firstSentence, isChatShortcut, offeredApps, onePerName, trayApps, trayLine, trayPrice } from '../lib/apps-dock'
+import { fitOffered, firstSentence, rowPlan, isChatShortcut, offeredApps, onePerName, trayApps, trayLine, trayPrice } from '../lib/apps-dock'
 import { chatScopeLabel } from '../lib/apps-page'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -37,6 +37,21 @@ export function appsDockPins(check: Check) {
   check('dock: fitOffered with no room shows none', fitOffered(0, [50], 8) === 0 && fitOffered(-40, [50], 8) === 0)
   check('dock: fitOffered stops at an unmeasured chip', fitOffered(1000, [80, 0, 80], 8) === 1)
   check('dock: fitOffered keeps order (a wide chip blocks the ones after it)', fitOffered(200, [80, 300, 40], 8) === 1)
+
+  // ── rowPlan: names while they fit, marks when not, scroll as the last resort
+  const plan = (width: number, offered: number[] = [90, 90]) => rowPlan({ width, onFull: [120, 130], onCompact: [50, 50], browse: 90, offered, gap: 8 })
+  const wide = plan(1000)
+  check('dock: rowPlan shows names and fills the room with offered chips', !wide.compact && !wide.overflowing && wide.fit === 2, JSON.stringify(wide))
+  const mid = plan(300)
+  check('dock: rowPlan goes to marks when the names do not fit', mid.compact && !mid.overflowing && mid.fit === 0, JSON.stringify(mid))
+  const tiny = plan(150)
+  check('dock: rowPlan scrolls only when even the marks do not fit', tiny.compact && tiny.overflowing && tiny.fit === 0, JSON.stringify(tiny))
+  const exact = rowPlan({ width: 356, onFull: [120, 130], onCompact: [50, 50], browse: 90, offered: [], gap: 8 })
+  check('dock: rowPlan keeps the names at an exact fit', !exact.compact && !exact.overflowing, JSON.stringify(exact))
+  const icon = rowPlan({ width: 200, onFull: [120, 130], onCompact: [50, 50], browse: 90, browseCompact: 38, offered: [], gap: 8 })
+  check('dock: rowPlan folds "Browse all" to its icon with the marks', icon.compact && !icon.overflowing, JSON.stringify(icon))
+  const none = rowPlan({ width: 200, onFull: [], onCompact: [], browse: 90, offered: [60, 60], gap: 8 })
+  check('dock: rowPlan with no app on fills with offered chips', !none.compact && none.fit === 1, JSON.stringify(none))
 
   // ── offeredApps: free first-party apps only, each name once ───────────────
   const dir = [

@@ -26,6 +26,24 @@ export function fitOffered(available: number, widths: number[], gap: number): nu
   return n
 }
 
+/** The row's plan for its one line. `onFull` / `onCompact` are each on-chip's
+ *  width with its name and with its mark alone; `browse` is "Browse all".
+ *  The names show whenever every on-chip fits with them; otherwise the
+ *  on-chips go to marks (the name stays in the tooltip and the accessible
+ *  name); if even the marks do not fit, the list scrolls sideways. Offered
+ *  chips only take what is left, and only while every name shows. */
+export function rowPlan(p: { width: number; onFull: number[]; onCompact: number[]; browse: number; browseCompact?: number; offered: number[]; gap: number }): {
+  compact: boolean
+  fit: number
+  overflowing: boolean
+} {
+  const fixed = (ws: number[], browse: number) => ws.reduce((sum, w) => sum + w + p.gap, 0) + browse
+  const fullRoom = p.width - fixed(p.onFull, p.browse)
+  const compact = fullRoom < 0 && p.onCompact.length > 0
+  const room = compact ? p.width - fixed(p.onCompact, p.browseCompact ?? p.browse) : fullRoom
+  return { compact, fit: room > 0 && !compact ? fitOffered(room, p.offered, p.gap) : 0, overflowing: room < -1 }
+}
+
 /** Most offered chips the row ever considers (the rest live in the tray). */
 export const OFFERED_MAX = 8
 

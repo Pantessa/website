@@ -2068,12 +2068,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <SiteAccount />
             </div>
           )}
-          {besideApps && (
-            <>
-              <DockControls />
-              <DockShortcut />
-            </>
-          )}
+          {besideApps && <DockControls />}
+          {besideApps && <DockShortcut />}
         </div>
       )}
 
