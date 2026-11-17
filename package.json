@@ -142,6 +142,7 @@
     "drive:prints": "tsx scripts/drive-print-alerts.ts",
     "drive:guest-chat": "node scripts/guest-chat-drive.mjs",
     "pins:markets-mobile": "tsx scripts/markets-mobile-pins.ts",
+    "pins:plan-ticket": "tsx scripts/plan-ticket-pins.ts",
     "drive:settings-sign-in": "node scripts/settings-sign-in-drive.mjs"
   },
   "dependencies": {
