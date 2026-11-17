@@ -1170,10 +1170,15 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
     ],
   },
   hyperliquid: {
-    message: 'No Hyperliquid account for this wallet yet — fund it in one move (or one job) and the guardian can watch your positions.',
+    message: 'No Hyperliquid account for this wallet yet — fund it in one move and the guardian can watch your positions.',
+    // No job chip here (squad lane1, 2026-11-17). This list is the same for
+    // every wallet with no Hyperliquid account, and the old "Fund + protected
+    // long (1 job)" chip needed 12 USDC on Arbitrum that nothing here had
+    // looked for: on prod it failed with "0 USDC on Arbitrum". A job is only
+    // offered where the wallet was read first (lib/job-offers). The deposit
+    // below is one step, and its own layer answers a shortfall with a way in.
     prompts: [
       { label: 'Deposit 10 USDC', prompt: 'Deposit 10 USDC to Hyperliquid' },
-      { label: 'Fund + protected long (1 job)', prompt: 'Deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop' },
       { label: 'Top markets', prompt: 'What are the top Hyperliquid markets by volume today?' },
     ],
   },

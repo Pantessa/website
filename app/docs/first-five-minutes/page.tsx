@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
+import { JobOfferLine } from '@/components/JobOfferDoor'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
 
@@ -83,9 +84,11 @@ export default function FirstFiveMinutesPage() {
           </SpineLink>{' '}
           and <Link href="/docs/guardian">Guardian</Link>{' '}watches it every minute with a key that
           can only reduce that position — revocable with one click. Say{' '}
-          <SpineLink href={ask('Fund Robinhood Chain with $50 from Base including gas, then buy $40 of AAPL', 'robinhood-free')}>
-            &ldquo;Fund Robinhood Chain with $50 from Base including gas, then buy $40 of AAPL&rdquo;
-          </SpineLink>{' '}
+          {/* An example, as text (squad lane1, 2026-11-17): this was a link
+              that prefilled one fixed job for every reader, whatever their
+              wallet held. JobOfferLine adds a link only when the reader's
+              wallet can run a job, carrying that wallet's own sentence. */}
+          <JobOfferLine example="Fund Robinhood Chain with $50 from Base including gas, then buy $40 of AAPL" />{' '}
           and you get <Link href="/docs/jobs">a job</Link>{' '}that waits for the bridge to settle, then
           offers the buy. The Jobs tab in the chat rail shows everything that&apos;s running and flags
           the moments that need you.

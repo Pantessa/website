@@ -17,6 +17,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import SpineLink from '@/components/SpineLink'
+import { useJobOffer } from '@/lib/use-job-offer'
 
 /** The night arc: 21:00 → 06:00, drawn clockwise from upper-left through
  *  midnight at the top. Hours past 24 keep counting (26 = 02:00). */
@@ -91,7 +92,7 @@ const POINTS: { t: string; d: string }[] = [
   },
 ]
 
-const TILES: { label: string; t: string; d: string; ask: string; href: string }[] = [
+const TILES: { label: string; t: string; d: string; ask: string; href: string; job?: true }[] = [
   {
     label: 'RECURRING BUYS',
     t: 'DCA in one sentence',
@@ -113,8 +114,16 @@ const TILES: { label: string; t: string; d: string; ask: string; href: string }[
     // Displayed = sent: the tile once showed "…then send it to nate.eth"
     // while the href carried the explicit clause — a reader who retyped the
     // tile's words got the jobs refusal ("it" isn't a segment).
-    ask: 'Swap 1 USDC from Base to Arbitrum, then send the 1 USDC on Arbitrum to nate.eth',
-    href: `/chat?prompt=${encodeURIComponent('Swap 1 USDC from Base to Arbitrum, then send the 1 USDC on Arbitrum to nate.eth')}`,
+    //
+    // 2026-11-17 (squad lane1, the jobs audit): the sentence here is the
+    // job catalog's EXAMPLE (lib/job-offers JOB_OFFER_EXAMPLE, pinned equal),
+    // and the tile is only a link for a wallet that can run a job: JobTile
+    // below swaps in that wallet's own sentence, or shows this one as text.
+    // The old tile ("Swap 1 USDC from Base to Arbitrum, then send … to
+    // nate.eth") was a link for everyone, whatever they held.
+    ask: 'Fund Robinhood Chain with $12.5 from Base including gas, then buy $10 of AAPL',
+    href: `/chat?mcps=robinhood-free&prompt=${encodeURIComponent('Fund Robinhood Chain with $12.5 from Base including gas, then buy $10 of AAPL')}`,
+    job: true,
   },
   {
     label: 'NFTS',
@@ -124,6 +133,35 @@ const TILES: { label: string; t: string; d: string; ask: string; href: string }[
     href: `/chat?mcps=opensea-free&prompt=${encodeURIComponent('Sell my NFT #4172 for 0.8 ETH')}`,
   },
 ]
+
+/** The JOBS tile. A link only for a wallet that can run a job, and then it
+ *  carries THAT wallet's sentence (its chain, its size). For everyone else
+ *  the example is text: a tile must never prefill a job that will fail. */
+function JobTile({ x }: { x: (typeof TILES)[number] }) {
+  const view = useJobOffer()
+  const inner = (ask: string, runs: boolean) => (
+    <>
+      <span className="night__tlabel mono">{x.label}</span>
+      <h3 className="night__tt">{x.t}</h3>
+      <p className="night__td">{x.d}</p>
+      <span className="night__task mono">
+        &ldquo;{ask}&rdquo;{runs ? ' →' : ''}
+      </span>
+    </>
+  )
+  if (view.state === 'offer') {
+    return (
+      <SpineLink href={`/chat?mcps=robinhood-free&prompt=${encodeURIComponent(view.offer.ask)}`} className="night__tile" data-job-offer="offer">
+        {inner(view.offer.ask, true)}
+      </SpineLink>
+    )
+  }
+  return (
+    <div className="night__tile" data-job-offer={view.state}>
+      {inner(x.ask, false)}
+    </div>
+  )
+}
 
 /** SVG arc path between two hours on the dial. */
 function arc(h1: number, h2: number, r = R) {
@@ -299,14 +337,18 @@ export default function NightShift() {
 
       {/* the four standing surfaces — each lands its ask in /chat, prefilled */}
       <div className="night__tiles">
-        {TILES.map((x) => (
-          <SpineLink href={x.href} className="night__tile" key={x.label}>
-            <span className="night__tlabel mono">{x.label}</span>
-            <h3 className="night__tt">{x.t}</h3>
-            <p className="night__td">{x.d}</p>
-            <span className="night__task mono">&ldquo;{x.ask}&rdquo; →</span>
-          </SpineLink>
-        ))}
+        {TILES.map((x) =>
+          x.job ? (
+            <JobTile key={x.label} x={x} />
+          ) : (
+            <SpineLink href={x.href} className="night__tile" key={x.label}>
+              <span className="night__tlabel mono">{x.label}</span>
+              <h3 className="night__tt">{x.t}</h3>
+              <p className="night__td">{x.d}</p>
+              <span className="night__task mono">&ldquo;{x.ask}&rdquo; →</span>
+            </SpineLink>
+          ),
+        )}
       </div>
     </section>
   )

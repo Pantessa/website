@@ -11,20 +11,39 @@
 // is lib/fees' number.
 
 import { CREATOR_FEE_SPLIT, LINK_FEE_PCT } from '@/lib/fees'
+import { JOB_OFFER_EXAMPLE } from '@/lib/job-offers'
 
 const SPLIT_WORD: string =
   CREATOR_FEE_SPLIT === 0.5 ? 'half' : CREATOR_FEE_SPLIT === 0.25 ? 'a quarter' : `${Math.round(CREATOR_FEE_SPLIT * 100)}%`
 
-/** The JOBS rail, empty or signed out. The ask is the hero reel's own
- *  four-step job at a first-run size (fund → wait → buy); the ladder builds
- *  it (pinned). */
+/** The JOBS rail, empty or signed out.
+ *
+ *  2026-11-17 (squad lane1, the jobs audit): `ask` is an EXAMPLE, never a
+ *  button on its own. It used to be the door's one hard-coded action, offered
+ *  to every wallet, and a new account with no USDC on Base pressed it into a
+ *  failed job. The button a wallet sees now comes from lib/job-offers
+ *  jobOfferFor (the first job THAT wallet can run, from the chain where its
+ *  money is); a wallet that can run none sees `fundLabel` instead, and a
+ *  visitor with no wallet sees the example as text beside the connect door.
+ *  The example is the catalog's own sentence, so the ladder still builds it
+ *  (pinned in scripts/guide-pins.ts and scripts/jobs-offers-pins.ts). */
 export const JOBS_DOOR = {
   eyebrow: 'Jobs · what lands here',
   title: 'An ask with “then” is a job.',
   body: 'Fund, wait, buy, protect — one signature per step. It waits out the bridge for you and every state stays visible here, nothing signed without you.',
   lines: ['You say the whole plan in one sentence.', 'Each step is built and guarded, then offered to your wallet.', 'Stops and recurring buys arm here too, and you can pause or fire them.'],
+  /** Appended to the offer's own label ("Try a 4-step job"). */
   ctaLabel: 'Try a 4-step job →',
-  ask: 'Fund Robinhood Chain with $12 from Base including gas, then buy $10 of AAPL',
+  ask: JOB_OFFER_EXAMPLE,
+  /** Before the example sentence, where it is shown as text. */
+  exampleLead: 'For example:',
+  /** No wallet: the connect door's label. */
+  connectLabel: 'Connect a wallet',
+  /** A wallet that can run no job yet: the door into the wallet window,
+   *  where the card and the receive address are. */
+  fundLabel: 'Add funds →',
+  /** While the balances are being read. */
+  reading: 'Reading this wallet to size a first job…',
 } as const
 
 /** The CHATS rail with nothing in it. */
