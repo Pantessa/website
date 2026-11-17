@@ -106,3 +106,13 @@ export function grantViolation(
     return e instanceof GrantError ? e.code : 'POLICY_ERROR'
   }
 }
+
+/**
+ * Pure: does a grant PATCH body lift the kill switch? Thawing (`paused:
+ * false`) and reactivating (`status: 'active'`) loosen; freezing and revoking
+ * tighten. Only the owner's session may loosen (app/api/grants/[id]).
+ */
+export function keyLoosens(body: unknown): boolean {
+  const b = (body ?? {}) as { paused?: unknown; status?: unknown }
+  return b.paused === false || b.status === 'active'
+}

@@ -69,7 +69,21 @@ export async function getBearerKey(req: NextRequest): Promise<BearerKey | null> 
  * or null. Touches lastUsedAt on success.
  */
 export async function getBearerAddress(req: NextRequest): Promise<string | null> {
-  return (await getBearerKey(req))?.ownerAddress ?? null
+  return keyActsAsOwner(await getBearerKey(req))
+}
+
+/**
+ * Pure: the wallet a key may ACT AS on a wallet-scoped route, or null.
+ *  - A PAUSED key acts as nobody. Pausing is the owner's kill switch for one
+ *    agent; before 2026-11-17 only /api/route honoured it, so a paused key
+ *    still wrote to every other route its owner could.
+ *  - An ORG key acts as nobody personally. Its `ownerAddress` is the admin
+ *    who minted it; the key belongs to the org, not to that admin's wallet.
+ *    Routes that serve org keys read the key itself (getBearerKey).
+ */
+export function keyActsAsOwner(key: Pick<BearerKey, 'ownerAddress' | 'orgId' | 'paused'> | null): string | null {
+  if (!key || key.paused || key.orgId) return null
+  return key.ownerAddress
 }
 
 /**

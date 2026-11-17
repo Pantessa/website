@@ -38,6 +38,8 @@ import { base } from 'viem/chains'
 import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/dry-run'
 import { createSiweMessage, parseSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
+import { keyActsAsOwner } from '../lib/api-key'
+import { keyLoosens } from '../lib/spend-grant'
 import { LINK_FEE_PCT, SWAP_FEE_PCT } from '../lib/fees'
 import {
   claimJobStepReport,
@@ -2076,6 +2078,23 @@ async function main() {
     body: JSON.stringify({ paused: true }),
   })
   check('owner pauses the agent (SIWE)', pauseRes.status === 200 && (await pauseRes.json()).paused === true)
+
+  // 2026-11-17 (key control plane): a PAUSED key acts as nobody on a
+  // wallet-scoped route. Before, only /api/route honoured the pause.
+  {
+    const pausedList = await fetch(`${BASE}/api/grants`, { headers: B })
+    const pausedLinks = await fetch(`${BASE}/api/intent-links`, { headers: B })
+    check('paused key: wallet-scoped routes answer 401 (grants, intent-links), the policy read still answers', pausedList.status === 401 && pausedLinks.status === 401, `${pausedList.status} ${pausedLinks.status}`)
+    check(
+      'key control plane (pure): a paused key and an org key act as nobody; a live personal key acts as its owner; only thaw / reactivate count as loosening',
+      keyActsAsOwner({ ownerAddress: '0xabc', orgId: null, paused: true }) === null &&
+        keyActsAsOwner({ ownerAddress: '0xabc', orgId: 'org_1', paused: false }) === null &&
+        keyActsAsOwner(null) === null &&
+        keyActsAsOwner({ ownerAddress: '0xabc', orgId: null, paused: false }) === '0xabc' &&
+        keyLoosens({ paused: false }) && keyLoosens({ status: 'active' }) &&
+        !keyLoosens({ paused: true }) && !keyLoosens({ status: 'revoked' }) && !keyLoosens({ label: 'x' }) && !keyLoosens(null),
+    )
+  }
 
   const pausedPolicy = await (await fetch(`${BASE}/api/agent/policy`, { headers: B })).json()
   check(
@@ -5329,6 +5348,24 @@ async function main() {
     'frozen account: allowed host HARD-refused server-side (ACCOUNT_FROZEN)',
     frozen.status === 200 && frozenBody.blocked === true && /ACCOUNT_FROZEN/.test(frozenBody.reply ?? ''),
   )
+  // 2026-11-17 (key control plane): the freeze is the OWNER's. The account's
+  // own API key cannot thaw it, reactivate it, delete the frozen grant, or
+  // shadow it with a fresh grant (a grant created during a freeze is born frozen).
+  {
+    const keyThaw = await fetch(`${BASE}/api/grants/${grant.id}`, { method: 'PATCH', headers: BJ, body: JSON.stringify({ paused: false }) })
+    const keyReactivate = await fetch(`${BASE}/api/grants/${grant.id}`, { method: 'PATCH', headers: BJ, body: JSON.stringify({ status: 'active' }) })
+    const keyDelete = await fetch(`${BASE}/api/grants/${grant.id}`, { method: 'DELETE', headers: B })
+    const still = await (await fetch(`${BASE}/api/grants/${grant.id}`, { headers: C })).json()
+    check(
+      'frozen account: the account\u2019s own key cannot thaw (403), reactivate (403) or delete (401) the grant; it stays frozen',
+      keyThaw.status === 403 && keyReactivate.status === 403 && keyDelete.status === 401 && still.paused === true,
+      `${keyThaw.status} ${keyReactivate.status} ${keyDelete.status} paused=${still.paused}`,
+    )
+    const shadowRes = await fetch(`${BASE}/api/grants`, { method: 'POST', headers: BJ, body: JSON.stringify({ allow: ['a.example.test'], perCallUsd: 0.05, perDayUsd: 2 }) })
+    const shadow = await shadowRes.json()
+    check('frozen account: a grant created during the freeze is born frozen (it cannot shadow the kill switch)', shadowRes.status === 201 && shadow.paused === true, `${shadowRes.status} paused=${shadow.paused}`)
+    if (shadow.id) await fetch(`${BASE}/api/grants/${shadow.id}`, { method: 'DELETE', headers: C })
+  }
   const unfreeze = await fetch(`${BASE}/api/grants/${grant.id}`, { method: 'PATCH', headers: CJ, body: JSON.stringify({ paused: false }) })
   const thawed = await (await fetch(`${BASE}/api/agent/policy`, { headers: B })).json()
   check(
