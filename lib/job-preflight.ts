@@ -323,6 +323,19 @@ function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   })
 }
 
+/** One retry after a short pause: public RPCs rate-limit in bursts (the
+ *  funding scan does the same), and a read that fails here creates the job
+ *  unverified. A timeout is not retried (the turn has waited long enough). */
+async function readTwice<T>(read: () => Promise<T>, ms: number, what: string): Promise<T> {
+  try {
+    return await within(read(), ms, what)
+  } catch (e) {
+    if (e instanceof Error && /timed out after/.test(e.message)) throw e
+    await new Promise((r) => setTimeout(r, 450))
+    return within(read(), ms, what)
+  }
+}
+
 const firstLine = (e: unknown): string => (e instanceof Error ? e.message.split('\n')[0].slice(0, 160) : String(e).slice(0, 160))
 
 /**
@@ -422,7 +435,7 @@ export async function preflightJob(input: {
     let facts: PreflightShortFacts
     let gasShort = false
     if (where.native) {
-      const wei = await within(reader.native(need.chainId, wallet), readMs, `the ${chain.name} balance read`)
+      const wei = await readTwice(() => reader.native(need.chainId, wallet), readMs, `the ${chain.name} balance read`)
       held = Number(formatUnits(wei, 18))
       if (need.kind === 'eth-usd') {
         const price = await within((deps.ethUsd ?? (() => usdPerToken(8453, 'ETH').then((p) => p?.usd ?? null)))(), readMs, 'the ETH price read')
@@ -437,7 +450,7 @@ export async function preflightJob(input: {
       // The token and the chain's gas, read together (no extra wall-clock). A
       // gas read that fails is ignored: only a READ zero is a verdict.
       const [read, gasWei] = await Promise.all([
-        within(reader.erc20(need.chainId, where.address, wallet), readMs, `the ${chain.name} balance read`),
+        readTwice(() => reader.erc20(need.chainId, where.address, wallet), readMs, `the ${chain.name} balance read`),
         within(reader.native(need.chainId, wallet), readMs, `the ${chain.name} gas read`).catch(() => null),
       ])
       held = Number(formatUnits(read.balance, read.decimals))

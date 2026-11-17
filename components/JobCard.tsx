@@ -366,7 +366,7 @@ export default function JobCard({
                           key={c.resume}
                           type="button"
                           onClick={() => sendFix(c.resume)}
-                          className="px-2.5 py-1.5 rounded-lg border border-[var(--line-2)] text-[11.5px] font-medium text-[color:var(--accent)] hover:bg-white/[0.04] transition-colors [@media(hover:none)]:min-h-11"
+                          className="px-2.5 py-1.5 rounded-lg border border-[var(--line-2)] text-[11.5px] font-medium text-[color:var(--accent)] hover:border-[var(--accent)] transition-colors [@media(hover:none)]:min-h-11"
                         >
                           {c.label}
                         </button>
