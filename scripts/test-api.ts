@@ -37,6 +37,7 @@ import { createPublicClient, custom, http, HttpRequestError, InvalidAddressError
 import { base } from 'viem/chains'
 import { ARM_NEEDS_OWNER, armProof } from '../lib/spend-permission-proof'
 import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/dry-run'
+import { bumpAndCheckSubscribe, subscribeOver, SUBSCRIBE_EMAIL_HOURLY_CAP, SUBSCRIBE_IP_HOURLY_CAP } from '../lib/turn-limits'
 import { createSiweMessage, parseSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { keyActsAsOwner } from '../lib/api-key'
@@ -8806,6 +8807,31 @@ async function main() {
   check('subscribe: valid email → 201 pending', subRes.status === 201 && subBody.status === 'pending' && subBody.emailSent === false)
   const subDup = await fetch(`${BASE}/api/subscribe`, { method: 'POST', headers: SJ, body: JSON.stringify({ email: subEmail }) })
   check('subscribe: idempotent on email (re-issues token, no 409)', subDup.status === 201)
+  // 2026-11-17: the signup is open to anyone and sends mail, so it is capped
+  // per address and per IP before any row or mail. The fixture address above
+  // is never mailed, so it is fenced by IP alone and re-runs stay green.
+  {
+    const route = readFileSync(pathJoin(process.cwd(), 'app/api/subscribe/route.ts'), 'utf8')
+    const fenceAt = route.indexOf('bumpAndCheckSubscribe(clientIpFrom(req.headers), email')
+    check(
+      'subscribe cap (pure + source): over the per-address or per-IP hourly cap refuses; at the cap passes; the route fences before it reads, writes or mails',
+      !subscribeOver({ email: SUBSCRIBE_EMAIL_HOURLY_CAP, ip: SUBSCRIBE_IP_HOURLY_CAP }) && subscribeOver({ email: SUBSCRIBE_EMAIL_HOURLY_CAP + 1, ip: 1 }) &&
+        subscribeOver({ email: 1, ip: SUBSCRIBE_IP_HOURLY_CAP + 1 }) && !subscribeOver({ email: null, ip: null }) &&
+        fenceAt > 0 && fenceAt < route.indexOf('prisma.subscriber.findUnique') && fenceAt < route.indexOf('sendEmail(') && /status: 429/.test(route.slice(fenceAt, fenceAt + 400)),
+    )
+    if (process.env.DATABASE_URL) {
+      // The store half, against the window table only: nothing is mailed and no subscriber row is written.
+      const addr = `pin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}@subscribe-cap.pantessa.com`
+      const laps: boolean[] = []
+      for (let i = 0; i < SUBSCRIBE_EMAIL_HOURLY_CAP + 1; i++) laps.push(await bumpAndCheckSubscribe(null, addr))
+      const neverMailed = await bumpAndCheckSubscribe(null, 'harness-subscribe@yeetful-test.invalid', { neverMailed: true })
+      check(
+        `subscribe cap (store): one address passes ${SUBSCRIBE_EMAIL_HOURLY_CAP} times an hour and is refused on the next; a never-mailed fixture address is not counted`,
+        laps.slice(0, SUBSCRIBE_EMAIL_HOURLY_CAP).every((x) => x === false) && laps[SUBSCRIBE_EMAIL_HOURLY_CAP] === true && neverMailed === false,
+        laps.join(','),
+      )
+    } else console.log('  ⚪ subscribe cap (store): no DATABASE_URL in the harness process, skipped')
+  }
   const verBad = await fetch(`${BASE}/api/subscribe/verify?token=bogus-token`, { redirect: 'manual' })
   check(
     'verify: bad token → redirect ?subscribed=invalid',

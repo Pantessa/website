@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes } from 'node:crypto'
 import prisma from '@/lib/db'
-import { emailEnabled, sendEmail, verifyEmailHtml } from '@/lib/email'
+import { emailEnabled, isUndeliverable, sendEmail, verifyEmailHtml } from '@/lib/email'
+import { bumpAndCheckSubscribe, clientIpFrom } from '@/lib/turn-limits'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -20,6 +21,12 @@ export async function POST(req: NextRequest) {
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
   if (!EMAIL_RE.test(email) || email.length > 254) {
     return NextResponse.json({ error: 'A valid email is required.' }, { status: 400 })
+  }
+
+  // Fenced BEFORE any row or mail (lib/turn-limits): this route is open to
+  // anyone and each call re-issues the token and sends a confirm link.
+  if (await bumpAndCheckSubscribe(clientIpFrom(req.headers), email, { neverMailed: isUndeliverable(email) })) {
+    return NextResponse.json({ error: 'Too many sign-up attempts for now. Try again in an hour.' }, { status: 429 })
   }
 
   const existing = await prisma.subscriber.findUnique({ where: { email } })
