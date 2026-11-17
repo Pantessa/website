@@ -383,6 +383,12 @@ import { battlePins } from './battle-pins'
 import { flyoverPins } from './flyover-pins'
 import { orderTicketPins } from './order-ticket-pins'
 import { symbolAskPins } from './symbol-ask-pins'
+import { appsPagePins } from './apps-page-pins'
+import { appsPortfolioPins } from './apps-portfolio-pins'
+import { appsTradePins } from './apps-trade-pins'
+import { appsEarnPins } from './apps-earn-pins'
+import { appsDockPins } from './apps-dock-pins'
+import { appsPhonePins } from './apps-phone-pins'
 import { cowRefusalLivePins, signStagePins } from './sign-stage-pins'
 import { depthPins } from './depth-pins'
 import { chartTapePins } from './chart-tape-pins'
@@ -35618,6 +35624,13 @@ async function main() {
   // The order ticket (2026-10-06): every shape the form composes lands native, the honesty rules, the sizing, the Available line, the wiring.
   orderTicketPins(check)
   symbolAskPins(check)
+  // The apps page (squad apps-page, 2026-11-17): one pin file per lane.
+  appsPagePins(check)
+  appsPortfolioPins(check)
+  appsTradePins(check)
+  appsEarnPins(check)
+  appsDockPins(check)
+  appsPhonePins(check)
   // Only the wallet may be blamed for a wallet rejection (2026-11-11): a CoW order the wallet SIGNED read "Signature rejected in the wallet" when CoW's order book refused it; the stage rule on five sign surfaces, CoW's errorType kept + logged + filed, and one live unfunded throwaway order through the relay.
   signStagePins(check)
   await cowRefusalLivePins(BASE, check)

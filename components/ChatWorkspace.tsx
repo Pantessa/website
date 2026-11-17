@@ -9,6 +9,9 @@ import AppSpine from '@/components/AppSpine'
 import ChatSignInGate from '@/components/ChatSignInGate'
 import RouterEngineWindow from '@/components/RouterEngineWindow'
 import PhoneScreens from '@/components/phone/PhoneScreens'
+import AppsPage from '@/components/apps/AppsPage'
+import { appsViewOn } from '@/lib/apps-page'
+import { useAppsUi } from '@/lib/apps-page-ui'
 import { useAppShellMode } from '@/components/AppShell'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { PHONE_MQ } from '@/lib/phone-shell'
@@ -45,6 +48,7 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
     railTab,
     mainView,
     setMainView,
+    mcpRailOpen,
   } = useYeetfulStore()
   const { address } = useAccount()
   const router = useRouter()
@@ -242,6 +246,19 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
     setPhoneScreen('links')
   }, [isNarrow, mainView, railTab, setMainView, setPhoneScreen])
 
+  // THE APPS PAGE (squad apps-page, 2026-11-17): on a desktop, with a wallet,
+  // the lit APPS tab is a PLACE — the selected apps as the page, the chat
+  // docked beside it in its own column. The conversation below is the SAME
+  // ChatInterface at the SAME tree position in both postures (a remount
+  // would drop the thread's state); only its wrapper changes shape. A page
+  // button hands its ask to the chat through lib/apps-page-ui; the newest of
+  // that and the URL's ?prompt= is what the chat receives.
+  const appsView = appsViewOn({ narrow: isNarrow, hasWallet: !!address, railTab, railOpen: mcpRailOpen, mainView })
+  const appsChatOpen = useAppsUi((s) => s.chatOpen)
+  const appsAsk = useAppsUi((s) => s.ask)
+  const injected = appsView && appsAsk && (!urlPrompt || appsAsk.at > urlPrompt.at) ? appsAsk : urlPrompt
+  const dockHidden = appsView && !appsChatOpen
+
   const screenUp = isNarrow && phoneScreen !== 'chat'
   // A screen rising over the composer takes the keyboard with it.
   useEffect(() => {
@@ -274,15 +291,29 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
           child that holds the ONE scroller, so it must be allowed to shrink.
           data-phone-screen names what the main area shows below lg (the
           squad's drive contract: chat | history | apps | jobs | links | team). */}
-      <main className="relative flex-1 min-w-0 min-h-0 flex flex-col" data-phone-screen={isNarrow ? phoneScreen : undefined}>
+      <main
+        className={`relative flex-1 min-w-0 min-h-0 flex ${appsView ? 'flex-row' : 'flex-col'}`}
+        data-phone-screen={isNarrow ? phoneScreen : undefined}
+        data-apps-view={appsView ? '' : undefined}
+      >
         {/* The phone screen showing over the conversation. It mounts BEFORE
             ChatInterface so its scroller is the first `data-app-scroll` on
             the page while it shows (lib/app-scroller). */}
         {screenUp && <PhoneScreens screen={phoneScreen} />}
         {/* The conversation keeps its state under a screen; inert so nothing
             behind the screen can take a tap or the focus. */}
-        <div className="flex-1 min-h-0 flex flex-col" inert={screenUp || undefined} aria-hidden={screenUp || undefined}>
-          <ChatInterface injectedPrompt={urlPrompt} />
+        {/* The page beside the chat. Mounted BEFORE the conversation's wrapper
+            and as its own slot, so the wrapper keeps its position in the
+            tree whether or not the page is showing. */}
+        {appsView && address && <AppsPage address={address} />}
+        <div
+          className={appsView ? 'apg-dock' : 'flex-1 min-h-0 flex flex-col'}
+          data-chat-dock={appsView ? (dockHidden ? 'closed' : 'open') : undefined}
+          hidden={dockHidden || undefined}
+          inert={screenUp || dockHidden || undefined}
+          aria-hidden={screenUp || dockHidden || undefined}
+        >
+          <ChatInterface injectedPrompt={injected} beside={appsView ? 'apps' : undefined} />
         </div>
       </main>
       <RouterEngineWindow />

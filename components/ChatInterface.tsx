@@ -77,6 +77,8 @@ import EmbedThisChat from '@/components/EmbedThisChat'
 import ChainPicker from '@/components/ChainPicker'
 import { chainById } from '@/lib/chains'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
+import { DockControls, DockEmpty, DockScope } from '@/components/apps/Dock'
+import { askPlaceholder } from '@/lib/apps-page'
 import LinksWorkspace from '@/components/LinksWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
 import { claimJobStepReport, jobStepSignedInfo } from '@/lib/job-step-telemetry'
@@ -397,9 +399,17 @@ interface ChatInterfaceProps {
    *  page keeps ONE place to type. Every card, chip and connect door inside
    *  the thread still works. */
   docked?: boolean
+  /** Beside the apps page (components/apps, squad apps-page): this chat is
+   *  the dock in a column next to the page. The page IS the dashboard, so no
+   *  splash cards mint here and the empty state is the dock's own; the
+   *  toolbar names the apps the chat is scoped to and carries the dock's
+   *  expand / close controls. Everything else — the thread, every card, the
+   *  composer, the send path — is unchanged. First-party /chat only. */
+  beside?: 'apps'
 }
 
-export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin, embedSession, intentLinkSlug, simple = false, docked = false }: ChatInterfaceProps = {}) {
+export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin, embedSession, intentLinkSlug, simple = false, docked = false, beside }: ChatInterfaceProps = {}) {
+  const besideApps = beside === 'apps' && !embedded && !simple && !docked
   const {
     servers,
     setServers,
@@ -601,6 +611,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // always gets a card (preview when there's no activity).
   const splashEligible =
     !simple &&
+    !besideApps &&
     !!effectiveAddress &&
     !autoRouter &&
     activeServers.some((s) => splashCapable(s) || manualSlugs.includes(s.slug))
@@ -628,7 +639,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
 
   // Simple mode has no splash surface at all — batches never mint, so the
   // link runtime stays a single focused thread (cards were "too much info").
-  const splashableServers = simple
+  const splashableServers = simple || besideApps
     ? []
     : activeServers.filter((s) => splashCapable(s) || manualSlugs.includes(s.slug))
   const splashableKey = splashableServers.map((s) => s.id).sort().join(',')
@@ -714,7 +725,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // orphan the header).
   const splashChromeBatchId = splashBatches.find((b) => splashCounts[b.id] !== 0)?.id
 
-  const renderSplashBatch = (b: SplashBatch, opts: { chrome: boolean; hint: boolean }) => (
+  const renderSplashBatch = (b: SplashBatch, opts: { chrome: boolean; hint: boolean }) => besideApps ? null : (
     <SplashDashboard
       key={b.id}
       address={effectiveAddress}
@@ -1986,6 +1997,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             breakpoint — the spine column owns them ≥lg and the bottom bar
             owns them below (the old chip row was the mobile header's
             horizontal-overflow bug: nine flex-shrink-0 items vs 375px). */}
+        {besideApps ? (
+          <DockScope servers={activeServers} />
+        ) : (
         <div className="flex-1 min-w-0 flex items-center">
           {/* Auto Router is DISABLED for now — the toggle is hidden and the
               feature behaves as if it never existed (forced off in the store);
@@ -2011,6 +2025,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             )
           )}
           </div>
+        )}
           {autoRouter && (
             <button
               onClick={() => setEngineWindowOpen(!engineWindowOpen)}
@@ -2028,12 +2043,14 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           )}
           {/* The Chat|App ModeToggle came off the toolbar (nav rethink,
               2026-07-17) — App Mode stays in-tree behind ?mode=app. */}
-          <ChainPicker />
+          {!besideApps && <ChainPicker />}
           {/* Embedding is a desk job — the control stays off the phone
               header (Share keeps its seat everywhere; sharing is mobile). */}
+          {!besideApps && (
           <div className="max-lg:hidden flex-shrink-0">
             <EmbedThisChat slugs={activeServers.map((s) => s.slug)} />
           </div>
+          )}
           <ShareButton />
           {showAppChrome && (
             <div className="flex-shrink-0 pl-1">
@@ -2048,6 +2065,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <SiteAccount />
             </div>
           )}
+          {besideApps && <DockControls />}
         </div>
       )}
 
@@ -2156,7 +2174,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                 layout out from under the just-sent message (the "glitchy
                 scroll" report). Mid-conversation batches (anchor > 0) still
                 render inline with their message below. */}
-            {(splashEligible || splashBatches.length > 0) && (
+            {!besideApps && (splashEligible || splashBatches.length > 0) && (
               <>
                 {/* The batch effect hasn't committed yet (first paint after
                     connect / chat-load) — hold with the loader, same as a
@@ -2176,7 +2194,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               </>
             )}
             {!currentChat || currentChat.messages.length === 0 ? (
-              splashEligible || splashBatches.length > 0 ? (
+              besideApps ? (
+                // Beside the apps page the dashboard is the page: the dock's
+                // empty state says what the chat is for and offers the open
+                // apps' own asks.
+                <DockEmpty count={activeServers.length} onPick={runExample} />
+              ) : splashEligible || splashBatches.length > 0 ? (
                 splashSettledEmpty ? (
                   <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} guestBannerPad={!embedded && !simple && sessionStatus === 'guest'} />
                 ) : null
@@ -2965,6 +2988,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             placeholder={
               simple
                 ? 'Ask a follow-up…'
+                : besideApps
+                  ? `${askPlaceholder(activeServers.map((s) => cleanServerName(s.name)))}…`
                 : // A phone: "Ask your 4 agents anything…" wrapped in the
                   // 190px field at 360 and showed only "anything…" (the
                   // #872 /i lesson, now on /chat — squad mobile-native).
