@@ -23,8 +23,8 @@ import { useSession } from '@/lib/session'
 import { jobOfferView, type JobOfferFacts, type JobOfferView } from '@/lib/job-offers'
 
 export const JOB_OFFER_EVERY_MS = 60_000
-/** The four funding origins and Robinhood Chain (the gas question). */
-const CHAINS = 'base,arbitrum,optimism,ethereum,robinhood'
+/** The three origins an offer can leave and Robinhood Chain (the gas question). */
+const CHAINS = 'base,arbitrum,optimism,robinhood'
 
 type Wire = { chains?: { id: number; ok: boolean; nativeEth?: number; stable?: { symbol: string; balance: number } | null }[] }
 
@@ -58,7 +58,7 @@ export function readJobOfferFacts(address: string, maxAgeMs = JOB_OFFER_EVERY_MS
 }
 
 export function useJobOffer(): JobOfferView {
-  const { walletAddress } = useSession()
+  const { walletAddress, signedOut } = useSession()
   const { status: walletStatus } = useAccount()
   const [got, setGot] = useState<{ address: string; facts: JobOfferFacts } | null>(null)
 
@@ -82,9 +82,11 @@ export function useJobOffer(): JobOfferView {
     }
   }, [walletAddress])
 
-  // A wallet wagmi is still bringing back is not "no wallet": wait, so the
-  // connect door never flashes at someone who is connected.
-  if (!walletAddress) return walletStatus === 'reconnecting' || walletStatus === 'connecting' ? { state: 'loading' } : jobOfferView(null, null)
+  // Nobody here (lib/app-entry isSignedOut: no wallet, no session, nothing
+  // remembered) or wagmi has settled on "disconnected": the connect door.
+  // Anything else without an address is a wallet still being brought back:
+  // wait, so the connect door never flashes at someone who is connected.
+  if (!walletAddress) return signedOut || walletStatus === 'disconnected' ? jobOfferView(null, null) : { state: 'loading' }
   // Another wallet's balances never answer for this one.
   const facts = got?.address === walletAddress ? got.facts : (lastRead.get(walletAddress.toLowerCase()) ?? null)
   return jobOfferView(walletAddress, facts)

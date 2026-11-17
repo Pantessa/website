@@ -22,7 +22,8 @@
 //
 //   "Fund Robinhood Chain with $X from <origin> [including gas], then buy $10 of AAPL"
 //
-//   needs  USDC on ONE origin chain >= X, and ETH there to sign the legs.
+//   needs  USDC on ONE of Base / Arbitrum / Optimism >= X, and ETH there to
+//          sign the legs. (Mainnet is left out: see JOB_OFFER_ORIGINS.)
 //   X      = lib/lifi-bridge fundingNeedUsd(10, gas): $12.5 with the gas leg,
 //            $10.5 without.
 //   gas    "including gas" only when the wallet has no ETH on Robinhood Chain
@@ -53,8 +54,8 @@ export const OFFER_FUNDING_MARGIN_BPS = 400
  *  (lib/lifi-bridge RH_GAS_FLOOR_WEI, 0.0002 ETH). */
 export const OFFER_DEST_GAS_FLOOR_ETH = 0.0002
 /** ETH an origin needs before its USDC can be signed for there
- *  (lib/lifi-bridge ORIGIN_MIN_GAS_ETH). Mainnet's is real L1 gas. */
-export const OFFER_ORIGIN_MIN_GAS_ETH: Readonly<Record<number, number>> = { 1: 0.002, 8453: 0.00003, 42161: 0.00003, 10: 0.00003 }
+ *  (lib/lifi-bridge ORIGIN_MIN_GAS_ETH, the offer's three chains). */
+export const OFFER_ORIGIN_MIN_GAS_ETH: Readonly<Record<number, number>> = { 8453: 0.00003, 42161: 0.00003, 10: 0.00003 }
 
 /** lib/lifi-bridge fundingNeedUsd, to the cent: the buy plus headroom, the
  *  gas leg when asked, rounded up to the next $0.50. */
@@ -65,9 +66,13 @@ export function offerFundUsd(buyUsd: number, includeGas: boolean): number {
 
 // ── The catalog ─────────────────────────────────────────────────────────────
 
-/** Origins in the order an offer prefers them: the L2s (cents of gas) before
- *  mainnet (dollars of gas). Among L2s the richest wins. */
-export const JOB_OFFER_ORIGINS: readonly number[] = [8453, 42161, 10, 1]
+/** Origins an offer may draw from, in tie order. The L2 funding origins only:
+ *  Ethereum is a funding origin too, but its legs pay real L1 gas (dollars on
+ *  a $10 buy, and the signing floor moves with the gas price), and the audit
+ *  drive only ever built a mainnet-origin job for a rich wallet. A default
+ *  must not depend on that margin, so mainnet is never offered. Typing a
+ *  mainnet sentence still works. Among these the richest wins. */
+export const JOB_OFFER_ORIGINS: readonly number[] = [8453, 42161, 10]
 
 export const JOB_OFFER_BUY = { usd: 10, symbol: 'AAPL' } as const
 
@@ -145,9 +150,8 @@ export function jobOfferFor(facts: JobOfferFacts | null | undefined): JobOffer |
   const fundUsd = offerFundUsd(JOB_OFFER_BUY.usd, gas)
   const able = JOB_OFFER_ORIGINS.map((id) => ({ id, usdc: spendableUsdc(facts.chains.find((c) => c.chainId === id)) })).filter((o) => o.usdc >= fundUsd)
   if (able.length === 0) return null
-  // L2s first, richest first; mainnet only when no L2 can.
-  const l2 = able.filter((o) => o.id !== 1).sort((a, b) => b.usdc - a.usdc)
-  const pick = l2[0] ?? able[0]
+  // Richest first; the list order breaks a tie.
+  const pick = [...able].sort((a, b) => b.usdc - a.usdc)[0]
   const originName = FUNDING_ORIGIN_WORD[pick.id]
   const steps = gas ? 4 : 3
   return {
@@ -179,7 +183,7 @@ export type JobOfferView =
   /** Read, and it can run none: say what a first job needs + the funding door. */
   | { state: 'fund'; needUsd: number; note: string }
 
-const ORIGIN_LIST = 'Base, Arbitrum, Optimism or Ethereum'
+const ORIGIN_LIST = 'Base, Arbitrum or Optimism'
 
 export function jobOfferView(walletAddress: string | null | undefined, facts: JobOfferFacts | null | undefined): JobOfferView {
   if (!walletAddress) return { state: 'connect', example: JOB_OFFER_EXAMPLE }

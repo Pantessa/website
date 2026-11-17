@@ -68,21 +68,21 @@ export function jobsOffersPins(check: Check) {
     const m = src('lib/lifi-bridge.ts').match(/const ORIGIN_MIN_GAS_ETH: Record<number, number> = \{([^}]+)\}/)
     const theirs = Object.fromEntries([...(m?.[1] ?? '').matchAll(/(\d+):\s*([\d.]+)/g)].map((x) => [Number(x[1]), Number(x[2])]))
     check(
-      'jobs offers: the origin signing floors equal lib/lifi-bridge ORIGIN_MIN_GAS_ETH, chain for chain',
-      !!m && FUNDING_ORIGIN_CHAINS.every((id) => theirs[id] === OFFER_ORIGIN_MIN_GAS_ETH[id]) && Object.keys(theirs).length === Object.keys(OFFER_ORIGIN_MIN_GAS_ETH).length,
+      'jobs offers: the origin signing floors equal lib/lifi-bridge ORIGIN_MIN_GAS_ETH for each chain an offer can leave',
+      !!m && JOB_OFFER_ORIGINS.every((id) => theirs[id] === OFFER_ORIGIN_MIN_GAS_ETH[id]) && Object.keys(OFFER_ORIGIN_MIN_GAS_ETH).length === JOB_OFFER_ORIGINS.length,
       JSON.stringify({ theirs, ours: OFFER_ORIGIN_MIN_GAS_ETH }),
     )
   }
   check(
-    'jobs offers: the offer draws from exactly the funding origin set (no origin the bridge cannot leave, none missing)',
-    [...JOB_OFFER_ORIGINS].sort().join() === [...FUNDING_ORIGIN_CHAINS].sort().join(),
+    'jobs offers: the offer draws only from funding origins the bridge can leave, and never from mainnet (L1 gas: only a rich wallet built one in the audit drive)',
+    JOB_OFFER_ORIGINS.every((id) => (FUNDING_ORIGIN_CHAINS as readonly number[]).includes(id)) && !JOB_OFFER_ORIGINS.includes(1) && [...JOB_OFFER_ORIGINS].sort().join() === [10, 42161, 8453].sort().join(),
   )
 
   // ── Every sentence the function can emit compiles ─────────────────────────
   const compiled = JOB_OFFER_SENTENCES.map((ask) => [ask, compileJobAsk(ask)] as const)
   check(
-    'jobs offers: every catalog sentence (4 origins x with / without the gas leg) compiles as a job',
-    JOB_OFFER_SENTENCES.length === 8 && compiled.every(([, c]) => !!c && 'steps' in c),
+    'jobs offers: every catalog sentence (3 origins x with / without the gas leg) compiles as a job',
+    JOB_OFFER_SENTENCES.length === 6 && compiled.every(([, c]) => !!c && 'steps' in c),
     compiled.map(([a, c]) => `${c && 'steps' in c ? 'ok' : JSON.stringify(c)} <- ${a}`).join(' | '),
   )
   check(
@@ -145,12 +145,12 @@ export function jobsOffersPins(check: Check) {
     jobOfferFor(facts(row(8453, withGas - 0.01, 0.001))) === null && jobOfferFor(facts(row(8453, noGas, 0.001))) === null && jobOfferFor(facts(row(8453, withGas, 0.001))) !== null,
   )
   check(
-    'jobs offers: USDC with no ETH to sign on that chain is not an offer (L2 floor and the mainnet floor)',
-    jobOfferFor(facts(row(8453, 500, 0))) === null && jobOfferFor(facts(row(1, 500, 0.0015))) === null && jobOfferFor(facts(row(1, 500, 0.002)))?.originChainId === 1,
+    'jobs offers: USDC with no ETH to sign on that chain is not an offer; at the floor it is',
+    jobOfferFor(facts(row(8453, 500, 0))) === null && jobOfferFor(facts(row(8453, 500, 0.00002))) === null && jobOfferFor(facts(row(8453, 500, 0.00003)))?.originChainId === 8453,
   )
   check(
-    'jobs offers: the richest L2 that qualifies wins; mainnet only when no L2 can',
-    jobOfferFor(facts(row(8453, 14, 0.001), row(42161, 90, 0.001), row(1, 5000, 0.01)))?.originChainId === 42161 && jobOfferFor(facts(row(8453, 5, 0.001), row(1, 5000, 0.01)))?.originChainId === 1,
+    'jobs offers: the richest chain that qualifies wins; USDC on mainnet alone, however much, is never an offer',
+    jobOfferFor(facts(row(8453, 14, 0.001), row(42161, 90, 0.001), row(1, 5000, 0.01)))?.originChainId === 42161 && jobOfferFor(facts(row(8453, 5, 0.001), row(1, 5000, 1))) === null,
   )
   check(
     'jobs offers: a chain that did not read, or whose stable is not USDC, never funds an offer',
@@ -158,7 +158,7 @@ export function jobsOffersPins(check: Check) {
   )
   check(
     'jobs offers: every offer the table can produce is a catalog sentence',
-    [facts(row(8453, 20, 0.001)), facts(row(42161, 20, 0.001)), facts(row(10, 20, 0.001)), facts(row(1, 20, 0.01)), facts(row(1, 20, 0.01), row(4663, 0, 1))].every((f) => {
+    [facts(row(8453, 20, 0.001)), facts(row(42161, 20, 0.001)), facts(row(10, 20, 0.001)), facts(row(10, 20, 0.01), row(4663, 0, 1))].every((f) => {
       const o = jobOfferFor(f)
       return !!o && JOB_OFFER_SENTENCES.includes(o.ask)
     }),
@@ -220,6 +220,16 @@ export function jobsOffersPins(check: Check) {
     check('jobs offers: NightShift\'s JOBS tile shows the catalog example, and is a link only through JobTile (the wallet\'s own offer)', lit === JOB_OFFER_EXAMPLE && /x\.job \? \(\s*<JobTile/.test(night) && /view\.state === 'offer'/.test(night), String(lit))
     check('jobs offers: the first-five-minutes page links no fixed job sentence (the example is JobOfferLine text)', !/SpineLink href=\{ask\('[^']*, then /.test(src('app/docs/first-five-minutes/page.tsx')) && /<JobOfferLine example=/.test(src('app/docs/first-five-minutes/page.tsx')))
     check('jobs offers: the dashboard\'s empty jobs panel shows its example through JobOfferLine', /<JobOfferLine example=\{JOBS_DOOR\.ask\} \/>/.test(src('components/JobsPanel.tsx')))
+    // AUDIT's two sentences that never built for anyone are gone, and what replaced them compiles.
+    const band = /compound: '([^']+)'/.exec(src('lib/markets-copy.ts'))?.[1] ?? ''
+    const sdk = /ask: '([^']+)',\n  signer,/.exec(src('components/home/tour/sides/b/snippets.ts'))?.[1] ?? ''
+    const all = ['lib/markets-copy.ts', 'components/home/tour/sides/b/snippets.ts', 'app/docs/desk/page.tsx'].map(code).join('\n')
+    const okJob = (a: string) => { const c = compileJobAsk(a); return !!c && 'steps' in c && c.steps.length >= 2 }
+    check(
+      'jobs offers: the landing band\'s compound and the desk SDK example compile as jobs; "Fund Hyperliquid with ..." and the chainless "Buy $50 of ETH, then stake ..." are offered nowhere',
+      okJob(band) && okJob(sdk) && src('app/docs/desk/page.tsx').includes(`ask: '${sdk}'`) && !/Fund Hyperliquid with/.test(all) && !/Buy \$50 of ETH, then stake/.test(all),
+      JSON.stringify({ band, sdk }),
+    )
     const hl = src('lib/splash/sources.ts').match(/hyperliquid: \{\s*message: 'No Hyperliquid account[\s\S]*?\n  \},/)?.[0] ?? ''
     check('jobs offers: the splash\'s no-account Hyperliquid card carries no job chip (a static list cannot know the wallet)', hl.length > 0 && [...hl.matchAll(/prompt: '([^']+)'/g)].every((m) => !/\bthen\b/i.test(m[1])), hl.slice(0, 200))
   }
@@ -237,3 +247,4 @@ if (process.argv[1] && /jobs-offers-pins\.ts$/.test(process.argv[1])) {
   console.log(`\n${pass} passed, ${fail} failed`)
   process.exit(fail ? 1 : 0)
 }
+

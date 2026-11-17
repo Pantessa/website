@@ -390,7 +390,12 @@ export const VENUE_BAND = {
   eyebrow: 'EVERY DAPP, ONE CHART',
   h2: 'One symbol. Every way your wallet can act on it.',
   sub: 'Spot, limit, perp, lend, stake, fund, 24/7 stock, stop — each venue live around the chart, one chip each, and a compound ask compiles into one signed job. A charting subscription shows you the window. This is the door.',
-  compound: 'Buy $50 of ETH, then stake 0.05 ETH with Lido',
+  // 2026-11-17 (squad lane1, the jobs audit): was "Buy $50 of ETH, then stake
+  // 0.05 ETH with Lido", which never compiled as a job for anyone (a chainless
+  // dollar buy has no job segment; the chat answered the stake alone and
+  // dropped the buy). This one compiles (two steps: the order, then the
+  // Guardian stop) and has completed on prod in its HYPE form.
+  compound: '2x Long $12 of ETH on Hyperliquid, then protect my ETH long with a 5% stop',
 } as const
 
 export const MAP_TEASER = {

@@ -53,14 +53,14 @@ const base = 'https://www.pantessa.com'
 
 const { jobId, token } = await openAndExecute({
   base,
-  ask: 'Fund Hyperliquid with $15 from Base, then 2x long $12 of HYPE',
+  ask: '2x Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop',
   signer,
   agentKey: process.env.DESK_KEY!,
 })
 
 await driveJob({
   base, jobId, token, signer,
-  rpc: { 8453: process.env.BASE_RPC! },
+  rpc: { 42161: process.env.ARBITRUM_RPC! },
   onLeg: (leg) => console.log(\`leg \${leg.seq} · \${leg.kind} · \${leg.summary}\`),
 })`
 
