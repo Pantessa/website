@@ -607,7 +607,7 @@ import { SITE_URL } from '../lib/site-url'
 import { PLAN_BY_ID, planCreditsFor, ALLOWANCE_CUTOFF, LISTED_PLANS, PAID_PLANS, TASTE, ANSWER_PACK, answersEarnedByFee, planChargeUsd } from '../lib/plans'
 import { HOUSE_DAILY_TURN_CAP, TASTE_HOUSE_DAILY_CAP, tasteCovers, tasteKeysFor, chooseLane } from '../lib/billing'
 import { FUSE_CAPS, fuseBlown, fuseKey } from '../lib/inference-fuse'
-import { answersForReceipt, feeRoutersFor, MAX_ANSWERS_PER_RECEIPT } from '../lib/earned-answers'
+import { answersForReceipt, feeRoutersFor, MAX_ANSWERS_PER_RECEIPT, movedByWallet, TRANSFER_TOPIC as EARNED_TRANSFER_TOPIC } from '../lib/earned-answers'
 import { houseRequestBody, splitForCache } from '../lib/house-model'
 import { PROMPT_CACHE_BREAK } from '../lib/prompt-cache-break'
 import { costUsd, rateFor } from '../lib/inference-meter'
@@ -1296,6 +1296,55 @@ async function main() {
       answersForReceipt({ claimedUsd: 100, onChainUsd: 99, viaFeeRouter: true, linkTier: false }) === 10 &&
       answersForReceipt({ claimedUsd: 10_000_000, onChainUsd: 10_000_000, viaFeeRouter: true, linkTier: false }) === MAX_ANSWERS_PER_RECEIPT,
   )
+  // 2026-11-17: the Transfer topic was a typed literal two hex characters
+  // short, so no log ever matched and a stable-paid swap earned nothing. It is
+  // computed now; these pins recompute it and read a real-shaped receipt log.
+  {
+    const realTopic = keccak256(stringToBytes('Transfer(address,address,uint256)'))
+    const libDir = pathJoin(process.cwd(), 'lib')
+    const typed: string[] = []
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const f = pathJoin(dir, e.name)
+        if (e.isDirectory()) walk(f)
+        else if (/\.tsx?$/.test(e.name)) for (const m of readFileSync(f, 'utf8').matchAll(/0xddf252ad[0-9a-f]*/gi)) if (m[0].toLowerCase() !== realTopic) typed.push(`${f.slice(libDir.length + 1)}: ${m[0]}`)
+      }
+    }
+    walk(libDir)
+    check(
+      'earned: the Transfer topic is the real keccak (66 chars), and no file under lib/ types a wrong copy of it',
+      EARNED_TRANSFER_TOPIC === realTopic && realTopic.length === 66 && typed.length === 0,
+      typed.join(' | ') || EARNED_TRANSFER_TOPIC,
+    )
+    const baseChain = chainById(8453)!
+    const [usdc, usdcDecimals] = Object.entries(baseChain.stables).find(([, d]) => d === 6)!
+    const me = '0x1111111111111111111111111111111111111111'
+    const pool = '0x2222222222222222222222222222222222222222'
+    const pad = (a: string) => `0x${a.slice(2).toLowerCase().padStart(64, '0')}`
+    const word = (n: bigint) => `0x${n.toString(16).padStart(64, '0')}`
+    const xfer = (token: string, from: string, to: string, atoms: bigint, extraTopic = false) => ({
+      address: token,
+      topics: [realTopic, pad(from), pad(to), ...(extraTopic ? [word(atoms)] : [])],
+      data: extraTopic ? '0x' : word(atoms),
+    })
+    const hundred = BigInt(100) * BigInt(10) ** BigInt(usdcDecimals)
+    const paid = movedByWallet(baseChain, [xfer(usdc, me, pool, hundred)], me)
+    const got = movedByWallet(baseChain, [xfer(usdc, pool, me.toUpperCase().replace('0X', '0x'), hundred)], me)
+    const others = movedByWallet(baseChain, [xfer(usdc, pool, '0x3333333333333333333333333333333333333333', hundred)], me)
+    const notStable = movedByWallet(baseChain, [xfer('0x4444444444444444444444444444444444444444', me, pool, hundred)], me)
+    const nft = movedByWallet(baseChain, [xfer(usdc, me, pool, hundred, true)], me)
+    const weth = movedByWallet(baseChain, [xfer(baseChain.wrappedNative, pool, me, BigInt(5)), xfer(baseChain.wrappedNative, me, pool, BigInt(7))], me)
+    check(
+      'earned: a 100 USDC transfer out of (or into) the signer reads as $100; a stranger\u2019s transfer, an unlisted token and a 4-topic log read as nothing; the wrapped leg is the largest',
+      paid.stableUsd === 100 && got.stableUsd === 100 && others.stableUsd === 0 && notStable.stableUsd === 0 && nft.stableUsd === 0 &&
+        weth.wrappedAtoms === BigInt(7) && weth.stableUsd === 0,
+      JSON.stringify({ paid: paid.stableUsd, got: got.stableUsd, others: others.stableUsd, notStable: notStable.stableUsd, nft: nft.stableUsd, weth: String(weth.wrappedAtoms) }),
+    )
+    check(
+      'earned: a stable-paid $100 swap through our router now earns (10 organic), end to end over the log reader',
+      answersForReceipt({ claimedUsd: 100, onChainUsd: paid.stableUsd, viaFeeRouter: true, linkTier: false }) === 10,
+    )
+  }
   check(
     'earned: the fee routers are OUR venue routers, per chain (v3 everywhere, the v4 Universal Router on 4663)',
     feeRoutersFor(8453).has('0x2626664c2603336e57b271c5c0b26f421741e481') &&
