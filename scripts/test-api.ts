@@ -32,6 +32,7 @@ import { readFile } from 'node:fs/promises'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join as pathJoin } from 'node:path'
 import { tokenMark } from '../lib/token-icons'
+import { scanMayLabel } from '../lib/called-it/scan'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { createPublicClient, custom, http, HttpRequestError, InvalidAddressError, RpcRequestError, TimeoutError } from 'viem'
 import { base } from 'viem/chains'
@@ -7247,6 +7248,20 @@ async function main() {
   check('revoked key → immediate 401', del.status === 200 && afterRevoke.status === 401)
 
   // ── Chat receipts: meta round-trip + share render ─────────────────────────
+  // 2026-11-17 (Called it): a post a viewer pasted is never labeled by a scan
+  // from the cache, so it can never enter a tally; a scan that reads the post
+  // for itself promotes it.
+  {
+    const scanSrc = readFileSync(pathJoin(process.cwd(), 'lib/called-it/scan.ts'), 'utf8')
+    const storeSrc = readFileSync(pathJoin(process.cwd(), 'lib/called-it/store.ts'), 'utf8')
+    check(
+      'called it (paste): a scan labels only posts a scan read - a pasted (syndication) post is skipped, an x-api or fixture post is not; the cache promotes a pasted post a scan reads, never demotes',
+      !scanMayLabel({ source: 'syndication' }) && scanMayLabel({ source: 'x-api' }) && scanMayLabel({ source: 'fixture' }) &&
+        /todo: posts\.filter\(\(p\) => scanMayLabel\(p\) && !labeled\.has\(p\.id\)\)/.test(scanSrc) &&
+        /source = CASE WHEN x_posts\.source = 'syndication' AND EXCLUDED\.source <> 'syndication' THEN EXCLUDED\.source ELSE x_posts\.source END/.test(storeSrc),
+    )
+  }
+
   console.log('— chat receipts')
   const chat = await (
     await fetch(`${BASE}/api/chats`, {

@@ -157,13 +157,26 @@ function spentOf(source: XSource): number | null {
 export const UNPARSED_ONCE_MODEL = 'unparsed-1'
 export const UNPARSED_MODEL = 'unparsed'
 
+/**
+ * May a SCAN label this cached post? Only a post a scan itself read. A post a
+ * viewer pasted is cached with source `syndication` (the keyless read), and a
+ * scan used to pick it up from the cache on the handle's next scan of any
+ * market and label it `origin: 'scan'` - which put a hand-picked post in the
+ * tally, the one thing a pasted post must never do (the 2026-11-11 contract).
+ * A pasted post a scan later reads for itself is promoted in the cache
+ * (store.savePosts) and counts like any other.
+ */
+export function scanMayLabel(post: { source?: string | null }): boolean {
+  return post.source !== 'syndication'
+}
+
 async function unlabeledIn(store: StoreApi, handle: string, symbol: string, fromMs: number): Promise<{ todo: XPost[]; have: StoredLabel[]; failedOnce: Set<string> }> {
   const [all, posts] = await Promise.all([store.labelsFor(handle, symbol), store.postsFor(handle, fromMs)])
   // A post that failed to parse once is still to label (one more try, in a later request).
   const failedOnce = new Set(all.filter((l) => l.model === UNPARSED_ONCE_MODEL).map((l) => l.postId))
   const have = all.filter((l) => !failedOnce.has(l.postId))
   const labeled = new Set(have.map((l) => l.postId))
-  return { todo: posts.filter((p) => !labeled.has(p.id)), have, failedOnce }
+  return { todo: posts.filter((p) => scanMayLabel(p) && !labeled.has(p.id)), have, failedOnce }
 }
 
 /** Label `todo` within the deadline and save what came back. */
