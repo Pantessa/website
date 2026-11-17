@@ -209,8 +209,8 @@ export async function jobsPreflightPins(check: Check) {
   // (a2) empty, card door closed → still a named next step in words, no dead chip.
   const emptyNoCard = await preflightJob({ wallet: WALLET, compiled: flagship, ask: FLAGSHIP, deps: { reader: readerOf({}), scanFunding: async () => scanOf([]), cardChip: () => null } })
   check(
-    'pre-flight (empty wallet, card door closed): no job, no button that would fail — the reply says what to send and where',
-    emptyNoCard.kind === 'short' && !emptyNoCard.clarify && /Send USDC to this wallet on Base \(or USDC or ETH on /.test(emptyNoCard.reply),
+    'pre-flight (empty wallet, card door closed): no job — the reply says what to send and where, and the only chip is the ask itself to press once the funds are there (the turn re-reads the wallet)',
+    emptyNoCard.kind === 'short' && emptyNoCard.clarify?.options[0]?.label === 'I sent funds, check again' && emptyNoCard.clarify.options[0].resume === FLAGSHIP && !emptyNoCard.clarify.options[0].fund && /Send USDC to this wallet on Base \(or USDC or ETH on /.test(emptyNoCard.reply),
     JSON.stringify(emptyNoCard).slice(0, 300),
   )
   // (b) nothing on Base, $40 of USDC on Arbitrum → the same job from Arbitrum.
@@ -225,16 +225,17 @@ export async function jobsPreflightPins(check: Check) {
     JSON.stringify(elsewhere).slice(0, 500),
   )
   // …and that chip's job passes the same pre-flight for the same wallet.
-  const elseAgain = elseCompiled ? await preflightJob({ wallet: WALLET, compiled: elseCompiled, ask: elseChip!.resume, deps: { reader: readerOf({ '42161:USDC': 40 }), scanFunding: never } }) : null
+  const elseAgain = elseCompiled ? await preflightJob({ wallet: WALLET, compiled: elseCompiled, ask: elseChip!.resume, deps: { reader: readerOf({ '42161:USDC': 40, '42161:ETH': 0.01 }), scanFunding: never } }) : null
   check('pre-flight (funded on another chain): the offered chip is not a second dead end — its job passes the pre-flight for that wallet with no scan', elseAgain?.kind === 'ok')
 
   // (c) funded where the job says → ok after exactly ONE balance read, no scan.
   const calls = { n: 0 }
   const funded = await preflightJob({ wallet: WALLET, compiled: flagship, ask: FLAGSHIP, deps: { reader: readerOf({ '8453:USDC': 12, '8453:ETH': 0.01 }, calls), scanFunding: never, offerPlan: never as unknown as JobPreflightDeps['offerPlan'] } })
+  const noGas = await preflightJob({ wallet: WALLET, compiled: flagship, ask: FLAGSHIP, deps: { reader: readerOf({ '8453:USDC': 50 }), scanFunding: async () => ({ ...scanOf([]), gaslessOrigins: [origin(8453, 'Base', 'USDC', 50, 0)] }), cardChip: () => null } })
   const justShort = await preflightJob({ wallet: WALLET, compiled: flagship, ask: FLAGSHIP, deps: { reader: readerOf({ '8453:USDC': 11.99 }), scanFunding: async () => scanOf([origin(8453, 'Base', 'USDC', 11)]), cardChip: () => null } })
   check(
-    'pre-flight (funded wallet): a wallet holding the $12 on Base gets its job after exactly one balance read and no wallet scan; $11.99 is short (the "$52 needed, holds 31.25" class)',
-    funded.kind === 'ok' && calls.n === 1 && justShort.kind === 'short' && justShort.short.held === '11.99',
+    'pre-flight (funded wallet): a wallet holding the $12 on Base gets its job after one token read and one gas read (made together) and no wallet scan; $11.99 is short (the "$52 needed, holds 31.25" class); the token with NO gas on the chain is short too',
+    funded.kind === 'ok' && calls.n === 2 && noGas.kind === 'short' && noGas.short.gas === true && /holds no ETH there to pay for gas/.test(noGas.reply) && justShort.kind === 'short' && justShort.short.held === '11.99',
     JSON.stringify({ funded, calls, justShort: justShort.kind }),
   )
   // (d) fail open: a read that throws or hangs creates the job as before.
@@ -308,8 +309,8 @@ export async function jobsPreflightPins(check: Check) {
   })
   const newCopy = [empty, emptyNoCard, elsewhere, scanDown, depNothing, openArb].map((r) => (r.kind === 'short' ? r.reply : '')).join(' ') + preflightLead({ chainId: 1, chain: 'Ethereum', symbol: 'ETH', needs: '12', held: '0.001', needsAreUsd: true })
   check(
-    'copy: money that exists but cannot move is named, with no button; the lane\'s own sentences carry no em dash; a dollars-of-ETH need prints as dollars',
-    /holding ~\$30 of USDC on \*\*Arbitrum\*\*/.test(gasStranded.reply) && !gasStranded.clarify && !/—|–/.test(newCopy) && /spends \$12 of ETH on Ethereum, and this wallet holds 0\.001 ETH there/.test(newCopy),
+    'copy: money that exists but cannot move is named; the lane\'s own sentences carry no em dash; a dollars-of-ETH need prints as dollars',
+    /holding ~\$30 of USDC on \*\*Arbitrum\*\*/.test(gasStranded.reply) && !/—|–/.test(newCopy) && /spends \$12 of ETH on Ethereum, and this wallet holds 0\.001 ETH there/.test(newCopy),
     newCopy.match(/.{0,30}[—–].{0,30}/)?.[0] ?? '',
   )
   check(

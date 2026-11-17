@@ -189,6 +189,9 @@ export interface PreflightShortFacts {
   /** Dollars-of-ETH needs print as dollars ("$12 of ETH"). */
   needsAreUsd?: boolean
   hlCollateral?: true
+  /** The token is there but the chain holds NO native ETH: nothing on it can
+   *  be signed (the affordability gate's gas-at-zero rule). */
+  gas?: true
 }
 
 /** The first sentence of every refusal: what the job needs, what is there. */
@@ -196,6 +199,7 @@ export function preflightLead(facts: PreflightShortFacts): string {
   if (facts.hlCollateral) {
     return `🧭 No job was created: it opens a position that needs about $${facts.needs} of collateral on Hyperliquid, and the account has $${facts.held} free.`
   }
+  if (facts.gas) return `🧭 No job was created: its first step runs on ${facts.chain}, and this wallet holds no ETH there to pay for gas.`
   const needs = facts.needsAreUsd ? `$${facts.needs} of ${facts.symbol}` : `${facts.needs} ${facts.symbol}`
   return `🧭 No job was created: its first step spends ${needs} on ${facts.chain}, and this wallet holds ${facts.held} ${facts.symbol} there.`
 }
@@ -203,12 +207,23 @@ export function preflightLead(facts: PreflightShortFacts): string {
 /** The last words when there is nothing to press. */
 export function preflightHomework(facts: PreflightShortFacts): string {
   if (facts.hlCollateral) return ` Deposit USDC to Hyperliquid first, then ask again. Nothing was built or signed.`
+  if (facts.gas) return ` Send a little ETH to this wallet on ${facts.chain}, then ask again. Nothing was built or signed.`
   return ` Send ${facts.symbol} to this wallet on ${facts.chain} (or USDC or ETH on ${fundingOriginWords()}), then ask again. Nothing was built or signed.`
 }
 
 /** Keep only chips the ladder really builds (the decline chip always stays). */
 export function buildableChips(options: ClarifyOption[], verify: (ask: string) => boolean = buildsNatively): ClarifyOption[] {
   return options.filter((o) => /^never mind\b/i.test(o.resume) || verify(o.resume))
+}
+
+/** The last resort when nothing can be pressed toward the money (no holding
+ *  to move, the card door closed): the ask itself, to press once the funds
+ *  are there. The same turn re-reads the wallet. Null when the ladder would
+ *  not build it. */
+export function recheckClarify(ask: string, verify: (ask: string) => boolean = buildsNatively): ClarifyRequest | null {
+  const resume = ask.trim()
+  if (!resume || !verify(resume)) return null
+  return { question: 'Sent the funds?', options: [{ label: 'I sent funds, check again', resume }, NOT_NOW] }
 }
 
 const withDecline = (options: ClarifyOption[]): ClarifyOption[] => {
@@ -229,6 +244,8 @@ export function fundingShortAnswer(input: {
   scan: Pick<FundingShortfall, 'origins'>
   /** The card chip, already built (null = the door is closed or does not fit). */
   cardChip: ClarifyOption | null
+  /** The ask as typed: the recheck chip when there is nothing else to press. */
+  ask?: string
   verify?: (ask: string) => boolean
 }): { reply: string; clarify?: ClarifyRequest } {
   const { facts, funding, goal, advice, scan, cardChip } = input
@@ -251,7 +268,7 @@ export function fundingShortAnswer(input: {
     const options = advice.chips ? withDecline(buildableChips(advice.chips, verify)) : []
     return {
       reply: `${lead} But ${advice.copy} Nothing was built or signed.`,
-      ...(options.length ? { clarify: { question: `Fix the ${advice.stranded.word} gas and run it?`, options } } : {}),
+      ...(options.length ? { clarify: { question: `Fix the ${advice.stranded.word} gas and run it?`, options } } : input.ask && recheckClarify(input.ask, verify) ? { clarify: recheckClarify(input.ask, verify)! } : {}),
     }
   }
   if (advice.kind === 'move' && advice.chips.length) {
@@ -266,7 +283,8 @@ export function fundingShortAnswer(input: {
       clarify: { question: 'Add the funds and run it?', options: [cardChip, NOT_NOW] },
     }
   }
-  return { reply: `${lead}${across}${preflightHomework(facts)}` }
+  const recheck = input.ask ? recheckClarify(input.ask, verify) : null
+  return { reply: `${lead}${across}${preflightHomework(facts)}`, ...(recheck ? { clarify: recheck } : {}) }
 }
 
 // ── The I/O shell ───────────────────────────────────────────────────────────
@@ -376,6 +394,7 @@ export async function preflightJob(input: {
     let held: number
     let needs: number
     let facts: PreflightShortFacts
+    let gasShort = false
     if (where.native) {
       const wei = await within(reader.native(need.chainId, wallet), readMs, `the ${chain.name} balance read`)
       held = Number(formatUnits(wei, 18))
@@ -389,13 +408,22 @@ export async function preflightJob(input: {
         facts = { chainId: need.chainId, chain: chain.name, symbol: 'ETH', needs: amountWord(needs), held: amountWord(held) }
       }
     } else {
-      const read = await within(reader.erc20(need.chainId, where.address, wallet), readMs, `the ${chain.name} balance read`)
+      // The token and the chain's gas, read together (no extra wall-clock). A
+      // gas read that fails is ignored: only a READ zero is a verdict.
+      const [read, gasWei] = await Promise.all([
+        within(reader.erc20(need.chainId, where.address, wallet), readMs, `the ${chain.name} balance read`),
+        within(reader.native(need.chainId, wallet), readMs, `the ${chain.name} gas read`).catch(() => null),
+      ])
       held = Number(formatUnits(read.balance, read.decimals))
       needs = need.kind === 'token' ? need.amount : 0
       facts = { chainId: need.chainId, chain: chain.name, symbol: read.symbol || symbol.toUpperCase(), needs: amountWord(needs), held: amountWord(held) }
+      if (held + 1e-9 >= needs && gasWei === BigInt(0)) {
+        facts = { ...facts, gas: true }
+        gasShort = true
+      }
     }
-    if (held + 1e-9 >= needs) return { kind: 'ok' }
-    trace({ type: 'note', level: 'warn', label: `jobs pre-flight: the first step needs ${facts.needsAreUsd ? '$' : ''}${facts.needs} ${facts.symbol} on ${facts.chain} and the wallet holds ${facts.held} — no job created` })
+    if (held + 1e-9 >= needs && !gasShort) return { kind: 'ok' }
+    trace({ type: 'note', level: 'warn', label: gasShort ? `jobs pre-flight: the first step runs on ${facts.chain} and the wallet holds no ETH there for gas — no job created` : `jobs pre-flight: the first step needs ${facts.needsAreUsd ? '$' : ''}${facts.needs} ${facts.symbol} on ${facts.chain} and the wallet holds ${facts.held} — no job created` })
 
     // The wallet scan and the chips: only on this path.
     const lead = preflightLead(facts)
@@ -422,7 +450,7 @@ export async function preflightJob(input: {
           cardChip = (deps.cardChip ?? fundChipFor)({ needUsd: funding.usd, actionLabel: buy ? `buy $${buy.usd} of ${buy.sym}` : `fund ${dest.name} with $${funding.usd}`, resume })
         }
       }
-      return { kind: 'short', short: facts, ...fundingShortAnswer({ facts, funding, goal, advice, scan, cardChip, verify }) }
+      return { kind: 'short', short: facts, ...fundingShortAnswer({ facts, funding, goal, advice, scan, cardChip, verify, ask }) }
     }
 
     // Any other lead: the generic funding plan toward the chain it spends on.
@@ -474,9 +502,11 @@ function shortFromOffer(input: {
         clarify: { question: 'Add the funds and run it?', options: [chip, NOT_NOW] },
       }
     }
-    return { kind: 'short', short: facts, reply: `${lead} ${offer.insufficient}${offer.empty ? preflightHomework(facts) : ' Nothing was built or signed.'}` }
+    const recheck = recheckClarify(resume, verify)
+    return { kind: 'short', short: facts, reply: `${lead} ${offer.insufficient} Nothing was built or signed.`, ...(recheck ? { clarify: recheck } : {}) }
   }
-  return { kind: 'short', short: facts, reply: `${lead}${preflightHomework(facts)}` }
+  const recheck = recheckClarify(resume, verify)
+  return { kind: 'short', short: facts, reply: `${lead}${preflightHomework(facts)}`, ...(recheck ? { clarify: recheck } : {}) }
 }
 
 /** The wire shape both doors attach to a short answer (the chat exit's own

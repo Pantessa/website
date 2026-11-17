@@ -119,6 +119,10 @@ async function dryRunAnswer(addr: string, compiled: CompiledJob, ask: string, un
   // the wallet cannot start.
   const pre = unfillable ? null : await preflightJob({ wallet: addr, compiled, ask })
   const short = pre?.kind === 'short' ? pre : null
+  // The preview tells the truth: a step the wallet cannot fund is `refused`
+  // with the shortfall, even when the venue would quote it for any address
+  // (a swap or a bridge builds for an empty wallet; the offer gate withholds).
+  if (short && !preview.refused) preview = { step: first, refused: short.reply.replace(/^[^\w]+/, '') }
   return NextResponse.json({
     dryRun: true,
     title: compiled.title,

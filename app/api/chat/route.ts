@@ -91,7 +91,7 @@ import { mosaicTurnFor } from '@/lib/mosaic-exec'
 import { isInternalRun } from '@/lib/internal-run'
 import { recordTurn } from '@/lib/journey-server'
 import { AFFORDABILITY_SHORT_PATH, gateSignablePayload } from '@/lib/affordability'
-import { preflightAffordabilityNote, preflightJob } from '@/lib/job-preflight'
+import { preflightAffordabilityNote, preflightJob, recheckClarify } from '@/lib/job-preflight'
 import { runSpotGuardTurn } from '@/lib/spot-guard-exec'
 import {
   aaveAgentOf,
@@ -324,7 +324,11 @@ async function hlAutoFundedJobTurn(
       refusal: offer,
     })
     traceLayerShortfall(nativeTrace, 'hl auto-fund', offer, turn)
-    return NextResponse.json(turn)
+    // Never words only (squad lane1): with no card door to offer, the ask
+    // itself rides as the chip to press once money is there. The same turn
+    // re-reads the wallet and compiles the funded job.
+    const recheck = turn.clarify ? null : recheckClarify(message)
+    return NextResponse.json(recheck ? { ...turn, clarify: recheck } : turn)
   }
   let resume = fundedAsk
   if (offer) {
