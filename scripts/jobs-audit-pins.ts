@@ -74,11 +74,16 @@ export function jobsAuditPins(check: Check) {
   const builtBy = new Map<string, Set<string>>()
   for (const e of list) {
     const c = compileJobAsk(e.ask)
-    const ok = !!c && !('problem' in c) && !('clarify' in c)
+    // A stock the LIVE Robinhood Chain listing does not carry right now is the
+    // market's state, not the sentence's shape (inside the harness the live
+    // listing is warm; alone, the static snapshot answers). The shape is what
+    // this pin holds.
+    const unlisted = !!c && 'problem' in c && /Robinhood Chain doesn't list/.test(c.problem)
+    const ok = (!!c && !('problem' in c) && !('clarify' in c)) || unlisted
     const known = KNOWN_NON_JOBS[e.ask]
     const why = !c ? 'not job-shaped (null)' : 'problem' in c ? `problem: ${c.problem}` : 'clarify' in c ? `clarify: ${c.clarify.question}` : ''
     check(`jobs audit: "${e.id}" compiles as a job${known ? ' (known non-job)' : ''}`, ok || !!known, `${e.ask}\n     ${why}`)
-    if (ok) builtBy.set(e.id, new Set(c.steps.map((s) => s.builder)))
+    if (ok && c && 'steps' in c) builtBy.set(e.id, new Set(c.steps.map((s) => s.builder)))
   }
 
   // 5. Every segment parser has a builder map entry and a sentence that

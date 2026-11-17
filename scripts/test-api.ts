@@ -4426,7 +4426,7 @@ async function main() {
       // ellipsized at 390+. Two lines beat an ellipsis over the amount.
       const jobsTab = await readFile(new URL('../components/JobsRailTab.tsx', import.meta.url), 'utf8')
       const funnel = await readFile(new URL('../components/LinkFunnelTable.tsx', import.meta.url), 'utf8')
-      check('mobile: jobs rail titles wrap (line-clamp-2), never truncate', /flex-1 min-w-0 text-xs line-clamp-2" title=\{j\.title\}/.test(jobsTab) && !/flex-1 min-w-0 text-xs truncate" title=\{j\.title\}/.test(jobsTab))
+      check('mobile: jobs rail titles wrap (line-clamp-2), never truncate', /flex-1 min-w-0 text-xs line-clamp-2', expired && [^)]*\)\} title=\{j\.title\}/.test(jobsTab) /* RE-PINNED 2026-11-17 (lane1): an expired row is muted */ && !/flex-1 min-w-0 text-xs truncate" title=\{j\.title\}/.test(jobsTab))
       check('mobile: links rail + funnel table asks wrap, never truncate', /block text-\[11px\] line-clamp-2 mt-0\.5">\{l\.ask\}/.test(linksTab) && /line-clamp-2 min-w-0" title=\{l\.ask\}/.test(funnel))
     }
 
@@ -10451,7 +10451,7 @@ async function main() {
         !long ||
           (noSignable(long) && long.buildPath === 'native-hl-exec' &&
             /^📈 To go long \$12 of HYPE at 2x on Hyperliquid, this wallet needs money in it first/.test(String(long.reply)) && /The position needs about \$6 of USDC on Hyperliquid as collateral\./.test(String(long.reply)) &&
-            (doorOpen ? !!longChip?.fund && longChip.fund.completes === undefined && longChip.resume === '2x long $12 of HYPE on hyperliquid' && simulateLadder(longChip.resume).kind === 'action' : !long.clarify)),
+            (doorOpen ? !!longChip?.fund && longChip.fund.completes === undefined && longChip.resume === '2x long $12 of HYPE on hyperliquid' && simulateLadder(longChip.resume).kind === 'action' : (!long.clarify || longChip?.resume === '2x long $12 of HYPE on hyperliquid') /* RE-PINNED 2026-11-17 (lane1): with the card door closed the refusal still carries a check-again chip */)),
         long ? `door=${doorOpen}${liveNote(long)} ${JSON.stringify(long).slice(0, 400)}` : 'no hyperliquid-free row in this directory',
       )
 
@@ -17953,7 +17953,8 @@ async function main() {
       dry.status === 200 && dryBody.dryRun === true && Array.isArray(dryBody.steps) && dryBody.steps.length === 4 &&
         dryBody.steps[0].builder === 'native-hl-exec' && dryBody.steps[3].kind === 'auto' &&
         dryBody.firstSignPreview?.step === 0 && ('artifact' in dryBody.firstSignPreview || 'refused' in dryBody.firstSignPreview) &&
-        /nothing was created/i.test(dryBody.note ?? ''),
+        // RE-PINNED 2026-11-17 (lane1): a wallet short on step 1 gets the pre-flight's verdict in the note.
+        /nothing was created|no job is created/i.test(dryBody.note ?? ''),
       JSON.stringify({ status: dry.status, title: dryBody.title, preview: Object.keys(dryBody.firstSignPreview ?? {}) }),
     )
     const jobsAfter = await (await fetch(`${BASE}/api/jobs`, { headers: C })).json()
