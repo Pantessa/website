@@ -533,6 +533,7 @@ button.mk-held:hover { border-color: var(--accent); }
 .mk-tour-seat:not(:empty) { margin-top: 12px; }
 .mk-how-seat:not(:empty) { margin-top: 12px; }
 .mk-close-seat:not(:empty) { margin-top: 12px; }
+.mk-suggest-seat:not(:empty) { margin-top: 12px; }
 /* The Called it shelf (2026-11-16): margins only, like the seats above. */
 .mk-called-seat:not(:empty) { margin-top: 16px; }
 /* ONE gap above the band, every width: THE SEAT OWNS IT, the band none while
@@ -592,7 +593,8 @@ button.mk-held:hover { border-color: var(--accent); }
 /* The strip: one line, the stats folding from the right as the column
    narrows (the seat is the size container; .sym stays a plain block for the
    full-screen chart). */
-.sym--cockpit .sym__strip { display: flex; align-items: center; flex-wrap: nowrap; gap: 14px; min-height: 64px; padding: 10px 0 8px; }
+/* Air over the mark (2026-11-17, Nate: "more of a margin spacing on the top … looks a bit crowded"). */
+.sym--cockpit .sym__strip { display: flex; align-items: center; flex-wrap: nowrap; gap: 14px; min-height: 64px; padding: 22px 0 12px; }
 .sym--cockpit .sym__strip > .sym__id { flex: 0 1 auto; gap: 10px; min-width: 0; }
 .sym--cockpit .sym__strip .sym__titlerow { flex-wrap: nowrap; gap: 8px; }
 .sym--cockpit .sym__strip .sym__name { font-size: clamp(18px, 1.7vw, 24px); }
@@ -673,7 +675,7 @@ button.mk-held:hover { border-color: var(--accent); }
 /* Phone: the strip is two rows — identity + YOU HOLD, then the price and
    the day's high / low. */
 @media (max-width: 640px) {
-  .sym--cockpit .sym__strip { flex-wrap: wrap; gap: 8px 12px; min-height: 0; padding: 12px 0 6px; }
+  .sym--cockpit .sym__strip { flex-wrap: wrap; gap: 8px 12px; min-height: 0; padding: 16px 0 8px; }
   .sym--cockpit .sym__strip > .sym__id { flex: 1 1 auto; order: 1; }
   .sym--cockpit .sym__strip > .mk-held { order: 2; }
   .sym--cockpit .sym__strip > .sym__sep, .sym--cockpit .sym__grow { display: none; }

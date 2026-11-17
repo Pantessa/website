@@ -15,6 +15,8 @@ import HlPerpsPrime from '@/components/markets/shell/HlPerpsPrime'
 import { HL_PERPS_HANDOFF_GLOBAL, liveHlPerpNames } from '@/lib/charts'
 import CalledShelf from '@/components/home/CalledShelf'
 import { readCalledShelf } from '@/app/x/_lib/home-shelf'
+import SuggestionsBoard from '@/components/home/SuggestionsBoard'
+import { readSuggestions } from '@/lib/suggestions-server'
 
 // `/` — THE FRONT DOOR IS THE APP (squad front-door, 2026-10-06, Nate: "the
 // landing page falls a bit flat and our new live page feels more alive …
@@ -107,7 +109,9 @@ export default async function HomePage() {
   // cache — the same ISR rule as the read's).
   // …and the Called it shelf (2026-11-16, app/x/_lib/home-shelf): three
   // featured records, capped in time, never a throw; none → no shelf.
-  const [trending, tradable, read, tour, called] = await Promise.all([readTrending(), readTradability(), readSnapshotForRender(), readTourSnapshotForRender(), readCalledShelf()])
+  // …and the suggestions (2026-11-17, lib/suggestions-server): open and closed
+  // GitHub issues on the repo through the data cache, capped in time.
+  const [trending, tradable, read, tour, called, suggestions] = await Promise.all([readTrending(), readTradability(), readSnapshotForRender(), readTourSnapshotForRender(), readCalledShelf(), readSuggestions()])
   // THE VENUE'S LIVE TABLE, HANDED DOWN (2026-11-10). The Macro board lists
   // Hyperliquid builder markets only the venue's live universe knows (SP500,
   // GOLD, SILVER, CL, NATGAS, EUR, JPY, TLT). A server that has read the
@@ -131,7 +135,7 @@ export default async function HomePage() {
       <script dangerouslySetInnerHTML={{ __html: HOME_MODE_BOOTSTRAP }} />
       <HlPerpsPrime hlPerps={hlPerps}>
         <MarketsShell>
-          <HomeSurface trending={trending} tradable={tradable} read={read} tour={tour} called={called.summaries.length ? <CalledShelf data={called} /> : undefined} />
+          <HomeSurface trending={trending} tradable={tradable} read={read} tour={tour} called={called.summaries.length ? <CalledShelf data={called} /> : undefined} suggest={<SuggestionsBoard data={suggestions} />} />
           <div className="mkt-frame__foot">
             <Footer />
           </div>

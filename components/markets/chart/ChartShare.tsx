@@ -34,6 +34,7 @@ import { withVia } from '@/lib/share-posts'
 import { absoluteUrl } from '@/lib/site-url'
 import { viewUrl, type BoardMode, type ChartView } from '@/lib/markets'
 import type { DepthSettings } from '@/lib/depth'
+import { depthOgPath, depthTweetHref, depthWindowWords } from '@/lib/depth-share'
 import { friendlyError } from '@/lib/friendly-error'
 import { CALL_NEXT_LABEL, COMMUNITY_NEW_HREF } from '@/components/community/feed-rules'
 
@@ -74,13 +75,21 @@ export default function ChartShare({ symbol, tf, lines, view, board, depth, capt
   const hasAction = useMemo(() => lines.some((l) => (l.kind === 'h' || l.kind === 'zone') && l.action), [lines])
 
   // One picture per opening: the chart as it stood when Share was pressed.
+  // From the Depth view it is the depth card itself (app/api/og/depth), the
+  // same picture X draws for the link, so what you see is what gets posted.
   useEffect(() => {
     let alive = true
     let url: string | null = null
     void (async () => {
       try {
-        const canvas = await capture()
-        const b = canvas ? await canvasToBlob(canvas) : null
+        let b: Blob | null
+        if (depth) {
+          const r = await fetch(depthOgPath(symbol, depth, Date.now()), { cache: 'no-store' })
+          b = r.ok && (r.headers.get('content-type') ?? '').startsWith('image/') ? await r.blob() : null
+        } else {
+          const canvas = await capture()
+          b = canvas ? await canvasToBlob(canvas) : null
+        }
         if (!alive) return
         if (!b) {
           setFailed(true)
@@ -100,7 +109,9 @@ export default function ChartShare({ symbol, tf, lines, view, board, depth, capt
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const fileName = shareFileName(symbol, tfLabel, shotAt.current)
+  const fileName = shareFileName(symbol, depth ? 'depth' : tfLabel, shotAt.current)
+  // A Depth share is the book, not lines: no call to post, the link carries its own card.
+  const depthRests = !!depth && chartPairFor(symbol)?.source === 'coinbase'
   const file = useMemo(() => (blob ? new File([blob], fileName, { type: 'image/png' }) : null), [blob, fileName])
   const canNativeShare = useMemo(() => {
     try {
@@ -143,7 +154,7 @@ export default function ChartShare({ symbol, tf, lines, view, board, depth, capt
 
   const nativeShare = useCallback(async () => {
     const link = call ? callUrl(call.id) : chartUrl
-    const words = call ? `$${symbol} — ${call.title}` : `$${symbol} · ${tfLabel} on Pantessa`
+    const words = call ? `$${symbol} — ${call.title}` : depth ? `$${symbol} order book on Pantessa` : `$${symbol} · ${tfLabel} on Pantessa`
     try {
       // With a picture the link goes in the text (most targets drop `url`
       // when files are attached); without one it is the share itself.
@@ -211,7 +222,7 @@ export default function ChartShare({ symbol, tf, lines, view, board, depth, capt
     }
   }
 
-  const canPublish = lines.length > 0
+  const canPublish = lines.length > 0 && !depth
   const earnAsk = useMemo(() => {
     const pair = chartPairFor(symbol)
     return pair ? (execAsks(pair, { usd: 25 }).find((a) => a.tone === 'buy')?.ask ?? null) : null
@@ -223,7 +234,7 @@ export default function ChartShare({ symbol, tf, lines, view, board, depth, capt
       <div className="mkt-share__card">
         <div className="mkt-share__head">
           <span className="mono mkt-share__eyebrow">
-            <Share2 className="h-3 w-3" aria-hidden /> Share {symbol} · {tfLabel}
+            <Share2 className="h-3 w-3" aria-hidden /> Share {symbol} · {depth ? `depth ${depthWindowWords(depth.pct)}` : tfLabel}
           </span>
           <button type="button" className="mkt-pop__x" aria-label="Close" onClick={onClose}>
             <X className="h-3.5 w-3.5" />
@@ -233,7 +244,7 @@ export default function ChartShare({ symbol, tf, lines, view, board, depth, capt
         <div className="mkt-share__shot">
           {preview ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={preview} alt={`${symbol} ${tfLabel} chart with your drawings and the Pantessa watermark`} />
+            <img src={preview} alt={depth ? `${symbol} order book depth: the card X draws for this link` : `${symbol} ${tfLabel} chart with your drawings and the Pantessa watermark`} />
           ) : (
             <span className="mono">{failed ? 'Could not draw the picture — the chart is still loading.' : 'Drawing the picture…'}</span>
           )}
@@ -257,7 +268,14 @@ export default function ChartShare({ symbol, tf, lines, view, board, depth, capt
                 <XMark /> {busy ? 'Posting…' : 'Post on X'}
               </button>
             ) : (
-              <a className="mkt-share__btn" href={chartTweetHref(symbol, tfLabel, chartUrl)} target="_blank" rel="noopener noreferrer" title="Opens X with a link to this chart">
+              <a
+                className={depth ? 'mkt-share__btn mkt-share__btn--go' : 'mkt-share__btn'}
+                href={depth ? depthTweetHref(symbol, chartUrl, depth.pct, depthRests) : chartTweetHref(symbol, tfLabel, chartUrl)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={depth ? 'Opens X with a link to this depth view: the card shows the book as X reads it' : 'Opens X with a link to this chart'}
+                data-depth-share={depth ? '' : undefined}
+              >
                 <XMark /> Post on X
               </a>
             ))}
@@ -269,6 +287,11 @@ export default function ChartShare({ symbol, tf, lines, view, board, depth, capt
         </div>
         {!call && canPublish && !session.address && (
           <p className="mkt-share__note">Signed out, the post on X links the plain {symbol} chart. Sign in below and it links your lines instead: the card on X shows them, and people can reply on the page.</p>
+        )}
+        {depth && !note && (
+          <p className="mkt-share__note" data-depth-share-note="">
+            The link opens this view ({depthWindowWords(depth.pct)}{depth.unit === 'base' ? `, in ${symbol}` : ''}), and the card on X is the book as it stands when X reads the link.
+          </p>
         )}
         {note && <p className="mkt-share__note">{note}</p>}
         {/* The share that pays: a plain chart link earns its sharer nothing; an
@@ -285,7 +308,8 @@ export default function ChartShare({ symbol, tf, lines, view, board, depth, capt
           </p>
         )}
 
-        {/* the call: time + price stamped, position verified */}
+        {/* the call: time + price stamped, position verified (lines, so not from the Depth view) */}
+        {!depth && (
         <div className="mkt-share__call">
           {call ? (
             <>
@@ -344,6 +368,7 @@ export default function ChartShare({ symbol, tf, lines, view, board, depth, capt
             </>
           )}
         </div>
+        )}
       </div>
     </div>
   )

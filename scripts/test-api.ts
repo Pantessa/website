@@ -389,6 +389,7 @@ import { appsTradePins } from './apps-trade-pins'
 import { appsEarnPins } from './apps-earn-pins'
 import { appsDockPins } from './apps-dock-pins'
 import { appsPhonePins } from './apps-phone-pins'
+import { symbolSearchPins } from './symbol-search-pins'
 import { cowRefusalLivePins, signStagePins } from './sign-stage-pins'
 import { depthPins } from './depth-pins'
 import { chartTapePins } from './chart-tape-pins'
@@ -411,6 +412,7 @@ import { calledGtmCoordPins, calledGtmCoordPinsServed } from './called-gtm-coord
 import { calledGtmCallPins, calledGtmCallPinsServed } from './called-gtm-call-pins'
 import { calledGtmProfilePins, calledGtmProfilePinsServed } from './called-gtm-profile-pins'
 import { calledGtmCommunityPins, calledGtmCommunityPinsServed } from './called-gtm-community-pins'
+import { suggestionsPins, suggestionsPinsServed } from './suggestions-pins'
 import { calledGtmTradePins, calledGtmTradePinsServed } from './called-gtm-trade-pins'
 import { calledGtmOutreachPins, calledGtmOutreachPinsServed } from './called-gtm-outreach-pins'
 import { communityFeedPins, communityFeedPinsServed } from './community-feed-pins'
@@ -24063,7 +24065,7 @@ async function main() {
           [2, route === '/t/AAPL' ? 4 : 2].includes((html.match(/aria-label="MARKETS" aria-current="page"/g) ?? []).length) &&
           !/<header class="nav/.test(html) && !html.includes('nav__tabs') && !html.includes('data-ask-door="nav"') &&
           // RE-PINNED 2026-10-13 (rail-declutter): the alerts bell (RailAlerts, data-slot="alerts") sits between Ask and the account seat; it is in the server HTML, its popover is not.
-          /<div class="mkt-frame__side"><div class="mkt-frame__top" data-slot="top-strip"><button[^>]*data-ask-door="rail"[^>]*>[\s\S]*?<\/button><div class="mkt-frame__alerts" data-slot="alerts"><button type="button" class="mkt-frame__bell" aria-label="Alerts"[^>]*aria-expanded="false"[^>]*>[\s\S]*?<\/button><\/div><div class="mkt-frame__acct"><\/div><\/div><aside class="mkt-frame__rail"/.test(html) &&
+          /<div class="mkt-frame__side"><div class="mkt-frame__top" data-slot="top-strip"><button[^>]*data-ask-door="rail"[^>]*>[\s\S]*?<\/button><button type="button" class="ssx-lens"[^>]*data-symbol-search="strip"[^>]*>[\s\S]*?<\/button><div class="mkt-frame__alerts" data-slot="alerts"><button type="button" class="mkt-frame__bell" aria-label="Alerts"[^>]*aria-expanded="false"[^>]*>[\s\S]*?<\/button><\/div><div class="mkt-frame__acct"><\/div><\/div><aside class="mkt-frame__rail"/.test(html) &&
           !html.includes('mkt-alertpop') &&
           html.includes('data-ask-door="pill"'),
         `workspace=${(html.match(/aria-label="Workspace"/g) ?? []).length} nav=${/<header class="nav/.test(html)}`,
@@ -35638,6 +35640,7 @@ async function main() {
   appsEarnPins(check)
   appsDockPins(check)
   appsPhonePins(check)
+  symbolSearchPins(check)
   // Only the wallet may be blamed for a wallet rejection (2026-11-11): a CoW order the wallet SIGNED read "Signature rejected in the wallet" when CoW's order book refused it; the stage rule on five sign surfaces, CoW's errorType kept + logged + filed, and one live unfunded throwaway order through the relay.
   signStagePins(check)
   await cowRefusalLivePins(BASE, check)
@@ -35718,6 +35721,8 @@ async function main() {
   await calledGtmProfilePinsServed(check, BASE)
   calledGtmCommunityPins(check)
   await calledGtmCommunityPinsServed(check, BASE)
+  suggestionsPins(check)
+  await suggestionsPinsServed(check, BASE)
   calledGtmTradePins(check)
   await calledGtmTradePinsServed(check, BASE)
   calledGtmOutreachPins(check)

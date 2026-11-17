@@ -43,11 +43,14 @@ import { EMPTY_TOUR, type TourSnapshot } from '@/lib/home-tour'
 // (lib/home-tour-server), a prop so the first paint is the server's.
 // HomeModeSync keeps the stranger / returning posture (lib/home-mode).
 
+// `suggest` is the suggestions board (2026-11-17, components/home/SuggestionsBoard),
+// a server component handed down the same way.
+
 // `called` is the Called it shelf (2026-11-16, components/home/CalledShelf): a
 // SERVER component page.tsx renders and hands down whole, so its record reads
 // never enter this client bundle.
 
-export default function HomeSurface({ trending = [], tradable, read = EMPTY_READ, tour = EMPTY_TOUR, called }: { trending?: TrendingRow[]; tradable?: TradabilityMap; read?: ReadSnapshot; tour?: TourSnapshot; called?: ReactNode }) {
+export default function HomeSurface({ trending = [], tradable, read = EMPTY_READ, tour = EMPTY_TOUR, called, suggest }: { trending?: TrendingRow[]; tradable?: TradabilityMap; read?: ReadSnapshot; tour?: TourSnapshot; called?: ReactNode; suggest?: ReactNode }) {
   return (
     <>
       <HomeModeSync />
@@ -63,6 +66,7 @@ export default function HomeSurface({ trending = [], tradable, read = EMPTY_READ
         }
         guide={<AppsRow />}
         called={called}
+        suggest={suggest}
         tour={<Tour data={tour} read={read} />}
         how={<HowItWorks data={tour} />}
         close={<ClosingDoors data={tour} />}

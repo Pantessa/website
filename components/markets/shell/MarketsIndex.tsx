@@ -260,6 +260,7 @@ export default function MarketsIndex({
   how,
   close,
   called,
+  suggest,
 }: {
   trending?: TrendingRow[]
   /** The measured venue verdicts, read server-side so the index's chips are right on the FIRST paint (lib/tradability-store). */
@@ -287,6 +288,9 @@ export default function MarketsIndex({
    *  under the lead (THE READ) and above the tour — three featured records,
    *  a door to /x. Empty when no record answered. */
   called?: ReactNode
+  /** Suggestions (2026-11-17, components/home/SuggestionsBoard): open and
+   *  closed GitHub issues and the door to make one. Renders above `close`. */
+  suggest?: ReactNode
 }) {
   // Idempotent, and deliberately during render: QuickAct reads the shared
   // store synchronously, so seeding in an effect would flash a chip the
@@ -448,6 +452,12 @@ export default function MarketsIndex({
                 Non-custodial. No broker account, no KYC to look. <Link href="/docs" className="mkt-link">How it works →</Link>
               </p>
             </section>
+          )}
+          {/* ── The suggest seat: what people asked us to build (components/home/SuggestionsBoard) ── */}
+          {suggest && (
+            <div className="mk-suggest-seat" data-seat="Suggest">
+              {suggest}
+            </div>
           )}
           {/* ── The close seat: the ways in, once more (components/home/ClosingDoors) ── */}
           {close && (

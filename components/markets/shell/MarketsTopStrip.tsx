@@ -10,16 +10,20 @@
 // otherwise). Sign-in and sign-out both keep you on the page, query included
 // (?tab=trade survives): the door names no destination, so it lands on the
 // page it is pressed on (lib/app-entry signInLandingFor). Sticky at the top
-// of the side column on desktop; the page's top bar on phones.
+// of the side column on desktop; the page's top bar on phones. The lens
+// between Ask and the bell opens the symbol search (2026-11-17,
+// components/markets/search): any chart from any markets page, `/` too.
 
 import { AskDoorTrigger } from '@/components/AskDoor'
 import RailAlerts from '@/components/markets/shell/RailAlerts'
+import { SymbolSearchTrigger } from '@/components/markets/search/SymbolSearch'
 import SiteAccount from '@/components/SiteAccount'
 
 export default function MarketsTopStrip() {
   return (
     <div className="mkt-frame__top" data-slot="top-strip">
       <AskDoorTrigger variant="rail" />
+      <SymbolSearchTrigger variant="strip" />
       <RailAlerts />
       <div className="mkt-frame__acct">
         <SiteAccount />
