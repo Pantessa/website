@@ -20,6 +20,9 @@ export interface MarketMapProps {
   /** Aspect ratio of the map (width / height); default 2.2 desktop, 1.1 phone. */
   aspect?: number
   className?: string
+  /** Told when the map's own filter tabs change the section, so a parent
+   *  that steers `section` (the index's board tabs) stays in step. */
+  onSectionChange?: (section: MapSection) => void
 }
 
 const TABS: { id: MapSection; label: string }[] = [
@@ -30,7 +33,7 @@ const TABS: { id: MapSection; label: string }[] = [
 ]
 
 
-export default function MarketMap({ section = 'all', onOpen, tabs = true, aspect, className = '' }: MarketMapProps) {
+export default function MarketMap({ section = 'all', onOpen, tabs = true, aspect, className = '', onSectionChange }: MarketMapProps) {
   const [filter, setFilter] = useState<MapSection>(section)
   useEffect(() => setFilter(section), [section])
   const sections = useMemo(() => marketSections(), [])
@@ -97,7 +100,10 @@ export default function MarketMap({ section = 'all', onOpen, tabs = true, aspect
         {tabs ? (
           <div className="mk-map__tabs" role="tablist" aria-label="Market map section">
             {TABS.map((t) => (
-              <button key={t.id} type="button" className="mk-map__tab" aria-pressed={filter === t.id} onClick={() => setFilter(t.id)}>
+              <button key={t.id} type="button" className="mk-map__tab" aria-pressed={filter === t.id} onClick={() => {
+                  setFilter(t.id)
+                  onSectionChange?.(t.id)
+                }}>
                 {t.label}
               </button>
             ))}

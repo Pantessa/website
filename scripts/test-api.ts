@@ -26993,6 +26993,20 @@ async function main() {
         (await readFile('components/home/TheRead.tsx', 'utf8')).includes('sessionStripFor(now)') &&
         (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes("const showList = view === 'list' || phone"),
     )
+    {
+      // 2026-11-17: in MAP view Equities · Crypto · Perps had no ledger to jump to (the
+      // boards render in the list only) and did nothing. A board tab now filters the heat
+      // map to its section; the map's own tabs report back so the two stay in step.
+      const boardSrc = await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')
+      const mapSrc = await readFile('components/markets/viz/MarketMap.tsx', 'utf8')
+      check(
+        'markets: in map view a board tab (Equities / Crypto / Perps) filters the heat map to its section and scrolls the map in; the map\'s own tabs keep the board tab in step',
+        boardSrc.includes('onClick={(e) => pickBoard(s.id, e)}') && boardSrc.includes('const boardsAreMapped = showMap && !showList') &&
+          boardSrc.includes('setMapSection(mapSectionOf(id))') && /<MarketMap\s+section=\{mapSection\}/.test(boardSrc) &&
+          boardSrc.includes("id === 'equities' ? 'stocks' : id") &&
+          mapSrc.includes('onSectionChange?.(t.id)') && mapSrc.includes('useEffect(() => setFilter(section), [section])'),
+      )
+    }
     const tableSrc = await readFile('components/markets/shell/MarketTable.tsx', 'utf8')
     const sparksSrc = await readFile('components/markets/shell/useSparks.ts', 'utf8')
     check(
