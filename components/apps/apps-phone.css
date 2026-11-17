@@ -66,6 +66,10 @@
 .apgm .apg-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
 .apgm .apg-fact__value { font-size: 24px; }
 .apgm .apg-appmark { min-height: 44px; }
+/* A phone's touch rule for everything on the page, the sections' own
+   controls included (prompt pills, a holding row's toggle) and the header's
+   chain picker: nothing tappable under 44px. */
+.apgm-scroll button, .apgm-top button { min-height: 44px; }
 .apgm .apg-row__acts { flex-wrap: wrap; }
 
 /* ── The pinned ask bar: the panel's last row, above the tab bar ──────────── */

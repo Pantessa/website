@@ -39,6 +39,7 @@ import { appFamily, askPlaceholder, densityEyebrow, dockSuggestions, lineFor, ne
 import { askBarSubmit, phoneLayoutFor, phoneSuggestions } from '@/lib/apps-phone'
 import { mergeMoneyMap, summarizeMoneyMap } from '@/lib/splash/money-map'
 import { useYeetfulStore } from '@/lib/store'
+import type { MoneyMap, SplashTile } from '@/lib/splash/types'
 import { cleanServerName } from '@/lib/utils'
 import './apps.css'
 import './apps-phone.css'
@@ -47,9 +48,28 @@ import './apps-phone.css'
 // tab brings you back where you were (the screen unmounts in between).
 let SCROLL_MEMORY = 0
 
+// The last scan, kept for the session the same way: the screen unmounts
+// while you read the conversation, and coming back to the SAME apps should
+// show the page at once, not a second scan's loader. A different wallet,
+// chain or set of apps never reads it (the key), so it can only ever show
+// what this exact scan already showed; the live scan replaces it as soon as
+// it lands.
+let TILE_CACHE: { key: string; tiles: SplashTile[]; map: MoneyMap | null } | null = null
+
 export default function AppsPhone({ address, title }: { address: string; title: string }) {
   const { active, toggle } = useAppSet()
-  const { tiles, map, loading, pending, retry } = useAppTiles(address, active)
+  const scan = useAppTiles(address, active)
+  const { pending, retry } = scan
+  const chainId = useYeetfulStore((s) => s.selectedChainId)
+  const cacheKey = `${address.toLowerCase()}|${active.map((s) => s.id).sort().join(',')}|${chainId ?? ''}`
+  useEffect(() => {
+    if (scan.tiles && !scan.loading) TILE_CACHE = { key: cacheKey, tiles: scan.tiles, map: scan.map }
+  }, [scan.tiles, scan.map, scan.loading, cacheKey])
+  const cached = TILE_CACHE && TILE_CACHE.key === cacheKey ? TILE_CACHE : null
+  const fresh = !scan.loading && scan.tiles !== null
+  const tiles = fresh ? scan.tiles : (cached?.tiles ?? scan.tiles)
+  const map = fresh ? scan.map : (cached?.map ?? scan.map)
+  const loading = fresh ? false : !cached && scan.loading
   const { sendAsk, setSuggestions, suggestions } = useAppsUi()
   const setPhoneScreen = useYeetfulStore((s) => s.setPhoneScreen)
   const [addOpen, setAddOpen] = useState(false)
