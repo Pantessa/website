@@ -77,7 +77,7 @@ import EmbedThisChat from '@/components/EmbedThisChat'
 import ChainPicker from '@/components/ChainPicker'
 import { chainById } from '@/lib/chains'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
-import { DockControls, DockEmpty, DockScope } from '@/components/apps/Dock'
+import { DockControls, DockEmpty, DockScope, DockShortcut } from '@/components/apps/Dock'
 import { askPlaceholder } from '@/lib/apps-page'
 import LinksWorkspace from '@/components/LinksWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
@@ -2052,7 +2052,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           </div>
           )}
           <ShareButton />
-          {showAppChrome && (
+          {/* Beside the apps page the account pill lives on the page's row
+              (components/apps/AppsPage), so the dock's one-line header keeps
+              its room for the names it is scoped to. */}
+          {showAppChrome && !besideApps && (
             <div className="flex-shrink-0 pl-1">
               {/* The site's account door (SiteAccount): "Sign in" for a guest
                   — the brochure nav is gone on /chat for everyone, so this seat
@@ -2065,7 +2068,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <SiteAccount />
             </div>
           )}
-          {besideApps && <DockControls />}
+          {besideApps && (
+            <>
+              <DockControls />
+              <DockShortcut />
+            </>
+          )}
         </div>
       )}
 
