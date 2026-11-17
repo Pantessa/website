@@ -28,7 +28,7 @@
 // settlements have no single EVM receipt carrying our fee (verdict
 // `attested`), so they do not earn yet — said plainly on /pricing.
 
-import { decodeEventLog, erc20Abi, formatUnits } from 'viem'
+import { decodeEventLog, erc20Abi, formatUnits, keccak256, toHex } from 'viem'
 import { chainById, gasIsStable } from '@/lib/chains'
 import { answersEarnedByFee } from '@/lib/plans'
 import { CREATOR_FEE_SPLIT, LINK_SWAP_FEE_BPS, SWAP_FEE_BPS } from '@/lib/fees'
@@ -69,7 +69,47 @@ export function answersForReceipt(i: EarnInputs): number {
   return Math.min(MAX_ANSWERS_PER_RECEIPT, answersEarnedByFee((usd * netBps) / 10_000))
 }
 
-const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b0fc378daa952ba7f163c4a11628f55a4df523b3ef'
+/**
+ * topic0 of an ERC-20 `Transfer`. COMPUTED, never typed: the literal that
+ * stood here until 2026-11-17 was two hex characters short, so no log ever
+ * matched and a stable-paid swap earned nothing.
+ */
+export const TRANSFER_TOPIC = keccak256(toHex('Transfer(address,address,uint256)'))
+
+interface ReceiptLog { address: string; topics: readonly string[]; data: string }
+
+/**
+ * Pure: what a receipt's logs show `wallet` moved - the largest stable
+ * transfer in or out of it (USD) and the largest wrapped-native leg (atoms).
+ * Only ERC-20 transfers (three topics) of a registry stable or the chain's
+ * wrapped native count; anything undecodable is skipped.
+ */
+export function movedByWallet(
+  chain: { stables: Record<string, number>; wrappedNative: string },
+  logs: readonly ReceiptLog[],
+  wallet: string,
+): { stableUsd: number; wrappedAtoms: bigint } {
+  const who = wallet.toLowerCase()
+  const wrapped = chain.wrappedNative.toLowerCase()
+  let stableUsd = 0
+  let wrappedAtoms = BigInt(0)
+  for (const log of logs) {
+    if (log.topics[0]?.toLowerCase() !== TRANSFER_TOPIC || log.topics.length !== 3) continue
+    const token = log.address.toLowerCase()
+    const stableDecimals = chain.stables[token]
+    if (stableDecimals === undefined && token !== wrapped) continue
+    let args: { from: string; to: string; value: bigint }
+    try {
+      args = decodeEventLog({ abi: erc20Abi, data: log.data as `0x${string}`, topics: log.topics as [`0x${string}`, ...`0x${string}`[]], eventName: 'Transfer' }).args as typeof args
+    } catch {
+      continue
+    }
+    if (args.from.toLowerCase() !== who && args.to.toLowerCase() !== who) continue
+    if (stableDecimals !== undefined) stableUsd = Math.max(stableUsd, Number(formatUnits(args.value, stableDecimals)))
+    else if (args.value > wrappedAtoms) wrappedAtoms = args.value
+  }
+  return { stableUsd, wrappedAtoms }
+}
 
 /** What the receipt shows `wallet` moved, in USD. null when it cannot tell. */
 export async function onChainNotionalUsd(chainId: number, txHash: string, wallet: string): Promise<{ usd: number | null; to: string | null }> {
@@ -85,24 +125,7 @@ export async function onChainNotionalUsd(chainId: number, txHash: string, wallet
   ])
   if (!tx || !receipt || receipt.status !== 'success' || tx.from.toLowerCase() !== who) return { usd: null, to: tx?.to?.toLowerCase() ?? null }
 
-  const wrapped = chain.wrappedNative.toLowerCase()
-  let stableUsd = 0
-  let wrappedAtoms = BigInt(0)
-  for (const log of receipt.logs) {
-    if (log.topics[0]?.toLowerCase() !== TRANSFER_TOPIC || log.topics.length !== 3) continue
-    const token = log.address.toLowerCase()
-    const stableDecimals = chain.stables[token]
-    if (stableDecimals === undefined && token !== wrapped) continue
-    let args: { from: string; to: string; value: bigint }
-    try {
-      args = decodeEventLog({ abi: erc20Abi, data: log.data, topics: log.topics, eventName: 'Transfer' }).args as typeof args
-    } catch {
-      continue
-    }
-    if (args.from.toLowerCase() !== who && args.to.toLowerCase() !== who) continue
-    if (stableDecimals !== undefined) stableUsd = Math.max(stableUsd, Number(formatUnits(args.value, stableDecimals)))
-    else if (args.value > wrappedAtoms) wrappedAtoms = args.value
-  }
+  const { stableUsd, wrappedAtoms } = movedByWallet(chain, receipt.logs, who)
 
   // Native value sent with the call (an ETH-in swap), or the wrapped leg.
   const nativeAtoms = tx.value > wrappedAtoms ? tx.value : wrappedAtoms
