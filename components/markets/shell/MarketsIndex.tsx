@@ -46,6 +46,23 @@ import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import type { TrendingRow } from '@/app/markets/trending'
 import type { TradabilityMap } from '@/lib/tradability'
 import { seedTradable } from '@/lib/tradable-read'
+import type { MapSection } from '@/lib/viz/market-map'
+
+/** A board tab's section as the heat map names it (the map says "stocks"). */
+const mapSectionOf = (id: MarketSectionId): MapSection => (id === 'equities' ? 'stocks' : id)
+const boardOfMap = (s: MapSection): MarketSectionId | null => (s === 'all' ? null : s === 'stocks' ? 'equities' : s)
+
+/** Scroll an element in under the sticky tool strip — where the strip will
+ *  sit once stuck (its sticky `top` + its height, read on press: the height
+ *  changes with the posture), not where it sits before the page moves. */
+function scrollUnderBar(el: Element | null) {
+  if (!el) return
+  const bar = document.querySelector('.mkt-frame__bar')
+  const barBottom = bar ? (parseFloat(getComputedStyle(bar).top) || 0) + bar.getBoundingClientRect().height : 0
+  const top = el.getBoundingClientRect().top + window.scrollY - barBottom - 12
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  window.scrollTo({ top: Math.max(0, top), behavior: reduce ? 'auto' : 'smooth' })
+}
 
 // Rows before "show all" — a folded board leads with the household names.
 const FOLD_AT = 24
@@ -309,6 +326,37 @@ export default function MarketsIndex({
   const phone = usePhone()
   const showMap = view === 'map'
   const showList = view === 'list' || phone
+  // The board tabs in MAP view (2026-11-17): Equities · Crypto · Perps have no
+  // ledger to jump to there (the boards render in the list only), so a tab
+  // filters the heat map to its section and brings the map in under the
+  // strip. In the list (and on a phone, where the ledger renders under the
+  // map) the tab stays a plain anchor.
+  const [mapSection, setMapSection] = useState<MapSection>('all')
+  const boardsAreMapped = showMap && !showList
+  const pickBoard = useCallback(
+    (id: MarketSectionId, e?: { preventDefault: () => void }) => {
+      setActive(id)
+      if (!boardsAreMapped) return
+      e?.preventDefault()
+      setMapSection(mapSectionOf(id))
+      try {
+        window.history.replaceState(window.history.state, '', `#${id}`)
+      } catch {
+        /* the filter still applies */
+      }
+      scrollUnderBar(document.querySelector('.mk-map-seat'))
+    },
+    [boardsAreMapped, setActive],
+  )
+  // Arriving on /#crypto with the map remembered: the map opens on Crypto.
+  useEffect(() => {
+    if (!boardsAreMapped) return
+    const id = window.location.hash.slice(1) as MarketSectionId
+    if (ids.includes(id)) {
+      setMapSection(mapSectionOf(id))
+      setActive(id)
+    }
+  }, [boardsAreMapped, ids, setActive])
   const open = useCallback((symbol: string) => router.push(`/t/${symbol}`), [router])
   // ONE act door for the index: the rail's Morning tape (AI) and every row's
   // QuickAct chips (EXEC) run in the app the way the rail's own chips do —
@@ -358,7 +406,8 @@ export default function MarketsIndex({
                 href={`#${s.id}`}
                 className={`mkt-frame__tab${active === s.id ? ' is-on' : ''}`}
                 aria-current={active === s.id ? 'location' : undefined}
-                onClick={() => setActive(s.id)}
+                onClick={(e) => pickBoard(s.id, e)}
+                data-tab={s.id}
               >
                 {TAB_LABELS[s.id]}
                 <span className="mkt-frame__tabcount mono">{s.rows.length}</span>
@@ -412,7 +461,15 @@ export default function MarketsIndex({
           <Trending rows={trending} />
           {showMap && (
             <section className="mk-map-seat" data-seat="MarketMap" aria-label="Market map">
-              <MarketMap section="all" onOpen={open} />
+              <MarketMap
+                section={mapSection}
+                onOpen={open}
+                onSectionChange={(next) => {
+                  setMapSection(next)
+                  const board = boardOfMap(next)
+                  if (board) setActive(board)
+                }}
+              />
               <p className="mk-map-seat__hint mono">
                 MAP · size by liquidity, colour by move · <button type="button" className="mk-map-seat__flip" onClick={() => setView('list')}>show the list</button>
               </p>
