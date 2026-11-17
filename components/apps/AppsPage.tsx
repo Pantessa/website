@@ -55,8 +55,8 @@ export default function AppsPage({ address }: { address: string }) {
   const sectionDensity = sectionDensityFor(density)
   const names = active.map((s) => cleanServerName(s.name))
   const page = useMemo(() => splitPageTiles(tiles ?? [], active.map((s) => s.slug)), [tiles, active])
+  const totalUsd = useMemo(() => pageTotalUsd([...page.bySlug.values()].flat()), [page])
   const needs = needsYouRows(page.briefing)
-  const totalUsd = useMemo(() => pageTotalUsd(map, tiles ?? []), [map, tiles])
 
   // The dock's empty state offers the open apps' own first asks.
   useEffect(() => {
@@ -91,7 +91,7 @@ export default function AppsPage({ address }: { address: string }) {
         right={
           <>
             <ChainPicker />
-            {!chatOpen && <SiteAccount />}
+            <SiteAccount />
             <button
               type="button"
               aria-pressed={chatOpen}
@@ -150,7 +150,7 @@ export default function AppsPage({ address }: { address: string }) {
                   )}
                 </div>
               ) : (
-                <div className={density === 'side' ? 'apg-cols' : 'apg-full'} data-apps-cols={active.length}>
+                <div className={density === 'side' ? 'apg-cols' : 'apg-full'} data-apps-cols={active.length} style={{ ['--apg-n' as string]: active.length }}>
                   {sectionsFor.map(({ server, family, mod, group, isPending }) => (
                     <mod.Section
                       key={server.id}

@@ -102,10 +102,10 @@ export function appsPagePins(check: Check) {
       pageHeadline({ count: 5, totalUsd: 6306.4, needs: 1 }) === 'You have $6,306 on this page. One thing needs you.' &&
       pageHeadline({ count: 2, totalUsd: null, needs: 2 }) === 'Two things need you.' && pageHeadline({ count: 2, totalUsd: 0, needs: 0 }) === 'Nothing needs you right now.')
 
-  check('apps page (headline): the total the headline names is never less than what a section on the same page prints (the money map read $20 beside a $28 portfolio); nothing priced is null, never $0',
-    pageTotalUsd({ facts: [{ bucket: 'spot', usd: 20, label: 'x' }], readChains: [], failedChains: [] }, [{ ...holdings, totalUsd: 28.4 } as SplashTile]) === 28.4 &&
-      pageTotalUsd({ facts: [{ bucket: 'spot', usd: 90, label: 'x' }], readChains: [], failedChains: [] }, [holdings]) === 6306.4 &&
-      pageTotalUsd({ facts: [{ bucket: 'spot', usd: 90, label: 'x' }], readChains: [], failedChains: [] }, [votes]) === 90 && pageTotalUsd(null, [votes]) === null)
+  check('apps page (headline): the total the headline names is what the OPEN APPS carry (never the wallet-level map: OpenSea alone read "$20 on this page"), never less than a section on the same page prints; nothing priced is null, never $0',
+    pageTotalUsd([{ ...holdings, totalUsd: 28.4, facts: [{ bucket: 'spot', usd: 8, label: 'long tail' }] } as SplashTile]) === 28.4 &&
+      pageTotalUsd([{ ...quietHl, facts: [{ bucket: 'earning', usd: 1121, label: 'supplied on Aave' }] } as SplashTile, votes]) === 1121 &&
+      pageTotalUsd([votes]) === null && pageTotalUsd([]) === null && pageHeadline({ count: 1, totalUsd: pageTotalUsd([votes]), needs: 0 }) === 'Nothing needs you right now.')
 
   // ── the dock ──────────────────────────────────────────────────────────────
   const sug = dockSuggestions([[{ label: 'a1', prompt: 'a1' }, { label: 'a2', prompt: 'a2' }], [{ label: 'b1', prompt: 'b1' }], []])
@@ -116,7 +116,7 @@ export function appsPagePins(check: Check) {
   // ── wired ─────────────────────────────────────────────────────────────────
   const ws = code('components/ChatWorkspace.tsx')
   check('apps page (wired, one chat): the workspace docks the SAME ChatInterface beside the page (one mount, never a second runtime) and the page is its own slot before it, so the thread keeps its tree position',
-    (ws.match(/<ChatInterface /g) ?? []).length === 1 && ws.includes("<ChatInterface injectedPrompt={injected} beside={appsView ? 'apps' : undefined} />") &&
+    (ws.match(/<ChatInterface /g) ?? []).length === 1 && ws.includes("<ChatInterface injectedPrompt={injected} beside={besideApps ? 'apps' : undefined} />") && ws.includes('const besideApps = appsView || (isNarrow && !!address)') &&
       ws.indexOf('{appsView && address && <AppsPage address={address} />}') > 0 && ws.indexOf('{appsView && address && <AppsPage address={address} />}') < ws.indexOf('<ChatInterface '))
   check('apps page (wired, chat in reach): the chat is its own column beside the page\'s scroller, never inside it; with the dock closed the page keeps ONE ask bar pinned outside its scroller',
     ws.includes("className={appsView ? 'apg-dock' : 'flex-1 min-h-0 flex flex-col'}") && (() => {
@@ -129,7 +129,7 @@ export function appsPagePins(check: Check) {
   const ci = code('components/ChatInterface.tsx')
   check('apps page (wired, dock): beside the page the chat mints no splash cards (the page is the dashboard), shows the dock\'s own empty state, names its scope and carries expand + close',
     ci.includes('const besideApps = beside === \'apps\' && !embedded && !simple && !docked') && ci.includes('const splashableServers = simple || besideApps') &&
-      ci.includes('!besideApps &&\n') && ci.includes('<DockEmpty count={activeServers.length} onPick={runExample} />') && ci.includes('<DockScope servers={activeServers} />') && ci.includes('{besideApps && <DockControls />}'))
+      ci.includes('!besideApps &&\n') && ci.includes('<DockEmpty count={activeServers.length} onPick={runExample} phone={isNarrow} />') && ci.includes('<DockScope servers={activeServers} />') && ci.includes('{besideApps && <DockControls />}'))
   const rail = code('components/ChatRail.tsx')
   check('apps page (wired, drawer): while the page owns the APPS tab the drawer does not draw the same list twice; with no wallet the classic drawer stands',
     rail.includes('if (appsViewOn({ narrow: false, hasWallet: !!address, railTab, railOpen: mcpRailOpen, mainView })) return null') && rail.includes('<AppsRailTab />'))

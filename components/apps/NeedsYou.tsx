@@ -8,6 +8,7 @@
 // Buttons hand the row's own asks to the chat. Rows with no action never show
 // here (lib/apps-page needsYouRows).
 
+import { useState } from 'react'
 import type { StatRow } from '@/lib/splash/types'
 import { AskButton, Eyebrow } from '@/components/apps/parts'
 import { Sparkline } from '@/components/splash/Sparkline'
@@ -15,11 +16,18 @@ import TokenIcon from '@/components/TokenIcon'
 import { needsPieces, rowTokenOf } from '@/lib/apps-portfolio'
 import './portfolio.css'
 
-export default function NeedsYou({ rows, onAsk }: { rows: StatRow[]; onAsk: (text: string) => void }) {
-  if (rows.length === 0) return null
+/** Rows shown before "Show N more": the strip must never push the open
+ *  apps' own content off the first screen (four rows did, on a real wallet). */
+export const NEEDS_SHOWN = 2
+
+export default function NeedsYou({ rows: allRows, onAsk }: { rows: StatRow[]; onAsk: (text: string) => void }) {
+  const [all, setAll] = useState(false)
+  if (allRows.length === 0) return null
+  const rows = all ? allRows : allRows.slice(0, NEEDS_SHOWN)
+  const hidden = allRows.length - rows.length
   return (
-    <section className="apg-needs apgp-needs" data-apps-needs={rows.length} aria-label="Needs you">
-      <Eyebrow tone="needs">{rows.length === 1 ? 'Needs you' : `${rows.length} things need you`}</Eyebrow>
+    <section className="apg-needs apgp-needs" data-apps-needs={allRows.length} aria-label="Needs you">
+      <Eyebrow tone="needs">{allRows.length === 1 ? 'Needs you' : `${allRows.length} things need you`}</Eyebrow>
       {rows.map((r) => {
         const [first, second] = r.actions ?? []
         const token = rowTokenOf(r)
@@ -60,6 +68,11 @@ export default function NeedsYou({ rows, onAsk }: { rows: StatRow[]; onAsk: (tex
           </div>
         )
       })}
+      {(hidden > 0 || all) && allRows.length > NEEDS_SHOWN && (
+        <button type="button" className="apg-more" aria-expanded={all} onClick={() => setAll((v) => !v)} data-apps-needs-more="">
+          {all ? 'Show fewer' : `Show ${hidden} more`}
+        </button>
+      )}
     </section>
   )
 }

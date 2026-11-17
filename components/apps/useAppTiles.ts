@@ -80,7 +80,7 @@ export function useAppTiles(address: string | undefined, servers: McpServer[]): 
       fetch('/api/splash', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ address, servers, manualSlugs: slugs, ...(chainKey ? { chain: chainKey } : {}) }),
+        body: JSON.stringify({ address, servers, manualSlugs: slugs, wide: true, ...(chainKey ? { chain: chainKey } : {}) }),
       })
         .then((r) => r.json())
         .then((data: { tiles?: SplashTile[]; map?: MoneyMap | null }) => {
@@ -126,6 +126,7 @@ export function useAppTiles(address: string | undefined, servers: McpServer[]): 
         servers: fresh,
         manualSlugs: fresh.map((s) => s.slug),
         serversOnly: true,
+        wide: true,
         ...(chainKey ? { chain: chainKey } : {}),
       }),
     })

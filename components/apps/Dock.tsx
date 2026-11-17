@@ -17,6 +17,7 @@ import { useAppsUi } from '@/lib/apps-page-ui'
 import { chatScopeLabel } from '@/lib/apps-page'
 import { DOCK_SHORTCUT_HINT, isChatShortcut } from '@/lib/apps-dock'
 import { cleanServerName } from '@/lib/utils'
+import './apps.css'
 import './dock.css'
 
 const rank = (order: string[], id: string) => {
@@ -117,14 +118,14 @@ export function DockShortcut() {
 /** The dock before the first message: what it is for, and a few asks the
  *  open apps suggest (the page publishes them: lib/apps-page-ui), each a
  *  full-width row that reads as something to say. */
-export function DockEmpty({ count, onPick }: { count: number; onPick: (prompt: string) => void }) {
+export function DockEmpty({ count, onPick, phone }: { count: number; onPick: (prompt: string) => void; /** The phone's conversation screen: there is no page beside it. */ phone?: boolean }) {
   const suggestions = useAppsUi((s) => s.suggestions)
   return (
     <div className="apg-dockempty apgd-empty" data-dock-empty="">
       <p className="apg-dockempty__lead apgd-empty__lead">
         {count === 0
           ? 'Add an app to the page and it joins this chat.'
-          : 'Ask about anything on the page, or say what should happen. Anything that moves money comes back here as a card your wallet signs.'}
+          : `${phone ? 'Ask about your apps' : 'Ask about anything on the page'}, or say what should happen. Anything that moves money comes back here as a card your wallet signs.`}
       </p>
       {count > 0 && suggestions.length > 0 && (
         <div className="apgd-empty__list" role="list" aria-label="Things to ask">

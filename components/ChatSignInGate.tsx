@@ -12,6 +12,8 @@ import { usePhonePosture } from '@/components/chat/usePhonePosture'
 import KeepItBar from '@/components/guide/KeepItBar'
 import { getSignedReceipt, subscribeSignedReceipt } from '@/lib/first-run'
 import { useYeetfulStore } from '@/lib/store'
+import { useAccount } from 'wagmi'
+import { appsViewOn } from '@/lib/apps-page'
 
 /**
  * The chat's sign-in surface. It used to be a full-screen scrim that demanded
@@ -49,7 +51,15 @@ export default function ChatSignInGate() {
   // last row now, and a native app never traps you behind a sheet you can't
   // leave (MARKETS, WALLET and the rest stay one tap away). At lg+ nothing
   // changes: the banner floats over the thread as before.
-  const phone = usePhonePosture()
+  const phonePosture = usePhonePosture()
+  // Beside the apps page (components/apps, squad apps-page) the chat is a
+  // column: a banner floating over the frame's bottom centre landed ON the
+  // page's content. The dock gets the phone's treatment — the compact row in
+  // the conversation's own in-flow seat above the composer, the takeover over
+  // the conversation only — so nothing ever covers the page.
+  const { address: gateWallet } = useAccount()
+  const inDock = useYeetfulStore((s) => appsViewOn({ narrow: false, hasWallet: !!gateWallet, railTab: s.railTab, railOpen: s.mcpRailOpen, mainView: s.mainView })) && !phonePosture
+  const phone = phonePosture || inDock
   // The LINKS studio/board owns the desktop main screen (ChatInterface's
   // linksMode): the floating banner sat over its "Mint this link" row, and a
   // covered button is a dead button. Its words are about THIS chat anyway, so
@@ -68,7 +78,7 @@ export default function ChatSignInGate() {
       banner: document.querySelector<HTMLElement>('[data-chat-gate-banner-slot]'),
       root: document.querySelector<HTMLElement>('[data-chat-gate-root]'),
     })
-  }, [phone, status])
+  }, [phone, status, inDock])
 
   // Only guests see any of this. During `loading` we stay out of the way to
   // avoid a flash before the session cookie hydrates; `authed` needs no gate.

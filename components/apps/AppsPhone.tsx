@@ -76,8 +76,8 @@ export default function AppsPhone({ address, title }: { address: string; title: 
   const { layout, section } = phoneLayoutFor(active.length)
   const names = active.map((s) => cleanServerName(s.name))
   const page = useMemo(() => splitPageTiles(tiles ?? [], active.map((s) => s.slug)), [tiles, active])
+  const totalUsd = useMemo(() => pageTotalUsd([...page.bySlug.values()].flat()), [page])
   const needs = needsYouRows(page.briefing)
-  const totalUsd = useMemo(() => pageTotalUsd(map, tiles ?? []), [map, tiles])
 
   // The same suggestions the desktop dock offers (the page publishes them).
   useEffect(() => {

@@ -16,7 +16,7 @@
 // SplashTile, lib/splash): this file only decides shape and words. No React,
 // no fetch, no store — everything here is pinned in scripts/apps-page-pins.ts.
 
-import type { MoneyMap, ProposalsTile, RowsTile, SplashTile, StatRow, SuggestedPrompt } from '@/lib/splash/types'
+import type { ProposalsTile, RowsTile, SplashTile, StatRow, SuggestedPrompt } from '@/lib/splash/types'
 import { mergeMoneyMap, summarizeMoneyMap } from '@/lib/splash/money-map'
 
 // ── Density ─────────────────────────────────────────────────────────────────
@@ -196,13 +196,17 @@ export function quietSentence(names: string[]): string {
 
 // ── The page's one total ────────────────────────────────────────────────────
 
-/** The dollars the headline may name: never less than what a section on the
- *  same page prints. The money map counts only what its buckets can place
- *  (a wallet read $20 there beside a portfolio section showing $28), so the
- *  page takes the larger of the map and the biggest holdings total on it.
- *  null when nothing on the page carries a dollar. */
-export function pageTotalUsd(map: MoneyMap | null | undefined, tiles: SplashTile[]): number | null {
-  const merged = mergeMoneyMap(map, tiles)
+/** The dollars the headline may name: what the APPS ON THE PAGE carry, and
+ *  never less than a section on the same page prints. The wallet-level map
+ *  is NOT counted: with OpenSea alone it read "You have $20 on this page"
+ *  for money no open app shows. So: the larger of the open apps' own facts
+ *  and the biggest holdings total among their tiles (a portfolio's facts
+ *  cover only its long tail, so its total leads). `appTiles` must be the
+ *  open apps' tiles only (lib/apps-page splitPageTiles bySlug). null when
+ *  nothing on the page carries a dollar. */
+export function pageTotalUsd(appTiles: SplashTile[]): number | null {
+  const tiles = appTiles
+  const merged = mergeMoneyMap(null, tiles)
   const mapTotal = merged ? summarizeMoneyMap(merged).totalUsd : 0
   const held = tiles.reduce((m, t) => (t.render === 'holdings' && t.totalUsd != null && t.totalUsd > m ? t.totalUsd : m), 0)
   const total = Math.max(mapTotal, held)

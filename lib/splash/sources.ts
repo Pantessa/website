@@ -153,7 +153,7 @@ async function buildMultichainTiles(address: string, server: McpServer, chain?: 
       // top five so the card reads at a glance.
       viz: allocationViz(holdings) ?? undefined,
       facts: holdingsFacts(holdings, chain?.name ?? 'Base'),
-      holdings: holdings.slice(0, 5).map((h) => ({
+      holdings: holdings.slice(0, (server as SplashServer).wide ? WIDE_HOLDINGS : 5).map((h) => ({
         ...h,
         actions: holdingRowActions(h, `on ${h.chain ?? chain?.name ?? 'Base'}`),
         // Explorer token page for real contracts (native pseudo-rows get null).
@@ -172,7 +172,7 @@ async function buildMultichainTiles(address: string, server: McpServer, chain?: 
       render: 'activity',
       title: 'Recent transactions',
       subtitle: `${scope}`,
-      rows: activity.slice(0, 2),
+      rows: activity.slice(0, (server as SplashServer).wide ? WIDE_ACTIVITY : 2),
       prompts: [
         { label: 'Explain my last tx', prompt: `Explain my most recent transaction (${activity[0].asset} on ${activity[0].chain}) in plain English.` },
         { label: 'Summarize my activity', prompt: chain ? `Summarize my recent on-chain activity on ${chain.name}.` : 'Summarize my recent on-chain activity across Ethereum, Base, and Arbitrum.' },
@@ -1277,7 +1277,16 @@ export type SplashServer = McpServer & {
    *  always paint a card, falling back to a preview when there's no activity.
    *  Set by /api/splash from the client's manualSlugs. */
   forceShow?: boolean
+  /** The apps page asked (components/apps, squad apps-page): the holdings
+   *  list is the page's MAIN list there, so it gets the whole portfolio (up
+   *  to WIDE_HOLDINGS rows) and a longer activity tail instead of the
+   *  card's top five. Set by /api/splash from the request's `wide`. */
+  wide?: boolean
 }
+
+/** Row caps for a wide scan. */
+const WIDE_HOLDINGS = 40
+const WIDE_ACTIVITY = 4
 
 /** Param names that mean "the user's own address" — same intent as the
  *  planner's $USER_ADDRESS guidance, matched structurally here. */

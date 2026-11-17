@@ -120,7 +120,7 @@ function mcpBaseOf(endpoint: string | null, childUrl: string | null): string | n
  * no spend, no auth. The chat UI paints this before the first keystroke.
  */
 export async function POST(req: Request) {
-  let body: { address?: string; servers?: Pick<McpServer, 'slug'>[]; manualSlugs?: string[]; chain?: string; serversOnly?: boolean }
+  let body: { address?: string; servers?: Pick<McpServer, 'slug'>[]; manualSlugs?: string[]; chain?: string; serversOnly?: boolean; wide?: boolean }
   try {
     body = await req.json()
   } catch {
@@ -205,6 +205,8 @@ export async function POST(req: Request) {
           endpoint: base,
           exampleQueries: r.exampleQueries,
           forceShow: manual.has(r.slug),
+          // The apps page's scan: the whole holdings list, not the card's five.
+          wide: body.wide === true,
           featuredEndpoints: (featuredByServer.get(r.id) ?? []).map((f) => ({
             url: f.url,
             description: f.description,

@@ -2202,7 +2202,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                 // Beside the apps page the dashboard is the page: the dock's
                 // empty state says what the chat is for and offers the open
                 // apps' own asks.
-                <DockEmpty count={activeServers.length} onPick={runExample} />
+                <DockEmpty count={activeServers.length} onPick={runExample} phone={isNarrow} />
               ) : splashEligible || splashBatches.length > 0 ? (
                 splashSettledEmpty ? (
                   <EmptyState activeCount={activeServers.length} autoRouter={autoRouter} onPick={runExample} showLinksHint={!embedded && !simple} guestBannerPad={!embedded && !simple && sessionStatus === 'guest'} />
@@ -2939,7 +2939,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           sit over the newest card or the composer, and needs no bar math
           (squad mobile-native — the old absolute offset counted a fixed tab
           bar that is now the frame's in-flow last row). */}
-      {firstParty && <div data-chat-gate-banner-slot="" className="flex-shrink-0 lg:hidden" />}
+      {firstParty && <div data-chat-gate-banner-slot="" className={cn('flex-shrink-0', !besideApps && 'lg:hidden')} />}
       {/* Input area — the command bar. First-party chat and the /i runtime
           float it as a free-standing pill: no full-width border-t (the pill
           itself is the boundary; the rule read as a stray line) and the
@@ -2992,7 +2992,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             placeholder={
               simple
                 ? 'Ask a follow-up…'
-                : besideApps
+                : besideApps && !isNarrow
                   ? `${askPlaceholder(activeServers.map((s) => cleanServerName(s.name)))}…`
                 : // A phone: "Ask your 4 agents anything…" wrapped in the
                   // 190px field at 360 and showed only "anything…" (the

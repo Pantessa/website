@@ -260,6 +260,9 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   // its asks reach the same conversation, so they ride below lg too.
   const injected = (appsView || isNarrow) && appsAsk && (!urlPrompt || appsAsk.at > urlPrompt.at) ? appsAsk : urlPrompt
   const dockHidden = appsView && !appsChatOpen
+  // A phone's APPS screen is the same page (components/apps/AppsPhone), so its
+  // conversation is "beside the apps" as well: no card grid above the thread.
+  const besideApps = appsView || (isNarrow && !!address)
 
   const screenUp = isNarrow && phoneScreen !== 'chat'
   // A screen rising over the composer takes the keyboard with it.
@@ -315,10 +318,12 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
           inert={screenUp || dockHidden || undefined}
           aria-hidden={screenUp || dockHidden || undefined}
         >
-          <ChatInterface injectedPrompt={injected} beside={appsView ? 'apps' : undefined} />
+          <ChatInterface injectedPrompt={injected} beside={besideApps ? 'apps' : undefined} />
         </div>
       </main>
-      <RouterEngineWindow />
+      {/* Beside the apps page the dock is the right column: the engine's
+          strip would squeeze the page for a feature that is off. */}
+      {!appsView && <RouterEngineWindow />}
       <ChatSignInGate />
     </div>
   )
