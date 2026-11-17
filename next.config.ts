@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { NextConfig } from 'next'
+import { autoSellStamp } from './lib/autopilot-live'
 
 // TradingView's Advanced Charts is licensed and never committed here:
 // scripts/tv-library.mjs copies it into public/charting_library/ before the
@@ -19,7 +20,9 @@ function tvLibraryVersion(): string {
 }
 
 const nextConfig: NextConfig = {
-  env: { NEXT_PUBLIC_TV_LIBRARY: tvLibraryVersion() },
+  // NEXT_PUBLIC_SPOT_AUTOSELL: is a spot stop / DCA autopilot armable here?
+  // Same condition the builders check (lib/autopilot-live).
+  env: { NEXT_PUBLIC_TV_LIBRARY: tvLibraryVersion(), NEXT_PUBLIC_SPOT_AUTOSELL: autoSellStamp(process.env) },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**' },

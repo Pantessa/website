@@ -5,6 +5,7 @@
 // pinned by test:api), and this fence carries Pantessa's chip copy and the
 // Robinhood Chain ticker snapshot.
 import type { ClarifyOption } from '@/lib/clarify'
+import { autoSellLive } from '@/lib/autopilot-live'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
 import { ROBINHOOD_TICKER_NAMES, ROBINHOOD_TICKER_SET } from '@/lib/robinhood-tickers'
 import { HL_BUILDER_DEXES } from '@/lib/hl-dex'
@@ -87,8 +88,9 @@ function notListedRefusal(ask: GuardianArmAsk, t: string): GuardianCoinFence {
   // A stop on a token you hold on Base is the Spot Guardian's job — offer its
   // exact grammar (it refuses what it can't hold on its own). Take-profit has
   // no spot twin, and the spot grammar caps percent stops under 90.
+  // Only while the Spot Guardian can actually be armed (lib/autopilot-live).
   const spot =
-    ask.kind !== 'stop_loss'
+    ask.kind !== 'stop_loss' || !autoSellLive()
       ? null
       : ask.triggerMode === 'price'
         ? `Protect my spot ${t} if it drops to $${ask.triggerValue}`

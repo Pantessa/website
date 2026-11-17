@@ -40,7 +40,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { isLookOnlySymbol, lookOnlyRefusal } from '@/lib/charts'
-import { chainNamedInAsk, isSellAsk } from '@/lib/sell-gate'
+import { chainNamedInAsk, isSellAsk, spotStopTarget } from '@/lib/sell-gate'
+import { autoSellLive, isDcaAutopilotArm } from '@/lib/autopilot-live'
 import { canFill, fillRefusal, type SymbolTradability, type TradabilityMap, type TradeSideKey } from '@/lib/tradability'
 import { canRunVenueAsk, capabilityTarget, venueAskRefusal } from '@/lib/venue-capability'
 import { normalizeWatchSymbol } from '@/lib/watchlists'
@@ -135,6 +136,9 @@ export function lookOnlyTarget(ask: string): string | null {
  */
 export function canTradeAsk(ask: string, tradable: TradabilityMap | null | undefined, now = Date.now()): boolean {
   if (lookOnlyTarget(ask)) return false
+  // A spot stop or a DCA autopilot arm while automatic selling is off here:
+  // the builder answers "that part isn't switched on" (lib/autopilot-live).
+  if (!autoSellLive() && (spotStopTarget(ask) || isDcaAutopilotArm(ask))) return false
   if (!canRunVenueAsk(ask, tradable, now)) return false
   const t = tradeTarget(ask)
   if (!t || !tradable) return true

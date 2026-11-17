@@ -6,6 +6,7 @@
 
 import { isChartOnlyPair, isHip3Pair, type ChartPair } from '@/lib/charts'
 import { tokenHome } from '@/lib/token-home'
+import { autoSellLive } from '@/lib/autopilot-live'
 
 // No DCA side (2026-09-16, Nate): a recurring buy in confirm mode only
 // reminds the wallet to sign each period, so no chart surface offers one.
@@ -59,7 +60,8 @@ export function sidesFor(pair: ChartPair): TradeSide[] {
   // A look-only index (US10Y, VIX…): nothing listed here trades it, so it offers no side (lib/charts isLookOnlyPair).
   if (pair.source === 'index') return []
   if (tokenHome(pair.symbol)) return ['buy', 'sell']
-  return ['buy', 'sell', 'protect']
+  // A coin's protect is the Spot Guardian: only while it can be armed (lib/autopilot-live).
+  return autoSellLive() ? ['buy', 'sell', 'protect'] : ['buy', 'sell']
 }
 
 /** Compose the sentence for a side. Every string here is a parser's own
@@ -134,7 +136,7 @@ export function execSidesFor(pair: ChartPair): ExecSide[] {
   if (hasPerpCold(pair.symbol)) out.push('long', 'short')
   if (pair.symbol === 'ETH') out.push('stake')
   if (hasAaveReserveCold(pair.symbol)) out.push('supply')
-  out.push('protect')
+  if (autoSellLive()) out.push('protect')
   return out
 }
 

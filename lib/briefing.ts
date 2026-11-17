@@ -23,6 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { MoneyFact, MoneyMap, RowsTile, StatRow } from './splash/types'
+import { autoSellLive } from './autopilot-live'
 import type { FundingScan, FundingSource } from './funding-plan'
 
 /** Public-shape read of one HL perp position (lib/hl-guardian-store's
@@ -198,7 +199,8 @@ export function composeBriefingItems(inputs: BriefingInputs): StatRow[] {
           tone: 'pos',
           chartSymbol: 'ETH',
         })
-      } else {
+      } else if (autoSellLive()) {
+        // Only nag when one signature really can arm the stop (lib/autopilot-live).
         rows.push({
           label: `${usd(s.usd)} of ETH on ${s.chainWord} · unwatched`,
           value: 'no stop loss',

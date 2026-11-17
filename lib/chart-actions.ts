@@ -36,6 +36,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { ChartSource } from './charts'
+import { autoSellLive } from './autopilot-live'
 import type { ChartAction, ChartActionKind } from './chart-state'
 import { tokenHome } from './token-home'
 
@@ -104,7 +105,8 @@ export function actionKindsFor(symbol: string, source: ChartSource): ReadonlySet
   if (source === 'hyperliquid') return new Set<ChartActionKind>(['buy', 'sell', 'stop', 'protect'])
   if (source === 'robinhood') return new Set<ChartActionKind>(['buy', 'sell'])
   if (tokenHome(symbol)) return new Set<ChartActionKind>(['buy', 'sell'])
-  return new Set<ChartActionKind>(['buy', 'sell', 'stop', 'limit', 'protect'])
+  // 'stop' on a coin is the Spot Guardian: only while it can be armed (lib/autopilot-live).
+  return new Set<ChartActionKind>(autoSellLive() ? ['buy', 'sell', 'stop', 'limit', 'protect'] : ['buy', 'sell', 'limit', 'protect'])
 }
 
 /** Why a drawn level on a look-only index carries no order. */
@@ -196,7 +198,7 @@ export function composeLineActions(input: ComposeLineInput): LineActionOffer[] {
       hint: `A CoW limit order: ${units} ${sym} at $${px} — fills at-or-better when the market reaches it.`,
     })
   }
-  if (below) {
+  if (below && autoSellLive()) {
     out.push({
       action: { kind: 'stop', ask: `Protect my spot ${sym} if it drops to $${px}` },
       label: 'Stop under this',

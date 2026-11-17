@@ -368,6 +368,7 @@ import { buildAutoBuy } from '../lib/dca-auto-exec'
 import { ADDRESS_THIS, NoV3PoolError, SWAP_ROUTER_02_ABI, guardUniswapV3Build, type V3GuardExpectations } from '../lib/uniswap-venue'
 import { creatorSplitPins } from './creator-split-pins'
 import { actionGateLivePins, actionGatePins } from './action-gate-pins'
+import { runAutosellPins } from './autosell-pins'
 import { hlHip3LivePins, hlHip3Pins, hlHip3ServedPins, hlHip3SignPins } from './hl-hip3-pins'
 import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
@@ -35592,6 +35593,12 @@ async function main() {
   creatorSplitPins(check)
   actionGatePins(check)
   await actionGateLivePins(check)
+  // No automatic sell is offered unless it can be armed (2026-11-17): the Spot Guardian + DCA autopilot
+  // offers read lib/autopilot-live, OFF and ON (scripts/autosell-pins).
+  {
+    const r = runAutosellPins()
+    check(`autosell: ${r.pass} pins, the offers follow the switch`, r.fail === 0, r.failures.join(' ; '))
+  }
   // Orders on Hyperliquid's builder-deployed (HIP-3) dexes (2026-11-09): "Long $25 of SP500 on Hyperliquid"
   // builds a guarded order on `xyz:SP500`. Pure pins over the venue's own answers (asset ids, the market
   // lookup, the order / leverage / move guards, the collateral rule), the typed data round trip, the rules

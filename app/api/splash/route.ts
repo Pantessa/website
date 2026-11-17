@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { autoSellLive } from '@/lib/autopilot-live'
 import { isAddress } from 'viem'
 import prisma from '@/lib/db'
 import type { McpServer } from '@/lib/store'
@@ -44,7 +45,7 @@ async function dcaTileFor(address: string): Promise<RowsTile | null> {
         ...(due ? [{ label: chip.label, prompt: chip.prompt }] : []),
         ...(armed
           ? [{ label: 'Turn off autopilot', prompt: `turn off my ${s.buyToken} dca autopilot` }]
-          : s.status === 'active' && s.chainId === 8453
+          : s.status === 'active' && s.chainId === 8453 && autoSellLive()
             ? [{ label: 'Make it autonomous', prompt: `make my ${s.buyToken} dca autonomous` }]
             : []),
         s.status === 'paused'
