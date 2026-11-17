@@ -400,6 +400,7 @@ import { appsDockPins } from './apps-dock-pins'
 import { appsPhonePins } from './apps-phone-pins'
 import { symbolSearchPins } from './symbol-search-pins'
 import { cowRefusalLivePins, signStagePins } from './sign-stage-pins'
+import { txInflightPins } from './tx-inflight-pins'
 import { depthPins } from './depth-pins'
 import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
@@ -35718,6 +35719,7 @@ async function main() {
   symbolSearchPins(check)
   // Only the wallet may be blamed for a wallet rejection (2026-11-11): a CoW order the wallet SIGNED read "Signature rejected in the wallet" when CoW's order book refused it; the stage rule on five sign surfaces, CoW's errorType kept + logged + filed, and one live unfunded throwaway order through the relay.
   signStagePins(check)
+  txInflightPins(check)
   await cowRefusalLivePins(BASE, check)
   // The Depth chart (2026-10-13): the book model and its deltas, the venue wire shapes, the window, the curve, the hover's numbers, the act at a level, the plan per chart, the words, the view's URL and wiring.
   depthPins(check)

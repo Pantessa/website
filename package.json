@@ -75,6 +75,7 @@
     "pins:symbol-search": "tsx scripts/symbol-search-pins.ts",
     "drive:symbol-ask": "node scripts/symbol-ask-drive.mjs",
     "pins:sign-stage": "tsx scripts/sign-stage-pins.ts",
+    "pins:tx-inflight": "tsx scripts/tx-inflight-pins.ts",
     "drive:cow-refusal": "node scripts/cow-refusal-drive.mjs",
     "pins:guide": "tsx scripts/guide-pins.ts",
     "pins:pulse": "tsx scripts/pulse-pins.ts",

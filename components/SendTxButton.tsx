@@ -36,13 +36,25 @@ import {
 } from '@/lib/sign-round-trip'
 import { useSignRoundTrip } from '@/lib/use-sign-round-trip'
 import SignatureWaitOpenApp from '@/components/SignatureWaitOpenApp'
+import {
+  INFLIGHT_COPY,
+  INFLIGHT_LOOKBACK_BLOCKS,
+  INFLIGHT_POLL_MS,
+  INFLIGHT_WATCH_MS,
+  inflightScanBlocks,
+  inflightVerdict,
+  isNonceConflict,
+  matchSentTx,
+} from '@/lib/tx-inflight'
 
 /** The outcome store. A return from the wallet app can be a full reload
  *  (LINKS, 2026-09-23), so the round trip's outcome lives here, not in
  *  React state. localStorage: it survives a tab the OS evicted. */
 const outcomeStore = () => (typeof window === 'undefined' ? null : window.localStorage)
 
-type Status = 'idle' | 'signing' | 'broadcast' | 'confirmed' | 'reverted' | 'error'
+// 'following' = the wallet refused the send because a transaction from it is
+// already out on that nonce (lib/tx-inflight): the card follows THAT one.
+type Status = 'idle' | 'signing' | 'following' | 'broadcast' | 'confirmed' | 'reverted' | 'error'
 
 const ORDER = ['idle', 'signing', 'broadcast', 'confirmed'] as const
 const STEPS: Array<{ key: Status; label: string }> = [
@@ -144,7 +156,98 @@ export default function SendTxButton({
   const explorer = chainInfo?.explorerTx ?? TX_EXPLORER[chainId] ?? 'https://basescan.org/tx/'
   const chainName = chainInfo?.name ?? `chain ${chainId}`
 
+  // The wallet answered "a transaction from this wallet is already on that
+  // nonce" (lib/tx-inflight, the 2026-11-17 bridge): nothing new was signed
+  // and a Retry could only be refused again, or, pressed after the first one
+  // mined, send the same step twice. Find the one that is out by its exact
+  // destination + calldata and follow it to its receipt.
+  const follow = async (askedAt: number) => {
+    if (!publicClient || !address) {
+      setError(INFLIGHT_COPY.timeout)
+      setStatus('error')
+      return
+    }
+    setError('')
+    setNote(INFLIGHT_COPY.waiting)
+    setStatus('following')
+    const me = address as `0x${string}`
+    let cursor: bigint | null = null
+    let minedAtStart: number | null = null
+    let lastMined = -1
+    const until = Date.now() + INFLIGHT_WATCH_MS
+    while (Date.now() < until) {
+      try {
+        const [latest, minedNow] = await Promise.all([
+          publicClient.getBlockNumber(),
+          publicClient.getTransactionCount({ address: me, blockTag: 'latest' }),
+        ])
+        if (cursor == null) {
+          const back = BigInt(INFLIGHT_LOOKBACK_BLOCKS)
+          cursor = latest > back ? latest - back : BigInt(0)
+          minedAtStart = minedNow
+        }
+        // A block is only worth reading when the wallet's mined count moved
+        // (or on the first look: it may have mined just before the refusal).
+        if (lastMined < 0 || minedNow > lastMined) {
+          const nums = inflightScanBlocks({ cursor, latest })
+          const scannedAll = BigInt(nums.length) >= latest - cursor
+          let hit: { hash?: string | null } | null = null
+          for (let i = 0; i < nums.length && !hit; i += 5) {
+            const blocks = await Promise.all(nums.slice(i, i + 5).map((n) => publicClient.getBlock({ blockNumber: n, includeTransactions: true })))
+            hit = matchSentTx(blocks.flatMap((b) => b.transactions as Array<{ from?: string; to?: string | null; input?: string; hash?: string }>), { from: me, to: tx.to, data: tx.data })
+          }
+          const verdict = inflightVerdict({ found: !!hit, minedAtStart, minedNow, scannedAll })
+          if (verdict === 'found' && hit?.hash) {
+            const found = hit.hash as `0x${string}`
+            if (outcomeKey) writeSignOutcome(outcomeStore(), { v: 1, key: outcomeKey, state: 'settled', askedAt, settledAt: Date.now(), hash: found })
+            setHash(found)
+            setNote('')
+            setStatus('broadcast')
+            const receipt = await publicClient.waitForTransactionReceipt({ hash: found, timeout: 120_000, retryCount: 8 })
+            setStatus(receipt.status === 'success' ? 'confirmed' : 'reverted')
+            if (receipt.status === 'success') onConfirmed?.(found)
+            return
+          }
+          if (verdict === 'cleared') {
+            // The nonce went to a different transaction: this step never
+            // left. The remembered ask would only scare the next visit.
+            if (outcomeKey) clearSignOutcome(outcomeStore(), outcomeKey)
+            setNote(INFLIGHT_COPY.cleared)
+            setStatus('idle')
+            return
+          }
+          cursor = latest
+          lastMined = minedNow
+        } else {
+          // Nothing from this wallet mined in these blocks: skip past them.
+          cursor = latest
+        }
+      } catch {
+        /* a read failed: look again */
+      }
+      await new Promise((r) => setTimeout(r, INFLIGHT_POLL_MS))
+    }
+    setNote('')
+    setError(INFLIGHT_COPY.timeout)
+    setStatus('error')
+  }
+
+  // ONE request per card at a time. `disabled` only lands on the next paint,
+  // so a double-click (or an auto-fire racing a tap) used to reach the wallet
+  // twice: two sends on one nonce, the second refused as an underpriced
+  // replacement and painted over the first one's progress.
+  const sending = useRef(false)
   const send = async () => {
+    if (sending.current) return
+    sending.current = true
+    try {
+      await sendOnce()
+    } finally {
+      sending.current = false
+    }
+  }
+
+  const sendOnce = async () => {
     setError('')
     setNote('')
     setSwitchNeeded(false)
@@ -153,6 +256,7 @@ export default function SendTxButton({
       return
     }
     let txHash: `0x${string}` | null = null
+    let askedAtMs = Date.now()
     try {
       setStatus('signing')
       // Match the wallet's network to the built transaction before signing.
@@ -209,6 +313,7 @@ export default function SendTxButton({
       // PARALLEL, never awaited ahead of the send: the same-chain path stays
       // a zero-await straight shot (Coinbase's popup-after-await rule).
       const askedAt = Date.now()
+      askedAtMs = askedAt
       if (outcomeKey) {
         writeSignOutcome(outcomeStore(), { v: 1, key: outcomeKey, state: 'asked', askedAt, nonceAtAsk: null })
         publicClient
@@ -284,13 +389,19 @@ export default function SendTxButton({
       // Only pre-broadcast errors are the wallet's — a revert after a hash
       // is the chain's, and reads as 'reverted' above.
       if (!txHash) {
-        // Nothing went out: the remembered ask would only scare the next visit.
-        if (outcomeKey) clearSignOutcome(outcomeStore(), outcomeKey)
+        const conflict = isNonceConflict(msg)
+        // Nothing went out: the remembered ask would only scare the next
+        // visit. (A nonce conflict keeps it: something from this wallet IS out.)
+        if (outcomeKey && !conflict) clearSignOutcome(outcomeStore(), outcomeKey)
         reportWalletRefusal({
           wallet: address, artifact: refusalArtifact, buildPath: refusalBuildPath,
           connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
           ask: summary ?? tx.action ?? 'transaction', detail: walletErrorWords(e),
         })
+        if (conflict) {
+          await follow(askedAtMs)
+          return
+        }
       }
       setError(
         /rejected|denied/i.test(msg)
@@ -326,14 +437,14 @@ export default function SendTxButton({
   const stepState = (step: Status): 'done' | 'active' | 'pending' => {
     if (status === 'confirmed') return 'done'
     if (status === 'reverted') return step === 'confirmed' ? 'pending' : 'done'
-    const cur = ORDER.indexOf(status === 'error' ? 'idle' : (status as (typeof ORDER)[number]))
+    const cur = ORDER.indexOf(status === 'error' ? 'idle' : status === 'following' ? 'broadcast' : (status as (typeof ORDER)[number]))
     const idx = ORDER.indexOf(step as (typeof ORDER)[number])
     if (idx < cur) return 'done'
     if (idx === cur) return 'active'
     return 'pending'
   }
 
-  const inFlight = status === 'signing' || status === 'broadcast'
+  const inFlight = status === 'signing' || status === 'broadcast' || status === 'following'
   const started = status !== 'idle' && status !== 'error'
   // The visitor came back from the wallet app and the request is still open.
   const cameBack = status === 'signing' && trip.verdict === 'offer-reopen'
@@ -414,8 +525,10 @@ export default function SendTxButton({
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
             {status === 'signing'
               ? 'Confirm in your wallet…'
-              : status === 'broadcast'
-                ? 'Waiting for confirmation…'
+              : status === 'following'
+                ? INFLIGHT_COPY.button
+                : status === 'broadcast'
+                  ? 'Waiting for confirmation…'
                 : status === 'error' && switchNeeded
                   ? `Switch to ${chainName} & retry`
                   : status === 'error'
