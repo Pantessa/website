@@ -83,6 +83,7 @@
     "pins:chart-tape": "tsx scripts/chart-tape-pins.ts",
     "pins:deck": "tsx scripts/deck-pins.ts",
     "pins:read": "tsx scripts/read-pins.ts",
+    "pins:news": "tsx scripts/news-front-pins.ts",
     "pins:suggestions": "tsx scripts/suggestions-pins.ts",
     "pins:macro": "tsx scripts/macro-pins.ts",
     "pins:community-coord": "tsx scripts/community-coord-pins.ts",
