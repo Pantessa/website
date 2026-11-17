@@ -270,3 +270,48 @@ export async function bumpAndCheckXchainStatus(ip: string | null): Promise<boole
     return false
   }
 }
+
+/** The landing page's email signup is unauthenticated and SENDS MAIL, so it
+ *  is fenced twice: per address (a confirm link is re-issued on every call,
+ *  which without a cap is a mail-bomb aimed at whoever owns the address) and
+ *  per IP (distinct addresses would otherwise write rows and send without
+ *  bound). The per-address cap holds on loopback too. */
+export const SUBSCRIBE_EMAIL_HOURLY_CAP = 3
+export const SUBSCRIBE_IP_HOURLY_CAP = 10
+
+/** Pure: is this signup over either cap? `null` = that window was not counted. */
+export function subscribeOver(counts: { email: number | null; ip: number | null }): boolean {
+  return (counts.email ?? 0) > SUBSCRIBE_EMAIL_HOURLY_CAP || (counts.ip ?? 0) > SUBSCRIBE_IP_HOURLY_CAP
+}
+
+/** Bump this signup's windows and say whether it is over a cap. Fail-open on
+ *  a store hiccup, like the rest of this module. */
+export async function bumpAndCheckSubscribe(ip: string | null, email: string, opts: { neverMailed?: boolean } = {}): Promise<boolean> {
+  // An address that is never mailed (a reserved test domain) has nobody to
+  // mail-bomb: it is fenced by IP alone, so a fixture address does not wall
+  // the harness that re-uses it.
+  if (opts.neverMailed && !ip) return false
+  const keys = [opts.neverMailed ? null : `se:${hashIp(email.toLowerCase())}`, ip ? `si:${hashIp(ip)}` : null]
+  try {
+    const { default: prisma } = await import('@/lib/db')
+    const windowStart = hourStartUTC()
+    const counts: (number | null)[] = []
+    for (const key of keys) {
+      if (!key) {
+        counts.push(null)
+        continue
+      }
+      const rows = await prisma.$queryRaw<{ count: number }[]>`
+        INSERT INTO unsigned_turn_windows (key, window_start, count)
+        VALUES (${key}, ${windowStart}, 1)
+        ON CONFLICT (key, window_start)
+        DO UPDATE SET count = unsigned_turn_windows.count + 1
+        RETURNING count
+      `
+      counts.push(Number(rows[0]?.count ?? 0))
+    }
+    return subscribeOver({ email: counts[0] ?? null, ip: counts[1] ?? null })
+  } catch {
+    return false
+  }
+}

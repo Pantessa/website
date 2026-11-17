@@ -18,7 +18,8 @@ export function emailEnabled(): boolean {
 }
 
 /** Skip obviously non-deliverable test addresses so the harness doesn't hit Resend. */
-function isUndeliverable(to: string): boolean {
+/** Reserved test domains: stored, never mailed. */
+export function isUndeliverable(to: string): boolean {
   return /@(?:[^.]+\.)*(?:test|example|invalid|localhost)$/i.test(to) || /@example\.(?:com|org|net)$/i.test(to)
 }
 
