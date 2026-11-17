@@ -12,8 +12,51 @@ import { rpcHostOf, transientRpcWords } from '@/lib/dry-run'
 import { HttpTransport, InfoClient } from '@nktkas/hyperliquid'
 import { affordabilityRefusal, checkAffordability, type BalanceReader } from '@/lib/affordability'
 
+import { shortfallOfRefusal } from '@/lib/job-status'
+
 /** How long a withheld (unaffordable) step waits before the runner re-quotes it. */
 const WITHHELD_HOLD_MS = 90_000
+/** A step withheld for funds this many times in a row slows down: the wallet
+ *  has not changed in several minutes, and every re-check is a venue quote. */
+const SHORT_FAST_TRIES = 5
+const WITHHELD_SLOW_HOLD_MS = 15 * 60_000
+
+/** The hold-down for a withheld step: 90 seconds while the shortfall is new
+ *  (a top-up in flight is picked up quickly), 15 minutes once it has held for
+ *  SHORT_FAST_TRIES checks. An RPC withhold keeps the short hold (it is
+ *  capped by RPC_WITHHOLD_MAX instead). Pure. */
+export function withheldHoldMs(result: unknown): number {
+  const r = (result ?? {}) as { withheldKind?: unknown; shortTries?: unknown }
+  if (r.withheldKind === 'rpc') return WITHHELD_HOLD_MS
+  return typeof r.shortTries === 'number' && r.shortTries > SHORT_FAST_TRIES ? WITHHELD_SLOW_HOLD_MS : WITHHELD_HOLD_MS
+}
+
+/**
+ * A builder's own "the wallet does not hold enough for this step". NOT a
+ * refusal: the runner withholds the step exactly like an affordability short
+ * (back to `pending`, the job stays live, re-checked after the hold-down)
+ * instead of failing the job. Squad lane1, 2026-11-17: on prod a new wallet's
+ * "Bridge ~$2 of gas ETH" step FAILED its job with "Insufficient USDC on
+ * Base", because the funding builder's balance check threw before the
+ * affordability gate one line later could withhold it.
+ */
+export class StepShortError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'StepShortError'
+  }
+}
+
+/** Throw a builder's words as a shortfall when they are one, else as given. */
+function throwBuilderWords(message: string): never {
+  if (shortfallOfRefusal(message)) throw new StepShortError(message)
+  throw new Error(message)
+}
+
+const shortTriesOf = (result: unknown): number => {
+  const n = (result as { shortTries?: unknown } | null)?.shortTries
+  return typeof n === 'number' && n > 0 ? n : 0
+}
 /** Builds withheld on an RPC that didn't answer: this many tries (one per
  *  hold-down, so ~9 minutes) before the step fails by name. */
 const RPC_WITHHOLD_MAX = 6
@@ -237,7 +280,7 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
       // and each poll advances a running job inline — without this, every
       // poll would re-quote the venue for a wallet that hasn't changed).
       const withheld = (step.result as { withheld?: unknown } | null)?.withheld === true
-      if (withheld && Date.now() - new Date(step.updatedAt).getTime() < WITHHELD_HOLD_MS) {
+      if (withheld && Date.now() - new Date(step.updatedAt).getTime() < withheldHoldMs(step.result)) {
         if (fresh.status !== 'running') await prisma.job.update({ where: { id: fresh.id }, data: { status: 'running' } })
         return
       }
@@ -270,7 +313,7 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
           console.warn(`[jobs] affordability withheld step ${step.seq + 1} of ${fresh.id} (${step.builder}): ${verdict.symbol} on ${verdict.chainName} holds ${verdict.held} needs ${verdict.needs}${verdict.gas ? ' (gas)' : ''}`)
           await prisma.jobStep.update({
             where: { id: step.id },
-            data: { status: 'pending', artifact: undefined, result: { error: affordabilityRefusal(verdict).replace(/^[^\w]+/, ''), withheld: true } as object },
+            data: { status: 'pending', artifact: undefined, result: { error: affordabilityRefusal(verdict).replace(/^[^\w]+/, ''), withheld: true, shortTries: shortTriesOf(step.result) + 1 } as object },
           })
           if (fresh.status !== 'running') await prisma.job.update({ where: { id: fresh.id }, data: { status: 'running' } })
           return
@@ -326,6 +369,20 @@ export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): 
           const gaveUp = `${who} ${RPC_WITHHOLD_MAX} times in a row (${transient}). Nothing was signed — try again in a few minutes.`
           await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'failed', result: { error: gaveUp, rpcTries: tries } as object } })
           await failJob(fresh.id, `"${step.title}" withheld: ${gaveUp}`)
+          return
+        }
+        // A shortfall the BUILDER named (its own balance or collateral check)
+        // is the affordability gate's verdict reached one step earlier: the
+        // step is WITHHELD with the builder's words, the job stays live, and
+        // it is offered once the funds are there. Never a failed job.
+        if (e instanceof StepShortError) {
+          const tries = shortTriesOf(step.result) + 1
+          console.warn(`[jobs] builder shortfall withheld step ${step.seq + 1} of ${fresh.id} (${step.builder}) try ${tries}: ${e.message.slice(0, 200)}`)
+          await prisma.jobStep.update({
+            where: { id: step.id },
+            data: { status: 'pending', artifact: undefined, result: { error: e.message.slice(0, 400), withheld: true, withheldKind: 'funds', shortTries: tries } as object },
+          })
+          if (fresh.status !== 'running') await prisma.job.update({ where: { id: fresh.id }, data: { status: 'running' } })
           return
         }
         // A spend-policy refusal persists its structured block so the JobCard
@@ -459,7 +516,14 @@ export async function buildSignArtifact(
       const arrival: HlCreditArrival | undefined = Number.isFinite(baseline) ? hlCreditArrival(baseline, depositUsd) : undefined
       return { artifact: { txRequest: turn.txRequest, ...(arrival ? { arrival } : {}) }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null, buildPath: asBuildPath(turn.buildPath) }
     }
-    throw new Error(turn.reply.replace(/^[^\w]+/, ''))
+    // The layer's own words. "No free collateral" and "holds only N USDC on
+    // Arbitrum" are shortfalls (withheld); anything else is a refusal.
+    // Only when EVERY blocking check is a shortfall: a deposit under the
+    // bridge minimum that is also unfunded stays a refusal.
+    const hlWords = turn.reply.replace(/^[^\w]+/, '')
+    const hlBlocks = ((turn.guardrails as { checks?: { ok: boolean; level: string; note: string }[] } | undefined)?.checks ?? []).filter((c) => !c.ok && c.level === 'block')
+    if (hlBlocks.length > 0 && !hlBlocks.every((c) => shortfallOfRefusal(c.note))) throw new Error(hlWords)
+    throwBuilderWords(hlWords)
   }
   if (builder === 'native-lido') {
     const p = params as unknown as LidoStakeParams
@@ -485,7 +549,7 @@ export async function buildSignArtifact(
       if (!client) throw new Error('No Ethereum mainnet RPC configured — cannot resolve the stake amount.')
       const balance = await client.getBalance({ address: wallet as `0x${string}` })
       const resolved = suggestedStakeEth(formatEther(balance))
-      if (!resolved) throw new Error(`Wallet holds only ${formatEther(balance)} ETH on mainnet — nothing left to stake after the gas buffer.`)
+      if (!resolved) throw new StepShortError(`Wallet holds only ${formatEther(balance)} ETH on mainnet — nothing left to stake after the gas buffer.`)
       amountEth = resolved
     }
     const raw = (await callMcpTool(LIDO_MCP, 'build_stake', { user: wallet, amount: amountEth, receive: p.receive }, { timeoutMs: 20_000 })) as LidoBuiltStake
@@ -589,7 +653,11 @@ export async function buildSignArtifact(
     const dest = p.dest !== undefined ? Number(p.dest) : undefined
     const built = await buildLifiBridgeLeg({ leg: p.leg, usd: Number(p.usd), from: wallet, origin, token: p.token, dest })
     if (built.blocked) {
-      const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
+      const failed = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block')
+      const reasons = failed.map((c) => c.note).join(' ')
+      // The leg's own balance check, and nothing else, said no: the wallet is
+      // short on the origin. That is a withheld step, not a refused job.
+      if (failed.length > 0 && failed.every((c) => c.id === 'balance') && !policyBlockOf(built.guardrails)) throw new StepShortError(reasons)
       throwRefusal(reasons || 'a safety check refused the funding leg', built.guardrails)
     }
     return {
@@ -624,7 +692,7 @@ export async function buildSignArtifact(
     const balanceUsd = Number(balance) / 10 ** stable.decimals
     const buyUsd = Number(p.buyUsd)
     if (balanceUsd < buyUsd * 0.5) {
-      throw new Error(`The wallet holds only ${balanceUsd.toFixed(2)} ${stable.symbol} on the chain — not enough to buy $${buyUsd} of ${p.buyToken}.`)
+      throw new StepShortError(`The wallet holds only ${balanceUsd.toFixed(2)} ${stable.symbol} on the chain — not enough to buy $${buyUsd} of ${p.buyToken}.`)
     }
     const amountHuman = Math.min(buyUsd, Math.floor(balanceUsd * 100) / 100).toFixed(2)
     await ensureTokenList(chainId) // AAPL/TSLA/… resolve from the official list
