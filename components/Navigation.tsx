@@ -67,7 +67,7 @@ export default function Navigation() {
   // yeetful.com; once inside /dashboard the top nav drops the brochure tabs —
   // navigation moves to the dashboard's left rail. A signed-in (or
   // wallet-connected) visitor on the brochure sees the account control.
-  const { address: sessionAddress } = useSession()
+  const { address: sessionAddress, walletAddress } = useSession()
 
   // /embed renders inside third-party iframes — no site chrome at all.
   // (After every hook, so the hook order stays stable across routes.)
@@ -90,6 +90,10 @@ export default function Navigation() {
   // full brochure nav there. mounted-gated so SSR keeps the nav.
   const onAppSurface = pathname.startsWith('/dashboard') || pathname.startsWith('/docs')
   if (mounted && !!sessionAddress && onAppSurface) return null
+  // A connected wallet with no session on the dashboard sees its sign-in card
+  // inside the app shell (lib/app-entry dashboardGate, 2026-11-17): the spine
+  // is its navigation there too.
+  if (mounted && !!walletAddress && pathname.startsWith('/dashboard')) return null
 
   // The app (/chat) has no brochure nav for ANYONE (2026-09-11, Nate:
   // "remove the header in the App if they are not logged in and move the
