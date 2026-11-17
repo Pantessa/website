@@ -107,9 +107,19 @@ export async function POST(req: NextRequest) {
       ? body.label.trim().slice(0, 80)
       : 'Agent expense account'
 
+  // A freeze outlives a new grant. The gate reads the NEWEST active grant
+  // (lib/grant-store getActiveGrant), so a fresh unfrozen row used to shadow
+  // a frozen one and lift the kill switch without anyone thawing it. A grant
+  // created while the account is frozen is born frozen.
+  const scope = orgId ? orgScopeKey(orgId) : addr
+  const frozen = await prisma.spendGrant.findFirst({
+    where: { ownerAddress: scope, status: 'active', paused: true, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  })
+
   const grant = await prisma.spendGrant.create({
     data: {
-      ownerAddress: orgId ? orgScopeKey(orgId) : addr,
+      ownerAddress: scope,
       orgId,
       label,
       allow,
@@ -117,6 +127,7 @@ export async function POST(req: NextRequest) {
       perDayUsd,
       totalUsd,
       expiresAt,
+      paused: !!frozen,
     },
   })
   return NextResponse.json({ ...grant, signed: false }, { status: 201 })

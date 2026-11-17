@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
+import { keyLoosens } from '@/lib/spend-grant'
 import { getSessionAddress } from '@/lib/auth'
 import { spentTodayUsd, spentTotalUsd } from '@/lib/grant-store'
 import { requireRole, type OrgRole } from '@/lib/org'
@@ -60,6 +61,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   const body = await req.json().catch(() => ({} as Record<string, unknown>))
+  // The kill switch is the OWNER's. An API key may freeze or revoke (stopping
+  // is always allowed), never thaw or reactivate: a key that could lift the
+  // freeze it is supposed to obey is no switch at all.
+  if (keyLoosens(body) && !(await getSessionAddress())) {
+    return NextResponse.json({ error: 'Unfreezing or reactivating a grant needs the owner\'s signed-in session, not an API key.' }, { status: 403 })
+  }
   const data: Record<string, unknown> = {}
   if (body.status === 'revoked' || body.status === 'active') data.status = body.status
   // Kill switch: reversible freeze of the whole account (distinct from revoke).
@@ -94,10 +101,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   return NextResponse.json({ ...updated, signed: !!updated.signature })
 }
 
-// Delete a grant (and its ledger via cascade). Owner only.
+// Delete a grant (and its ledger via cascade). Owner only, by session: a
+// deleted frozen grant stops freezing, so a key may not delete one.
 export async function DELETE(req: NextRequest, { params }: Params) {
   const { id } = await params
-  const addr = await getAuthAddress(req)
+  const addr = await getSessionAddress()
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
 
   const grant = await prisma.spendGrant.findUnique({ where: { id } })
