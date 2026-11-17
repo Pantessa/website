@@ -383,6 +383,9 @@ import { battlePins } from './battle-pins'
 import { flyoverPins } from './flyover-pins'
 import { orderTicketPins } from './order-ticket-pins'
 import { symbolAskPins } from './symbol-ask-pins'
+import { jobsOffersPins } from './jobs-offers-pins'
+import { jobsPreflightPins } from './jobs-preflight-pins'
+import { jobsAuditPins } from './jobs-audit-pins'
 import { appsPagePins } from './apps-page-pins'
 import { appsPortfolioPins } from './apps-portfolio-pins'
 import { appsTradePins } from './apps-trade-pins'
@@ -35659,6 +35662,9 @@ async function main() {
   // The order ticket (2026-10-06): every shape the form composes lands native, the honesty rules, the sizing, the Available line, the wiring.
   orderTicketPins(check)
   symbolAskPins(check)
+  jobsOffersPins(check)
+  jobsPreflightPins(check)
+  jobsAuditPins(check)
   // The apps page (squad apps-page, 2026-11-17): one pin file per lane.
   appsPagePins(check)
   appsPortfolioPins(check)
