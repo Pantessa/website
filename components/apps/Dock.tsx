@@ -125,7 +125,7 @@ export function DockEmpty({ count, onPick, phone }: { count: number; onPick: (pr
       <p className="apg-dockempty__lead apgd-empty__lead">
         {count === 0
           ? 'Add an app to the page and it joins this chat.'
-          : `${phone ? 'Ask about your apps' : 'Ask about anything on the page'}, or say what should happen. Anything that moves money comes back here as a card your wallet signs.`}
+          : 'Ask your apps a question, or say what should happen. Anything that moves money comes back here as a card your wallet signs.'}
       </p>
       {count > 0 && suggestions.length > 0 && (
         <div className="apgd-empty__list" role="list" aria-label="Things to ask">
