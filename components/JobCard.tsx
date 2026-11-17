@@ -22,7 +22,9 @@ import { orderRequestOf, txChainOf, txRequestOf } from '@/lib/transaction-layer'
 import { feeBpsOfArtifact } from '@/lib/fees'
 import { chainById } from '@/lib/chains'
 import { jobStepBuildPath, jobStepChainId, type JobStepSignal } from '@/lib/job-step-telemetry'
-import { LIVE_JOB_STATUSES, jobStatusWord } from '@/lib/step-status'
+import { LIVE_JOB_STATUSES } from '@/lib/step-status'
+import { JOB_EXPIRED_LINE, jobDisplayWord, jobExpired, stepFixFor } from '@/lib/job-status'
+import { useYeetfulStore } from '@/lib/store'
 
 interface StepRow {
   seq: number
@@ -30,6 +32,7 @@ interface StepRow {
   status: string
   builder: string
   title: string
+  params?: unknown
   artifact?: Record<string, unknown> | null
   result?: Record<string, unknown> | null
   valueUsd?: number | null
@@ -62,6 +65,7 @@ export default function JobCard({
   token,
   onStepSigned,
   onSettled,
+  onFix,
 }: {
   jobId: string
   /** Capability token from the turn that compiled the job — the embed path's
@@ -78,7 +82,12 @@ export default function JobCard({
    *  settlement signal /i's arc and embed hosts read. Also fires on mount
    *  for an already-finished job (a reopened thread), which is truthful. */
   onSettled?: (info: { jobId: string; status: 'done' | 'failed' | 'canceled'; valueUsd?: number | null }) => void
+  /** Where a fix chip's ask goes (lib/job-status stepFixFor). Default: the
+   *  composer, PREFILLED and never sent (the rail's prefill contract). The
+   *  overlay passes its own, which also closes it and opens the chat. */
+  onFix?: (resume: string) => void
 }) {
+  const setComposerPrefill = useYeetfulStore((s) => s.setComposerPrefill)
   const [job, setJob] = useState<JobRow | null>(null)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState(true)
@@ -229,8 +238,14 @@ export default function JobCard({
   }
 
   const doneCount = job.steps.filter((s) => s.status === 'done').length
-  const statusLine = jobStatusWord(job.status)
+  // An offer nobody signed for 7 days is `expired`, a neutral end: the row is
+  // stored as failed (no schema change) but it is never drawn in the fail red.
+  const expired = jobExpired(job)
+  const statusLine = jobDisplayWord(job)
   const live = ACTIVE.has(job.status)
+  // A step that stopped on a shortfall carries its fix (lib/job-status).
+  const fix = stepFixFor(job)
+  const sendFix = (resume: string) => (onFix ? onFix(resume) : setComposerPrefill(resume))
 
   return (
     <div className="mt-2.5 rounded-xl border border-[var(--line)] overflow-hidden">
@@ -256,7 +271,9 @@ export default function JobCard({
             className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
               job.status === 'done'
                 ? 'border-[color:color-mix(in_srgb,var(--done)_40%,transparent)] text-[color:var(--done)]'
-                : job.status === 'failed'
+                : expired
+                  ? 'border-[color:var(--line-2)] text-[color:var(--muted-2)]'
+                  : job.status === 'failed'
                   ? 'border-[color:color-mix(in_srgb,var(--fail)_40%,transparent)] text-[color:var(--fail)]'
                   : job.status === 'waiting_signature'
                     ? 'border-[color:color-mix(in_srgb,var(--accent)_45%,transparent)] text-[color:var(--accent)]'
@@ -275,7 +292,7 @@ export default function JobCard({
       </button>
 
       {/* progress — visible even collapsed; the card's heartbeat */}
-      <div className={`yprog mx-3 mb-0.5 ${job.status === 'failed' ? 'yprog--fail' : job.status === 'done' ? 'yprog--full' : ''}`}>
+      <div className={`yprog mx-3 mb-0.5 ${job.status === 'failed' && !expired ? 'yprog--fail' : job.status === 'done' ? 'yprog--full' : ''}`}>
         <div className="yprog__fill" style={{ width: `${job.steps.length ? (doneCount / job.steps.length) * 100 : 0}%` }} />
       </div>
 
@@ -286,9 +303,12 @@ export default function JobCard({
             const prevDone = i > 0 && job.steps[i - 1].status === 'done'
             const isFirst = i === 0
             const isLast = i === job.steps.length - 1
-            const order = step.status === 'offered' ? orderRequestOf(step.artifact) : null
-            const chain = step.status === 'offered' && !order ? txChainOf(step.artifact) : null
-            const tx = step.status === 'offered' && !order && !chain ? txRequestOf(step.artifact) : null
+            // A sign surface only on a LIVE job: an expired or canceled job may
+            // still hold an offered step row, and its artifact is long stale.
+            const signable = step.status === 'offered' && live
+            const order = signable ? orderRequestOf(step.artifact) : null
+            const chain = signable && !order ? txChainOf(step.artifact) : null
+            const tx = signable && !order && !chain ? txRequestOf(step.artifact) : null
             const resultNote =
               step.status === 'done' && step.result
                 ? String(
@@ -335,6 +355,32 @@ export default function JobCard({
                       change + a retry that rebuilds this step fresh. */}
                   {step.status === 'failed' && job.status === 'failed' && (step.result as { policyBlock?: PolicyBlockInfo } | null)?.policyBlock && (
                     <SpendPolicyFix block={(step.result as { policyBlock: PolicyBlockInfo }).policyBlock} onFixed={() => void retry()} retryLabel="Try the build again" />
+                  )}
+                  {/* A step stopped on a shortfall (funds, Hyperliquid collateral):
+                      the fix is a chip. Each one is a lone ask the chat plans from
+                      this wallet's own money; it lands in the composer, never sent. */}
+                  {fix && fix.seq === step.seq && (fix.chips.length > 0 || fix.retry) && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-job-fix={fix.shortfall.kind}>
+                      {fix.chips.map((c) => (
+                        <button
+                          key={c.resume}
+                          type="button"
+                          onClick={() => sendFix(c.resume)}
+                          className="px-2.5 py-1.5 rounded-lg border border-[var(--line-2)] text-[11.5px] font-medium text-[color:var(--accent)] hover:border-[var(--accent)] transition-colors [@media(hover:none)]:min-h-11"
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                      {fix.retry && (
+                        <button
+                          type="button"
+                          onClick={() => void retry()}
+                          className="px-2.5 py-1.5 rounded-lg border border-[var(--line)] text-[11.5px] text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors [@media(hover:none)]:min-h-11"
+                        >
+                          I added funds, try again
+                        </button>
+                      )}
+                    </div>
                   )}
                   {/* the embedded sign surface — the SAME buttons chat uses;
                       orderRequest artifacts dispatch on their protocol */}
@@ -418,7 +464,9 @@ export default function JobCard({
               </span>
             ) : (
               <span className="text-[11px] text-[color:var(--muted-2)]">
-                {job.status === 'failed' && job.failReason
+                {expired
+                  ? JOB_EXPIRED_LINE
+                  : job.status === 'failed' && job.failReason
                   ? job.failReason.slice(0, 160)
                   : 'Steps are built + guard-checked only when offered; waits verify settlement.'}
               </span>

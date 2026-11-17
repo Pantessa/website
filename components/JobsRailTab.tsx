@@ -17,7 +17,7 @@
 // Clicking the row BODY opens the job detail card (store.jobDetail): the
 // live position/PnL around the job + its step card — for any job kind.
 
-import { CalendarClock, CheckCircle2, Inbox as InboxIcon, Loader2, Pause, PenLine, Play, ShieldCheck, Trash2, XCircle, ZapOff } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Clock, Inbox as InboxIcon, Loader2, Pause, PenLine, Play, ShieldCheck, Trash2, XCircle, ZapOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { useAccount, useSignMessage } from 'wagmi'
@@ -29,9 +29,10 @@ import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { ChartHoverButton } from '@/components/TokenChartButton'
 import { LIVE_JOB_STATUS, useRunningWork, type InboxIntent, type RunningGuard, type RunningJob, type RunningSchedule } from '@/lib/use-running-work'
 import { jobStatusWord } from '@/lib/step-status'
-import EmptyDoor from '@/components/guide/EmptyDoor'
+import { JobsEmptyDoor } from '@/components/JobOfferDoor'
 import { askAppSlugs } from '@/lib/ask-apps'
 import { JOBS_DOOR } from '@/lib/first-run'
+import { isExpiredJob } from '@/lib/job-offers'
 
 function IconBtn({ label, danger, onClick, children }: { label: string; danger?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -49,7 +50,9 @@ function IconBtn({ label, danger, onClick, children }: { label: string; danger?:
   )
 }
 
-function jobDot(status: string) {
+function jobDot(status: string, expired = false) {
+  // Offered, never signed, lapsed: not a failure. Neutral, no red.
+  if (expired) return <Clock className="w-3.5 h-3.5 text-[color:var(--muted-2)] flex-shrink-0" aria-hidden />
   if (status === 'done') return <CheckCircle2 className="w-3.5 h-3.5 text-[color:var(--done)] flex-shrink-0" aria-hidden />
   if (status === 'failed') return <XCircle className="w-3.5 h-3.5 text-[color:var(--fail)] flex-shrink-0" aria-hidden />
   if (status === 'waiting_signature') return <PenLine className="w-3.5 h-3.5 text-[color:var(--accent)] flex-shrink-0" aria-hidden />
@@ -99,8 +102,10 @@ export default function JobsRailTab({
   const router = useRouter()
   const { setComposerPrefill, setJobDetail, setComposerSend } = useYeetfulStore()
   // The empty door's chip SENDS into the chat beside this rail (the
-  // chip-send contract); a stranger meets the connect door first and the held
-  // ask runs when a wallet lands (lib/use-connect-to-act, inside EmptyDoor).
+  // chip-send contract). The chip is never a fixed sentence: JobsEmptyDoor
+  // offers the one job THIS wallet can run (lib/job-offers), the funding door
+  // when it can run none, and the connect door (example as text) to a
+  // stranger. 2026-11-17: the fixed sentence failed for a new account.
   const runInChat = (text: string) => {
     setComposerSend({ text, mcps: askAppSlugs(text) })
     onAct?.()
@@ -216,16 +221,7 @@ export default function JobsRailTab({
       <div className={cn('px-2 pb-3', !flat && 'flex-1 overflow-y-auto')}>
         <InboxSection />
         <div className="px-1 pt-1">
-          <EmptyDoor
-            id="jobs"
-            compact
-            eyebrow={JOBS_DOOR.eyebrow}
-            title={JOBS_DOOR.title}
-            body={JOBS_DOOR.body}
-            lines={JOBS_DOOR.lines}
-            primary={{ kind: 'ask', label: JOBS_DOOR.ctaLabel, ask: JOBS_DOOR.ask }}
-            run={runInChat}
-          />
+          <JobsEmptyDoor eyebrow={JOBS_DOOR.eyebrow} run={runInChat} />
         </div>
       </div>
     )
@@ -234,16 +230,7 @@ export default function JobsRailTab({
   if (jobs.length === 0 && schedules.length === 0 && guards.length === 0 && inbox.length === 0) {
     return (
       <div className={cn('px-3 pt-1 pb-3', !flat && 'flex-1 overflow-y-auto')}>
-        <EmptyDoor
-          id="jobs"
-          compact
-          eyebrow="Jobs · nothing running yet"
-          title={JOBS_DOOR.title}
-          body={JOBS_DOOR.body}
-          lines={JOBS_DOOR.lines}
-          primary={{ kind: 'ask', label: JOBS_DOOR.ctaLabel, ask: JOBS_DOOR.ask }}
-          run={runInChat}
-        />
+        <JobsEmptyDoor eyebrow="Jobs · nothing running yet" run={runInChat} />
       </div>
     )
   }
@@ -380,6 +367,9 @@ export default function JobsRailTab({
 
   const JobRow = ({ j }: { j: RunningJob }) => {
     const doneCount = j.steps.filter((x) => x.status === 'done').length
+    // A job that sat unsigned until it lapsed is stored as failed with an
+    // "expired" reason. It reads as expired: neutral colour, no red line.
+    const expired = isExpiredJob(j)
     return (
       <div
         role="button"
@@ -393,19 +383,20 @@ export default function JobsRailTab({
         }}
         title="Open this job — your live position around it, every step, anything it needs from you"
         data-sheet-open="job"
+        data-job-row={expired ? 'expired' : j.status}
         className={cn('px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors cursor-pointer', flat && 'min-h-[48px] active:bg-[var(--surf-1)]')}
       >
         <div className="flex items-center gap-2">
-          {jobDot(j.status)}
+          {jobDot(j.status, expired)}
           {/* Job titles carry the money ("Fund Robinhood Chain with $10 from…"):
               two lines in the rail beats an ellipsis over the amount. */}
-          <span className="flex-1 min-w-0 text-xs line-clamp-2" title={j.title}>
+          <span className={cn('flex-1 min-w-0 text-xs line-clamp-2', expired && 'text-[color:var(--muted)]')} title={j.title}>
             {j.title}
           </span>
         </div>
         <div className="ml-[22px] mt-0.5 flex items-center gap-2 text-[10px] text-[color:var(--muted-2)]">
           <span className="mono">
-            {doneCount}/{j.steps.length} · {jobStatusWord(j.status)}
+            {doneCount}/{j.steps.length} · {expired ? 'expired, never signed' : jobStatusWord(j.status)}
           </span>
           {j.valueUsd != null && j.valueUsd > 0 && <span className="mono">${j.valueUsd.toFixed(2)}</span>}
           <span className="flex-1" />
@@ -413,17 +404,19 @@ export default function JobsRailTab({
         </div>
         {/* The same progress object the JobCard breathes — a rail row is the
             card at a distance, not a different species. */}
-        <div className={cn('yprog ml-[22px] mt-1.5', j.status === 'failed' && 'yprog--fail', j.status === 'done' && 'yprog--full')}>
+        <div className={cn('yprog ml-[22px] mt-1.5', j.status === 'failed' && !expired && 'yprog--fail', j.status === 'done' && 'yprog--full')}>
           <div className="yprog__fill" style={{ width: `${j.steps.length ? (doneCount / j.steps.length) * 100 : 0}%` }} />
         </div>
-        {j.status === 'failed' && j.failReason && (
+        {j.status === 'failed' && !expired && j.failReason && (
           <p className="ml-[22px] mt-0.5 text-[10px] leading-snug text-[color:var(--fail)] line-clamp-2">{j.failReason}</p>
         )}
       </div>
     )
   }
 
-  const activeFirst = [...jobs].sort((a, b) => Number(LIVE_JOB_STATUS.has(b.status)) - Number(LIVE_JOB_STATUS.has(a.status)))
+  // Live first; a job that lapsed unsigned sinks under everything that ran.
+  const rank = (j: RunningJob) => (LIVE_JOB_STATUS.has(j.status) ? 0 : isExpiredJob(j) ? 2 : 1)
+  const activeFirst = [...jobs].sort((a, b) => rank(a) - rank(b))
 
   return (
     <div className={cn('px-2 pb-3', !flat && 'flex-1 overflow-y-auto')}>
