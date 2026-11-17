@@ -16,8 +16,8 @@
 //   • `at` (ms) no older than ARRIVAL_TTL_MS and no further in the future
 //     than ARRIVAL_FUTURE_SKEW_MS (a forged `at` far ahead would otherwise be
 //     "fresh" forever);
-//   • `from` = a public front door's PATHNAME ('/markets' or a symbol page
-//     '/t/<SYM>', or a path under either) — never a query, hash, or another surface (/i, /embed, /chat…);
+//   • `from` = a public front door's PATHNAME ('/markets', a symbol page
+//     '/t/<SYM>' or a Called it page '/x/<handle>/<SYM>', or a path under one) — never a query, hash, or another surface (/i, /embed, /chat…);
 //   • `text` = one line, 1..ARRIVAL_MAX_TEXT chars, no control characters,
 //     NOT transfer-shaped (lib/intent-links isTransferShaped — the /i door's
 //     own phishing fence), carrying no 0x address, no .eth name, no URL (the
@@ -39,7 +39,10 @@ export type ArrivalRefusal = 'malformed' | 'version' | 'stale' | 'future' | 'sou
 export type ArrivalVerdict = { ok: true } | { ok: false; reason: ArrivalRefusal }
 
 /** Public front doors allowed to hand an intent to the app (pathname prefixes). */
-export const ARRIVAL_SOURCES: readonly string[] = ['/', '/markets', '/t']
+// `/x` (squad called-gtm, 2026-11-16): the Called it pages are public doors too. Their only chips are
+// components/called/CallActs', composed from the market's own symbol by the app's composers (never from
+// a post's text), and every text rule below still applies to what arrives.
+export const ARRIVAL_SOURCES: readonly string[] = ['/', '/markets', '/t', '/x']
 
 /** Longest ask a handoff may carry. */
 export const ARRIVAL_MAX_TEXT = 280

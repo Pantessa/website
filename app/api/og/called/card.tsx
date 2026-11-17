@@ -2,15 +2,20 @@ import { ImageResponse } from 'next/og'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { gemMarkSvg } from '@/lib/og-marks'
-import { ADDED_MARK, VERDICT_WORDS, moveLine, pickCalls, type CalledCall, type CalledRecord, type CallVerdict } from '@/lib/called-it/spec'
+import { ADDED_MARK, VERDICT_WORDS, judgedLine, moveLine, pickCalls, sinceLine, type CalledCall, type CalledRecord, type CallVerdict } from '@/lib/called-it/spec'
 import {
+  OG_CALL,
   OG_COLUMN,
   OG_MAX_CARDS,
   OG_PANEL,
   OG_SIZE,
+  callPlot,
+  callQuote,
+  callQuoteFit,
   clampPostWidth,
   cleanLine,
   fmtCallPrice,
+  fmtCount,
   fmtUtcDate,
   headlineParts,
   headlineTally,
@@ -18,7 +23,10 @@ import {
   linePaths,
   ogLayout,
   plotScale,
+  sentenceCase,
+  textUnits,
   unreadShare,
+  type CallPlot,
   type ClosePoint,
   type OgCardBox,
   type OgLayout,
@@ -85,8 +93,11 @@ function fonts(): Promise<Buffer[]> {
 
 // ── What a card is drawn from ───────────────────────────────────────────
 
-/** `pasted`: a record with no scan behind it, only posts viewers added. It is never drawn as a record. */
-export type CalledCardKind = 'record' | 'pasted' | 'empty' | 'unscanned' | 'scanning' | 'refused' | 'handle' | 'generic'
+/**
+ * `pasted`: a record with no scan behind it, only posts viewers added. It is never drawn as a record.
+ * `call` (squad called-gtm): ONE call of a ready record leads, with the record's whole tally along the foot.
+ */
+export type CalledCardKind = 'record' | 'call' | 'pasted' | 'empty' | 'unscanned' | 'scanning' | 'refused' | 'handle' | 'generic'
 
 export interface CalledCardInput {
   kind: CalledCardKind
@@ -99,6 +110,8 @@ export interface CalledCardInput {
   reason?: string
   /** The chart's unit (dollars unless the market is an index level or a yield). */
   unit?: 'usd' | 'level' | 'yield'
+  /** Kind `call`: the call that leads. It is one of `record.calls`. */
+  call?: CalledCall
 }
 
 /** The calls that get a post card: the plot's pins, the best hit and the worst miss first, then by impact (spec pickCalls). */
@@ -207,9 +220,6 @@ function PostCard({ box, call, name, handle, avatar, initial }: { box: OgCardBox
     </div>
   )
 }
-
-/** Spec's words, standing alone as a sentence: the same words with a capital to open them. */
-const sentenceCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 /** "on BTC" / "bullish on BTC": the headline's own words between the handle and the colon. */
 function marketWords(record: CalledRecord | null, handle: string | null, symbol: string | null): string {
@@ -339,10 +349,149 @@ function CalledCard({ input, address }: { input: CalledCardInput; address: strin
   )
 }
 
+// ── ONE CALL (squad called-gtm, lane CALL) ──────────────────────────────
+// The image that unfurls when an account reposts the call it was sent. Flat:
+// no glow, no gradient, one hairline. Left, the words: the verdict in spec's
+// word beside a mark in its colour, the post's own words large (card-layout
+// callQuote: the whole post, or the labeled span with an ellipsis where the
+// post goes on), who said it and the day. Right, the proof: the daily closes
+// with THIS call's day marked (every other call of the record a small dot in
+// its verdict's colour), the price that day and the record's own move words.
+// Along the foot, always: the record's WHOLE tally in its own headline's
+// words and the standing line. The drawing is built from numbers alone.
+
+function callPlotSvg(plot: CallPlot | null, scale: PlotScale | null, closes: readonly ClosePoint[], verdict: CallVerdict, tones: Map<string, CallVerdict>, hollow: ReadonlySet<string>, added: boolean, unread: number): string {
+  const B = OG_CALL.plot
+  const parts: string[] = [`<line x1="${OG_CALL.pad}" y1="${OG_CALL.footY}" x2="${OG_SIZE.w - OG_CALL.pad}" y2="${OG_CALL.footY}" stroke="rgba(255,255,255,0.14)" stroke-width="1.5"/>`]
+  if (plot && scale) {
+    const base = B.y + B.h + 10
+    parts.push(`<line x1="${B.x}" y1="${base}" x2="${B.x + B.w}" y2="${base}" stroke="rgba(255,255,255,0.14)" stroke-width="1.5"/>`, `<path d="${linePaths(closes, scale, B).line}" fill="none" stroke="${INK}" stroke-opacity="0.82" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"/>`)
+    // The stretch the scans did not read: dimmed, with a dashed edge where reading began.
+    if (unread > 0) {
+      const w = Math.round(B.w * unread * 10) / 10
+      parts.push(`<rect x="${B.x - 2}" y="${B.y - 6}" width="${w + 2}" height="${B.h + 14}" fill="${BG}" fill-opacity="0.66"/>`, `<line x1="${B.x + w}" y1="${B.y - 6}" x2="${B.x + w}" y2="${base}" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" stroke-dasharray="4 6"/>`)
+    }
+    for (const o of plot.others) {
+      const tone = TONE[tones.get(o.id) ?? 'flat']
+      parts.push(hollow.has(o.id) ? `<circle cx="${o.x}" cy="${o.y}" r="4" fill="${BG}" stroke="${tone}" stroke-width="2"/>` : `<circle cx="${o.x}" cy="${o.y}" r="4.5" fill="${tone}" stroke="${BG}" stroke-width="2"/>`)
+    }
+    const tone = TONE[verdict]
+    const { x, y } = plot.dot
+    parts.push(
+      `<line x1="${x}" y1="${B.y - 14}" x2="${x}" y2="${base}" stroke="${tone}" stroke-opacity="0.7" stroke-width="1.5"${added ? ' stroke-dasharray="5 6"' : ''}/>`,
+      `<circle cx="${x}" cy="${y}" r="15" fill="none" stroke="${tone}" stroke-opacity="0.55" stroke-width="1.5"/>`,
+      added ? `<circle cx="${x}" cy="${y}" r="7.5" fill="${BG}" stroke="${tone}" stroke-width="3"/>` : `<circle cx="${x}" cy="${y}" r="8" fill="${tone}" stroke="${BG}" stroke-width="3"/>`,
+    )
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${OG_SIZE.w}" height="${OG_SIZE.h}" viewBox="0 0 ${OG_SIZE.w} ${OG_SIZE.h}">${parts.join('')}</svg>`
+}
+
+function OneCallCard({ input, address }: { input: CalledCardInput; address: string }) {
+  const record = input.record as CalledRecord
+  const call = input.call as CalledCall
+  const unit = input.unit ?? 'usd'
+  const tone = TONE[call.verdict]
+  const added = call.origin === 'added'
+  const Q = OG_CALL.quote
+  const B = OG_CALL.plot
+  const scale = plotScale(input.closes, record.calls.map((c) => c.priceAt))
+  const toIn = (c: CalledCall) => ({ id: c.postId, t: c.barTime, price: c.priceAt })
+  const plot = callPlot(scale, toIn(call), record.calls.map(toIn))
+  const tones = new Map(record.calls.map((c) => [c.postId, c.verdict]))
+  const hollow = new Set(record.calls.filter((c) => c.origin === 'added').map((c) => c.postId))
+  const unread = scale ? unreadShare(scale, record.coverage?.from) : 0
+  const quote = callQuote(call.text, call.quote)
+  const fit = callQuoteFit(textUnits(quote.text))
+  const bare = !record.profile.name.trim() || record.profile.name.trim().toLowerCase() === record.handle
+  const name = bare ? `@${record.handle}` : cleanLine(record.profile.name, 24)
+  const under = [bare ? null : `@${record.handle}`, record.profile.followers != null ? `${fmtCount(record.profile.followers)} followers` : null].filter(Boolean).join(' · ')
+  const parts = headlineParts(record.words.headline)
+  const since = sinceLine(call)
+  // The day's tag sits beside its mark, on whichever side has the room.
+  const tagLeft = plot ? (plot.dot.x > B.x + B.w * 0.62 ? plot.dot.x - 10 - 150 : plot.dot.x + 10) : 0
+  const tagRight = !!plot && plot.dot.x > B.x + B.w * 0.62
+  return (
+    <div style={{ width: '100%', height: '100%', display: 'flex', position: 'relative', background: BG, fontFamily: 'Geist' }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={toDataUri(callPlotSvg(plot, scale, input.closes, call.verdict, tones, hollow, added, unread))} width={OG_SIZE.w} height={OG_SIZE.h} alt="" style={{ position: 'absolute', left: 0, top: 0 }} />
+
+      {/* The mark, and whose feature this is. */}
+      <div style={{ position: 'absolute', left: OG_CALL.pad, top: 40, width: OG_SIZE.w - 2 * OG_CALL.pad, display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={toDataUri(MARK)} width={32} height={32} alt="" />
+        <span style={{ color: INK, fontSize: 25, fontWeight: 600, letterSpacing: -1 }}>pantessa</span>
+        <span style={{ color: MUTED, fontSize: 13, letterSpacing: 3.6, marginLeft: 'auto' }}>{`${record.symbol} · DAILY CLOSES`}</span>
+      </div>
+
+      {/* The verdict leads: spec's word, one colour, a mark in the verdict's own. */}
+      <div style={{ position: 'absolute', left: OG_CALL.pad, top: 104, width: Q.w, height: 48, display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ display: 'flex', width: 18, height: 18, borderRadius: 9, flexShrink: 0, ...(added ? { border: `3px solid ${tone}` } : { background: tone }) }} />
+        <span style={{ color: INK, fontSize: 40, fontWeight: 600, letterSpacing: -1.4, whiteSpace: 'nowrap' }}>{sentenceCase(VERDICT_WORDS[call.verdict])}</span>
+        <span style={{ color: SOFT, fontSize: 17, letterSpacing: 2.4, marginLeft: 6, whiteSpace: 'nowrap' }}>{`${call.stance === 'bull' ? 'BULL' : 'BEAR'} ${added ? 'POST' : 'CALL'} · ${fmtUtcDate(call.postedAt).toUpperCase()}`}</span>
+      </div>
+
+      {/* The post's own words. */}
+      <div style={{ position: 'absolute', left: Q.x, top: Q.y, width: Q.w, height: Q.h, display: 'flex' }}>
+        <div style={{ display: 'flex', width: 3, height: '100%', background: tone, flexShrink: 0, borderRadius: 2 }} />
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginLeft: 24, width: Q.w - 27, height: '100%', overflow: 'hidden' }}>
+          <span style={{ color: INK, fontFamily: 'Newsreader', fontSize: fit.size, lineHeight: 1.14, letterSpacing: fit.size > 45 ? -1.2 : -0.6, textWrap: 'balance' }}>{`“${quote.text}”`}</span>
+        </div>
+      </div>
+
+      {/* Who said it. */}
+      <div style={{ position: 'absolute', left: OG_CALL.pad, top: 438, width: Q.w, display: 'flex', alignItems: 'center', gap: 14 }}>
+        <Face uri={input.avatar} initial={initialOf(record.profile.name, record.handle)} size={50} />
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <span style={{ color: INK, fontSize: 22, fontWeight: 600, letterSpacing: -0.3, maxWidth: 520, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+          {under && <span style={{ color: SOFT, fontSize: 16.5, marginTop: 1, whiteSpace: 'nowrap' }}>{under}</span>}
+        </div>
+        {added && <span style={{ display: 'flex', marginLeft: 6, padding: '2px 9px', borderRadius: 999, border: '1px dashed rgba(255,255,255,0.4)', color: SOFT, fontSize: 13, whiteSpace: 'nowrap' }}>{ADDED_MARK}</span>}
+      </div>
+
+      {/* The proof: the day on the line, the price that day, what it did next. */}
+      {plot ? (
+        <span style={{ position: 'absolute', left: tagLeft, top: B.y - 34, width: 150, display: 'flex', justifyContent: tagRight ? 'flex-end' : 'flex-start', color: tone, fontSize: 13, letterSpacing: 1.8, whiteSpace: 'nowrap' }}>{fmtUtcDate(call.postedAt).toUpperCase()}</span>
+      ) : (
+        <span style={{ position: 'absolute', left: B.x, top: B.y + 70, width: B.w, display: 'flex', color: MUTED, fontSize: 15, lineHeight: 1.4 }}>The chart did not answer just now. The call is judged on its daily closes.</span>
+      )}
+      {unread > 0.06 && plot && <span style={{ position: 'absolute', left: B.x + 2, top: B.y + B.h - 16, display: 'flex', padding: '1px 7px', borderRadius: 6, background: 'rgba(5,7,8,0.8)', color: SOFT, fontSize: 11, letterSpacing: 1.5 }}>NOT READ</span>}
+      <div style={{ position: 'absolute', left: B.x, top: B.y + B.h + 28, width: B.w, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+          <span style={{ color: INK, fontSize: 34, fontWeight: 600, letterSpacing: -1 }}>{fmtCallPrice(call.priceAt, unit)}</span>
+          <span style={{ color: MUTED, fontSize: 13, letterSpacing: 2.2 }}>THAT DAY</span>
+        </div>
+        <span style={{ display: 'flex', marginTop: 6, color: tone, fontSize: 21, fontWeight: 600, lineHeight: 1.22, letterSpacing: -0.2 }}>{judgedLine(call)}</span>
+        {since && <span style={{ display: 'flex', marginTop: 2, color: SOFT, fontSize: 17 }}>{since}</span>}
+      </div>
+
+      {/* The record this call belongs to: the whole tally, the standing line, the address. */}
+      <div style={{ position: 'absolute', left: OG_CALL.pad, top: OG_CALL.footY + 16, width: OG_SIZE.w - 2 * OG_CALL.pad, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18, height: 30 }}>
+          <span style={{ color: MUTED, fontSize: 13, letterSpacing: 2.6, whiteSpace: 'nowrap' }}>FULL RECORD</span>
+          {parts ? (
+            parts.counts.map((c) => (
+              <div key={c.kind} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {c.kind !== 'total' && <div style={{ display: 'flex', width: 9, height: 9, borderRadius: 5, background: TONE[c.kind as CallVerdict] }} />}
+                <span style={{ color: c.kind === 'total' ? INK : SOFT, fontSize: 20, fontWeight: c.kind === 'total' ? 600 : 500, whiteSpace: 'nowrap' }}>{c.text}</span>
+              </div>
+            ))
+          ) : (
+            <span style={{ color: SOFT, fontSize: 19, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sentenceCase(headlineTally(record.words.headline))}</span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', marginTop: 12 }}>
+          <span style={{ color: record.verified ? ACCENT : MUTED, fontSize: 15.5, fontWeight: record.verified ? 600 : 500, whiteSpace: 'nowrap' }}>{record.words.standing}</span>
+          <span style={{ color: ACCENT, fontSize: 15.5, marginLeft: 'auto', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 520 }}>{address}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** Paint one card to the end (so a throw is the caller's to catch, never a broken stream). */
 export async function renderCalledCard(input: CalledCardInput, address: string): Promise<ArrayBuffer> {
   const [serif, serifItalic, sans, sansSemi] = await fonts()
-  const res = new ImageResponse(<CalledCard input={input} address={address} />, {
+  const res = new ImageResponse(input.kind === 'call' && input.record && input.call ? <OneCallCard input={input} address={address} /> : <CalledCard input={input} address={address} />, {
     width: OG_SIZE.w,
     height: OG_SIZE.h,
     fonts: [

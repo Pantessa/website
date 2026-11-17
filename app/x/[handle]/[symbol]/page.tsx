@@ -4,18 +4,21 @@ import { redirect } from 'next/navigation'
 import { Fragment } from 'react'
 import Footer from '@/components/Footer'
 import CallCard from '@/components/called/CallCard'
+import CallLead, { BestCall } from '@/components/called/CallLead'
 import RecordChart from '@/components/called/RecordChart'
 import ScanNow from '@/components/called/ScanNow'
 import ShareRow from '@/components/called/ShareRow'
 import { FIXTURE_HANDLE } from '@/lib/called-it/fixture'
 import { getXIdentity } from '@/lib/called-it/x-auth'
-import { ADDED_MARK, SCAN_WINDOW_DAYS, chartHref, recordHref, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
-import { calledImageHref, cleanLine, fmtCount, headlineParts } from '@/lib/called-it/card-layout'
-import { calledPost, myCalledPost } from '@/lib/share-posts'
+import { ADDED_MARK, SCAN_WINDOW_DAYS, chartHref, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
+import { CALL_PARAM, bestCallOf, callHref, leadCallOf, parseCallParam } from '@/lib/called-it/gtm'
+import { callDescription, callHeadline, calledImageHref, cleanLine, fmtCount, headlineParts } from '@/lib/called-it/card-layout'
+import { calledCallPost, calledPost, myCalledCallPost, myCalledPost } from '@/lib/share-posts'
 import { absoluteUrl } from '@/lib/site-url'
 import { loadRecordView, type RecordView } from '../../_lib/view'
 import { Avatar, DoorBlock, Eyebrow, MethodBlock } from '../../_lib/parts'
 import '@/components/called/called-record.css'
+import '@/components/called/called-call.css'
 
 // /x/<handle>/<SYMBOL>[?side=bull|bear][&pins=id,id] — ONE RECORD: an X
 // handle's calls on one market, each pinned to the day it was posted and
@@ -48,6 +51,24 @@ import '@/components/called/called-record.css'
 // with no scan has no tally at all (no chips, no score) and offers the scan.
 // What the scans read is the record's own coverage line, printed under the
 // tally. The chart's window is only the chart's: nothing here says "since".
+//
+// ONE CALL (squad called-gtm, lane CALL, 2026-11-16). `?call=<postId>` is the
+// address of one call: the link an account is sent about the call it got
+// right, and the one that unfurls when it reposts. The page then LEADS with
+// that call (components/called/CallLead): the verdict, the post, the price
+// that day and what it did next, and on the same first screen the record's
+// whole tally and its standing line, then one button onto the live chart with
+// the call open. The record follows as it always does.
+//   - A call address reads the WHOLE record, whatever `side` says: one call
+//     is never set beside half a tally.
+//   - Any verdict has an address. The words are spec's: "called it" is said
+//     only of a call whose verdict is right.
+//   - An id the record does not hold is the plain record page, no error.
+//   - The plain page shows the record's hit (gtm bestCallOf) as a highlight
+//     that links to its address; a record with no hit shows none.
+//   - Its metadata: canonical is the RECORD's address and the call address is
+//     noindex (one indexed page per record); og:url is the call's own, and
+//     og:image / twitter:image are the call's image.
 
 export const runtime = 'nodejs'
 
@@ -63,17 +84,25 @@ function decode(raw: string): string {
   }
 }
 
-async function viewOf(props: Props): Promise<{ view: RecordView; rawHandle: string; rawSymbol: string }> {
+async function viewOf(props: Props): Promise<{ view: RecordView; rawHandle: string; rawSymbol: string; call: CalledCall | null }> {
   const [p, q] = await Promise.all([props.params, props.searchParams])
   const rawHandle = decode(p.handle)
   const rawSymbol = decode(p.symbol)
-  return { view: await loadRecordView(rawHandle, rawSymbol, first(q.side), first(q.pins)), rawHandle, rawSymbol }
+  // One call's address: read the WHOLE record (no side) and lead with the call it holds.
+  const callId = parseCallParam(q[CALL_PARAM])
+  if (callId) {
+    const whole = await loadRecordView(rawHandle, rawSymbol, '', first(q.pins))
+    // Only a call the SCAN found on a SCANNED record leads (review F1): a pasted post's id falls back to the plain record.
+    const call = whole.body.status === 'ready' ? leadCallOf(whole.body.record, callId) : null
+    if (call) return { view: whole, rawHandle, rawSymbol, call }
+  }
+  return { view: await loadRecordView(rawHandle, rawSymbol, first(q.side), first(q.pins)), rawHandle, rawSymbol, call: null }
 }
 
 const withPins = (href: string, pins: readonly string[]) => (pins.length ? `${href}${href.includes('?') ? '&' : '?'}pins=${pins.join(',')}` : href)
 
 export async function generateMetadata(props: Props): Promise<Metadata> {
-  const { view } = await viewOf(props)
+  const { view, call } = await viewOf(props)
   const { handle, symbol, side, pins, body } = view
   if (!handle || !symbol) {
     const title = 'Called it on Pantessa'
@@ -81,6 +110,21 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
     return { title, description, robots: { index: false, follow: true }, openGraph: { title, description, siteName: 'Pantessa', type: 'website', images: [{ url: '/api/og/called', width: 1200, height: 630, alt: title, type: 'image/png' }] }, twitter: { card: 'summary_large_image', title, description, images: [{ url: '/api/og/called', alt: title, width: 1200, height: 630, type: 'image/png' }] } }
   }
   const ready = body.status === 'ready' ? body.record : null
+  if (ready && call && handle && symbol) {
+    // One call: its own title and card, in the record's own words; the whole tally and the standing line ride in the description.
+    const headline = callHeadline(handle, symbol, call)
+    const description = callDescription(ready, call, view.unit)
+    const image = { url: calledImageHref(handle, symbol, 'all', [], call.postId), width: 1200, height: 630, alt: `${headline} ${ready.words.headline}`, type: 'image/png' }
+    return {
+      title: `${headline.replace(/\.$/, '')} · Called it on Pantessa`,
+      description,
+      // One indexed address per record: a call's address points at it and stays out of the index.
+      alternates: { canonical: absoluteUrl(recordHref(handle, symbol)) },
+      robots: { index: false, follow: true },
+      openGraph: { title: headline, description, url: absoluteUrl(callHref(handle, symbol, call.postId)), siteName: 'Pantessa', type: 'article', images: [image] },
+      twitter: { card: 'summary_large_image', title: headline, description, images: [{ url: image.url, alt: image.alt, width: image.width, height: image.height, type: image.type }] },
+    }
+  }
   const headline = ready ? ready.words.headline : `@${handle} on ${symbol}: not plotted yet.`
   const title = `${headline.replace(/\.$/, '')} · Called it on Pantessa`
   const description = ready ? `${ready.words.standing} ${ready.words.method}` : `Plot @${handle} on ${symbol}: every post where the account took a side, pinned to the day it was posted and judged by what the price did next.`
@@ -162,11 +206,11 @@ function Who({ view, record }: { view: RecordView; record: CalledRecord | null }
 }
 
 export default async function RecordPage(props: Props) {
-  const { view, rawHandle, rawSymbol } = await viewOf(props)
+  const { view, rawHandle, rawSymbol, call } = await viewOf(props)
   const { handle, symbol, side, pins, body } = view
 
-  // One address per record: @Name, a mixed-case symbol and friends land on the canonical spelling.
-  if (handle && symbol && (rawHandle !== handle || rawSymbol !== symbol)) redirect(withPins(recordHref(handle, symbol, side), pins))
+  // One address per record: @Name, a mixed-case symbol and friends land on the canonical spelling (a call keeps its id).
+  if (handle && symbol && (rawHandle !== handle || rawSymbol !== symbol)) redirect(withPins(call ? callHref(handle, symbol, call.postId) : recordHref(handle, symbol, side), pins))
 
   // ── Not a handle, or not a market: the refusal, and the door ──
   if (!handle || !symbol || body.status === 'refused') {
@@ -265,8 +309,9 @@ export default async function RecordPage(props: Props) {
   const me = await getXIdentity().catch(() => null)
   // "This viewer is the owner": the record is verified AND X's user id on the cookie is the record's own. Never the cookie's handle.
   const mine = !!record.verified && !!me && !!record.profile.xUserId && me.xUserId === record.profile.xUserId
-  const post = mine ? myCalledPost(record) : calledPost(record)
-  const imageHref = calledImageHref(record.handle, record.symbol, record.side, pins)
+  // A call's page shares THAT call (its own words, its own image); the record's page shares the record.
+  const post = call ? (mine ? myCalledCallPost(record, call) : calledCallPost(record, call)) : mine ? myCalledPost(record) : calledPost(record)
+  const imageHref = call ? calledImageHref(record.handle, record.symbol, 'all', [], call.postId) : calledImageHref(record.handle, record.symbol, record.side, pins)
   const live = chartHref(record.handle, record.symbol, record.side)
   const ownPins = pins.length > 0 && record.calls.some((c) => pins.includes(c.postId))
   const pinned = record.calls.filter((c) => c.picked).length
@@ -277,40 +322,68 @@ export default async function RecordPage(props: Props) {
   const scannedCalls = numbered.filter((c) => c.call.origin === 'scan')
   const addedCalls = numbered.filter((c) => c.call.origin === 'added')
   const pasteOnly = !record.scanned
+  // The plain page's highlight: the hit the record is shown by. Only a call the scan found, only a hit; otherwise nothing.
+  const best = call ? null : bestCallOf(record.calls)
+  const facts = (record.words.coverage || record.words.added || unlabeled > 0) && (
+    <div className="xrc-facts">
+      {record.words.coverage && <p data-coverage>{record.words.coverage}</p>}
+      {record.words.added && <p data-added>{record.words.added}</p>}
+      {unlabeled > 0 && (
+        <p data-unlabeled={unlabeled}>
+          {unlabeled} {unlabeled === 1 ? 'post' : 'posts'} still to label. <ScanNow handle={record.handle} symbol={record.symbol} label="Finish" variant="link" />
+        </p>
+      )}
+    </div>
+  )
 
   return (
     <>
-      <main className="xrc" data-xrc="record" data-status="ready" data-side={record.side} data-calls={record.calls.length} data-scanned={record.scanned ? 'yes' : 'no'} data-verified={record.verified ? 'yes' : 'no'}>
+      <main className="xrc" data-xrc="record" data-status="ready" data-side={record.side} data-calls={record.calls.length} data-scanned={record.scanned ? 'yes' : 'no'} data-verified={record.verified ? 'yes' : 'no'} data-lead={call ? 'call' : 'record'}>
         <div className="xrc__wrap">
           <div className="xrc__main">
-            <header className="xrc-head">
-              <Eyebrow jump share={record.calls.length > 0}>
-                <span className="xrc-eyebrow__ctx">{record.symbol}</span>
-              </Eyebrow>
-              <Who view={view} record={record} />
-              <p className={`xrc-standing${record.verified ? ' is-verified' : ''}`} data-standing>
-                {record.words.standing}
-              </p>
-              <Headline record={record} />
-              {/* What was read, and what was only added: the record's own words, right under the tally. */}
-              {(record.words.coverage || record.words.added || unlabeled > 0) && (
-                <div className="xrc-facts">
-                  {record.words.coverage && <p data-coverage>{record.words.coverage}</p>}
-                  {record.words.added && <p data-added>{record.words.added}</p>}
-                  {unlabeled > 0 && (
-                    <p data-unlabeled={unlabeled}>
-                      {unlabeled} {unlabeled === 1 ? 'post' : 'posts'} still to label. <ScanNow handle={record.handle} symbol={record.symbol} label="Finish" variant="link" />
+            {call ? (
+              <>
+                {/* ONE CALL leads: the verdict, the post, the proof, the whole tally, the next press. */}
+                <CallLead record={record} call={call} avatar={view.avatar} unit={view.unit} closes={view.closes} />
+                {/* Then the record, as it always reads. */}
+                <header className="xrc-head xcl-rest" id="record">
+                  <Eyebrow jump>
+                    <span className="xrc-eyebrow__ctx">{record.symbol}</span>
+                  </Eyebrow>
+                  <h2 className="xcl-rest__title">
+                    Every call @{record.handle} made on {record.symbol}
+                  </h2>
+                  {facts}
+                  {pasteOnly && (
+                    <p className="xrc-next">
+                      <ScanNow handle={record.handle} symbol={record.symbol} label={`Scan @${record.handle} on ${record.symbol}`} />
                     </p>
                   )}
-                </div>
-              )}
-              {pasteOnly && (
-                <p className="xrc-next">
-                  <ScanNow handle={record.handle} symbol={record.symbol} label={`Scan @${record.handle} on ${record.symbol}`} auto />
+                  {found > 0 && <Sides record={record} />}
+                </header>
+              </>
+            ) : (
+              <header className="xrc-head">
+                <Eyebrow jump share={record.calls.length > 0}>
+                  <span className="xrc-eyebrow__ctx">{record.symbol}</span>
+                </Eyebrow>
+                <Who view={view} record={record} />
+                <p className={`xrc-standing${record.verified ? ' is-verified' : ''}`} data-standing>
+                  {record.words.standing}
                 </p>
-              )}
-              {found > 0 && <Sides record={record} />}
-            </header>
+                <Headline record={record} />
+                {/* What was read, and what was only added: the record's own words, right under the tally. */}
+                {facts}
+                {pasteOnly && (
+                  <p className="xrc-next">
+                    <ScanNow handle={record.handle} symbol={record.symbol} label={`Scan @${record.handle} on ${record.symbol}`} auto />
+                  </p>
+                )}
+                {found > 0 && <Sides record={record} />}
+                {/* The hit this record is shown by, with its own address. No hit: nothing is dressed up. */}
+                {best && <BestCall record={record} call={best} unit={view.unit} />}
+              </header>
+            )}
 
             <RecordChart
               symbol={record.symbol}
@@ -336,8 +409,8 @@ export default async function RecordPage(props: Props) {
 
             {scannedCalls.length > 0 && (
               <ol className="xrc-calls" aria-label={`Every call the scan found, oldest first: ${scannedCalls.length}`}>
-                {scannedCalls.map(({ call, n }) => (
-                  <CallCard key={call.postId} call={call} n={n} handle={record.handle} unit={view.unit} />
+                {scannedCalls.map(({ call: c, n }) => (
+                  <CallCard key={c.postId} call={c} n={n} handle={record.handle} unit={view.unit} lead={c.postId === call?.postId} />
                 ))}
               </ol>
             )}
@@ -362,8 +435,8 @@ export default async function RecordPage(props: Props) {
                 </h2>
                 <p className="xrc-addedgroup__lede">{record.words.added ?? `Somebody picked ${addedCalls.length === 1 ? 'this post' : 'these posts'} by hand. No scan has run, so nothing here is a tally.`}</p>
                 <ol className="xrc-calls">
-                  {addedCalls.map(({ call, n }) => (
-                    <CallCard key={call.postId} call={call} n={n} handle={record.handle} unit={view.unit} />
+                  {addedCalls.map(({ call: c, n }) => (
+                    <CallCard key={c.postId} call={c} n={n} handle={record.handle} unit={view.unit} lead={c.postId === call?.postId} />
                   ))}
                 </ol>
               </section>
@@ -378,10 +451,28 @@ export default async function RecordPage(props: Props) {
 
           <aside className="xrc__side">
             {record.calls.length > 0 && (
-              <section className="xrc-share" id="share" aria-label={pasteOnly ? 'Share these posts' : 'Share this record'}>
-                <h2 className="xrc-share__title">{pasteOnly ? 'Share these posts' : mine ? 'Share your record' : 'Share this record'}</h2>
-                {pasteOnly && <p className="xrc-share__lede">The post and the image say what this is: posts a viewer pinned, with no tally.</p>}
-                <ShareRow post={post} imageHref={imageHref} fileName={`called-it-${record.handle}-${record.symbol.replace(/[^A-Za-z0-9]/g, '')}.png`} />
+              <section className="xrc-share" id="share" aria-label={call ? 'Share this call' : pasteOnly ? 'Share these posts' : 'Share this record'}>
+                <h2 className="xrc-share__title">{call ? (mine ? 'Share your call' : 'Share this call') : pasteOnly ? 'Share these posts' : mine ? 'Share your record' : 'Share this record'}</h2>
+                {call ? (
+                  <>
+                    <p className="xrc-share__lede">The post and the card carry this call and the full record: {record.scanned ? 'every call the scan found, hits and misses.' : 'no scan has run, so they state no tally.'}</p>
+                    {/* What unfurls on X, shown before it is posted: the same image the link's card draws. */}
+                    <a href={imageHref} className="xcl-card" target="_blank" rel="noopener" data-journey="called_call_card" aria-label="The card this link unfurls as: open the image">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- our own image route; next/image would re-encode a picture meant to be saved as it unfurls */}
+                      <img src={imageHref} width={1200} height={630} alt={`${callHeadline(record.handle, record.symbol, call)} ${record.words.headline}`} loading="lazy" decoding="async" />
+                    </a>
+                  </>
+                ) : (
+                  pasteOnly && <p className="xrc-share__lede">The post and the image say what this is: posts a viewer pinned, with no tally.</p>
+                )}
+                <ShareRow post={post} imageHref={imageHref} fileName={`called-it-${record.handle}-${record.symbol.replace(/[^A-Za-z0-9]/g, '')}${call ? `-${call.postId}` : ''}.png`} kind={call ? 'call' : 'record'} />
+                {call && (
+                  <p className="xrc-note">
+                    <Link href={`${recordHref(record.handle, record.symbol)}#share`} prefetch={false} data-journey="called_call_share_record">
+                      Share the whole record instead
+                    </Link>
+                  </p>
+                )}
               </section>
             )}
             <DoorBlock symbol={record.symbol} side={record.side} owner={record.verified ? 'yourself' : 'this'} />

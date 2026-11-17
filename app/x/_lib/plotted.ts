@@ -42,6 +42,7 @@ async function strictVerified(handles: readonly string[]): Promise<Set<string>> 
   return out
 }
 
+/** `symbol` narrows the list in the store, before its limit (review F4): a market's board is never cut from every market's newest rows. */
 export async function readPlotted(opts: { limit: number; handle?: string; symbol?: string }): Promise<PlottedList> {
   try {
     const listed = await listPlotted(opts)
