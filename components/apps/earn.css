@@ -1,0 +1,47 @@
+/* THE APPS PAGE, EARN SECTIONS (Aave, Lido, Morpho, NEAR Intents, funding).
+   Flat like the rest of the page: hairlines, no shells. Prefix `apge-`
+   (checked against every stylesheet in the repo). Site tokens only. */
+
+/* The body of a section shown in full: the main list left, facts and the
+   side list right, from ~900px of section width; one column below. */
+.apge { container-type: inline-size; min-width: 0; }
+.apge__cols { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.apge__main, .apge__side { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+@container (min-width: 880px) {
+  .apge__cols { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(250px, 1fr); gap: 0 48px; align-items: start; }
+  .apge__side .apg-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.apge-viz { display: flex; flex-direction: column; gap: 10px; padding-bottom: 4px; }
+.apge-gauge { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.apge-prompts { display: flex; flex-wrap: wrap; gap: 8px; }
+.apge-sub { font-size: var(--fs-md); color: var(--muted); }
+.apge-neg { color: var(--sell, #f0776b); }
+.apge-foot { margin: -6px 0 0; font-size: var(--fs-md); line-height: 1.5; color: var(--muted-2); }
+.apge-note { margin: 0; font-size: var(--fs-md); line-height: 1.5; color: var(--muted); }
+
+/* A section with nothing of its own yet (preview, error). */
+.apge-state { display: flex; flex-direction: column; gap: 16px; }
+.apge-state__text { margin: 0; max-width: 60ch; font-size: var(--fs-lg); line-height: 1.5; color: var(--muted); }
+
+/* A table with aligned columns (Aave's rates for what the wallet holds). */
+.apge-tbl { display: flex; flex-direction: column; }
+.apge-tbl--offers .apge-tbl__head,
+.apge-tbl--offers .apge-tbl__row {
+  display: grid; align-items: center; column-gap: 16px;
+  grid-template-columns: minmax(150px, 2fr) minmax(56px, 0.7fr) minmax(90px, 1fr) minmax(76px, 0.9fr) auto;
+}
+.apge-tbl__head { padding-bottom: 8px; font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); }
+.apge-tbl__row { min-height: 60px; padding: 8px 0; border-top: 1px solid var(--line); }
+.apge-tbl__row:last-child { border-bottom: 1px solid var(--line); }
+.apge-tbl__asset { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.apge-tbl__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--fs-base); }
+.apge-tbl__name .apge-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apge-tbl__act { justify-self: end; }
+.apge-num { text-align: right; font-family: var(--font-mono); font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+.apge-num--strong { color: var(--fg); font-weight: 600; }
+@container (max-width: 520px) {
+  .apge-hide-narrow { display: none; }
+  .apge-tbl--offers .apge-tbl__head,
+  .apge-tbl--offers .apge-tbl__row { grid-template-columns: minmax(120px, 2fr) minmax(56px, 0.8fr) minmax(70px, 0.9fr) auto; }
+}
