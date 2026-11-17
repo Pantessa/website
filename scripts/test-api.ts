@@ -37,8 +37,8 @@ import { createPublicClient, custom, http, HttpRequestError, InvalidAddressError
 import { base } from 'viem/chains'
 import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/dry-run'
 import { createSiweMessage, parseSiweMessage } from 'viem/siwe'
-import { grantTypedData } from '../lib/grant-typed-data'
 import { planTicketPins, planTicketServedPins } from './plan-ticket-pins'
+import { grantTypedData } from '../lib/grant-typed-data'
 import { LINK_FEE_PCT, SWAP_FEE_PCT } from '../lib/fees'
 import {
   claimJobStepReport,
