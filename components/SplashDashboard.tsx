@@ -347,7 +347,7 @@ function MasonryCell({ children }: { children: ReactNode }) {
 
 /** One tile's content: caption row (what this section is + its scope), the
  *  render-primitive body, and the tile's prompt chips. */
-function TileSection({
+export function TileSection({
   tile,
   onPick,
   onRetry,
@@ -971,7 +971,7 @@ function InlineActionChips({
   )
 }
 
-function PromptChips({
+export function PromptChips({
   prompts,
   slug,
   onPick,
@@ -1002,7 +1002,7 @@ function PromptChips({
   )
 }
 
-function Avatar({ url, label, size }: { url: string; label: string; size: number }) {
+export function Avatar({ url, label, size }: { url: string; label: string; size: number }) {
   const [failed, setFailed] = useState(false)
   if (failed || !url) {
     return (
