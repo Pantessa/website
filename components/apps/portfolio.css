@@ -1,0 +1,187 @@
+/* THE PORTFOLIO SECTIONS (components/apps/sections/{uniswap,wallet,robinhood,
+   opensea}.tsx, NeedsYou, Recurring). Flat like the rest of the apps page:
+   hairlines, no shells, tabular numbers, the site's tokens. Prefix `apgp-`
+   (checked against every stylesheet in the repo). */
+
+.apgp-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.apgp-muted { color: var(--muted); }
+.apgp-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.apgp-p { margin: 0; line-height: 1.5; }
+.apgp-sentence { margin: 0; font-size: var(--fs-lg); line-height: 1.45; color: var(--fg); }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.apgp-btn { height: 32px; padding: 0 14px; font-size: var(--fs-md); }
+.apgp-btn--sm { height: 30px; padding: 0 12px; }
+.apgp-btn--quiet { border-color: var(--line); color: var(--muted); font-weight: 400; }
+.apgp-btn--quiet:hover { color: var(--fg); }
+.apgp-btn--wrap { height: auto; min-height: 32px; padding: 6px 14px; white-space: normal; text-align: left; justify-content: flex-start; line-height: 1.3; }
+.apgp-acts { display: inline-flex; align-items: center; gap: 4px; }
+.apgp-more {
+  flex: none; width: 32px; height: 32px; display: grid; place-items: center;
+  border: 0; border-radius: 999px; background: none; color: var(--muted); cursor: pointer;
+}
+.apgp-more:hover { color: var(--fg); background: color-mix(in oklch, var(--fg) 7%, transparent); }
+.apgp-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.apgp-more__icon { transition: transform 0.15s; }
+.apgp-more[aria-expanded='true'] .apgp-more__icon { transform: rotate(180deg); }
+.apgp-textbtn {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-size: var(--fs-md); color: var(--fg); text-decoration: underline; text-underline-offset: 4px; text-decoration-color: var(--line-2);
+}
+.apgp-textbtn:hover { text-decoration-color: var(--fg); }
+.apgp-textbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.apgp-link {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px;
+  font-size: var(--fs-md); color: var(--muted); text-decoration: none; border-radius: 999px;
+}
+.apgp-link:hover { color: var(--fg); }
+.apgp-asks { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* ── The full page: facts, bar, list left, aside right ───────────────────── */
+.apgp-full {
+  container-type: inline-size;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px;
+  grid-template-areas: 'facts' 'alloc' 'list' 'aside';
+}
+.apgp-full__facts { grid-area: facts; min-width: 0; }
+.apgp-full__alloc { grid-area: alloc; min-width: 0; }
+.apgp-full__list { grid-area: list; min-width: 0; }
+.apgp-full__aside { grid-area: aside; min-width: 0; }
+.apgp-full--nfts { grid-template-areas: 'facts' 'list' 'aside'; }
+
+/* Two columns once the section has room (a container query: the section,
+   not the viewport, decides — the dock takes a third of the screen). */
+@container (min-width: 880px) {
+  .apgp-full {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+    grid-template-areas: 'facts facts' 'alloc alloc' 'list aside';
+    column-gap: 48px;
+  }
+  .apgp-full--nfts { grid-template-areas: 'facts facts' 'list aside'; }
+}
+
+.apgp-alloc { padding: 4px 0 0; }
+.apgp-listhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 10px; }
+.apgp-listhead__note { font-size: var(--fs-md); color: var(--muted-2); text-align: right; }
+
+/* ── The holdings table ──────────────────────────────────────────────────── */
+.apgp-table { container-type: inline-size; display: flex; flex-direction: column; }
+.apgp-thead, .apgp-tr {
+  display: grid; align-items: center; column-gap: 16px;
+  grid-template-columns: minmax(130px, 1.4fr) minmax(70px, 0.8fr) 118px minmax(80px, 0.8fr) minmax(150px, auto);
+}
+.apgp-thead {
+  padding: 0 0 8px;
+  font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2);
+}
+.apgp-hrow { border-top: 1px solid var(--line); }
+.apgp-table > .apgp-hrow:last-of-type, .apgp-rec__rows > .apgp-hrow:last-child { border-bottom: 1px solid var(--line); }
+.apgp-hrow[data-open] { background: color-mix(in oklch, var(--fg) 3%, transparent); }
+.apgp-tr { min-height: 60px; padding: 8px 0; }
+.apgp-c-amt, .apgp-c-val { text-align: right; justify-self: end; }
+.apgp-c-amt { font-size: var(--fs-md); }
+.apgp-c-val { font-size: var(--fs-base); }
+.apgp-c-spark { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.apgp-delta { font-size: var(--fs-xs) !important; }
+.apgp-c-act { display: flex; justify-content: flex-end; align-items: center; min-width: 0; }
+.apgp-thead .apgp-c-amt, .apgp-thead .apgp-c-val { justify-self: end; }
+
+.apgp-asset { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.apgp-asset__text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.apgp-asset__sym { font-size: var(--fs-base); font-weight: 600; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apgp-tag { font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.apgp-band { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 0 12px 40px; }
+.apgp-tfoot { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; padding-top: 12px; font-size: var(--fs-md); }
+.apgp-tfoot > :only-child { margin-left: auto; }
+
+@container (max-width: 620px) {
+  .apgp-thead, .apgp-tr { grid-template-columns: minmax(110px, 1fr) minmax(70px, auto) auto; }
+  .apgp-c-amt, .apgp-c-spark { display: none !important; }
+  .apgp-band { padding-left: 0; }
+}
+
+/* ── The aside ("Only here", activity, asks) ─────────────────────────────── */
+.apgp-only { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.apgp-block { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.apgp-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.apgp-notes > li + li { border-top: 1px solid var(--line); }
+.apgp-note {
+  display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 10px 0;
+  background: none; border: 0; cursor: pointer; text-align: left; font: inherit; font-size: var(--fs-md); line-height: 1.45; color: var(--fg);
+}
+.apgp-note .apg-dot { transform: translateY(-1px); }
+.apgp-note:hover > span:last-child { text-decoration: underline; text-underline-offset: 4px; text-decoration-color: var(--line-2); }
+.apgp-note:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+.apgp-activity { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.apgp-activity > li + li { border-top: 1px solid var(--line); }
+.apgp-act { display: flex; align-items: center; gap: 10px; padding: 9px 0; color: var(--fg); text-decoration: none; min-width: 0; }
+.apgp-act__icon { flex: none; width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center; color: var(--muted); background: color-mix(in oklch, var(--fg) 6%, transparent); }
+.apgp-act__icon--in { color: var(--accent); background: color-mix(in oklch, var(--accent) 14%, transparent); }
+.apgp-act__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.apgp-act__main { font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apgp-act__sub { font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apgp-act__ext { flex: none; color: var(--muted-2); opacity: 0; transition: opacity 0.15s; }
+.apgp-act:hover .apgp-act__ext, .apgp-act:focus-visible .apgp-act__ext { opacity: 1; }
+.apgp-act:hover .apgp-act__main { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); }
+
+/* ── States ──────────────────────────────────────────────────────────────── */
+.apgp-state { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.apgp-state p { margin: 0; max-width: 56ch; font-size: var(--fs-lg); line-height: 1.5; color: var(--muted); }
+
+/* ── Side density ────────────────────────────────────────────────────────── */
+.apgp-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.apgp-srows { display: flex; flex-direction: column; }
+.apgp-srow { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 6px 0; border-top: 1px solid var(--line); }
+.apgp-srows > .apgp-srow:last-child { border-bottom: 1px solid var(--line); }
+.apgp-srow__main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.apgp-srow__val { flex: none; font-size: var(--fs-md); text-align: right; }
+.apgp-srow__act { flex: none; display: inline-flex; max-width: 0; overflow: hidden; opacity: 0; transition: opacity 0.15s; }
+/* The one ask shows on hover; it is in the tab order all along, and focus
+   opens it the same way (max-width, never display:none). */
+.apgp-srow:hover .apgp-srow__act, .apgp-srow:focus-within .apgp-srow__act { max-width: 220px; opacity: 1; overflow: visible; }
+@media (hover: none) { .apgp-srow__act { max-width: 220px; opacity: 1; overflow: visible; } }
+
+.apgp-thumbs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.apgp-thumbs__cell { display: block; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--surf-2); }
+
+/* ── NFTs ────────────────────────────────────────────────────────────────── */
+.apgp-thumb { display: block; width: 100%; height: 100%; aspect-ratio: 1; object-fit: cover; border-radius: inherit; background: var(--surf-2); }
+.apgp-thumb--letter { display: grid; place-items: center; font-family: var(--font-chat-display); font-weight: 600; font-size: 22px; color: var(--muted); background: var(--surf-2); aspect-ratio: 1; border-radius: inherit; }
+.apgp-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px 16px; }
+.apgp-gcell { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; color: var(--fg); font: inherit; }
+.apgp-gcell > .apgp-thumb, .apgp-gcell > .apgp-thumb--letter { border-radius: 10px; outline: 1px solid var(--line); outline-offset: -1px; transition: outline-color 0.15s; }
+.apgp-gcell:hover > .apgp-thumb, .apgp-gcell:hover > .apgp-thumb--letter { outline-color: var(--line-2); }
+.apgp-gcell[aria-pressed='true'] > .apgp-thumb, .apgp-gcell[aria-pressed='true'] > .apgp-thumb--letter { outline: 2px solid var(--fg); outline-offset: 2px; }
+.apgp-gcell:focus-visible { outline: none; }
+.apgp-gcell:focus-visible > .apgp-thumb { outline: 2px solid var(--accent); outline-offset: 2px; }
+.apgp-gcell__name { font-size: var(--fs-md); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apgp-gcell__sub { font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.apgp-nftdetail { display: flex; flex-direction: column; gap: 14px; }
+.apgp-nftdetail > .apgp-thumb, .apgp-nftdetail > .apgp-thumb--letter { width: 100%; max-width: 300px; border-radius: 12px; }
+.apgp-nftdetail__text { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-md); }
+.apgp-nftdetail__name { font-size: var(--fs-lg); font-weight: 600; }
+
+/* ── Needs you (page strip) ──────────────────────────────────────────────── */
+.apgp-needs { gap: 0; padding: 16px 0 4px; }
+.apgp-needs > .apg-eyebrow { padding-bottom: 6px; }
+.apgp-needs__row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 12px 0; }
+.apgp-needs__row + .apgp-needs__row { border-top: 1px solid var(--line); }
+.apgp-needs__mark { flex: none; width: 26px; display: grid; place-items: center; }
+.apgp-needs__text { flex: 1 1 320px; min-width: 0; margin: 0; font-size: var(--fs-lg); line-height: 1.45; }
+.apgp-needs__value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.apgp-needs__spark { flex: none; display: flex; }
+.apgp-needs__acts { flex: none; display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+
+/* ── Recurring buys ──────────────────────────────────────────────────────── */
+.apgp-rec { container-type: inline-size; display: flex; flex-direction: column; }
+.apgp-rec__rows { display: flex; flex-direction: column; }
+.apgp-rec__tr { display: grid; align-items: center; column-gap: 16px; grid-template-columns: minmax(0, 1fr) auto minmax(120px, auto); min-height: 58px; padding: 8px 0; }
+.apgp-rec__state { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--muted); text-align: right; }
+.apgp-rec__state--due { color: var(--accent); }
+.apgp-recmark { width: 26px; height: 26px; border-radius: 999px; }
+@container (max-width: 460px) {
+  .apgp-rec__tr { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+  .apgp-rec__tr > .apgp-c-act { grid-column: 1 / -1; justify-content: flex-start; padding-left: 38px; }
+}
