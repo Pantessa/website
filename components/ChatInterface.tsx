@@ -64,7 +64,7 @@ import { useHydrated } from '@/lib/use-hydrated'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '@/lib/turn-status'
 import { SplashDashboard } from '@/components/SplashDashboard'
 import ChatLoader from '@/components/ChatLoader'
-import { splashCapable } from '@/lib/splash/types'
+import { earnsChatCard } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
 import PostProofDoor from '@/components/community/PostProofDoor'
@@ -609,12 +609,22 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // paint a dashboard tile (Uniswap portfolio / Snapshot proposals / CoW
   // orders / Hyperliquid positions / …) — or one the user hand-picked, which
   // always gets a card (preview when there's no activity).
+  // An app an ASK turned on earns no card (lib/splash/types earnsChatCard):
+  // the ids are noted where the ask adds them and dropped when the app goes
+  // off again, so a later pick by hand is a pick like any other.
+  const askAppsRef = useRef<Set<string>>(new Set())
+  const noteAskApps = (ids: readonly string[]) => {
+    for (const id of ids) askAppsRef.current.add(id)
+  }
+  useEffect(() => {
+    for (const id of [...askAppsRef.current]) if (!activeServerIds.includes(id)) askAppsRef.current.delete(id)
+  }, [activeServerIds])
   const splashEligible =
     !simple &&
     !besideApps &&
     !!effectiveAddress &&
     !autoRouter &&
-    activeServers.some((s) => splashCapable(s) || manualSlugs.includes(s.slug))
+    activeServers.some((s) => earnsChatCard(s, manualSlugs, askAppsRef.current))
 
   // ── Splash cards live IN the chat flow ────────────────────────────────────
   // Each batch is a snapshot of MCP cards anchored at the message index where
@@ -641,7 +651,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // link runtime stays a single focused thread (cards were "too much info").
   const splashableServers = simple || besideApps
     ? []
-    : activeServers.filter((s) => splashCapable(s) || manualSlugs.includes(s.slug))
+    : activeServers.filter((s) => earnsChatCard(s, manualSlugs, askAppsRef.current))
   const splashableKey = splashableServers.map((s) => s.id).sort().join(',')
   useEffect(() => {
     const surface = `${currentChatId ?? ''}|${effectiveAddress ?? ''}`
@@ -801,6 +811,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     const next = [...live.activeServerIds, ...fresh.map((r) => r.id)]
     if (live.linkSetActive) setLinkServerIds(next)
     else setActiveServerIds(next)
+    noteAskApps(fresh.map((r) => r.id))
     noteChipApps(fresh.map((r) => r.id))
     if (currentChatId) updateChatServers(currentChatId, next)
     return fresh
@@ -844,6 +855,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       // An /i link's set stays marked as the link's (store.linkSetActive).
       if (linkSetActive) setLinkServerIds(next)
       else setActiveServerIds(next)
+      noteAskApps(missing)
       noteChipApps(missing)
       if (currentChatId) updateChatServers(currentChatId, next)
       setChipSend({ ...chipSend, rounds: chipSend.rounds + 1, added: [...new Set([...chipSend.added, ...missing])] })

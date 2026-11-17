@@ -276,3 +276,19 @@ export interface SplashResponse {
 export function splashCapable(s: { slug: string; name: string; splashReady?: boolean }): boolean {
   return !!s.splashReady || /uniswap|snapshot|cow|hyperliquid|aave|morpho|lido|robinhood|opensea|funding|finance/i.test(`${s.slug} ${s.name}`)
 }
+
+/** Does this app earn a card in the chat flow? A card is for an app the
+ *  person opened to LOOK at: one that can paint a tile, or one they picked by
+ *  hand. An app an ASK turned on (the symbol page's handoff, a chip, the
+ *  route's belt) is there to run that ask, and its card under the reply was
+ *  noise: "Nothing here yet, try one of these" below a job waiting on a
+ *  signature (Nate, 2026-11-17). `askAdded` = the ids asks turned on in this
+ *  conversation; it wins over a hand pick remembered from an earlier day. */
+export function earnsChatCard(
+  s: { id: string; slug: string; name: string; splashReady?: boolean },
+  manualSlugs: readonly string[],
+  askAdded: ReadonlySet<string>,
+): boolean {
+  if (askAdded.has(s.id)) return false
+  return splashCapable(s) || manualSlugs.includes(s.slug)
+}
