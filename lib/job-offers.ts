@@ -40,6 +40,7 @@
 //   - other sizes: one size keeps the offer a sentence that has actually run.
 
 import { FUNDING_ORIGIN_WORD } from '@/lib/funding-origins'
+import { jobExpired } from '@/lib/job-status'
 import { ROBINHOOD_CHAIN_ID } from '@/lib/lifi-destinations'
 
 // ── Floors (copies of lib/lifi-bridge, pinned equal) ────────────────────────
@@ -209,5 +210,6 @@ export function jobOfferView(walletAddress: string | null | undefined, facts: Jo
  *  `failed` with a reason that starts "expired". It is not a failure: the
  *  rail shows it in a neutral colour and never counts it as needing you. */
 export function isExpiredJob(j: { status: string; failReason?: string | null }): boolean {
-  return j.status === 'failed' && typeof j.failReason === 'string' && /^expired\b/i.test(j.failReason.trim())
+  // ONE rule: lib/job-status owns it (the card, the overlay and the rail agree).
+  return jobExpired(j)
 }

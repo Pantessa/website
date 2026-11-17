@@ -9202,32 +9202,17 @@ async function main() {
         !signable(xc) && xc.buildPath === AFFORDABILITY_SHORT_PATH && /spend 5 USDC on Base and the wallet holds 0 USDC/.test(String(xc.reply)) && (xc.affordability as { withheldBuildPath?: string })?.withheldBuildPath === 'native-cross-chain',
         JSON.stringify(xc).slice(0, 300),
       )
-      // Jobs: the runner's offer is gated — a $0 wallet's first swap step
-      // fails WITH the shortfall named instead of "Sign & send approve".
-      const jobTurn = await fetch(`${BASE}/api/chat`, { method: 'POST', headers: linkHeaders, body: JSON.stringify({ message: 'swap 1 USDC for ETH on base, then send 0.0001 ETH to 0x1848a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a03c59 on base', walletAddress: W, activeServers: [{ slug: 'uniswap-free' }], history: [] }) }).then((r) => r.json() as Promise<{ jobId?: string; jobToken?: string; buildPath?: string }>)
-      if (jobTurn.jobId) {
-        const t = encodeURIComponent(jobTurn.jobToken ?? '')
-        let jobRead: { job?: { status?: string; failReason?: string | null; steps?: { status: string; result?: { error?: string; withheld?: boolean } | null }[] } } = {}
-        for (let i = 0; i < 10; i++) {
-          jobRead = (await (await fetch(`${BASE}/api/jobs/${jobTurn.jobId}?t=${t}`)).json()) as typeof jobRead
-          const s0 = jobRead.job?.steps?.[0]
-          if (s0?.status === 'failed' || s0?.status === 'offered' || (s0?.status === 'pending' && s0.result?.withheld)) break
-          await new Promise((r) => setTimeout(r, 500))
-        }
-        const s0 = jobRead.job?.steps?.[0]
-        check(
-          'affordability gate (jobs): a $0 wallet’s first swap step is never OFFERED — it is WITHHELD (pending, reason on the card: "would spend 1 USDC on Base and the wallet holds 0 USDC"), the job stays live for the top-up',
-          jobTurn.buildPath === 'native-job' && jobRead.job?.status === 'running' && s0?.status === 'pending' && s0.result?.withheld === true && /spend 1 USDC on Base and the wallet holds 0 USDC/.test(String(s0.result?.error ?? '')),
-          JSON.stringify(jobRead).slice(0, 300),
-        )
-        // The hold-down: a second poll right away does NOT re-quote (the step
-        // row is untouched — same updatedAt), and the job is still live.
-        const again = (await (await fetch(`${BASE}/api/jobs/${jobTurn.jobId}?t=${t}`)).json()) as typeof jobRead
-        check('affordability gate (jobs): a withheld step is not re-quoted on every poll (hold-down), and the job is still cancelable', again.job?.status === 'running' && again.job?.steps?.[0]?.status === 'pending' && again.job?.steps?.[0]?.result?.withheld === true)
-        await fetch(`${BASE}/api/jobs/${jobTurn.jobId}?t=${t}`, { method: 'DELETE' }).catch(() => {})
-      } else {
-        check('affordability gate (jobs): the compound ask compiled as a job', false, JSON.stringify(jobTurn).slice(0, 200))
-      }
+      // Jobs: RE-PINNED 2026-11-17 (squad lane1, the jobs audit). A $0 wallet's
+      // compound ask used to CREATE a job whose first step was withheld; the
+      // pre-flight (lib/job-preflight) now refuses before a job row exists and
+      // answers the shortfall with a next-step chip.
+      const jobTurn = await fetch(`${BASE}/api/chat`, { method: 'POST', headers: linkHeaders, body: JSON.stringify({ message: 'swap 1 USDC for ETH on base, then send 0.0001 ETH to 0x1848a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a03c59 on base', walletAddress: W, activeServers: [{ slug: 'uniswap-free' }], history: [] }) }).then((r) => r.json() as Promise<{ jobId?: string; jobToken?: string; buildPath?: string; reply?: string; affordability?: { withheldBuildPath?: string }; clarify?: { options?: { label?: string }[] } }>)
+      check(
+        'affordability gate (jobs): a $0 wallet\u2019s compound ask creates NO job \u2014 the pre-flight names the shortfall ("its first step spends 1 USDC on Base, and this wallet holds 0 USDC there") and carries a next-step chip',
+        !jobTurn.jobId && jobTurn.buildPath === AFFORDABILITY_SHORT_PATH && jobTurn.affordability?.withheldBuildPath === 'native-job' && /No job was created: its first step spends 1 USDC on Base, and this wallet holds 0 USDC there/.test(String(jobTurn.reply)) && (jobTurn.clarify?.options?.length ?? 0) >= 1,
+        JSON.stringify(jobTurn).slice(0, 300),
+      )
+      if (jobTurn.jobId) await fetch(`${BASE}/api/jobs/${jobTurn.jobId}?t=${encodeURIComponent(jobTurn.jobToken ?? '')}`, { method: 'DELETE' }).catch(() => {})
     }
 
     // ── NFT-buy funding resume (the 2026-07-23 unfunded "buy this NFT") ───
@@ -35663,7 +35648,7 @@ async function main() {
   orderTicketPins(check)
   symbolAskPins(check)
   jobsOffersPins(check)
-  jobsPreflightPins(check)
+  await jobsPreflightPins(check)
   jobsAuditPins(check)
   // The apps page (squad apps-page, 2026-11-17): one pin file per lane.
   appsPagePins(check)
