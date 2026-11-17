@@ -1400,9 +1400,11 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
       // ok-step; the signature is the consent). Only the leading-open shape:
       // a job with earlier steps is already hand-plumbed.
       const leadStep = jobAsk.steps[0]
+      let hlOpenFoundShort = false
       if (leadStep?.builder === 'native-hl-exec' && (leadStep.params as { kind?: string }).kind === 'open') {
         const short = await hlOpenCollateralShortfall(leadStep.params as unknown as HlOrderIntent, walletAddress)
         if (short) {
+          hlOpenFoundShort = true
           const autoTurn = await hlAutoFundedJobTurn(short, leadStep.params as unknown as HlOrderIntent, message, walletAddress, nativeTrace, swapFeeBps, internalRun, jobBirth)
           if (autoTurn) return autoTurn
           // No plan available (scan/price down) — fall through to the job;
@@ -1427,7 +1429,7 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
       // Robinhood Chain with $12 from Base including gas, then buy $10 of
       // AAPL" created a job that failed in red at step 1. One balance read;
       // an unreadable balance creates the job exactly as before.
-      const jobPre = await preflightJob({ wallet: walletAddress, compiled: jobAsk, ask: message, hlOpenChecked: true, trace: nativeTrace })
+      const jobPre = await preflightJob({ wallet: walletAddress, compiled: jobAsk, ask: message, hlOpenChecked: hlOpenFoundShort, trace: nativeTrace })
       if (jobPre.kind === 'short') {
         return NextResponse.json({
           reply: jobPre.reply,

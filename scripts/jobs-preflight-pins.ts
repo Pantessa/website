@@ -319,7 +319,7 @@ export async function jobsPreflightPins(check: Check) {
   )
   const chatSrc = readFileSync(join(process.cwd(), 'app/api/chat/route.ts'), 'utf8')
   const apiSrc = readFileSync(join(process.cwd(), 'app/api/jobs/route.ts'), 'utf8')
-  const chatPre = chatSrc.indexOf('const jobPre = await preflightJob({ wallet: walletAddress, compiled: jobAsk, ask: message, hlOpenChecked: true')
+  const chatPre = chatSrc.indexOf('const jobPre = await preflightJob({ wallet: walletAddress, compiled: jobAsk, ask: message, hlOpenChecked: hlOpenFoundShort')
   const chatCreate = chatSrc.indexOf("const job = await createJob(walletAddress, stampSwapFeeTier(jobAsk, swapFeeBps")
   const apiPre = apiSrc.indexOf('const pre = await preflightJob({ wallet: addr, compiled, ask })')
   const apiCreate = apiSrc.indexOf('const job = await createJob(addr, compiled')

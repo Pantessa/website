@@ -35,7 +35,7 @@ import type { ClarifyOption, ClarifyRequest } from '@/lib/clarify'
 import { expectedOriginChainId } from '@/lib/cross-chain-swap'
 import { FUNDING_CHAIN_WORD, offerFundingPlan } from '@/lib/funding-plan'
 import { fundingOriginWords } from '@/lib/funding-origins'
-import { arbitrumUsdcBalance, hlOpenCollateralShortfall, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
+import { arbitrumUsdcBalance, fetchHlSnapshot, HL_MIN_DEPOSIT_USDC, hlCollateralTargetUsd, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseRobinhoodEthMove, parseRobinhoodFunding, parseRobinhoodGasFunding, robinhoodFundingFromCrossChain, splitJobSegments, type CompiledJob } from '@/lib/jobs'
 import {
   fundingAltUsdcFor,
@@ -325,6 +325,30 @@ function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
 
 const firstLine = (e: unknown): string => (e instanceof Error ? e.message.split('\n')[0].slice(0, 160) : String(e).slice(0, 160))
 
+/**
+ * lib/hyperliquid-exec hlOpenCollateralShortfall's own arithmetic, with one
+ * difference that matters here: a venue read that FAILS throws (after one
+ * retry) instead of answering null. That function answers null for "funded"
+ * and for "could not read" alike, so under a rate-limited venue an unfunded
+ * account read as funded and its job was created, then withheld (the jobs
+ * audit, 2026-11-17). Null = funded; a throw = unknown (the caller fails open).
+ */
+export async function hlOpenShortfallStrict(intent: HlOrderIntent, wallet: string): Promise<HlOpenShortfall | null> {
+  if (intent.kind !== 'open') return null
+  const read = () => fetchHlSnapshot(intent.coin, wallet, false, intent.isBuy)
+  const snap = await read().catch(async () => {
+    await new Promise((r) => setTimeout(r, 700))
+    return read()
+  })
+  const notionalUsd = intent.notionalUsd ?? (intent.sizeUnits ? intent.sizeUnits * snap.markPx : 0)
+  if (!(notionalUsd > 0)) return null
+  const lev = intent.leverage ?? 3
+  const fundable = snap.withdrawableUsd + snap.transferableUsd
+  if (fundable >= notionalUsd / lev) return null
+  const depositUsdc = Math.max(HL_MIN_DEPOSIT_USDC, Number((hlCollateralTargetUsd(notionalUsd, lev) - fundable).toFixed(2)))
+  return { depositUsdc, withdrawableUsd: fundable, notionalUsd: Number(notionalUsd.toFixed(2)) }
+}
+
 /** Where a symbol lives on a chain, per the registry. Null = unknown token
  *  (the check is skipped, never guessed). */
 function tokenOn(chainId: number, symbol: string): { native: true } | { native: false; address: string; decimals: number } | null {
@@ -346,8 +370,10 @@ export async function preflightJob(input: {
   wallet: string
   compiled: CompiledJob
   ask: string
-  /** The caller already ran the Hyperliquid open's own collateral check (the
-   *  chat route compiles the funded job itself): skip it here. */
+  /** The caller already FOUND the Hyperliquid open short and could not plan
+   *  its funding (the chat route compiles the funded job itself): skip the
+   *  venue read here. A caller whose own check answered "funded or unread"
+   *  leaves this unset, and the strict read below settles which. */
   hlOpenChecked?: boolean
   trace?: (event: unknown) => void
   deps?: JobPreflightDeps
@@ -364,7 +390,7 @@ export async function preflightJob(input: {
     // ── Hyperliquid open: collateral on the venue ──
     if (need.kind === 'hl-open') {
       if (input.hlOpenChecked) return { kind: 'no-check' }
-      const short = await within((deps.hlShortfall ?? hlOpenCollateralShortfall)(need.intent, wallet), readMs, 'the Hyperliquid read')
+      const short = await within((deps.hlShortfall ?? hlOpenShortfallStrict)(need.intent, wallet), readMs, 'the Hyperliquid read')
       if (!short) return { kind: 'ok' }
       const facts: PreflightShortFacts = { chainId: null, chain: 'Hyperliquid', symbol: 'USDC', needs: amountWord(Number((short.withdrawableUsd + short.depositUsdc).toFixed(2))), held: short.withdrawableUsd.toFixed(2), hlCollateral: true }
       const fundedAsk = `deposit ${short.depositUsdc} USDC to Hyperliquid, then ${ask.trim()}`
