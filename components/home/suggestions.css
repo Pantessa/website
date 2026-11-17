@@ -1,0 +1,42 @@
+/* SUGGESTIONS on the home (components/home/SuggestionsBoard). Rides the markets
+   look and the ONE SCALE as closing.css does: tokens only, no literal colour.
+   Its own size container: two lists side by side when wide, stacked when
+   narrow. Flat; nothing moves. Prefix `sgb`, checked against every stylesheet. */
+
+.sgb { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; padding: clamp(var(--sp-4), 3cqi, var(--sp-5)); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); container-type: inline-size; container-name: sgb; }
+
+.sgb__head { display: flex; flex-direction: column; gap: var(--sp-2); }
+.sgb__eyebrow { margin: 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.sgb__heading { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.5rem, 4cqi, 2.25rem); line-height: 1.1; letter-spacing: -0.015em; color: var(--fg); }
+.sgb__lede { margin: 0; max-width: 62ch; font-family: var(--mk-font-ui); font-size: var(--fs-base); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.sgb__note { margin: 0; font-size: var(--fs-xs); color: var(--muted-2); }
+
+.sgb__doors { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-1); }
+.sgb__door { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 var(--sp-4); border: 1px solid var(--line-2); border-radius: var(--r-pill, 999px); font-family: var(--mk-font-ui); font-size: var(--fs-sm); font-weight: 600; color: var(--fg); text-decoration: none; transition: border-color var(--dur-1) ease; }
+.sgb__door:hover, .sgb__door:focus-visible { border-color: var(--accent); outline: none; }
+.sgb__door--main { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.sgb__door--main:hover, .sgb__door--main:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+@media (hover: none) { .sgb__door { min-height: 44px; } }
+
+.sgb__cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
+@container sgb (min-width: 640px) {
+  .sgb__cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.sgb__col { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.sgb__coltitle { display: flex; align-items: baseline; gap: var(--sp-2); margin: 0; font-family: var(--mk-font-ui); font-size: var(--fs-sm); font-weight: 600; color: var(--fg); }
+.sgb__count { font-size: var(--fs-xs); color: var(--muted-2); font-variant-numeric: tabular-nums; }
+
+.sgb__list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.sgb__row { border-bottom: 1px solid var(--line); }
+.sgb__link { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--sp-2); row-gap: 2px; align-items: baseline; padding: var(--sp-2) 0; min-height: 44px; color: var(--fg); text-decoration: none; }
+.sgb__link:hover .sgb__title, .sgb__link:focus-visible .sgb__title { color: var(--accent); }
+.sgb__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm, 4px); }
+.sgb__pill { grid-row: 1; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.sgb__pill--open { color: var(--accent); }
+.sgb__pill--done { color: var(--fg); }
+.sgb__title { grid-row: 1; font-family: var(--mk-font-ui); font-size: var(--fs-sm); line-height: 1.4; overflow-wrap: anywhere; transition: color var(--dur-1) ease; }
+.sgb__meta { grid-column: 2; font-size: var(--fs-xs); color: var(--muted-2); overflow-wrap: anywhere; }
+
+.sgb__empty { margin: 0; padding: var(--sp-3) 0; border-top: 1px solid var(--line); font-size: var(--fs-sm); color: var(--muted); }
+.sgb__all { align-self: flex-start; font-size: var(--fs-xs); font-weight: 600; color: var(--accent); text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; gap: 0.3em; }
+.sgb__all:hover, .sgb__all:focus-visible { text-decoration: underline; text-underline-offset: 0.2em; outline: none; }
