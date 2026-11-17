@@ -5292,7 +5292,8 @@ async function main() {
   // RE-PINNED 2026-11-17 (harness-zero): since the spend policy's retirement (2026-10-30, f43a85b2) nothing refuses a
   // house-paid call but the kill switch, so a funded harness PAYS (this Mac's burner does: ~$0.001 a turn on blockrun.ai).
   // The old pins read "blocked or no engine". The pin now: either no live engine, or EVERY receipt settled on-chain
-  // (ok + a 32-byte tx hash), each at or under the $0.05 auto-call ceiling, and the route report's spend equals their sum.
+  // (ok + a 32-byte tx hash; a free $0 call carries none), each at or under the $0.05 auto-call ceiling, and the route
+  // report's spend equals their sum.
   type ArReply = { type: string; blocked?: boolean; content?: string; receipts?: Array<{ ok?: boolean; txHash?: string; priceUsd?: string }>; routeReport?: { spentUsd?: number }; payer?: string }
   const housePaidReplyOk = (r: ArReply | undefined): boolean => {
     if (!r || typeof r.content !== 'string' || !r.content.trim()) return false
@@ -5300,7 +5301,8 @@ async function main() {
     const rs = Array.isArray(r.receipts) ? r.receipts : []
     if (rs.length === 0) return r.blocked === true
     const sum = rs.reduce((a, x) => a + Number(x.priceUsd), 0)
-    return rs.every((x) => x.ok === true && /^0x[0-9a-f]{64}$/i.test(String(x.txHash)) && Number(x.priceUsd) > 0 && Number(x.priceUsd) <= 0.05) &&
+    // A free MCP call leaves a $0 receipt with no transaction; every PAID one carries its 32-byte tx hash.
+    return rs.every((x) => x.ok === true && Number(x.priceUsd) >= 0 && Number(x.priceUsd) <= 0.05 && (Number(x.priceUsd) === 0 ? !x.txHash : /^0x[0-9a-f]{64}$/i.test(String(x.txHash)))) &&
       Math.abs(Number(r.routeReport?.spentUsd) - sum) < 1e-9 && r.payer === 'the house wallet'
   }
   const arRes = await fetch(`${BASE}/api/chat`, {
@@ -29046,6 +29048,11 @@ async function main() {
           verdictOfThrow(new Error('HTTP request failed.')).kind === 'unknown',
       )
       check(
+        'venue gate (measure): an unknown token on a chain whose token list never loaded is UNKNOWN, not a refusal — a list outage must not shut the board for the trust window (2026-11-17, harness-zero: the harness\'s own cold read wrote "Unknown sell token on Robinhood Chain: AMBA" as no-venue)',
+        verdictOfThrow(new UnknownTokenError('sell', 'AMBA', 'Nowhere'), 999_999).kind === 'unknown' &&
+          (await readFile('lib/venue-preflight.ts', 'utf8')).includes('return verdictOfThrow(err, buy.chainId)'),
+      )
+      check(
         'venue gate (measure): a refusal is confirmed by a SECOND read — one rate-limited burst on 4663 looks exactly like "no pool" and must not tell anyone a tradable stock is untradeable',
         (await readFile('lib/venue-preflight.ts', 'utf8')).includes('const second = await onePass'),
       )
@@ -29127,30 +29134,37 @@ async function main() {
       // RE-PINNED 2026-11-17 (harness-zero): these two read the TEST DB's verdict rows, which nothing refreshes on a dev
       // machine — once they passed the 24h trust window (TRADABILITY_MAX_AGE_MS) the reader dropped them, every chip came
       // back, and both pins went red with no product change. The harness now MEASURES the two symbols itself (the cascade,
-      // read-only, a burn address — the cron's own path), drops the server's 60s copy through the cron route, and asserts
+      // read-only, a burn address — the cron's own path), waits out the server's 60s copy, and asserts
       // only what the measurement supports: AMBA shut + AAPL fillable → the full pins; anything else → reported SKIPPED.
       const { refreshTradability: vgRefresh } = await import('../lib/tradability-store')
       const { tradeLegsFor: vgLegsFor } = await import('../lib/tradability')
       const vgLegs = ['AMBA', 'AAPL'].flatMap((sym) => { const pr = chartPairFor(sym); return pr ? vgLegsFor(sym, pr) : [] })
+      await ensureTokenList(4663)
+      const vgStart = new Date(Date.now() - 1_000)
       const vgMeasured = await vgRefresh({ legs: vgLegs, budgetMs: 25_000 }).catch(() => null)
       const vgFresh = await prisma.symbolTradability.findMany({
-        where: { symbol: { in: ['AMBA', 'AAPL'] }, checkedAt: { gte: new Date(Date.now() - 10 * 60_000) } },
+        where: { symbol: { in: ['AMBA', 'AAPL'] }, checkedAt: { gte: vgStart } },
         select: { symbol: true, verdict: true },
       }).catch(() => [] as { symbol: string; verdict: string }[])
       const vgAmbaShut = vgFresh.filter((r) => r.symbol === 'AMBA').length >= 2 && vgFresh.filter((r) => r.symbol === 'AMBA').every((r) => r.verdict === 'no-venue')
       const vgAaplOpen = vgFresh.some((r) => r.symbol === 'AAPL') && vgFresh.filter((r) => r.symbol === 'AAPL').every((r) => r.verdict === 'fillable')
-      const vgCronSecret = process.env.CRON_SECRET ?? (await readFile('.env.local', 'utf8').catch(() => '')).match(/^CRON_SECRET=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '')
-      if (!vgAmbaShut || !vgAaplOpen || !vgCronSecret) {
-        console.log(`  ⚪ venue gate (served): SKIPPED — the live measurement does not give one shut + one fillable symbol (AMBA shut=${vgAmbaShut}, AAPL open=${vgAaplOpen}, measured=${JSON.stringify(vgMeasured)}, cron secret=${!!vgCronSecret})`)
+      if (!vgAmbaShut || !vgAaplOpen) {
+        console.log(`  ⚪ venue gate (served): SKIPPED — the live measurement does not give one shut + one fillable symbol (AMBA shut=${vgAmbaShut}, AAPL open=${vgAaplOpen}, measured=${JSON.stringify(vgMeasured)})`)
       } else {
-        // The server holds a 60s copy; the cron route drops it (forgetTradability) at the end of a pass.
-        await fetch(`${BASE}/api/cron/tradability?budgetMs=1000`, { headers: { authorization: `Bearer ${vgCronSecret}` } }).catch(() => null)
-        const vgAmbaTrade = await (await fetch(`${BASE}/t/AMBA?tab=trade`)).text()
-        const vgAaplTrade = await (await fetch(`${BASE}/t/AAPL?tab=trade`)).text()
+        // The server holds a 60s copy PER BUNDLE (the cron route's forgetTradability clears only its own), so poll the
+        // page until its copy turns over — bounded at 75s, then assert on what it served.
+        let vgAmbaTrade = '', vgAaplTrade = ''
+        const vgSymOk = () => /data-shut="buy\+sell"/.test(vgAmbaTrade) && vgAmbaTrade.includes('No venue can buy or sell AMBA') && !/sym__act-chip/.test(vgAmbaTrade) && vgAmbaTrade.includes('Ambarella') &&
+          /sym__act-chip/.test(vgAaplTrade) && !/data-shut/.test(vgAaplTrade)
+        for (const vgDeadline = Date.now() + 75_000; ;) {
+          vgAmbaTrade = await (await fetch(`${BASE}/t/AMBA?tab=trade`)).text()
+          vgAaplTrade = await (await fetch(`${BASE}/t/AAPL?tab=trade`)).text()
+          if (vgSymOk() || Date.now() > vgDeadline) break
+          await new Promise((r) => setTimeout(r, 5_000))
+        }
         check(
           'venue gate (served): /t for a shut symbol renders the chart, the name and the reason and NO act chip; the same page for a fillable one is untouched',
-          /data-shut="buy\+sell"/.test(vgAmbaTrade) && vgAmbaTrade.includes('No venue can buy or sell AMBA') && !/sym__act-chip/.test(vgAmbaTrade) && vgAmbaTrade.includes('Ambarella') &&
-            /sym__act-chip/.test(vgAaplTrade) && !/data-shut/.test(vgAaplTrade),
+          vgSymOk(),
         )
         // `/markets` 308s to `/`, an ISR page (60s): the first read after the flush can be the copy rendered before it.
         // Poll until the regenerated copy lands (bounded at 75s), then assert on it.
@@ -35941,6 +35955,12 @@ async function main() {
     check('live relay: the probe answers the key\'s state by name — 200 with the six venues when keyed, 503 `unconfigured` naming DUNE_BETA_API_KEY when not — never a dropped socket',
       (keyed && pj.venues?.length === 6) || (probe.status === 503 && pj.error === 'unconfigured' && /DUNE_BETA_API_KEY/.test(pj.detail ?? '')), `${probe.status} ${JSON.stringify(pj).slice(0, 160)}`)
     if (keyed) {
+      // RE-PINNED 2026-11-17 (harness-zero): run 2 saw `hello` and then nothing for 15s while the same request a minute
+      // later streamed fills at once — Dune's upstream, not the relay. The relay names each venue's state (`status`), so:
+      // one retry; a pass in which NO venue reached "live" is reported SKIPPED (upstream did not open); a live venue that
+      // delivered no fills is still red.
+      const want = ['BTC', 'ETH', 'HYPE', 'SOL']
+      const relayPass = async () => {
       const ac = new AbortController()
       const t = setTimeout(() => ac.abort(), 15_000)
       let hello = false
@@ -35949,7 +35969,7 @@ async function main() {
       let tagged = 0
       let ctype = ''
       const venuesSeen = new Set<string>()
-      const want = ['BTC', 'ETH', 'HYPE', 'SOL']
+      const live = new Set<string>()
       try {
         const res = await fetch(`${BASE}/api/live/stream?venues=hypercore,lighter&markets=${want.join(',')}`, { signal: ac.signal })
         ctype = res.headers.get('content-type') ?? ''
@@ -35969,6 +35989,7 @@ async function main() {
             if (!ev || !data) continue
             const e = JSON.parse(data) as { keyed?: boolean; venues?: string[]; fills?: { market: string; venue: string; source: string; block: number | null; effect: string | null }[] }
             if (ev === 'hello') hello = e.keyed === true && Array.isArray(e.venues) && e.venues.join(',') === 'hypercore,lighter'
+            if (ev === 'status' && (e as { status?: string; venue?: string }).status === 'live') live.add(String((e as { venue?: string }).venue))
             if (ev === 'fills') {
               for (const f of e.fills ?? []) {
                 fills++
@@ -35984,9 +36005,18 @@ async function main() {
         // the abort, or a relay that never answered — the check below says which
       }
       clearTimeout(t)
-      check('live relay (live): a keyed relay streams text/event-stream — `hello` with the venues asked for, then fills within 15s tagged with their venue and block, carrying a position effect, filtered to the markets asked for',
-        /text\/event-stream/.test(ctype) && hello && fills >= 3 && tagged === fills && effectful > 0 && [...venuesSeen].every((v) => v === 'hyperliquid' || v === 'lighter'),
-        `fills=${fills} tagged=${tagged} effect=${effectful} venues=${[...venuesSeen].join(',')} hello=${hello} ctype=${ctype}`)
+      return { hello, fills, effectful, tagged, ctype, venuesSeen, live }
+      }
+      let rp = await relayPass()
+      if (rp.fills === 0) rp = await relayPass()
+      const relayDetail = `fills=${rp.fills} tagged=${rp.tagged} effect=${rp.effectful} venues=${[...rp.venuesSeen].join(',')} live=${[...rp.live].join(',')} hello=${rp.hello} ctype=${rp.ctype}`
+      if (rp.fills === 0 && rp.live.size === 0 && rp.hello) {
+        console.log(`  ⚪ live relay (live): SKIPPED — Dune's upstream never reached "live" in two 15s passes (${relayDetail})`)
+      } else {
+        check('live relay (live): a keyed relay streams text/event-stream — `hello` with the venues asked for, then fills within 15s tagged with their venue and block, carrying a position effect, filtered to the markets asked for',
+          /text\/event-stream/.test(rp.ctype) && rp.hello && rp.fills >= 3 && rp.tagged === rp.fills && rp.effectful > 0 && [...rp.venuesSeen].every((v) => v === 'hyperliquid' || v === 'lighter'),
+          relayDetail)
+      }
     }
   }
 

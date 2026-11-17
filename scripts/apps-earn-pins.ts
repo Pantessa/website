@@ -143,7 +143,12 @@ export function appsEarnPins(check: Check) {
   check('near: the sentence is one the chat reads as a cross-chain swap', !!parsed && !('problem' in parsed) && parsed.originChain.toLowerCase() === 'optimism')
   check('near: no button for a non-stable', moveAsk(placed.rows[0], groups) === null)
   check('near: no button under the $5 minimum', moveAsk(placed.rows.find((r) => r.chain === 'Base')!, groups) === null)
-  check('near: no button where the venue floor refuses (BNB $1,000)', moveAsk(placed.rows.find((r) => r.chain === 'BNB')!, groups) === null)
+  // RE-PINNED 2026-11-17 (harness-zero): BNB Chain's $1,000 floor LIFTED (probe:venue-floors; lib/venue-floor VENUE_FLOORS is empty),
+  // so the $50 BNB row now gets its move. The floor rule stays wired: moveAsk still refuses whatever crossChainFloorBlock refuses.
+  const bnbMove = moveAsk(placed.rows.find((r) => r.chain === 'BNB')!, groups)
+  const bnbParsed = bnbMove ? parseCrossChainSwap(bnbMove.ask) : null
+  check('near: a BNB Chain stable moves like any other since its venue floor lifted (50 USDC to Optimism, a sentence the chat reads)', bnbMove?.to === 'Optimism' && bnbMove.amount === 50 && /^Swap 50 USDC from BNB/i.test(bnbMove.ask) && !!bnbParsed && !('problem' in bnbParsed) && bnbParsed.destinationChain.toLowerCase() === 'optimism', bnbMove?.ask)
+  check('near: a venue floor still takes the button away (moveAsk asks crossChainFloorBlock before composing)', /if \(crossChainFloorBlock\(params\)\) return null/.test(fs.readFileSync(path.join(__dirname, '../lib/apps-earn.ts'), 'utf8')))
   check('near: no button with no other chain to go to', moveAsk(opUsdc, chainGroups([opUsdc])) === null)
   const fromMap = placedHoldings(new Map(), idleMap)
   check('near: with no holdings tile, the map ETH + USDC by chain stand in', fromMap.source === 'map' && fromMap.rows.length === 3)
