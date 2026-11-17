@@ -8,6 +8,7 @@
     "tv:library": "node scripts/tv-library.mjs",
     "pins:tv": "tsx scripts/tv-pins.ts",
     "pins:scenario": "tsx scripts/scenario-pins.ts",
+    "pins:autosell": "tsx scripts/autosell-pins.ts",
     "start": "next start",
     "lint": "next lint",
     "db:generate": "prisma generate",
@@ -84,6 +85,7 @@
     "pins:chart-tape": "tsx scripts/chart-tape-pins.ts",
     "pins:deck": "tsx scripts/deck-pins.ts",
     "pins:read": "tsx scripts/read-pins.ts",
+    "pins:news": "tsx scripts/news-front-pins.ts",
     "pins:suggestions": "tsx scripts/suggestions-pins.ts",
     "pins:macro": "tsx scripts/macro-pins.ts",
     "pins:community-coord": "tsx scripts/community-coord-pins.ts",
@@ -137,7 +139,8 @@
     "drive:native": "tsx scripts/drive-native.ts",
     "drive:prints": "tsx scripts/drive-print-alerts.ts",
     "drive:guest-chat": "node scripts/guest-chat-drive.mjs",
-    "pins:markets-mobile": "tsx scripts/markets-mobile-pins.ts"
+    "pins:markets-mobile": "tsx scripts/markets-mobile-pins.ts",
+    "drive:settings-sign-in": "node scripts/settings-sign-in-drive.mjs"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.111",

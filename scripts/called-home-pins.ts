@@ -31,7 +31,7 @@ export function calledHomePins(check: Check): void {
   const shelf = read('app/x/_lib/home-shelf.ts')
   check('called home: the read goes through the public list (readPlotted) and is capped in time', /readPlotted\(/.test(shelf) && /Promise\.race\(/.test(shelf) && SHELF_BUDGET_MS > 0 && SHELF_BUDGET_MS <= 4000)
   const page = read('app/page.tsx')
-  check('called home: the page reads the shelf beside its other reads and hands a server component down', /Promise\.all\(\[[^\]]*readCalledShelf\(\)\]\)/.test(page) && /called=\{called\.summaries\.length \? <CalledShelf data=\{called\} \/> : undefined\}/.test(page))
+  check('called home: the page reads the shelf beside its other reads and hands a server component down', /Promise\.all\(\[[^\]]*readCalledShelf\(\)[^\]]*\]\)/.test(page) /* RE-PINNED 2026-11-17 (suggestions): another read may follow the shelf's */ && /called=\{called\.summaries\.length \? <CalledShelf data=\{called\} \/> : undefined\}/.test(page))
   const surface = read('components/home/HomeSurface.tsx')
   check('called home: the client surface never imports the record reads', !/home-shelf|CalledShelf|called-it\/store/.test(surface.replace(/^\s*\/\/.*$/gm, '')))
   const index = read('components/markets/shell/MarketsIndex.tsx')

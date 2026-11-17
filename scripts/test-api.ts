@@ -21,6 +21,13 @@
  *   npm run dev        # in one terminal
  *   npm run test:api   # in another
  */
+
+// The Spot Guardian / DCA autopilot offers follow a BUILD-time stamp
+// (lib/autopilot-live). This process imports the composers directly, where no
+// build stamped it: the harness pins the composers as they are when automatic
+// selling is ON (the shape a CDP_SPEND_NETWORK=base build serves), and
+// scripts/autosell-pins.ts pins both states. Set it to '' to see the OFF shape.
+process.env.NEXT_PUBLIC_SPOT_AUTOSELL ??= '1'
 import { readFile } from 'node:fs/promises'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join as pathJoin } from 'node:path'
@@ -368,6 +375,7 @@ import { buildAutoBuy } from '../lib/dca-auto-exec'
 import { ADDRESS_THIS, NoV3PoolError, SWAP_ROUTER_02_ABI, guardUniswapV3Build, type V3GuardExpectations } from '../lib/uniswap-venue'
 import { creatorSplitPins } from './creator-split-pins'
 import { actionGateLivePins, actionGatePins } from './action-gate-pins'
+import { runAutosellPins } from './autosell-pins'
 import { hlHip3LivePins, hlHip3Pins, hlHip3ServedPins, hlHip3SignPins } from './hl-hip3-pins'
 import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
@@ -396,6 +404,7 @@ import { depthPins } from './depth-pins'
 import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
 import { readPins, readRedirectPins, readServedPins } from './read-pins'
+import { newsFrontPins, newsFrontServedPins } from './news-front-pins'
 import { macroLivePins, macroPins, macroServedPins } from './macro-pins'
 import { homeAppsPins } from './home-apps-pins'
 import { communityCoordPins, communityCoordPinsServed } from './community-coord-pins'
@@ -24310,6 +24319,35 @@ async function main() {
           /\(redirectTo\?: string\) => \{\s*forgetSignInReturn\(\)\s*if \(!redirectTo\) return/.test(sessS) &&
           !/homeFor|\?next=/.test(spineSrc + dashLayoutS),
       )
+      // SETTINGS WITH A WALLET CONNECTED, NOT SIGNED IN (2026-11-17, Nate: "when I
+      // click settings … it just goes home and not to main dashboard … give the
+      // user a path to sign then to dashboard"). The dashboard's gate is
+      // lib/app-entry dashboardGate: a connected wallet with no session for it
+      // gets the in-place sign-in card; only nobody-here goes home.
+      {
+        const g = (o: Partial<Parameters<typeof ae.dashboardGate>[0]>) =>
+          ae.dashboardGate({ mounted: true, sessionStatus: 'guest', sessionAddress: null, needsSignIn: false, signedOut: false, ...o })
+        check(
+          'dashboard gate: a connected wallet without a session signs in place (never home); a session opens it; only a settled nobody-here goes home; loading and an unmounted render wait',
+          g({ needsSignIn: true }) === 'sign' &&
+            // the wallet switched accounts: useSession() hands the session's address as null, needsSignIn true
+            g({ sessionStatus: 'authed', needsSignIn: true }) === 'sign' &&
+            g({ sessionStatus: 'authed', sessionAddress: '0xabc' }) === 'open' &&
+            g({ signedOut: true }) === 'home' &&
+            // a remembered wallet still reconnecting is not nobody-here yet
+            g({ signedOut: false }) === 'wait' &&
+            g({ sessionStatus: 'loading', needsSignIn: true }) === 'wait' &&
+            g({ mounted: false, signedOut: true }) === 'wait',
+        )
+        const signCardS = await src('components/DashboardSignIn.tsx')
+        check(
+          'dashboard gate wired: the layout decides with dashboardGate, renders DashboardSignIn inside the spine frame for "sign", and the card signs from its button only, aimed at the page it is on (read on press)',
+          /dashboardGate\(\{ mounted, sessionStatus: status, sessionAddress: address, needsSignIn, signedOut: nobodyHere \}\)/.test(dashLayoutS) &&
+            /if \(gate === 'sign'\) \{[\s\S]{0,200}<AppSpine surface="dashboard" \/>[\s\S]{0,200}<DashboardSignIn \/>/.test(dashLayoutS) &&
+            /onClick=\{\(\) => void signIn\(currentAppHref\(\)\)\}/.test(signCardS) &&
+            !/useEffect/.test(signCardS),
+        )
+      }
       // Re-pinned 2026-09-14 (public markets): the spine still sends a settled
       // signed-out visitor home, except on a public app page (the markets
       // surface), where looking needs no wallet.
@@ -26995,10 +27033,11 @@ async function main() {
     )
     check(
       // RE-PINNED 2026-11-09 (the read): the session strip left the index — the read's eyebrow says the bell (a browser clock, so it is not in the server HTML) and that tokens and perps trade 24/7.
-      'mk2/markets: /markets no longer server-renders the session strip (the read\'s eyebrow carries the bell and the 24/7 line), and under 640px the map view keeps the map AND renders the ledger under it',
+      'mk2/markets: /markets no longer server-renders the session strip (the read\'s eyebrow carries the bell and the 24/7 line), and the map view keeps the map AND renders the ledgers under it at every width',
       !mkHtml.includes('class="mk-session"') && /class="read__eyebrow mono"/.test(mkHtml) && /tokens and perps here trade 24\/7/.test(mkHtml) &&
         (await readFile('components/home/TheRead.tsx', 'utf8')).includes('sessionStripFor(now)') &&
-        (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes("const showList = view === 'list' || phone"),
+        // RE-PINNED 2026-11-17 (boards-under-map): the ledgers render under the map at EVERY width now, not only under 640px.
+        (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes('{sections.map((s) => <Board key={s.id} section={s} onAsk={indexAct} />)}'),
     )
     {
       // 2026-11-17: in MAP view Equities · Crypto · Perps had no ledger to jump to (the
@@ -27008,7 +27047,7 @@ async function main() {
       const mapSrc = await readFile('components/markets/viz/MarketMap.tsx', 'utf8')
       check(
         'markets: in map view a board tab (Equities / Crypto / Perps) filters the heat map to its section and scrolls the map in; the map\'s own tabs keep the board tab in step',
-        boardSrc.includes('onClick={(e) => pickBoard(s.id, e)}') && boardSrc.includes('const boardsAreMapped = showMap && !showList') &&
+        boardSrc.includes('onClick={(e) => pickBoard(s.id, e)}') && boardSrc.includes('const boardsAreMapped = showMap && !phone') /* RE-PINNED 2026-11-17 (boards-under-map): the ledgers render in both views */ &&
           boardSrc.includes('setMapSection(mapSectionOf(id))') && /<MarketMap\s+section=\{mapSection\}/.test(boardSrc) &&
           boardSrc.includes("id === 'equities' ? 'stocks' : id") &&
           mapSrc.includes('onSectionChange?.(t.id)') && mapSrc.includes('useEffect(() => setFilter(section), [section])'),
@@ -35611,6 +35650,12 @@ async function main() {
   creatorSplitPins(check)
   actionGatePins(check)
   await actionGateLivePins(check)
+  // No automatic sell is offered unless it can be armed (2026-11-17): the Spot Guardian + DCA autopilot
+  // offers read lib/autopilot-live, OFF and ON (scripts/autosell-pins).
+  {
+    const r = runAutosellPins()
+    check(`autosell: ${r.pass} pins, the offers follow the switch`, r.fail === 0, r.failures.join(' ; '))
+  }
   // Orders on Hyperliquid's builder-deployed (HIP-3) dexes (2026-11-09): "Long $25 of SP500 on Hyperliquid"
   // builds a guarded order on `xyz:SP500`. Pure pins over the venue's own answers (asset ids, the market
   // lookup, the order / leverage / move guards, the collateral rule), the typed data round trip, the rules
@@ -35681,6 +35726,9 @@ async function main() {
   deckPins(check)
   // THE APPS ROW (2026-10-13): the fleet's marks on the splash in the guide card's old seat, each a door into the chat's apps drawer with that app on — the table, the hrefs, the public chat surface, the wiring.
   homeAppsPins(check)
+  // The News tab as a front page (2026-11-17): the deal, since, the plate, the feed filter.
+  newsFrontPins(check)
+  await newsFrontServedPins(check, BASE)
   // THE READ (2026-11-09): the home's lead — the market as one sentence, the macro line, the chart of the pick; the deck off `/`, the battle views off the nav, the old deck links forwarded.
   readPins(check)
   await readRedirectPins(check)

@@ -45,6 +45,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { builderDexOfPair, isChartOnlyPair, isHip3Pair, lookOnlyRefusal, type ChartPair } from '@/lib/charts'
+import { autoSellLive } from '@/lib/autopilot-live'
 import { HL_BUILDER_DEXES } from '@/lib/hl-dex'
 import { spotChainsFor, tokenHome } from '@/lib/token-home'
 import { fmtAskPrice, fmtAskUnits } from '@/lib/chart-actions'
@@ -355,8 +356,8 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
     }
   }
 
-  // ── Standing: the Spot Guardian ──
-  if (!isPerpChart) {
+  // ── Standing: the Spot Guardian (only while it can be armed — lib/autopilot-live) ──
+  if (!isPerpChart && autoSellLive()) {
     out.push({
       id: `protect:spot:${SPOT_GUARD_CHAIN_ID}`, kind: 'protect', venue: 'pantessa', chainId: SPOT_GUARD_CHAIN_ID, fee: 'none', needs: 'position',
       label: 'Spot stop on Base', ask: `Protect my ${sym} in my wallet with a ${stopPct}% stop`,

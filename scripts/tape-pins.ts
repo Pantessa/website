@@ -55,7 +55,7 @@ import {
   duneQueryKey,
 } from '../lib/dune'
 import { simulateLadder } from './ask-ladder'
-import { LIVE_TAIL_TFS, PRINT_KEEP_MS, applyPrint, barsFromPrints, bucketOf, chartLiveFeed, livePriceStats, printOf, seedThenPrints, tailIsLive, tailWords } from '../lib/chart-live'
+import { LIVE_PRINT_FRESH_MS, LIVE_TAIL_TFS, PRINT_KEEP_MS, applyPrint, barsFromPrints, bucketOf, chartLiveFeed, livePriceStats, pickLivePrice, printOf, seedThenPrints, tailIsLive, tailWords } from '../lib/chart-live'
 import { fmtLivePrice, isLiveTabTitle, liveTabTitle } from '../lib/markets-quotes'
 import { printFromCoinbase, printFromHl, trimPrints } from '../lib/venue-trades'
 import { PRINT_BAR_SPACING, engineRightOffset, fitMarginBars, printOpeningView } from '../lib/chart-viewport'
@@ -427,14 +427,25 @@ export function tapePins(check: Check): void {
   check('header: the tab\'s title leads with the price in the header\'s own decimals — `$7.1329 · UNI · Pantessa`; no price → null (the SEO title stays)',
     liveTabTitle('UNI', 7.1329) === '$7.1329 · UNI · Pantessa' && liveTabTitle('ETH', 2365.123) === '$2,365.12 · ETH · Pantessa' && liveTabTitle('UNI', null) === null && liveTabTitle('UNI', 0) === null &&
       isLiveTabTitle('$7.1329 · UNI · Pantessa') && !isLiveTabTitle('UNI live chart — trade Uniswap from the chart | Pantessa Markets') && !isLiveTabTitle(null))
-  check('header: the strip and the tab share the formatter and the chart re-states the header from every print path (the live tail, the print frame\'s rebuild), throttled, with the poll keeping a fresh print over its own close',
+  // RE-PINNED 2026-11-10 (live-mid): the header follows the venue's book center first (the light top-of-book
+  // feed, or the depth view's own MID), a fresh print only when no book speaks, the poll's close otherwise.
+  check('header: the strip and the tab share the formatter and the chart re-states the header from the book\'s center and every print path (the live tail, the print frame\'s rebuild), throttled, stamped with the symbol, with the poll keeping a live price over its own close',
     (() => {
       const sp = readFileSync('components/markets/shell/SymbolPage.tsx', 'utf8')
       const mc = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
       return sp.includes('${fmtLivePrice(stats.last)}') && sp.includes('liveTabTitle(sym, liveLast)') && sp.includes('document.title = title') && !sp.includes('fmtPrice(stats.last)') &&
         sp.includes('mo.observe(document.head') && sp.includes("statsFor?.sym === sym ? statsFor.stats : null") &&
-        (mc.match(/emitLivePrice\(/g) ?? []).length === 2 && (mc.match(/emitPollStats\(\{/g) ?? []).length === 2 && !mc.includes('onStatsRef.current?.({') && mc.includes('LIVE_EMIT_MS = 250') && mc.includes('livePriceStats(s, lp.price)')
+        (mc.match(/emitLivePrice\(/g) ?? []).length === 2 && (mc.match(/emitPollStats\(\{/g) ?? []).length === 2 && !mc.includes('onStatsRef.current?.({') && mc.includes('LIVE_EMIT_MS = 250') &&
+        mc.includes('livePriceStats(s, p)') && mc.includes('pickLivePrice({ mid, print: l.print }, Date.now())') && mc.includes('depthOnRef.current && l.depth != null ? l.depth : l.book') &&
+        mc.includes('if (!prev || prev.sym !== symRef.current) return') && mc.includes('if (sym !== symRef.current) return') && !/const LIVE_PRINT_FRESH_MS/.test(mc)
     })())
+  check('header: the book\'s center wins while its feed is open, on every frame and view, and is never aged out (a quiet book is still the book); a print speaks only with no book, and only while fresh; otherwise null (the poll\'s close stands)',
+    pickLivePrice({ mid: 7.0914, print: { price: 7.0806, at: 1_000_000 } }, 1_000_100) === 7.0914 &&
+      pickLivePrice({ mid: 7.0914, print: null }, 9e12) === 7.0914 &&
+      pickLivePrice({ mid: null, print: { price: 7.0806, at: 1_000_000 } }, 1_000_000 + LIVE_PRINT_FRESH_MS - 1) === 7.0806 &&
+      pickLivePrice({ mid: null, print: { price: 7.0806, at: 1_000_000 } }, 1_000_000 + LIVE_PRINT_FRESH_MS) === null &&
+      pickLivePrice({ mid: 0, print: null }, 1) === null && pickLivePrice({ mid: NaN, print: { price: 7.1, at: 10 } }, 11) === 7.1 && pickLivePrice({ mid: null, print: { price: -1, at: 10 } }, 11) === null &&
+      LIVE_PRINT_FRESH_MS === 60_000)
 
 }
 
