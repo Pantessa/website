@@ -26994,10 +26994,11 @@ async function main() {
     )
     check(
       // RE-PINNED 2026-11-09 (the read): the session strip left the index — the read's eyebrow says the bell (a browser clock, so it is not in the server HTML) and that tokens and perps trade 24/7.
-      'mk2/markets: /markets no longer server-renders the session strip (the read\'s eyebrow carries the bell and the 24/7 line), and under 640px the map view keeps the map AND renders the ledger under it',
+      'mk2/markets: /markets no longer server-renders the session strip (the read\'s eyebrow carries the bell and the 24/7 line), and the map view keeps the map AND renders the ledgers under it at every width',
       !mkHtml.includes('class="mk-session"') && /class="read__eyebrow mono"/.test(mkHtml) && /tokens and perps here trade 24\/7/.test(mkHtml) &&
         (await readFile('components/home/TheRead.tsx', 'utf8')).includes('sessionStripFor(now)') &&
-        (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes("const showList = view === 'list' || phone"),
+        // RE-PINNED 2026-11-17 (boards-under-map): the ledgers render under the map at EVERY width now, not only under 640px.
+        (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes('{sections.map((s) => <Board key={s.id} section={s} onAsk={indexAct} />)}'),
     )
     {
       // 2026-11-17: in MAP view Equities · Crypto · Perps had no ledger to jump to (the
@@ -27007,7 +27008,7 @@ async function main() {
       const mapSrc = await readFile('components/markets/viz/MarketMap.tsx', 'utf8')
       check(
         'markets: in map view a board tab (Equities / Crypto / Perps) filters the heat map to its section and scrolls the map in; the map\'s own tabs keep the board tab in step',
-        boardSrc.includes('onClick={(e) => pickBoard(s.id, e)}') && boardSrc.includes('const boardsAreMapped = showMap && !showList') &&
+        boardSrc.includes('onClick={(e) => pickBoard(s.id, e)}') && boardSrc.includes('const boardsAreMapped = showMap && !phone') /* RE-PINNED 2026-11-17 (boards-under-map): the ledgers render in both views */ &&
           boardSrc.includes('setMapSection(mapSectionOf(id))') && /<MarketMap\s+section=\{mapSection\}/.test(boardSrc) &&
           boardSrc.includes("id === 'equities' ? 'stocks' : id") &&
           mapSrc.includes('onSectionChange?.(t.id)') && mapSrc.includes('useEffect(() => setFilter(section), [section])'),
