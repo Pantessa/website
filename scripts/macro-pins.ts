@@ -61,7 +61,7 @@ import { starterDoor } from '../lib/starter-door'
 import { lastSessionStats, sessionState, symbolName, symbolStanding, venueLabel } from '../lib/markets'
 import { symbolName as seoName, symbolPageSeo } from '../lib/markets-seo'
 import { isLiveTabTitle, liveTabTitle, liveTabTitleOf } from '../lib/markets-quotes'
-import { GUIDE_HINTS, GUIDE_LOOK_ONLY_ALERT_BODY, GUIDE_LOOK_ONLY_ALERT_TITLE, GUIDE_LOOK_ONLY_BODY, guideBody, guideTitle } from '../lib/guide'
+import { GUIDE_HINTS, GUIDE_LOOK_ONLY_ALERT_BODY, GUIDE_LOOK_ONLY_ALERT_TITLE, guideBody, guideTitle } from '../lib/guide'
 import { newsLadderFor } from '../lib/news'
 import { READ_INDEX_VENUE_LINE, READ_INSTRUMENTS } from '../lib/read'
 import {
@@ -288,13 +288,12 @@ export function macroPins(check: Check): void {
       ['SPY', 'QQQ', 'SHY'].every((s) => chartPairFor(s)?.source === 'robinhood' && quickActs(s, chartPairFor(s)!)[0]?.ask === `Buy $25 of ${s}`) &&
       lookOnlyNoActLine('VIX') === 'Nothing listed here trades the VIX. It is here to read.' && lookOnlyNoActLine('NDX') === 'Nothing here trades the Nasdaq 100 directly.',
   )
-  const chartHint = GUIDE_HINTS.find((h) => h.id === 'chart')!
   const alertHint = GUIDE_HINTS.find((h) => h.id === 'alerts')!
   check(
-    'macro (guide): on an index page the chart hint teaches the question and says nothing here places an order, and the alerts hint says an alert TELLS you — neither promises a chip that "does the trade"; an ordinary page keeps both as they were',
-    guideBody(chartHint, { symbol: 'VIX', lookOnly: true }) === GUIDE_LOOK_ONLY_BODY && !/\$|Buy|Long|ticket/.test(GUIDE_LOOK_ONLY_BODY) &&
+    'macro (guide): on an index page (RE-PINNED 2026-11-17: the chart hint left) the alerts hint says an alert TELLS you — it promises no chip that "does the trade"; an ordinary page keeps it as it was, and no hint is the chart hint any more',
+    !GUIDE_HINTS.some((h) => (h.id as string) === 'chart') &&
       guideTitle(alertHint, { symbol: 'VIX', lookOnly: true }) === GUIDE_LOOK_ONLY_ALERT_TITLE && guideBody(alertHint, { symbol: 'VIX', lookOnly: true }) === GUIDE_LOOK_ONLY_ALERT_BODY.replace('{SYM}', 'VIX') && !/does the trade|hands you/.test(guideBody(alertHint, { symbol: 'VIX', lookOnly: true })) &&
-      guideTitle(alertHint, { symbol: 'AAPL' }) === alertHint.title && guideBody(alertHint, { symbol: 'AAPL' }) === alertHint.body && guideBody(chartHint, { symbol: 'AAPL', ask: 'Buy $25 of AAPL' }).includes('“Buy $25 of AAPL”') && guideTitle(chartHint, { lookOnly: true }) === chartHint.title,
+      guideTitle(alertHint, { symbol: 'AAPL' }) === alertHint.title && guideBody(alertHint, { symbol: 'AAPL' }) === alertHint.body,
   )
   const news = newsLadderFor(ix('US10Y'))
   check(

@@ -68,22 +68,23 @@ export function compactOnPhone(surface: GuideSurface): boolean {
   return GUIDE_COMPACT_SURFACES.includes(surface)
 }
 
-export type GuideHintId = 'chart' | 'triggers' | 'links' | 'jobs' | 'wallet' | 'alerts' | 'proof'
+export type GuideHintId = 'triggers' | 'links' | 'jobs' | 'wallet' | 'alerts' | 'proof'
 
 /** What the seat knows that the record does not: where it is, which symbol
- *  (the chart hint names it), the example ask the page's own grammar
+ *  ({SYM} names it), the example ask the page's own grammar
  *  composes, and whether a wallet is connected right now. */
 export interface GuideCtx {
   surface?: GuideSurface
   symbol?: string | null
   /** The symbol page's own "buy" sentence for this pair (lib/trade-asks
-   *  composeAsk) — the chart hint quotes it, so the example is always a
+   *  composeAsk) — {ASK} quotes it (no hint does since the chart hint left,
+   *  2026-11-17), so the example is always a
    *  sentence the ladder builds. */
   ask?: string | null
   connected?: boolean
   /** The page's chart takes no order here (a Hyperliquid builder-dex market
-   *  the order layer does not build on — lib/charts isChartOnlyPair): the
-   *  chart hint teaches the question, and never quotes an order the page
+   *  the order layer does not build on — lib/charts isChartOnlyPair): no
+   *  hint reads it since the chart hint left (2026-11-17); a hint must never quote an order the page
    *  cannot build. A builder-dex market that DOES take orders (`xyz:SP500`)
    *  is an ordinary page: it quotes its own long sentence. */
   chartOnly?: boolean
@@ -158,16 +159,11 @@ export const CREATOR_SPLIT_WORD: string =
 // seat; the other hints keep 'home' in their surfaces as the rulebook's
 // vocabulary (lib/guide knows the splash as a surface — the claim block reads
 // `visited.home`), and teach on /t, /live, /chat and /wallet.
+// The symbol page's "Ask the chart." lesson left on 2026-11-17 (Nate: "remove the Ask
+// the chart flag"): a fresh browser's /t opens with no card; the later lessons (links,
+// jobs, alerts) still reach it once their `requires` hold. A stored record that names
+// it reads its stamps away (unknown ids are dropped, readGuideState).
 export const GUIDE_HINTS: readonly GuideHint[] = [
-  {
-    id: 'chart',
-    surfaces: ['symbol'],
-    title: 'Ask the chart.',
-    body: 'Type “{ASK}” or “why is it moving?” and it runs in the app, with the apps it needs already on.',
-    // The compact row's label: "Why is AAPL moving?" is ~152px and would
-    // leave ~40px for the title at 320 (MOBILE's measurement).
-    cta: { label: 'Why is {SYM} moving?', short: 'Ask it →', kind: 'door', value: 'Why is {SYM} moving?' },
-  },
   {
     id: 'triggers',
     surfaces: ['live'],
@@ -250,13 +246,6 @@ export function renderGuideText(text: string, ctx: GuideCtx = {}): string {
   return text.replace(/\{SYM\}/g, sym).replace(/\{ASK\}/g, ask)
 }
 
-/** The chart hint's body on a chart that takes no order here. */
-export const GUIDE_CHART_ONLY_BODY = 'Type “why is it moving?” or “draw support and resistance” — the answer lands on the chart. Orders on this market are not built here yet.'
-
-/** The chart hint's body on a look-only index: the question, and the plain
- *  fact that nothing here places an order on it. */
-export const GUIDE_LOOK_ONLY_BODY = 'Type “why is it moving?” or “draw support and resistance” — the answer lands on the chart. An index is here to read: nothing listed here places an order on it.'
-
 /** The alerts hint on a look-only index: an alert there TELLS you. It hands
  *  over no chip, because there is no trade to hand over. */
 export const GUIDE_LOOK_ONLY_ALERT_TITLE = 'An alert here tells you.'
@@ -267,12 +256,11 @@ export function guideTitle(hint: GuideHint, ctx: GuideCtx = {}): string {
   return renderGuideText(hint.id === 'alerts' && ctx.lookOnly ? GUIDE_LOOK_ONLY_ALERT_TITLE : hint.title, ctx)
 }
 
-/** A hint's body for this ctx, text filled: the chart hint never quotes an
- *  order on a chart-only page, and no hint promises one on a look-only index. */
+/** A hint's body for this ctx, text filled: no hint promises an order on a
+ *  look-only index. */
 export function guideBody(hint: GuideHint, ctx: GuideCtx = {}): string {
-  if (ctx.lookOnly && hint.id === 'chart') return renderGuideText(GUIDE_LOOK_ONLY_BODY, ctx)
   if (ctx.lookOnly && hint.id === 'alerts') return renderGuideText(GUIDE_LOOK_ONLY_ALERT_BODY, ctx)
-  return renderGuideText(hint.id === 'chart' && ctx.chartOnly ? GUIDE_CHART_ONLY_BODY : hint.body, ctx)
+  return renderGuideText(hint.body, ctx)
 }
 
 /** The hint's action for this ctx, text filled. */

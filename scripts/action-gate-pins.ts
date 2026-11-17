@@ -12,7 +12,6 @@
 import { builderDexOfPair, chartPairFor, isChartOnlyPair, isHip3Pair, primeHlPerps, type ChartPair } from '../lib/charts'
 import { resetHlUniverse } from '../lib/hl-universe'
 import { askChartSuggestions } from '../lib/markets-ai-suggestions'
-import { GUIDE_CHART_ONLY_BODY, GUIDE_HINTS, guideBody } from '../lib/guide'
 import { aaveRows } from '../lib/earn'
 import { marketSections } from '../lib/markets'
 import { canSellAsk, spotStopTarget } from '../lib/sell-gate'
@@ -236,14 +235,10 @@ export function actionGatePins(check: Check): void {
       venuesFor('HYPE', hype).filter((r) => r.kind === 'perp').length === 2 && venuesFor('HYPE', hype).some((r) => r.id === 'protect:hyperliquid') && compoundLegKindsFor('HYPE', hype).join() === 'deposit,long,short,protect' &&
       askChartSuggestions('HYPE', hype).some((x) => x.kind === 'act' && x.ask === 'Long $25 of HYPE on Hyperliquid'),
   )
-  const chartHint = GUIDE_HINTS.find((h) => h.id === 'chart')!
   check(
-    'action gate (builder market): the page SAYS where it trades — a proven builder dex is named with what builds and the one thing that does not (a Guardian stop); a chart-only market keeps the "does not place orders there yet" words, the empty ticket uses the same ones, and the guide\'s chart hint quotes no order on a chart-only page (a page that takes orders still quotes its own sentence)',
+    'action gate (builder market): the page SAYS where it trades — a proven builder dex is named with what builds and the one thing that does not (a Guardian stop); a chart-only market keeps the "does not place orders there yet" words, the empty ticket uses the same ones (RE-PINNED 2026-11-17: the guide\'s chart hint left, so its chart-only words left with it)',
     missingVenueNotes('SP500', sp500).length === 1 && missingVenueNotes('SP500', sp500)[0] === builderDexNote('SP500', 'xyz') && /XYZ builder dex: long and short build here/.test(builderDexNote('sp500', 'xyz')) && /no Guardian stop yet/.test(builderDexNote('SP500', 'xyz')) &&
-      missingVenueNotes('US10Y', tenYear).length === 1 && missingVenueNotes('US10Y', tenYear)[0] === hip3Refusal('us10y') && /does not place orders there yet/.test(hip3Refusal('US10Y')) &&
-      guideBody(chartHint, { symbol: 'US10Y', chartOnly: true }) === GUIDE_CHART_ONLY_BODY && !/Long|Buy|\$/.test(GUIDE_CHART_ONLY_BODY) &&
-      guideBody(chartHint, { symbol: 'SP500', ask: 'Long $25 of SP500 on Hyperliquid' }).includes('“Long $25 of SP500 on Hyperliquid”') &&
-      guideBody(chartHint, { symbol: 'AAPL', ask: 'Buy $25 of AAPL' }).includes('“Buy $25 of AAPL”'),
+      missingVenueNotes('US10Y', tenYear).length === 1 && missingVenueNotes('US10Y', tenYear)[0] === hip3Refusal('us10y') && /does not place orders there yet/.test(hip3Refusal('US10Y')),
   )
   // The gate itself reads the live perp table (the server, a symbol page): a fixture table in, then out.
   resetHlUniverse()
