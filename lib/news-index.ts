@@ -77,7 +77,8 @@ export interface FiledItem extends NewsItem {
 export async function storeItems(items: FiledItem[]): Promise<number> {
   // A story older than a page shows is never read back: it is not stored (a feed's deep archive would be written and pruned on every pass).
   const floor = Math.floor(Date.now() / 1000) - INDEX_WINDOW_DAYS * 86_400
-  const rows = items.filter((it) => it.symbols.length > 0 && it.publishedAt >= floor)
+  // Sorted by id (review F13): two feeds upserting the same stories in different orders would deadlock.
+  const rows = items.filter((it) => it.symbols.length > 0 && it.publishedAt >= floor).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   if (!rows.length) return 0
   // Nullable text travels as '' + NULLIF: Prisma types an array by its first
   // element and refuses one that opens with null (CLAUDE.md gotcha, 11-11).

@@ -5,7 +5,7 @@ import { pullDueXSymbols } from '@/lib/news-x'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 30
+export const maxDuration = 60
 
 // The news indexer — Vercel cron (vercel.json), every 10 minutes. Re-reads
 // every site feed that is due (lib/news-sources SITE_FEEDS) and files each
@@ -28,8 +28,9 @@ async function handle(req: NextRequest) {
   if (!newsIndexOn()) return NextResponse.json({ skipped: 'no database' })
   try {
     const feeds = await refreshSiteFeeds()
-    const x = await pullDueXSymbols().catch((e) => ({ error: (e as Error).message.split('\n')[0] }))
+    // Pruned before the X step (review F5): a slow X never costs the index its housekeeping.
     const pruned = await pruneIndex()
+    const x = await pullDueXSymbols().catch((e) => ({ error: (e as Error).message.split('\n')[0] }))
     return NextResponse.json({ feeds, x, pruned, index: await indexStats() })
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message.split('\n')[0] }, { status: 500 })

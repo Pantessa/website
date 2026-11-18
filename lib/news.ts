@@ -43,6 +43,11 @@ export const NEWS_LIMIT_DEFAULT = 20
 export const NEWS_LIMIT_MAX = 100
 const FETCH_TIMEOUT_MS = 6_000
 const FEED_MAX_BYTES = 1_500_000
+/** Rows read from one feed, and the bytes of one row (review F9, F11): a publisher's feed is 10 to 100 rows of a few KB. */
+export const FEED_MAX_ITEMS = 200
+const ITEM_MAX_BYTES = 40_000
+/** A link or picture URL longer than this is not one we store. */
+const URL_MAX = 2_000
 const UA = 'Mozilla/5.0 (compatible; Pantessa/1.0; +https://www.pantessa.com)'
 /** Nasdaq's edge closes the socket (HTTP 000) for any UA that isn't a
  *  browser's — probed 2026-09-11 with our honest UA and the compatible form
@@ -62,7 +67,7 @@ export function decodeEntities(s: string): string {
   return s
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => safeChar(parseInt(h, 16)))
     .replace(/&#(\d+);/g, (_, d) => safeChar(parseInt(d, 10)))
-    .replace(/&([a-z]+);/gi, (m, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? m)
+    .replace(/&([a-z]+);/gi, (m, name: string) => (Object.hasOwn(NAMED_ENTITIES, name.toLowerCase()) ? NAMED_ENTITIES[name.toLowerCase()] : m))
 }
 
 function safeChar(code: number): string {
@@ -115,10 +120,22 @@ export interface RssItem {
  *  never a throw. */
 export function parseRss(xml: string): RssItem[] {
   const items: RssItem[] = []
-  const re = /<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi
-  let m: RegExpExecArray | null
-  while ((m = re.exec(xml)) !== null) {
-    const b = m[1]
+  // Walk by position (review F9): a lazy `<item>…</item>` regex is quadratic
+  // on a body of unclosed openers, and a feed is 1.5 MB of someone else's text.
+  let at = 0
+  while (items.length < FEED_MAX_ITEMS) {
+    const open = xml.indexOf('<item', at)
+    if (open < 0) break
+    // `<itemref` and friends are not an item.
+    if (!/[\s>]/.test(xml[open + 5] ?? '')) {
+      at = open + 5
+      continue
+    }
+    const bodyStart = xml.indexOf('>', open)
+    const close = bodyStart < 0 ? -1 : xml.indexOf('</item>', bodyStart)
+    if (close < 0) break
+    at = close + 7
+    const b = xml.slice(bodyStart + 1, Math.min(close, bodyStart + 1 + ITEM_MAX_BYTES))
     const title = stripHtml(inner(tag(b, 'title')))
     const link = inner(tag(b, 'link')) || (attr(b, 'guid', 'isPermaLink') === 'true' ? inner(tag(b, 'guid')) : '')
     const pub = inner(tag(b, 'pubDate')) || inner(tag(b, 'dc:date')) || inner(tag(b, 'atom:updated'))
@@ -153,24 +170,39 @@ export function newsItemId(url: string): string {
   return createHash('sha1').update(url).digest('hex').slice(0, 12)
 }
 
+/** Text as Postgres and JSON both take it (review F4): no NUL, and a cut that
+ *  split a surrogate pair is repaired, so one odd headline can never refuse a
+ *  whole feed's batch. */
+export function storable(s: string, max: number): string {
+  return s.replace(/\u0000/g, '').slice(0, max).toWellFormed().trim()
+}
+
+/** A story dated further ahead than this is a feed's mistake (review F2): it
+ *  would sort first and never age out. */
+export const FUTURE_SLACK_SEC = 600
+
 /** RssItem → NewsItem, or null when it can't be rendered honestly (no title,
- *  no https public link, no date). */
-export function normalizeItem(r: RssItem): NewsItem | null {
-  if (!r.title || !r.link || r.publishedAt === null) return null
+ *  no https public link, no date, a date in the future). */
+export function normalizeItem(r: RssItem, nowSec = Math.floor(Date.now() / 1000)): NewsItem | null {
+  if (!r.title || !r.link || r.publishedAt === null || r.link.length > URL_MAX) return null
+  if (r.publishedAt > nowSec + FUTURE_SLACK_SEC) return null
   const gate = validateBrandUrl(r.link)
   if (!gate.ok) return null
   const url = gate.url.toString()
-  const source = r.source || safeHost(r.sourceUrl) || gate.url.hostname.replace(/^www\./, '')
-  const title = trimPublisherSuffix(r.title, r.source).slice(0, 240)
+  const source = storable(r.source || safeHost(r.sourceUrl) || gate.url.hostname.replace(/^www\./, ''), 80)
+  const title = storable(trimPublisherSuffix(r.title, r.source), 240)
+  if (!title || !source) return null
   // Google News descriptions are the headline again wrapped in an anchor —
   // a summary that repeats the title is noise, drop it.
-  const desc = r.description && r.description !== r.title && !r.description.startsWith(title) ? r.description.slice(0, 300) : undefined
-  const image = r.imageUrl && validateBrandUrl(r.imageUrl).ok ? r.imageUrl : undefined
+  const desc = r.description && r.description !== r.title && !r.description.startsWith(title) ? storable(r.description, 300) : undefined
+  // The picture is stored as the fence normalised it, never as the feed wrote it.
+  const img = r.imageUrl && r.imageUrl.length <= URL_MAX ? validateBrandUrl(r.imageUrl) : null
+  const image = img?.ok ? img.url.toString() : undefined
   return {
     id: newsItemId(url),
     title,
     url,
-    source: source.slice(0, 80),
+    source,
     publishedAt: r.publishedAt,
     ...(desc ? { summary: desc } : {}),
     ...(image ? { imageUrl: image } : {}),
@@ -286,7 +318,9 @@ export function newsFeedsFor(pair: ChartPair): NewsHop[] {
   const named = headlineTestFor(sym, 'coin')
   const about = named ? (r: RssItem) => named(r.title) : undefined
   hops.push({ key: key('google-news'), feed: 'google-news', url: googleNewsUrl(`"${name}" ${sym !== name ? sym : ''} crypto when:14d`.replace(/\s+/g, ' ')), keep: about })
-  hops.push({ key: key('google-majors'), feed: 'google-majors', url: googleNewsUrl(`"${name}" ${MAJORS_CLAUSE} when:14d`), keep: about })
+  // The majors search carries no "crypto" in its query, so it is asked only where a headline test can hold it to the
+  // coin (review F3: for WELL, AI, ME or MOVE it would file every Forbes story that uses the word).
+  if (about) hops.push({ key: key('google-majors'), feed: 'google-majors', url: googleNewsUrl(`"${name}" ${MAJORS_CLAUSE} when:14d`), keep: about })
   // Yahoo files a coin as <SYM>-USD and pads the feed with miners and funds.
   // Tagged coins only (an unknown ticker there is some other company's).
   if (tagSlug) hops.push({ key: key('yahoo'), feed: 'yahoo', url: yahooUrl(`${sym}-USD`), sourceLabel: 'Yahoo Finance', keep: about })
@@ -370,20 +404,37 @@ export const FIRST_READ_WAIT_MS = 7_000
 
 const siteKey = (s: SiteFeed) => `site:${s.key}`
 
-async function refreshHop(pair: ChartPair, hop: NewsHop, staleSec: number): Promise<number> {
-  if (!(await claimFeed(hop.key, staleSec))) return 0
-  const items = await runHop(hop)
-  const stored = items ? await storeItems(items.map((it) => ({ ...it, feed: hop.feed, symbols: [pair.symbol] }))) : 0
-  await settleFeed(hop.key, items !== null, items?.length ?? 0)
+/** Read one symbol feed into the index. Null = somebody else is reading it right now (the page is not complete yet). */
+async function refreshHop(pair: ChartPair, hop: NewsHop, staleSec: number): Promise<number | null> {
+  if (!(await claimFeed(hop.key, staleSec))) return null
+  let items: NewsItem[] | null = null
+  let stored = 0
+  let ok = false
+  try {
+    items = await runHop(hop)
+    stored = items ? await storeItems(items.map((it) => ({ ...it, feed: hop.feed, symbols: [pair.symbol] }))) : 0
+    ok = items !== null
+  } finally {
+    // Settled whatever happened (review F4): a batch the store refused is a failed read that waits for the
+    // next stale window, never a claim that frees in a minute and is re-fetched by every reader.
+    await settleFeed(hop.key, ok, items?.length ?? 0).catch(() => undefined)
+  }
   return stored
 }
 
 async function refreshSite(site: SiteFeed, staleSec: number): Promise<{ key: string; ok: boolean; stored: number } | null> {
   if (!(await claimFeed(siteKey(site), staleSec))) return null
-  const items = await runSite(site)
-  const stored = items ? await storeItems(items) : 0
-  await settleFeed(siteKey(site), items !== null, items?.length ?? 0)
-  return { key: site.key, ok: items !== null, stored }
+  let items: FiledItem[] | null = null
+  let stored = 0
+  let ok = false
+  try {
+    items = await runSite(site)
+    stored = items ? await storeItems(items) : 0
+    ok = items !== null
+  } finally {
+    await settleFeed(siteKey(site), ok, items?.length ?? 0).catch(() => undefined)
+  }
+  return { key: site.key, ok, stored }
 }
 
 /** Re-read every site feed that is due. The cron's job (app/api/cron/news);
@@ -422,9 +473,11 @@ async function loadIndexed(pair: ChartPair, defer?: (work: Promise<unknown>) => 
     const at = states.get(key)?.fetchedAt ?? null
     return at === null || now - at > sec * 1000
   }
-  const work: Promise<unknown>[] = []
-  for (const h of hops) if (older(h.key, SYMBOL_STALE_SEC)) work.push(refreshHop(pair, h, SYMBOL_STALE_SEC))
-  for (const s of SITE_FEEDS) if (older(siteKey(s), SITE_STALE_ON_READ_SEC)) work.push(refreshSite(s, SITE_STALE_ON_READ_SEC))
+  const own: Promise<number | null>[] = []
+  const sites: Promise<unknown>[] = []
+  for (const h of hops) if (older(h.key, SYMBOL_STALE_SEC)) own.push(refreshHop(pair, h, SYMBOL_STALE_SEC))
+  for (const s of SITE_FEEDS) if (older(siteKey(s), SITE_STALE_ON_READ_SEC)) sites.push(refreshSite(s, SITE_STALE_ON_READ_SEC))
+  const work = [...own, ...sites]
   let partial = false
   if (work.length) {
     const firstRead = hops.every((h) => !states.get(h.key)?.fetchedAt)
@@ -433,6 +486,11 @@ async function loadIndexed(pair: ChartPair, defer?: (work: Promise<unknown>) => 
     if (!finished) {
       partial = true
       defer?.(all)
+    } else {
+      // A feed another instance is reading right now, or one that threw, is not on the page yet (review F6):
+      // the page is served as partial, so it is cached for seconds and never reads as "no headlines".
+      const ownDone = await Promise.allSettled(own)
+      if (ownDone.some((d) => d.status === 'rejected' || d.value === null)) partial = true
     }
   }
   // The machine-page rule is applied on the way OUT too: a row stored before a rule was written does not outlive it.
@@ -512,7 +570,7 @@ export async function getNews(symbolRaw: string, limit = NEWS_LIMIT_DEFAULT, opt
   const n = Math.max(1, Math.min(NEWS_LIMIT_MAX, Math.floor(limit) || NEWS_LIMIT_DEFAULT))
   const items = value.items.slice(0, n)
   const feeds = feedCounts(items)
-  return { symbol: key, items, feed: feeds[0] ?? 'none', feeds, sources: sourceCounts(items), via: value.via, asOf: Math.floor(value.asOf / 1000) }
+  return { symbol: key, items, feed: feeds[0] ?? 'none', feeds, sources: sourceCounts(items), via: value.via, ...(value.partial ? { partial: true } : {}), asOf: Math.floor(value.asOf / 1000) }
 }
 
 /** Test seam: drop the cache (the harness never needs it; local drills do). */

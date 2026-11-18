@@ -69,8 +69,10 @@ const COIN_PHRASES: Record<string, string[]> = {
   CRV: ['Curve Finance', 'Curve DAO'],
   OP: ['OP Mainnet', 'OP Stack', 'Optimism Foundation', 'Optimism Collective', 'Optimism Superchain', 'on Optimism', "Optimism's"],
   SYRUP: ['Maple Finance'],
-  XRP: ['XRP', 'Ripple'],
+  XRP: ['XRP', 'Ripple Labs', "Ripple's"],
   SHIB: ['Shiba Inu'],
+  // "An avalanche of liquidations" opens a sentence in capitals too: the chain is named with its ticker or as a network.
+  AVAX: ['Avalanche network', 'Avalanche Foundation', 'Avalanche blockchain', "Avalanche's", 'on Avalanche'],
 }
 
 /** Tickers that are also something else in capitals (an APT is a hacking
@@ -78,12 +80,14 @@ const COIN_PHRASES: Record<string, string[]> = {
 const BARE_TICKER_BLOCK = new Set(['APT', 'DOGE'])
 
 /** Company names that are also plain words or generic phrases: the ticker patterns still file them. */
-const STOCK_NAME_BLOCK = new Set(['Strategy', 'Snap', 'Zoom', 'Nu', 'Pons', 'Carnival', 'Celsius', 'Coherent', 'Quantum Computing', 'Cash Cat', 'RVI', 'AXT', 'KLA', 'Futu'])
+const STOCK_NAME_BLOCK = new Set(['Oracle', 'Strategy', 'Snap', 'Zoom', 'Nu', 'Pons', 'Carnival', 'Celsius', 'Coherent', 'Quantum Computing', 'Cash Cat', 'RVI', 'AXT', 'KLA', 'Futu'])
 
 /** What headlines call a company when it is not the registered name. */
 const STOCK_ALIASES: Record<string, string[]> = {
   META: ['Meta'], GOOGL: ['Google'], F: ['Ford'], MSTR: ['MicroStrategy'], TSM: ['TSMC'], ARM: ['Arm Holdings'], PLTR: ['Palantir'],
   MU: ['Micron'], CSCO: ['Cisco'], IBM: ['IBM'], SMCI: ['Super Micro', 'Supermicro'], XOM: ['Exxon'], LLY: ['Lilly'], NVDA: ['Nvidia'],
+  // "Oracle of Omaha" is Buffett: the company is named with its tail or its ticker.
+  ORCL: ['Oracle Corp', "Oracle's", 'Oracle Cloud'],
 }
 
 /** Coins a markets desk (CNBC, MarketWatch, Forbes) names by their plain name. */
@@ -122,7 +126,9 @@ let matchers: { coins: Matcher[]; household: Matcher[]; stocks: Matcher[] } | nu
 function allMatchers() {
   if (!matchers) {
     const coins = Object.keys(COIN_NAMES).map(coinMatcher)
-    matchers = { coins, household: coins.filter((m) => HOUSEHOLD_COINS.includes(m.symbol)), stocks: Object.keys(ROBINHOOD_TICKER_NAMES).map(stockMatcher) }
+    // A markets desk names a coin by its name or a cashtag; its bare ticker there is something else ("ETH Zurich").
+    const household = HOUSEHOLD_COINS.map((symbol) => ({ symbol, re: new RegExp(`${whole(COIN_NAMES[symbol])}|\\$${esc(symbol)}(?![A-Za-z0-9])`) }))
+    matchers = { coins, household, stocks: Object.keys(ROBINHOOD_TICKER_NAMES).map(stockMatcher) }
   }
   return matchers
 }
@@ -214,34 +220,43 @@ export function titleKey(title: string): string {
 export const TITLE_KEY_MIN = 16
 
 function rowRank(it: NewsItem): number {
-  return (it.feed && AGGREGATORS.has(it.feed) ? 0 : 2) + (it.imageUrl ? 1 : 0)
+  // The publisher's own row, then the majors search (a named site), then any other aggregator; a picture breaks a tie.
+  const own = !it.feed || !AGGREGATORS.has(it.feed) ? 4 : it.feed === 'google-majors' ? 2 : 0
+  return own + (it.imageUrl ? 1 : 0)
 }
+
+/** Two rows are one story only when they ran this close together: a headline
+ *  that recurs ("ETF flows turn negative again") is a new story a week later. */
+export const MERGE_WINDOW_SEC = 72 * 3600
 
 /** Many feeds' rows → one page: a story two feeds both carry is kept ONCE
  *  (the publisher's own row over an aggregator's, a pictured row over a bare
  *  one, then the earlier print), newest first. Nothing is ranked by anything
  *  but its time. Pure. */
 export function mergeNews(items: readonly NewsItem[]): NewsItem[] {
-  const byKey = new Map<string, NewsItem>()
+  const byId = new Map<string, NewsItem>()
   for (const it of items) {
+    const had = byId.get(it.id)
+    if (!had || rowRank(it) > rowRank(had)) byId.set(it.id, it)
+  }
+  // Newest first, so a group's rows are compared against the newest print of that headline.
+  const rows = [...byId.values()].sort((a, b) => b.publishedAt - a.publishedAt || (a.id < b.id ? -1 : 1))
+  const groups = new Map<string, NewsItem[]>()
+  const out: NewsItem[] = []
+  for (const it of rows) {
     const tk = titleKey(it.title)
-    const key = tk.length >= TITLE_KEY_MIN ? `t:${tk}` : `i:${it.id}`
-    const had = byKey.get(key) ?? byKey.get(`i:${it.id}`)
-    if (!had) {
-      byKey.set(key, it)
+    if (tk.length < TITLE_KEY_MIN) {
+      out.push(it)
       continue
     }
-    const better = rowRank(it) > rowRank(had) || (rowRank(it) === rowRank(had) && it.publishedAt < had.publishedAt)
-    if (better) byKey.set(key, it)
+    const list = groups.get(tk) ?? []
+    if (!groups.has(tk)) groups.set(tk, list)
+    // The kept row of this headline that ran within the window, if any.
+    const i = list.findIndex((kept) => Math.abs(kept.publishedAt - it.publishedAt) <= MERGE_WINDOW_SEC)
+    if (i < 0) list.push(it)
+    else if (rowRank(it) > rowRank(list[i]) || (rowRank(it) === rowRank(list[i]) && it.publishedAt < list[i].publishedAt)) list[i] = it
   }
-  // The same URL can sit under a title key and an id key: one row per id.
-  const seen = new Set<string>()
-  const out: NewsItem[] = []
-  for (const it of byKey.values()) {
-    if (seen.has(it.id)) continue
-    seen.add(it.id)
-    out.push(it)
-  }
+  for (const list of groups.values()) out.push(...list)
   out.sort((a, b) => b.publishedAt - a.publishedAt || (a.id < b.id ? -1 : 1))
   return out
 }

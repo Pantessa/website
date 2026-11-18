@@ -48,6 +48,9 @@
     },
     "app/api/cron/prints/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/news/route.ts": {
+      "maxDuration": 60
     }
   }
 }

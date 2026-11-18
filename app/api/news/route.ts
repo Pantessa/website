@@ -19,5 +19,6 @@ export async function GET(req: NextRequest) {
   const limit = Number(req.nextUrl.searchParams.get('limit') ?? NEWS_LIMIT_DEFAULT)
   const news = await getNews(symbol, Number.isFinite(limit) ? limit : NEWS_LIMIT_DEFAULT, { defer: (work) => after(() => work) })
   if (!news) return NextResponse.json({ error: `No live chart for ${symbol}, so no news feed either.` }, { status: 400 })
-  return NextResponse.json(news, { headers: { 'cache-control': 'public, max-age=60, s-maxage=120' } })
+  // A page served while its feeds were still being read is not one to keep (review F6).
+  return NextResponse.json(news, { headers: { 'cache-control': news.partial ? 'public, max-age=5, s-maxage=10' : 'public, max-age=60, s-maxage=120' } })
 }

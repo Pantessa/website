@@ -71,6 +71,8 @@ export interface NewsResponse {
   sources?: NewsSourceCount[]
   /** Where the page was read from: the shared index, or the feeds directly (no database). */
   via?: 'index' | 'direct'
+  /** Some of this symbol's feeds were still being read when the page was served: ask again in a few seconds. */
+  partial?: boolean
   /** Unix seconds the newest feed read behind this page finished. */
   asOf: number
 }

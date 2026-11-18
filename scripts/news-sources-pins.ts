@@ -24,15 +24,16 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { NEWS_FEED_LABELS, sourceCounts, type NewsItem, type NewsResponse } from '../lib/news-shared'
-import { MAJOR_SITES, SITE_FEEDS, headlineTestFor, mergeNews, symbolsInText, titleKey } from '../lib/news-sources'
-import { hopItems, isQuotePage, newsFeedsFor, siteItems, type RssItem } from '../lib/news'
+import { MAJOR_SITES, MERGE_WINDOW_SEC, SITE_FEEDS, headlineTestFor, mergeNews, symbolsInText, titleKey } from '../lib/news-sources'
+import { FEED_MAX_ITEMS, FUTURE_SLACK_SEC, hopItems, isQuotePage, newsFeedsFor, normalizeItem, parseRss, siteItems, storable, type RssItem } from '../lib/news'
 import { cashtagOf, fixtureXPosts, keepXPost, mapRecentSearch, orderXPosts, recentSearchUrl, worstPullUsd, xNewsConfig, xSearchLinks } from '../lib/news-x'
 import { additiveRefusal } from './run-ddl'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
 const code = (f: string) => readFileSync(join(__dirname, '..', f), 'utf8')
-const T0 = 1_800_000_000
+// An hour ago: a story dated in the future is refused, so a fixture cannot carry a fixed date ahead of the clock.
+const T0 = Math.floor(Date.now() / 1000) - 3600
 const item = (over: Partial<NewsItem> & { id: string; title: string }): NewsItem => ({ url: `https://example.com/${over.id}`, source: 'Wire', publishedAt: T0, ...over })
 const rss = (title: string, link: string, over: Partial<RssItem> = {}): RssItem => ({ title, link, publishedAt: T0, description: '', source: '', tickers: '', ...over })
 const same = (a: string[], b: string[]) => [...a].sort().join() === [...b].sort().join()
@@ -60,7 +61,8 @@ export function newsSourcesPins(check: Check): void {
     'news sources: a word that is also a coin is not the coin (Optimism the mood, compound interest, an APT hacking group, the DOGE office, ETHDenver, a ticker in lower case)',
     c('Optimism returns to crypto markets as rates fall').length === 0 && c('The magic of compound interest in DeFi').length === 0 && c('North Korean APT group drains exchange').length === 0 &&
       c('DOGE staff cuts reach the SEC').length === 0 && c('ETHDenver recap: what builders shipped').length === 0 && c('A near miss for the bill, and a link to the vote').length === 0 &&
-      same(c('OP Stack upgrade ships on OP Mainnet'), ['OP']) && same(c('Compound Finance votes on a new market'), ['COMP']),
+      same(c('OP Stack upgrade ships on OP Mainnet'), ['OP']) && same(c('Compound Finance votes on a new market'), ['COMP']) &&
+      c('Ripple effects of the ruling reach DeFi').length === 0 && c('Avalanche of liquidations hits leveraged longs').length === 0 && same(c('AVAX jumps as Avalanche Foundation ships an upgrade'), ['AVAX']) && same(c('Ripple Labs wins its appeal'), ['XRP']),
     JSON.stringify([c('Optimism returns to crypto markets as rates fall'), c('DOGE staff cuts reach the SEC'), c('OP Stack upgrade ships on OP Mainnet')]),
   )
   const m = (t: string) => symbolsInText(t, 'markets')
@@ -68,7 +70,7 @@ export function newsSourcesPins(check: Check): void {
     'news sources: a markets desk\'s headline is filed under the stocks it names (name, alias, $T, (T), NASDAQ: T) and the household coins; a company named like a plain word needs its ticker',
     same(m('Apple (AAPL) beats on services revenue'), ['AAPL']) && same(m('Nvidia stock jumps after earnings'), ['NVDA']) && same(m('MicroStrategy adds to its Bitcoin stack'), ['MSTR', 'BTC']) &&
       m('Strategy matters more than ever for retailers').length === 0 && m('Zoom fatigue is back, and Snap judgments with it').length === 0 && same(m('Why $SNAP is moving today'), ['SNAP']) &&
-      m('Uniswap fee switch passes').length === 0,
+      m('Uniswap fee switch passes').length === 0 && m('ETH Zurich spins out a robotics startup').length === 0 && m('The Oracle of Omaha trims a stake').length === 0 && same(m('Oracle Corp raises its cloud forecast'), ['ORCL']) && same(m('Ethereum ETF inflows return'), ['ETH']),
     JSON.stringify([m('MicroStrategy adds to its Bitcoin stack'), m('Zoom fatigue is back, and Snap judgments with it')]),
   )
 
@@ -85,7 +87,9 @@ export function newsSourcesPins(check: Check): void {
     'news sources: a coin is asked of Cointelegraph\'s tag feed, Google News, the majors and Yahoo, ALL read; the majors feed names its sites and drops a headline that does not name the coin',
     btcFeeds.map((h) => h.feed).join('+') === 'cointelegraph+google-news+google-majors+yahoo' && !!majors && /site:forbes\.com/.test(decodeURIComponent(majors.url)) &&
       majors.keep!(rss('Wall Street prepares for an IPO frenzy', 'https://example.com/a')) === false && majors.keep!(rss('Bitcoin ETFs lose $240M', 'https://example.com/b')) === true &&
-      /s=BTC-USD/.test(btcFeeds[3].url) && new Set(btcFeeds.map((h) => h.key)).size === btcFeeds.length,
+      /s=BTC-USD/.test(btcFeeds[3].url) && new Set(btcFeeds.map((h) => h.key)).size === btcFeeds.length &&
+      // A coin we hold no name for (WELL, AI, MOVE are words): the majors search has no "crypto" in it and no headline test, so it is not asked.
+      newsFeedsFor({ symbol: 'ZEC', source: 'coinbase', pair: 'ZEC-USD', label: 'ZEC / USD' }).map((h) => h.feed).join('+') === 'google-news',
   )
   check(
     'news sources: a fund\'s daily holdings line and an exchange\'s price page are not headlines',
@@ -129,6 +133,39 @@ export function newsSourcesPins(check: Check): void {
     merged.map((x) => x.id).join() === 'y1,b1,c1' && merged[2].imageUrl === 'https://img.example.com/a.png' && titleKey('  Bitcoin’s  $60K—bids! ') === 'bitcoin s 60k bids',
     merged.map((x) => x.id).join(),
   )
+  const recur = 'Bitcoin ETF flows turn negative again as traders wait'
+  const recurring = mergeNews([
+    item({ id: 'r2', title: recur, feed: 'google-news', source: 'Reuters', publishedAt: T0 }),
+    item({ id: 'r1', title: recur, feed: 'google-news', source: 'Reuters', publishedAt: T0 - MERGE_WINDOW_SEC - 3600 }),
+    item({ id: 'm1', title: recur, feed: 'google-majors', source: 'Reuters', publishedAt: T0 - 60 }),
+    item({ id: 's1', title: recur, feed: 'google-news', source: 'Scraper', publishedAt: T0 - 120 }),
+  ])
+  check(
+    'news sources: a headline that recurs past the merge window is a NEW story (both stay), and between aggregators the majors search\'s row beats a general one (a re-printer with an earlier stamp does not take the seat)',
+    recurring.map((x) => x.id).join() === 'm1,r1',
+    recurring.map((x) => x.id).join(),
+  )
+  // ── what a feed can do to us (the 2026-11-18 review) ──
+  const nowSec = 1_800_000_000
+  const ok = normalizeItem(rss('A headline \u0000with a NUL', 'https://example.com/n', { publishedAt: nowSec - 60, imageUrl: 'https://img.example.com/a.png?x=1' }), nowSec)
+  check(
+    'news sources: a story dated in the future is refused (it would lead the page and never age out), an over-long link is refused, text is stored without NUL or half a surrogate pair, and a picture is stored as the fence normalised it',
+    normalizeItem(rss('From the year 2100', 'https://example.com/f', { publishedAt: nowSec + FUTURE_SLACK_SEC + 1 }), nowSec) === null && normalizeItem(rss('Soon', 'https://example.com/s', { publishedAt: nowSec + 30 }), nowSec) !== null &&
+      normalizeItem(rss('Long', `https://example.com/${'a'.repeat(2100)}`, { publishedAt: nowSec }), nowSec) === null && ok?.title === 'A headline with a NUL' && ok?.imageUrl === 'https://img.example.com/a.png?x=1' &&
+      storable(`${'a'.repeat(9)}\u{1F600}`, 10) === 'a'.repeat(9) + '\uFFFD' && !/[\uD800-\uDFFF]/.test(storable(`${'a'.repeat(9)}\u{1F600}`, 10).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '')),
+    JSON.stringify(ok),
+  )
+  const hostile = '<item>'.repeat(60_000)
+  const t0 = Date.now()
+  const none = parseRss(hostile)
+  const many = parseRss(`<rss>${'<item><title>T</title><link>https://example.com/x</link></item>'.repeat(FEED_MAX_ITEMS + 50)}</rss>`)
+  check(
+    'news sources: the parser walks a feed by position (60,000 unclosed <item> openers answer at once, not in seconds), stops at FEED_MAX_ITEMS rows, and an entity named like an object method stays text',
+    none.length === 0 && Date.now() - t0 < 500 && many.length === FEED_MAX_ITEMS && parseRss('<item><title>A &constructor; B &amp; C</title><link>https://example.com/y</link></item>')[0]?.title === 'A &constructor; B & C' &&
+      parseRss('<itemref>x</itemref><item rdf:about="z"><title>Kept</title></item>').map((r) => r.title).join() === 'Kept',
+    `${Date.now() - t0}ms ${many.length}`,
+  )
+
   check(
     'news sources: the publishers on a page are counted, most stories first',
     JSON.stringify(sourceCounts([{ source: 'B' }, { source: 'A' }, { source: 'B' }, { source: 'C' }])) === JSON.stringify([{ source: 'B', count: 2 }, { source: 'A', count: 1 }, { source: 'C', count: 1 }]),
@@ -140,12 +177,16 @@ export function newsSourcesPins(check: Check): void {
   const vercel = JSON.parse(code('vercel.json')) as { crons: { path: string; schedule: string }[] }
   check(
     'news index: a page is read from Postgres; a feed is fetched only by whoever claims it (one conditional upsert), a reader is served what the index holds while stale feeds finish, and with no database the feeds are read directly',
-    /const items = mergeNews\(\(await readSymbol\(pair\.symbol\)\)\.filter\(\(it\) => !isQuotePage\(it\.title\)\)\)/.test(lib) && /if \(!\(await claimFeed\(hop\.key, staleSec\)\)\) return 0/.test(lib) && /ON CONFLICT \(feed_key\) DO UPDATE SET claimed_at = now\(\)\s+WHERE/.test(index) &&
-      /Promise\.race\(\[all\.then\(\(\) => true as const\), sleep\(/.test(lib) && /defer\?\.\(all\)/.test(lib) && /return loadDirect\(pair\)/.test(lib) && /after\(\(\) => work\)/.test(code('app/api/news/route.ts')),
+    /const items = mergeNews\(\(await readSymbol\(pair\.symbol\)\)\.filter\(\(it\) => !isQuotePage\(it\.title\)\)\)/.test(lib) && /if \(!\(await claimFeed\(hop\.key, staleSec\)\)\) return null/.test(lib) && /ON CONFLICT \(feed_key\) DO UPDATE SET claimed_at = now\(\)\s+WHERE/.test(index) &&
+      /Promise\.race\(\[all\.then\(\(\) => true as const\), sleep\(/.test(lib) && /defer\?\.\(all\)/.test(lib) && /return loadDirect\(pair\)/.test(lib) && /after\(\(\) => work\)/.test(code('app/api/news/route.ts')) &&
+      // A feed somebody else is reading, or one that threw, makes the page PARTIAL: cached for seconds, never served as "no headlines". A read is settled whatever happened.
+      /if \(ownDone\.some\(\(d\) => d\.status === 'rejected' \|\| d\.value === null\)\) partial = true/.test(lib) && /news\.partial \? 'public, max-age=5, s-maxage=10'/.test(code('app/api/news/route.ts')) &&
+      (lib.match(/\} finally \{[^}]*await settleFeed\(/g) ?? []).length === 2 && /\.sort\(\(a, b\) => \(a\.id < b\.id \? -1/.test(index),
   )
   check(
     'news index: the cron re-reads the site feeds every 10 minutes behind CRON_SECRET, and never touches X unless the X budget is on',
-    vercel.crons.some((x) => x.path === '/api/cron/news' && x.schedule === '*/10 * * * *') && /if \(!secret\) return false/.test(code('app/api/cron/news/route.ts')) && /refreshSiteFeeds\(\)/.test(code('app/api/cron/news/route.ts')),
+    vercel.crons.some((x) => x.path === '/api/cron/news' && x.schedule === '*/10 * * * *') && /if \(!secret\) return false/.test(code('app/api/cron/news/route.ts')) && /refreshSiteFeeds\(\)/.test(code('app/api/cron/news/route.ts')) &&
+      code('app/api/cron/news/route.ts').indexOf('await pruneIndex()') < code('app/api/cron/news/route.ts').indexOf('await pullDueXSymbols()') && /"app\/api\/cron\/news\/route\.ts": \{\s*"maxDuration": 60/.test(code('vercel.json')),
   )
   const ddl = code('prisma/ddl/2026-11-18-news-index.sql').replace(/--.*$/gm, '').split(';').map((s) => s.trim()).filter(Boolean)
   check('news index: its DDL is additive only (five tables, their indexes)', ddl.length === 9 && ddl.every((st) => additiveRefusal(st) === null), ddl.map((st) => additiveRefusal(st)).filter(Boolean).join('; '))
@@ -163,7 +204,9 @@ export function newsSourcesPins(check: Check): void {
     'news x: a pull is reserved against the day\'s ceiling, under a lock, BEFORE X is asked; a refusal settles at $0; a page view never asks X anything',
     xlib.indexOf('const pullId = await reservePull(') > 0 && xlib.indexOf('const pullId = await reservePull(') < xlib.indexOf('await fetch(recentSearchUrl(') && /pg_advisory_xact_lock/.test(xlib) &&
       /\+ \$\{worstUsd\}::double precision <= \$\{capUsd\}::double precision/.test(xlib) && /await settlePull\(pullId, 0, 0, 0, status\)/.test(xlib) && /\(!fake && cfg\.dailyUsd <= 0\)/.test(xlib) &&
-      !/pullXSymbol|pullDueXSymbols|api\.x\.com|fetch\(/.test(code('app/api/news/x/route.ts')),
+      !/pullXSymbol|pullDueXSymbols|api\.x\.com|fetch\(/.test(code('app/api/news/x/route.ts')) &&
+      // A 200 whose body does not read was still billed: the reservation stands (no catch on the body). And "is it due" is asked again under the lock.
+      /const mapped = mapRecentSearch\(await res\.json\(\)\)/.test(xlib) && /WHERE NOT EXISTS \(\s*SELECT 1 FROM news_x_pulls p WHERE p\.symbol = \$\{symbol\}/.test(xlib) && /UPDATE news_x_pulls SET status = 'error' WHERE id/.test(xlib),
   )
   const q = new URL(recentSearchUrl('$BTC', 20))
   check(

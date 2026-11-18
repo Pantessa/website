@@ -125,7 +125,7 @@ export function mapRecentSearch(body: unknown): { posts: XNewsPost[]; returned: 
     const m = obj(t.public_metrics)
     posts.push({
       id,
-      text: text.replace(/\u0000/g, '').slice(0, 4000),
+      text: text.replace(/\u0000/g, '').slice(0, 4000).toWellFormed(),
       postedAt: Math.floor(at / 1000),
       likes: count(m?.like_count),
       reposts: count(m?.retweet_count),
@@ -204,17 +204,21 @@ export async function listXPosts(symbol: string, max = X_NEWS_LIST_MAX): Promise
 }
 
 /** Write the pull's worst case against today's ceiling. Null when the day cannot afford it. One caller at a time. */
-async function reservePull(symbol: string, worstUsd: number, capUsd: number, internal: boolean): Promise<string | null> {
+async function reservePull(symbol: string, worstUsd: number, capUsd: number, internal: boolean, pullHours: number): Promise<string | null> {
   const id = randomUUID()
   const rows = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_KEY}::bigint)`
+    // "Is this symbol due" is asked again here, under the lock (review F7): two cron passes that overlap both
+    // saw it due, and only one of them may pay for it.
     return tx.$queryRaw<{ id: string }[]>`
       INSERT INTO news_x_pulls (id, symbol, reserved_usd, is_internal)
       SELECT ${id}, ${symbol}, ${worstUsd}::double precision, ${internal}
-      WHERE ${internal} OR (
+      WHERE NOT EXISTS (
+        SELECT 1 FROM news_x_pulls p WHERE p.symbol = ${symbol} AND p.is_internal = ${internal} AND p.started_at > now() - make_interval(secs => ${pullHours * 3600 - 60}::double precision)
+      ) AND (${internal} OR (
         SELECT COALESCE(SUM(COALESCE(cost_usd, reserved_usd)), 0) FROM news_x_pulls
         WHERE NOT is_internal AND started_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
-      ) + ${worstUsd}::double precision <= ${capUsd}::double precision
+      ) + ${worstUsd}::double precision <= ${capUsd}::double precision)
       RETURNING id`
   })
   return rows[0]?.id ?? null
@@ -242,8 +246,8 @@ export async function pullXSymbol(symbol: string, cfg: XNewsConfig = xNewsConfig
   const fake = fakeModeOn()
   const cashtag = `$${symbol}`
   const worst = fake ? 0 : worstPullUsd(cfg.postsPerPull)
-  const pullId = await reservePull(symbol, worst, cfg.dailyUsd, fake)
-  if (!pullId) return { symbol, status: 'over-budget', read: 0, kept: 0, costUsd: 0 }
+  const pullId = await reservePull(symbol, worst, cfg.dailyUsd, fake, cfg.pullHours)
+  if (!pullId) return { symbol, status: 'not-reserved', read: 0, kept: 0, costUsd: 0 }
   try {
     let found: XNewsPost[]
     let returned: number
@@ -263,7 +267,9 @@ export async function pullXSymbol(symbol: string, cfg: XNewsConfig = xNewsConfig
         await settlePull(pullId, 0, 0, 0, status)
         return { symbol, status, read: 0, kept: 0, costUsd: 0 }
       }
-      const mapped = mapRecentSearch(await res.json().catch(() => null))
+      // No catch on the body (review F1): X billed this 200 whether or not its body reads. A body that stalls or
+      // arrives cut throws to the handler below, which leaves the reservation standing as the cost.
+      const mapped = mapRecentSearch(await res.json())
       found = mapped.posts
       returned = mapped.returned
     }
