@@ -1,4 +1,7 @@
-# Pantessa — the Emerald Cut
+# Pantessa — the Emerald Cut (retired 2026-11-18)
+
+> **Retired.** The mark is the Cut P now: see `public/brand/cut-p/`. This
+> directory is the archive of the Emerald Cut kit; nothing in the app reads it.
 
 Pan (all) + tessera (a mosaic tile). An emerald cut is the one gem made
 entirely of tiles — rectangular step facets descending to an open table. The

@@ -89,35 +89,34 @@ export function ogMarkSvg(hay: string, color: string, box: number): string | nul
   return null
 }
 
-// ── The Pantessa Emerald Cut ─────────────────────────────────────────────────
+// ── The Pantessa Cut P ───────────────────────────────────────────────────────
 // ONE source for the house mark across every OG card (root, /chat, /i, /l, /p,
 // /r, /agents). Geometry comes from lib/gem-geometry.ts — the same source the
-// DOM components render from. Satori can't rasterize a `mask` on an inline
-// element, so every card renders this the same way: a data-URI <img> (see each
-// card's toDataUri), where the mask is fine.
+// DOM components render from. Every card renders this the same way: a
+// data-URI <img> (see each card's toDataUri).
 //
-// Structure: a rounded tile and the stone in its icon cut (unfurls render the
-// chip tiny — a lacy cut cannot share a small box). The accent is the one
-// color a caller varies: a white-label /i or /l card re-inks the whole facet
-// ramp to the creator's brand via fill-opacity steps.
+// Structure: a rounded tile and the mark in its icon cut (unfurls render the
+// chip tiny — a thin cut closes up in a small box). The accent is the one
+// color a caller varies: a white-label /i or /l card re-inks both pieces to
+// the creator's brand via fill-opacity steps.
 import { GEM_TONES_DARK, gemAccentRamp, gemSvgBody } from './gem-geometry'
 
 /**
- * Full `<svg>` string for the Emerald Cut on its rounded tile, ready for
+ * Full `<svg>` string for the Cut P on its rounded tile, ready for
  * `toDataUri` + an `<img>` in any OG card. The tile is deliberately
  * self-contained (its own dark plate + hairline) so it reads on a house card
  * and on a creator's white-label background alike.
  *
- * @param accent hex to re-ink the facet ramp on a branded card — omit for the
+ * @param accent hex to re-ink both pieces on a branded card — omit for the
  *   house emerald.
  */
 export function gemMarkSvg(accent?: string): string {
   const body = accent
-    ? gemSvgBody('icon', [accent, accent], 'ptgm', gemAccentRamp('icon'))
-    : gemSvgBody('icon', GEM_TONES_DARK.icon, 'ptgm')
+    ? gemSvgBody('icon', [accent, accent], gemAccentRamp('icon'))
+    : gemSvgBody('icon', GEM_TONES_DARK.icon)
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
   <rect x="2" y="2" width="124" height="124" rx="27" fill="#0B0E0D" stroke="rgba(255,255,255,0.16)" stroke-width="3.5"/>
-  <g transform="translate(14.72 14.72) scale(0.77)">
+  <g transform="translate(16 16) scale(0.75)">
     ${body}
   </g>
 </svg>`

@@ -58,7 +58,7 @@ export function AppRailHeader() {
         <PanelLeftClose width={17} height={17} />
       </button>
       <Link href="/" className="apprail__home" aria-label="Pantessa home">
-        <YeetfulMark size={25} />
+        <YeetfulMark size={22} tight />
         <span className="apprail__word">pantessa</span>
       </Link>
     </div>

@@ -16339,7 +16339,7 @@ async function main() {
     'og mark: morpho mirrors the vendored mark (4 wing paths, aspect kept)',
     !!ogMorpho && (ogMorpho.match(/<path/g) ?? []).length === 4 && ogMorpho.includes('viewBox="0 0 22 20"') && ogMorpho.includes('height="40"'),
   )
-  // The Emerald Cut is the house mark on EVERY share card. It used to be
+  // The Cut P is the house mark on EVERY share card. It used to be
   // copied inline per card, which is how five cards kept shipping the retired
   // hub glyph after the rebrand — these pin the one source and the re-inking.
   const gemHouse = gemMarkSvg()
@@ -16353,7 +16353,7 @@ async function main() {
       !/https?:\/\/(?!www\.w3\.org)/.test(gemHouse),
   )
   check(
-    'gem mark: an accent re-inks the WHOLE facet ramp via fill-opacity steps; the house form keeps the emerald tones',
+    'gem mark: an accent re-inks BOTH pieces via fill-opacity steps; the house form keeps the emerald tones',
     gemHouse.includes('#159B68') &&
       gemHouse.includes('#3ECF8E') &&
       !gemHouse.includes('fill-opacity') &&
@@ -25856,8 +25856,8 @@ async function main() {
         railSrc.includes('railBrewPhase(') && railSrc.includes('bandClassName="wl__brewBand"') && railSrc.includes('quoteCellState(') && !railSrc.includes('loading…'))
     const brewHtml = flat(await (await fetch(`${BASE}/markets`)).text())
     const brewBlock = brewHtml.match(/<div class="wl__brew" role="status">.*?<\/div>/)?.[0] ?? ''
-    check('watch brew: /markets server-renders the brewing state (role=status, the Emerald Cut with its three bands on the brew class, "Loading your watchlist"), and the rail foot does not claim "saved in this browser" before the session is known',
-      brewBlock.includes(RAIL_BREW_COPY.lists.title) && (brewBlock.match(/class="wl__brewBand"/g) ?? []).length === 3 && !brewHtml.includes('saved in this browser'),
+    check('watch brew: /markets server-renders the brewing state (role=status, the Cut P with its two pieces on the brew class (RE-PINNED 2026-11-18, the mark changed), "Loading your watchlist"), and the rail foot does not claim "saved in this browser" before the session is known',
+      brewBlock.includes(RAIL_BREW_COPY.lists.title) && (brewBlock.match(/class="wl__brewBand"/g) ?? []).length === 2 && !brewHtml.includes('saved in this browser'),
       brewBlock.slice(0, 300) || 'no brew block')
 
     // Cleanup — lists through the API, ledger rows directly (harness Prisma
@@ -35749,7 +35749,7 @@ async function main() {
     // theme-color that follows the site theme.
     const mf = await fetch(`${BASE}/manifest.webmanifest`)
     const mfJson = mf.ok ? ((await mf.json()) as { display?: string; start_url?: string; icons?: { src: string; sizes: string; purpose?: string }[]; theme_color?: string; background_color?: string; name?: string }) : null
-    check('native shell: /manifest.webmanifest serves display standalone, start_url `/` (the splash; RE-PINNED 2026-10-06 (front-door)), the Emerald Cut 192 + 512 (any) + 512 maskable icons, and the dark theme/background colors', mf.ok && !!mfJson && mfJson.display === 'standalone' && mfJson.start_url === '/' && mfJson.name === 'Pantessa' && mfJson.theme_color === '#000000' && mfJson.background_color === '#000000' &&
+    check('native shell: /manifest.webmanifest serves display standalone, start_url `/` (the splash; RE-PINNED 2026-10-06 (front-door)), the Cut P 192 + 512 (any) + 512 maskable icons, and the dark theme/background colors', mf.ok && !!mfJson && mfJson.display === 'standalone' && mfJson.start_url === '/' && mfJson.name === 'Pantessa' && mfJson.theme_color === '#000000' && mfJson.background_color === '#000000' &&
       (mfJson.icons ?? []).some((i) => i.sizes === '192x192' && i.purpose === 'any') && (mfJson.icons ?? []).some((i) => i.sizes === '512x512' && i.purpose === 'any') && (mfJson.icons ?? []).some((i) => i.sizes === '512x512' && i.purpose === 'maskable'), `${mf.status}`)
     const iconChecks = await Promise.all((mfJson?.icons ?? []).map(async (i) => { const r = await fetch(`${BASE}${i.src}`); return r.ok && (r.headers.get('content-type') ?? '').includes('image/png') }))
     check('native shell: every manifest icon serves as image/png', iconChecks.length === 3 && iconChecks.every(Boolean))

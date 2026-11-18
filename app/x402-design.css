@@ -6505,8 +6505,7 @@
 .wl__brewMark::before { content: ''; position: absolute; inset: -12px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 24%, transparent), transparent); animation: wl-brew-glow 1.6s ease-in-out infinite; }
 .wl__brewMark svg { position: relative; animation: wl-brew-breathe 1.6s ease-in-out infinite; }
 .wl__brewBand { animation: wl-brew-band 1.6s ease-in-out infinite both; }
-.wl__brewBand:nth-child(2) { animation-delay: .25s; }
-.wl__brewBand:nth-child(3) { animation-delay: .5s; }
+.wl__brewBand:nth-child(2) { animation-delay: .4s; }
 .wl__brewText { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; line-height: 1.45; color: var(--fg); }
 .wl__brewText .wl__muted { font-size: 11.5px; }
 .wl__quoteWait { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; padding: 3px 0; }

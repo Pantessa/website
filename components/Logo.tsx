@@ -1,21 +1,20 @@
 // components/Logo.tsx
-// Pantessa — the Emerald Cut mark + wordmark.
+// Pantessa — the Cut P mark + wordmark.
 //
-// Pan (all) + tessera (a mosaic tile): an emerald cut is the one gem made
-// entirely of tiles — rectangular step facets descending to an open table.
-// The brand emerald is the material itself, and the open center is the table:
-// the flat plane where a signature lands. The corner miters (cut through a
-// mask, so they are holes on any ground) are what make the nested octagons
-// read as a cut stone rather than a target.
+// A square stone is the bowl of a P and its open table is the counter. One
+// cut runs from the top-right corner, through the table, to the left edge of
+// the stem, and every other diagonal in the mark is parallel to it. The cut is
+// a gap between two pieces (never a painted line), so the mark sits on any
+// ground; the pieces take two emerald tones, lit and shade.
 //
-// The stone auto-picks its cut for the rendered size (fine ≥96px, mark 32–95,
-// icon <32) — a lacy cut cannot share a small box. Geometry lives in
-// lib/gem-geometry.ts; the full asset kit and its generator live in
-// public/brand/emerald/.
+// The letter never changes with size, only the width of the cut: it widens as
+// the mark shrinks (fine ≥96px, mark 32–95, icon <32) so it does not close up
+// in a small box. Geometry lives in lib/gem-geometry.ts; the full asset kit
+// and its generator live in public/brand/cut-p/.
 
-import * as React from "react";
 import {
   GEM_ACCENT,
+  GEM_BOX,
   gemAccentRamp,
   gemFillVars,
   gemGeometry,
@@ -32,15 +31,19 @@ type MarkProps = {
   size?: number;
   className?: string;
   title?: string;
-  /** `GEM_ACCENT` (default) renders the theme-aware emerald ramp; `null`
-   *  renders a single-ink stone in `currentColor`; any other color re-inks
-   *  the ramp for white-label surfaces. */
+  /** `GEM_ACCENT` (default) renders the theme-aware emerald pair; `null`
+   *  renders a single-ink mark in `currentColor`; any other color re-inks
+   *  both pieces for white-label surfaces. */
   accent?: string | null;
   /** Override the size-picked cut (e.g. force `icon` in a dense strip). */
   weight?: GemWeight;
-  /** A class on every band, outer → inner in DOM order, for motion (the
-   *  watchlist rail's brewing loader lights them in turn). */
+  /** A class on each of the two pieces, lit then shade in DOM order, for
+   *  motion (the watchlist rail's brewing loader lights them in turn). */
   bandClassName?: string;
+  /** Crop the box to the letter itself (72 by 112 on the grid) instead of the
+   *  square: `size` is then the mark's HEIGHT and it is narrower than it is
+   *  tall. For lockups, where the square's side air would read as a gap. */
+  tight?: boolean;
 };
 
 export function PantessaMark({
@@ -50,45 +53,35 @@ export function PantessaMark({
   accent = GEM_ACCENT,
   weight,
   bandClassName,
+  tight = false,
 }: MarkProps) {
   const cut = weight ?? gemWeightFor(size);
-  const { bands, miters, miterWidth } = gemGeometry(cut);
-  // Unique mask id per instance so multiple marks on one page don't collide.
-  const maskId = `pt-gem-${React.useId().replace(/:/g, "")}`;
+  const { pieces } = gemGeometry(cut);
   const fills =
     accent === null
-      ? bands.map(() => "currentColor")
+      ? pieces.map(() => "currentColor")
       : accent === GEM_ACCENT
         ? gemFillVars(cut)
-        : bands.map(() => accent);
+        : pieces.map(() => accent);
   const opacities = accent && accent !== GEM_ACCENT ? gemAccentRamp(cut) : null;
   return (
     <svg
-      width={size}
+      width={tight ? Math.round((size * GEM_BOX.w) / GEM_BOX.h) : size}
       height={size}
-      viewBox="0 0 128 128"
+      viewBox={tight ? `${GEM_BOX.x} ${GEM_BOX.y} ${GEM_BOX.w} ${GEM_BOX.h}` : "0 0 128 128"}
       className={className}
       role="img"
       aria-label={title}
     >
-      <mask id={maskId}>
-        <rect width="128" height="128" fill="#fff" />
-        {miters.map((m, k) => (
-          <line key={k} x1={m.x1} y1={m.y1} x2={m.x2} y2={m.y2} stroke="#000" strokeWidth={miterWidth} />
-        ))}
-      </mask>
-      <g mask={`url(#${maskId})`}>
-        {bands.map((b, i) => (
-          <path
-            key={i}
-            className={bandClassName}
-            d={`${b.outer} ${b.inner}`}
-            fillRule="evenodd"
-            fill={fills[i]}
-            fillOpacity={opacities ? opacities[i] : undefined}
-          />
-        ))}
-      </g>
+      {pieces.map((d, i) => (
+        <path
+          key={i}
+          className={bandClassName}
+          d={d}
+          fill={fills[i]}
+          fillOpacity={opacities ? opacities[i] : undefined}
+        />
+      ))}
     </svg>
   );
 }
@@ -112,12 +105,12 @@ export function Logo({ size = 28, withWordmark = true, className }: LogoProps) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: Math.round(size * 0.36),
+        gap: Math.round(size * 0.3),
         color: "inherit",
         lineHeight: 1,
       }}
     >
-      <PantessaMark size={size} />
+      <PantessaMark size={size} tight />
       {withWordmark && (
         <span
           style={{

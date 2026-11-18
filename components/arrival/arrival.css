@@ -43,8 +43,7 @@
 .arrival__mark svg { position: relative; }
 .arrival--holding .arrival__mark::before { animation: arrival-glow 1.6s ease-in-out infinite; }
 .arrival--holding .arrival__band { animation: arrival-band 1.6s ease-in-out infinite both; }
-.arrival--holding .arrival__band:nth-child(2) { animation-delay: .25s; }
-.arrival--holding .arrival__band:nth-child(3) { animation-delay: .5s; }
+.arrival--holding .arrival__band:nth-child(2) { animation-delay: .4s; }
 .arrival--waiting .arrival__band { opacity: .55; }
 .arrival--waiting .arrival__mark svg { filter: saturate(.6); }
 .arrival--sent .arrival__band { opacity: 1; }
