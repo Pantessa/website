@@ -226,7 +226,7 @@ export default function AppsPhone({ address, title }: { address: string; title: 
       <PhoneAskBar
         placeholder={askPlaceholder(names)}
         disabled={active.length === 0}
-        suggestions={phoneSuggestions(suggestions)}
+        suggestions={starting ? [] : phoneSuggestions(suggestions)}
         onSend={(text) => ask(text)}
         onOpen={() => setPhoneScreen('chat')}
       />
