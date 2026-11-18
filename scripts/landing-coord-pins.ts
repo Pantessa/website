@@ -326,7 +326,7 @@ export async function landingCoordPinsServed(check: Check, base: string): Promis
       ['data-seat="Lead"', 'data-seat="Tour"', 'data-seat="Guide"', 'data-seat="How"', 'data-seat="Close"'].every((s, i, a) => at(s) > 0 && (i === 0 || at(a[i - 1]) < at(s))),
     `status ${res.status} · cache ${res.headers.get('cache-control')}`,
   )
-  // The tour's own slice of the page (the footer wears the old name on purpose: "Formerly Yeetful", t.me/yeetful).
+  // The tour's own slice of the page (the footer wears the old name on purpose: "Formerly Yeetful").
   const tourHtml = html.slice(Math.max(0, at('data-seat="Tour"')), at('class="mkt-frame__data"') > 0 ? at('class="mkt-frame__data"') : undefined)
   check(
     'landing (served): the tour is in the server HTML — the section at #tour and every side named with its own anchor — the page writes no `/chat?prompt=` link, and the tour never says the old brand',
