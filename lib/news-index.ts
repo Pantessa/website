@@ -38,6 +38,19 @@ export interface FeedState {
   ok: boolean
 }
 
+// ONE WRITE AT A TIME. A reader who finds a symbol stale can set off a
+// refresh of up to 17 feeds at once, and each refresh is a claim, a store and
+// a settle. The feeds are still FETCHED in parallel; what they write goes
+// through this queue, so the news index holds one connection for writes
+// however many feeds are due and a refresh cannot take the instance's
+// connection pool from the rest of the app.
+let writeTail: Promise<unknown> = Promise.resolve()
+function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
+  const run = writeTail.then(fn, fn)
+  writeTail = run.catch(() => undefined)
+  return run
+}
+
 /** The last read of each feed key that has one. */
 export async function feedStates(keys: string[]): Promise<Map<string, FeedState>> {
   const out = new Map<string, FeedState>()
@@ -51,19 +64,19 @@ export async function feedStates(keys: string[]): Promise<Map<string, FeedState>
 /** Take the right to read a feed now. True for exactly one caller while the
  *  feed is older than `staleSec` and unclaimed for CLAIM_TTL_SEC. */
 export async function claimFeed(key: string, staleSec: number): Promise<boolean> {
-  const rows = await prisma.$queryRaw<{ feed_key: string }[]>`
+  const rows = await oneAtATime(() => prisma.$queryRaw<{ feed_key: string }[]>`
     INSERT INTO news_feed_state (feed_key, claimed_at) VALUES (${key}, now())
     ON CONFLICT (feed_key) DO UPDATE SET claimed_at = now()
       WHERE (news_feed_state.fetched_at IS NULL OR news_feed_state.fetched_at < now() - make_interval(secs => ${staleSec}::double precision))
         AND (news_feed_state.claimed_at IS NULL OR news_feed_state.claimed_at < now() - make_interval(secs => ${CLAIM_TTL_SEC}::double precision))
-    RETURNING feed_key`
+    RETURNING feed_key`)
   return rows.length > 0
 }
 
 /** Record a finished read (a failed one too: a dead feed is not re-hit until it is stale again). */
 export async function settleFeed(key: string, ok: boolean, itemCount: number): Promise<void> {
-  await prisma.$executeRaw`
-    UPDATE news_feed_state SET fetched_at = now(), claimed_at = NULL, ok = ${ok}, item_count = ${itemCount} WHERE feed_key = ${key}`
+  await oneAtATime(() => prisma.$executeRaw`
+    UPDATE news_feed_state SET fetched_at = now(), claimed_at = NULL, ok = ${ok}, item_count = ${itemCount} WHERE feed_key = ${key}`)
 }
 
 export interface FiledItem extends NewsItem {
@@ -74,7 +87,11 @@ export interface FiledItem extends NewsItem {
 
 /** Store stories and file them under their symbols. A story already stored
  *  keeps its row and gains what it lacked (a picture, a summary, a page). */
-export async function storeItems(items: FiledItem[]): Promise<number> {
+export function storeItems(items: FiledItem[]): Promise<number> {
+  return oneAtATime(() => storeItemsNow(items))
+}
+
+async function storeItemsNow(items: FiledItem[]): Promise<number> {
   // A story older than a page shows is never read back: it is not stored (a feed's deep archive would be written and pruned on every pass).
   const floor = Math.floor(Date.now() / 1000) - INDEX_WINDOW_DAYS * 86_400
   // Sorted by id (review F13): two feeds upserting the same stories in different orders would deadlock.

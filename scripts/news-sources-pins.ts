@@ -181,7 +181,9 @@ export function newsSourcesPins(check: Check): void {
       /Promise\.race\(\[all\.then\(\(\) => true as const\), sleep\(/.test(lib) && /defer\?\.\(all\)/.test(lib) && /return loadDirect\(pair\)/.test(lib) && /after\(\(\) => work\)/.test(code('app/api/news/route.ts')) &&
       // A feed somebody else is reading, or one that threw, makes the page PARTIAL: cached for seconds, never served as "no headlines". A read is settled whatever happened.
       /if \(ownDone\.some\(\(d\) => d\.status === 'rejected' \|\| d\.value === null\)\) partial = true/.test(lib) && /news\.partial \? 'public, max-age=5, s-maxage=10'/.test(code('app/api/news/route.ts')) &&
-      (lib.match(/\} finally \{[^}]*await settleFeed\(/g) ?? []).length === 2 && /\.sort\(\(a, b\) => \(a\.id < b\.id \? -1/.test(index),
+      (lib.match(/\} finally \{[^}]*await settleFeed\(/g) ?? []).length === 2 &&
+      // Feeds are fetched in parallel and WRITTEN one at a time: a stale symbol never takes the connection pool from the rest of the app.
+      (index.match(/oneAtATime\(\(\) => /g) ?? []).length === 3 && /\.sort\(\(a, b\) => \(a\.id < b\.id \? -1/.test(index),
   )
   check(
     'news index: the cron re-reads the site feeds every 10 minutes behind CRON_SECRET, and never touches X unless the X budget is on',
