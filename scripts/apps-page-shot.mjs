@@ -20,6 +20,8 @@
 //     --click='[data-apps-browse]'   (click a selector before the shot)
 //     --ask='What is my biggest position?'  (type into the composer, no send)
 //     --path=/chat?tab=mcps          (override the whole path)
+//     --ls='key=value'               (write one localStorage entry before the page's scripts run;
+//                                     ADDR in key or value becomes the watched address, lowercased)
 //     --assert                       (exit 1 unless the page's promises hold)
 // WALLET=0x… watches another address with NO session (connect-only).
 import { spawn } from 'node:child_process'
@@ -133,6 +135,11 @@ try {
   await send('Network.setExtraHTTPHeaders', { headers: HDR }, sessionId)
   if (session) await send('Network.setCookie', { name: 'yf_session', value: session, url: BASE }, sessionId)
   await send('Page.addScriptToEvaluateOnNewDocument', { source: mockWallet(address) }, sessionId)
+  const ls = arg('ls')
+  if (ls && ls !== true) {
+    const [k, v] = [ls.slice(0, ls.indexOf('=')), ls.slice(ls.indexOf('=') + 1)].map((x) => x.replaceAll('ADDR', address.toLowerCase()))
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: `try{localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)})}catch{}` }, sessionId)
+  }
   const phone = W < 1024
   await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: phone ? 2 : 1, mobile: phone }, sessionId)
   await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId)

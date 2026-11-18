@@ -40,6 +40,24 @@ export interface FundWait {
   baselineEth: number | null
   baselineStable: number | null
   openedAt: number
+  /** The Stripe checkout this wait opened, kept so a closed tab is not the
+   *  end of the purchase. Read it through fundCheckoutHref, never raw. */
+  checkoutUrl?: string
+}
+
+/** The stored checkout as a link a page may draw, or null. localStorage is
+ *  the visitor's to edit (and any script's on the page), so only an https
+ *  address on Stripe's own checkout hosts comes back. */
+export function fundCheckoutHref(w: Pick<FundWait, 'checkoutUrl'> | null | undefined): string | null {
+  if (!w || typeof w.checkoutUrl !== 'string') return null
+  try {
+    const u = new URL(w.checkoutUrl)
+    if (u.protocol !== 'https:' || u.username || u.password) return null
+    const h = u.hostname.toLowerCase()
+    return h === 'link.com' || h.endsWith('.link.com') || h === 'stripe.com' || h.endsWith('.stripe.com') ? u.toString() : null
+  } catch {
+    return null
+  }
 }
 
 /** A card purchase can take a while (bank rails, a KYC review) — but a wait

@@ -190,6 +190,7 @@ export default function ClarifyChips({
         baselineEth: null,
         baselineStable: null,
         openedAt: Date.now(),
+        checkoutUrl: res.url,
       }
       firedRef.current = false
       saveFundWait(w)

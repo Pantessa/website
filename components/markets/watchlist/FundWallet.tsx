@@ -40,7 +40,7 @@ export interface FundWalletProps {
 export default function FundWallet({ holder, empty, cardFunding, onLanded }: FundWalletProps) {
   // The door's state and the buy itself live in lib/use-card-fund (the Apps
   // page's first-run screen is the other door on it).
-  const { phase, offer, busy, error, wait, watch, landed, buy, startOver, dismissLanded } = useCardFund({ holder, empty, cardFunding, onLanded })
+  const { phase, offer, busy, error, wait, watch, landed, buy, startOver, checkoutHref, dismissLanded } = useCardFund({ holder, empty, cardFunding, onLanded })
   if (!phase) return null
 
   if (phase === 'landed' && landed) {
@@ -82,6 +82,15 @@ export default function FundWallet({ holder, empty, cardFunding, onLanded }: Fun
               : 'Finish the purchase in the Stripe tab. This updates the moment it lands.'}
         </p>
         <p className="wl__fundNote">
+          {!stopped && checkoutHref && (
+            <>
+              Lost the tab?{' '}
+              <a className="wl__link" href={checkoutHref} target="_blank" rel="noopener noreferrer" data-rail-fund-reopen="">
+                Open Stripe again
+              </a>
+              {'. '}
+            </>
+          )}
           Closed it without buying?{' '}
           <button type="button" className="wl__link" onClick={startOver}>
             Start over
