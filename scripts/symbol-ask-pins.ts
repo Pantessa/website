@@ -10,6 +10,7 @@ import { arrivalAllowed, ARRIVAL_MAX_MCPS } from '../lib/arrival-fence'
 import { useAskDoor } from '../lib/ask-door'
 import { FIRST_PARTY_APP_SLUGS } from '../lib/ask-apps'
 import { chartPairFor } from '../lib/charts'
+import { earnsChatCard } from '../lib/splash/types'
 import { namesSymbol, pairVenueApp, symbolAskApps, symbolAskNeedsWallet, symbolAskText } from '../lib/symbol-ask'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -119,6 +120,20 @@ export function symbolAskPins(check: Check) {
   const ci = code('components/ChatInterface.tsx')
   check('symbol ask (wired, receiver): /chat fires an arrival with the apps its page named, and an ask it has to PARK (no wallet here, or "Don\'t run it") keeps those apps for the unedited send',
     ci.includes('setComposerSend({ text: arrival.text, mcps: arrival.mcps })') && (ci.match(/parkAsk\(arrival\.text, arrival\.mcps\)/g) ?? []).length === 2 && ci.includes('parkedAppsRef.current = [...apps]') && ci.includes('sendChip(text, parkedAppsRef.current)'))
+
+  // ── no card for an app the ask turned on (Nate, 2026-11-17) ─────────────
+  // A TSLA buy handed from /t/TSLA compiled its job, and under it sat a
+  // Robinhood Chain card: "Nothing here yet, try one of these".
+  const rh = { id: 'rh', slug: 'robinhood-free', name: 'Robinhood Chain' }
+  const other = { id: 'x', slug: 'some-mcp', name: 'Some MCP' }
+  check('symbol ask (no card): an app an ask turned on earns no card in the chat, even when it can paint one and even when it was hand-picked on an earlier day; the same app opened by hand still does, and an app that can paint nothing needs the hand pick',
+    !earnsChatCard(rh, [], new Set(['rh'])) && !earnsChatCard(rh, ['robinhood-free'], new Set(['rh'])) &&
+      earnsChatCard(rh, [], new Set()) && earnsChatCard(rh, ['robinhood-free'], new Set(['x'])) &&
+      !earnsChatCard(other, [], new Set()) && earnsChatCard(other, ['some-mcp'], new Set()) && !earnsChatCard(other, ['some-mcp'], new Set(['x'])))
+  check('symbol ask (no card, wired): both places an ask turns apps on (the pre-send effect, the route\'s echoed apps) note the ids, the card list and the splash gate both read the one rule, and an app that goes off again is forgotten so a later hand pick earns its card',
+    (ci.match(/noteAskApps\(missing\)/g) ?? []).length === 1 && (ci.match(/noteAskApps\(fresh\.map\(\(r\) => r\.id\)\)/g) ?? []).length === 1 &&
+      (ci.match(/earnsChatCard\(s, manualSlugs, askAppsRef\.current\)/g) ?? []).length === 2 && !/splashCapable/.test(ci) &&
+      ci.includes('if (!activeServerIds.includes(id)) askAppsRef.current.delete(id)'))
 }
 
 // Runnable alone (the harness imports this file, so the run is argv-gated).
