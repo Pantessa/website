@@ -12,6 +12,22 @@ export const TV_LIBRARY_VERSION: string = process.env.NEXT_PUBLIC_TV_LIBRARY ?? 
 /** Where the library's files are served from (same origin, trailing slash). */
 export const TV_LIBRARY_PATH = '/charting_library/'
 
+/**
+ * How the library builds its frame. By default it loads the frame from a
+ * `blob:` URL, which in-app browsers refuse (X's, and the wallet apps the
+ * library's own changelog names: MetaMask, Trust, Phantom): the script
+ * loads, the frame stays empty and the plot is black. Compatibility mode
+ * writes the frame's document from the page instead, which every browser
+ * allows. (2026-11-18, Nate's phone, a /t link opened from X.)
+ */
+export const TV_IFRAME_FEATURES: readonly string[] = ['iframe_loading_compatibility_mode']
+
+/**
+ * How long a created widget gets to report ready before the page gives up
+ * on it and draws the built-in chart. A healthy start is 1 to 3 seconds.
+ */
+export const TV_READY_TIMEOUT_MS = 20_000
+
 /** Does this build ship the library? */
 export function advancedChartsBuilt(version: string = TV_LIBRARY_VERSION): boolean {
   return /^\d+\.\d+/.test(version)

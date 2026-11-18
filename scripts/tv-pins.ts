@@ -17,7 +17,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { parseChartState, type ChartLine } from '../lib/chart-state'
 import { barOpenMs, barsBefore, foldPrint, olderPageCursor, slotOf, ticksSince, toTvBars } from '../lib/tv/bars'
-import { advancedChartsBuilt, engineFor, parseEnginePref } from '../lib/tv/config'
+import { TV_IFRAME_FEATURES, TV_READY_TIMEOUT_MS, advancedChartsBuilt, engineFor, parseEnginePref } from '../lib/tv/config'
 import { planAsks, planFor, planItemFor, positionLevels, stopPercent } from '../lib/tv/plan'
 import { ALL_TV_RESOLUTIONS, intradayMultipliers, normalizeTvResolution, pageTfOfResolution, resolutionsForSource, tfOfResolution, tvResolution } from '../lib/tv/resolution'
 import { cleanLabel, lineFromShape, lineIdFor, linesFromShapes, shapeFromLine, type ShapeSnapshot } from '../lib/tv/shapes'
@@ -199,6 +199,13 @@ export function tvPins(check: Check): void {
   const feedSrc = readFileSync('lib/tv/datafeed.ts', 'utf8')
   check('tv wiring: the range bar ends on "All", and opening the chart, changing its frame or picking a range turns the price axis\'s auto-scale back on (a saved manual scale cut candles off)',
     /text: '1000y', resolution: '1W'[^}]*title: 'All'/.test(adv) && /scale\.setAutoScale\(true\)/.test(adv) && /fitPrices\(\)\s+chart\.onIntervalChanged\(\)/.test(adv) && /readablePrints\(interval\)\s+fitPrices\(\)/.test(adv) && adv.includes("w.subscribe('timeframe_interval', (() => fitPrices())"))
+  {
+    // An in-app browser (X's, a wallet app's) refuses the library's default
+    // `blob:` frame: the script loads, the frame stays empty, the plot is black.
+    const src = readFileSync('components/markets/chart/AdvancedChart.tsx', 'utf8')
+    check('tv in-app browsers: the widget is built in compatibility mode (no `blob:` frame), and a widget that never reports ready hands the page to the built-in chart instead of a black plot',
+      TV_IFRAME_FEATURES.includes('iframe_loading_compatibility_mode') && /enabled_features: \[[^\]]*\.\.\.TV_IFRAME_FEATURES/.test(src) && TV_READY_TIMEOUT_MS >= 10_000 && TV_READY_TIMEOUT_MS <= 30_000 && /readyTimer = setTimeout\(\(\) => \{\s*if \(!dead && !chartRef\.current\) onFailRef\.current\(/.test(src) && /onChartReady\(\(\) => \{\s*if \(readyTimer\) clearTimeout\(readyTimer\)/.test(src))
+  }
   check('tv datafeed: an older-history request reads pages until it reaches the library\'s `from` (the library takes one answer as all of [from, to); one page left a gap a range button never filled)',
     /for \(let page = 0; page < MAX_PAGES_PER_REQUEST; page\+\+\)/.test(feedSrc) && /if \(bars\[0\]\.time <= period\.from \* 1000\) break/.test(feedSrc) && /cursor = olderPageCursor\(bars\[0\]\.time\)/.test(feedSrc))
 }
