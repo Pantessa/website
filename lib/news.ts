@@ -545,11 +545,22 @@ async function loadNews(pair: ChartPair, defer?: (work: Promise<unknown>) => voi
   return loadDirect(pair)
 }
 
+/** Feeds whose rows wear a name the reply fences read as a dead end. The
+ *  chat's market read and the model's context are built WITHOUT them: "Yahoo"
+ *  in a reply is how app/api/markets/ask and the harness spot a model sending
+ *  the reader somewhere else, and a story sourced "Yahoo Finance" would trip
+ *  both (it did, 2026-11-18). The News tab keeps every feed. */
+export const FEEDS_NOT_FOR_REPLIES: readonly NewsFeed[] = ['yahoo']
+
 /** News for a charted symbol; null for a chartless one (fail-closed — the
  *  same gate the candles proxy uses, so a symbol with no chart can't turn
  *  this into an open feed proxy). `defer` is handed any feed read still
  *  running when the page is served (a route passes next/server `after`). */
-export async function getNews(symbolRaw: string, limit = NEWS_LIMIT_DEFAULT, opts: { defer?: (work: Promise<unknown>) => void } = {}): Promise<NewsResponse | null> {
+export async function getNews(
+  symbolRaw: string,
+  limit = NEWS_LIMIT_DEFAULT,
+  opts: { defer?: (work: Promise<unknown>) => void; skipFeeds?: readonly NewsFeed[] } = {},
+): Promise<NewsResponse | null> {
   const pair = chartPairFor(symbolRaw)
   if (!pair) return null
   const key = pair.symbol
@@ -568,7 +579,8 @@ export async function getNews(symbolRaw: string, limit = NEWS_LIMIT_DEFAULT, opt
     cache.set(key, { at: now, ttl: value.partial ? PARTIAL_TTL_MS : NEWS_TTL_MS, value })
   }
   const n = Math.max(1, Math.min(NEWS_LIMIT_MAX, Math.floor(limit) || NEWS_LIMIT_DEFAULT))
-  const items = value.items.slice(0, n)
+  const skip = opts.skipFeeds
+  const items = (skip?.length ? value.items.filter((it) => !it.feed || !skip.includes(it.feed)) : value.items).slice(0, n)
   const feeds = feedCounts(items)
   return { symbol: key, items, feed: feeds[0] ?? 'none', feeds, sources: sourceCounts(items), via: value.via, ...(value.partial ? { partial: true } : {}), asOf: Math.floor(value.asOf / 1000) }
 }

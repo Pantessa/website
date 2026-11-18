@@ -193,7 +193,7 @@ import { marketReadAsk, marketReadChips, marketReadWords } from '@/lib/market-re
 import { symbolName } from '@/lib/markets'
 import { NEXT_STEP_QUESTION, refusalNextSteps } from '@/lib/refusal-next-step'
 import { readTape, techSummary } from '@/lib/markets-ai-context'
-import { getNews, ageLabel } from '@/lib/news'
+import { FEEDS_NOT_FOR_REPLIES, getNews, ageLabel } from '@/lib/news'
 import { ensureTokenList } from '@/lib/token-list'
 import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
 import { resolveProposal } from '@/lib/snapshot-read'
@@ -1102,7 +1102,7 @@ async function handleChatTurn(req: NextRequest): Promise<Response> {
         const [tape, hourly, news] = await Promise.all([
           readTape(pair.symbol, '1d').catch(() => null),
           readTape(pair.symbol, '1h').catch(() => null),
-          marketRead.kind === 'trend' ? Promise.resolve(null) : getNews(pair.symbol, 8).catch(() => null),
+          marketRead.kind === 'trend' ? Promise.resolve(null) : getNews(pair.symbol, 8, { skipFeeds: FEEDS_NOT_FOR_REPLIES }).catch(() => null),
         ])
         nativeTrace({ type: 'select', service: `${pair.source} (native read)`, endpoint: `tape · ${pair.label}`, priceUsd: 0, reason: 'native market read — our own tape + the news ladder, never the planner narrating a price' })
         const reply = marketReadWords({

@@ -193,6 +193,12 @@ export function newsSourcesPins(check: Check): void {
   const ddl = code('prisma/ddl/2026-11-18-news-index.sql').replace(/--.*$/gm, '').split(';').map((s) => s.trim()).filter(Boolean)
   check('news index: its DDL is additive only (five tables, their indexes)', ddl.length === 9 && ddl.every((st) => additiveRefusal(st) === null), ddl.map((st) => additiveRefusal(st)).filter(Boolean).join('; '))
 
+  check(
+    'news index: the chat\'s market read and the model\'s context are built without Yahoo-sourced rows (the reply fences read "Yahoo" as a dead end); the tab keeps every feed',
+    /export const FEEDS_NOT_FOR_REPLIES: readonly NewsFeed\[\] = \['yahoo'\]/.test(lib) && /skipFeeds: FEEDS_NOT_FOR_REPLIES/.test(code('app/api/chat/route.ts')) && /skipFeeds: FEEDS_NOT_FOR_REPLIES/.test(code('lib/markets-ai-context.ts')) &&
+      !/skipFeeds/.test(code('app/api/news/route.ts')) && /\\bYahoo\\b/.test(code('app/api/markets/ask/route.ts')),
+  )
+
   // ── on X ──
   const off = xNewsConfig({})
   check(
