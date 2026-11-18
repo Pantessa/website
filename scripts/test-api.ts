@@ -35289,14 +35289,14 @@ async function main() {
     // Round 2: my openers of CHAT's sheets name them (data-sheet-open ⇄ the
     // Sheet's id): jobs + schedule rows → job, "Name your page" → creator
     // (only when it opens the modal — on the phone's list sheet it lands on
-    // the studio's panel), "Add your own MCP" → addmcp.
+    // the studio's panel). AppsRailTab no longer offers "Add your own MCP".
     const nnJobsTab = await readFile(new URL('../components/JobsRailTab.tsx', import.meta.url), 'utf8')
     const nnAppsTab = await readFile(new URL('../components/AppsRailTab.tsx', import.meta.url), 'utf8')
     check(
-      'native nav: the openers of CHAT\'s sheets name them — JobsRailTab job + schedule rows data-sheet-open="job", LinksRailTab "Name your page" data-sheet-open="creator" (undefined when onPage lands on the studio), AppsRailTab "Add your own MCP" data-sheet-open="addmcp" — matching the ids CHAT\'s Sheets carry',
+      'native nav: the openers of CHAT\'s sheets name them — JobsRailTab job + schedule rows data-sheet-open="job", LinksRailTab "Name your page" data-sheet-open="creator" (undefined when onPage lands on the studio), AppsRailTab opens no addmcp sheet — matching the ids CHAT\'s Sheets carry',
       (nnJobsTab.match(/data-sheet-open="job"/g) ?? []).length === 2 &&
         /data-sheet-open=\{onPage \? undefined : 'creator'\}/.test(nnLinksTab) &&
-        /onClick=\{\(\) => setAddOpen\(true\)\}\s*data-sheet-open="addmcp"/.test(nnAppsTab) &&
+        !/AddMcpModal|data-sheet-open="addmcp"/.test(nnAppsTab) &&
         /<Sheet[^>]*id="creator"/.test(await readFile(new URL('../components/CreatorPageModal.tsx', import.meta.url), 'utf8')) &&
         /id="addmcp"/.test(await readFile(new URL('../components/AddMcpModal.tsx', import.meta.url), 'utf8')) &&
         /id="job"/.test(await readFile(new URL('../components/JobDetailOverlay.tsx', import.meta.url), 'utf8')),

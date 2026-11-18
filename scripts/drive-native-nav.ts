@@ -505,22 +505,9 @@ const rowContract: NavScenario = {
     }
     await tapSeat(page, 'APPS')
     await wait(600)
-    // The APPS screen's "Add your own MCP" opens CHAT's Sheet by the id it
-    // names (data-sheet-open="addmcp" ⇄ data-sheet="addmcp"), and a tap
-    // outside closes it.
-    const addBtn = page.locator('[data-phone-panel="apps"] [data-sheet-open="addmcp"]').first()
-    if ((await addBtn.count()) > 0) {
-      await addBtn.scrollIntoViewIfNeeded()
-      await addBtn.tap()
-      await wait(500)
-      const sheet = await page.locator('.sheet[data-sheet="addmcp"]').count()
-      v.push(sheet > 0 ? pass('contract', 'APPS: "Add your own MCP" (data-sheet-open="addmcp") opens the Sheet with that id', 'ok') : fail('contract', 'APPS: "Add your own MCP" (data-sheet-open="addmcp") opens the Sheet with that id', `${sheet} sheets`))
-      await page.keyboard.press('Escape')
-      await wait(500)
-      v.push((await page.locator('.sheet[data-sheet="addmcp"]').count()) === 0 ? pass('contract', 'APPS: Escape closes the add-MCP sheet', 'closed') : fail('contract', 'APPS: Escape closes the add-MCP sheet', 'still open'))
-    } else {
-      v.push(fail('contract', 'APPS: "Add your own MCP" carries data-sheet-open="addmcp"', 'missing'))
-    }
+    // The APPS screen offers no "Add your own MCP" (removed 2026-11-18).
+    const addBtns = await page.locator('[data-phone-panel="apps"] [data-sheet-open="addmcp"]').count()
+    v.push(addBtns === 0 ? pass('contract', 'APPS: no "Add your own MCP" button', 'none') : fail('contract', 'APPS: no "Add your own MCP" button', `${addBtns} found`))
     await page.evaluate(() => {
       const s = document.querySelector('[data-app-scroll]') as HTMLElement | null
       if (s) s.scrollTop = 0

@@ -1,6 +1,6 @@
 'use client'
 
-// "Add your own MCP" — the chat rail's inline path into the directory. A
+// "Add your own MCP" — the /servers/add path into the directory. A
 // compact modal version of /servers/add: paste the MCP base URL, tools are
 // discovered from the server's own tools/list, and the user stars the tools a
 // newly connected account should PING FIRST (mcp_endpoints.featured). Those

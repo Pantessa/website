@@ -108,7 +108,7 @@ export function appsDockPins(check: Check) {
   check('dock: the shortcut never fires inside a dialog', /role="dialog"\]\[aria-modal="true"\]/.test(dock))
   check('dock: the controls keep expand + close', /data-dock-expand/.test(dock) && /data-dock-close/.test(dock))
   const chips = strip(read('components/apps/AppChips.tsx'))
-  check('dock: the row keeps "Add your own MCP"', /AddMcpModal/.test(chips) && /data-tray-own/.test(chips))
+  check('dock: the tray offers no "Add your own MCP"', !/AddMcpModal|data-tray-own|data-sheet-open="addmcp"/.test(chips))
   check('dock: a spare chip is out of reach (no tab stop, hidden from readers)', /tabIndex=\{shown \? undefined : -1\}/.test(chips) && /aria-hidden=\{shown \? undefined : true\}/.test(chips))
   check('dock: no sign button or tx hook in the dock lane', !/useSendTransaction|useSignTypedData|useWriteContract|SendTxChain/.test(chips + dock))
   const css = read('components/apps/dock.css')

@@ -1,7 +1,7 @@
 'use client'
 
 // The APPS destination's body: the working set on top, then the free fleet
-// (or the paid x402 catalog behind the toggle), then "Add your own MCP".
+// (or the paid x402 catalog behind the toggle).
 // Extracted from ChatRail (squad mobile-native, 2026-09-24) so the desktop
 // drawer and the phone's APPS screen render ONE component: at lg and up the
 // drawer shows it in its 248px column, below lg it is the whole main area
@@ -15,7 +15,6 @@ import { cleanServerName, cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { fleetRank } from '@/lib/free-fleet'
 import BrandIcon from '@/components/BrandIcon'
-import AddMcpModal from '@/components/AddMcpModal'
 
 export default function AppsRailTab({
   /** The parent scrolls (the phone screen's one scroller): the list is laid
@@ -29,8 +28,6 @@ export default function AppsRailTab({
 
   // Free (default) vs the paid x402 catalog.
   const [freeView, setFreeView] = useState(true)
-  // "Add your own MCP" modal (portaled — a drawer clips fixed children).
-  const [addOpen, setAddOpen] = useState(false)
 
   const active = useMemo(
     () =>
@@ -198,28 +195,11 @@ export default function AppsRailTab({
             {freeView ? 'All free MCPs are in your set.' : 'No paid MCPs loaded.'}
           </p>
         )}
-        {/* Bring-your-own — the modal discovers tools from the server and
-            lets the user star what a new account should ping first. */}
-        <button
-          type="button"
-          onClick={() => setAddOpen(true)}
-          data-sheet-open="addmcp"
-          className={cn(
-            'mt-1.5 w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--line-2)] px-2 py-2 text-[length:var(--fs-xs)] font-medium text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--muted-2)] hover:bg-white/[0.03] transition-colors',
-            flat && 'min-h-[44px] text-[length:var(--fs-md)]',
-          )}
-        >
-          <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-          Add your own MCP
-        </button>
       </div>
 
       <p className={cn('px-3 pb-3 text-[10px] leading-relaxed text-[color:var(--muted-2)] border-t border-[var(--line)] pt-2', flat && 'text-[length:var(--fs-sm)]')}>
         {flat ? 'Tap an MCP to add or remove it from your set.' : 'Click an MCP to add or remove it from your set.'}
       </p>
-
-      {/* Portaled — lives outside any width-animated drawer so it never clips. */}
-      <AddMcpModal open={addOpen} onClose={() => setAddOpen(false)} />
     </>
   )
 }
