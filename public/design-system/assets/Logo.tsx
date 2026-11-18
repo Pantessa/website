@@ -1,64 +1,41 @@
 // components/Logo.tsx — standalone copy for external consumers.
-// Pantessa — the Emerald Cut mark + wordmark.
+// Pantessa — the Cut P mark + wordmark.
 //
-// Pan (all) + tessera (a mosaic tile): an emerald cut is the one gem made
-// entirely of tiles — rectangular step facets descending to an open table.
-// The brand emerald is the material; the open center is the table, the flat
-// plane where a signature lands. The corner miters are cut through a mask
-// (holes, never painted lines), so the mark sits on any ground.
+// A square stone is the bowl of a P and its open table is the counter. One
+// cut runs from the top-right corner, through the table, to the left edge of
+// the stem, and every other diagonal in the mark is parallel to it. The cut
+// is a gap between two pieces (never a painted line), so the mark sits on any
+// ground; the pieces take two emerald tones, lit and shade.
 //
-// The stone picks its cut by rendered size — a lacy cut cannot share a small
-// box: fine (5 rings) ≥96px, mark (3 rings) 32–95px, icon (2 rings) <32px.
-// Full asset kit + generator: https://www.pantessa.com/brand/emerald/
+// The letter never changes with size, only the width of the cut: fine (2.6)
+// at 96px and up, mark (3.2) from 32 to 95px, icon (6.5) below 32px.
+// Full asset kit + generator: https://www.pantessa.com/brand/cut-p/
 
 import * as React from "react";
 
 export const GEM_ACCENT = "#3ECF8E";
 
 type GemWeight = "fine" | "mark" | "icon";
-const W0 = 112, H0 = 88, C0 = 17, CX = 64, CY = 64, MITER_W = 2.6;
-const WEIGHTS: Record<GemWeight, { rings: number; band: number; gap: number }> = {
-  fine: { rings: 5, band: 4.6, gap: 2.4 },
-  mark: { rings: 3, band: 8.6, gap: 4.0 },
-  icon: { rings: 2, band: 12.5, gap: 5.5 },
-};
-const TONES: Record<GemWeight, string[]> = {
-  fine: ["#0B6B4A", "#0F8156", "#159B68", "#27B67A", "#3ECF8E"],
-  mark: ["#0B6B4A", "#159B68", "#3ECF8E"],
-  icon: ["#159B68", "#3ECF8E"],
-};
+const X0 = 28, X1 = 100, Y0 = 8, Y1 = 80, C = 16, S = 22, YB = 120, LENS = 0.46;
+const CUT: Record<GemWeight, number> = { fine: 2.6, mark: 3.2, icon: 6.5 };
+/** [lit, shade] */
+const TONES = ["#3ECF8E", "#159B68"];
 
 const f = (n: number) => +n.toFixed(2);
-const cOf = (w: number) => C0 * (w / W0);
-function octagon(w: number, h: number, c: number): string {
-  const x0 = CX - w / 2, x1 = CX + w / 2, y0 = CY - h / 2, y1 = CY + h / 2;
-  const p: [number, number][] = [
-    [x0 + c, y0], [x1 - c, y0], [x1, y0 + c], [x1, y1 - c],
-    [x1 - c, y1], [x0 + c, y1], [x0, y1 - c], [x0, y0 + c],
+const path = (pts: [number, number][]) => "M " + pts.map((q) => `${f(q[0])} ${f(q[1])}`).join(" L ") + " Z";
+function geometry(weight: GemWeight): string[] {
+  const h = CUT[weight] / Math.SQRT2;
+  const kx0 = X0 + S, kx1 = X1 - S, ky0 = Y0 + S, ky1 = Y1 - S;
+  const l = (kx1 - kx0) * LENS;
+  const lit: [number, number][] = [
+    [X0 + C, Y0], [X1 - h, Y0], [kx1 - h, ky0], [kx0 + l, ky0],
+    [kx0, ky0 + l], [kx0, ky1 - h], [X0, Y1 - h], [X0, Y0 + C],
   ];
-  return "M " + p.map((q) => `${f(q[0])} ${f(q[1])}`).join(" L ") + " Z";
-}
-function cornerMids(w: number, h: number, c: number): [number, number][] {
-  return [
-    [CX + w / 2 - c / 2, CY - h / 2 + c / 2],
-    [CX + w / 2 - c / 2, CY + h / 2 - c / 2],
-    [CX - w / 2 + c / 2, CY + h / 2 - c / 2],
-    [CX - w / 2 + c / 2, CY - h / 2 + c / 2],
+  const shade: [number, number][] = [
+    [X1, Y0 + h], [X1, Y1 - C], [X1 - C, Y1], [kx0, Y1], [kx0, YB - S], [X0, YB],
+    [X0, Y1 + h], [kx0 + h, ky1], [kx1 - l, ky1], [kx1, ky1 - l], [kx1, ky0 + h],
   ];
-}
-function geometry(weight: GemWeight) {
-  const { rings, band, gap } = WEIGHTS[weight];
-  const bands: { outer: string; inner: string }[] = [];
-  let w = W0, h = H0;
-  for (let i = 0; i < rings; i++) {
-    const outer = octagon(w, h, cOf(w));
-    const w2 = w - band * 2, h2 = h - band * 2;
-    bands.push({ outer, inner: octagon(w2, h2, Math.max(2.5, cOf(w2))) });
-    w = w2 - gap * 2; h = h2 - gap * 2;
-  }
-  const mo = cornerMids(W0, H0, C0);
-  const mi = cornerMids(w + 2, h + 2, Math.max(3, cOf(w)));
-  return { bands, miters: mo.map((m, k) => ({ x1: f(m[0]), y1: f(m[1]), x2: f(mi[k][0]), y2: f(mi[k][1]) })) };
+  return [path(lit), path(shade)];
 }
 const weightFor = (px: number): GemWeight => (px < 32 ? "icon" : px < 96 ? "mark" : "fine");
 
@@ -66,10 +43,12 @@ type MarkProps = {
   size?: number;
   className?: string;
   title?: string;
-  /** Default renders the emerald facet ramp; `null` renders single-ink in
-   *  `currentColor`; any other color re-inks the ramp (white-label). */
+  /** Default renders the two emerald tones; `null` renders single-ink in
+   *  `currentColor`; any other color re-inks both pieces (white-label). */
   accent?: string | null;
   weight?: GemWeight;
+  /** Crop the box to the letter (72 by 112): `size` is then its height. */
+  tight?: boolean;
 };
 
 export function PantessaMark({
@@ -78,33 +57,23 @@ export function PantessaMark({
   title = "Pantessa",
   accent = GEM_ACCENT,
   weight,
+  tight = false,
 }: MarkProps) {
-  const cut = weight ?? weightFor(size);
-  const { bands, miters } = geometry(cut);
-  const maskId = `pt-gem-${React.useId().replace(/:/g, "")}`;
-  const ramp = cut === "fine" ? [0.45, 0.58, 0.7, 0.85, 1] : cut === "mark" ? [0.55, 0.75, 1] : [0.72, 1];
-  const fills =
-    accent === null ? bands.map(() => "currentColor") : accent === GEM_ACCENT ? TONES[cut] : bands.map(() => accent);
-  const opacities = accent && accent !== GEM_ACCENT ? ramp : null;
+  const pieces = geometry(weight ?? weightFor(size));
+  const fills = accent === null ? ["currentColor", "currentColor"] : accent === GEM_ACCENT ? TONES : [accent, accent];
+  const opacities = accent && accent !== GEM_ACCENT ? [1, 0.72] : null;
   return (
-    <svg width={size} height={size} viewBox="0 0 128 128" className={className} role="img" aria-label={title}>
-      <mask id={maskId}>
-        <rect width="128" height="128" fill="#fff" />
-        {miters.map((m, k) => (
-          <line key={k} x1={m.x1} y1={m.y1} x2={m.x2} y2={m.y2} stroke="#000" strokeWidth={MITER_W} />
-        ))}
-      </mask>
-      <g mask={`url(#${maskId})`}>
-        {bands.map((b, i) => (
-          <path
-            key={i}
-            d={`${b.outer} ${b.inner}`}
-            fillRule="evenodd"
-            fill={fills[i]}
-            fillOpacity={opacities ? opacities[i] : undefined}
-          />
-        ))}
-      </g>
+    <svg
+      width={tight ? Math.round((size * (X1 - X0)) / (YB - Y0)) : size}
+      height={size}
+      viewBox={tight ? `${X0} ${Y0} ${X1 - X0} ${YB - Y0}` : "0 0 128 128"}
+      className={className}
+      role="img"
+      aria-label={title}
+    >
+      {pieces.map((d, i) => (
+        <path key={i} d={d} fill={fills[i]} fillOpacity={opacities ? opacities[i] : undefined} />
+      ))}
     </svg>
   );
 }
@@ -118,9 +87,9 @@ export function Logo({ size = 28, withWordmark = true, className }: LogoProps) {
   return (
     <span
       className={className}
-      style={{ display: "inline-flex", alignItems: "center", gap: Math.round(size * 0.36), color: "inherit", lineHeight: 1 }}
+      style={{ display: "inline-flex", alignItems: "center", gap: Math.round(size * 0.3), color: "inherit", lineHeight: 1 }}
     >
-      <PantessaMark size={size} />
+      <PantessaMark size={size} tight />
       {withWordmark && (
         <span
           style={{

@@ -16,13 +16,13 @@
 //      `foo-free`, `foo-mcp`, etc. That's the whole wiring — every surface
 //      (BrandIcon and the hero) picks it up automatically.
 
-import { useId, type ComponentType } from 'react'
+import { type ComponentType } from 'react'
 import { gemGeometry } from '@/lib/gem-geometry'
 
 export type Mark = ComponentType<{ size?: number }>
 
-// The Emerald Cut, shared with components/Logo.tsx via lib/gem-geometry.ts —
-// see public/brand/emerald/README.md for the construction and regeneration.
+// The Cut P, shared with components/Logo.tsx via lib/gem-geometry.ts —
+// see public/brand/cut-p/README.md for the construction and regeneration.
 
 export function UniswapMark({ size = 22 }: { size?: number }) {
   return (
@@ -132,31 +132,20 @@ export function MorphoMark({ size = 22 }: { size?: number }) {
 }
 
 export function YeetfulMark({ size = 22 }: { size?: number }) {
-  // Pantessa's own Emerald Cut — nested octagonal step facets with the corner
-  // miters cut through a mask (same geometry as components/Logo.tsx via
+  // Pantessa's own Cut P (same geometry as components/Logo.tsx via
   // lib/gem-geometry.ts). Used for the first-party `yeetful-tool-*` internal
   // MCPs so they carry the brand mark instead of a bare lettermark.
   //
-  // Single-ink here: every band takes `currentColor`, so the mark inverts with
-  // its tile like every other vendored mark in this file — the miter cuts and
-  // band gaps keep the stone legible either way. The icon cut is forced: tile
-  // slots are small, and a lacy cut cannot share a small box.
-  // A per-instance mask id keeps multiple marks on one page from colliding.
-  const maskId = `pt-gem-${useId().replace(/:/g, '')}`
-  const { bands, miters, miterWidth } = gemGeometry('icon')
+  // Single-ink here: both pieces take `currentColor`, so the mark inverts with
+  // its tile like every other vendored mark in this file, and the cut keeps
+  // the two pieces apart either way. The icon cut is forced: tile slots are
+  // small, and a thin cut closes up in a small box.
+  const { pieces } = gemGeometry('icon')
   return (
     <svg viewBox="0 0 128 128" width={size} height={size} fill="none" aria-hidden style={{ display: 'block' }}>
-      <mask id={maskId}>
-        <rect width="128" height="128" fill="#fff" />
-        {miters.map((m, k) => (
-          <line key={k} x1={m.x1} y1={m.y1} x2={m.x2} y2={m.y2} stroke="#000" strokeWidth={miterWidth} />
-        ))}
-      </mask>
-      <g mask={`url(#${maskId})`}>
-        {bands.map((b, i) => (
-          <path key={i} d={`${b.outer} ${b.inner}`} fillRule="evenodd" fill="currentColor" />
-        ))}
-      </g>
+      {pieces.map((d, i) => (
+        <path key={i} d={d} fill="currentColor" />
+      ))}
     </svg>
   )
 }

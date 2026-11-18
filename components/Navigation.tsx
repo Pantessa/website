@@ -222,10 +222,9 @@ export default function Navigation() {
             (2026-11-09, Nate: signed in, the logo goes back to the main
             market home). The Dashboard button on the right is the way in. */}
         <Link className="logo" href="/">
-          {/* The gem's ink box is 112×88 in the 128 grid, so a nominal size
-              renders ~0.69× that in visual height — retuned from the pangolin
-              era's 34 to keep the same visual weight. */}
-          <YeetfulMark size={28} />
+          {/* `tight` crops the box to the letter, so `size` is the mark's own
+              height: about 1.25x the wordmark's size, as in the kit lockup. */}
+          <YeetfulMark size={26} tight />
           <span className="logo__word">pantessa</span>
         </Link>
 

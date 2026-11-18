@@ -1,65 +1,75 @@
 // lib/gem-geometry.ts
-// Pantessa — the Emerald Cut. ONE geometry source for every renderer:
+// Pantessa — the Cut P. ONE geometry source for every renderer:
 // components/Logo.tsx (DOM), components/protocol-marks.tsx (first-party MCP
-// tiles), lib/og-marks.ts (satori data-URI cards), app/icon.svg and the brand
-// kit generator (public/brand/emerald/generate.js mirrors these numbers — if
-// the geometry changes here, regenerate the kit).
+// tiles), lib/og-marks.ts (share cards), app/icon.svg and the brand kit
+// generator (public/brand/cut-p/generate.js mirrors these numbers: if the
+// geometry changes here, change it there and regenerate the kit).
 //
-// Pan (all) + tessera (a mosaic tile): an emerald cut is the one gem made
-// entirely of tiles — rectangular step facets descending to an open table.
-// The stone is drawn as nested octagonal bands; the eight corner miters are
-// what make the octagons read as a cut stone rather than a target, and they
-// are cut through a mask (holes, never painted lines) so the mark sits on any
-// ground. The center is left open on purpose: it is the table, the flat plane
-// where a signature lands.
+// The mark, picked 2026-11-18 to replace the Emerald Cut (nested octagons
+// that had no outline of their own at avatar size). It keeps the stone, the
+// emerald and the open table, and gives them a letter:
 //
-// Weight ladder (the seal-era lesson, kept): a lacy cut cannot share a small
-// box. `gemWeightFor` picks the cut for the rendered size — never ship the
-// fine cut below 96px or the mark cut below 32px.
+//   - A SQUARE stone is the bowl of a P, and its open table is the counter.
+//   - Because the stone is square, the top-right and lower-left miters lie on
+//     one line. That line is THE CUT: it runs from the top-right corner,
+//     through the table, to the left edge of the stem. Two pieces, two tones.
+//   - Every diagonal in the mark is parallel to the cut: the top-left and
+//     lower-right chamfers, the two sharp corners of the table, and the foot
+//     of the stem. The top-right corner stays sharp, where the cut enters.
+//
+// The cut is a real gap between two polygons (never a painted line), so the
+// mark sits on any ground. The table stays open: it is where a signature
+// lands.
+//
+// Weight ladder: the letter never changes, only the width of the cut. A thin
+// cut closes up in a small box, so `gemWeightFor` widens it as the mark
+// shrinks. Never ship the fine cut below 96px or the mark cut below 32px.
 
 export type GemWeight = "fine" | "mark" | "icon";
 
 /** The brand emerald — mirrors `--accent` in app/x402-design.css (dark). */
 export const GEM_ACCENT = "#3ECF8E";
 
-/** Stone proportions (viewBox 128). 112×88 ≈ the classic 1.27:1 emerald cut;
- *  corner cut 17 scales down with each ring so facets stay in proportion. */
-const W0 = 112;
-const H0 = 88;
-const C0 = 17;
-const CX = 64;
-const CY = 64;
+/** The letter, on a 128 grid. The stone is X0..X1 by Y0..Y1 and must stay
+ *  square: that is what puts the two miters on one line. */
+const X0 = 28;
+const X1 = 100;
+const Y0 = 8;
+const Y1 = 80;
+/** Chamfer of the top-left and lower-right corners. */
+const C = 16;
+/** Stroke: the stem's width and the band around the table. */
+const S = 22;
+/** Bottom of the stem's long side. The foot is cut on the cut's own angle. */
+const YB = 120;
+/** How far the table's two blunt corners are cut back, as a share of its side. */
+const LENS = 0.46;
 
-const WEIGHTS: Record<GemWeight, { rings: number; band: number; gap: number }> = {
-  fine: { rings: 5, band: 4.6, gap: 2.4 },
-  mark: { rings: 3, band: 8.6, gap: 4.0 },
-  icon: { rings: 2, band: 12.5, gap: 5.5 },
-};
+/** The letter's own box inside the 128 grid, for renderers that crop to it. */
+export const GEM_BOX = { x: X0, y: Y0, w: X1 - X0, h: YB - Y0 };
 
-/** Miter grout width — uniform across weights; subpixel at icon sizes. */
-export const GEM_MITER_WIDTH = 2.6;
+/** Width of the cut, in grid units, per weight. */
+const CUT: Record<GemWeight, number> = { fine: 2.6, mark: 3.2, icon: 6.5 };
 
-/** Emerald ramps, deep → bright, per ring count. Dark-theme inks; the light
- *  theme resolves via the `--gem-*` tokens in app/x402-design.css. */
+/** The two pieces, [lit, shade]. Dark-theme inks; the light theme resolves
+ *  through the `--gem-*` tokens in app/x402-design.css. */
 export const GEM_TONES_DARK: Record<GemWeight, string[]> = {
-  fine: ["#0B6B4A", "#0F8156", "#159B68", "#27B67A", "#3ECF8E"],
-  mark: ["#0B6B4A", "#159B68", "#3ECF8E"],
-  icon: ["#159B68", "#3ECF8E"],
+  fine: ["#3ECF8E", "#159B68"],
+  mark: ["#3ECF8E", "#159B68"],
+  icon: ["#3ECF8E", "#159B68"],
 };
 export const GEM_TONES_LIGHT: Record<GemWeight, string[]> = {
-  fine: ["#084A33", "#0A5C40", "#0C7A52", "#0D8158", "#0e8f62"],
-  mark: ["#0A5C40", "#0C7A52", "#0e8f62"],
-  icon: ["#0C7A52", "#0e8f62"],
+  fine: ["#0e8f62", "#0C7A52"],
+  mark: ["#0e8f62", "#0C7A52"],
+  icon: ["#0e8f62", "#0C7A52"],
 };
 
-/** Theme-aware fills for the DOM component: `--gem-N` tokens flip with
- *  data-theme; the fallbacks are the dark inks so the mark stays emerald on
- *  surfaces outside the site stylesheet. Ring index → token: fine uses 1..5,
- *  mark 1/3/5, icon 3/5 — so all weights share one five-token ramp. */
+/** Theme-aware fills for the DOM component, [lit, shade]: `--gem-5` and
+ *  `--gem-3` flip with data-theme; the fallbacks are the dark inks so the mark
+ *  stays emerald on surfaces outside the site stylesheet. */
 export function gemFillVars(weight: GemWeight): string[] {
   const dark = GEM_TONES_DARK[weight];
-  const idx = weight === "fine" ? [1, 2, 3, 4, 5] : weight === "mark" ? [1, 3, 5] : [3, 5];
-  return idx.map((n, i) => `var(--gem-${n}, ${dark[i]})`);
+  return [`var(--gem-5, ${dark[0]})`, `var(--gem-3, ${dark[1]})`];
 }
 
 export function gemWeightFor(px: number): GemWeight {
@@ -69,82 +79,49 @@ export function gemWeightFor(px: number): GemWeight {
 }
 
 const f = (n: number) => +n.toFixed(2);
-
-function octagonPath(w: number, h: number, c: number): string {
-  const x0 = CX - w / 2, x1 = CX + w / 2, y0 = CY - h / 2, y1 = CY + h / 2;
-  const p: [number, number][] = [
-    [x0 + c, y0], [x1 - c, y0], [x1, y0 + c], [x1, y1 - c],
-    [x1 - c, y1], [x0 + c, y1], [x0, y1 - c], [x0, y0 + c],
-  ];
-  return "M " + p.map((q) => `${f(q[0])} ${f(q[1])}`).join(" L ") + " Z";
-}
-
-/** Corner-cut midpoints of an octagon, clockwise from top-right. */
-function cornerMids(w: number, h: number, c: number): [number, number][] {
-  return [
-    [CX + w / 2 - c / 2, CY - h / 2 + c / 2],
-    [CX + w / 2 - c / 2, CY + h / 2 - c / 2],
-    [CX - w / 2 + c / 2, CY + h / 2 - c / 2],
-    [CX - w / 2 + c / 2, CY - h / 2 + c / 2],
-  ];
-}
+const path = (pts: [number, number][]) =>
+  "M " + pts.map((q) => `${f(q[0])} ${f(q[1])}`).join(" L ") + " Z";
 
 export type GemGeometry = {
-  /** One evenodd band per ring, outer path + inner path, deep → bright. */
-  bands: { outer: string; inner: string }[];
-  /** The four corner miter cuts, outer corner → table corner. */
-  miters: { x1: number; y1: number; x2: number; y2: number }[];
-  miterWidth: number;
+  /** The two pieces of the letter as closed paths, [lit, shade]: the lit
+   *  piece is the top of the stone and the upper stem, the shade piece is the
+   *  rest of the stone and the foot. */
+  pieces: string[];
 };
 
-const cOf = (w: number) => C0 * (w / W0);
-
 export function gemGeometry(weight: GemWeight): GemGeometry {
-  const { rings, band, gap } = WEIGHTS[weight];
-  const bands: GemGeometry["bands"] = [];
-  let w = W0, h = H0;
-  for (let i = 0; i < rings; i++) {
-    const outer = octagonPath(w, h, cOf(w));
-    const w2 = w - band * 2, h2 = h - band * 2;
-    const inner = octagonPath(w2, h2, Math.max(2.5, cOf(w2)));
-    bands.push({ outer, inner });
-    w = w2 - gap * 2;
-    h = h2 - gap * 2;
-  }
-  const mo = cornerMids(W0, H0, C0);
-  const mi = cornerMids(w + 2, h + 2, Math.max(3, cOf(w)));
-  const miters = mo.map((m, k) => ({ x1: f(m[0]), y1: f(m[1]), x2: f(mi[k][0]), y2: f(mi[k][1]) }));
-  return { bands, miters, miterWidth: GEM_MITER_WIDTH };
+  // The cut is the line x + y = X1 + Y0. Each piece stops `h` short of it,
+  // which leaves a gap CUT[weight] wide measured across the cut.
+  const h = CUT[weight] / Math.SQRT2;
+  const kx0 = X0 + S, kx1 = X1 - S, ky0 = Y0 + S, ky1 = Y1 - S;
+  const l = (kx1 - kx0) * LENS;
+  const lit: [number, number][] = [
+    [X0 + C, Y0], [X1 - h, Y0], [kx1 - h, ky0], [kx0 + l, ky0],
+    [kx0, ky0 + l], [kx0, ky1 - h], [X0, Y1 - h], [X0, Y0 + C],
+  ];
+  const shade: [number, number][] = [
+    [X1, Y0 + h], [X1, Y1 - C], [X1 - C, Y1], [kx0, Y1], [kx0, YB - S], [X0, YB],
+    [X0, Y1 + h], [kx0 + h, ky1], [kx1 - l, ky1], [kx1, ky1 - l], [kx1, ky0 + h],
+  ];
+  return { pieces: [path(lit), path(shade)] };
 }
 
 /**
- * The mark as a raw SVG inner-body string (mask + banded stone), for renderers
- * that assemble their own `<svg>` shell: og-marks' data-URI cards and the
- * brand-kit generator. `fills` must have one entry per ring of the weight;
- * `fillOpacities` (optional, same length) supports accent-ramp re-inks.
- * Callers must pass a `maskId` unique within the composed document.
+ * The mark as a raw SVG inner-body string, for renderers that assemble their
+ * own `<svg>` shell: og-marks' share cards and the brand-kit generator.
+ * `fills` is [lit, shade]; `fillOpacities` (optional, same order) supports
+ * single-accent re-inks.
  */
-export function gemSvgBody(
-  weight: GemWeight,
-  fills: string[],
-  maskId: string,
-  fillOpacities?: number[],
-): string {
-  const { bands, miters, miterWidth } = gemGeometry(weight);
-  const cuts = miters
-    .map((m) => `<line x1="${m.x1}" y1="${m.y1}" x2="${m.x2}" y2="${m.y2}" stroke="#000" stroke-width="${miterWidth}"/>`)
-    .join("");
-  const stone = bands
-    .map((b, i) =>
-      `<path d="${b.outer} ${b.inner}" fill-rule="evenodd" fill="${fills[i]}"${
-        fillOpacities ? ` fill-opacity="${fillOpacities[i]}"` : ""
-      }/>`,
+export function gemSvgBody(weight: GemWeight, fills: string[], fillOpacities?: number[]): string {
+  return gemGeometry(weight)
+    .pieces.map(
+      (d, i) =>
+        `<path d="${d}" fill="${fills[i] ?? fills[0]}"${fillOpacities ? ` fill-opacity="${fillOpacities[i]}"` : ""}/>`,
     )
     .join("");
-  return `<mask id="${maskId}"><rect width="128" height="128" fill="#fff"/>${cuts}</mask><g mask="url(#${maskId})">${stone}</g>`;
 }
 
-/** Accent-ramp opacities for white-label re-inks, deep → bright. */
-export function gemAccentRamp(weight: GemWeight): number[] {
-  return weight === "fine" ? [0.45, 0.58, 0.7, 0.85, 1] : weight === "mark" ? [0.55, 0.75, 1] : [0.72, 1];
+/** Opacities for a white-label re-ink in one accent, [lit, shade]. */
+export function gemAccentRamp(_weight: GemWeight): number[] {
+  return [1, 0.72];
 }
