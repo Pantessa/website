@@ -3,27 +3,53 @@
 // The Apps page's first run (lib/apps-start): a way to put money in, then what
 // each app can do. An ask goes to the chat like every other button on the page;
 // nothing here builds or signs a trade.
+//
+// Two numbered blocks. 01 is the money: a card buy or the address, and while a
+// card purchase is on its way, the wait WITH its two ways out (the same Stripe
+// checkout again, or back to the choices). 02 is the board: every app with its
+// mark, a line on what it does, a live price where it has a market, and its
+// asks. Asks that move money are marked and still go to the chat, whose
+// funding step holds the ask until the money lands.
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { Check, Copy, CreditCard, Loader2, QrCode } from 'lucide-react'
+import { ArrowUpRight, Check, Copy, CreditCard, ExternalLink, Loader2, QrCode } from 'lucide-react'
 import BrandIcon from '@/components/BrandIcon'
 import { Eyebrow } from '@/components/apps/parts'
 import type { AppsStartState } from '@/components/apps/useAppsStart'
-import type { StartRow } from '@/lib/apps-start'
+import type { StartCell } from '@/lib/apps-start'
+import { fmtPct, fmtQuotePrice, useQuotes, type Quote } from '@/lib/markets-quotes'
 import { ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
 import type { McpServer } from '@/lib/store'
 import { cleanServerName } from '@/lib/utils'
 import { RAIL_FUND_PRESET_USD, railFundOptionsFor } from '@/lib/watchlists'
 
 export default function AppsStart({ address, start, onAsk }: { address: string; start: AppsStartState; onAsk: (prompt: string, slug: string) => void }) {
-  const { fund, rows } = start
+  const { fund, cells } = start
+  const symbols = useMemo(() => cells.flatMap((c) => (c.quote ? [c.quote] : [])), [cells])
+  const { quotes } = useQuotes(symbols)
   return (
     <div className="apg-start" data-apps-start={fund.phase ?? 'open'}>
       <p className="apg-start__lead apg-muted">Your apps do the work. Your wallet signs every move.</p>
-      <FundBlock address={address} start={start} />
-      <AskList title="Try now, no funds needed" rows={rows.free} onAsk={onAsk} list="free" />
-      <AskList title="Ready when you’ve added funds" rows={rows.funded} onAsk={onAsk} list="funded" />
+      <div className="apg-start__step">
+        <Eyebrow>
+          <span className="apg-start__n">01</span>Add funds
+        </Eyebrow>
+        <FundBlock address={address} start={start} />
+      </div>
+      {cells.length > 0 && (
+        <section className="apg-start__step" data-apps-start-list="apps">
+          <Eyebrow>
+            <span className="apg-start__n">02</span>Ask your apps
+          </Eyebrow>
+          <p className="apg-start__note">Questions are free and work right now. Anything that moves money waits for funds, then for your signature.</p>
+          <div className="apg-start__grid">
+            {cells.map((c) => (
+              <AppCell key={c.family} cell={c} quote={c.quote ? quotes[c.quote] : undefined} onAsk={onAsk} />
+            ))}
+          </div>
+        </section>
+      )}
       {start.canHide && (
         <button type="button" className="apg-start__hide" onClick={start.hide} data-apps-start-hide="">
           Hide this guide
@@ -55,6 +81,10 @@ function FundBlock({ address, start }: { address: string; start: AppsStartState 
   if (fund.phase === 'watching' && fund.wait) {
     const chain = ONRAMP_NETWORK_LABEL[fund.wait.network] ?? fund.wait.network
     const stopped = fund.watch.status === 'timeout'
+    // A wait can outlive its Stripe tab (closed, lost, never finished). The
+    // way back is a button, not a line of small print: the SAME checkout
+    // again when this wait kept it, and always the choices again.
+    const checkout = stopped ? null : fund.checkoutHref
     return (
       <section className="apg-start__fund" role="status" data-apps-start-fund="watching">
         <p className="apg-start__status">
@@ -68,11 +98,21 @@ function FundBlock({ address, start }: { address: string; start: AppsStartState 
               ? `${chain} isn’t answering right now. Still watching.`
               : 'Finish the purchase in the Stripe tab. This page updates when it lands.'}
         </p>
-        <p className="apg-start__note">
-          Closed it without buying?{' '}
-          <button type="button" className="apg-start__link" onClick={fund.startOver}>
+        <div className="apg-start__acts">
+          {checkout && (
+            <a className="apg-btn apg-btn--strong" href={checkout} target="_blank" rel="noopener noreferrer" data-apps-start-reopen="">
+              <ExternalLink width={14} height={14} aria-hidden />
+              Open Stripe again
+            </a>
+          )}
+          <button type="button" className={`apg-btn${checkout ? '' : ' apg-btn--strong'}`} onClick={fund.startOver} data-apps-start-over="">
             Start over
           </button>
+        </div>
+        <p className="apg-start__note">
+          {checkout
+            ? 'Lost the Stripe tab? Open Stripe again picks up the same checkout. Start over brings back the card and address choices.'
+            : 'Didn’t finish at Stripe? Start over brings back the card and address choices.'}
         </p>
       </section>
     )
@@ -134,20 +174,32 @@ function Receive({ address }: { address: string }) {
   )
 }
 
-function AskList({ title, rows, onAsk, list }: { title: string; rows: StartRow<McpServer>[]; onAsk: (prompt: string, slug: string) => void; list: string }) {
-  if (rows.length === 0) return null
+function AppCell({ cell, quote, onAsk }: { cell: StartCell<McpServer>; quote: Quote | undefined; onAsk: (prompt: string, slug: string) => void }) {
+  const live = quote && Number.isFinite(quote.last) ? quote : null
   return (
-    <section className="apg-start__list" data-apps-start-list={list}>
-      <Eyebrow>{title}</Eyebrow>
+    <div className="apg-start__cell" data-apps-start-app={cell.family}>
+      <div className="apg-start__cellHead">
+        <span className="apg-start__icon">
+          <BrandIcon server={cell.server} size={28} />
+        </span>
+        <span className="apg-start__name">{cleanServerName(cell.server.name)}</span>
+        {live && cell.quote && (
+          <span className="apg-start__quote" data-apps-start-quote={cell.quote}>
+            <span className="apg-start__sym">{cell.quote}</span>
+            <span>${fmtQuotePrice(live.last)}</span>
+            {Number.isFinite(live.chgPct) && <span className={live.chgPct > 0 ? 'is-up' : live.chgPct < 0 ? 'is-down' : undefined}>{fmtPct(live.chgPct)}</span>}
+          </span>
+        )}
+        <span className="apg-start__does">{cell.does}</span>
+      </div>
       <div className="apg-start__rows">
-        {rows.map((r) => (
-          <button key={r.prompt} type="button" className="apg-start__row" onClick={() => onAsk(r.prompt, r.server.slug)}>
-            <BrandIcon server={r.server} size={20} />
-            <span className="apg-start__ask">{r.label}</span>
-            <span className="apg-start__app">{cleanServerName(r.server.name)}</span>
+        {cell.asks.map((a) => (
+          <button key={a.prompt} type="button" className="apg-start__row" data-funded={a.funded ? '' : undefined} onClick={() => onAsk(a.prompt, cell.server.slug)}>
+            <span className="apg-start__ask">{a.label}</span>
+            {a.funded ? <span className="apg-start__tag">Needs funds</span> : <ArrowUpRight width={14} height={14} className="apg-start__go" aria-hidden />}
           </button>
         ))}
       </div>
-    </section>
+    </div>
   )
 }

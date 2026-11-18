@@ -66,6 +66,46 @@ export function startSuggestions(rows: { free: StartRow<{ slug: string }>[] }, a
     .map((r) => ({ label: r.label, prompt: r.prompt }))
 }
 
+/** One app on the first-run board (2026-11-18, Nate: "a bit boring when a
+ *  user does not have funds"): what it does in a line, and the market whose
+ *  live price sits beside its name. The board's order, two to a row. */
+export interface StartApp {
+  family: AppFamily
+  does: string
+  /** A symbol /api/quotes answers. No quote, no figure: never a placeholder. */
+  quote?: string
+}
+
+export const START_APPS: readonly StartApp[] = [
+  { family: 'uniswap', does: 'Prices and swaps for any token.', quote: 'ETH' },
+  { family: 'robinhood', does: 'Stocks as tokens, bought with crypto.', quote: 'AAPL' },
+  { family: 'hyperliquid', does: 'Perp markets: go long or short.', quote: 'BTC' },
+  { family: 'aave', does: 'Lend what you hold and earn on it.' },
+  { family: 'snapshot', does: 'DAO proposals and votes.' },
+  { family: 'opensea', does: 'NFT collections, floors and listings.' },
+]
+
+export interface StartCell<S> extends StartApp {
+  server: S
+  /** Free asks first, then the ones that wait for funds. */
+  asks: (StartAsk & { funded: boolean })[]
+}
+
+/** The board: one cell per listed app that has an ask, each ask under the app
+ *  that answers it. Built from the same two lists as startRows, so no ask is
+ *  on the board that the chat's suggestions do not know. */
+export function startCells<S extends { slug: string; name: string }>(servers: readonly S[]): StartCell<S>[] {
+  const rows = startRows(servers)
+  return START_APPS.flatMap((app) => {
+    const free = rows.free.filter((r) => r.family === app.family)
+    const funded = rows.funded.filter((r) => r.family === app.family)
+    const server = (free[0] ?? funded[0])?.server
+    if (!server) return []
+    const ask = (funded: boolean) => (r: StartRow<S>) => ({ family: r.family, label: r.label, prompt: r.prompt, funded })
+    return [{ ...app, server, asks: [...free.map(ask(false)), ...funded.map(ask(true))] }]
+  })
+}
+
 export type StartPhase = 'deciding' | 'start' | 'off'
 
 export function startPhase(s: {
