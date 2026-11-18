@@ -28,13 +28,16 @@ import ChatLoader from '@/components/ChatLoader'
 import AppsRailTab from '@/components/AppsRailTab'
 import Sheet from '@/components/mobile/Sheet'
 import { useSoftKeyboard } from '@/components/mobile/useSoftKeyboard'
+import AppsStart from '@/components/apps/AppsStart'
 import NeedsYou from '@/components/apps/NeedsYou'
 import Recurring from '@/components/apps/Recurring'
 import { Eyebrow } from '@/components/apps/parts'
 import { SECTIONS } from '@/components/apps/sections'
 import { useAppSet } from '@/components/apps/useAppSet'
 import { useAppTiles } from '@/components/apps/useAppTiles'
+import { useAppsStart } from '@/components/apps/useAppsStart'
 import { useAppsUi } from '@/lib/apps-page-ui'
+import { START_EYEBROW } from '@/lib/apps-start'
 import { appFamily, askPlaceholder, densityEyebrow, dockSuggestions, lineFor, needsLeads, needsYouRows, pageHeadline, pageTotalUsd, quietSentence, splitPageTiles } from '@/lib/apps-page'
 import { askBarSubmit, phoneLayoutFor, phoneSuggestions } from '@/lib/apps-phone'
 import { useYeetfulStore } from '@/lib/store'
@@ -56,7 +59,7 @@ let SCROLL_MEMORY = 0
 let TILE_CACHE: { key: string; tiles: SplashTile[]; map: MoneyMap | null } | null = null
 
 export default function AppsPhone({ address, title }: { address: string; title: string }) {
-  const { active, toggle } = useAppSet()
+  const { active, servers, toggle } = useAppSet()
   const scan = useAppTiles(address, active)
   const { pending, retry } = scan
   const chainId = useYeetfulStore((s) => s.selectedChainId)
@@ -78,11 +81,14 @@ export default function AppsPhone({ address, title }: { address: string; title: 
   const page = useMemo(() => splitPageTiles(tiles ?? [], active.map((s) => s.slug)), [tiles, active])
   const totalUsd = useMemo(() => pageTotalUsd([...page.bySlug.values()].flat()), [page])
   const needs = needsYouRows(page.briefing)
+  // An empty wallet's first run, as on the desktop page (lib/apps-start).
+  const start = useAppsStart({ address, servers, active, ready: !loading && tiles !== null, totalUsd, needs: needs.length })
+  const starting = start.phase === 'start'
 
   // The same suggestions the desktop dock offers (the page publishes them).
   useEffect(() => {
-    setSuggestions(dockSuggestions(active.map((s) => (page.bySlug.get(s.slug) ?? []).flatMap((t) => t.prompts))))
-  }, [active, page, setSuggestions])
+    setSuggestions(starting ? start.suggestions : dockSuggestions(active.map((s) => (page.bySlug.get(s.slug) ?? []).flatMap((t) => t.prompts))))
+  }, [active, page, setSuggestions, starting, start.suggestions])
 
   // Every ask goes to the conversation, which runs it.
   const ask = (text: string, opts?: { send?: boolean; mcps?: string[] }) => {
@@ -167,12 +173,16 @@ export default function AppsPhone({ address, title }: { address: string; title: 
 
         <div className={`apgm-inner apgm-inner--${layout}`}>
           <header className="apg-head">
-            <Eyebrow>{densityEyebrow(active.length)}</Eyebrow>
-            <h2 className="apg-headline apgm-headline">{headline}</h2>
+            <Eyebrow>{starting ? START_EYEBROW : densityEyebrow(active.length)}</Eyebrow>
+            <h2 className="apg-headline apgm-headline" data-deciding={start.phase === 'deciding' ? '' : undefined}>
+              {starting ? start.headline : headline}
+            </h2>
           </header>
 
+          {starting && <AppsStart address={address} start={start} onAsk={(text, slug) => ask(text, { mcps: [slug] })} />}
+
           {layout === 'empty' ? (
-            <p className="apg-muted apgm-empty">Add an app from the row above. One app is shown in full; add more and the page makes room for each.</p>
+            !starting && <p className="apg-muted apgm-empty">Add an app from the row above. One app is shown in full; add more and the page makes room for each.</p>
           ) : !contentReady ? (
             <ChatLoader inline />
           ) : (
@@ -196,7 +206,7 @@ export default function AppsPhone({ address, title }: { address: string; title: 
                   />
                 ))}
                 {layout === 'lines' && <Recurring tile={page.recurring} line onAsk={askFor()} />}
-                {quiet.length > 0 && (
+                {quiet.length > 0 && !starting && (
                   <div className="apg-line apg-line--quiet" data-apps-line="quiet">
                     <span className="apg-line__app">
                       <Eyebrow>Quiet</Eyebrow>

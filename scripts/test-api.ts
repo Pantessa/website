@@ -402,6 +402,7 @@ import { jobsOffersPins } from './jobs-offers-pins'
 import { jobsPreflightPins } from './jobs-preflight-pins'
 import { jobsAuditPins } from './jobs-audit-pins'
 import { appsPagePins } from './apps-page-pins'
+import { appsStartPins } from './apps-start-pins'
 import { appsPortfolioPins } from './apps-portfolio-pins'
 import { appsTradePins } from './apps-trade-pins'
 import { appsEarnPins } from './apps-earn-pins'
@@ -25939,7 +25940,8 @@ async function main() {
         arrivalSrc.includes('waitRef.current = keepWatchedWait(waitRef.current, wait)') && !/waitRef\.current = wait\s*$/m.test(arrivalSrc))
 
     // 4. The wiring.
-    const fundSrc = await readFile('components/markets/watchlist/FundWallet.tsx', 'utf8')
+    // The door's state moved to lib/use-card-fund (2026-11-18): the two files are one door.
+    const fundSrc = (await readFile('components/markets/watchlist/FundWallet.tsx', 'utf8')) + (await readFile('lib/use-card-fund.ts', 'utf8'))
     const railFundSrc = await readFile('components/markets/watchlist/WatchlistRail.tsx', 'utf8')
     const hookFundSrc = await readFile('components/markets/watchlist/useWatchlists.ts', 'utf8')
     // The holdings read itself moved to lib/held-read (2026-09-16, shared with
@@ -35958,6 +35960,7 @@ async function main() {
   jobsAuditPins(check)
   // The apps page (squad apps-page, 2026-11-17): one pin file per lane.
   appsPagePins(check)
+  appsStartPins(check)
   appsPortfolioPins(check)
   appsTradePins(check)
   appsEarnPins(check)

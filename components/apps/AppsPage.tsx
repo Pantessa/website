@@ -22,13 +22,16 @@ import ChainPicker from '@/components/ChainPicker'
 import ChatLoader from '@/components/ChatLoader'
 import SiteAccount from '@/components/SiteAccount'
 import AppChips from '@/components/apps/AppChips'
+import AppsStart from '@/components/apps/AppsStart'
 import NeedsYou from '@/components/apps/NeedsYou'
 import Recurring from '@/components/apps/Recurring'
 import { Eyebrow } from '@/components/apps/parts'
 import { SECTIONS } from '@/components/apps/sections'
 import { useAppSet } from '@/components/apps/useAppSet'
 import { useAppTiles } from '@/components/apps/useAppTiles'
+import { useAppsStart } from '@/components/apps/useAppsStart'
 import { useAppsUi } from '@/lib/apps-page-ui'
+import { START_EYEBROW } from '@/lib/apps-start'
 import {
   appFamily,
   askPlaceholder,
@@ -48,7 +51,7 @@ import { cleanServerName } from '@/lib/utils'
 import './apps.css'
 
 export default function AppsPage({ address }: { address: string }) {
-  const { active } = useAppSet()
+  const { active, servers } = useAppSet()
   const { tiles, map, loading, pending, retry } = useAppTiles(address, active)
   const { chatOpen, setChatOpen, sendAsk, setSuggestions } = useAppsUi()
 
@@ -58,11 +61,15 @@ export default function AppsPage({ address }: { address: string }) {
   const page = useMemo(() => splitPageTiles(tiles ?? [], active.map((s) => s.slug)), [tiles, active])
   const totalUsd = useMemo(() => pageTotalUsd([...page.bySlug.values()].flat()), [page])
   const needs = needsYouRows(page.briefing)
+  // An empty wallet's first run (lib/apps-start): it takes the headline and
+  // leads the page; the apps' own sections stay under it.
+  const start = useAppsStart({ address, servers, active, ready: !loading && tiles !== null, totalUsd, needs: needs.length })
+  const starting = start.phase === 'start'
 
   // The dock's empty state offers the open apps' own first asks.
   useEffect(() => {
-    setSuggestions(dockSuggestions(active.map((s) => (page.bySlug.get(s.slug) ?? []).flatMap((t) => t.prompts))))
-  }, [active, page, setSuggestions])
+    setSuggestions(starting ? start.suggestions : dockSuggestions(active.map((s) => (page.bySlug.get(s.slug) ?? []).flatMap((t) => t.prompts))))
+  }, [active, page, setSuggestions, starting, start.suggestions])
 
   const askFor = (slug?: string) => (text: string, opts?: { send?: boolean }) =>
     sendAsk(text, { send: opts?.send, mcps: slug ? [slug] : undefined })
@@ -112,12 +119,16 @@ export default function AppsPage({ address }: { address: string }) {
       <div className="apg__scroll" data-apps-scroll="">
         <div className={`apg__inner apg__inner--${density}`}>
           <header className="apg-head">
-            <Eyebrow>{densityEyebrow(active.length)}</Eyebrow>
-            <h1 className="apg-headline">{headline}</h1>
+            <Eyebrow>{starting ? START_EYEBROW : densityEyebrow(active.length)}</Eyebrow>
+            <h1 className="apg-headline" data-deciding={start.phase === 'deciding' ? '' : undefined}>
+              {starting ? start.headline : headline}
+            </h1>
           </header>
 
+          {starting && <AppsStart address={address} start={start} onAsk={(text, slug) => sendAsk(text, { mcps: [slug] })} />}
+
           {density === 'empty' ? (
-            <p className="apg-muted apg-empty">Add an app from the row above. One app is shown in full; add more and the page makes room for each.</p>
+            !starting && <p className="apg-muted apg-empty">Add an app from the row above. One app is shown in full; add more and the page makes room for each.</p>
           ) : loading || tiles === null ? (
             <ChatLoader inline />
           ) : (
@@ -142,7 +153,7 @@ export default function AppsPage({ address }: { address: string }) {
                     />
                   ))}
                   <Recurring tile={page.recurring} line onAsk={askFor()} />
-                  {quiet.length > 0 && (
+                  {quiet.length > 0 && !starting && (
                     <div className="apg-line apg-line--quiet" data-apps-line="quiet">
                       <span className="apg-line__app">
                         <Eyebrow>Quiet</Eyebrow>
