@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react'
 import { useAccount, useSignMessage } from 'wagmi'
 import { startOnrampSession } from '@/lib/onramp-client'
 import type { OnrampAsset } from '@/lib/onramp'
-import { clearFundWait, loadFundWait, saveFundWait, type Arrival, type FundWait } from '@/lib/funding-arrival'
+import { clearFundWait, fundCheckoutHref, loadFundWait, saveFundWait, type Arrival, type FundWait } from '@/lib/funding-arrival'
 import { useFundingArrival } from '@/lib/use-funding-arrival'
 import { useOnrampOffer } from '@/lib/use-onramp-offer'
 import { RAIL_FUND_PRESET_USD, railFundPhase, type RailFundOption } from '@/lib/watchlists'
@@ -101,13 +101,15 @@ export function useCardFund({ holder, empty, cardFunding, onLanded }: CardFundIn
       baselineEth: null,
       baselineStable: null,
       openedAt: Date.now(),
+      checkoutUrl: res.url,
     }
     saveFundWait(w)
     setWait(w)
   }
 
   // Closed the Stripe tab without buying: back to the buttons. A chat chip's
-  // wait stays stored for the chat.
+  // wait stays stored for the chat. (A buyer who lost the tab mid-purchase has
+  // `checkoutHref` instead: the same checkout, so not a second charge.)
   const startOver = () => {
     if (wait?.resume === '') clearFundWait(wait.address)
     setWait(null)
@@ -118,7 +120,7 @@ export function useCardFund({ holder, empty, cardFunding, onLanded }: CardFundIn
   // door would offer them (lib/onramp WHAT A CHECKOUT CAN SELL).
   const offer = useOnrampOffer(phase === 'offer')
 
-  return { phase, offer, busy, error, wait, watch, landed, buy, startOver, dismissLanded: () => setLanded(null) }
+  return { phase, offer, busy, error, wait, watch, landed, buy, startOver, checkoutHref: fundCheckoutHref(wait), dismissLanded: () => setLanded(null) }
 }
 
 export type CardFund = ReturnType<typeof useCardFund>

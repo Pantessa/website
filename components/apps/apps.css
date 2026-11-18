@@ -77,11 +77,15 @@
 
 /* ── First run (components/apps/AppsStart) ── */
 .apg-headline[data-deciding] { visibility: hidden; }
-.apg-start { display: flex; flex-direction: column; gap: 28px; max-width: 720px; }
+.apg-start { display: flex; flex-direction: column; gap: 32px; }
 .apg-start__lead { margin: -14px 0 0; font-size: var(--fs-lg); line-height: 1.5; }
+.apg-start__step { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.apg-start__step > .apg-start__note { max-width: 64ch; }
+.apg-start__n { color: var(--fg); }
 .apg-start__fund { display: flex; flex-direction: column; gap: 12px; padding: 20px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.apg-start__fund > .apg-start__note { max-width: 64ch; }
 .apg-start__acts { display: flex; flex-wrap: wrap; gap: 10px; }
-.apg-start__fund .apg-btn { height: 40px; }
+.apg-start__fund .apg-btn { height: 40px; text-decoration: none; }
 .apg-start__fund .apg-btn:disabled { opacity: 0.6; cursor: default; }
 .apg-start__status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-lg); font-weight: 500; color: var(--fg); }
 .apg-start__note { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); }
@@ -93,13 +97,27 @@
 .apg-start__addr { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 0; border: 0; background: none; color: var(--fg); cursor: pointer; text-align: left; }
 .apg-start__addr code { min-width: 0; font-family: var(--font-mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 .apg-start__addr svg { flex: none; color: var(--muted); }
-.apg-start__list { display: flex; flex-direction: column; gap: 8px; }
-.apg-start__rows { display: flex; flex-direction: column; }
-.apg-start__row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 8px 0; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--fg); cursor: pointer; text-align: left; }
+/* The board: two apps to a row, hairlines between, no card shells. */
+.apg-start__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 40px; border-top: 1px solid var(--line); }
+.apg-start__cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 18px 0 10px; border-bottom: 1px solid var(--line); }
+.apg-start__cellHead { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 2px; align-items: baseline; min-width: 0; }
+.apg-start__icon { grid-row: 1 / span 2; align-self: start; width: 28px; height: 28px; display: grid; place-items: center; overflow: hidden; }
+.apg-start__name { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-lg); font-weight: 600; color: var(--fg); }
+.apg-start__does { grid-column: 2 / -1; grid-row: 2; font-size: var(--fs-sm); line-height: 1.4; color: var(--muted); }
+.apg-start__quote { grid-column: 3; grid-row: 1; display: inline-flex; align-items: baseline; gap: 8px; font-family: var(--font-mono); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; color: var(--fg); white-space: nowrap; }
+.apg-start__sym { color: var(--muted); }
+.apg-start__quote .is-up { color: var(--accent); }
+.apg-start__quote .is-down { color: var(--apg-needs); }
+.apg-start__rows { display: flex; flex-direction: column; padding-left: 40px; }
+.apg-start__row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 6px 0; border: 0; border-top: 1px solid var(--line); background: none; color: var(--fg); cursor: pointer; text-align: left; }
+.apg-start__row:first-child { border-top: 0; }
 .apg-start__row:hover .apg-start__ask { text-decoration: underline; text-underline-offset: 3px; }
+.apg-start__row:hover .apg-start__go { color: var(--fg); }
 .apg-start__row:focus-visible, .apg-start__addr:focus-visible, .apg-start__hide:focus-visible, .apg-start__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .apg-start__ask { flex: 1 1 auto; min-width: 0; font-size: var(--fs-base); }
-.apg-start__app { flex: none; font-size: var(--fs-sm); color: var(--muted); }
+.apg-start__row[data-funded] .apg-start__ask { color: var(--muted); }
+.apg-start__go { flex: none; color: var(--muted-2); transition: color 0.15s; }
+.apg-start__tag { flex: none; font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted-2); }
 .apg-start__hide { align-self: flex-start; padding: 0; border: 0; background: none; color: var(--muted); font-size: var(--fs-sm); cursor: pointer; }
 .apg-start__hide:hover { color: var(--fg); }
 

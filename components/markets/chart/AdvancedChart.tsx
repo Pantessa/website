@@ -43,7 +43,7 @@ import { useHeld } from '@/lib/use-held'
 import { useTradable } from '@/lib/use-tradable'
 import type { FeedStatus } from '@/lib/tape-feed'
 import { fmtPrice, type ChartStats } from '@/components/CandleChart'
-import { TV_LIBRARY_PATH } from '@/lib/tv/config'
+import { TV_IFRAME_FEATURES, TV_LIBRARY_PATH, TV_READY_TIMEOUT_MS } from '@/lib/tv/config'
 import { createPantessaDatafeed, type PantessaDatafeed } from '@/lib/tv/datafeed'
 import { loadTvLibrary } from '@/lib/tv/loader'
 import { planFor, type PlanItem } from '@/lib/tv/plan'
@@ -330,6 +330,7 @@ export default function AdvancedChart({
     let dead = false
     let widget: TvWidget | null = null
     let themeWatch: MutationObserver | null = null
+    let readyTimer: ReturnType<typeof setTimeout> | null = null
     const tokens = readTokens()
     tokensRef.current = tokens
 
@@ -388,7 +389,7 @@ export default function AdvancedChart({
           // The market-status badge is off because every market is described
           // as round-the-clock (lib/tv/symbol): it would read "open" on a Sunday.
           disabled_features: ['header_symbol_search', 'symbol_search_hot_key', 'header_saveload', 'display_market_status', 'popup_hints', 'header_quick_search', 'study_templates'],
-          enabled_features: ['seconds_resolution', ...(phone ? ['hide_left_toolbar_by_default'] : [])],
+          enabled_features: ['seconds_resolution', ...TV_IFRAME_FEATURES, ...(phone ? ['hide_left_toolbar_by_default'] : [])],
           overrides: tvOverrides(tokens),
           studies_overrides: tvStudyOverrides(tokens),
           loading_screen: { backgroundColor: tokens.bg, foregroundColor: tokens.accent },
@@ -409,6 +410,13 @@ export default function AdvancedChart({
         widgetRef.current = widget
         const w = widget
 
+        // The script loaded, but the chart inside its frame may never start
+        // (an in-app browser that blocks the frame, a bundle that 404s on a
+        // stale deploy). Without this the plot stayed black for good.
+        readyTimer = setTimeout(() => {
+          if (!dead && !chartRef.current) onFailRef.current('chart did not start')
+        }, TV_READY_TIMEOUT_MS)
+
         const applyTheme = (t: Tokens) => {
           try {
             w.applyOverrides({ ...tvOverrides(t), ...tvStudyOverrides(t) })
@@ -419,6 +427,7 @@ export default function AdvancedChart({
         }
 
         w.onChartReady(() => {
+          if (readyTimer) clearTimeout(readyTimer)
           if (dead) return
           const chart = w.activeChart()
           chartRef.current = chart
@@ -546,6 +555,7 @@ export default function AdvancedChart({
 
     return () => {
       dead = true
+      if (readyTimer) clearTimeout(readyTimer)
       themeWatch?.disconnect()
       called.detach()
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current)

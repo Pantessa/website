@@ -5,7 +5,7 @@
 // watchlist rail uses, so a page still makes one read per wallet per window.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { startHiddenKey, startPhase, startRows, startSuggestions, START_HEADLINE } from '@/lib/apps-start'
+import { startCells, startHiddenKey, startPhase, startRows, startSuggestions, START_HEADLINE } from '@/lib/apps-start'
 import { arrivalPhrase } from '@/lib/funding-arrival'
 import { HELD_EVERY_MS, peekHeld, readHeld, type HeldRead } from '@/lib/held-read'
 import { useCardFund } from '@/lib/use-card-fund'
@@ -58,6 +58,7 @@ export function useAppsStart(p: { address: string; servers: McpServer[]; active:
 
   const fund = useCardFund({ holder: address, empty, cardFunding: read?.cardFunding === true, onLanded: recheck })
   const rows = useMemo(() => startRows(servers), [servers])
+  const cells = useMemo(() => startCells(servers), [servers])
   const activeSlugs = useMemo(() => active.map((s) => s.slug), [active])
   const suggestions = useMemo(() => startSuggestions(rows, activeSlugs), [rows, activeSlugs])
   const phase = startPhase({ read, ready: ready || active.length === 0, totalUsd, needs, hidden, landed: !!fund.landed })
@@ -73,7 +74,7 @@ export function useAppsStart(p: { address: string; servers: McpServer[]; active:
   }
 
   const headline = fund.landed ? `${arrivalPhrase(fund.landed.arrival, fund.landed.stableSymbol)} landed.` : START_HEADLINE
-  return { phase, headline, rows, suggestions, fund, hide, canHide: !fund.landed }
+  return { phase, headline, rows, cells, suggestions, fund, hide, canHide: !fund.landed }
 }
 
 export type AppsStartState = ReturnType<typeof useAppsStart>

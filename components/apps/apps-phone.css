@@ -5,6 +5,9 @@
    scroller. Flat like the desktop page: hairlines, no shells. */
 
 .apgm {
+  /* The page's two status colours (apps.css sets them on .apg, which the phone never mounts). */
+  --apg-needs: #f0776b;
+  --apg-idle: #e5ae4a;
   position: absolute; inset: 0; z-index: 45;
   display: flex; flex-direction: column;
   background: var(--bg);
@@ -58,6 +61,8 @@
 
 /* The page's shared pieces, sized for a thumb (44px targets). */
 .apgm .apg-start__acts .apg-btn { width: 100%; white-space: normal; }
+.apgm .apg-start__grid { grid-template-columns: minmax(0, 1fr); }
+.apgm .apg-start__row { min-height: 44px; }
 .apgm .apg-start__hide, .apgm .apg-start__link, .apgm .apg-start__addr { min-height: 44px; }
 .apgm .apg-btn { min-height: 44px; height: auto; }
 .apgm .apg-needs__text { flex-basis: 100%; }

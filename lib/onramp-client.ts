@@ -15,7 +15,9 @@ import type { ClarifyFundAction } from '@/lib/clarify'
 import { onrampConsentMessage, onrampHasLane, onrampUnsellableMessage, type OnrampOffer } from '@/lib/onramp'
 import { platformOf } from '@/lib/sign-round-trip'
 
-export type OnrampStartResult = { ok: true } | { ok: false; error: string }
+/** `url` is the Stripe checkout the tab was sent to. A door keeps it with its
+ *  wait so a visitor who closed that tab can open the SAME checkout again. */
+export type OnrampStartResult = { ok: true; url: string } | { ok: false; error: string }
 
 /** Sign the consent, mint the session, send the user to it.
  *
@@ -107,7 +109,7 @@ export async function startOnrampSession(input: {
 
     if (tab) tab.location.href = data.url
     else window.location.href = data.url
-    return { ok: true }
+    return { ok: true, url: data.url }
   } catch {
     tab?.close()
     return { ok: false, error: 'Could not start the funding session.' }
