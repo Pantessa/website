@@ -140,7 +140,7 @@ export function newsSourcesPins(check: Check): void {
   const vercel = JSON.parse(code('vercel.json')) as { crons: { path: string; schedule: string }[] }
   check(
     'news index: a page is read from Postgres; a feed is fetched only by whoever claims it (one conditional upsert), a reader is served what the index holds while stale feeds finish, and with no database the feeds are read directly',
-    /const items = mergeNews\(await readSymbol\(pair\.symbol\)\)/.test(lib) && /if \(!\(await claimFeed\(hop\.key, staleSec\)\)\) return 0/.test(lib) && /ON CONFLICT \(feed_key\) DO UPDATE SET claimed_at = now\(\)\s+WHERE/.test(index) &&
+    /const items = mergeNews\(\(await readSymbol\(pair\.symbol\)\)\.filter\(\(it\) => !isQuotePage\(it\.title\)\)\)/.test(lib) && /if \(!\(await claimFeed\(hop\.key, staleSec\)\)\) return 0/.test(lib) && /ON CONFLICT \(feed_key\) DO UPDATE SET claimed_at = now\(\)\s+WHERE/.test(index) &&
       /Promise\.race\(\[all\.then\(\(\) => true as const\), sleep\(/.test(lib) && /defer\?\.\(all\)/.test(lib) && /return loadDirect\(pair\)/.test(lib) && /after\(\(\) => work\)/.test(code('app/api/news/route.ts')),
   )
   check(

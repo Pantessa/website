@@ -75,7 +75,9 @@ export interface FiledItem extends NewsItem {
 /** Store stories and file them under their symbols. A story already stored
  *  keeps its row and gains what it lacked (a picture, a summary, a page). */
 export async function storeItems(items: FiledItem[]): Promise<number> {
-  const rows = items.filter((it) => it.symbols.length > 0)
+  // A story older than a page shows is never read back: it is not stored (a feed's deep archive would be written and pruned on every pass).
+  const floor = Math.floor(Date.now() / 1000) - INDEX_WINDOW_DAYS * 86_400
+  const rows = items.filter((it) => it.symbols.length > 0 && it.publishedAt >= floor)
   if (!rows.length) return 0
   // Nullable text travels as '' + NULLIF: Prisma types an array by its first
   // element and refuses one that opens with null (CLAUDE.md gotcha, 11-11).

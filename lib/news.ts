@@ -435,7 +435,8 @@ async function loadIndexed(pair: ChartPair, defer?: (work: Promise<unknown>) => 
       defer?.(all)
     }
   }
-  const items = mergeNews(await readSymbol(pair.symbol))
+  // The machine-page rule is applied on the way OUT too: a row stored before a rule was written does not outlive it.
+  const items = mergeNews((await readSymbol(pair.symbol)).filter((it) => !isQuotePage(it.title)))
   const read = [...states.values()].map((s) => s.fetchedAt ?? 0)
   const asOf = work.length && !partial ? now : Math.max(0, ...read) || now
   return { items, asOf, via: 'index', partial }
@@ -462,7 +463,7 @@ async function loadDirect(pair: ChartPair): Promise<Loaded> {
     Promise.all(SITE_FEEDS.filter((s) => s.desk === desk || s.desk === 'markets').map((s) => siteDirect(s, now))),
   ])
   const filed = sites.flat().filter((it) => it.symbols.includes(pair.symbol)).map(({ symbols: _symbols, ...it }) => it)
-  return { items: mergeNews([...own.flat(), ...filed]), asOf: now, via: 'direct', partial: false }
+  return { items: mergeNews([...own.flat(), ...filed].filter((it) => !isQuotePage(it.title))), asOf: now, via: 'direct', partial: false }
 }
 
 // ── the page ────────────────────────────────────────────────────────────────

@@ -28,6 +28,7 @@ import {
   DAY_SEC,
   FRONT_BRIEFS,
   FRONT_FEATURES,
+  FRONT_PICTURE_REACH_SEC,
   FRONT_SECONDS,
   HOUR_SEC,
   frontPage,
@@ -55,7 +56,7 @@ export function newsFrontPins(check: Check): void {
   }
   const sizes = [0, 1, 2, 3, 4, 7, 8, 9, 10, 15, 16, 30, 50]
   check(
-    'news front: every story lands in exactly one seat, in the feed\'s own order, at every feed length',
+    'news front: every story lands in exactly one seat, in time order (a feed with no pictures), at every feed length',
     sizes.every((n) => seated(n).join() === feed(n).map((x) => x.id).join()),
     sizes.filter((n) => seated(n).join() !== feed(n).map((x) => x.id).join()).join(','),
   )
@@ -63,6 +64,18 @@ export function newsFrontPins(check: Check): void {
   check(
     'news front: a full feed seats 1 lead, 2 seconds, 4 in brief, 8 pictures and the rest in the archive',
     full.lead?.id === 'id0' && full.seconds.length === FRONT_SECONDS && full.briefs.length === FRONT_BRIEFS && full.features.length === FRONT_FEATURES && full.archive.length === 30 - 1 - FRONT_SECONDS - FRONT_BRIEFS - FRONT_FEATURES,
+  )
+  // Picture seats: the newest pictured story in reach takes the lead and the seconds; nothing is lost or repeated.
+  const pic = (i: number, hoursOld: number, img: boolean): NewsItem => ({ ...item(i), publishedAt: 1_800_000_000 - hoursOld * 3600, ...(img ? { imageUrl: `https://img.example.com/${i}.png` } : {}) })
+  const mixed = [pic(0, 0, false), pic(1, 1, false), pic(2, 2, true), pic(3, 3, true), pic(4, 4, false), pic(5, 5, true), pic(6, 30, true)]
+  const mp = frontPage(mixed)
+  const mseats = [...(mp.lead ? [mp.lead] : []), ...mp.seconds, ...mp.briefs, ...mp.features, ...mp.archive].map((x) => x.id)
+  const stale = frontPage([pic(0, 0, false), pic(1, 1, false), pic(2, 2, false), pic(3, FRONT_PICTURE_REACH_SEC / 3600 + 1, true)])
+  check(
+    'news front: the lead and the seconds go to the newest PICTURED stories within reach of the newest story, every other seat is time order, and a picture out of reach never jumps the queue',
+    mp.lead?.id === 'id2' && mp.seconds.map((x) => x.id).join() === 'id3,id5' && mp.briefs.map((x) => x.id).join() === 'id0,id1,id4,id6' && [...mseats].sort().join() === mixed.map((x) => x.id).sort().join() && mseats.length === mixed.length &&
+      stale.lead?.id === 'id0' && stale.seconds.map((x) => x.id).join() === 'id1,id2',
+    `${mp.lead?.id} / ${mp.seconds.map((x) => x.id).join()} / ${mp.briefs.map((x) => x.id).join()}`,
   )
   const thin = frontPage(feed(9))
   check(
