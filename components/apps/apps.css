@@ -75,6 +75,34 @@
 .apg-muted { color: var(--muted); }
 .apg-empty { max-width: 52ch; font-size: var(--fs-lg); line-height: 1.5; }
 
+/* ── First run (components/apps/AppsStart) ── */
+.apg-headline[data-deciding] { visibility: hidden; }
+.apg-start { display: flex; flex-direction: column; gap: 28px; max-width: 720px; }
+.apg-start__lead { margin: -14px 0 0; font-size: var(--fs-lg); line-height: 1.5; }
+.apg-start__fund { display: flex; flex-direction: column; gap: 12px; padding: 20px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.apg-start__acts { display: flex; flex-wrap: wrap; gap: 10px; }
+.apg-start__fund .apg-btn { height: 40px; }
+.apg-start__fund .apg-btn:disabled { opacity: 0.6; cursor: default; }
+.apg-start__status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-lg); font-weight: 500; color: var(--fg); }
+.apg-start__note { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); }
+.apg-start__err { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--apg-needs); }
+.apg-start__link { padding: 0; border: 0; background: none; color: var(--fg); text-decoration: underline; cursor: pointer; font: inherit; }
+.apg-start__receive { display: flex; align-items: flex-start; gap: 16px; padding-top: 4px; }
+.apg-start__qr { flex: none; display: block; padding: 6px; background: #fff; border-radius: 6px; line-height: 0; }
+.apg-start__receiveText { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.apg-start__addr { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 0; border: 0; background: none; color: var(--fg); cursor: pointer; text-align: left; }
+.apg-start__addr code { min-width: 0; font-family: var(--font-mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.apg-start__addr svg { flex: none; color: var(--muted); }
+.apg-start__list { display: flex; flex-direction: column; gap: 8px; }
+.apg-start__rows { display: flex; flex-direction: column; }
+.apg-start__row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 8px 0; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--fg); cursor: pointer; text-align: left; }
+.apg-start__row:hover .apg-start__ask { text-decoration: underline; text-underline-offset: 3px; }
+.apg-start__row:focus-visible, .apg-start__addr:focus-visible, .apg-start__hide:focus-visible, .apg-start__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.apg-start__ask { flex: 1 1 auto; min-width: 0; font-size: var(--fs-base); }
+.apg-start__app { flex: none; font-size: var(--fs-sm); color: var(--muted); }
+.apg-start__hide { align-self: flex-start; padding: 0; border: 0; background: none; color: var(--muted); font-size: var(--fs-sm); cursor: pointer; }
+.apg-start__hide:hover { color: var(--fg); }
+
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .apg-btn {
   flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;

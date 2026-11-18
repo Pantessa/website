@@ -73,7 +73,7 @@
     "pins:symbol-ask": "tsx scripts/symbol-ask-pins.ts",
     "audit:jobs": "tsx scripts/jobs-audit-drive.ts",
     "pins:jobs": "tsx scripts/jobs-offers-pins.ts && tsx scripts/jobs-preflight-pins.ts && tsx scripts/jobs-audit-pins.ts",
-    "pins:apps": "tsx scripts/apps-page-pins.ts && tsx scripts/apps-portfolio-pins.ts && tsx scripts/apps-trade-pins.ts && tsx scripts/apps-earn-pins.ts && tsx scripts/apps-dock-pins.ts && tsx scripts/apps-phone-pins.ts",
+    "pins:apps": "tsx scripts/apps-page-pins.ts && tsx scripts/apps-start-pins.ts && tsx scripts/apps-portfolio-pins.ts && tsx scripts/apps-trade-pins.ts && tsx scripts/apps-earn-pins.ts && tsx scripts/apps-dock-pins.ts && tsx scripts/apps-phone-pins.ts",
     "pins:symbol-search": "tsx scripts/symbol-search-pins.ts",
     "drive:symbol-ask": "node scripts/symbol-ask-drive.mjs",
     "pins:sign-stage": "tsx scripts/sign-stage-pins.ts",

@@ -57,6 +57,8 @@
 .apgm-stack > * { min-width: 0; }
 
 /* The page's shared pieces, sized for a thumb (44px targets). */
+.apgm .apg-start__acts .apg-btn { width: 100%; white-space: normal; }
+.apgm .apg-start__hide, .apgm .apg-start__link, .apgm .apg-start__addr { min-height: 44px; }
 .apgm .apg-btn { min-height: 44px; height: auto; }
 .apgm .apg-needs__text { flex-basis: 100%; }
 .apgm .apg-needs__row .apg-btn { margin-left: auto; }
