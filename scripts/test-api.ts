@@ -416,6 +416,7 @@ import { chartTapePins } from './chart-tape-pins'
 import { deckPins } from './deck-pins'
 import { readPins, readRedirectPins, readServedPins } from './read-pins'
 import { newsFrontPins, newsFrontServedPins } from './news-front-pins'
+import { newsSourcesPins, newsSourcesServedPins } from './news-sources-pins'
 import { guidePins } from './guide-pins'
 import { macroLivePins, macroPins, macroServedPins } from './macro-pins'
 import { homeAppsPins } from './home-apps-pins'
@@ -24917,23 +24918,24 @@ async function main() {
         norm[0]?.id.length === 12,
       JSON.stringify(norm.map((n) => n && [n.title, n.source, n.summary]))?.slice(0, 200),
     )
-    const aaplLadder = news.newsLadderFor({ symbol: 'AAPL', source: 'robinhood', pair: 'AAPL', label: 'AAPL / USD' })
-    const ethLadder = news.newsLadderFor({ symbol: 'ETH', source: 'coinbase', pair: 'ETH-USD', label: 'ETH / USD' })
-    const syrupLadder = news.newsLadderFor({ symbol: 'SYRUP', source: 'hyperliquid', pair: 'SYRUP', label: 'SYRUP / USD' })
+    const aaplFeeds = news.newsFeedsFor({ symbol: 'AAPL', source: 'robinhood', pair: 'AAPL', label: 'AAPL / USD' })
+    const ethFeeds = news.newsFeedsFor({ symbol: 'ETH', source: 'coinbase', pair: 'ETH-USD', label: 'ETH / USD' })
+    const syrupFeeds = news.newsFeedsFor({ symbol: 'SYRUP', source: 'hyperliquid', pair: 'SYRUP', label: 'SYRUP / USD' })
+    const nasdaqHop = aaplFeeds.find((h) => h.feed === 'nasdaq')!
     check(
-      'news: the ladder — stocks Google News (company name in the query) → Nasdaq (tickers-filtered, browser UA); coins Cointelegraph tag → Google News; an untagged coin goes straight to Google News',
-      aaplLadder.map((h) => h.feed).join('>') === 'google-news>nasdaq' &&
-        aaplLadder[0].url.includes('Apple') &&
-        aaplLadder[1].browserUa === true &&
-        !!aaplLadder[1].keep &&
-        ethLadder.map((h) => h.feed).join('>') === 'cointelegraph>google-news' &&
-        ethLadder[0].url === 'https://cointelegraph.com/rss/tag/ethereum' &&
-        syrupLadder.map((h) => h.feed).join('>') === 'google-news' &&
-        aaplLadder.every((h) => h.url.startsWith('https://')),
+      'news: the symbol feeds (all read, none a fallback) — stocks Google News (company name in the query) + the majors + Yahoo + Nasdaq (tickers-filtered, browser UA); coins Cointelegraph tag + Google News + the majors + Yahoo; an untagged coin gets the two searches',
+      aaplFeeds.map((h) => h.feed).join('+') === 'google-news+google-majors+yahoo+nasdaq' &&
+        aaplFeeds[0].url.includes('Apple') &&
+        nasdaqHop.browserUa === true &&
+        !!nasdaqHop.keep &&
+        ethFeeds.map((h) => h.feed).join('+') === 'cointelegraph+google-news+google-majors+yahoo' &&
+        ethFeeds[0].url === 'https://cointelegraph.com/rss/tag/ethereum' &&
+        syrupFeeds.map((h) => h.feed).join('+') === 'google-news+google-majors' &&
+        [...aaplFeeds, ...ethFeeds, ...syrupFeeds].every((h) => h.url.startsWith('https://') && h.key === `${h.feed}:${h.key.split(':')[1]}`),
     )
     check(
-      'news: nasdaq hop keeps only items whose own tickers tag names the symbol (the feed pads unknown symbols)',
-      aaplLadder[1].keep!(parsed[3]) === true && aaplLadder[1].keep!(parsed[0]) === false,
+      'news: nasdaq feed keeps only items whose own tickers tag names the symbol (the feed pads unknown symbols)',
+      nasdaqHop.keep!(parsed[3]) === true && nasdaqHop.keep!(parsed[0]) === false,
     )
 
     // Live: /api/news for a stock and a coin — feed named, https items, sorted newest-first.
@@ -24945,7 +24947,7 @@ async function main() {
         continue
       }
       check(
-        `news: GET /api/news?symbol=${sym} serves ≥1 item with the feed named, https links, publisher, newest first, ≤ limit`,
+        `news: GET /api/news?symbol=${sym} serves ≥1 item with the lead feed named, https links, publisher, newest first, ≤ limit`,
         r.status === 200 &&
           d.symbol === sym &&
           !!d.feed &&
@@ -35981,6 +35983,8 @@ async function main() {
   // The News tab as a front page (2026-11-17): the deal, since, the plate, the feed filter.
   newsFrontPins(check)
   await newsFrontServedPins(check, BASE)
+  newsSourcesPins(check)
+  await newsSourcesServedPins(check, BASE)
   // THE GUIDE (2026-10-06): the hints, the pick rules, the record, the spine dots, the honesty rules — wired into test:api 2026-11-17 (harness-zero); it was only runnable alone (`npm run pins:guide`).
   guidePins(check)
   // THE READ (2026-11-09): the home's lead — the market as one sentence, the macro line, the chart of the pick; the deck off `/`, the battle views off the nav, the old deck links forwarded.

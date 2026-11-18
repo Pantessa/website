@@ -23,7 +23,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { NewsItem } from '../lib/news-shared'
-import { isQuotePage, newsLadderFor } from '../lib/news'
+import { isQuotePage, newsFeedsFor } from '../lib/news'
 import {
   DAY_SEC,
   FRONT_BRIEFS,
@@ -145,10 +145,10 @@ export function newsFrontPins(check: Check): void {
       isQuotePage('AAPL Nov 2026 355.000 put (AAPL261118P00355000)') && !isQuotePage('Apple to stand trial in France over iPhone repair restrictions: report (AAPL:NASDAQ)') &&
       !isQuotePage('Apple puts a call option on its own history'),
   )
-  const stock = newsLadderFor({ symbol: 'AAPL', source: 'robinhood', pair: 'AAPL', label: 'AAPL / USD' })
+  const stock = newsFeedsFor({ symbol: 'AAPL', source: 'robinhood', pair: 'AAPL', label: 'AAPL / USD' })
   const quote = { title: 'AAPL Nov 2026 510.000 call (AAPL261118C00510000) Stock Price, News, Quote & History', link: '', publishedAt: 1, description: '', source: '', tickers: '' }
   check(
-    'news front: the stock ladder\'s search hop drops quote pages and keeps stories',
+    'news front: the stock\'s search feed drops quote pages and keeps stories',
     stock[0].feed === 'google-news' && stock[0].keep?.(quote) === false && stock[0].keep?.({ ...quote, title: 'Apple names a new head of Apple Pay' }) === true,
   )
 
@@ -184,8 +184,8 @@ export async function newsFrontServedPins(check: Check, BASE: string): Promise<v
   try {
     const html = await (await fetch(`${BASE}/t/ETH?tab=news`)).text()
     check(
-      'news front (served): /t/ETH?tab=news renders the nameplate, the refresh and the community pin section on the server',
-      /<div class="gaz" data-news="front-page">/.test(html) && /<h2 class="gaz__name">The Ethereum Edition<\/h2>/.test(html) && /aria-label="Refresh headlines"/.test(html) && /Pinned by the community/.test(html),
+      'news front (served): /t/ETH?tab=news renders the nameplate, the refresh and the readers\' section on the server',
+      /<div class="gaz" data-news="front-page">/.test(html) && /<h2 class="gaz__name">The Ethereum Edition<\/h2>/.test(html) && /aria-label="Refresh headlines"/.test(html) && /data-news="readers"/.test(html) && /From readers/.test(html),
     )
     const stock = await (await fetch(`${BASE}/t/AAPL?tab=news`)).text()
     check('news front (served): a stock wears its company\'s name without the corporate tail', /<h2 class="gaz__name">The Apple Edition<\/h2>/.test(stock))
