@@ -83,7 +83,6 @@
 .apgd-app__info:hover { color: var(--fg); background: color-mix(in oklch, var(--fg) 7%, transparent); }
 .apgd-app__info:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .apgd-app__add { height: 32px; padding: 0 14px; }
-.apgd-app--own .apgd-app__mark { border: 1px dashed var(--line-2); border-radius: 10px; color: var(--muted); }
 
 /* ── The dock's header: one line, the names cut with an ellipsis ────────── */
 .apgd-scope { flex-wrap: nowrap; gap: 8px; overflow: hidden; }

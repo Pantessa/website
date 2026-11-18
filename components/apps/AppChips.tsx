@@ -5,17 +5,16 @@
 // off fill only the room the row has left (measured, so the row is ONE line
 // at every width), an app just removed first so it is one tap from back;
 // everything else is in the tray under "Browse all": the whole free fleet,
-// the paid catalog, each app's page, and "Add your own MCP". Nothing the old
-// drawer list (components/AppsRailTab) could do is lost.
+// the paid catalog and each app's page. Nothing the old drawer list
+// (components/AppsRailTab) could do is lost.
 //
 // If even the on-chips do not fit, the list scrolls sideways inside itself;
 // "Browse all" and the right-hand controls never scroll away.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Info, LayoutGrid, Plus } from 'lucide-react'
+import { Info, LayoutGrid } from 'lucide-react'
 import BrandIcon from '@/components/BrandIcon'
-import AddMcpModal from '@/components/AddMcpModal'
 import { cleanServerName, cn } from '@/lib/utils'
 import { offeredApps, rowPlan, trayApps, trayLine, trayPrice, type TrayView } from '@/lib/apps-dock'
 import type { McpServer } from '@/lib/store'
@@ -30,7 +29,6 @@ const BROWSE_COMPACT = 38
 export default function AppChips({ right }: { right?: React.ReactNode }) {
   const { servers, active, toggle } = useAppSet()
   const [trayOpen, setTrayOpen] = useState(false)
-  const [addOpen, setAddOpen] = useState(false)
   // Apps removed from the row this visit, newest first: they lead the
   // offered chips so a removal is undone with one tap.
   const [recent, setRecent] = useState<string[]>([])
@@ -93,10 +91,9 @@ export default function AppChips({ right }: { right?: React.ReactNode }) {
   useEffect(() => {
     if (!trayOpen) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !addOpen) setTrayOpen(false)
+      if (e.key === 'Escape') setTrayOpen(false)
     }
     const onDown = (e: PointerEvent) => {
-      if (addOpen) return
       const t = e.target as Node | null
       if (t && rootRef.current?.contains(t)) return
       setTrayOpen(false)
@@ -107,7 +104,7 @@ export default function AppChips({ right }: { right?: React.ReactNode }) {
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('pointerdown', onDown)
     }
-  }, [trayOpen, addOpen])
+  }, [trayOpen])
 
   return (
     <div ref={rootRef} className="apg-chips apgd-chips" data-apps-chips="">
@@ -182,10 +179,7 @@ export default function AppChips({ right }: { right?: React.ReactNode }) {
         </div>
         {right && <div className="apg-chips__right">{right}</div>}
       </div>
-      {trayOpen && <Tray activeIds={activeIds} servers={servers} onToggle={toggle} onAddOwn={() => setAddOpen(true)} />}
-      {/* Owned by the row, not the tray, so closing the tray never drops a
-          half-filled form. Portaled by the modal itself. */}
-      <AddMcpModal open={addOpen} onClose={() => setAddOpen(false)} />
+      {trayOpen && <Tray activeIds={activeIds} servers={servers} onToggle={toggle} />}
     </div>
   )
 }
@@ -194,12 +188,10 @@ function Tray({
   servers,
   activeIds,
   onToggle,
-  onAddOwn,
 }: {
   servers: McpServer[]
   activeIds: string[]
   onToggle: (s: McpServer) => void
-  onAddOwn: () => void
 }) {
   const [view, setView] = useState<TrayView>('free')
   const list = useMemo(() => trayApps(servers, activeIds, view), [servers, activeIds, view])
@@ -247,18 +239,6 @@ function Tray({
         {list.length === 0 && (
           <p className="apgd-tray__none">{view === 'free' ? 'Every free app is already on the page.' : 'No paid apps are loaded.'}</p>
         )}
-        <div className="apgd-app apgd-app--own">
-          <span className="apgd-app__mark" aria-hidden>
-            <Plus width={18} height={18} />
-          </span>
-          <span className="apgd-app__text">
-            <span className="apgd-app__name">Your own MCP</span>
-            <span className="apgd-app__line">Paste a server address and pick its tools.</span>
-          </span>
-          <button type="button" className="apg-btn apgd-app__add" onClick={onAddOwn} data-sheet-open="addmcp" data-tray-own="">
-            Add your own
-          </button>
-        </div>
       </div>
     </section>
   )
