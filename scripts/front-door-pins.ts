@@ -60,8 +60,9 @@ const jsonLdTypes = (html: string): Set<string> => {
 export async function frontDoorPins(check: Check): Promise<void> {
   // ── Route rules ───────────────────────────────────────────────────────
   check(
-    'front door: `/` is a markets path and a public app page (looking needs no wallet), a fresh sign-in lands there, MARKETS_HREF is `/` and STORY_HREF is /story; /marketsx, /t, /chat and /story itself are not markets paths',
-    isMarketsPath('/') && isPublicAppPath('/') && SIGN_IN_LANDING === '/' && MARKETS_HREF === '/' && STORY_HREF === '/story' &&
+    // RE-PINNED 2026-11-19 (signed-in home): a fresh sign-in lands on /markets, the index without the hero.
+    'front door: `/` and /markets are markets paths and public app pages (looking needs no wallet), a fresh sign-in lands on /markets, MARKETS_HREF is `/` and STORY_HREF is /story; /marketsx, /t, /chat and /story itself are not markets paths',
+    isMarketsPath('/') && isPublicAppPath('/') && isPublicAppPath('/markets') && SIGN_IN_LANDING === '/markets' && MARKETS_HREF === '/' && STORY_HREF === '/story' &&
       isMarketsPath('/markets') && isMarketsPath('/t/AAPL') && isMarketsPath('/live') &&
       !isMarketsPath('/marketsx') && !isMarketsPath('/t') && !isMarketsPath('/chat') && !isMarketsPath(STORY_HREF) && !isPublicAppPath(STORY_HREF),
   )
@@ -70,8 +71,9 @@ export async function frontDoorPins(check: Check): Promise<void> {
   const cards = redirects.find((r) => r.source === '/markets/:card(opengraph-image|twitter-image)')
   check(
     // RE-PINNED 2026-11-09 (the read): `/` itself is still never redirected — the one rule on it is conditional (a `?view=` that names a /live view, the deck's old addresses; scripts/read-pins.ts pins it).
-    'front door: next.config 308s /markets → `/` and the old card URLs → the root card (both permanent); /story is never redirected, and `/` only on a `?view=` condition',
-    !!toRoot && toRoot.destination === '/' && toRoot.permanent === true &&
+    // RE-PINNED 2026-11-19 (signed-in home): /markets is a page again, never redirected.
+    'front door: /markets is not redirected (it is the signed-in home), the old card URLs 308 → the root card (permanent); /story is never redirected, and `/` only on a `?view=` condition',
+    !toRoot &&
       !!cards && cards.destination === '/:card' && cards.permanent === true &&
       !redirects.some((r) => r.source === '/story' || (r.source === '/' && !(r as { has?: unknown[] }).has?.length)),
     JSON.stringify({ toRoot, cards }),
@@ -202,12 +204,12 @@ export async function frontDoorPins(check: Check): Promise<void> {
   const liveOg = src('app/live/opengraph-image.tsx')
   const mirror = (p: string) => /export \{ default, alt, size, contentType \} from '\.\/opengraph-image'/.test(src(p)) && /export const runtime = 'nodejs'/.test(src(p)) && /export const dynamic = 'force-dynamic'/.test(src(p))
   check(
-    'front door: the root social card is THE BOARD (self-fetched /api/quotes with a timeout, the dashed board on a miss, the claim beside it, pantessa.com — no /markets), /story\'s card is the brochure\'s rehearsal (live tape + HUD + stamp), both twitter mirrors declare their own runtime + dynamic, both draw the house mark, and nothing is left under app/markets but the trending reader',
+    'front door: the root social card is THE BOARD (self-fetched /api/quotes with a timeout, the dashed board on a miss, the claim beside it, pantessa.com — no /markets), /story\'s card is the brochure\'s rehearsal (live tape + HUD + stamp), both twitter mirrors declare their own runtime + dynamic, both draw the house mark, and app/markets holds only the trending reader and the signed-in home (page.tsx, 2026-11-19)',
     /marketsOgBoard\(\)/.test(rootOg) && /\/api\/quotes\?symbols=/.test(rootOg) && /AbortSignal\.timeout\(/.test(rootOg) && /return NO_QUOTES/.test(rootOg) && /FEED WARMING UP/.test(rootOg) &&
       /that executes\./.test(rootOg) && /YOUR WALLET SIGNS/.test(rootOg) && /gemMarkSvg\(/.test(rootOg) && !/REEL_STAMP|pantessa\.com\/markets/.test(rootOg) && /alt = `Pantessa — \$\{HERO_LINE\} /.test(rootOg) &&
       /REEL_STAMP/.test(storyOg) && /candleSvg\(/.test(storyOg) && /loadSeries\(beat\.symbol\)/.test(storyOg) && /venueLabel\(pair\)/.test(storyOg) && /gemMarkSvg\(/.test(storyOg) &&
       mirror('app/twitter-image.tsx') && mirror('app/story/twitter-image.tsx') &&
-      !existsSync('app/markets/opengraph-image.tsx') && !existsSync('app/markets/twitter-image.tsx') && !existsSync('app/markets/page.tsx') && readdirSync('app/markets').join(',') === 'trending.ts',
+      !existsSync('app/markets/opengraph-image.tsx') && !existsSync('app/markets/twitter-image.tsx') && existsSync('app/markets/page.tsx') && readdirSync('app/markets').sort().join(',') === 'page.tsx,trending.ts',
   )
   check(
     'front door (R2): /live has its own card — the 24h leaders from the venue\'s own info endpoint (one POST, a timeout, dashes + "feed warming up" on a miss, never a fake fill; the tape itself streams in the browser), the page\'s line "every print is a button", the house mark, pantessa.com/live — and a twitter mirror with its own runtime + dynamic',
@@ -217,7 +219,7 @@ export async function frontDoorPins(check: Check): Promise<void> {
   )
   const crawl = src('scripts/gtm-crawl.ts')
   check(
-    'front door: gtm-crawl visits `/`, /story and /markets (which follows its 308) and fetches both cards raw',
+    'front door: gtm-crawl visits `/`, /story and /markets and fetches both cards raw',
     /'\/', '\/story', '\/markets',/.test(crawl) && /'\/story\/opengraph-image', '\/markets\/opengraph-image'/.test(crawl),
   )
   const harness = src('scripts/test-api.ts')
@@ -260,8 +262,9 @@ export async function frontDoorHttpPins(check: Check, base: string): Promise<voi
   const tw308 = await get('/markets/twitter-image', { redirect: 'manual' })
   const loc = (r: Response) => (r.headers.get('location') ?? '').replace(/^https?:\/\/[^/]+/, '')
   check(
-    'front door (served): /markets answers 308 → `/`, and the old card URLs 308 → the root card and its twitter mirror',
-    r308.status === 308 && loc(r308) === '/' && card308.status === 308 && loc(card308) === '/opengraph-image' && tw308.status === 308 && loc(tw308) === '/twitter-image',
+    // RE-PINNED 2026-11-19 (signed-in home): /markets answers 200 now.
+    'front door (served): /markets answers 200 (the signed-in home), and the old card URLs 308 → the root card and its twitter mirror',
+    r308.status === 200 && card308.status === 308 && loc(card308) === '/opengraph-image' && tw308.status === 308 && loc(tw308) === '/twitter-image',
     `${r308.status} ${loc(r308)} · ${card308.status} ${loc(card308)} · ${tw308.status} ${loc(tw308)}`,
   )
   const storyRes = await get('/story')

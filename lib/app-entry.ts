@@ -27,9 +27,22 @@ import { isMarketsPath } from '@/lib/markets'
 import { isProgressPath } from '@/lib/progress'
 
 /** Where a fresh login with no page to come back to goes (signInLandingFor).
- *  The splash IS the markets page now (squad front-door, 2026-10-06), so a
- *  sign-in there stays there. */
-export const SIGN_IN_LANDING = '/'
+ *  The signed-in home (2026-11-19): `/` is the stranger's landing, /markets
+ *  is the same index without the hero and the brochure. */
+export const SIGN_IN_LANDING = '/markets'
+
+/** THE SIGNED-IN HOME (2026-11-19, Nate: "anytime they hit logo and they are
+ *  signed in it goes to that"): the markets index without the hero and the
+ *  brochure (app/markets/page.tsx). */
+export const SIGNED_IN_HOME = SIGN_IN_LANDING
+
+/** Where a logo goes: /markets for anyone with a session or a connected
+ *  wallet, `/` (the stranger's landing) otherwise — including while the
+ *  session is still loading, so the server HTML and a stranger's first paint
+ *  never name /markets. Pure, pinned. */
+export function homeHrefFor(i: { authed: boolean; walletAddress?: string | null }): string {
+  return i.authed || !!i.walletAddress ? SIGNED_IN_HOME : '/'
+}
 
 // ── Where a sign-in lands ────────────────────────────────────────────────
 // 2026-09-16, Nate: "If the user is in a chat or anywhere else doing

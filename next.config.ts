@@ -55,9 +55,8 @@ const nextConfig: NextConfig = {
       // chats, emails, the Claude Code prompt — lands on the Overview instead
       // of a 404.
       { source: '/dashboard/approvals', destination: '/dashboard', permanent: false },
-      // THE FRONT DOOR (squad front-door, 2026-10-06): the markets splash lives
-      // at `/` now; every /markets link already in the world lands there.
-      { source: '/markets', destination: '/', permanent: true },
+      // THE FRONT DOOR (squad front-door, 2026-10-06) 308'd /markets to `/`;
+      // since 2026-11-19 /markets is the signed-in home again (app/markets/page).
       // …and its social card went with it: the board that was
       // /markets/opengraph-image is the root card now, so a client that
       // cached the old image URL still gets a picture.
