@@ -63,8 +63,36 @@ export type HeroAppId = 'uniswap' | 'lido' | 'hyperliquid' | 'morpho' | 'robinho
 /** The stock the buy tile buys, its words (Nate's) and the sentence it sends. */
 export const HERO_BUY = { symbol: 'AAPL', usd: 25, label: 'Buy $25 worth of AAPL shares', ask: 'Buy $25 of AAPL' } as const
 
-/** The Called it record the hero points at: an account page that is public on prod (app/x/_lib/home-shelf HOME_CALLED). */
-export const HERO_CALLED = { handle: 'dcinvestor', name: 'DC Investor', href: '/x/dcinvestor', eyebrow: 'Called it on X', line: 'Every call, pinned to the chart.' } as const
+/** The Called it record the hero points at: one of the home shelf's own
+ *  (app/x/_lib/home-shelf HOME_CALLED). The tile opens the ASSET's chart with
+ *  the account's calls pinned (lib/called-it/spec chartHref, written out here
+ *  so the client bundle does not carry that module; the pin holds them equal),
+ *  not the profile (Nate, 2026-11-19). */
+export const HERO_CALLED = { handle: 'dcinvestor', symbol: 'ETH', name: 'DC Investor', href: '/t/ETH?x=dcinvestor', eyebrow: 'Called it on X', line: 'Every call, pinned to the chart.' } as const
+
+/** What the server knows about that record when the page is rendered: the
+ *  account's photo (a data URI, never X's own URL) and the tally. Null fields
+ *  when the record is not on this database: the tile then wears an initial. */
+export interface HeroCalledSeedData {
+  avatar: string | null
+  tally: { total: number; right: number } | null
+}
+export const EMPTY_HERO_CALLED: HeroCalledSeedData = { avatar: null, tally: null }
+
+/** Pure: the hero's record out of the shelf's read (same order: summaries[i] wears avatars[i]). */
+export function heroCalledFrom(shelf: { summaries: readonly { handle: string; symbol: string; tally: { total: number; right: number } }[]; avatars: readonly (string | null)[] }): HeroCalledSeedData {
+  const i = shelf.summaries.findIndex((s) => s.handle === HERO_CALLED.handle && s.symbol === HERO_CALLED.symbol)
+  if (i < 0) return EMPTY_HERO_CALLED
+  const t = shelf.summaries[i].tally
+  return { avatar: shelf.avatars[i] ?? null, tally: t.total > 0 ? { total: t.total, right: t.right } : null }
+}
+
+/** The tile's foot line: the record's own count when it is known, the plain line otherwise. */
+export function heroCalledLine(seed: HeroCalledSeedData): string {
+  if (!seed.tally) return HERO_CALLED.line
+  const { total, right } = seed.tally
+  return `${total} ${HERO_CALLED.symbol} ${total === 1 ? 'call' : 'calls'} on the chart, ${right} called it.`
+}
 
 /** The stocks a mover tile shows when fewer than two listed stocks moved enough to rank. */
 export const HERO_MOVER_FALLBACK: readonly string[] = ['NVDA', 'TSLA']

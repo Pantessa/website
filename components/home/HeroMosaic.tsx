@@ -30,6 +30,7 @@ import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import { ARRIVAL_MAX_MCPS } from '@/lib/arrival-fence'
 import { askAppSlugs } from '@/lib/ask-apps'
 import {
+  EMPTY_HERO_CALLED,
   HERO_BUY,
   HERO_CALLED,
   HERO_CYCLE,
@@ -37,9 +38,11 @@ import {
   HERO_TILES,
   heroAppAsk,
   heroAppFallbackHref,
+  heroCalledLine,
   heroMoverSymbols,
   heroSay,
   type HeroAppTile,
+  type HeroCalledSeedData,
   type HeroSay,
 } from '@/lib/hero-mosaic'
 import { fmtPct, fmtQuotePrice, useQuotes } from '@/lib/markets-quotes'
@@ -52,6 +55,13 @@ const ReadSeed = createContext<ReadSnapshot>(EMPTY_READ)
 /** Hands the server's read snapshot to the hero (mounted by HomeSurface). */
 export function HeroReadSeed({ value, children }: { value: ReadSnapshot; children: ReactNode }) {
   return <ReadSeed.Provider value={value}>{children}</ReadSeed.Provider>
+}
+
+const CalledSeed = createContext<HeroCalledSeedData>(EMPTY_HERO_CALLED)
+
+/** Hands the server's read of the hero's Called it record (photo, tally) to the tile (mounted by app/page.tsx). */
+export function HeroCalledSeed({ value, children }: { value: HeroCalledSeedData; children: ReactNode }) {
+  return <CalledSeed.Provider value={value}>{children}</CalledSeed.Provider>
 }
 
 interface Stage {
@@ -81,6 +91,7 @@ export function HeroComposer() {
 
 export default function HeroMosaic({ children }: { children: ReactNode }) {
   const snap = useContext(ReadSeed)
+  const calledSeed = useContext(CalledSeed)
   const router = useRouter()
   const pathname = usePathname()
   const eth = snap.quotes.eth?.last ?? null
@@ -193,9 +204,19 @@ export default function HeroMosaic({ children }: { children: ReactNode }) {
                   </svg>
                   {HERO_CALLED.eyebrow}
                 </span>
-                <span className="hm__title">{HERO_CALLED.name}</span>
+                <span className="hm__who">
+                  {calledSeed.avatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- a data URI the server already read (app/x/_lib/avatar)
+                    <img className="hm__avatar" src={calledSeed.avatar} alt="" width={40} height={40} />
+                  ) : (
+                    <span className="hm__avatar hm__avatar--none" aria-hidden>
+                      {HERO_CALLED.name.slice(0, 1)}
+                    </span>
+                  )}
+                  <span className="hm__title">{HERO_CALLED.name}</span>
+                </span>
                 <span className="hm__foot">
-                  <span>{HERO_CALLED.line}</span>
+                  <span>{heroCalledLine(calledSeed)}</span>
                   <span className="hm__arrow" aria-hidden>
                     →
                   </span>

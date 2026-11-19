@@ -63,6 +63,9 @@
 .hm__eyebrow { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
 .hm__tile--called .hm__eyebrow { color: var(--muted); }
 .hm__title { font-family: var(--mk-font-display, 'Fraunces', Georgia, serif); font-weight: 600; font-size: var(--fs-xl); line-height: 1.08; letter-spacing: -0.015em; text-wrap: balance; }
+.hm__who { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.hm__avatar { flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--r-pill); object-fit: cover; box-shadow: 0 0 0 1px var(--line-2); }
+.hm__avatar--none { display: flex; align-items: center; justify-content: center; background: var(--surf-2); color: var(--muted); font-family: var(--mk-font-display, 'Fraunces', Georgia, serif); font-size: var(--fs-lg); }
 .hm__foot { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .hm__foot > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hm__tile--called .hm__foot { color: var(--muted); }
@@ -100,6 +103,23 @@
   :root:not([data-home='return']) .hm__title { font-size: var(--fs-lg); }
   :root:not([data-home='return']) .hm__mark { transform: scale(0.9); }
   :root:not([data-home='return']) .hm__val { font-size: var(--fs-md); }
+}
+
+/* ── NO RAIL FOR A STRANGER (2026-11-19, Nate: "hide the watch list bar on
+   the right so the hero has more room"). On the home, in the stranger's
+   posture, the frame is one column: the ask + account strip becomes a bar
+   across the top (the layout the frame already has below 1024px) and the
+   docked watchlist is not drawn. A returning visitor (`data-home="return"`)
+   keeps the rail exactly as it was, and so does every other page that rides
+   the frame: the rule needs the claim block in the main column. The posture
+   is set before first paint (lib/home-mode), so nothing moves after it. */
+@media (min-width: 1024px) {
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "main" "foot"; --mkt-pad-r: var(--mkt-pad-l); }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__side { display: contents; }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__top { grid-area: top; justify-content: flex-end; padding: 0 var(--mkt-pad-l); border-left: 0; border-bottom-color: transparent; }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__alerts { margin-right: 0; }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__bar { top: var(--mkt-top-h); }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__rail { display: none; }
 }
 
 /* A phone's column: the sentence at reading size so it fits beside its button. */

@@ -9,7 +9,9 @@ import { isPublicAppPath } from '../lib/app-entry'
 import { arrivalAllowed } from '../lib/arrival-fence'
 import { askAppSlugs } from '../lib/ask-apps'
 import { moneyShaped } from '../lib/ask-failure-shape'
-import { HERO_BUY, HERO_CALLED, HERO_COLS, HERO_CYCLE, HERO_MOVER_FALLBACK, HERO_ROWS, HERO_TILES, heroAppAsk, heroAppFallbackHref, heroMoverSymbols, heroSay, heroTileSpan, type HeroAppTile } from '../lib/hero-mosaic'
+import { chartHref } from '../lib/called-it/spec'
+import { HOME_CALLED } from '../app/x/_lib/home-shelf'
+import { EMPTY_HERO_CALLED, heroCalledFrom, heroCalledLine, HERO_BUY, HERO_CALLED, HERO_COLS, HERO_CYCLE, HERO_MOVER_FALLBACK, HERO_ROWS, HERO_TILES, heroAppAsk, heroAppFallbackHref, heroMoverSymbols, heroSay, heroTileSpan, type HeroAppTile } from '../lib/hero-mosaic'
 import { isSignedInAppHref } from '../lib/home-doors'
 import { marketSections } from '../lib/markets'
 import { READ_IDS } from '../lib/read'
@@ -88,9 +90,25 @@ export function heroMosaicPins(check: Check): void {
       heroMoverSymbols([{ symbol: 'AAPL' }, { symbol: 'intc' }, { symbol: 'INTC' }, { symbol: 'MU' }]).join() === 'INTC,MU' &&
       heroMoverSymbols([{ symbol: 'NVDA' }]).join() === 'NVDA,TSLA',
   )
+  const shelf = { summaries: [{ handle: 'defi_dad', symbol: 'ETH', tally: { total: 4, right: 1 } }, { handle: 'dcinvestor', symbol: 'ETH', tally: { total: 12, right: 7 } }], avatars: [null, 'data:image/jpeg;base64,AAAA'] }
   check(
-    'hero mosaic: the Called it tile is a plain link to a public account page (/x/<handle>), never a door',
-    HERO_CALLED.href === `/x/${HERO_CALLED.handle}` && isPublicAppPath(HERO_CALLED.href) && !isSignedInAppHref(HERO_CALLED.href) && HERO_CALLED.handle === HERO_CALLED.handle.toLowerCase(),
+    "hero mosaic: the Called it tile opens the ASSET's chart with the account's calls pinned (the spec's own chartHref, a public page: a plain link, never a door), not the profile; the record is one the home shelf features",
+    HERO_CALLED.href === chartHref(HERO_CALLED.handle, HERO_CALLED.symbol) &&
+      !HERO_CALLED.href.startsWith('/x/') &&
+      isPublicAppPath(HERO_CALLED.href) &&
+      !isSignedInAppHref(HERO_CALLED.href) &&
+      HOME_CALLED.some((f) => f.handle === HERO_CALLED.handle && f.symbol === HERO_CALLED.symbol),
+    HERO_CALLED.href,
+  )
+  check(
+    "hero mosaic: the tile wears the record's OWN photo and count, read by the server with the shelf (the photo is a data URI, never X's URL); a record that is not on this database leaves an initial and the plain line, never an invented number",
+    heroCalledFrom(shelf).avatar === 'data:image/jpeg;base64,AAAA' &&
+      heroCalledFrom(shelf).tally?.total === 12 &&
+      heroCalledLine(heroCalledFrom(shelf)) === '12 ETH calls on the chart, 7 called it.' &&
+      heroCalledFrom({ summaries: shelf.summaries.slice(0, 1), avatars: [null] }) === EMPTY_HERO_CALLED &&
+      heroCalledLine(EMPTY_HERO_CALLED) === HERO_CALLED.line &&
+      heroCalledFrom({ summaries: [{ handle: 'dcinvestor', symbol: 'ETH', tally: { total: 0, right: 0 } }], avatars: ['x'] }).tally === null &&
+      /<HeroCalledSeed value=\{heroCalledFrom\(called\)\}>/.test(code('app/page.tsx')),
   )
 
   // ── The component ──
@@ -122,13 +140,29 @@ export function heroMosaicPins(check: Check): void {
     "hero mosaic (sheet): tokens only; the mosaic is laid out for a stranger only (every rule that moves the claim keys on `:root:not([data-home='return'])`) and the returning line hides the tiles and the sentence; sized by the claim's own container; the motion (a line growing, the sentence changing) is off under reduced motion; the `hm` prefix is in no other sheet",
     !/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|font-size:\s*[\d.]+px/.test(sheet) &&
       /@container hero \(min-width: 900px\) \{/.test(sheet) &&
-      !/@media \((?:max|min)-width/.test(sheet) &&
+      (sheet.match(/@media \((?:max|min)-width[^)]*\)/g) ?? []).join() === '@media (min-width: 1024px)' &&
       sheet.split('\n').filter((l) => l.includes('.mk-claim__')).every((l) => l.trimStart().startsWith(":root:not([data-home='return']) .hm ")) &&
       /^:root\[data-home='return'\] \.hm__tiles, :root\[data-home='return'\] \.hm-say \{ display: none; \}$/m.test(sheet) /* two selectors, never `:is(…)`: the landing's served pin reads the FIRST `:root[data-home=return] :is(…){display:none` in the page's CSS as hero.css's fold */ && !/:root\[data-home='return'\] :is\(/.test(sheet) &&
       /@keyframes hm-grow \{/.test(sheet) &&
       /@media \(prefers-reduced-motion: reduce\) \{\s*\.hm__spark, \.hm__tile\.is-lit \.hm__spark, \.hm-say__text \{ animation: none; \}/.test(sheet) &&
       !/position:\s*(sticky|fixed)/.test(sheet) &&
       others.every((p) => !/\.hm(__|-say|\s|\{|\.|:)/.test(css(p))),
+  )
+  // ── No rail for a stranger ──
+  const railBlock = sheet.slice(sheet.indexOf('@media (min-width: 1024px) {'), sheet.indexOf('\n}', sheet.indexOf('@media (min-width: 1024px) {')))
+  const railRules = railBlock.split('\n').slice(1).filter((l) => l.trim())
+  const HOME_STRANGER = ":root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim)"
+  check(
+    "hero mosaic (no rail): on the home, in the stranger's posture, the frame is one column (the ask + account strip a bar across the top, the docked watchlist not drawn); every rule keys on the posture AND on the claim block being in the main column, so a returning visitor and every other page on the frame keep the rail",
+    railRules.length === 6 &&
+      railRules.every((l) => l.trimStart().startsWith(HOME_STRANGER)) &&
+      /grid-template-columns: minmax\(0, 1fr\); grid-template-areas: "top" "main" "foot";/.test(railBlock) &&
+      /\.mkt-frame__side \{ display: contents; \}/.test(railBlock) &&
+      /\.mkt-frame__top \{ grid-area: top;/.test(railBlock) &&
+      /\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}/.test(railBlock) &&
+      /\.mkt-frame__rail \{ display: none; \}/.test(railBlock) &&
+      /\{claim \?\? <h1 className="sr-only">Markets<\/h1>\}/.test(code('components/markets/shell/MarketsIndex.tsx')),
+    `${railRules.length} rules`,
   )
 }
 
