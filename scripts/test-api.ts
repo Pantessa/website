@@ -36447,9 +36447,9 @@ async function main() {
       `status=${lbRes.status}`,
     )
     check(
-      'progress: /leaderboard?w=7 lights the 7-day window and names it; /analytics?w=all serves 200 with the ANALYTICS seat lit, the deltas absent (no previous window for all time), the two day charts, the five-stop funnel, the venue + chain boards',
+      'progress: /leaderboard?w=7 lights the 7-day window and names it; /analytics?w=all serves 200 (its spine seat is admin-only since 2026-11-19, so a signed-out render draws none), the deltas absent (no previous window for all time), the two day charts, the five-stop funnel, the venue + chain boards',
       /<a [^>]*aria-current="true"[^>]*data-window="7"[^>]*href="\/leaderboard\?w=7"/.test(lb7) && !/<a [^>]*aria-current="true"[^>]*data-window="30"/.test(lb7) && lb7.includes('7 days') &&
-        anRes.status === 200 && /data-progress="analytics"/.test(an) && seatLit(an, 'ANALYTICS') && !seatLit(an, 'LEADERS') && !/<header class="nav/.test(an) &&
+        anRes.status === 200 && /data-progress="analytics"/.test(an) && !/aria-label="ANALYTICS"/.test(an) && !seatLit(an, 'LEADERS') && !/<header class="nav/.test(an) &&
         /data-chart="Money moved by day"/.test(an) && /data-chart="Links by day"/.test(an) && (an.match(/role="img"/g) ?? []).length >= 2 &&
         /data-funnel=""/.test(an) && ['arrived', 'asked', 'built', 'signed', 'returned'].every((s) => an.includes(`data-stop="${s}"`)) &&
         /data-board="venues"/.test(an) && /data-board="chains"/.test(an) && !/pg__delta/.test(an) &&
@@ -36465,10 +36465,11 @@ async function main() {
     // below sm, listed in the MORE sheet; the sitemap carries both pages.
     const spineSrc = await readFile(new URL('../components/AppSpine.tsx', import.meta.url), 'utf8')
     check(
-      'progress: the spine seats LEADERS + ANALYTICS on the column and the bar (max-sm:hidden on the bar — the phone bar is full), lists both in the MORE sheet, and phone-nav folds them behind MORE; the sitemap lists both pages; Navigation hides on them',
-      (lb.match(/<a [^>]*aria-label="LEADERS"[^>]*href="\/leaderboard"/g) ?? []).length === 2 && (lb.match(/<a [^>]*aria-label="ANALYTICS"[^>]*href="\/analytics"/g) ?? []).length === 2 &&
+      'progress: the spine seats LEADERS on the column and the bar (max-sm:hidden on the bar — the phone bar is full) and in the MORE sheet; ANALYTICS, LINKS and TEAM are admin-only seats (2026-11-19: a signed-out render draws none, the pages stay); the sitemap lists both pages; Navigation hides on them',
+      (lb.match(/<a [^>]*aria-label="LEADERS"[^>]*href="\/leaderboard"/g) ?? []).length === 2 && !/aria-label="ANALYTICS"/.test(lb) &&
         /<a [^>]*aria-label="LEADERS"[^>]*class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/leaderboard"/.test(lb) &&
-        /<a [^>]*aria-label="ANALYTICS"[^>]*class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/analytics"/.test(lb) &&
+        (spineSrc.match(/\{showAnalytics && \(/g) ?? []).length === 3 && /ADMIN_ONLY_TABS: ReadonlySet<RailTab> = new Set<RailTab>\(\['links', 'team'\]\)/.test(spineSrc) &&
+        /const admin = isAdminAddress\(walletAddress\)/.test(spineSrc) &&
         /href=\{LEADERBOARD_HREF\} role="menuitem"/.test(spineSrc) && /href=\{ANALYTICS_HREF\} role="menuitem"/.test(spineSrc) &&
         /isProgressPath\(pathname\)\) return null/.test(await readFile(new URL('../components/Navigation.tsx', import.meta.url), 'utf8')) &&
         (await (await fetch(`${BASE}/sitemap.xml`)).text()).includes('/leaderboard</loc>') && (await (await fetch(`${BASE}/sitemap.xml`)).text()).includes('/analytics</loc>'),

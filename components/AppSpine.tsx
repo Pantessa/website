@@ -62,6 +62,7 @@ import { useRunningWork } from '@/lib/use-running-work'
 import { rosterEnabledClient } from '@/lib/roster-client'
 import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
 import { ANALYTICS_HREF, LEADERBOARD_HREF } from '@/lib/progress'
+import { isAdminAddress } from '@/lib/admin'
 import { YeetfulMark } from '@/components/Logo'
 import SpineLink from '@/components/SpineLink'
 import SpineGuideDot from '@/components/guide/SpineGuideDot'
@@ -91,6 +92,14 @@ const TABS = [...TABS_ABOVE_WALLET, ...TABS_BELOW_WALLET]
 // Drawer tabs the PHONE bar folds behind MORE (see the capacity note in the
 // component). The desktop column has room for every seat.
 const PHONE_MORE_TABS: ReadonlySet<RailTab> = new Set<RailTab>(['team'])
+
+// ADMIN-ONLY SEATS (2026-11-19, Nate: "hide Links and analytics for non admin
+// until we can get our numbers up, also team as no one needs that right now,
+// but keep the pages"). Only the SEATS go: /links, /analytics, ?tab=links and
+// ?tab=team still open for anyone with the address. To turn a seat back on,
+// take it out of this set (ANALYTICS: set SHOW_ANALYTICS_SEAT_TO_ALL).
+export const ADMIN_ONLY_TABS: ReadonlySet<RailTab> = new Set<RailTab>(['links', 'team'])
+const SHOW_ANALYTICS_SEAT_TO_ALL = false
 
 const WALLET_TITLE = 'Wallet — balances on every chain, gas, send and receive'
 // THE PUBLIC PROGRESS PAGES (2026-10-15, Nate: "a leaderboard, and analytics
@@ -123,6 +132,12 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // visitor runs on connect alone), so the reset below fires at the moment the
   // user actually names themselves.
   const { walletAddress, signedOut, connectAndSignIn, status: sessionStatus } = useSession()
+  // The admin-only seats (ADMIN_ONLY_TABS above) show for an admin wallet.
+  const admin = isAdminAddress(walletAddress)
+  const seatShown = (t: SpineTab) => admin || !ADMIN_ONLY_TABS.has(t.tab)
+  const tabsAboveWallet = TABS_ABOVE_WALLET.filter(seatShown)
+  const tabsBelowWallet = TABS_BELOW_WALLET.filter(seatShown)
+  const showAnalytics = admin || SHOW_ANALYTICS_SEAT_TO_ALL
 
   // SIGNED OUT → HOME (2026-09-11, Nate: "if the user is inside markets, or
   // App or anytime the left side bar is there and they are not logged in,
@@ -475,7 +490,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
 
   // What MORE holds on a phone, and whether it wears the "you are here" tick
   // (the settings page, or the TEAM screen showing over the chat).
-  const moreTab = TABS.find((t) => PHONE_MORE_TABS.has(t.tab))
+  const moreTab = TABS.find((t) => PHONE_MORE_TABS.has(t.tab) && seatShown(t))
   const moreLit = moreLitFor(surface, phoneScreen) || onCommunity
   // The one sheet-row class (components/mobile/Sheet SHEET_ROW, polish R1):
   // every lane's sheet list wears it, so MORE is the reference.
@@ -531,7 +546,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             <span className="mono text-[9px] font-medium tracking-wide">MARKETS</span>
           </Link>
 
-          {TABS_ABOVE_WALLET.map(desktopTab)}
+          {tabsAboveWallet.map(desktopTab)}
 
           {/* WALLET is a destination PAGE (/wallet: the "Wallet details"
               window given the whole screen). It came in above DOCS
@@ -557,7 +572,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             <span className="mono text-[9px] font-medium tracking-wide">WALLET</span>
           </SpineLink>
 
-          {TABS_BELOW_WALLET.map(desktopTab)}
+          {tabsBelowWallet.map(desktopTab)}
 
           {/* LEADERS + ANALYTICS are public destination PAGES (2026-10-15):
               the system's progress in the open, seated under the personal
@@ -601,6 +616,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             <Trophy className="w-[18px] h-[18px]" />
             <span className="mono text-[9px] font-medium tracking-wide">LEADERS</span>
           </Link>
+          {showAnalytics && (
           <Link
             href={ANALYTICS_HREF}
             title={ANALYTICS_TITLE}
@@ -619,6 +635,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             <ChartColumn className="w-[18px] h-[18px]" />
             <span className="mono text-[9px] font-medium tracking-wide">ANALYTICS</span>
           </Link>
+          )}
 
           {/* DOCS is a destination PAGE, seated under CHATS (2026-09-11,
               Nate) — the docs left the brochure nav's reach once the nav
@@ -680,7 +697,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <CandlestickChart className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">MARKETS</span>
         </Link>
-        {TABS_ABOVE_WALLET.map(mobileTab)}
+        {tabsAboveWallet.map(mobileTab)}
         <SpineLink
           href={WALLET_PAGE_HREF}
           title={WALLET_TITLE}
@@ -695,7 +712,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <span className="relative"><Wallet className="w-[18px] h-[18px]" /><SpineGuideDot tab="wallet" /></span>
           <span className="mono text-[10px] font-medium tracking-wide">WALLET</span>
         </SpineLink>
-        {TABS_BELOW_WALLET.map(mobileTab)}
+        {tabsBelowWallet.map(mobileTab)}
         <Link
           href={COMMUNITY_HREF}
           title={COMMUNITY_TITLE}
@@ -723,6 +740,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <Trophy className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">LEADERS</span>
         </Link>
+        {showAnalytics && (
         <Link
           href={ANALYTICS_HREF}
           title={ANALYTICS_TITLE}
@@ -737,6 +755,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <ChartColumn className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">ANALYTICS</span>
         </Link>
+        )}
         <Link
           href="/docs"
           title="Docs — how Pantessa builds, guards and signs"
@@ -816,6 +835,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               <span className="block text-[12px] truncate">Who moved the money</span>
             </span>
           </Link>
+          {showAnalytics && (
           <Link href={ANALYTICS_HREF} role="menuitem" aria-current={onAnalytics ? 'page' : undefined} onClick={() => setMoreOpen(false)} className={moreItem}>
             <ChartColumn className="w-[18px] h-[18px] flex-shrink-0" />
             <span className="min-w-0">
@@ -823,6 +843,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               <span className="block text-[12px] truncate">The whole system, in the open</span>
             </span>
           </Link>
+          )}
           <Link href="/docs" role="menuitem" onClick={() => setMoreOpen(false)} className={moreItem}>
             <BookOpen className="w-[18px] h-[18px] flex-shrink-0" />
             <span className="min-w-0">
