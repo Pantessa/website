@@ -230,8 +230,11 @@ const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven'
 /** The page's one headline when no single app owns it (2+ apps, or an app
  *  with no headline of its own): what the page can see, then what it asks of
  *  you. Never a number it was not given. */
-export function pageHeadline(p: { count: number; totalUsd: number | null; needs: number }): string {
+export function pageHeadline(p: { count: number; totalUsd: number | null; needs: number; loading?: boolean }): string {
   if (p.count <= 0) return 'Pick an app to start.'
+  // While the apps are still reading, "Nothing needs you" would be a claim
+  // the page cannot make yet (Nate, 2026-11-19).
+  if (p.loading) return p.count === 1 ? 'Loading your app…' : 'Loading your apps…'
   const money = p.totalUsd != null && p.totalUsd > 0 ? `You have ${usd0(p.totalUsd)} on this page. ` : ''
   if (p.needs <= 0) return `${money}Nothing needs you right now.`
   const n = p.needs < COUNT_WORDS.length ? COUNT_WORDS[p.needs] : String(p.needs)

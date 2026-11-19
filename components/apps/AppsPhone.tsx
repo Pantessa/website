@@ -109,9 +109,11 @@ export default function AppsPhone({ address, title }: { address: string; title: 
   const only = layout === 'full' ? active[0] : null
   const needsFirst = needsLeads(layout === 'full' ? 'full' : 'side', only ? appFamily(only) : null)
   const onlyModule = only ? SECTIONS[appFamily(only)] : null
-  const headline =
-    (only && onlyModule?.headline?.({ server: only, tiles: page.bySlug.get(only.slug) ?? [], page, map })) ||
-    pageHeadline({ count: active.length, totalUsd, needs: needs.length })
+  const pageLoading = loading || tiles === null
+  const headline = pageLoading
+    ? pageHeadline({ count: active.length, totalUsd, needs: needs.length, loading: true })
+    : (only && onlyModule?.headline?.({ server: only, tiles: page.bySlug.get(only.slug) ?? [], page, map })) ||
+      pageHeadline({ count: active.length, totalUsd, needs: needs.length })
 
   const sectionsFor = active.map((server) => {
     const family = appFamily(server)
