@@ -24191,9 +24191,12 @@ async function main() {
       // RE-PINNED 2026-10-06 (front-door): /markets 308s to `/`, the splash, which opens on
       // the claim block — HERO_LINE as the visible h1 above the tool strip — so
       // the index's sr-only "Markets" h1 steps aside. Still no brochure hero.
-      '/markets → `/`: 200 full-screen frame — the claim (h1 = HERO_LINE) above the tool strip, no brochure hero, search + board tabs, the three boards, the watchlist slot docked in the rail, the footer under the data',
+      // RE-PINNED 2026-11-19 (signed-in home): /markets is a page again — the
+      // index with NO claim block (no hero, no tour), so the index's sr-only
+      // "Markets" h1 is the page's one h1 and the rail is drawn.
+      '/markets: 200 full-screen frame — the signed-in home: no claim block and no tour, the sr-only "Markets" h1, no brochure hero, search + board tabs, the three boards, the watchlist slot docked in the rail, the footer under the data',
       !/class="mkt__hero"/.test(mkHtml) && !mkHtml.includes('MARKETS · STOCKS 24/7 · SPOT · PERPS') &&
-        /<h1 class="mk-claim__h1">Trading for the AI age\.<\/h1>/.test(mkHtml) /* RE-PINNED 2026-11-19 (the mosaic hero): the home's h1 is its own line, SPLASH.h1 ("Trading for the AI age."); HERO_LINE stays the <title>, the social card and /story's hero. */ && !/<h1 class="sr-only">Markets<\/h1>/.test(mkHtml) &&
+        !/class="mk-claim/.test(mkHtml) && !/class="hm[ _"]/.test(mkHtml) && /<h1 class="sr-only">Markets<\/h1>/.test(mkHtml) &&
         /class="mkt-frame__rail"[^>]*>[\s\S]*?data-slot="watchlist"/.test(mkHtml) &&
         /class="mkt-frame__foot"><footer class="footer"/.test(mkHtml) &&
         /aria-label="Search markets"/.test(mkHtml) &&
@@ -24546,7 +24549,7 @@ async function main() {
         'spine: no NEW seat in either posture (CHATS leads with New Chat), and the spine sends a settled signed-out visitor home with replace, except on a public app page',
         !/>NEW</.test(spineSrc) && !/Start a new chat/.test(spineSrc) &&
           !chatHtml.includes('Start a new chat') && !mkHtml.includes('Start a new chat') &&
-          /const \{ walletAddress, signedOut, connectAndSignIn \} = useSession\(\)/.test(spineSrc) &&
+          /const \{ walletAddress, signedOut, connectAndSignIn, status: sessionStatus \} = useSession\(\)/.test(spineSrc) /* RE-PINNED 2026-11-19 (signed-in home): the status feeds homeHrefFor */ &&
           /const publicPage = isPublicAppPath\(pathname\)/.test(spineSrc) &&
           // Re-pinned 2026-09-16: the gate remembers the page a signed-out
           // arrival opened first; the exact effect is pinned in the landing block.
