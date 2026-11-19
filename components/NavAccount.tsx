@@ -199,6 +199,7 @@ export default function NavAccount() {
               aria-expanded={open}
               onClick={toggle}
               data-sheet-open="account"
+              title={label}
             >
               <span className={`navacct__dot ${authed ? 'is-authed' : ''}`} aria-hidden />
               <span className="navacct__addr mono">{label}</span>

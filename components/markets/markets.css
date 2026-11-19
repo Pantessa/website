@@ -211,10 +211,10 @@ button.mk-held:hover { border-color: var(--accent); }
    right on any page). The floating pill steps aside on this surface, so the
    door never covers a row. */
 @media (max-width: 1023px) {
-  .mkt-frame__top .mkt-frame__ask { flex: 1 1 auto; min-width: 0; height: 44px; justify-content: flex-start; gap: 10px; padding: 0 16px 0 10px; }
+  .mkt-frame__top .mkt-frame__ask { flex: 1 1 0; min-width: 0; height: 44px; justify-content: flex-start; gap: 10px; padding: 0 16px 0 10px; }
   .mkt-frame__top .mkt-frame__askword { display: none; }
   .mkt-frame__top .mkt-frame__askhint { display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 14px; font-weight: 400; color: var(--muted); }
-  .mkt-frame__top .mkt-frame__acct { flex: 0 0 auto; }
+  .mkt-frame__top .mkt-frame__acct { flex: 0 1 auto; } /* shrinks: the name ellipsizes inside the seat (x402-design.css, the strip fits) */
   /* The bell beside the ask field (RailAlerts): a 40px target in the 52px bar;
      its popover spans the screen under the bar instead of hanging off a
      button that sits a thumb from the right edge. */
