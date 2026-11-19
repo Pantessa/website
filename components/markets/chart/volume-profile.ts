@@ -67,7 +67,7 @@ export class VolumeProfile implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null
   private bars: readonly Candle[] = []
   private ink = 'rgba(128,128,128,0.5)'
-  private poc = 'rgba(62,207,142,0.9)'
+  private poc = 'rgba(42,245,152,0.9)'
   private rows: { y0: number; y1: number; w: number; isPoc: boolean }[] = []
   private readonly renderer: IPrimitivePaneRenderer = { draw: (target) => this.paint(target) }
   private readonly views: readonly IPrimitivePaneView[] = [{ zOrder: () => 'bottom', renderer: () => (this.rows.length ? this.renderer : null) }]

@@ -193,7 +193,7 @@ export function TraceLine({ event }: { event: RouterTraceEvent }) {
     }
     case 'tool': {
       const mark = event.status === 'ok' ? '✓' : event.status === 'error' ? '✗' : '⋯'
-      const color = event.status === 'ok' ? 'var(--accent)' : event.status === 'error' ? '#ff6b6b' : 'var(--muted)'
+      const color = event.status === 'ok' ? 'var(--up)' : event.status === 'error' ? '#ff6b6b' : 'var(--muted)'
       return (
         <p className="[overflow-wrap:anywhere]" style={{ color }}>
           <span className="text-[color:var(--muted-2)]">⚙</span> {event.name} <span>{mark}</span>

@@ -139,7 +139,7 @@ export default function LiveRoutingFeed() {
                 <div key={c.key} className="flex items-center gap-2 px-3 py-2 text-[length:var(--fs-sm)] min-w-0">
                   <span
                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                    style={{ background: c.ok ? 'var(--accent)' : '#ff6b6b' }}
+                    style={{ background: c.ok ? 'var(--up)' : '#ff6b6b' }}
                   />
                   <span className="text-[color:var(--fg)] truncate">{cleanServerName(c.service)}</span>
                   {!c.ok && c.note ? <span className="text-[#ff6b6b] truncate text-[length:var(--fs-xs)]">— {c.note}</span> : null}

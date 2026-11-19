@@ -20,11 +20,11 @@
        only: no gradient between two brand hues, no glow. */
     --accent: #9F7AFF;
     --hot: #FF48C4;
-    --up: #3ECF8E;
+    --up: #2AF598;
     /* The Split spectrum, lit then shade: a tile is a square in the shade
        tone with the lit tone above its cut (components/brand/split.css).
        Fills and rules only, never body text. Lime is held for the pick. */
-    --neon-emerald: #3ECF8E; --neon-emerald-2: #159B68;
+    --neon-emerald: #2AF598; --neon-emerald-2: #12B36B;
     --neon-teal: #2CE8C4; --neon-teal-2: #0E9F8C;
     --neon-cyan: #2AD4FF; --neon-cyan-2: #0B8CC6;
     --neon-blue: #5B8CFF; --neon-blue-2: #2A52D8;
@@ -47,7 +47,9 @@
     --paper: var(--surf-1); /* input / field background */
     --mist: var(--line);    /* hairline borders */
     --smoke: var(--muted);  /* muted label text */
-    --sell: #E5484D;        /* sell-side / destructive accent */
+    /* The action red: a shade under the chart's --mk-down (#ff3b47) so the
+       white label on a sell fill keeps the 4.1:1 it had on #E5484D. */
+    --sell: #EE2D46;        /* sell-side / destructive accent */
     /* Progress-state tokens — the ONE source for run-state color across
        JobCard, /i, the rail, and receipts (PLAN-progress-ui.md). Values
        match the tailwind emerald-400/red-400 the surfaces hardcoded, so
@@ -4936,8 +4938,8 @@
     --muted-2: oklch(0.61 0 0);
     --accent: #9F7AFF;
     --hot: #FF48C4;
-    --up: #3ECF8E;
-    --sell: #E5484D;
+    --up: #2AF598;
+    --sell: #EE2D46;
     color-scheme: dark;
   }
 

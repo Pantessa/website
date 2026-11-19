@@ -224,7 +224,7 @@ export default function CandleChart({
 
   const last = candles.length ? candles[candles.length - 1] : null
   const hovered = hover && candles[hover.i] ? candles[hover.i] : null
-  const upColor = 'var(--accent)'
+  const upColor = 'var(--up)'
   const downColor = 'var(--sell)'
 
   if (!resolvable) {

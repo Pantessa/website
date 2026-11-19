@@ -7,11 +7,16 @@
 
 :root {
   /* direction */
-  --mk-up: #3ecf8e;
-  --mk-down: #ff5d64;
+  /* HOT (2026-11-19): the market's green and red at the Split palette's own
+     saturation, so a chart sits beside the brand's neons without going
+     pastel. Green stays green and red stays red: the red is kept off the
+     brand's pink and magenta (hue 357 against 340 and 319). Light keeps its
+     text-grade inks below. */
+  --mk-up: #2af598;
+  --mk-down: #ff3b47;
   --mk-flat: oklch(0.68 0 0);
-  --mk-up-soft: rgb(62 207 142 / 0.14);
-  --mk-down-soft: rgb(255 93 100 / 0.14);
+  --mk-up-soft: rgb(42 245 152 / 0.14);
+  --mk-down-soft: rgb(255 59 71 / 0.14);
   /* categorical series — 8 fixed slots; dataviz validate_palette.js ALL PASS on
      #000 (dark) and #fdfdfc (light): L band, chroma ≥0.10, normal ΔE ≥16, contrast ≥3:1;
      CVD worst pair gold↔emerald ΔE 7.4 (legal: every consumer direct-labels) */
@@ -27,14 +32,14 @@
   --mk-seq-1: #0b2a1f;
   --mk-seq-2: #0f5a3d;
   --mk-seq-3: #159b68;
-  --mk-seq-4: #3ecf8e;
+  --mk-seq-4: #2af598;
   --mk-seq-5: #a6f0cf;
   /* surfaces */
   --mk-surface: oklch(0.156 0 0);
   --mk-surface-2: oklch(0.205 0 0);
   --mk-glass: rgb(16 16 18 / 0.78);
   --mk-glass-line: rgb(255 255 255 / 0.12);
-  --mk-glow: rgb(62 207 142 / 0.22);
+  --mk-glow: rgb(42 245 152 / 0.22);
   --mk-rule: rgb(255 255 255 / 0.14);
   --mk-grid: rgb(255 255 255 / 0.07);
   --mk-crosshair: rgb(255 255 255 / 0.35);

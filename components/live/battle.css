@@ -15,8 +15,8 @@
   --battle-down: var(--mk-down, var(--sell));
   --battle-grid: var(--mk-grid, rgb(255 255 255 / 0.07));
   --battle-horizon: var(--mk-rule, rgb(255 255 255 / 0.18));
-  --battle-ground-gain: rgb(62 207 142 / 0.10);
-  --battle-ground-loss: rgb(255 93 100 / 0.10);
+  --battle-ground-gain: rgb(42 245 152 / 0.10);
+  --battle-ground-loss: rgb(255 59 71 / 0.10);
   container-type: inline-size; container-name: battle;
 }
 html[data-theme="light"] .battle {

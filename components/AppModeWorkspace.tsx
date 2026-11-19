@@ -452,7 +452,7 @@ function RowsBody({ tile, reduced }: { tile: RowsTile; reduced: boolean }) {
               {r.sub && <div className="text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
             </div>
             {r.value && (
-              <span className={r.tone === 'pos' ? 'text-[color:var(--accent)]' : r.tone === 'neg' ? 'text-red-400' : 'text-[color:var(--fg)]'}>
+              <span className={r.tone === 'pos' ? 'text-[color:var(--up)]' : r.tone === 'neg' ? 'text-red-400' : 'text-[color:var(--fg)]'}>
                 {r.value}
               </span>
             )}
