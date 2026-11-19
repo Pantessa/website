@@ -125,14 +125,14 @@ export default function ReputationPanel({
                   rel="noopener noreferrer"
                   title={`${p.ok ? 'settled' : 'failed'}${p.note ? ` — ${p.note}` : ''}${p.latencyMs ? ` · ${p.latencyMs}ms` : ''} · ${new Date(p.createdAt).toLocaleString()}`}
                   className="w-2.5 h-2.5 rounded-sm hover:ring-2 hover:ring-[color-mix(in_srgb,var(--fg)_30%,transparent)]"
-                  style={{ background: p.ok ? 'var(--accent)' : '#ff6b6b' }}
+                  style={{ background: p.ok ? 'var(--up)' : '#ff6b6b' }}
                 />
               ) : (
                 <span
                   key={p.id}
                   title={`${p.ok ? 'settled' : 'failed'}${p.note ? ` — ${p.note}` : ''} · ${new Date(p.createdAt).toLocaleString()}`}
                   className="w-2.5 h-2.5 rounded-sm"
-                  style={{ background: p.ok ? 'var(--accent)' : '#ff6b6b' }}
+                  style={{ background: p.ok ? 'var(--up)' : '#ff6b6b' }}
                 />
               ),
             )}

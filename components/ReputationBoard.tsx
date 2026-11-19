@@ -31,7 +31,7 @@ export interface ReputationRowData {
 }
 
 const stateColor = (s: HealthState): string =>
-  s === 'live' ? 'var(--accent)' : s === 'needs' ? '#f4b740' : '#ff6b6b'
+  s === 'live' ? 'var(--up)' : s === 'needs' ? '#f4b740' : '#ff6b6b'
 
 const stateLabel = (s: HealthState): string =>
   s === 'live' ? 'live' : s === 'needs' ? 'needs auth' : 'down'

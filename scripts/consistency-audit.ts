@@ -104,9 +104,9 @@ export function stripComments(src: string, css: boolean): string {
 
 // ── The token tables ───────────────────────────────────────────────────────
 const HEX_TOKENS: Record<string, string> = {
-  '#3ecf8e': '--up', '#0a7350': '--up (light)', '#0e8f62': '--up (old light accent)',
+  '#2af598': '--up / --mk-up', '#3ecf8e': '--up (before 2026-11-19)', '#0a7350': '--up (light)', '#0e8f62': '--up (old light accent)',
   '#9f7aff': '--accent', '#5b2fd6': '--accent (light)', '#ff48c4': '--hot / --gem-5', '#c4168c': '--hot (light)',
-  '#e5484d': '--sell', '#b0323a': '--sell (light) / --fail (light)',
+  '#ee2d46': '--sell', '#ff3b47': '--mk-down', '#e5484d': '--sell (before 2026-11-19)', '#b0323a': '--sell (light) / --fail (light)',
   '#34d399': '--done', '#0b7a53': '--done (light)', '#f87171': '--fail',
   '#f0b454': '--gold', '#8a600a': '--gold (light)',
   '#000': '--bg (dark) / --ink on an accent fill', '#000000': '--bg (dark) / --ink on an accent fill',
@@ -117,7 +117,7 @@ const HEX_TOKENS: Record<string, string> = {
 }
 /** The palette a one-off hex is measured against (dark values). */
 const PALETTE: Array<[string, string]> = [
-  ['--accent', '#9f7aff'], ['--hot', '#ff48c4'], ['--up', '#3ecf8e'], ['--sell', '#e5484d'], ['--done', '#34d399'], ['--fail', '#f87171'], ['--gold', '#f0b454'],
+  ['--accent', '#9f7aff'], ['--hot', '#ff48c4'], ['--up', '#2af598'], ['--sell', '#ee2d46'], ['--done', '#34d399'], ['--fail', '#f87171'], ['--gold', '#f0b454'],
   ['--chart-ma-50', '#5b9cff'], ['--chart-ma-200', '#f5c518'], ['--bg', '#000000'], ['--fg', '#ffffff'],
   ['--surf-1', '#0c0c0c'], ['--surf-2', '#171717'], ['--line', '#333333'], ['--line-2', '#4a4a4a'], ['--muted', '#a3a3a3'],
 ]

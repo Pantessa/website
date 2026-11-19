@@ -283,7 +283,7 @@ function AiKeyCard({ ai, onChange }: { ai: PlanResponse['aiKey']; onChange: () =
           </button>
         </form>
       )}
-      {note && <p className={`text-[length:var(--fs-md)] mt-3 ${note.tone === 'ok' ? 'text-[color:var(--accent)]' : 'text-[#ffb86b]'}`}>{note.text}</p>}
+      {note && <p className={`text-[length:var(--fs-md)] mt-3 ${note.tone === 'ok' ? 'text-[color:var(--up)]' : 'text-[#ffb86b]'}`}>{note.text}</p>}
     </Card>
   )
 }

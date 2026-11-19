@@ -150,7 +150,7 @@ export function SplashHero({
                         </div>
                         <Sparkline symbol={sparkSymbolFor(r)} width={64} height={20} className="hidden sm:block" />
                         {r.value && (
-                          <span className="shrink-0 text-[length:var(--fs-xs)] tabular-nums" style={{ color: r.tone === 'pos' ? 'var(--accent)' : 'var(--gold)' }}>
+                          <span className="shrink-0 text-[length:var(--fs-xs)] tabular-nums" style={{ color: r.tone === 'pos' ? 'var(--up)' : 'var(--gold)' }}>
                             {r.value}
                           </span>
                         )}
