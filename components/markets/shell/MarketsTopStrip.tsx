@@ -18,10 +18,17 @@ import { AskDoorTrigger } from '@/components/AskDoor'
 import RailAlerts from '@/components/markets/shell/RailAlerts'
 import { SymbolSearchTrigger } from '@/components/markets/search/SymbolSearch'
 import SiteAccount from '@/components/SiteAccount'
+import type { ReactNode } from 'react'
 
-export default function MarketsTopStrip() {
+// `lead` (2026-11-19, Nate: "Pantessa — An intent is all you need and the Ask
+// buttons should be on the same horizontal level and padding"): whatever the
+// page wants at the strip's left edge, on the row the controls ride. Only the
+// home hands one (its eyebrow), and components/home/mosaic.css shows it only
+// where the strip is a full-width bar over the stranger's hero.
+export default function MarketsTopStrip({ lead }: { lead?: ReactNode }) {
   return (
     <div className="mkt-frame__top" data-slot="top-strip">
+      {lead ? <div className="mkt-frame__lead">{lead}</div> : null}
       <AskDoorTrigger variant="rail" />
       <SymbolSearchTrigger variant="strip" />
       <RailAlerts />

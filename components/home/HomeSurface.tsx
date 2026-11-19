@@ -22,7 +22,7 @@
 
 import MarketsIndex from '@/components/markets/shell/MarketsIndex'
 import SentHomeNotice from '@/components/SentHomeNotice'
-import SplashClaim from '@/components/home/SplashClaim'
+import SplashClaim, { ClaimEyebrow } from '@/components/home/SplashClaim'
 import { HeroReadSeed } from '@/components/home/HeroMosaic'
 import TheRead from '@/components/home/TheRead'
 import AppsRow from '@/components/home/AppsRow'
@@ -59,6 +59,7 @@ export default function HomeSurface({ trending = [], tradable, read = EMPTY_READ
         trending={trending}
         tradable={tradable}
         claim={<SplashClaim />}
+        stripLead={<ClaimEyebrow />}
         lead={
           <div data-home-lead className="min-w-0">
             <SentHomeNotice />

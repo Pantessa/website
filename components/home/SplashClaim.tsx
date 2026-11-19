@@ -46,6 +46,18 @@ function glideToTour() {
   document.getElementById(TOUR_ANCHOR)?.scrollIntoView({ block: 'start', behavior: calm ? 'auto' : 'smooth' })
 }
 
+/** Whose page this is. Drawn in the claim on a phone and a narrow column; on
+ *  a stranger's desktop home the ask + account strip carries it instead
+ *  (HomeSurface `stripLead`), so it sits on the controls' row. CSS shows one. */
+export function ClaimEyebrow() {
+  return (
+    <p className="mk-claim__eyebrow mono">
+      <b>{SPLASH.eyebrow[0]}</b>{' '}
+      <span>{SPLASH.eyebrow[1]}</span>
+    </p>
+  )
+}
+
 export default function SplashClaim() {
   // The stranger's primary door: the tour is already open under THE READ.
   const toTour = (e: MouseEvent<HTMLAnchorElement>) => {
@@ -70,10 +82,7 @@ export default function SplashClaim() {
       <HeroMosaic>
       <div className="mk-claim__in">
         <div className="mk-claim__main">
-          <p className="mk-claim__eyebrow mono">
-            <b>{SPLASH.eyebrow[0]}</b>{' '}
-            <span>{SPLASH.eyebrow[1]}</span>
-          </p>
+          <ClaimEyebrow />
           <h1 className="mk-claim__h1">{SPLASH.h1}</h1>
           <p className="mk-claim__sub">{SPLASH.sub}</p>
           <HeroComposer />

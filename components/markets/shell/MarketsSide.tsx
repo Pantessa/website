@@ -21,13 +21,13 @@ import { AlertsContext } from '@/components/markets/watchlist/alerts-context'
 import { useAlerts } from '@/components/markets/watchlist/useWatchlists'
 import { useSession } from '@/lib/session'
 
-export default function MarketsSide({ label, children }: { label: string; children: React.ReactNode }) {
+export default function MarketsSide({ label, lead, children }: { label: string; lead?: React.ReactNode; children: React.ReactNode }) {
   const { status, address } = useSession()
   const alerts = useAlerts(status === 'authed' && !!address)
   return (
     <AlertsContext.Provider value={alerts}>
       <div className="mkt-frame__side">
-        <MarketsTopStrip />
+        <MarketsTopStrip lead={lead} />
         <SymbolSearch />
         <aside className="mkt-frame__rail" aria-label={label}>
           {children}

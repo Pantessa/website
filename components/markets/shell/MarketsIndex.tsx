@@ -273,6 +273,7 @@ export default function MarketsIndex({
   lead,
   guide,
   claim,
+  stripLead,
   tour,
   how,
   close,
@@ -293,6 +294,9 @@ export default function MarketsIndex({
    *  carries the page's visible h1 — so when it is given, the index's own
    *  sr-only "Markets" h1 steps aside (one h1 per page). */
   claim?: ReactNode
+  /** The left end of the ask + account strip (MarketsTopStrip `lead`): the
+   *  home's eyebrow, so it shares the controls' row on a stranger's page. */
+  stripLead?: ReactNode
   /** THE LANDING's seats (squad landing, 2026-11-10): `tour` renders under
    *  the lead and above the market data (components/home/tour/Tour — the
    *  eight sides of the product); `how` REPLACES the small "How a chart
@@ -536,7 +540,7 @@ export default function MarketsIndex({
 
       {/* ── The side column: ask + account on top, the watchlist docked
           under it at full height ── */}
-      <MarketsSide label="Your watchlist">
+      <MarketsSide label="Your watchlist" lead={stripLead}>
         <div className="mk-rail-seat" data-seat="MorningTape">
           <MorningTape onAsk={indexAct} />
         </div>
