@@ -234,7 +234,7 @@ async function marketsRows(engine: Engine) {
     const view = await sizes(page, '.mk-view__btn')
     const earnChips = await sizes(page, '.mk-earn__chip')
     const earnGo = await sizes(page, '.mk-earn__go, .mk-earn__act button, .mk-earn__act a')
-    const search = await sizes(page, '.mkt-search__box input')
+    const search = await sizes(page, '.mkt-search .ssx-field')
     const topAsk = await sizes(page, '[data-ask-door="rail"]')
     const acct = await sizes(page, '.mkt-frame__acct button, .mkt-frame__acct a')
     const map = await page.evaluate(`!!document.querySelector('[data-seat="MarketMap"]')`)
