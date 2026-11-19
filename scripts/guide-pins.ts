@@ -459,15 +459,15 @@ export function guidePins(check: Check): void {
     // RE-PINNED 2026-10-13 (apps row): the splash's guide seat is gone — the
     // deck IS the live-tape lesson and the seat holds the apps row (which
     // still writes the `visited:home` record the claim block reads).
-    'guide: four seats, one line each — the symbol header under the act strip quoting the pair\'s own buy sentence, /live once per posture (rail on desktop, main column on a phone), the chat empty state, the wallet page under its header; the splash mounts NO seat (its guide prop is the apps row, which keeps the visit record)',
+    'guide: three seats, one line each — the symbol page mounts none (2026-11-19), /live once per posture (rail on desktop, main column on a phone), the chat empty state, the wallet page under its header; the splash mounts NO seat (its guide prop is the apps row, which keeps the visit record)',
     !/<GuideSeat/.test(home) &&
       /guide=\{<AppsRow \/>\}/.test(home) &&
       /noteGuideEvent\('visited:home'\)/.test(src('components/home/AppsRow.tsx')) &&
       // RE-PINNED 2026-11-09 (builder market): a chart that takes no order here hands the seat no order to quote and says so (chartOnly); every other page still quotes its own buy sentence.
       // RE-PINNED 2026-11-09 (hip3 orders): "takes no order" is lib/charts isChartOnlyPair now — a builder dex the order layer builds on (xyz) quotes its own long sentence like any perp page.
       // RE-PINNED 2026-11-09 (macro board): a look-only index (lib/charts isLookOnlyPair — US10Y, VIX…) hands it no order either and says so in its own words (lookOnly).
-      /\{pair && <GuideSeat surface="symbol" symbol=\{sym\} ask=\{isChartOnlyPair\(pair\) \|\| lookOnly \? null : composeAsk\(pair, 'buy', \{ usd: 25 \}\)\} chartOnly=\{isChartOnlyPair\(pair\)\} lookOnly=\{lookOnly\} \/>\}/.test(symbol) &&
-      symbol.indexOf('data-seat="ExecStrip"') < symbol.indexOf('<GuideSeat surface="symbol"') &&
+      // RE-PINNED 2026-11-19 (Nate: the hints above the chart are "a bit annoying"): the symbol page mounts NO seat.
+      !/<GuideSeat/.test(symbol) &&
       count(live, '<GuideSeat surface="live" posture="phone" />') === 1 &&
       count(live, '<GuideSeat surface="live" posture="desktop" />') === 1 &&
       live.indexOf('className="live__rail">') < live.indexOf('<GuideSeat surface="live" posture="desktop" />') &&
