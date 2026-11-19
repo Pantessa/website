@@ -17,7 +17,8 @@
 //     --wait=9000                    (ms to let the scan settle)
 //     --scroll=bottom                (scroll the page's scroller before the shot)
 //     --chat=closed                  (close the dock first; default leaves it)
-//     --click='[data-apps-add]'      (click a selector before the shot; a comma list clicks each in turn)
+//     --click='[data-apps-add]'      (press a selector's centre with a real mouse before the shot; a comma
+//                                     list presses each in turn; --assert fails a press nothing handles)
 //     --burst=6                      (with --click and --out: 6 frames right after the last click,
 //                                     saved as <out>-f0.png …, each with the animations then running)
 //     --type='[data-picker-search]=aave'    (type into an input after the clicks: selector=text)
@@ -158,11 +159,28 @@ try {
     await sleep(400)
   }
   const click = arg('click')
+  const clickMisses = []
   if (click && click !== true) {
     const sels = click.split(',')
     const burst = Number(arg('burst', 0))
     for (const [i, sel] of sels.entries()) {
-      await ev(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (b) b.click() })()`)
+      // A REAL press at the element's centre (CDP mouse events), never
+      // element.click(): .click() skips hit-testing, so a control covered by
+      // a sibling still "works" in the drive and does nothing for a person
+      // (2026-11-19: every switch in the app picker). The element the press
+      // actually landed on is printed.
+      const at = JSON.parse(
+        (await ev(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (!b) return 'null'; b.scrollIntoView({ block: 'nearest' }); const r = b.getBoundingClientRect(); const x = r.x + r.width / 2, y = r.y + r.height / 2; const h = document.elementFromPoint(x, y); const d = (e) => e ? e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\\s+/)[0] : '') : 'nothing'; const act = h && h.closest('button, a, input, [role="switch"], [role="tab"]'); return JSON.stringify({ x, y, hit: d(h), actionable: act ? d(act) : null }) })()`)) ?? 'null',
+      )
+      if (!at) {
+        clickMisses.push(`no element for ${sel}`)
+        console.error(`click ${sel}: no such element`)
+      } else {
+        console.error(`click ${sel}: landed on ${at.hit}${at.actionable ? ` (inside ${at.actionable})` : ' (NOTHING CLICKABLE)'}`)
+        if (!at.actionable) clickMisses.push(`${sel} landed on ${at.hit}, which nothing handles`)
+        for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'])
+          await send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: type === 'mouseMoved' ? 0 : 1 }, sessionId)
+      }
       // --burst=N: N frames right after the LAST click, to look at motion.
       if (burst && i === sels.length - 1 && OUT && OUT !== true) {
         const t0 = Date.now()
@@ -237,6 +255,7 @@ try {
   if (arg('assert')) {
     const bad = []
     if (errors.length) bad.push(`page errors: ${errors.join(' | ')}`)
+    for (const miss of clickMisses) bad.push(`a click did not reach a control: ${miss}`)
     if (m.docOverflowX > 0) bad.push(`the document overflows sideways by ${m.docOverflowX}px`)
     if (!phone && !m.appsPage) bad.push('the apps page is not showing')
     if (!phone && !m.chatInReach) bad.push('neither the dock\'s composer nor the pinned ask bar is fully on screen')
