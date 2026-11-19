@@ -65,8 +65,10 @@ export function symbolSearchPins(check: Check) {
   const page = code('components/markets/shell/SymbolPage.tsx')
   const comp = code('components/markets/search/SymbolSearch.tsx')
   const css = rf('components/markets/search/search.css')
+  // RE-PINNED 2026-11-19 (#1110): the strip takes the page's optional lead
+  // (the home's eyebrow) at its left end, before Ask; MarketsSide hands it on.
   check('symbol search (wired): the lens sits in the strip between Ask and the bell (a phone\'s top bar), the pill beside the symbol on /t, and ONE panel is mounted per markets page',
-    /<AskDoorTrigger variant="rail" \/>\s*<SymbolSearchTrigger variant="strip" \/>\s*<RailAlerts \/>/.test(strip) && /<MarketsTopStrip \/>\s*<SymbolSearch \/>/.test(side) &&
+    /\{lead \? <div className="mkt-frame__lead">\{lead\}<\/div> : null\}\s*<AskDoorTrigger variant="rail" \/>\s*<SymbolSearchTrigger variant="strip" \/>\s*<RailAlerts \/>/.test(strip) && /<MarketsTopStrip lead=\{lead\} \/>\s*<SymbolSearch \/>/.test(side) && (side.match(/<SymbolSearch \/>/g) ?? []).length === 1 &&
       /<span className="sym__sym mono">\{sym\}<\/span>\s*<SymbolSearchTrigger variant="head" \/>/.test(page))
   check('symbol search (wired): a search only navigates — the panel posts nothing, opens /t/<symbol>, and its one hand-off to the Ask door carries a draft, never a send',
     !/method:\s*'POST'/.test(comp) && !/api\/chat/.test(comp) && comp.includes('router.push(`/t/${hit.symbol}`)') && comp.includes('openDoor(typed)') && !/send:\s*true/.test(comp))
