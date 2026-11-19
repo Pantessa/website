@@ -20,13 +20,16 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { PanelLeft, PanelLeftClose } from 'lucide-react'
 import { useSession } from '@/lib/session'
+import { homeHrefFor } from '@/lib/app-entry'
 import { useAppSidebar } from '@/lib/app-sidebar'
 import { YeetfulMark } from '@/components/Logo'
 
 /** Which app-shell behaviours apply on the current route for a signed-in user. */
 export function useAppShellMode() {
   const pathname = usePathname()
-  const { address, walletAddress } = useSession()
+  const { address, walletAddress, status: sessionStatus } = useSession()
+  // The signed-in home (2026-11-19): /markets once there is a session or a wallet (lib/app-entry homeHrefFor).
+  const homeHref = homeHrefFor({ authed: sessionStatus === 'authed', walletAddress })
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
@@ -44,12 +47,13 @@ export function useAppShellMode() {
     chrome: (authed && (onDashboard || onDocs)) || (mounted && !!walletAddress && onDashboard) || onChat,
     // The rail is collapsible via the shared toggle (dashboard + docs only).
     collapsible: authed && (onDashboard || onDocs),
+    homeHref,
   }
 }
 
 /** Header at the top of a collapsible rail: collapse toggle + home. */
 export function AppRailHeader() {
-  const { collapsible } = useAppShellMode()
+  const { collapsible, homeHref } = useAppShellMode()
   const toggle = useAppSidebar((s) => s.toggle)
   if (!collapsible) return null
   return (
@@ -57,7 +61,7 @@ export function AppRailHeader() {
       <button className="apprail__toggle" onClick={toggle} aria-label="Collapse sidebar" title="Collapse sidebar">
         <PanelLeftClose width={17} height={17} />
       </button>
-      <Link href="/" className="apprail__home" aria-label="Pantessa home">
+      <Link href={homeHref} className="apprail__home" aria-label="Pantessa home">
         <YeetfulMark size={22} tight />
         <span className="apprail__word">pantessa</span>
       </Link>
@@ -68,12 +72,13 @@ export function AppRailHeader() {
 /** Floating control shown top-left when the rail is collapsed. */
 function AppRailReopen() {
   const toggle = useAppSidebar((s) => s.toggle)
+  const { homeHref } = useAppShellMode()
   return (
     <div className="apprail__reopen">
       <button className="apprail__toggle" onClick={toggle} aria-label="Open sidebar" title="Open sidebar">
         <PanelLeft width={17} height={17} />
       </button>
-      <Link href="/" className="apprail__homeicon" aria-label="Pantessa home">
+      <Link href={homeHref} className="apprail__homeicon" aria-label="Pantessa home">
         <YeetfulMark size={25} />
       </Link>
     </div>

@@ -14,7 +14,7 @@ import { YeetfulMark } from '@/components/Logo'
 import { AskDoorTrigger } from '@/components/AskDoor'
 import { isMarketsPath, MARKETS_HREF } from '@/lib/markets'
 import { isProgressPath } from '@/lib/progress'
-import { isCommunityPath } from '@/lib/app-entry'
+import { homeHrefFor, isCommunityPath } from '@/lib/app-entry'
 import SiteAccount, { signInLabel, signInPill } from '@/components/SiteAccount'
 import SpineLink from '@/components/SpineLink'
 import Sheet from '@/components/mobile/Sheet'
@@ -67,7 +67,7 @@ export default function Navigation() {
   // yeetful.com; once inside /dashboard the top nav drops the brochure tabs —
   // navigation moves to the dashboard's left rail. A signed-in (or
   // wallet-connected) visitor on the brochure sees the account control.
-  const { address: sessionAddress, walletAddress } = useSession()
+  const { address: sessionAddress, walletAddress, status: sessionStatus } = useSession()
 
   // /embed renders inside third-party iframes — no site chrome at all.
   // (After every hook, so the hook order stays stable across routes.)
@@ -221,7 +221,7 @@ export default function Navigation() {
         {/* The logo goes to the market home `/`, signed in or out
             (2026-11-09, Nate: signed in, the logo goes back to the main
             market home). The Dashboard button on the right is the way in. */}
-        <Link className="logo" href="/">
+        <Link className="logo" href={homeHrefFor({ authed: sessionStatus === 'authed', walletAddress })}>
           {/* `tight` crops the box to the letter, so `size` is the mark's own
               height: about 1.25x the wordmark's size, as in the kit lockup. */}
           <YeetfulMark size={26} tight />

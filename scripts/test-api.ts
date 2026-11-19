@@ -24357,7 +24357,7 @@ async function main() {
       ) => ae.isSignedOut({ sessionStatus, sessionAddress, walletStatus, walletAddress, walletRemembered: remembered })
       const store = (m: Record<string, string>) => (k: string) => m[k] ?? null
       check(
-        "app entry: signed out = the session answered with no one, no wallet on hand, and no wallet coming back — a stranger is decided without waiting out wagmi's connector probe, a browser that connected a wallet before waits for it, a connected wallet is in (connect to act); a fresh login lands on the splash (`/`)",
+        "app entry: signed out = the session answered with no one, no wallet on hand, and no wallet coming back — a stranger is decided without waiting out wagmi's connector probe, a browser that connected a wallet before waits for it, a connected wallet is in (connect to act); a fresh login lands on the signed-in home (/markets)",
         so('guest', 'disconnected') && so('guest', 'connecting') && so('guest', 'reconnecting') &&
           // the first beat: wagmi reads 'disconnected' before its mount effect runs
           !so('loading', 'disconnected') && !so('loading', 'connecting') &&
@@ -24374,9 +24374,9 @@ async function main() {
           ae.walletRemembered(store({ 'wagmi.recentConnectorId': '"cdp-embedded-wallet"' })) &&
           !ae.walletRemembered(store({ 'wagmi.recentConnectorId': '"io.metamask"', 'wagmi.io.metamask.disconnected': 'true' })) &&
           !ae.walletRemembered(store({})) && !ae.walletRemembered(store({ 'wagmi.recentConnectorId': 'not json' })) &&
-          // RE-PINNED 2026-10-06 (front-door): the splash IS the markets page,
-          // so a fresh login lands on `/`.
-          ae.SIGN_IN_LANDING === '/',
+          // RE-PINNED 2026-11-19 (signed-in home): a fresh login lands on
+          // /markets, the index without the hero and the brochure.
+          ae.SIGN_IN_LANDING === '/markets',
       )
       const src = (p: string) => readFile(new URL(`../${p}`, import.meta.url), 'utf8')
       const [doorS, authS, oauthS, acctS, navS, sessS, mctaS, spineLinkS, dashLayoutS] = await Promise.all(
@@ -24399,15 +24399,17 @@ async function main() {
         // a sign-in there stays there (the rule "every other page stays put"
         // now covers the landing too); /markets redirects to `/` and is no
         // longer a page anyone stands on.
-        'sign-in lands: the splash and every other page keep their page and query (a chat, an intent link, a symbol page, the docs, a link board, a checkout)',
-        landingFor('/') === '/' && landingFor('/?utm_source=x') === '/' &&
+        // RE-PINNED 2026-11-19 (signed-in home): a sign-in on `/` (the
+        // stranger's landing) lands on /markets; /markets is a page again.
+        'sign-in lands: the landing goes to the signed-in home /markets; every other page keeps its page and query (a chat, an intent link, a symbol page, the docs, a link board, a checkout)',
+        landingFor('/') === '/markets' && landingFor('/?utm_source=x') === '/markets' &&
           landingFor('/chat') === '/chat' &&
           landingFor('/chat/cm123?mcps=uniswap-free&prompt=Buy%20%2410') === '/chat/cm123?mcps=uniswap-free&prompt=Buy%20%2410' &&
           landingFor('/i/buy-aapl') === '/i/buy-aapl' &&
           landingFor('/t/AAPL?tab=trade') === '/t/AAPL?tab=trade' && landingFor('/markets') === '/markets' &&
           landingFor('/docs/desk#install') === '/docs/desk' && landingFor('/links') === '/links' &&
           landingFor('/l/nate') === '/l/nate' && landingFor('/pricing?checkout=growth') === '/pricing?checkout=growth' &&
-          ae.SIGN_IN_LANDING === '/',
+          ae.SIGN_IN_LANDING === '/markets',
       )
       // The way back rides a sessionStorage record, not ?next= on the landing
       // URL: Next 16.2's router caches a route under its pathname with the URL
@@ -24431,11 +24433,11 @@ async function main() {
           rec('/markets') === null && rec('/t/AAPL') === null && rec('/docs') === null && rec('/chatty') === null &&
           rec(`/chat?prompt=${'x'.repeat(3000)}`) === null &&
           // a way back never leaves the signed-in app pages, or the site
-          // (RE-PINNED 2026-10-06 (front-door): a refused way back falls to SIGN_IN_LANDING, the splash `/`)
-          landingFor('/', 'https://evil.example/chat') === '/' && landingFor('/', '//evil.example/chat') === '/' &&
-          landingFor('/', '/\\evil.example/chat') === '/' && landingFor('/', 'javascript:alert(1)') === '/' &&
-          landingFor('/', '/api/auth/logout') === '/' && landingFor('/', '/chat/../api/auth/logout') === '/' &&
-          landingFor('/', '/markets') === '/' &&
+          // (RE-PINNED 2026-11-19 (signed-in home): a refused way back falls to SIGN_IN_LANDING, /markets)
+          landingFor('/', 'https://evil.example/chat') === '/markets' && landingFor('/', '//evil.example/chat') === '/markets' &&
+          landingFor('/', '/\\evil.example/chat') === '/markets' && landingFor('/', 'javascript:alert(1)') === '/markets' &&
+          landingFor('/', '/api/auth/logout') === '/markets' && landingFor('/', '/chat/../api/auth/logout') === '/markets' &&
+          landingFor('/', '/markets') === '/markets' &&
           ae.homeReturnHref('/dashboard?tab=keys') === '/dashboard?tab=keys' && ae.homeReturnHref(null) === null,
       )
       check(
@@ -24562,15 +24564,24 @@ async function main() {
         const navSrcL = readFileSync('components/Navigation.tsx', 'utf8')
         const shellSrcL = readFileSync('components/AppShell.tsx', 'utf8')
         const brand = spineSrc.match(/\{\/\* Brand seat[\s\S]*?\*\/\}\s*(<[\s\S]*?<YeetfulMark size=\{25\} \/>)/)?.[1] ?? ''
+        // RE-PINNED 2026-11-19 (signed-in home, Nate: "anytime they hit logo
+        // and they are signed in it goes to that"): signed out, `/`; anyone
+        // else, /markets — the index without the hero and the brochure. Both
+        // are public, so the logo is never a sign-in wall.
+        const HOME_HREF = /homeHref = homeHrefFor\(\{ authed: sessionStatus === 'authed', walletAddress \}\)/
+        const ae2 = await import('../lib/app-entry')
         check(
-          'logo goes home: the spine\'s brand seat, the brochure nav\'s logo and the docs rail\'s mark all link to the market home `/` signed in or out (never /chat, which opens on APPS, nor /dashboard); `/` is public, so the logo is never a sign-in wall',
-          /<Link\s+href="\/"\s+title="Pantessa — home"\s+aria-label="Pantessa home"/.test(brand) &&
-            !/\/chat|signedOut|SpineLink|onClick/.test(brand) &&
-            /<Link className="logo" href="\/">/.test(navSrcL) && !/className="logo" href=\{/.test(navSrcL) &&
-            /<Link href="\/" className="apprail__home" aria-label="Pantessa home">/.test(shellSrcL) &&
-            /<Link href="\/" className="apprail__homeicon" aria-label="Pantessa home">/.test(shellSrcL) &&
+          'logo goes home: the spine\'s brand seat, the brochure nav\'s logo and the docs rail\'s mark link through homeHrefFor — `/` for a stranger and while the session loads, /markets once there is a session or a wallet (never /chat, which opens on APPS, nor /dashboard); both are public, so the logo is never a sign-in wall',
+          /<Link\s+href=\{homeHref\}\s+title="Pantessa — home"\s+aria-label="Pantessa home"/.test(brand) && HOME_HREF.test(spineSrc) &&
+            !/\/chat|SpineLink|onClick/.test(brand) &&
+            /<Link className="logo" href=\{homeHrefFor\(\{ authed: sessionStatus === 'authed', walletAddress \}\)\}>/.test(navSrcL) &&
+            HOME_HREF.test(shellSrcL) &&
+            /<Link href=\{homeHref\} className="apprail__home" aria-label="Pantessa home">/.test(shellSrcL) &&
+            /<Link href=\{homeHref\} className="apprail__homeicon" aria-label="Pantessa home">/.test(shellSrcL) &&
             !/href="\/dashboard" className="apprail__home/.test(shellSrcL) &&
-            (await import('../lib/app-entry')).isPublicAppPath('/'),
+            ae2.homeHrefFor({ authed: false }) === '/' && ae2.homeHrefFor({ authed: false, walletAddress: null }) === '/' &&
+            ae2.homeHrefFor({ authed: true }) === '/markets' && ae2.homeHrefFor({ authed: false, walletAddress: '0xabc' }) === '/markets' &&
+            ae2.isPublicAppPath('/') && ae2.isPublicAppPath('/markets'),
         )
       }
       // 2026-11-11, Nate: a Macro row clicked low on `/` opened /t/<sym>

@@ -49,7 +49,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { BookOpen, Boxes, CandlestickChart, ChartColumn, Ellipsis, Flame, Link2, ListChecks, MessageSquare, Settings, Trophy, Users, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { COMMUNITY_HREF, isCommunityPath, isPublicAppPath } from '@/lib/app-entry'
+import { COMMUNITY_HREF, homeHrefFor, isCommunityPath, isPublicAppPath } from '@/lib/app-entry'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { DEFAULT_TAB, parseTabParam, syncTabParam, tabUrl } from '@/lib/app-tab-url'
 import { PHONE_MQ } from '@/lib/phone-shell'
@@ -122,7 +122,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // The live connected wallet (NOT the SIWE session — under connect-to-act a
   // visitor runs on connect alone), so the reset below fires at the moment the
   // user actually names themselves.
-  const { walletAddress, signedOut, connectAndSignIn } = useSession()
+  const { walletAddress, signedOut, connectAndSignIn, status: sessionStatus } = useSession()
 
   // SIGNED OUT → HOME (2026-09-11, Nate: "if the user is inside markets, or
   // App or anytime the left side bar is there and they are not logged in,
@@ -154,6 +154,10 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // two seats is lit (never both).
   const onCommunity = isCommunityPath(pathname)
   const onMarkets = surface === 'markets' && !onCommunity
+  // THE SIGNED-IN HOME (2026-11-19): the logo and MARKETS go to /markets, the
+  // index without the hero and the brochure, once there is a session or a
+  // wallet; a stranger's home is still `/` (lib/app-entry homeHrefFor).
+  const homeHref = homeHrefFor({ authed: sessionStatus === 'authed', walletAddress })
   useEffect(() => {
     if (!signedOut || publicPage) return
     if (!signedOutJustNow()) rememberSignInReturn(pathname + window.location.search)
@@ -496,7 +500,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             not the apps page"; it used to open /chat, which lands on APPS).
             `/` is public, so a logo is never a sign-in wall (2026-10-06). */}
         <Link
-          href="/"
+          href={homeHref}
           title="Pantessa — home"
           aria-label="Pantessa home"
           className="grid place-items-center w-full h-14 flex-shrink-0 border-b border-[var(--line)] text-white hover:bg-[var(--surf-2)] transition-colors"
@@ -509,7 +513,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               drawer tab — it sits first among the seats because the chart
               that executes is the front door (2026-09-11). */}
           <Link
-            href="/"
+            href={homeHref}
             title="Markets — stocks 24/7, spot, perps; the chart that executes"
             aria-label="MARKETS"
             aria-current={onMarkets ? 'page' : undefined}
@@ -663,7 +667,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         aria-label="Workspace"
       >
         <Link
-          href="/"
+          href={homeHref}
           title="Markets — stocks 24/7, spot, perps; the chart that executes"
           aria-label="MARKETS"
           aria-current={onMarkets ? 'page' : undefined}
