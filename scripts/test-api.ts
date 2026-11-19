@@ -28774,6 +28774,10 @@ async function main() {
         'Sell $10 of AVAX': '"AVAX" reads as cross-chain-shaped (rail chip)',
         'Buy $50 of F': 'single-letter stock ticker F (fired-alert chip, lib/watchlists alertActionChips)',
         'Buy $50 of P': 'single-letter stock ticker P (fired-alert chip)',
+        // 2026-11-19: V (Visa) listed through Robinhood's registry (lib/token-list) — the third single-letter stock, the same gap as F and P.
+        'Buy $25 of V': 'single-letter stock ticker V (QuickAct)',
+        'Buy $10 of V': 'single-letter stock ticker V (rail chip)',
+        'Buy $50 of V': 'single-letter stock ticker V (fired-alert chip)',
         'Buy $50 of AVAX': '"AVAX" reads as cross-chain-shaped (fired-alert chip)',
         'Sell $50 of AVAX': '"AVAX" reads as cross-chain-shaped (fired-alert chip)',
         'Supply $25 of AAVE to Aave': 'the venue word twice — PR #777 already gives the AAVE row no chip',

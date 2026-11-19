@@ -169,9 +169,8 @@ export default function SymbolPage({
   // title only when the route's metadata changes — no loop).
   const baseTitleRef = useRef<string | null>(null)
   useEffect(() => {
-    // A perp twin's tab reads "ANT perp", never the stock's bare ticker.
-    const titled = twinStock ? `${ticker} perp` : sym
-    const title = unit === 'usd' ? liveTabTitle(titled, liveLast) : liveTabTitleOf(titled, unitTitle)
+    // A perp twin's tab reads "ANT perp", never the stock's bare ticker (a twin is always a dollar price).
+    const title = twinStock ? liveTabTitle(`${ticker} perp`, liveLast) : unit === 'usd' ? liveTabTitle(sym, liveLast) : liveTabTitleOf(sym, unitTitle)
     if (!title) return
     const assert = () => {
       if (!isLiveTabTitle(document.title)) baseTitleRef.current = document.title
