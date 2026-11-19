@@ -161,8 +161,11 @@ export function heroMosaicPins(check: Check): void {
     /* RE-PINNED 2026-11-19 (#1110): 6 → 10 rules. The bar draws the home's
        eyebrow at its left end (`.mkt-frame__lead`, hidden everywhere else),
        the claim's own eyebrow steps aside and the mosaic drops the strip it
-       kept for it; all four key on the home frame like the rail rules. */
-    railRules.length === 10 &&
+       kept for it; all four key on the home frame like the rail rules.
+       RE-PINNED 2026-11-19 (room to breathe): 10 → 11, THE READ's seat
+       starts 40px under the search bar on the stranger's desktop home. */
+    railRules.length === 11 &&
+      railRules.some((l) => l.includes(`${HOME_STRANGER} > .mkt-frame__main > .mk-lead-seat { margin-top: 40px; }`)) &&
       railRules.every((l) => l.trimStart().startsWith(HOME_STRANGER)) &&
       /\.mkt-frame__lead \{ display: flex;/.test(railBlock) &&
       railRules.some((l) => l.includes(`${HOME_STRANGER} > .mkt-frame__main .hm .mk-claim__eyebrow { display: none; }`)) &&

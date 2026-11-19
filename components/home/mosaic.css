@@ -101,7 +101,7 @@
    claim's own pieces move to the mosaic's edges: whose page it is and the
    quiet doors on a strip above the tiles, the three proofs on a strip below. */
 @container hero (min-width: 900px) {
-  :root:not([data-home='return']) .hm { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(124px, 1fr)); gap: var(--sp-3); padding: 44px 0 36px; }
+  :root:not([data-home='return']) .hm { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(124px, 1fr)); gap: var(--sp-3); padding: 44px 0 88px; }
   :root:not([data-home='return']) .hm__tiles { display: contents; }
   :root:not([data-home='return']) .hm__tile { flex: none; min-height: 0; }
   :root:not([data-home='return']) :is(.hm__tile--buy, .hm__tile--called) { grid-column: span 2; order: 0; }
@@ -113,7 +113,7 @@
   :root:not([data-home='return']) .hm .mk-claim__doors { justify-content: center; margin-top: var(--sp-3); }
   :root:not([data-home='return']) .hm .mk-claim__eyebrow { position: absolute; top: 0; left: 0; height: 32px; margin: 0; }
   :root:not([data-home='return']) .hm .mk-claim__acts { position: absolute; top: 0; right: 0; }
-  :root:not([data-home='return']) .hm .mk-claim__proofs { position: absolute; left: 0; bottom: 0; flex-direction: row; gap: var(--sp-5); padding: 0; }
+  :root:not([data-home='return']) .hm .mk-claim__proofs { position: absolute; left: 0; bottom: var(--sp-6); flex-direction: row; gap: var(--sp-5); padding: 0; }
   :root:not([data-home='return']) .hm .mk-claim__proofs::before { content: none; }
   :root:not([data-home='return']) .hm .mk-claim__proof { font-size: var(--fs-sm); }
 }
@@ -150,6 +150,11 @@
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__lead .mk-claim__eyebrow { margin: 0; white-space: nowrap; }
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) > .mkt-frame__main .hm .mk-claim__eyebrow { display: none; }
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) > .mkt-frame__main .hm { padding-top: var(--sp-4); }
+  /* ROOM TO BREATHE (2026-11-19, Nate: hero, search and the read felt
+     "claustrophobic"): the proofs sit a clear step under the tiles and above
+     the search bar (the mosaic's bottom padding + the proofs' offset), and
+     THE READ starts a full step under the bar instead of touching it. */
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) > .mkt-frame__main > .mk-lead-seat { margin-top: 40px; }
 }
 /* The strip's lead is the home's, and only the stranger's desktop bar draws it. */
 .mkt-frame__lead { display: none; }
