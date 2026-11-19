@@ -4,7 +4,7 @@
 // expands bigger when clicked … make sure it works on mobile too." Pure: no
 // server, no chain, no DB. Called from scripts/test-api.ts, and runnable alone:
 //   npx tsx scripts/symbol-search-pins.ts
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { primeHlPerps } from '../lib/charts'
 import { SEARCH_POPULAR, SEARCH_RECENT_MAX, hitsFor, isSearchKey, matchRange, parseRecent, pushRecent, searchHitFor, searchScore, searchSymbols } from '../lib/symbol-search'
 
@@ -70,6 +70,17 @@ export function symbolSearchPins(check: Check) {
   check('symbol search (wired): the lens sits in the strip between Ask and the bell (a phone\'s top bar), the pill beside the symbol on /t, and ONE panel is mounted per markets page',
     /\{lead \? <div className="mkt-frame__lead">\{lead\}<\/div> : null\}\s*<AskDoorTrigger variant="rail" \/>\s*<SymbolSearchTrigger variant="strip" \/>\s*<RailAlerts \/>/.test(strip) && /<MarketsTopStrip lead=\{lead\} \/>\s*<SymbolSearch \/>/.test(side) && (side.match(/<SymbolSearch \/>/g) ?? []).length === 1 &&
       /<span className="sym__sym mono">\{sym\}<\/span>\s*<SymbolSearchTrigger variant="head" \/>/.test(page))
+  // 2026-11-19 (Nate: "same functionality as when on an asset page … only show
+  // the style where it pops up"): the markets tool strip's box is a door to
+  // the panel, and the in-place search it replaced is gone.
+  const index = code('components/markets/shell/MarketsIndex.tsx')
+  const mosaic = rf('components/home/mosaic.css')
+  const STRANGER = ":root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim)"
+  check('symbol search (one style): the markets tool strip opens the pop-up panel (no in-place search is left), and on the stranger\'s landing the search rides the top bar as a field while the strip under the hero neither sticks nor draws a line',
+    /<div className="mkt-frame__bar">\s*<SymbolSearchTrigger variant="bar" \/>/.test(index) && !/TickerSearch/.test(index) && !existsSync('components/markets/shell/TickerSearch.tsx') &&
+      /className="ssx-field" onClick=\{\(\) => openSearch\(\)\}/.test(comp) && !/mkt-search__/.test(rf('app/x402-design.css') + rf('components/markets/markets.css')) &&
+      css.includes(`${STRANGER} .mkt-frame__top .ssx-lens__word { display: block;`) && /^\.ssx-lens__word, \.ssx-lens__kbd \{ display: none; \}$/m.test(css) &&
+      mosaic.includes(`${STRANGER} .mkt-frame__bar { position: static; border-bottom-color: transparent; }`) && mosaic.includes(`${STRANGER} .mkt-frame__bar > .mkt-search { display: none; }`))
   check('symbol search (wired): a search only navigates — the panel posts nothing, opens /t/<symbol>, and its one hand-off to the Ask door carries a draft, never a send',
     !/method:\s*'POST'/.test(comp) && !/api\/chat/.test(comp) && comp.includes('router.push(`/t/${hit.symbol}`)') && comp.includes('openDoor(typed)') && !/send:\s*true/.test(comp))
   check('symbol search (phone): under 720px the panel is the whole screen with a Cancel button, the box is 16px (no iOS zoom) and rows are a thumb tall; the header pill leaves a phone to the lens, which grows to 44px',

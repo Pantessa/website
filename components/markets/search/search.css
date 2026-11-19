@@ -13,6 +13,16 @@
 .ssx-pill__kbd { display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border: 1px solid var(--line-2); border-radius: 5px; font-size: 10px; line-height: 1; color: var(--muted-2); }
 .ssx-pill:hover, .ssx-pill:focus-visible { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); background: color-mix(in srgb, var(--accent) 6%, transparent); padding-right: 12px; outline: none; }
 
+/* The field in the markets tool strip: a box to look at, a button to press.
+   It opens the panel; nothing is typed here. */
+.ssx-field { display: flex; align-items: center; gap: 10px; width: 100%; height: 40px; padding: 0 10px 0 14px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surf-1); color: var(--muted-2); font-family: var(--mk-font-ui, inherit); font-size: 14px; text-align: left; cursor: text; transition: color .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.ssx-field svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.ssx-field__word { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssx-field__kbd, .ssx-lens__kbd { display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 6px; font-size: 10px; line-height: 1; color: var(--muted-2); }
+.ssx-field:hover, .ssx-field:focus-visible { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); outline: none; }
+/* The lens's word and key show only where the lens opens out (below). */
+.ssx-lens__word, .ssx-lens__kbd { display: none; }
+
 /* ── The panel ── */
 .ssx { position: fixed; inset: 0; z-index: 400; display: flex; justify-content: center; align-items: flex-start; padding: min(9vh, 84px) 24px 24px; font-family: var(--mk-font-ui, 'Hanken Grotesk', system-ui, sans-serif); }
 .ssx__scrim { position: absolute; inset: 0; border: 0; padding: 0; background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); cursor: default; animation: ssx-fade .16s ease both; }
@@ -131,7 +141,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ssx__scrim, .ssx__panel { animation: none; }
-  .ssx-pill { transition: none; }
+  .ssx-pill, .ssx-field { transition: none; }
 }
 
 /* ── Where the triggers sit ── */
@@ -143,4 +153,20 @@
   .sym__titlerow > .ssx-pill { display: none; }
   .mkt-frame__top .ssx-lens { width: 44px; height: 44px; }
   .mkt-frame__top .ssx-lens svg { width: 18px; height: 18px; }
+}
+/* A thumb gets 44px and no key hint. */
+@media (hover: none) {
+  .ssx-field { height: 44px; font-size: 16px; }
+  .ssx-field__kbd { display: none; }
+}
+/* THE STRANGER'S LANDING on a desktop (2026-11-19, Nate: "we should have the
+   search at the top"): the strip is the bar across the top of the hero
+   (components/home/mosaic.css, the same selector), so its lens opens out into
+   a field beside Ask, and the tool strip under the hero gives its own up. */
+@media (min-width: 1024px) {
+  /* One door a row: where the tool strip carries the field (the markets home), the strip above the watchlist drops its lens. */
+  .mkt-frame:has(.mkt-frame__bar > .mkt-search) .mkt-frame__top .ssx-lens { display: none; }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__top .ssx-lens { display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; width: clamp(200px, 20vw, 280px); padding: 0 7px 0 12px; font-family: var(--mk-font-ui, inherit); font-size: 13px; text-align: left; cursor: text; }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__top .ssx-lens__word { display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__top .ssx-lens__kbd { display: grid; }
 }

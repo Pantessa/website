@@ -163,8 +163,11 @@ export function heroMosaicPins(check: Check): void {
        the claim's own eyebrow steps aside and the mosaic drops the strip it
        kept for it; all four key on the home frame like the rail rules.
        RE-PINNED 2026-11-19 (room to breathe): 10 → 11, THE READ's seat
-       starts 40px under the search bar on the stranger's desktop home. */
-    railRules.length === 11 &&
+       starts 40px under the search bar on the stranger's desktop home.
+       RE-PINNED 2026-11-19 (search at the top): 11 → 12. The tool strip under
+       the hero no longer sticks or draws a line, and gives up its search (the
+       top bar's lens opens out into the field, search.css). */
+    railRules.length === 12 &&
       railRules.some((l) => l.includes(`${HOME_STRANGER} > .mkt-frame__main > .mk-lead-seat { margin-top: 40px; }`)) &&
       railRules.every((l) => l.trimStart().startsWith(HOME_STRANGER)) &&
       /\.mkt-frame__lead \{ display: flex;/.test(railBlock) &&
@@ -173,7 +176,7 @@ export function heroMosaicPins(check: Check): void {
       /grid-template-columns: minmax\(0, 1fr\); grid-template-areas: "top" "main" "foot";/.test(railBlock) &&
       /\.mkt-frame__side \{ display: contents; \}/.test(railBlock) &&
       /\.mkt-frame__top \{ grid-area: top;/.test(railBlock) &&
-      /\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}/.test(railBlock) &&
+      /\.mkt-frame__bar \{ position: static; border-bottom-color: transparent; \}/.test(railBlock) && /\.mkt-frame__bar > \.mkt-search \{ display: none; \}/.test(railBlock) &&
       /\.mkt-frame__rail \{ display: none; \}/.test(railBlock) &&
       /\{claim \?\? <h1 className="sr-only">Markets<\/h1>\}/.test(code('components/markets/shell/MarketsIndex.tsx')),
     `${railRules.length} rules`,

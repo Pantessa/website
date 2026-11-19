@@ -44,15 +44,37 @@ import './search.css'
 
 // ── Triggers ─────────────────────────────────────────────────────────────────
 
-/** `strip`: the round lens beside Ask (a phone's top bar). `head`: the small
- *  pill beside a symbol's name. Both open the same panel. */
-export function SymbolSearchTrigger({ variant }: { variant: 'strip' | 'head' }) {
+/** `strip`: the round lens beside Ask (a phone's top bar); on the stranger's
+ *  landing, where the strip is the bar across the top of the hero, it opens
+ *  out into a field with its word and key (search.css). `head`: the small
+ *  pill beside a symbol's name. `bar`: the field at the left of the markets
+ *  tool strip (2026-11-19, Nate: "same functionality as when on an asset
+ *  page … only show the style where it pops up"): it looks like a box and is
+ *  a button. All three open the same panel; nothing searches in place. */
+export function SymbolSearchTrigger({ variant }: { variant: 'strip' | 'head' | 'bar' }) {
   const openSearch = useSymbolSearch((s) => s.openSearch)
   if (variant === 'strip') {
     return (
       <button type="button" className="ssx-lens" onClick={() => openSearch()} aria-label="Search markets" title="Search any stock, coin, perp or index ( / )" data-symbol-search="strip">
         <Search aria-hidden />
+        <span className="ssx-lens__word">Search markets</span>
+        <kbd className="ssx-lens__kbd mono" aria-hidden>
+          /
+        </kbd>
       </button>
+    )
+  }
+  if (variant === 'bar') {
+    return (
+      <div className="mkt-search" role="search">
+        <button type="button" className="ssx-field" onClick={() => openSearch()} aria-label="Search markets" aria-haspopup="dialog" title="Search any stock, coin, perp or index ( / )" data-symbol-search="bar">
+          <Search aria-hidden />
+          <span className="ssx-field__word">Search a ticker or a company</span>
+          <kbd className="ssx-field__kbd mono" aria-hidden>
+            /
+          </kbd>
+        </button>
+      </div>
     )
   }
   return (

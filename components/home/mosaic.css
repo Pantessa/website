@@ -137,7 +137,13 @@
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__side { display: contents; }
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__top { grid-area: top; justify-content: flex-end; padding: 0 var(--mkt-pad-l); border-left: 0; border-bottom-color: transparent; }
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__alerts { margin-right: 0; }
-  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__bar { top: var(--mkt-top-h); }
+  /* The tool strip under the hero (2026-11-19, Nate: "looks a bit awkward,
+     maybe no line and it just sits above … it's supposed to be there when
+     it's a nav header in /markets"): here it is a row over the boards, not a
+     header. It does not stick, it draws no line, and the search rides the
+     bar at the top of the page instead (search.css opens the lens out). */
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__bar { position: static; border-bottom-color: transparent; }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__bar > .mkt-search { display: none; }
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__rail { display: none; }
   /* ONE ROW (2026-11-19, Nate: the eyebrow "and the Ask buttons should be on
      the same horizontal level and padding"): the bar carries the eyebrow at

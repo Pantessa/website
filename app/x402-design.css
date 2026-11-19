@@ -5749,18 +5749,7 @@
 .mkt-frame__steps li::before { content: counter(mkt-step, decimal-leading-zero); display: block; margin-bottom: 4px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; color: var(--accent); }
 
 /* search */
-.mkt-search { position: relative; flex: 1 1 320px; max-width: 520px; }
-.mkt-search__box { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 14px; height: 40px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surf-1); transition: border-color .15s ease; }
-.mkt-search__box:focus-within { border-color: var(--accent); }
-.mkt-search__icon { width: 16px; height: 16px; color: var(--muted-2); flex-shrink: 0; }
-.mkt-search__box input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; font-size: 14px; color: var(--fg); text-overflow: ellipsis; }
-.mkt-search__box input::placeholder { color: var(--muted-2); }
-.mkt-search__kbd { font-size: 10px; color: var(--muted-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
-.mkt-search__menu { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30; border: 1px solid var(--line-2); border-radius: 14px; background: var(--surf-1); box-shadow: 0 18px 48px rgba(0,0,0,.28); overflow: hidden; }
-.mkt-search__opt { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; text-align: left; font-size: var(--fs-md); color: var(--fg); background: transparent; border: 0; cursor: pointer; }
-.mkt-search__opt:hover { background: var(--surf-2); }
-.mkt-search__hint { margin-left: auto; font-size: var(--fs-sm); color: var(--muted); }
-.mkt-search__none { padding: 12px 14px; font-size: var(--fs-md); color: var(--muted); }
+.mkt-search { position: relative; flex: 1 1 320px; max-width: 520px; } /* the seat of the search door (components/markets/search) */
 
 /* boards — a card per board, a grid cell per symbol. The column count
    follows the data column (1 → 4 via the mkt-data container), so a wide

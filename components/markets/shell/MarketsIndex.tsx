@@ -35,7 +35,7 @@ import { chgClass, fmtPct, fmtQuotePrice, useQuotes, type QuoteMap } from '@/lib
 import { MACRO_ROWS, MACRO_SECTION, MACRO_SYMBOLS, macroBoardRows, macroRow, macroRowTag } from '@/lib/macro'
 import MarketTable, { type TableRow } from '@/components/markets/shell/MarketTable'
 import './macro.css'
-import TickerSearch from '@/components/markets/shell/TickerSearch'
+import { SymbolSearchTrigger } from '@/components/markets/search/SymbolSearch'
 import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
 import MarketMap from '@/components/markets/slots/MarketMap'
@@ -321,9 +321,6 @@ export default function MarketsIndex({
   const pathname = usePathname()
   const sections = useMemo(() => marketSections(), [])
   const ids = useMemo(() => sections.map((s) => s.id), [sections])
-  // The search box finds the macro rows too (by symbol, name or a word a
-  // desk uses: "treasury", "dow", "crude"); the boards' own rows stay first.
-  const allRows = useMemo(() => [...sections.flatMap((s) => s.rows), ...MACRO_ROWS], [sections])
   const boardIds = useMemo<readonly BoardId[]>(() => [...ids, 'macro', 'earn'], [ids])
   const [active, setActive] = useActiveBoard(boardIds)
   const [view, setView] = useMarketsView()
@@ -395,9 +392,9 @@ export default function MarketsIndex({
       <main className="mkt-frame__main" data-view={view} data-map-fallback={view === 'map' && phone ? 'list' : undefined}>
         {claim ?? <h1 className="sr-only">Markets</h1>}
 
-        {/* ── Tool strip: search + view toggle + board tabs, sticky at the top ── */}
+        {/* ── Tool strip: the search door (it opens the one pop-up panel, components/markets/search) + view toggle + board tabs, sticky at the top ── */}
         <div className="mkt-frame__bar">
-          <TickerSearch rows={allRows} />
+          <SymbolSearchTrigger variant="bar" />
           <div className="mk-view" role="group" aria-label="Board view">
             <button type="button" className={`mk-view__btn${view === 'map' ? ' is-on' : ''}`} aria-pressed={view === 'map'} onClick={() => setView('map')} title="Heat map">
               <LayoutGrid className="mk-view__icon" aria-hidden />
