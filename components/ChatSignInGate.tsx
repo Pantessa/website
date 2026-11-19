@@ -12,7 +12,6 @@ import { usePhonePosture } from '@/components/chat/usePhonePosture'
 import KeepItBar from '@/components/guide/KeepItBar'
 import { getSignedReceipt, subscribeSignedReceipt } from '@/lib/first-run'
 import { useYeetfulStore } from '@/lib/store'
-import { useAccount } from 'wagmi'
 import { appsViewOn } from '@/lib/apps-page'
 
 /**
@@ -57,8 +56,7 @@ export default function ChatSignInGate() {
   // page's content. The dock gets the phone's treatment — the compact row in
   // the conversation's own in-flow seat above the composer, the takeover over
   // the conversation only — so nothing ever covers the page.
-  const { address: gateWallet } = useAccount()
-  const inDock = useYeetfulStore((s) => appsViewOn({ narrow: false, hasWallet: !!gateWallet, railTab: s.railTab, railOpen: s.mcpRailOpen, mainView: s.mainView })) && !phonePosture
+  const inDock = useYeetfulStore((s) => appsViewOn({ narrow: false, railTab: s.railTab, railOpen: s.mcpRailOpen, mainView: s.mainView })) && !phonePosture
   const phone = phonePosture || inDock
   // The LINKS studio/board owns the desktop main screen (ChatInterface's
   // linksMode): the floating banner sat over its "Mint this link" row, and a

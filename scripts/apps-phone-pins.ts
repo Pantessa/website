@@ -6,7 +6,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { askBarSubmit, PHONE_SUGGESTION_CAP, phoneAppsPageOn, phoneLayoutFor, phoneSuggestions } from '../lib/apps-phone'
+import { askBarSubmit, PHONE_SUGGESTION_CAP, phoneLayoutFor, phoneSuggestions } from '../lib/apps-phone'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -50,14 +50,12 @@ export function appsPhonePins(check: Check) {
   check('apps phone: a sentence on the bar runs in the chat', JSON.stringify(askBarSubmit('  What is my biggest position? ')) === JSON.stringify({ kind: 'send', text: 'What is my biggest position?' }))
   check('apps phone: an empty bar only opens the conversation', askBarSubmit('   ').kind === 'open')
 
-  // ── The no-wallet posture is unchanged ────────────────────────────────────
-  check('apps phone: the page needs a connected wallet', phoneAppsPageOn(true) === true && phoneAppsPageOn(false) === false)
+  // ── No wallet: the same page (2026-11-19) ─────────────────────────────────
   const screens = code('components/phone/PhoneScreens.tsx')
   const appsScreen = screens.slice(screens.indexOf('function AppsScreen'), screens.indexOf('export default function PhoneScreens'))
   check(
-    'apps phone: no wallet keeps the plain list (PhoneScreen "apps" + AppsRailTab flat)',
-    /phoneAppsPageOn\(!!address\)\s*&&\s*address\)\s*return\s*<AppsPhone\b/.test(appsScreen) &&
-      /<PhoneScreen name="apps" title=\{PHONE_SCREEN_TITLES\.apps\}>\s*<AppsRailTab flat \/>\s*<\/PhoneScreen>/.test(appsScreen),
+    'apps phone: the APPS screen is the apps page signed in or not (no wallet no longer drops to the plain list)',
+    /return <AppsPhone address=\{address\} title=\{PHONE_SCREEN_TITLES\.apps\} \/>/.test(appsScreen) && !/AppsRailTab flat/.test(appsScreen),
   )
   check("apps phone: the screens' switch renders the APPS screen through AppsScreen", /case 'apps':\s*return <AppsScreen \/>/.test(screens))
 

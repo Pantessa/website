@@ -21,10 +21,16 @@ function loadHidden(address: string): boolean {
 
 export function useAppsStart(p: { address: string; servers: McpServer[]; active: McpServer[]; ready: boolean; totalUsd: number | null; needs: number }) {
   const { address, servers, active, ready, totalUsd, needs } = p
-  const [read, setRead] = useState<HeldRead | null | undefined>(() => peekHeld(address) ?? undefined)
+  const [read, setRead] = useState<HeldRead | null | undefined>(() => (address ? (peekHeld(address) ?? undefined) : null))
   const [hidden, setHidden] = useState(() => loadHidden(address))
 
   useEffect(() => {
+    // No wallet: there is nothing to fund and nothing to read (startPhase
+    // reads a null read as 'off').
+    if (!address) {
+      setRead(null)
+      return
+    }
     setRead(peekHeld(address) ?? undefined)
     setHidden(loadHidden(address))
     let live = true
@@ -40,7 +46,7 @@ export function useAppsStart(p: { address: string; servers: McpServer[]; active:
   // wallet keeps being read while the page is on screen.
   const empty = read?.empty === true
   useEffect(() => {
-    if (!empty) return
+    if (!empty || !address) return
     const t = setInterval(() => {
       if (document.visibilityState !== 'visible') return
       void readHeld(address, HELD_EVERY_MS - 1_000).then((r) => {
@@ -51,12 +57,13 @@ export function useAppsStart(p: { address: string; servers: McpServer[]; active:
   }, [empty, address])
 
   const recheck = useCallback(() => {
+    if (!address) return
     void readHeld(address, 0, true).then((r) => {
       if (r) setRead(r)
     })
   }, [address])
 
-  const fund = useCardFund({ holder: address, empty, cardFunding: read?.cardFunding === true, onLanded: recheck })
+  const fund = useCardFund({ holder: address || null, empty, cardFunding: read?.cardFunding === true, onLanded: recheck })
   const rows = useMemo(() => startRows(servers), [servers])
   const cells = useMemo(() => startCells(servers), [servers])
   const activeSlugs = useMemo(() => active.map((s) => s.slug), [active])

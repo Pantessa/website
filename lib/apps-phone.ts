@@ -27,10 +27,6 @@ export function phoneLayoutFor(count: number): { layout: PhoneLayout; density: A
   }
 }
 
-/** The page shows for a connected wallet only; no wallet keeps the plain
- *  list of apps the APPS screen always had (its data is the wallet's). */
-export const phoneAppsPageOn = (hasWallet: boolean): boolean => hasWallet
-
 /** How many suggestions ride above the pinned ask bar: one sideways row. */
 export const PHONE_SUGGESTION_CAP = 2
 

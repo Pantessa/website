@@ -58,12 +58,12 @@ let SCROLL_MEMORY = 0
 // it lands.
 let TILE_CACHE: { key: string; tiles: SplashTile[]; map: MoneyMap | null } | null = null
 
-export default function AppsPhone({ address, title }: { address: string; title: string }) {
+export default function AppsPhone({ address, title }: { address?: string; title: string }) {
   const { active, servers, toggle } = useAppSet()
   const scan = useAppTiles(address, active)
   const { pending, retry } = scan
   const chainId = useYeetfulStore((s) => s.selectedChainId)
-  const cacheKey = `${address.toLowerCase()}|${active.map((s) => s.id).sort().join(',')}|${chainId ?? ''}`
+  const cacheKey = `${(address ?? '').toLowerCase()}|${active.map((s) => s.id).sort().join(',')}|${chainId ?? ''}`
   useEffect(() => {
     if (scan.tiles && !scan.loading) TILE_CACHE = { key: cacheKey, tiles: scan.tiles, map: scan.map }
   }, [scan.tiles, scan.map, scan.loading, cacheKey])
@@ -91,7 +91,7 @@ export default function AppsPhone({ address, title }: { address: string; title: 
   const totalUsd = useMemo(() => pageTotalUsd([...page.bySlug.values()].flat()), [page])
   const needs = needsYouRows(page.briefing)
   // An empty wallet's first run, as on the desktop page (lib/apps-start).
-  const start = useAppsStart({ address, servers, active, ready: !loading && tiles !== null, totalUsd, needs: needs.length })
+  const start = useAppsStart({ address: address ?? '', servers, active, ready: !loading && tiles !== null, totalUsd, needs: needs.length })
   const starting = start.phase === 'start'
 
   // The same suggestions the desktop dock offers (the page publishes them).
@@ -110,7 +110,9 @@ export default function AppsPhone({ address, title }: { address: string; title: 
   const needsFirst = needsLeads(layout === 'full' ? 'full' : 'side', only ? appFamily(only) : null)
   const onlyModule = only ? SECTIONS[appFamily(only)] : null
   const pageLoading = loading || tiles === null
-  const headline = pageLoading
+  const headline = !address
+    ? pageHeadline({ count: active.length, totalUsd, needs: 0, noWallet: true })
+    : pageLoading
     ? pageHeadline({ count: active.length, totalUsd, needs: needs.length, loading: true })
     : (only && onlyModule?.headline?.({ server: only, tiles: page.bySlug.get(only.slug) ?? [], page, map })) ||
       pageHeadline({ count: active.length, totalUsd, needs: needs.length })
@@ -120,7 +122,8 @@ export default function AppsPhone({ address, title }: { address: string; title: 
     const mod = SECTIONS[family]
     const group = page.bySlug.get(server.slug) ?? []
     const isPending = pending.some((p) => p.id === server.id)
-    const quiet = section === 'line' && !isPending && (mod.quiet ? mod.quiet({ server, tiles: group, page, map }) : lineFor(group).quiet)
+    // No wallet, nothing read: no app is "quiet" (see AppsPage).
+    const quiet = section === 'line' && !!address && !isPending && (mod.quiet ? mod.quiet({ server, tiles: group, page, map }) : lineFor(group).quiet)
     return { server, family, mod, group, isPending, quiet }
   })
   const shown = section === 'line' ? sectionsFor.filter((s) => !s.quiet) : sectionsFor
@@ -177,7 +180,7 @@ export default function AppsPhone({ address, title }: { address: string; title: 
             </h2>
           </header>
 
-          {starting && <AppsStart address={address} start={start} onAsk={(text, slug) => ask(text, { mcps: [slug] })} />}
+          {starting && address && <AppsStart address={address} start={start} onAsk={(text, slug) => ask(text, { mcps: [slug] })} />}
 
           {layout === 'empty' ? (
             !starting && <p className="apg-muted apgm-empty">Press Add app above to pick one. One app is shown in full; add more and the page makes room for each.</p>
@@ -198,7 +201,7 @@ export default function AppsPhone({ address, title }: { address: string; title: 
                     density={section ?? 'full'}
                     page={page}
                     map={map}
-                    address={address}
+                    address={address ?? ''}
                     onAsk={askFor(server.slug)}
                     onRetry={retry}
                   />
