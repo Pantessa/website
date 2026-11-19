@@ -40,7 +40,7 @@
 .lh__px { margin-left: auto; display: flex; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums; }
 .lh__last { font-size: 18px; color: var(--fg); }
 .lh__chg { font-size: var(--fs-xs); }
-.lh__chg.is-up { color: var(--accent); }
+.lh__chg.is-up { color: var(--up); }
 .lh__chg.is-down { color: var(--sell); }
 .lh__live { font-size: 9.5px; letter-spacing: .14em; color: var(--accent); }
 .lh__chart { position: relative; }
@@ -116,7 +116,7 @@
 .lvb__core { grid-column: 2 / 4; grid-row: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 22px; border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 18px; background: radial-gradient(60% 60% at 50% 50%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%), var(--surf-1); text-align: center; }
 .lvb__coresym { font-family: var(--font-serif); font-size: 40px; letter-spacing: -.02em; color: var(--fg); line-height: 1; }
 .lvb__corepx { font-size: var(--fs-base); color: var(--fg); font-variant-numeric: tabular-nums; }
-.lvb__corepx .is-up { color: var(--accent); }
+.lvb__corepx .is-up { color: var(--up); }
 .lvb__corepx .is-down { color: var(--sell); }
 .lvb__corenote { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); }
 .lvb__v { display: flex; flex-direction: column; gap: 6px; padding: 14px 14px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); text-decoration: none; color: inherit; transition: border-color var(--dur-1) ease, transform var(--dur-1) ease; min-width: 0; }

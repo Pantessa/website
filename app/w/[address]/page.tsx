@@ -70,7 +70,7 @@ function BriefingRows({ snap }: { snap: WalletSnapshot }) {
               </span>
               {r.value && (
                 <span
-                  className={`mono text-[11.5px] ${r.tone === 'neg' ? 'text-[color:var(--sell,#e5484d)]' : r.tone === 'pos' ? 'text-[color:var(--accent)]' : 'text-[color:var(--muted)]'}`}
+                  className={`mono text-[11.5px] ${r.tone === 'neg' ? 'text-[color:var(--sell,#e5484d)]' : r.tone === 'pos' ? 'text-[color:var(--up)]' : 'text-[color:var(--muted)]'}`}
                 >
                   {r.value}
                 </span>

@@ -5,7 +5,7 @@
 // cut runs from the top-right corner, through the table, to the left edge of
 // the stem, and every other diagonal in the mark is parallel to it. The cut is
 // a gap between two pieces (never a painted line), so the mark sits on any
-// ground; the pieces take two emerald tones, lit and shade.
+// ground; the pieces take the brand's two neons, magenta lit and violet shade.
 //
 // The letter never changes with size, only the width of the cut: it widens as
 // the mark shrinks (fine ≥96px, mark 32–95, icon <32) so it does not close up
@@ -31,7 +31,7 @@ type MarkProps = {
   size?: number;
   className?: string;
   title?: string;
-  /** `GEM_ACCENT` (default) renders the theme-aware emerald pair; `null`
+  /** `GEM_ACCENT` (default) renders the theme-aware magenta and violet pair; `null`
    *  renders a single-ink mark in `currentColor`; any other color re-inks
    *  both pieces for white-label surfaces. */
   accent?: string | null;

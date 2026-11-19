@@ -188,7 +188,7 @@ export function AllocationViz({ viz, chain }: { viz: Extract<TileViz, { kind: 'a
 // ── lending (Aave / Morpho) ──────────────────────────────────────────────────
 
 function hfTone(hf: number): string {
-  return hf < 1.2 ? 'var(--sell)' : hf < 1.5 ? 'var(--gold)' : 'var(--accent)'
+  return hf < 1.2 ? 'var(--sell)' : hf < 1.5 ? 'var(--gold)' : 'var(--up)'
 }
 
 /** Health-factor gauge: a half ring over [1, 3] (1 = liquidation) with the
@@ -327,7 +327,7 @@ export function PositionsViz({ viz }: { viz: Extract<TileViz, { kind: 'positions
         const up = p.pnlUsd >= 0
         const w = (Math.abs(p.pnlUsd) / maxAbs) * 50
         const liq = p.liqDistancePct
-        const liqTone = liq == null ? 'var(--muted-2)' : liq < 10 ? 'var(--sell)' : liq < 25 ? 'var(--gold)' : 'var(--accent)'
+        const liqTone = liq == null ? 'var(--muted-2)' : liq < 10 ? 'var(--sell)' : liq < 25 ? 'var(--gold)' : 'var(--up)'
         return (
           <div key={`${p.coin}-${p.side}`} className="flex items-center gap-3">
             <div className="flex w-[7.5rem] shrink-0 items-center gap-1.5 text-[length:var(--fs-xs)]">
@@ -342,12 +342,12 @@ export function PositionsViz({ viz }: { viz: Extract<TileViz, { kind: 'positions
               <div className="absolute inset-y-0 left-1/2 w-px bg-[var(--line-2)]" />
               <div
                 className="absolute inset-y-0 rounded-full"
-                style={up ? { left: '50%', width: `${w}%`, background: 'var(--accent)' } : { right: '50%', width: `${w}%`, background: 'var(--sell)' }}
+                style={up ? { left: '50%', width: `${w}%`, background: 'var(--up)' } : { right: '50%', width: `${w}%`, background: 'var(--sell)' }}
               />
             </div>
             <span className="flex w-[4.75rem] shrink-0 flex-col items-end text-right leading-tight tabular-nums">
               <span className="text-[length:var(--fs-xs)] font-medium text-[color:var(--fg)]" title="position value (notional)">{fmtUsd(p.valueUsd)}</span>
-              <span className="text-[10px]" style={{ color: up ? 'var(--accent)' : 'var(--sell)' }} title="unrealized PnL">
+              <span className="text-[10px]" style={{ color: up ? 'var(--up)' : 'var(--sell)' }} title="unrealized PnL">
                 {up ? '+' : '−'}
                 {fmtUsd(Math.abs(p.pnlUsd))}
               </span>

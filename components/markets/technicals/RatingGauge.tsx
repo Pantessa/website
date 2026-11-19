@@ -11,12 +11,12 @@ const BANDS: { rating: Rating; color: string; dim: number }[] = [
   { rating: 'strong_sell', color: 'var(--sell)', dim: 1 },
   { rating: 'sell', color: 'var(--sell)', dim: 0.5 },
   { rating: 'neutral', color: 'var(--muted-2)', dim: 0.8 },
-  { rating: 'buy', color: 'var(--accent)', dim: 0.5 },
-  { rating: 'strong_buy', color: 'var(--accent)', dim: 1 },
+  { rating: 'buy', color: 'var(--up)', dim: 0.5 },
+  { rating: 'strong_buy', color: 'var(--up)', dim: 1 },
 ]
 
 export function ratingColor(rating: Rating): string {
-  return rating === 'neutral' ? 'var(--muted)' : rating.endsWith('sell') ? 'var(--sell)' : 'var(--accent)'
+  return rating === 'neutral' ? 'var(--muted)' : rating.endsWith('sell') ? 'var(--sell)' : 'var(--up)'
 }
 
 const CX = 100
@@ -111,7 +111,7 @@ export default function RatingGauge({
             <b className="text-[color:var(--fg)]">{gauge.neutral}</b> neutral
           </span>
           <span>
-            <b className="text-[color:var(--accent)]">{gauge.buy}</b> buy
+            <b className="text-[color:var(--up)]">{gauge.buy}</b> buy
           </span>
         </div>
       )}

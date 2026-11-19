@@ -39,10 +39,10 @@
 /* The verdict: a color AND a word (and a glyph where there is no room for the word). */
 .xcc-v { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .xcc-v__g { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; border: 1px solid currentColor; font-style: normal; font-size: 9.5px; line-height: 1; flex: none; }
-.xcc-v--right { color: var(--mk-up, var(--accent)); }
+.xcc-v--right { color: var(--mk-up, var(--up)); }
 .xcc-v--wrong { color: var(--mk-down, var(--sell)); }
 .xcc-v--flat, .xcc-v--open { color: var(--muted); }
-.xcc-v--right .xcc-v__g { background: var(--mk-up, var(--accent)); color: var(--bg); border-color: var(--mk-up, var(--accent)); }
+.xcc-v--right .xcc-v__g { background: var(--mk-up, var(--up)); color: var(--bg); border-color: var(--mk-up, var(--up)); }
 .xcc-v--wrong .xcc-v__g { background: var(--mk-down, var(--sell)); color: var(--bg); border-color: var(--mk-down, var(--sell)); }
 
 /* ── The door's seat on the chart bar ── */
@@ -129,7 +129,7 @@
 .xcc__name { letter-spacing: 0.02em; text-transform: none; color: var(--muted-2); }
 .xcc__headline { margin: 2px 0 0; font-size: 15px; line-height: 1.3; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
 .xcc__standing { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
-.xcc__standing[data-verified] { color: var(--accent); }
+.xcc__standing[data-verified] { color: var(--up); }
 .xcc__coverage { color: var(--fg); }
 .xcc__headtools { flex: none; display: flex; align-items: center; gap: 8px; }
 .xcc__clear { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 6px; border: 0; border-radius: 7px; background: none; color: var(--muted-2); font-size: 11.5px; cursor: pointer; }
@@ -265,7 +265,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xch__ksym { color: var(--muted-2); }
 .xch__name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-family: var(--font-chat-display, Georgia, serif); font-size: 21px; line-height: 1.15; font-weight: 600; letter-spacing: -0.012em; color: var(--fg); overflow-wrap: anywhere; }
 .xch__id:hover .xch__name { text-decoration: underline; text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
-.xch__verified { display: inline-grid; color: var(--accent); }
+.xch__verified { display: inline-grid; color: var(--up); }
 .xch__vicon { width: 17px; height: 17px; }
 .xch__sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -277,7 +277,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
   border: 1px solid color-mix(in srgb, var(--xch-tone) 42%, transparent); background: color-mix(in srgb, var(--xch-tone) 13%, transparent); color: var(--xch-tone);
 }
 .xch__count.is-total { border-color: var(--line-2); background: transparent; color: var(--fg); }
-.xch__count.is-right, .xch__seg.is-right { --xch-tone: var(--mk-up, var(--accent)); }
+.xch__count.is-right, .xch__seg.is-right { --xch-tone: var(--mk-up, var(--up)); }
 .xch__count.is-wrong, .xch__seg.is-wrong { --xch-tone: var(--mk-down, var(--sell)); }
 .xch__count.is-flat, .xch__seg.is-flat { --xch-tone: var(--muted); }
 .xch__count.is-open, .xch__seg.is-open { --xch-tone: var(--gold, #d9a441); }
@@ -287,7 +287,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xch__facts { margin: 0; font-size: 12px; line-height: 1.45; color: var(--muted); max-width: 86ch; }
 .xch__facts:empty { display: none; }
 .xch__standing { color: var(--muted-2); }
-.xch__standing[data-verified] { color: var(--accent); font-weight: 600; }
+.xch__standing[data-verified] { color: var(--up); font-weight: 600; }
 
 .xch__tools { flex: none; display: flex; align-items: center; gap: 8px; align-self: flex-start; }
 .xch__tools .xcc-share { margin-left: 0; }
@@ -364,7 +364,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcf:focus { outline: 0; }
 .xcf[data-dock='right'] { right: 78px; }
 .xcf[data-dock='left'] { left: 66px; }
-.xcf[data-verdict='right'] { --xcf-tone: var(--mk-up, var(--accent)); }
+.xcf[data-verdict='right'] { --xcf-tone: var(--mk-up, var(--up)); }
 .xcf[data-verdict='wrong'] { --xcf-tone: var(--mk-down, var(--sell)); }
 .xcf[data-verdict='open'] { --xcf-tone: var(--gold, #d9a441); }
 /* Movement only: a frame that stalls mid-way (a background tab) must never leave the card see-through over the chart. */
@@ -409,7 +409,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcf__num dt { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
 .xcf__num dd { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--fg); }
 .xcf__num.is-judged dd { color: var(--xcf-tone); }
-.xcf__num[data-sign='up'] dd { color: var(--mk-up, var(--accent)); }
+.xcf__num[data-sign='up'] dd { color: var(--mk-up, var(--up)); }
 .xcf__num[data-sign='down'] dd { color: var(--mk-down, var(--sell)); }
 
 .xcf__foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--line); }

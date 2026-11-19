@@ -11,12 +11,39 @@
        0.56 → 0.61 (pre-gtm POLISH, 2026-10-07): measured 4.2:1 on the #0c0c0c
        ground in headless Chrome — 0.61 is ≈4.9:1 there and 4.5:1 on --surf-2. */
     --muted-2: oklch(0.61 0 0);
-    --accent: #3ECF8E;
+    /* THE BRAND IS NOT THE MARKET (2026-11-19, the Split palette). `--accent`
+       is the brand's violet: chrome, links, focus, a picked state. `--hot` is
+       the brand's magenta, kept for the few filled moments (a brand door, a
+       selection). `--up` is the market's green and means exactly one thing:
+       up, buy, long, done, verified. Never spell a price move or a buy in
+       --accent, and never spell chrome in --up. Flat fills and hard cuts
+       only: no gradient between two brand hues, no glow. */
+    --accent: #9F7AFF;
+    --hot: #FF48C4;
+    --up: #3ECF8E;
+    /* The Split spectrum, lit then shade: a tile is a square in the shade
+       tone with the lit tone above its cut (components/brand/split.css).
+       Fills and rules only, never body text. Lime is held for the pick. */
+    --neon-emerald: #3ECF8E; --neon-emerald-2: #159B68;
+    --neon-teal: #2CE8C4; --neon-teal-2: #0E9F8C;
+    --neon-cyan: #2AD4FF; --neon-cyan-2: #0B8CC6;
+    --neon-blue: #5B8CFF; --neon-blue-2: #2A52D8;
+    --neon-violet: #9466FF; --neon-violet-2: #5A31CC;
+    --neon-purple: #C651FF; --neon-purple-2: #8523C7;
+    --neon-magenta: #FF48C4; --neon-magenta-2: #BD1C8E;
+    --neon-pink: #FF5C93; --neon-pink-2: #C72A62;
+    --neon-lime: #D4FF3A; --neon-lime-2: #93BD00;
+    /* The ink on a lit tile and the ground behind the mark on an icon: the
+       same near-black in both themes (a neon fill does not flip). */
+    --neon-ink: #07080D;
+    /* The spectrum as five hard steps, cool to hot: the nav's filament, the
+       hero's proof rule, the page's top edge. Steps, never a blend. */
+    --spectrum: linear-gradient(90deg, var(--neon-cyan) 0 20%, var(--neon-blue) 20% 40%, var(--neon-violet) 40% 60%, var(--neon-magenta) 60% 80%, var(--neon-pink) 80% 100%);
     --maxw: 1280px;
     /* Aliases the launchpad token UI (TokenPanel/TradeToken/StakeToken) was
        written against but that were never defined — map them to the real palette
        so those inline styles render as intended instead of inheriting. */
-    --ink: var(--bg);      /* text/icon on an --accent fill (dark on green) */
+    --ink: var(--bg);      /* text/icon on an --accent, --hot or --up fill */
     --paper: var(--surf-1); /* input / field background */
     --mist: var(--line);    /* hairline borders */
     --smoke: var(--muted);  /* muted label text */
@@ -27,7 +54,7 @@
        dark mode is byte-identical; the light block overrides them so
        done/fail marks finally follow the theme flip. */
     --done: #34d399;
-    --live: var(--accent);
+    --live: var(--up);
     --fail: #f87171;
     /* Idle-money amber — the splash money map's "sitting there" segment and
        any "earning nothing" cue. Light re-inks it below. */
@@ -66,14 +93,15 @@
        deliberate, readable hierarchy. */
     --font-chat-display: 'Fraunces', 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
     --font-chat-body: 'Hanken Grotesk', 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    /* The Emerald Cut's facet ramp, deep → bright (lib/gem-geometry.ts reads
-       these as --gem-1..5 with dark fallbacks). Light mode flips the whole
-       ramp toward the paper accent so the stone keeps contrast on white. */
-    --gem-1: #0B6B4A;
-    --gem-2: #0F8156;
-    --gem-3: #159B68;
-    --gem-4: #27B67A;
-    --gem-5: #3ECF8E;
+    /* The Cut P's inks (lib/gem-geometry.ts reads --gem-5 for the lit piece
+       and --gem-3 for the shade, with dark fallbacks): magenta above the cut,
+       violet below it. The five steps run violet to magenta for the few
+       rules that draw the whole ramp. Light mode re-inks them for paper. */
+    --gem-1: #4A27B8;
+    --gem-2: #5F38E0;
+    --gem-3: #7B4DFF;
+    --gem-4: #C651FF;
+    --gem-5: #FF48C4;
     /* ── ONE SCALE (squad polish, 2026-10-13 — CONSISTENCY lane) ──────
        THE tokens every surface sizes itself with (README rule B7). Values
        are theme-free except the shadows + scrim, which the light block
@@ -189,14 +217,14 @@
   }
   a { color: inherit; text-decoration: none; }
   button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
-  ::selection { background: var(--fg); color: var(--bg); }
+  ::selection { background: var(--hot); color: var(--ink); }
 
   /* ── NAV ─────────────────────────────────────────── */
   /* Borderless bar: separation from the page comes from the blur + a barely-
      there falloff shadow, not a hairline. The nav's one accent is the rainbow
      underline on the active tab (echoed by the mega-menu's opening edge). */
   :root {
-    --nav-rainbow: linear-gradient(90deg, #8b7cf8, #5aa7f7 26%, #3ECF8E 52%, #e8c468 78%, #f0876f);
+    --nav-rainbow: var(--spectrum);
   }
   .nav {
     position: sticky; top: 0; z-index: 40;
@@ -1157,7 +1185,7 @@
     color: var(--muted); background: transparent; transition: background var(--dur-1), color var(--dur-1);
   }
   .tkt__tab:hover:not(.is-active) { color: var(--fg); }
-  .tkt__tab--buy.is-active { background: var(--accent); color: var(--ink); }
+  .tkt__tab--buy.is-active { background: var(--up); color: var(--ink); }
   .tkt__tab--sell.is-active { background: var(--sell); color: #fff; }
   .tkt__bal { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; }
   .tkt__ballbl { color: var(--muted-2); }
@@ -1192,7 +1220,7 @@
   .tkt__cta:disabled { opacity: .45; cursor: default; }
   .tkt__note { font-size: var(--fs-sm); color: var(--muted-2); line-height: 1.45; margin: 0; }
   .tkt__msg { font-size: var(--fs-md); margin: 0; }
-  .tkt__msg--ok { color: var(--accent); }
+  .tkt__msg--ok { color: var(--up); }
   .tkt__msg--err { color: var(--sell); }
   .tkt__tab--neutral.is-active { background: var(--line-2); color: var(--fg); }
 
@@ -1241,8 +1269,8 @@
     transition: color var(--dur-1), border-color var(--dur-1), background var(--dur-1);
   }
   .tchart__act:hover { color: var(--fg); border-color: var(--line-2); }
-  .tchart__act--buy { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-  .tchart__act--buy:hover { background: var(--accent); color: var(--ink); border-color: var(--accent); }
+  .tchart__act--buy { border-color: var(--up); color: var(--up); font-weight: 600; }
+  .tchart__act--buy:hover { background: var(--up); color: var(--ink); border-color: var(--up); }
   .tchart__hint { font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
   .tchart__canvas { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px clamp(12px, 2vw, 26px) 16px; }
   .tchart__fs {
@@ -1264,7 +1292,7 @@
   .tok__pricewrap { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .tok__price { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
   .tok__chg { font-family: 'Geist Mono', ui-monospace, monospace; font-size: var(--fs-md); font-weight: 600; }
-  .tok__chg--up { color: var(--accent); }
+  .tok__chg--up { color: var(--up); }
   .tok__chg--down { color: var(--sell); }
   .tok__chg--flat { color: var(--muted-2); }
   .tok__tf { display: flex; gap: 4px; }
@@ -1289,7 +1317,7 @@
   .tok__details[open] > summary { border-bottom: 1px solid var(--line); }
   .tok__chev { flex-shrink: 0; transition: transform var(--dur-1); }
   .tok__details[open] .tok__chev { transform: rotate(90deg); }
-  .tok__verified { margin-left: auto; color: var(--accent); font-size: var(--fs-sm); }
+  .tok__verified { margin-left: auto; color: var(--up); font-size: var(--fs-sm); }
   .tok__detailsbody { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
 
   /* Stakers — a tidy address · staked table (the .eps row idiom). */
@@ -2267,6 +2295,8 @@
     padding-bottom: 0;
     background: linear-gradient(180deg, transparent, color-mix(in oklch, var(--accent) 5%, transparent) 120%);
   }
+  /* The spectrum in five hard steps, as the footer's top edge (the Split). */
+  .footer::before { content: ''; position: absolute; top: -1px; left: 0; right: 0; height: 3px; background: var(--spectrum); }
 
   /* Full-bleed living texture: emerald aurora drifting over a fading grid */
   .footer__texture {
@@ -3248,7 +3278,8 @@
   .fhero__em {
     font-style: italic; letter-spacing: -.012em;
     color: transparent;
-    background: linear-gradient(92deg, var(--fem1) 6%, var(--haccent) 46%, var(--fem3) 108%);
+    /* one flat brand ink, never a blend between two hues (the Split, 2026-11-19) */
+    background: linear-gradient(var(--hot), var(--hot));
     -webkit-background-clip: text; background-clip: text;
   }
   /* The typed intent — h1 line one cycles the ask reel (typed-asks.ts).
@@ -3664,7 +3695,7 @@
     color: var(--muted-2); align-self: flex-start;
     padding: 3px 8px; border-radius: var(--r-pill); border: 1px solid var(--line);
   }
-  .chn__row.is-done .chn__state { color: color-mix(in srgb, var(--accent) 85%, var(--fg)); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .chn__row.is-done .chn__state { color: color-mix(in srgb, var(--up) 85%, var(--fg)); border-color: color-mix(in srgb, var(--up) 45%, transparent); }
   .chn__row.is-wait .chn__state { color: #e8c468; border-color: color-mix(in srgb, #e8c468 45%, transparent); }
   .chn__row.is-fail .chn__state { color: var(--sell); border-color: color-mix(in srgb, var(--sell) 40%, transparent); }
   .chn__count { font-size: 10.5px; color: var(--muted-2); }
@@ -3685,13 +3716,13 @@
     content: ''; position: absolute; right: 9px; top: 50%; width: 12px; height: 1.5px;
     background: color-mix(in srgb, var(--fg) 18%, transparent);
   }
-  .chn__step.is-done:not(:last-child)::after { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+  .chn__step.is-done:not(:last-child)::after { background: color-mix(in srgb, var(--up) 55%, transparent); }
   .chn__node {
     position: relative; display: inline-flex; align-items: center; justify-content: center;
     height: 28px; width: 28px; border-radius: 9px; flex-shrink: 0;
     border: 1px solid var(--line); background: var(--surf-2); color: var(--fg);
   }
-  .chn__step.is-done .chn__node { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 10%, var(--surf-2)); }
+  .chn__step.is-done .chn__node { border-color: color-mix(in srgb, var(--up) 55%, transparent); background: color-mix(in srgb, var(--up) 10%, var(--surf-2)); }
   .chn__step.is-failed .chn__node { border-color: color-mix(in srgb, var(--sell) 50%, transparent); }
   .chn__step.is-offered .chn__node, .chn__step.is-running .chn__node { border-color: color-mix(in srgb, #e8c468 55%, transparent); }
   .chn__mark { display: flex; }
@@ -3699,7 +3730,7 @@
      full size instead of an empty box with a speck in the corner. */
   .chn__solokind { display: flex; align-items: center; justify-content: center; color: var(--muted); }
   .chn__solokind .chn__kindsvg { width: 14px; height: 14px; }
-  .chn__step.is-done .chn__solokind { color: var(--accent); }
+  .chn__step.is-done .chn__solokind { color: var(--up); }
 
   /* a settled step opens its own receipt */
   .chn__link { display: inline-flex; align-items: center; gap: 8px; border-radius: var(--r-sm); transition: opacity var(--dur-1); }
@@ -3714,7 +3745,7 @@
     background: var(--bg); border: 1px solid var(--line); color: var(--muted-2);
   }
   .chn__kindsvg { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-  .chn__step.is-done .chn__kind { color: var(--accent); }
+  .chn__step.is-done .chn__kind { color: var(--up); }
   .chn__label { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
   .chn__step.is-done .chn__label { color: var(--fg); }
   .chn__usd { font-size: var(--fs-xs); color: var(--accent); }
@@ -3779,7 +3810,7 @@
   .sud__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
   .sud__row .btn { width: 100%; justify-content: center; height: 46px; border-radius: 12px; }
   .sud__fine { margin-top: 12px; font-size: 10.5px; letter-spacing: .06em; color: var(--muted-2); }
-  .sud__done { font-size: var(--fs-md); color: var(--accent); line-height: 1.6; }
+  .sud__done { font-size: var(--fs-md); color: var(--up); line-height: 1.6; }
   .sud__err { margin-top: 8px; font-size: 11.5px; color: #e8c468; }
   @media (max-width: 860px) {
     .sud { grid-template-columns: 1fr; }
@@ -4396,7 +4427,7 @@
   .mach__legwire { position: relative; display: block; width: 3px; height: 26px; border-radius: 3px; background: repeating-linear-gradient(180deg, var(--mline) 0 3px, transparent 3px 7px); overflow: hidden; transition: background .4s; }
   .r-plan .mach__legwire { background: repeating-linear-gradient(180deg, var(--mplan) 0 3px, transparent 3px 7px); }
   .r-built .mach__legwire { background: color-mix(in srgb, var(--mbuild) 70%, transparent); }
-  .r-done .mach__legwire { background: var(--accent); }
+  .r-done .mach__legwire { background: var(--up); }
   .mach__legspark { position: absolute; left: 0; right: 0; height: 8px; border-radius: 3px; background: var(--accent); opacity: 0; top: -8px; }
   .r-sign .mach__legspark { opacity: 1; animation: mach-spark 1.5s cubic-bezier(.4,0,.3,1) infinite; animation-delay: calc(var(--i) * .28s); }
   @keyframes mach-spark { 0% { top: -8px; opacity: 0; } 20% { opacity: 1; } 100% { top: 26px; opacity: 0; } }
@@ -4542,7 +4573,7 @@
   .fundx__vstep i { font-style: normal; }
   .fundx__vstep em { font-style: normal; color: var(--muted-2); }
   .fundx__vstep--done { color: var(--muted-2); }
-  .fundx__vstep--done i { color: var(--accent); }
+  .fundx__vstep--done i { color: var(--up); }
   .fundx__vstep--live { color: var(--fg); }
   .fundx__vstep--live i { color: var(--accent); animation: tt-pulse 2.2s ease-in-out infinite; }
   .fundx__vreceipt { font-size: var(--fs-xs); color: var(--muted-2); letter-spacing: .05em; }
@@ -4864,7 +4895,12 @@
        a 15% tint; sell #b0323a; gold #8a600a; muted-2 .49 ≈ 4.8:1. The mark
        (--gem-*) keeps its own ramp. Dark mode is untouched. */
     --muted-2: oklch(0.49 0.008 155);
-    --accent: #0a7350;
+    /* Brand inks for paper (2026-11-19): violet #5B2FD6 is 7.3:1 on --bg and
+       6.7:1 on --surf-1; magenta #C4168C is 5.6:1 and carries paper text as a
+       fill. --up keeps the deep green the 10-07 re-ink measured. */
+    --accent: #5B2FD6;
+    --hot: #C4168C;
+    --up: #0a7350;
     --sell: #b0323a;
     --gold: #8a600a;
     --chart-ma-50: #2563eb;
@@ -4872,11 +4908,11 @@
     --chart-session: rgb(16 21 18 / 0.045);
     --done: #0b7a53;
     --fail: #b0323a;
-    --gem-1: #084A33;
-    --gem-2: #0A5C40;
-    --gem-3: #0C7A52;
-    --gem-4: #0D8158;
-    --gem-5: #0e8f62;
+    --gem-1: #3B1FA0;
+    --gem-2: #4C2BC4;
+    --gem-3: #6A3DF0;
+    --gem-4: #B13BEA;
+    --gem-5: #F230B4;
     /* ONE SCALE, light re-inks (squad polish): paper shadows are ink at a
        low alpha, not black; the scrim is lighter so the page still reads. */
     --sh-1: 0 1px 2px rgb(16 21 18 / 0.08);
@@ -4898,7 +4934,9 @@
     --fg: #ffffff;
     --muted: oklch(0.68 0 0);
     --muted-2: oklch(0.61 0 0);
-    --accent: #3ECF8E;
+    --accent: #9F7AFF;
+    --hot: #FF48C4;
+    --up: #3ECF8E;
     --sell: #E5484D;
     color-scheme: dark;
   }
@@ -5714,7 +5752,7 @@
 .mkt-row__num { display: flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
 .mkt-row__last { font-size: var(--fs-md); font-weight: 600; }
 .mkt-chg { font-size: var(--fs-sm); font-weight: 600; }
-.mkt-chg--up { color: var(--accent); }
+.mkt-chg--up { color: var(--up); }
 .mkt-chg--down { color: var(--sell); }
 .mkt-chg--flat { color: var(--muted-2); }
 
@@ -5743,8 +5781,8 @@
 .mkt-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .mkt-chip { display: inline-flex; align-items: center; min-height: 34px; padding: 0 13px; border: 1px solid var(--line-2); border-radius: 999px; font-size: 12.5px; font-weight: 500; color: var(--fg); background: transparent; text-decoration: none; cursor: pointer; transition: border-color .12s ease, background .12s ease, color .12s ease; }
 .mkt-chip:hover { border-color: var(--accent); }
-.mkt-chip--buy { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-.mkt-chip--buy:hover { background: var(--accent); color: var(--ink); }
+.mkt-chip--buy { border-color: var(--up); color: var(--up); font-weight: 600; }
+.mkt-chip--buy:hover { background: var(--up); color: var(--ink); }
 
 /* tiles */
 .mkt-tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
@@ -5932,7 +5970,7 @@
 .mkt-legend__when { color: var(--muted-2); text-transform: uppercase; letter-spacing: 0.08em; font-size: 9.5px; }
 .mkt-legend__when:empty { display: none; }
 .mkt-legend__k { color: var(--muted-2); margin-right: 3px; }
-.mkt-legend--up .mkt-legend__cell:not(.mkt-legend__vol), .mkt-legend--up .mkt-legend__chg { color: var(--accent); }
+.mkt-legend--up .mkt-legend__cell:not(.mkt-legend__vol), .mkt-legend--up .mkt-legend__chg { color: var(--up); }
 .mkt-legend--down .mkt-legend__cell:not(.mkt-legend__vol), .mkt-legend--down .mkt-legend__chg { color: var(--sell); }
 .mkt-legend__vol { color: var(--muted); }
 .mkt-legend__hint { margin-top: 2px; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); width: fit-content; background: color-mix(in oklch, var(--bg) 72%, transparent); border-radius: 3px; }
@@ -6076,7 +6114,7 @@
 }
 .mkt-share__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mkt-share__eyebrow { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
-.mkt-share__eyebrow--done { color: var(--accent); }
+.mkt-share__eyebrow--done { color: var(--up); }
 .mkt-share__shot { display: grid; place-items: center; min-height: 160px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); overflow: hidden; }
 .mkt-share__shot img { display: block; width: 100%; height: auto; }
 .mkt-share__shot span { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); padding: 24px; text-align: center; }
@@ -6108,7 +6146,7 @@
 .callpg__exec { justify-content: center; }
 .callpg__proofline { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .callpg__verified { display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: var(--r-pill); border: 1px solid var(--line); font-size: var(--fs-sm); color: var(--muted); transition: border-color var(--dur-1), color var(--dur-1); }
-.callpg__verified.is-on { border-color: var(--accent); color: var(--accent); }
+.callpg__verified.is-on { border-color: var(--up); color: var(--up); }
 .callpg__verified:hover { color: var(--fg); border-color: var(--line-2); }
 .callinfo { gap: 14px; }
 .callinfo__fills { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -6139,7 +6177,7 @@
 .callpg__stamp dd { margin: 0; font-size: var(--fs-lg); font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
 .callpg__stamp small { font-size: 10.5px; line-height: 1.35; color: var(--muted-2); }
 @media (max-width: 720px) { .callpg__stamp { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.callpg__up { color: var(--accent); }
+.callpg__up { color: var(--up); }
 .callpg__down { color: var(--sell); }
 .callpg__chart { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .callpg__body { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -6153,7 +6191,7 @@
 .callticket { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); }
 .callticket__sides { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border-radius: var(--r-md); background: var(--bg); border: 1px solid var(--line); }
 .callticket__side { min-height: 38px; border-radius: 9px; font-size: 14px; font-weight: 600; color: var(--muted); transition: background var(--dur-1), color var(--dur-1); }
-.callticket__side.is-buy { background: color-mix(in oklch, var(--accent) 18%, transparent); color: var(--accent); }
+.callticket__side.is-buy { background: color-mix(in oklch, var(--up) 18%, transparent); color: var(--up); }
 .callticket__side.is-sell { background: color-mix(in oklch, var(--sell) 18%, transparent); color: var(--sell); }
 .callticket__modes { display: flex; gap: 14px; }
 .callticket__modes button { padding: 4px 0; font-size: var(--fs-md); font-weight: 600; color: var(--muted-2); border-bottom: 2px solid transparent; }
@@ -6201,8 +6239,8 @@
   border: 1px solid var(--line); background: transparent; color: var(--fg); transition: border-color var(--dur-1), background var(--dur-1);
 }
 .mkt-pop__chip:hover { border-color: var(--line-2); background: var(--surf-2); }
-.mkt-pop__chip--buy { border-color: color-mix(in oklch, var(--accent) 55%, transparent); }
-.mkt-pop__chip--buy .mkt-pop__chiplabel { color: var(--accent); }
+.mkt-pop__chip--buy { border-color: color-mix(in oklch, var(--up) 55%, transparent); }
+.mkt-pop__chip--buy .mkt-pop__chiplabel { color: var(--up); }
 .mkt-pop__chip.is-active { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 12%, transparent); }
 .mkt-pop__chiplabel { font-size: var(--fs-sm); font-weight: 600; }
 .mkt-pop__hint { font-size: 10.5px; line-height: 1.35; color: var(--muted); }
@@ -6236,7 +6274,7 @@
 .mkt-perf--compact .mkt-perf__tile { flex-direction: row; gap: 6px; align-items: baseline; padding: 3px 7px; min-width: 0; }
 .mkt-perf__key { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
 .mkt-perf__val { font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
-.mkt-perf__tile.is-up .mkt-perf__val { color: var(--accent); }
+.mkt-perf__tile.is-up .mkt-perf__val { color: var(--up); }
 .mkt-perf__tile.is-down .mkt-perf__val { color: var(--sell); }
 /* A window the feed can't reach: the dash goes quiet, the label stays legible (pre-gtm POLISH r2 — .6 opacity on the
    whole tile put the key at 2.5:1). */
@@ -6271,7 +6309,7 @@
 .mkt__quote { display: flex; align-items: baseline; gap: 8px; }
 .mkt__last { font-size: 19px; color: var(--fg); font-variant-numeric: tabular-nums; }
 .mkt__chg { font-size: var(--fs-xs); }
-.mkt__chg.is-up, .mkt__rowchg.is-up { color: var(--accent); }
+.mkt__chg.is-up, .mkt__rowchg.is-up { color: var(--up); }
 .mkt__chg.is-down, .mkt__rowchg.is-down { color: var(--sell); }
 .mkt__chips { margin-left: auto; display: flex; gap: 7px; flex-wrap: wrap; }
 .mkt__chip { font-size: var(--fs-sm); padding: 7px 12px; border-radius: var(--r-pill); border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
@@ -6480,7 +6518,7 @@
 .wl__rowLast { font-size: 12.5px; color: var(--fg); }
 .wl__rowLast--dim { color: var(--muted-2); }
 .wl__rowChg { font-size: 10.5px; color: var(--muted); }
-.wl__rowChg--up { color: var(--accent); }
+.wl__rowChg--up { color: var(--up); }
 .wl__rowChg--down { color: var(--sell); }
 /* Your position beside the price (2026-09-14, Nate: "if they own $10 of it
    say that and how much they own 0.0004 ETH"; lib/watchlists heldPosition).
@@ -6601,7 +6639,7 @@
 .lists__name { display: block; font-size: var(--fs-xs); color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lists__last { font-family: 'Geist Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: var(--fs-md); }
 .lists__chg { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11.5px; min-width: 62px; text-align: right; color: var(--muted); }
-.lists__chg--up { color: var(--accent); }
+.lists__chg--up { color: var(--up); }
 .lists__chg--down { color: var(--sell); }
 .lists__foot { margin-top: 18px; font-size: var(--fs-sm); color: var(--muted); line-height: 1.55; }
 @media (max-width: 480px) { .lists__row { grid-template-columns: 22px minmax(0, 1fr) auto auto; } .lists__row .wl__chip { display: none; } }
@@ -6628,8 +6666,8 @@
 .sym__act-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 .sym__act-chip { display: inline-flex; align-items: center; min-height: 36px; padding: 0 16px; border: 1px solid var(--line-2); border-radius: 999px; background: color-mix(in srgb, var(--fg) 3%, transparent); color: var(--fg); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; transition: border-color .12s ease, background .12s ease, color .12s ease, box-shadow .15s ease, transform .15s ease; }
 .sym__act-chip:hover { border-color: var(--fg); transform: translateY(-1px); }
-.sym__act-chip--buy { background: var(--accent); border-color: var(--accent); color: var(--ink); box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--accent) 70%, transparent); }
-.sym__act-chip--buy:hover { border-color: var(--accent); filter: brightness(1.06); }
+.sym__act-chip--buy { background: var(--up); border-color: var(--up); color: var(--ink); box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--up) 70%, transparent); }
+.sym__act-chip--buy:hover { border-color: var(--up); filter: brightness(1.06); }
 .sym__act-chip--sell { border-color: color-mix(in srgb, var(--sell) 55%, transparent); color: var(--sell); }
 .sym__act-chip--sell:hover { background: var(--sell); border-color: var(--sell); color: #fff; }
 /* A symbol no venue can fill keeps its page and loses its buttons
@@ -6814,3 +6852,32 @@
   .docs__prose a { text-decoration: none; color: inherit; }
   .venues__addr a::after { content: none; }
 }
+
+/* ── THE SPLIT TILE (2026-11-19) ─────────────────────────────────────────
+   Every app is a tile: the mark's square stone in two flat neons either side
+   of the cut, with the app's glyph in the ground's ink. One rule for every
+   surface that seats a SELECTED app's mark: the chat rail's row
+   (`.split-tile[data-split=<slug>]`, components/AppsRailTab) and the Apps
+   page's mark row (`.apgk-mark[data-apps-mark=<slug>]`, components/apps).
+   The hue is keyed on the slug so an app wears the same two tones everywhere;
+   an app this table does not name is violet. Emerald and lime are not in it:
+   green means up, and lime is held for the pick. */
+:where(.split-tile, .apgk-mark) { --sp-h: var(--neon-violet); --sp-h2: var(--neon-violet-2); }
+:is(.split-tile[data-split], .apgk-mark[data-apps-mark]) {
+  background: linear-gradient(135deg, var(--sp-h) 50%, var(--sp-h2) 50%);
+  color: var(--neon-ink); border-color: transparent;
+}
+.apgk-mark[data-apps-mark]:hover { background: linear-gradient(135deg, var(--sp-h) 50%, var(--sp-h2) 50%); border-color: transparent; }
+:is([data-split*='lido'], [data-apps-mark*='lido'], [data-split*='uniswap'], [data-apps-mark*='uniswap']) { --sp-h: var(--neon-teal); --sp-h2: var(--neon-teal-2); }
+:is([data-split*='aave'], [data-apps-mark*='aave'], [data-split*='opensea'], [data-apps-mark*='opensea']) { --sp-h: var(--neon-cyan); --sp-h2: var(--neon-cyan-2); }
+:is([data-split*='morpho'], [data-apps-mark*='morpho'], [data-split*='cow'], [data-apps-mark*='cow']) { --sp-h: var(--neon-blue); --sp-h2: var(--neon-blue-2); }
+:is([data-split*='near'], [data-apps-mark*='near'], [data-split*='snapshot'], [data-apps-mark*='snapshot']) { --sp-h: var(--neon-violet); --sp-h2: var(--neon-violet-2); }
+:is([data-split*='hyperliquid'], [data-apps-mark*='hyperliquid']) { --sp-h: var(--neon-purple); --sp-h2: var(--neon-purple-2); }
+:is([data-split*='hands'], [data-apps-mark*='hands']) { --sp-h: var(--neon-magenta); --sp-h2: var(--neon-magenta-2); }
+:is([data-split*='robinhood'], [data-apps-mark*='robinhood']) { --sp-h: var(--neon-pink); --sp-h2: var(--neon-pink-2); }
+/* Pantessa's own tools wear the Cut P, which carries its own two neons: it
+   sits on the icon's dark ground, never on a neon tile. */
+:is(.split-tile, .apgk-mark):is([data-split*='yeetful'], [data-apps-mark*='yeetful'], [data-split*='pantessa'], [data-apps-mark*='pantessa'], [data-split*='wallet'], [data-apps-mark*='wallet'], [data-split*='funding'], [data-apps-mark*='funding']),
+.apgk-mark:is([data-apps-mark*='yeetful'], [data-apps-mark*='pantessa'], [data-apps-mark*='wallet'], [data-apps-mark*='funding']):hover { background: var(--neon-ink); border-color: var(--line-2); color: var(--hot); }
+/* A glyph from the icon CDN is drawn white: on a lit tile it is the ink. */
+:root :is(.split-tile[data-split], .apgk-mark[data-apps-mark]) img[src*='simpleicons'] { filter: brightness(0); }

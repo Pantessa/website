@@ -6,8 +6,8 @@
 // geometry changes here, change it there and regenerate the kit).
 //
 // The mark, picked 2026-11-18 to replace the Emerald Cut (nested octagons
-// that had no outline of their own at avatar size). It keeps the stone, the
-// emerald and the open table, and gives them a letter:
+// that had no outline of their own at avatar size). It keeps the stone and
+// the open table, and gives them a letter:
 //
 //   - A SQUARE stone is the bowl of a P, and its open table is the counter.
 //   - Because the stone is square, the top-right and lower-left miters lie on
@@ -27,8 +27,12 @@
 
 export type GemWeight = "fine" | "mark" | "icon";
 
-/** The brand emerald — mirrors `--accent` in app/x402-design.css (dark). */
-export const GEM_ACCENT = "#3ECF8E";
+/** The mark's lit ink, the brand magenta: mirrors `--gem-5` (and `--hot`) in
+ *  app/x402-design.css (dark). The mark was emerald until 2026-11-19; the
+ *  Split palette gave it two neons, magenta above the cut and violet below. */
+export const GEM_ACCENT = "#FF48C4";
+/** The mark's shade ink, the brand violet: mirrors `--gem-3` (dark). */
+export const GEM_SHADE = "#7B4DFF";
 
 /** The letter, on a 128 grid. The stone is X0..X1 by Y0..Y1 and must stay
  *  square: that is what puts the two miters on one line. */
@@ -54,19 +58,19 @@ const CUT: Record<GemWeight, number> = { fine: 2.6, mark: 3.2, icon: 6.5 };
 /** The two pieces, [lit, shade]. Dark-theme inks; the light theme resolves
  *  through the `--gem-*` tokens in app/x402-design.css. */
 export const GEM_TONES_DARK: Record<GemWeight, string[]> = {
-  fine: ["#3ECF8E", "#159B68"],
-  mark: ["#3ECF8E", "#159B68"],
-  icon: ["#3ECF8E", "#159B68"],
+  fine: [GEM_ACCENT, GEM_SHADE],
+  mark: [GEM_ACCENT, GEM_SHADE],
+  icon: [GEM_ACCENT, GEM_SHADE],
 };
 export const GEM_TONES_LIGHT: Record<GemWeight, string[]> = {
-  fine: ["#0e8f62", "#0C7A52"],
-  mark: ["#0e8f62", "#0C7A52"],
-  icon: ["#0e8f62", "#0C7A52"],
+  fine: ["#F230B4", "#6A3DF0"],
+  mark: ["#F230B4", "#6A3DF0"],
+  icon: ["#F230B4", "#6A3DF0"],
 };
 
 /** Theme-aware fills for the DOM component, [lit, shade]: `--gem-5` and
  *  `--gem-3` flip with data-theme; the fallbacks are the dark inks so the mark
- *  stays emerald on surfaces outside the site stylesheet. */
+ *  keeps its two neons on surfaces outside the site stylesheet. */
 export function gemFillVars(weight: GemWeight): string[] {
   const dark = GEM_TONES_DARK[weight];
   return [`var(--gem-5, ${dark[0]})`, `var(--gem-3, ${dark[1]})`];

@@ -45,7 +45,7 @@
 .mk-table__spark { padding: 0 6px; width: 64px; line-height: 0; vertical-align: middle; }
 .mk-table__spark svg { display: block; }
 .mk-table__dash { color: var(--muted-2); font-weight: 400; }
-.mkt-chg--up { color: var(--mk-up, var(--accent)); }
+.mkt-chg--up { color: var(--mk-up, var(--up)); }
 .mkt-chg--down { color: var(--mk-down, var(--sell)); }
 /* Wide data column: the ledger splits into two columns (the terminal look);
    the sort bar above it stays one row, so sorting is always reachable. */
@@ -73,7 +73,7 @@
 .mk-session__v { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mk-session__sep { width: 1px; height: 14px; background: var(--line); }
 .mk-dot--tick { background: var(--mk-series-3, var(--accent)); }
-.mk-session[data-nyse="open"] .mk-session__k:first-of-type { color: var(--mk-up, var(--accent)); }
+.mk-session[data-nyse="open"] .mk-session__k:first-of-type { color: var(--mk-up, var(--up)); }
 
 /* ── Trending on Pantessa ──────────────────────────────────────────────── */
 .mk-trend__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -106,14 +106,14 @@
 .sym__exec > .sym__act .sym__act-chips { justify-content: flex-start; }
 .sym__meta { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-top: 8px; min-width: 0; }
 .mk-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--muted-2); flex: 0 0 auto; }
-.mk-dot--open { background: var(--mk-up, var(--accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mk-up, var(--accent)) 22%, transparent); }
+.mk-dot--open { background: var(--mk-up, var(--up)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mk-up, var(--up)) 22%, transparent); }
 .mk-dot--closed { background: var(--muted-2); }
 .mk-dot--always { background: var(--accent); }
 .mk-range { display: grid; grid-template-columns: auto minmax(120px, 220px) auto; grid-template-areas: "lo bar hi" "k k k"; align-items: center; gap: 2px 8px; margin-top: 6px; }
 .mk-range__lo { grid-area: lo; font-size: 10.5px; color: var(--muted); }
 .mk-range__hi { grid-area: hi; font-size: 10.5px; color: var(--muted); }
 .mk-range__bar { grid-area: bar; position: relative; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--fg) 12%, transparent); overflow: visible; }
-.mk-range__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: linear-gradient(90deg, color-mix(in srgb, var(--mk-down, var(--sell)) 70%, transparent), var(--mk-up, var(--accent))); }
+.mk-range__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: linear-gradient(90deg, color-mix(in srgb, var(--mk-down, var(--sell)) 70%, transparent), var(--mk-up, var(--up))); }
 .mk-range__tick { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--fg); box-shadow: 0 0 0 2px var(--bg); }
 .mk-range__k { grid-area: k; justify-self: center; font-size: 8.5px; letter-spacing: 0.16em; color: var(--muted-2); }
 /* What you hold — one pill. */

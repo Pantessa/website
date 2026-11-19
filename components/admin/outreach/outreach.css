@@ -1,6 +1,6 @@
 /* The outreach desk (squad called-gtm, lane OUTREACH). Internal tool: dense,
    flat, hairlines only (README rule 3). Prefix `xod`. Site tokens only. */
-.xod { --xod-right: var(--accent); --xod-wrong: var(--sell); --xod-flat: var(--muted); --xod-open: var(--gold); font-size: 13px; line-height: 1.45; }
+.xod { --xod-right: var(--up); --xod-wrong: var(--sell); --xod-flat: var(--muted); --xod-open: var(--gold); font-size: 13px; line-height: 1.45; }
 .xod h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
 .xod__lede { color: var(--muted); max-width: 72ch; margin: 0 0 14px; }
 .xod__head { display: flex; flex-wrap: wrap; gap: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 0 0 18px; }

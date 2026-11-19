@@ -84,14 +84,16 @@ export default function AppsRailTab({
           : 'text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:bg-[var(--surf-1)]',
       )}
     >
-      {/* In-set rows tint the mark with the accent (the vendored marks render
-          in currentColor, so this is just a color flip; full-color logo_url
-          <img> customs keep their own colors). */}
+      {/* An in-set row seats its mark on a Split tile: the app's own two neons
+          either side of the cut, the glyph in the ground's ink (the vendored
+          marks render in currentColor; a full-colour logo_url <img> keeps its
+          own colours). The rule and the hue table are in x402-design.css. */}
       <span
         className={cn(
           'w-9 h-9 grid place-items-center flex-shrink-0 rounded-lg bg-black/30 border border-[var(--line)] transition-colors',
-          isActive && 'text-[color:var(--accent)]',
+          isActive && 'split-tile',
         )}
+        data-split={isActive ? server.slug : undefined}
       >
         <BrandIcon server={server} size={22} />
       </span>

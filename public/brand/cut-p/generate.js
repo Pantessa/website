@@ -21,13 +21,17 @@ const OUT = __dirname;
 fs.mkdirSync(path.join(OUT, 'png'), { recursive: true });
 
 // ── palette ──────────────────────────────────────────────────────────────────
-const DARKBG = '#06110B';            // the ground behind the mark on icons
+// The mark was emerald until 2026-11-19. The Split palette gave it two neons:
+// magenta above the cut, violet below it (mirrors GEM_ACCENT / GEM_SHADE in
+// lib/gem-geometry.ts and --gem-5 / --gem-3 in app/x402-design.css).
+const DARKBG = '#07080D';            // the ground behind the mark on icons
 const INK = '#101512';
-const EMERALD = '#3ECF8E';
+const MAGENTA = '#FF48C4';
+const VIOLET = '#7B4DFF';
 const WHITE = '#FFFFFF';
 const BLACK = '#000000';
-const TONES = [EMERALD, '#159B68'];        // [lit, shade] on dark grounds
-const TONES_PAPER = ['#0e8f62', '#0C7A52']; // [lit, shade] on white/paper
+const TONES = [MAGENTA, VIOLET];            // [lit, shade] on dark grounds
+const TONES_PAPER = ['#F230B4', '#6A3DF0']; // [lit, shade] on white/paper
 
 // ── geometry (mirror of lib/gem-geometry.ts) ────────────────────────────────
 const X0 = 28, X1 = 100, Y0 = 8, Y1 = 80, C = 16, S = 22, YB = 120, LENS = 0.46;
@@ -86,7 +90,7 @@ write('pantessa-mark-paper.svg', svg128(markBody('mark', TONES_PAPER)));
 write('pantessa-mark-mono-white.svg', svg128(markBody('mark', mono(WHITE))));
 write('pantessa-mark-mono-black.svg', svg128(markBody('mark', mono(BLACK))));
 write('pantessa-mark-mono-ink.svg', svg128(markBody('mark', mono(INK))));
-write('pantessa-mark-mono-emerald.svg', svg128(markBody('mark', mono(EMERALD))));
+write('pantessa-mark-mono-magenta.svg', svg128(markBody('mark', mono(MAGENTA))));
 
 // ── icons and avatars (128 grid, mark centered) ─────────────────────────────
 const tile = (rx, ground, inner) => svg128(`<rect width="128" height="128" rx="${rx}" fill="${ground}"/>${inner}`);
@@ -99,7 +103,7 @@ write('pantessa-apple-touch.svg', tile(0, DARKBG, centered('mark', TONES, 0.7)))
 write('pantessa-favicon.svg', tile(24, DARKBG, centered('icon', TONES, 0.82)));
 // Avatars are square and get cropped to a circle (X, Telegram, GitHub).
 write('pantessa-avatar.svg', tile(0, DARKBG, centered('mark', TONES, 0.64)));
-write('pantessa-avatar-emerald.svg', tile(0, EMERALD, centered('mark', mono(DARKBG), 0.64)));
+write('pantessa-avatar-magenta.svg', tile(0, MAGENTA, centered('mark', mono(DARKBG), 0.64)));
 write('pantessa-avatar-black.svg', tile(0, BLACK, centered('mark', mono(WHITE), 0.64)));
 write('pantessa-avatar-white.svg', tile(0, WHITE, centered('mark', mono(BLACK), 0.64)));
 
@@ -178,7 +182,7 @@ function square(file, ground, fills) {
   write(file, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="${ground}"/>${markAt((1080 - markWidth(H)) / 2, (1080 - H) / 2, H, 'fine', fills)}</svg>\n`);
 }
 square('pantessa-social-square.svg', DARKBG, TONES);
-square('pantessa-social-square-emerald.svg', EMERALD, mono(DARKBG));
+square('pantessa-social-square-magenta.svg', MAGENTA, mono(DARKBG));
 square('pantessa-social-square-black.svg', BLACK, mono(WHITE));
 square('pantessa-social-square-white.svg', WHITE, mono(BLACK));
 

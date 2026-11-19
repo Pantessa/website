@@ -5,7 +5,7 @@
    colour here means one thing: up-ink buys, down-ink sells, the strong
    shade opens a position, the soft shade closes one (Dune's four). */
 
-.live { --live-up: var(--mk-up, var(--accent)); --live-down: var(--mk-down, var(--sell)); }
+.live { --live-up: var(--mk-up, var(--up)); --live-down: var(--mk-down, var(--sell)); }
 
 /* ── Bar ───────────────────────────────────────────────────────────────── */
 .live__bar { justify-content: space-between; }

@@ -21,7 +21,7 @@
 .dcp__code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; padding: 1px 6px; border-radius: 6px; background: var(--bg); color: var(--fg); word-break: break-all; }
 .dcp__note { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--muted-2); }
 .dcp__err { margin: 0; font-size: 12.5px; color: var(--sell); }
-.dcp__ok { margin: 0; font-size: 12.5px; color: var(--accent); }
+.dcp__ok { margin: 0; font-size: 12.5px; color: var(--up); }
 @media (max-width: 480px) {
   .dcp__form { flex-direction: column; }
   .dcp__cta, .dcp__ghost { min-height: 44px; }

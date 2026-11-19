@@ -173,7 +173,7 @@ export const OVERLAYS: { key: OverlayKey; label: string; title: string; swatch: 
   { key: 'vp', label: 'VP', title: 'Volume profile — the bars on screen binned by price, drawn at the right edge; the brightest row is where most volume traded', swatch: 'var(--mk-flat)' },
   // The symbol page only (MarketChart offers it with the Battlefield). While it
   // draws it absorbs the volume profile as a grey underlay on each rung.
-  { key: 'wall', label: 'WALL', title: 'The Wall — every dollar standing at each price, on the right margin: resting orders on Coinbase and Hyperliquid (solid, live), estimated liquidation clusters (hatched), and what the bars on screen traded there (grey)', swatch: 'var(--mk-up, var(--accent))' },
+  { key: 'wall', label: 'WALL', title: 'The Wall — every dollar standing at each price, on the right margin: resting orders on Coinbase and Hyperliquid (solid, live), estimated liquidation clusters (hatched), and what the bars on screen traded there (grey)', swatch: 'var(--mk-up, var(--up))' },
 ]
 
 /** The symbol page opens on the trend pair: the 50 (blue) and the 200

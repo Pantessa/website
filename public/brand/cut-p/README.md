@@ -3,7 +3,9 @@
 Picked 2026-11-18, replacing the Emerald Cut (2026-09-01,
 `public/brand/emerald/`, kept as the archive). The Emerald Cut was nested
 octagons: pretty, but with no outline of its own at avatar size. The Cut P
-keeps the stone, the emerald and the open table, and gives them a letter.
+keeps the stone and the open table, and gives them a letter. Since 2026-11-19 it
+wears the Split palette's two neons: magenta `#FF48C4` above the cut, violet
+`#7B4DFF` below it (on paper `#F230B4` and `#6A3DF0`).
 
 ## Construction
 
@@ -45,7 +47,7 @@ grounds: `#0e8f62` over `#0C7A52`. In the app these are the `--gem-5` and
 White-label surfaces re-ink both pieces in one accent (shade at 72%).
 
 Single-ink marks fill both pieces with one color: white, black, ink
-(`#101512`) or emerald. The cut carries the read. Icon ground: `#06110B`.
+(`#101512`) or magenta. The cut carries the read. Icon ground: `#07080D`.
 
 Wordmark: "pantessa", Fraunces 600, −0.015em, outlined to vectors in
 `wordmark.json`, so no delivered file depends on a font.
@@ -54,17 +56,17 @@ Wordmark: "pantessa", Fraunces 600, −0.015em, outlined to vectors in
 
 - `pantessa-mark[-fine|-mark|-icon][-paper].svg` — the mark alone, every cut,
   dark and paper tones
-- `pantessa-mark-mono-{white,black,ink,emerald}.svg` — single-ink marks
+- `pantessa-mark-mono-{white,black,ink,magenta}.svg` — single-ink marks
 - `pantessa-app-icon.svg`, `pantessa-app-icon-maskable.svg`,
   `pantessa-apple-touch.svg`, `pantessa-favicon.svg` — tiled icons
-- `pantessa-avatar[-emerald|-black|-white].svg` — square avatars for X,
+- `pantessa-avatar[-magenta|-black|-white].svg` — square avatars for X,
   Telegram and GitHub (they crop to a circle)
 - `pantessa-lockup[-ink|-mono-white|-mono-black].svg`,
   `pantessa-stacked[-ink|-mono-white|-mono-black].svg`,
   `pantessa-wordmark.svg` (currentColor)
 - `pantessa-x-header[-black|-white].svg` (1500×500),
   `pantessa-linkedin-banner.svg` (1584×396), `pantessa-og-banner.svg`
-  (1200×630), `pantessa-social-square[-emerald|-black|-white].svg` (1080×1080)
+  (1200×630), `pantessa-social-square[-magenta|-black|-white].svg` (1080×1080)
 - `png/` — every one of the above rasterized: favicons 16/32/48/64,
   apple-touch 180, app icon 192/512/1024 + maskable 512, avatars 400/800,
   marks 512 (transparent), lockups 1600w, stacked 1200, the headers, banners

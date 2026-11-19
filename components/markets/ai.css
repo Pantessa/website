@@ -52,7 +52,7 @@
   white-space: nowrap; max-width: 100%;
 }
 .mk-ai__chip:hover { border-color: var(--accent); transform: translateY(-1px); }
-.mk-ai__chip--buy, .mk-ai__chip--trade { background: var(--accent); color: var(--ink); border-color: var(--accent); }
+.mk-ai__chip--buy, .mk-ai__chip--trade { background: var(--up); color: var(--ink); border-color: var(--up); }
 .mk-ai__chip--buy:hover, .mk-ai__chip--trade:hover { filter: brightness(1.06); }
 .mk-ai__chip--sell { border-color: color-mix(in oklab, var(--sell) 60%, var(--line-2)); color: var(--sell); background: transparent; }
 .mk-ai__chip--sell:hover { background: color-mix(in oklab, var(--sell) 14%, transparent); }
@@ -60,7 +60,7 @@
 .mk-ai__chip--limit { border-color: var(--line-2); }
 
 .mk-ai__pos { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; border: 1px dashed var(--line); background: color-mix(in oklab, var(--surf-2) 60%, transparent); position: relative; }
-.mk-ai__pos--held { border-style: solid; border-color: color-mix(in oklab, var(--accent) 45%, var(--line)); }
+.mk-ai__pos--held { border-style: solid; border-color: color-mix(in oklab, var(--up) 45%, var(--line)); }
 
 .mk-ai__foot { display: flex; flex-wrap: wrap; gap: 6px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.04em; color: var(--muted-2); position: relative; }
 

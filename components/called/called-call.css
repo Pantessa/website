@@ -98,7 +98,7 @@
 .xcl-count::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--xrc-tone); }
 .xcl-count.is-total::before { display: none; }
 .xcl-record__standing { margin: 0; font-size: var(--fs-md); line-height: 1.4; color: var(--muted); }
-.xcl-record__standing.is-verified { color: var(--accent); font-weight: 600; }
+.xcl-record__standing.is-verified { color: var(--up); font-weight: 600; }
 
 /* ── The next press ────────────────────────────────────────────────────── */
 .xcl-go { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-1); }

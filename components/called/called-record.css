@@ -23,7 +23,7 @@
    door's classed elements never meet these rules. */
 
 .xrc {
-  --xrc-right: var(--accent);
+  --xrc-right: var(--up);
   --xrc-wrong: var(--sell);
   --xrc-flat: var(--muted);
   --xrc-open: var(--gold);
@@ -71,7 +71,7 @@
 .xrc-avatar--lg { width: 52px; height: 52px; font-size: var(--fs-2xl); }
 
 .xrc-standing { margin: 0; font-size: var(--fs-md); line-height: 1.45; color: var(--muted); max-width: 62ch; }
-.xrc-standing.is-verified { color: var(--accent); font-weight: 600; }
+.xrc-standing.is-verified { color: var(--up); font-weight: 600; }
 
 .xrc-headline { margin: 0; font-family: var(--xrc-display); font-weight: 600; font-size: clamp(1.5rem, 1.1rem + 2.2vw, 2.375rem); line-height: 1.14; letter-spacing: -0.015em; text-wrap: balance; overflow-wrap: anywhere; }
 .xrc-headline__who { display: block; }
@@ -353,7 +353,7 @@
 .xrc--splash .xrc-who { min-width: 0; display: inline-flex; align-items: center; gap: var(--sp-3); }
 .xrc-who__text { min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
 .xrc--splash .xrc-who__name { display: flex; align-items: center; gap: var(--sp-2); font-weight: 600; font-size: var(--fs-base); }
-.xrc-who__verified { flex: none; color: var(--accent); font-family: var(--xrc-mono); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; }
+.xrc-who__verified { flex: none; color: var(--up); font-family: var(--xrc-mono); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; }
 .xrc--splash .xrc-who__handle { font-size: var(--fs-xs); }
 .xrc--splash .xrc-avatar { border: 0; }
 
