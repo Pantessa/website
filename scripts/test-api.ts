@@ -6523,7 +6523,7 @@ async function main() {
         /if \(chatId \|\| servers\.length === 0 \|\| !linkSetActive\) return/.test(workspace),
     )
     check(
-      'onboarding: the guest banner promises a connect and its button connects (walletConnectOnly door, "Connect wallet" — not "Sign in"); signing out lands on the home page, except on a public markets page, which keeps you there',
+      'onboarding: the guest banner promises a connect and its button connects (walletConnectOnly door, "Connect wallet" — not "Sign in"); signing out lands on the home page from every page, markets included, with a full load',
       /Connect a wallet when you want to sign what it builds\./.test(gate) &&
         (gate.match(/<span>Connect wallet<\/span>/g) ?? []).length === 1 &&
         /'Connect wallet'\}<\/span>/.test(gate) &&
@@ -6536,7 +6536,10 @@ async function main() {
         // instead of landing on /chat or a markets page first and bouncing.
         // Re-pinned 2026-09-14 (public markets): a markets page is public, so
         // signing out there stays; everywhere else still lands home.
-        /signOut\(\)\.then\(\(\) => \{\s*if \(!isPublicAppPath\(pathname\)\) router\.push\('\/'\)\s*\}\)/.test(nav) && !/const dest = /.test(nav),
+        // Re-pinned 2026-11-19 (Nate: sign-out "starts fresh"): every page,
+        // markets included, lands on '/' with a full document load, so the
+        // signed-in shell's watchlist rail and stores do not survive it.
+        /signOut\(\)\.then\(\(\) => \{\s*window\.location\.assign\('\/'\)\s*\}\)/.test(nav) && !/isPublicAppPath\(pathname\)\) router\.push/.test(nav) && !/const dest = /.test(nav),
     )
     check(
       'onboarding: after the on-ramp chip the chat says a Stripe tab opened and that it is watching the chain (the handoff moment is named, not implied)',
