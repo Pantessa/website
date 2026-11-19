@@ -120,7 +120,18 @@
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__alerts { margin-right: 0; }
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__bar { top: var(--mkt-top-h); }
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__rail { display: none; }
+  /* ONE ROW (2026-11-19, Nate: the eyebrow "and the Ask buttons should be on
+     the same horizontal level and padding"): the bar carries the eyebrow at
+     its left end, on the controls' row and inside the same side padding as
+     the tiles; the claim's own copy steps aside and the mosaic loses the
+     strip it kept above the tiles for it. */
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__lead { display: flex; align-items: center; min-width: 0; margin-right: auto; }
+  :root:not([data-home='return']) .mkt-frame__lead .mk-claim__eyebrow { margin: 0; white-space: nowrap; }
+  :root:not([data-home='return']) .mkt-frame__main .hm .mk-claim__eyebrow { display: none; }
+  :root:not([data-home='return']) .mkt-frame__main .hm { padding-top: var(--sp-4); }
 }
+/* The strip's lead is the home's, and only the stranger's desktop bar draws it. */
+.mkt-frame__lead { display: none; }
 
 /* A phone's column: the sentence at reading size so it fits beside its button. */
 @container hero (max-width: 559px) {
