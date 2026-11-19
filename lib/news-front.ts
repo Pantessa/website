@@ -2,11 +2,17 @@
 // says, and what the price did since a story ran. Pure and client-safe (the
 // tab imports it; scripts/news-front-pins.ts pins it).
 //
-// THE ORDER IS THE FEED'S. Stories arrive newest first and are dealt into the
+// THE ORDER IS TIME'S. Stories arrive newest first and are dealt into the
 // page's seats in that order: the lead, two seconds beside it, the "in brief"
 // column, the picture grid, then the archive. Nothing here ranks a story by
-// anything but its time, so the page never claims an editorial judgment the
-// feed did not make.
+// what it says, so the page never claims an editorial judgment nobody made.
+//
+// ONE LAYOUT RULE (2026-11-18, when the page began to mix a dozen publishers
+// and only some of them ship a picture): the lead and the two seconds are the
+// page's picture seats, so each goes to the newest story WITH a picture, as
+// long as that story ran within FRONT_PICTURE_REACH_SEC of the newest story
+// on the page. Past that reach, or with no picture in reach, the seat goes to
+// the newest story as before. Every other seat is plain time order.
 
 import type { NewsItem } from '@/lib/news-shared'
 
@@ -24,24 +30,36 @@ export interface FrontPage {
   archive: NewsItem[]
 }
 
+/** How far behind the newest story a pictured one may be and still take a picture seat. */
+export const FRONT_PICTURE_REACH_SEC = 12 * 3600
+
 /** Deal the feed (newest first) into the page's seats. Every item lands in
  *  exactly one seat; none is dropped and none repeats. */
 export function frontPage(items: readonly NewsItem[]): FrontPage {
-  const lead = items[0] ?? null
-  let at = lead ? 1 : 0
+  const pool = [...items]
+  const newest = pool[0]?.publishedAt ?? 0
+  /** The next story for a picture seat: the newest pictured one in reach, else the newest. */
+  const takePictured = (): NewsItem | null => {
+    if (pool.length === 0) return null
+    const i = pool.findIndex((it) => !!it.imageUrl && newest - it.publishedAt <= FRONT_PICTURE_REACH_SEC)
+    return pool.splice(i > 0 ? i : 0, 1)[0]
+  }
+  const lead = takePictured()
+  const seconds: NewsItem[] = []
+  while (seconds.length < FRONT_SECONDS && pool.length > 0) seconds.push(takePictured()!)
+  let at = 0
   const take = (n: number) => {
-    const out = items.slice(at, at + n)
+    const out = pool.slice(at, at + n)
     at += out.length
     return out
   }
-  const seconds = take(FRONT_SECONDS)
   const briefs = take(FRONT_BRIEFS)
   let features = take(FRONT_FEATURES)
   if (features.length < FRONT_FEATURES_MIN) {
     at -= features.length
     features = []
   }
-  return { lead, seconds, briefs, features, archive: items.slice(at) }
+  return { lead, seconds, briefs, features, archive: pool.slice(at) }
 }
 
 /** "The Ethereum Edition". A name that already opens with "The" keeps its own. */

@@ -62,7 +62,7 @@ import { lastSessionStats, sessionState, symbolName, symbolStanding, venueLabel 
 import { symbolName as seoName, symbolPageSeo } from '../lib/markets-seo'
 import { isLiveTabTitle, liveTabTitle, liveTabTitleOf } from '../lib/markets-quotes'
 import { GUIDE_HINTS, GUIDE_LOOK_ONLY_ALERT_BODY, GUIDE_LOOK_ONLY_ALERT_TITLE, guideBody, guideTitle } from '../lib/guide'
-import { newsLadderFor } from '../lib/news'
+import { newsFeedsFor } from '../lib/news'
 import { READ_INDEX_VENUE_LINE, READ_INSTRUMENTS } from '../lib/read'
 import {
   LOOK_ONLY_SOURCE_LINE,
@@ -295,10 +295,10 @@ export function macroPins(check: Check): void {
       guideTitle(alertHint, { symbol: 'VIX', lookOnly: true }) === GUIDE_LOOK_ONLY_ALERT_TITLE && guideBody(alertHint, { symbol: 'VIX', lookOnly: true }) === GUIDE_LOOK_ONLY_ALERT_BODY.replace('{SYM}', 'VIX') && !/does the trade|hands you/.test(guideBody(alertHint, { symbol: 'VIX', lookOnly: true })) &&
       guideTitle(alertHint, { symbol: 'AAPL' }) === alertHint.title && guideBody(alertHint, { symbol: 'AAPL' }) === alertHint.body,
   )
-  const news = newsLadderFor(ix('US10Y'))
+  const news = newsFeedsFor(ix('US10Y'))
   check(
     'macro (news + model): an index\'s headlines are searched by the phrase a markets desk uses, never as "crypto" or as a stock ticker; and a model reading an index\'s bare numbers is told the unit (a yield in percent, moved in basis points — never a dollar price)',
-    news.length === 1 && news[0].feed === 'google-news' && /Treasury/.test(decodeURIComponent(news[0].url)) && !/crypto|stock/.test(decodeURIComponent(news[0].url)) && SIX.every((s) => !/crypto/.test(decodeURIComponent(newsLadderFor(ix(s))[0].url))) &&
+    news.length === 1 && news[0].feed === 'google-news' && /Treasury/.test(decodeURIComponent(news[0].url)) && !/crypto|stock/.test(decodeURIComponent(news[0].url)) && SIX.every((s) => !/crypto/.test(decodeURIComponent(newsFeedsFor(ix(s))[0].url))) &&
       /basis points/.test(lookOnlyUnitNote(ix('US10Y')) ?? '') && /index points/.test(lookOnlyUnitNote(ix('NDX')) ?? '') && /never a dollar price/.test(lookOnlyUnitNote(ix('VIX')) ?? '') && lookOnlyUnitNote(chartPairFor('ETH')) === null && lookOnlyUnitNote(null) === null,
   )
 

@@ -298,9 +298,79 @@
 @container gaz (min-width: 720px) { .gaz__archive { columns: 2; } }
 @container gaz (min-width: 1180px) { .gaz__archive { columns: 3; } }
 
-/* ── Pinned by the community ── */
+/* ── From readers ── */
 .gaz__community { display: flex; flex-direction: column; gap: 14px; }
 .gaz__community .gaz__archive { margin-top: -8px; }
+
+/* ── Publishers on the page: one quiet row of names and counts; the picked
+   one is underlined like a tab. It scrolls sideways before it wraps. ── */
+.gaz__srcs {
+  display: flex; align-items: stretch; gap: 2px 18px; min-width: 0;
+  overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  border-bottom: 1px solid var(--line);
+}
+.gaz__srcs::-webkit-scrollbar { display: none; }
+.gaz__srcchip {
+  flex-shrink: 0; display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 10px 0 9px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: transparent;
+  font-family: var(--gaz-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted-2); white-space: nowrap; cursor: pointer; transition: color .15s, border-color .15s;
+}
+.gaz__srcchip b { font-weight: 500; color: var(--muted-2); opacity: 0.7; font-variant-numeric: tabular-nums; }
+.gaz__srcchip:hover { color: var(--fg); }
+.gaz__srcchip.is-on { color: var(--fg); border-bottom-color: var(--fg); }
+.gaz__srcchip.is-on b { color: var(--fg); opacity: 1; }
+.gaz__srcchip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 3px; }
+.gaz__srcmore { text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+@container gaz (min-width: 900px) { .gaz__srcs { flex-wrap: wrap; overflow-x: visible; } }
+
+/* ── A label with a control on its right (Add an article, Best / Latest) ── */
+.gaz__label--row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.gaz__add,
+.gaz__xby button {
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; padding: 3px 0;
+  border: 0; background: transparent; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--muted-2);
+  transition: color .15s;
+}
+.gaz__add svg { width: 12px; height: 12px; }
+.gaz__add:hover,
+.gaz__xby button:hover { color: var(--fg); }
+.gaz__label .gaz__xby { display: inline-flex; gap: 14px; margin: 0; padding: 0; border: 0; }
+.gaz__xby button.is-on { color: var(--fg); text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; }
+
+/* ── From readers: the vote column, then the story ── */
+.gaz__readers { display: flex; flex-direction: column; }
+.gaz__reader { display: flex; align-items: flex-start; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.gaz__reader:first-child { padding-top: 4px; }
+.gaz__reader .gaz__hed { font-family: var(--gaz-serif); font-weight: 600; font-size: 19px; line-height: 1.22; letter-spacing: -0.012em; margin: 0; color: var(--fg); text-wrap: pretty; }
+.gaz__link--inline::after { content: none; }
+.gaz__link--inline:hover { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.gaz__link--inline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+/* ── On X: the posts in newspaper columns, each one link ── */
+.gaz__x { display: flex; flex-direction: column; gap: 14px; }
+.gaz__xgrid { columns: 1; column-gap: calc(var(--gaz-gut) * 2); column-rule: 1px solid var(--line); }
+@container gaz (min-width: 720px) { .gaz__xgrid { columns: 2; } }
+@container gaz (min-width: 1180px) { .gaz__xgrid { columns: 3; } }
+.gaz__xpost {
+  position: relative; break-inside: avoid; display: flex; flex-direction: column; gap: 7px;
+  padding: 4px 0 16px; margin-bottom: 14px; border-bottom: 1px solid var(--line); min-width: 0;
+}
+.gaz__xpost:has(.gaz__link:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.gaz__xhandle { color: var(--muted-2); text-transform: none; letter-spacing: 0.02em; }
+.gaz__xtext {
+  margin: 0; font-size: 14.5px; line-height: 1.5; color: var(--fg); overflow-wrap: anywhere; white-space: pre-line;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 7; overflow: hidden;
+}
+@media (hover: hover) { .gaz__xpost:hover .gaz__xtext { color: color-mix(in oklch, var(--fg) 82%, var(--accent)); } }
+.gaz__xmeta { display: flex; gap: 16px; margin: 0; font-family: var(--gaz-mono); font-size: 10.5px; letter-spacing: 0.06em; color: var(--muted-2); font-variant-numeric: tabular-nums; }
+.gaz__xmeta span { display: inline-flex; align-items: center; gap: 5px; }
+.gaz__xmeta svg { width: 12px; height: 12px; }
+.gaz__xout { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 0; font-size: 13px; color: var(--muted); }
+.gaz__xout a { display: inline-flex; align-items: center; gap: 3px; color: var(--fg); text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+.gaz__xout a:hover { text-decoration-color: var(--fg); }
+.gaz__xout svg { width: 12px; height: 12px; }
 
 /* ── Loading: the page's own shape, empty ── */
 .gaz__bone { border-radius: 3px; background: var(--surf-1); animation: gaz-pulse 1.4s ease-in-out infinite; }
@@ -318,6 +388,9 @@
   .gaz__story--lead .gaz__pin { min-height: 44px; padding-inline: 14px; }
   .gaz__story:not(.gaz__story--lead) .gaz__pin::after { content: ''; position: absolute; inset: -9px; }
   .gaz__foot { min-height: 30px; }
+  .gaz__srcchip { min-height: 44px; }
+  .gaz__add, .gaz__xby button { min-height: 44px; margin-top: 0; }
+  .gaz__xout a { min-height: 44px; }
 }
 
 /* ── Narrow masthead: the nameplate leads, flush left ── */

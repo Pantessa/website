@@ -8,7 +8,7 @@
 import { changePct24h, chartPairFor, type ChartPair, type ChartTf } from './charts'
 import { loadCandleSeries, resolveTf, type LoadedSeries } from './candles-server'
 import { computeTechnicals, RATING_LABELS, type Technicals } from './technicals'
-import { getNews } from './news'
+import { FEEDS_NOT_FOR_REPLIES, getNews } from './news'
 import { performanceFromCandles, sessionState, stats24h, symbolName } from './markets'
 import { chipMenu, tapeSymbols, venueWordsFor, type AiChip, type BriefContext, type PositionContext, type TapeRow } from './markets-ai'
 import type { SymbolPosition } from './symbol-position'
@@ -69,7 +69,7 @@ export async function composeBriefContext(tape: TapeRead): Promise<{ ctx: BriefC
   const candles = loaded.series.candles
   const s24 = stats24h(candles)
   const perfAll = performanceFromCandles(candles)
-  const news = await getNews(pair.symbol, 8).catch(() => null)
+  const news = await getNews(pair.symbol, 8, { skipFeeds: FEEDS_NOT_FOR_REPLIES }).catch(() => null)
   const { chips: menu, dropped } = ladderFilterMenu(chipMenu({ pair, last, tech }))
   const ctx: BriefContext = {
     symbol: pair.symbol,

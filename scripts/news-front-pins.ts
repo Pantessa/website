@@ -23,11 +23,12 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { NewsItem } from '../lib/news-shared'
-import { isQuotePage, newsLadderFor } from '../lib/news'
+import { isQuotePage, newsFeedsFor } from '../lib/news'
 import {
   DAY_SEC,
   FRONT_BRIEFS,
   FRONT_FEATURES,
+  FRONT_PICTURE_REACH_SEC,
   FRONT_SECONDS,
   HOUR_SEC,
   frontPage,
@@ -55,7 +56,7 @@ export function newsFrontPins(check: Check): void {
   }
   const sizes = [0, 1, 2, 3, 4, 7, 8, 9, 10, 15, 16, 30, 50]
   check(
-    'news front: every story lands in exactly one seat, in the feed\'s own order, at every feed length',
+    'news front: every story lands in exactly one seat, in time order (a feed with no pictures), at every feed length',
     sizes.every((n) => seated(n).join() === feed(n).map((x) => x.id).join()),
     sizes.filter((n) => seated(n).join() !== feed(n).map((x) => x.id).join()).join(','),
   )
@@ -63,6 +64,18 @@ export function newsFrontPins(check: Check): void {
   check(
     'news front: a full feed seats 1 lead, 2 seconds, 4 in brief, 8 pictures and the rest in the archive',
     full.lead?.id === 'id0' && full.seconds.length === FRONT_SECONDS && full.briefs.length === FRONT_BRIEFS && full.features.length === FRONT_FEATURES && full.archive.length === 30 - 1 - FRONT_SECONDS - FRONT_BRIEFS - FRONT_FEATURES,
+  )
+  // Picture seats: the newest pictured story in reach takes the lead and the seconds; nothing is lost or repeated.
+  const pic = (i: number, hoursOld: number, img: boolean): NewsItem => ({ ...item(i), publishedAt: 1_800_000_000 - hoursOld * 3600, ...(img ? { imageUrl: `https://img.example.com/${i}.png` } : {}) })
+  const mixed = [pic(0, 0, false), pic(1, 1, false), pic(2, 2, true), pic(3, 3, true), pic(4, 4, false), pic(5, 5, true), pic(6, 30, true)]
+  const mp = frontPage(mixed)
+  const mseats = [...(mp.lead ? [mp.lead] : []), ...mp.seconds, ...mp.briefs, ...mp.features, ...mp.archive].map((x) => x.id)
+  const stale = frontPage([pic(0, 0, false), pic(1, 1, false), pic(2, 2, false), pic(3, FRONT_PICTURE_REACH_SEC / 3600 + 1, true)])
+  check(
+    'news front: the lead and the seconds go to the newest PICTURED stories within reach of the newest story, every other seat is time order, and a picture out of reach never jumps the queue',
+    mp.lead?.id === 'id2' && mp.seconds.map((x) => x.id).join() === 'id3,id5' && mp.briefs.map((x) => x.id).join() === 'id0,id1,id4,id6' && [...mseats].sort().join() === mixed.map((x) => x.id).sort().join() && mseats.length === mixed.length &&
+      stale.lead?.id === 'id0' && stale.seconds.map((x) => x.id).join() === 'id1,id2',
+    `${mp.lead?.id} / ${mp.seconds.map((x) => x.id).join()} / ${mp.briefs.map((x) => x.id).join()}`,
   )
   const thin = frontPage(feed(9))
   check(
@@ -145,10 +158,10 @@ export function newsFrontPins(check: Check): void {
       isQuotePage('AAPL Nov 2026 355.000 put (AAPL261118P00355000)') && !isQuotePage('Apple to stand trial in France over iPhone repair restrictions: report (AAPL:NASDAQ)') &&
       !isQuotePage('Apple puts a call option on its own history'),
   )
-  const stock = newsLadderFor({ symbol: 'AAPL', source: 'robinhood', pair: 'AAPL', label: 'AAPL / USD' })
+  const stock = newsFeedsFor({ symbol: 'AAPL', source: 'robinhood', pair: 'AAPL', label: 'AAPL / USD' })
   const quote = { title: 'AAPL Nov 2026 510.000 call (AAPL261118C00510000) Stock Price, News, Quote & History', link: '', publishedAt: 1, description: '', source: '', tickers: '' }
   check(
-    'news front: the stock ladder\'s search hop drops quote pages and keeps stories',
+    'news front: the stock\'s search feed drops quote pages and keeps stories',
     stock[0].feed === 'google-news' && stock[0].keep?.(quote) === false && stock[0].keep?.({ ...quote, title: 'Apple names a new head of Apple Pay' }) === true,
   )
 
@@ -184,8 +197,8 @@ export async function newsFrontServedPins(check: Check, BASE: string): Promise<v
   try {
     const html = await (await fetch(`${BASE}/t/ETH?tab=news`)).text()
     check(
-      'news front (served): /t/ETH?tab=news renders the nameplate, the refresh and the community pin section on the server',
-      /<div class="gaz" data-news="front-page">/.test(html) && /<h2 class="gaz__name">The Ethereum Edition<\/h2>/.test(html) && /aria-label="Refresh headlines"/.test(html) && /Pinned by the community/.test(html),
+      'news front (served): /t/ETH?tab=news renders the nameplate, the refresh and the readers\' section on the server',
+      /<div class="gaz" data-news="front-page">/.test(html) && /<h2 class="gaz__name">The Ethereum Edition<\/h2>/.test(html) && /aria-label="Refresh headlines"/.test(html) && /data-news="readers"/.test(html) && /From readers/.test(html),
     )
     const stock = await (await fetch(`${BASE}/t/AAPL?tab=news`)).text()
     check('news front (served): a stock wears its company\'s name without the corporate tail', /<h2 class="gaz__name">The Apple Edition<\/h2>/.test(stock))

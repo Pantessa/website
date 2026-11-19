@@ -3,34 +3,42 @@
 // News for the symbol, set as a FRONT PAGE (2026-11-17): a nameplate and a
 // dateline, the newest story as the lead with its picture, two seconds beside
 // it, an "in brief" column, a picture grid, then the archive in newspaper
-// columns. The data is /api/news exactly as before; lib/news-front deals the
-// feed into the page's seats in the feed's own order (newest first), so the
-// page claims no ranking the feed did not make.
+// columns. lib/news-front deals the feed into the page's seats in the feed's
+// own order (newest first), so the page claims no ranking the feed did not make.
+//
+// MANY PUBLISHERS (2026-11-18). /api/news now answers from the news index: a
+// dozen publishers' feeds merged, one row per story. The strip under the
+// masthead names every publisher on the page with its count; a tap keeps only
+// that publisher's stories and deals the page again. Two more sections sit
+// on the page: READERS (links readers added to this symbol, voted up and
+// down, the community feed's own rows and votes) and ON X (posts carrying the
+// symbol's cashtag that the server already holds, plus X's own search links).
 //
 // Every story is one click target: the headline's link is stretched over its
 // block, and "Show on chart" (a marker published to lib/chart-markers for the
 // chart to draw on the bar the story broke on) sits above it.
 //
-// A story's picture is the feed's own (Cointelegraph ships one per item),
-// right-sized through next/image. A LEAD with no picture gets the PLATE: the
-// symbol's own tape around the hour it ran, the story marked on it; any other
-// story with no picture is set in type alone. Beside a recent story, what the
-// price did since: one hourly and one daily candle read
-// for the whole tab, fail-soft (no tape, no number, the page still reads).
+// A story's picture is the feed's own, right-sized through next/image. A LEAD
+// with no picture gets the PLATE: the symbol's own tape around the hour it
+// ran, the story marked on it; any other story with no picture is set in type
+// alone. Beside a recent story, what the price did since: one hourly and one
+// daily candle read for the whole tab, fail-soft (no tape, no number, the
+// page still reads).
 //
-// Every string here renders as a text node: titles and summaries were
-// HTML-stripped server-side and are never re-interpreted as markup.
+// Every string here renders as a text node: titles, summaries, readers' words
+// and X posts are never re-interpreted as markup.
 
 import { notAnswering, shownError } from '@/lib/fetch-words'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { ArrowRight, ArrowUpRight, Pin, PinOff, RefreshCw } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Heart, Pin, PinOff, Plus, RefreshCw, Repeat2 } from 'lucide-react'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { useSession } from '@/lib/session'
 import type { ChartPair } from '@/lib/charts'
 import { symbolName } from '@/lib/markets'
-import { ageLabel, NEWS_FEED_LABELS, type NewsItem, type NewsResponse } from '@/lib/news-shared'
+import VoteButtons from '@/components/community/VoteButtons'
+import { ageLabel, sourceCounts, type NewsItem, type NewsResponse } from '@/lib/news-shared'
 import { toggleChartMarker, useChartMarkers } from '@/lib/chart-markers'
 import {
   archiveDate,
@@ -45,7 +53,8 @@ import {
   type Bar,
   type Plate,
 } from '@/lib/news-front'
-import type { PublicPost } from '@/lib/chart-posts'
+import type { FeedPost } from '@/lib/community/spec'
+import type { XNewsPost } from '@/lib/news-x'
 import '../comm.css'
 import './news.css'
 
@@ -79,6 +88,11 @@ const SIZES: Record<Seat, string> = {
   archive: '64px',
 }
 
+/** Stories asked for: enough that one publisher's filter still fills a page. */
+const PAGE_STORIES = 80
+/** Publishers named on the strip before "more". */
+const STRIP_SOURCES = 12
+
 const fmtPrice = (n: number, money: boolean) => {
   const body = n >= 1000 ? n.toLocaleString('en-US', { maximumFractionDigits: 2 }) : n >= 1 ? n.toFixed(2) : n.toPrecision(4)
   return money ? `$${body}` : body
@@ -93,12 +107,15 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
   // The dateline is the reader's own day: set after mount, never on the server.
   const [today, setToday] = useState<string | null>(null)
   const markers = useChartMarkers(sym)
+  const [only, setOnly] = useState<string | null>(null)
+  const [allSources, setAllSources] = useState(false)
+  const [readers, setReaders] = useState<FeedPost[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
     setErr(null)
     try {
-      const r = await fetch(`/api/news?symbol=${encodeURIComponent(sym)}&limit=30`, { cache: 'no-store' })
+      const r = await fetch(`/api/news?symbol=${encodeURIComponent(sym)}&limit=${PAGE_STORIES}`, { cache: 'no-store' })
       const d = (await r.json().catch(() => ({}))) as NewsResponse & { error?: string }
       if (!r.ok) throw new Error(d.error ?? notAnswering('The news feed'))
       setNews(d)
@@ -143,11 +160,17 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
     }
   }, [sym])
 
-  const feedLabel = news && news.feed !== 'none' ? NEWS_FEED_LABELS[news.feed] : null
-  const page = useMemo(() => frontPage(news?.items ?? []), [news])
+  // The publishers on the page, most stories first. One of them picked = only its stories, dealt again.
+  const sources = useMemo(() => news?.sources ?? sourceCounts(news?.items ?? []), [news])
+  const picked = only && sources.some((s) => s.source === only) ? only : null
+  const shown = useMemo(() => (picked ? (news?.items ?? []).filter((it) => it.source === picked) : (news?.items ?? [])), [news, picked])
+  const page = useMemo(() => frontPage(shown), [shown])
   const onIds = useMemo(() => new Set(markers.map((m) => m.id)), [markers])
   const money = pair.source !== 'index'
-  const count = news?.items.length ?? 0
+  const count = shown.length
+  const total = news?.items.length ?? 0
+  const viaLabel = sources.length === 1 ? `Via ${sources[0].source}` : sources.length > 1 ? `${sources.length} publishers` : null
+  const strip = allSources ? sources : sources.slice(0, STRIP_SOURCES)
   const cols = page.seconds.length === 0 ? 1 : page.briefs.length === 0 ? 2 : 3
 
   const story = (item: NewsItem, seat: Seat) => (
@@ -161,7 +184,7 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
         <h2 className="gaz__name">{nameplate(symbolName(sym))}</h2>
         <div className="gaz__ed">
           <span className="gaz__via">
-            {feedLabel ? `Via ${feedLabel}` : `${sym} headlines`}
+            {viaLabel ?? `${sym} headlines`}
             {news?.asOf ? ` · as of ${ageLabel(news.asOf)}` : ''}
           </span>
           <button type="button" className="gaz__refresh" onClick={() => void load()} disabled={loading} aria-label="Refresh headlines">
@@ -172,8 +195,8 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
 
       <div className="gaz__strip">
         <span>
-          {count > 0 ? `${count} ${count === 1 ? 'story' : 'stories'} · newest first` : loading ? 'Reading the wires' : `${sym} headlines`}
-          {feedLabel && <span className="gaz__stripvia"> · via {feedLabel}</span>}
+          {count > 0 ? `${count} ${count === 1 ? 'story' : 'stories'}${picked ? ` from ${picked}` : ''} · newest first` : loading ? 'Reading the wires' : `${sym} headlines`}
+          {viaLabel && !picked && <span className="gaz__stripvia"> · {viaLabel.toLowerCase()}</span>}
         </span>
         {markers.length > 0 && (
           <span className="gaz__marks" aria-live="polite">
@@ -187,10 +210,34 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
         )}
       </div>
 
+      {sources.length > 1 && (
+        <nav className="gaz__srcs" aria-label="Publishers on this page" data-news="sources">
+          <button type="button" className={picked ? 'gaz__srcchip' : 'gaz__srcchip is-on'} aria-pressed={!picked} onClick={() => setOnly(null)}>
+            All <b>{total}</b>
+          </button>
+          {strip.map((s) => (
+            <button
+              key={s.source}
+              type="button"
+              className={picked === s.source ? 'gaz__srcchip is-on' : 'gaz__srcchip'}
+              aria-pressed={picked === s.source}
+              onClick={() => setOnly(picked === s.source ? null : s.source)}
+            >
+              {s.source} <b>{s.count}</b>
+            </button>
+          ))}
+          {sources.length > STRIP_SOURCES && (
+            <button type="button" className="gaz__srcchip gaz__srcmore" aria-expanded={allSources} onClick={() => setAllSources((v) => !v)}>
+              {allSources ? 'Fewer' : `${sources.length - STRIP_SOURCES} more`}
+            </button>
+          )}
+        </nav>
+      )}
+
       {err && <p className="mkc__err">{err}</p>}
       {!news && loading && !err && <FrontSkeleton />}
       {!err && news && news.items.length === 0 && (
-        <div className="mkc__empty">No headlines for {sym} in the last two weeks from any feed we read. The tape still trades — try the community tab.</div>
+        <div className="mkc__empty">No headlines for {sym} in the last three weeks from any publisher we read. The tape still trades — try the community tab.</div>
       )}
 
       {page.lead && (
@@ -208,6 +255,8 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
         </section>
       )}
 
+      {readers.length > 0 && <ReaderArticles symbol={sym} posts={readers} onPosts={setReaders} />}
+
       {page.features.length > 0 && (
         <section className="gaz__sec" aria-label="More headlines">
           <h3 className="gaz__label">
@@ -216,6 +265,8 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
           <div className="gaz__grid">{page.features.map((it) => story(it, 'feature'))}</div>
         </section>
       )}
+
+      <OnX symbol={sym} />
 
       {page.archive.length > 0 && (
         <section className="gaz__sec" aria-label="Earlier headlines">
@@ -226,7 +277,7 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
         </section>
       )}
 
-      <PinnedLinks symbol={sym} />
+      {readers.length === 0 && <ReaderArticles symbol={sym} posts={readers} onPosts={setReaders} />}
     </div>
   )
 }
@@ -361,12 +412,14 @@ function FrontSkeleton() {
   )
 }
 
-/** Links the community pinned to this symbol — kind 'link' posts. */
-function PinnedLinks({ symbol }: { symbol: string }) {
+/** READERS: links readers added to this symbol, the community feed's own
+ *  `link` rows, voted up and down (one vote a proven reader), hottest first.
+ *  Adding one takes a sign-in; the page's own title rides along. */
+function ReaderArticles({ symbol, posts, onPosts }: { symbol: string; posts: FeedPost[]; onPosts: (posts: FeedPost[]) => void }) {
   const session = useSession()
   const pathname = usePathname()
   const search = useSearchParams()
-  const [posts, setPosts] = useState<PublicPost[]>([])
+  const [open, setOpen] = useState(false)
   const [url, setUrl] = useState('')
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
@@ -375,19 +428,19 @@ function PinnedLinks({ symbol }: { symbol: string }) {
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch(`/api/posts?symbol=${encodeURIComponent(symbol)}&kind=link&limit=20`, { cache: 'no-store' })
-      const d = (await r.json()) as { posts?: PublicPost[] }
-      setPosts(d.posts ?? [])
+      const r = await fetch(`/api/feed?symbol=${encodeURIComponent(symbol)}&kind=link&sort=hot&window=all&limit=20`, { cache: 'no-store' })
+      const d = (await r.json()) as { posts?: FeedPost[] }
+      onPosts(d.posts ?? [])
     } catch {
       /* the list is optional */
     }
-  }, [symbol])
+  }, [symbol, onPosts])
 
   useEffect(() => {
     void load()
   }, [load])
 
-  const pin = async () => {
+  const add = async () => {
     setBusy(true)
     setMsg(null)
     try {
@@ -400,7 +453,7 @@ function PinnedLinks({ symbol }: { symbol: string }) {
       if (!r.ok) throw new Error(d.error ?? notAnswering('The board'))
       setUrl('')
       setTitle('')
-      setMsg('Pinned.')
+      setMsg('Added.')
       await load()
     } catch (e) {
       setMsg(shownError(e, 'The board'))
@@ -410,26 +463,32 @@ function PinnedLinks({ symbol }: { symbol: string }) {
   }
 
   return (
-    <section className="gaz__sec gaz__community" aria-label="Community-pinned links">
-      <h3 className="gaz__label">
-        <span>Pinned by the community</span>
+    <section className="gaz__sec gaz__community" aria-label="Articles added by readers" data-news="readers">
+      <h3 className="gaz__label gaz__label--row">
+        <span>From readers</span>
+        {session.address && !open && (
+          <button type="button" className="gaz__add" onClick={() => setOpen(true)}>
+            <Plus aria-hidden /> Add an article
+          </button>
+        )}
       </h3>
-      {posts.length === 0 && <p className="mkc__note">Nothing pinned to {symbol} yet. Paste an https link below — the page&rsquo;s own title rides along.</p>}
+      {posts.length === 0 && <p className="mkc__note">No reader has added an article to {symbol} yet. Add one: any public https page, and readers vote it up or down.</p>}
       {posts.length > 0 && (
-        <div className="gaz__archive">
+        <div className="gaz__readers">
           {posts.map((p) => (
-            <article key={p.id} className="gaz__story gaz__story--archive">
+            <article key={p.id} className="gaz__reader">
+              <VoteButtons postId={p.id} score={p.score} myVote={p.myVote} layout="col" />
               <div className="gaz__text">
                 <p className="gaz__kicker">
                   <span className="gaz__src">{p.linkUrl ? hostOf(p.linkUrl) : 'link'}</span>
                   <span aria-hidden>·</span>
-                  <span className="mkp__author">pinned by {p.authorLabel}</span>
+                  <span className="mkp__author">added by {p.authorLabel}</span>
                   <span aria-hidden>·</span>
                   <time dateTime={new Date(p.createdAt * 1000).toISOString()}>{ageLabel(p.createdAt)}</time>
                 </p>
                 {p.linkUrl && (
                   <h4 className="gaz__hed">
-                    <a className="gaz__link" href={p.linkUrl} target="_blank" rel="noopener noreferrer nofollow ugc">
+                    <a className="gaz__link gaz__link--inline" href={p.linkUrl} target="_blank" rel="noopener noreferrer nofollow ugc">
                       {p.title}
                       <ArrowUpRight className="gaz__out" aria-hidden />
                     </a>
@@ -442,27 +501,122 @@ function PinnedLinks({ symbol }: { symbol: string }) {
         </div>
       )}
       {session.address ? (
-        <form
-          className="mkn__pinform"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!busy && url.trim()) void pin()
-          }}
-        >
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://… (public https page)" inputMode="url" aria-label="Link to pin" />
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (optional — read from the page)" maxLength={120} aria-label="Pinned link title" style={{ flexBasis: 200 }} />
-          <button type="submit" className="mkc__cta" disabled={busy || !url.trim()}>
-            {busy ? 'Pinning…' : 'Pin link'}
-          </button>
-          {msg && <span className={msg === 'Pinned.' ? 'mkc__note' : 'mkc__err'}>{msg}</span>}
-        </form>
+        (open || posts.length === 0) && (
+          <form
+            className="mkn__pinform"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!busy && url.trim()) void add()
+            }}
+          >
+            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://… (public https page)" inputMode="url" aria-label="Article link" />
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (optional — read from the page)" maxLength={120} aria-label="Article title" style={{ flexBasis: 200 }} />
+            <button type="submit" className="mkc__cta" disabled={busy || !url.trim()}>
+              {busy ? 'Adding…' : 'Add article'}
+            </button>
+            {msg && <span className={msg === 'Added.' ? 'mkc__note' : 'mkc__err'}>{msg}</span>}
+          </form>
+        )
       ) : (
         <div className="mkp__door">
-          <span>Pin a link to {symbol} — one free signature, no account form.</span>
+          <span>Add an article to {symbol} — one free signature, no account form.</span>
           {/* Rule 6: the unified sign-in door, redirect back to this tab. */}
-          <CreateAccountButton className="mkc__cta" label="Sign in to pin" redirectTo={here} />
+          <CreateAccountButton className="mkc__cta" label="Sign in to add" redirectTo={here} />
         </div>
       )}
+    </section>
+  )
+}
+
+interface XResponse {
+  cashtag: string | null
+  posts: XNewsPost[]
+  asOf: number | null
+  links: { latest: string; top: string } | null
+}
+
+const fmtCount = (n: number) => (n >= 10_000 ? `${Math.round(n / 1000)}K` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n))
+
+/** ON X: the posts the server holds for this symbol's cashtag (/api/news/x,
+ *  a read of what a scheduled pull already stored; a page view never asks X
+ *  anything), most liked or newest, and X's own search for the rest. A symbol
+ *  with no cashtag shows nothing. */
+function OnX({ symbol }: { symbol: string }) {
+  const [x, setX] = useState<XResponse | null>(null)
+  const [by, setBy] = useState<'best' | 'latest'>('best')
+
+  useEffect(() => {
+    let live = true
+    setX(null)
+    fetch(`/api/news/x?symbol=${encodeURIComponent(symbol)}`)
+      .then((r) => (r.ok ? (r.json() as Promise<XResponse>) : null))
+      .then((d) => {
+        if (live && d) setX(d)
+      })
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [symbol])
+
+  const posts = useMemo(() => {
+    const list = [...(x?.posts ?? [])]
+    list.sort((a, b) => (by === 'best' ? b.likes - a.likes || b.postedAt - a.postedAt : b.postedAt - a.postedAt || b.likes - a.likes))
+    return list.slice(0, 9)
+  }, [x, by])
+
+  if (!x?.cashtag || !x.links) return null
+  return (
+    <section className="gaz__sec gaz__x" aria-label={`${x.cashtag} on X`} data-news="x">
+      <h3 className="gaz__label gaz__label--row">
+        <span>{x.cashtag} on X</span>
+        {posts.length > 0 && (
+          <span className="gaz__xby" role="group" aria-label="Order">
+            <button type="button" className={by === 'best' ? 'is-on' : undefined} aria-pressed={by === 'best'} onClick={() => setBy('best')}>
+              Best
+            </button>
+            <button type="button" className={by === 'latest' ? 'is-on' : undefined} aria-pressed={by === 'latest'} onClick={() => setBy('latest')}>
+              Latest
+            </button>
+          </span>
+        )}
+      </h3>
+      {posts.length > 0 && (
+        <div className="gaz__xgrid">
+          {posts.map((p) => (
+            <article key={p.id} className="gaz__xpost">
+              <p className="gaz__kicker">
+                <span className="gaz__src">{p.authorName ?? 'A post on X'}</span>
+                {p.authorHandle && <span className="gaz__xhandle">@{p.authorHandle}</span>}
+                <span aria-hidden>·</span>
+                <time dateTime={new Date(p.postedAt * 1000).toISOString()}>{ageLabel(p.postedAt)}</time>
+              </p>
+              <p className="gaz__xtext">
+                <a className="gaz__link" href={p.url} target="_blank" rel="noopener noreferrer nofollow ugc">
+                  {p.text}
+                </a>
+              </p>
+              <p className="gaz__xmeta">
+                <span>
+                  <Heart aria-hidden /> {fmtCount(p.likes)}
+                </span>
+                <span>
+                  <Repeat2 aria-hidden /> {fmtCount(p.reposts)}
+                </span>
+              </p>
+            </article>
+          ))}
+        </div>
+      )}
+      <p className="gaz__xout">
+        {posts.length > 0 ? `The most-liked ${x.cashtag} posts we hold${x.asOf ? `, read ${ageLabel(x.asOf)}` : ''}. The rest is on X:` : `What people are posting about ${x.cashtag}, on X itself:`}
+        <a href={x.links.latest} target="_blank" rel="noopener noreferrer nofollow">
+          Latest <ArrowUpRight aria-hidden />
+        </a>
+        <a href={x.links.top} target="_blank" rel="noopener noreferrer nofollow">
+          Top <ArrowUpRight aria-hidden />
+        </a>
+      </p>
     </section>
   )
 }

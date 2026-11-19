@@ -33,6 +33,10 @@
     {
       "path": "/api/cron/policy-pool",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/news",
+      "schedule": "*/10 * * * *"
     }
   ],
   "functions": {
@@ -43,6 +47,9 @@
       "maxDuration": 300
     },
     "app/api/cron/prints/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/news/route.ts": {
       "maxDuration": 60
     }
   }
