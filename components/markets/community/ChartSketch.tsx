@@ -80,7 +80,7 @@ export default function ChartSketch({ state, caption }: { state: ChartState; cap
           if (l.kind === 'zone') {
             const top = y(Math.max(l.p1, l.p2))
             const bot = y(Math.min(l.p1, l.p2))
-            const color = l.action?.kind === 'sell' || l.action?.kind === 'stop' || l.action?.kind === 'protect' ? 'var(--sell)' : 'var(--accent)'
+            const color = l.action?.kind === 'sell' || l.action?.kind === 'stop' || l.action?.kind === 'protect' ? 'var(--sell)' : 'var(--up)'
             return (
               <g key={l.id}>
                 <rect x={0} y={top} width={W - PAD_R} height={Math.max(2, bot - top)} fill={color} opacity="0.16" />
@@ -100,7 +100,7 @@ export default function ChartSketch({ state, caption }: { state: ChartState; cap
           }
           if (l.kind === 'h') {
             const yy = y(l.price)
-            const color = l.action?.kind === 'sell' || l.action?.kind === 'stop' || l.action?.kind === 'protect' ? 'var(--sell)' : 'var(--accent)'
+            const color = l.action?.kind === 'sell' || l.action?.kind === 'stop' || l.action?.kind === 'protect' ? 'var(--sell)' : 'var(--up)'
             return (
               <g key={l.id}>
                 <line x1={0} x2={W - PAD_R} y1={yy} y2={yy} stroke={color} strokeWidth="1.2" strokeDasharray={l.action ? undefined : '4 3'} />

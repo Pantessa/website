@@ -19,9 +19,9 @@
 /* ── The sentence ─────────────────────────────────────────────────────── */
 .hm-say { display: flex; align-items: center; gap: var(--sp-3); width: 100%; max-width: 560px; min-height: 52px; box-sizing: border-box; margin-top: var(--sp-4); padding: 4px 4px 4px var(--sp-4); border: 1px solid var(--accent); border-radius: var(--r-pill); background: var(--surf-1); text-align: left; }
 .hm-say__text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mk-font-ui); font-size: var(--fs-lg); color: var(--fg); animation: hm-say-in 320ms var(--ease-out) both; }
-.hm-say__go { flex: 0 0 auto; min-height: 44px; padding: 0 var(--sp-4); border: 0; border-radius: var(--r-pill); background: var(--accent); color: var(--ink, var(--bg)); font-family: var(--mk-font-ui); font-size: var(--fs-base); font-weight: 600; white-space: nowrap; cursor: pointer; outline: none; transition: filter var(--dur-1) ease; }
+.hm-say__go { flex: 0 0 auto; min-height: 44px; padding: 0 var(--sp-4); border: 0; border-radius: var(--r-pill); background: var(--hot); color: var(--ink, var(--bg)); font-family: var(--mk-font-ui); font-size: var(--fs-base); font-weight: 600; white-space: nowrap; cursor: pointer; outline: none; transition: filter var(--dur-1) ease; }
 .hm-say__go:hover { filter: brightness(1.08); }
-.hm-say__go:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.hm-say__go:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--hot); }
 .hm-say__go:disabled { opacity: 0.5; cursor: default; }
 
 /* ── A tile ───────────────────────────────────────────────────────────── */
@@ -30,9 +30,25 @@
 .hm__tile { position: relative; flex: 0 0 116px; min-width: 0; min-height: 112px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; gap: var(--sp-1); margin: 0; padding: var(--sp-3); border: 1px solid color-mix(in srgb, var(--line) 62%, transparent); border-radius: var(--r-md); background: var(--surf-1); color: var(--fg); font: inherit; text-align: left; text-decoration: none; scroll-snap-align: start; cursor: pointer; outline: none; transition: border-color var(--dur-2) ease, background-color var(--dur-2) ease, color var(--dur-2) ease; }
 .hm__tile:hover { border-color: var(--line-2); }
 .hm__tile:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
-.hm__tile.is-up { --hm-tone: var(--mk-up, var(--accent)); }
+.hm__tile.is-up { --hm-tone: var(--mk-up, var(--up)); }
 .hm__tile.is-down { --hm-tone: var(--mk-down, var(--sell)); }
-.hm__tile.is-lit { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surf-1)); }
+.hm__tile.is-lit { border-color: var(--hm-h); background: color-mix(in srgb, var(--hm-h) 14%, var(--surf-1)); }
+.hm__tile--mkt:hover { border-color: var(--hm-h); }
+
+/* THE SPLIT (2026-11-19): every tile has a hue of its own, and the hue steps
+   along the mosaic's diagonal from teal at the top left to pink at the lower
+   right (the X header's own field). `--hm-h` is the lit tone and `--hm-h2`
+   its shade. No emerald and no lime here: on a market tile green means up,
+   and lime is held for the pick. Keyed on the tile's own name, so a tile
+   that moves in the table keeps its hue. */
+.hm__tile { --hm-h: var(--neon-violet); --hm-h2: var(--neon-violet-2); }
+.hm__tile:is([data-hero-tile='market:spx'], [data-hero-tile='app:uniswap']) { --hm-h: var(--neon-teal); --hm-h2: var(--neon-teal-2); }
+.hm__tile:is([data-hero-tile='app:lido'], [data-hero-tile='app:morpho'], [data-hero-tile='market:gold']) { --hm-h: var(--neon-cyan); --hm-h2: var(--neon-cyan-2); }
+.hm__tile:is([data-hero-tile='market:eth'], [data-hero-tile='market:oil'], .hm__tile--stock) { --hm-h: var(--neon-blue); --hm-h2: var(--neon-blue-2); }
+.hm__tile:is([data-hero-tile='market:btc'], [data-hero-tile='app:cow']) { --hm-h: var(--neon-violet); --hm-h2: var(--neon-violet-2); }
+.hm__tile:is([data-hero-tile='app:aave'], [data-hero-tile='market:vix'], [data-hero-tile='app:hyperliquid']) { --hm-h: var(--neon-purple); --hm-h2: var(--neon-purple-2); }
+.hm__tile:is([data-hero-tile='market:ndx'], [data-hero-tile='market:us10y'], [data-hero-tile='app:near'], [data-hero-tile='called']) { --hm-h: var(--neon-magenta); --hm-h2: var(--neon-magenta-2); }
+.hm__tile:is([data-hero-tile='app:robinhood'], [data-hero-tile='app:opensea'], [data-hero-tile='market:dxy'], .hm__tile--stock ~ .hm__tile--stock) { --hm-h: var(--neon-pink); --hm-h2: var(--neon-pink-2); }
 
 /* A market: its name, the day as a line, the number and the move. */
 .hm__label { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; white-space: nowrap; }
@@ -41,25 +57,28 @@
 .hm__spark path { fill: none; stroke: var(--muted-2); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; transition: stroke var(--dur-2) ease; }
 .hm__tile:hover .hm__spark path { stroke: var(--hm-tone); }
 .hm__tile.is-lit .hm__spark { animation: hm-grow 1400ms var(--ease-out) both, hm-regrow 900ms var(--ease-out); animation-delay: calc(var(--hm-i, 0) * 55ms + 120ms), 0ms; }
-.hm__tile.is-lit .hm__spark path { stroke: var(--accent); stroke-width: 1.8; }
+.hm__tile.is-lit .hm__spark path { stroke: var(--hm-h); stroke-width: 1.8; }
 .hm__nums { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0 var(--sp-2); font-variant-numeric: tabular-nums; }
 .hm__val { font-size: var(--fs-base); color: var(--fg); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .hm__chg { font-size: var(--fs-sm); color: var(--hm-tone); white-space: nowrap; }
 .hm__big { font-size: var(--fs-xl); color: var(--hm-tone); font-variant-numeric: tabular-nums; }
 .hm__tile--stock .hm__val { font-size: var(--fs-sm); color: var(--muted); }
 
-/* A dapp: the mark, nothing else. */
-.hm__tile--app { align-items: center; justify-content: center; color: var(--muted); }
-.hm__tile--app:hover, .hm__tile--app:focus-visible, .hm__tile--app.is-lit { color: var(--fg); }
+/* A dapp: the mark, nothing else. At rest the tile is the stone unlit, two
+   near-black tones either side of the cut. Lit (the sentence would use it,
+   or a pointer is on it) it is the stone in its own two neons with the mark
+   cut out of it in the ground's ink. Flat tones and a hard cut, no blend. */
+.hm__tile--app { align-items: center; justify-content: center; color: var(--muted); background: linear-gradient(135deg, var(--surf-2) 50%, var(--surf-1) 50%); }
+.hm__tile--app:hover, .hm__tile--app:focus-visible, .hm__tile--app.is-lit { color: var(--neon-ink); border-color: transparent; background: linear-gradient(135deg, var(--hm-h) 50%, var(--hm-h2) 50%); }
 .hm__mark { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; font-family: var(--mk-font-display, 'Fraunces', Georgia, serif); font-size: var(--fs-2xl); transition: transform var(--dur-2) var(--ease-out); }
 .hm__tile--app:hover .hm__mark, .hm__tile--app.is-lit .hm__mark { transform: scale(1.08); }
 
 /* The two wide tiles: the stock buy (the one filled tile) and the record. */
 .hm__tile--buy, .hm__tile--called { flex-basis: 232px; order: -1; }
-.hm__tile--buy { border-color: var(--accent); background: var(--accent); color: var(--ink, var(--bg)); }
-.hm__tile--buy:hover { border-color: var(--accent); filter: brightness(1.06); }
-.hm__tile--buy.is-lit { background: var(--accent); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent); }
-.hm__tile--called:hover { border-color: var(--accent); }
+.hm__tile--buy { border-color: var(--up); background: var(--up); color: var(--ink, var(--bg)); }
+.hm__tile--buy:hover { border-color: var(--up); filter: brightness(1.06); }
+.hm__tile--buy.is-lit { background: var(--up); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--up) 55%, transparent); }
+.hm__tile--called:hover { border-color: var(--hm-h); }
 .hm__eyebrow { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
 .hm__tile--called .hm__eyebrow { color: var(--muted); }
 .hm__title { font-family: var(--mk-font-display, 'Fraunces', Georgia, serif); font-weight: 600; font-size: var(--fs-xl); line-height: 1.08; letter-spacing: -0.015em; text-wrap: balance; }
@@ -70,7 +89,7 @@
 .hm__foot > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hm__tile--called .hm__foot { color: var(--muted); }
 .hm__arrow { font-size: var(--fs-lg); transition: transform var(--dur-2) var(--ease-out); }
-.hm__tile--called .hm__arrow { color: var(--accent); }
+.hm__tile--called .hm__arrow { color: var(--hm-h); }
 .hm__tile:hover .hm__arrow { transform: translateX(3px); }
 
 @media (pointer: coarse) {

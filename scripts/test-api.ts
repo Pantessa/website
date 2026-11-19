@@ -16355,13 +16355,14 @@ async function main() {
       !/https?:\/\/(?!www\.w3\.org)/.test(gemHouse),
   )
   check(
-    'gem mark: an accent re-inks BOTH pieces via fill-opacity steps; the house form keeps the emerald tones',
-    gemHouse.includes('#159B68') &&
-      gemHouse.includes('#3ECF8E') &&
+    'gem mark: an accent re-inks BOTH pieces via fill-opacity steps; the house form keeps its two neons (magenta lit, violet shade)',
+    gemHouse.includes('#7B4DFF') &&
+      gemHouse.includes('#FF48C4') &&
+      !gemHouse.includes('#3ECF8E') &&
       !gemHouse.includes('fill-opacity') &&
       (gemBrand.match(/<path[^>]*fill="#ff4198"/g) ?? []).length === 2 &&
       gemBrand.includes('fill-opacity="0.72"') &&
-      !gemBrand.includes('#3ECF8E') &&
+      !gemBrand.includes('#FF48C4') &&
       gemStrip(gemHouse) === gemStrip(gemBrand),
   )
   // Drift guard: a card that re-inlines its own mark silently stops tracking

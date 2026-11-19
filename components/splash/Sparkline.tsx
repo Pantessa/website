@@ -121,7 +121,7 @@ export function Sparkline({
   const [gid] = useState(() => `spk${++gradSeq}`)
   if (!data) return null
   const up = (data.changePctSeries ?? 0) >= 0
-  const tone = up ? 'var(--accent)' : 'var(--sell)'
+  const tone = up ? 'var(--up)' : 'var(--sell)'
   const { line, area } = sparkPath(data.closes, width, height)
   return (
     <button
@@ -158,7 +158,7 @@ export function Delta24({ symbol, className }: { symbol?: string | null; classNa
   return (
     <span
       className={`mono text-[10px] tabular-nums ${className ?? ''}`}
-      style={{ color: up ? 'var(--accent)' : 'var(--sell)' }}
+      style={{ color: up ? 'var(--up)' : 'var(--sell)' }}
       title={`${data.label} · 24h change`}
     >
       {up ? '▲' : '▼'} {Math.abs(v).toFixed(1)}%

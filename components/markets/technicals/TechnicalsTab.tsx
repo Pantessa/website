@@ -44,7 +44,7 @@ function fmtLevel(v: number | undefined): string {
 const SIGNAL_WORD: Record<Row['signal'], string> = { buy: 'Buy', neutral: 'Neutral', sell: 'Sell' }
 
 function SignalCell({ signal }: { signal: Row['signal'] }) {
-  const color = signal === 'buy' ? 'var(--accent)' : signal === 'sell' ? 'var(--sell)' : 'var(--muted)'
+  const color = signal === 'buy' ? 'var(--up)' : signal === 'sell' ? 'var(--sell)' : 'var(--muted)'
   return (
     <span className="mono text-[10.5px] font-medium uppercase tracking-wider" style={{ color }}>
       {SIGNAL_WORD[signal]}
@@ -123,7 +123,7 @@ function PivotTable({ pivots, period, last }: { pivots: NonNullable<TechnicalsAp
                 const above = v !== undefined && last != null && v > last
                 const below = v !== undefined && last != null && v < last
                 return (
-                  <td key={f.key} className="mono px-3 py-1.5 text-right tabular-nums" style={{ color: above ? 'var(--sell)' : below ? 'var(--accent)' : 'var(--fg)' }}>
+                  <td key={f.key} className="mono px-3 py-1.5 text-right tabular-nums" style={{ color: above ? 'var(--sell)' : below ? 'var(--up)' : 'var(--fg)' }}>
                     {fmtLevel(v)}
                   </td>
                 )

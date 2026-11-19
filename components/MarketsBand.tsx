@@ -75,7 +75,7 @@ const METERS: { k: string; theirs: string; ours: string }[] = [
 ]
 
 export default function MarketsBand() {
-  const chart = candleSvg(SERIES, { width: 720, height: 220, up: 'var(--accent)', down: 'var(--sell)', grid: 'var(--line)', count: 60 })
+  const chart = candleSvg(SERIES, { width: 720, height: 220, up: 'var(--up)', down: 'var(--sell)', grid: 'var(--line)', count: 60 })
   const session = sessionLine('stock', { exchangeOpen: false })
   return (
     <section className="mkt" id="markets" data-markets-band data-compare-band>

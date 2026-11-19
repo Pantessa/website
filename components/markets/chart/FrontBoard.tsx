@@ -836,7 +836,7 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
           <p className="bf__legend mono">
             {mode === 'heat' ? (
               <span className="bf__heatkey">
-                short <i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 100%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 55%, var(--surf-1))' }} /><i style={{ background: 'var(--surf-1)' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--accent)) 55%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--accent)) 100%, var(--surf-1))' }} /> long · against the year's typical day · full ink 8 points off it
+                short <i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 100%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 55%, var(--surf-1))' }} /><i style={{ background: 'var(--surf-1)' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--up)) 55%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--up)) 100%, var(--surf-1))' }} /> long · against the year's typical day · full ink 8 points off it
               </span>
             ) : rows.length ? (
               <span title={mode === 'perps' ? 'Estimated from open interest that appeared on each bar, across 5x to 50x leverage: where the positions probably break, not where price will go.' : 'Orders resting on Coinbase Exchange’s book, read every 15 seconds.'}>

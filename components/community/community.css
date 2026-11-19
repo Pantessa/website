@@ -154,7 +154,7 @@ button.cmy-video:hover .cmy-video__play { transform: scale(1.06); background: va
 .cmy-compose__hint { font-size: 12px; line-height: 1.45; color: var(--muted-2); }
 .cmy-compose__hint a { color: var(--accent); }
 .cmy-compose__hint a:hover { text-decoration: underline; text-underline-offset: 2px; }
-.cmy-compose__hint--ok { color: var(--accent); }
+.cmy-compose__hint--ok { color: var(--up); }
 .cmy-compose__hint--bad { color: var(--sell); }
 .cmy-compose__check { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; font-size: 13px; color: var(--muted); cursor: pointer; }
 .cmy-compose__check input { width: 16px; height: 16px; accent-color: var(--accent); }

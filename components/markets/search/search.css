@@ -57,17 +57,17 @@
 .ssx__last { font-size: 13.5px; font-weight: 500; white-space: nowrap; }
 .ssx__dash { color: var(--muted-2); }
 .ssx__chg { font-size: 11.5px; font-weight: 500; white-space: nowrap; }
-.ssx__chg--up { color: var(--mk-up, var(--accent)); }
+.ssx__chg--up { color: var(--mk-up, var(--up)); }
 .ssx__chg--down { color: var(--mk-down, var(--sell)); }
 .ssx__chg--flat { color: var(--muted); }
 
 .ssx-spark { display: block; overflow: visible; }
 .ssx-spark--none { display: block; }
 .ssx-spark__line { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
-.ssx-spark--up .ssx-spark__line { stroke: var(--mk-up, var(--accent)); }
+.ssx-spark--up .ssx-spark__line { stroke: var(--mk-up, var(--up)); }
 .ssx-spark--down .ssx-spark__line { stroke: var(--mk-down, var(--sell)); }
 .ssx-spark__area { stroke: none; opacity: .1; }
-.ssx-spark--up .ssx-spark__area { fill: var(--mk-up, var(--accent)); }
+.ssx-spark--up .ssx-spark__area { fill: var(--mk-up, var(--up)); }
 .ssx-spark--down .ssx-spark__area { fill: var(--mk-down, var(--sell)); }
 
 .ssx__none { margin: 0; padding: 26px 14px 18px; font-size: 14px; line-height: 1.5; color: var(--muted); }

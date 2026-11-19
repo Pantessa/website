@@ -10,7 +10,7 @@
 .dp__chip--other { border: 1px solid var(--line); }
 .dp__chip--other.is-on { color: var(--fg); background: transparent; border-color: var(--mk-series-2, #f59e0b); }
 .dp__sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
-.dp__sw--bid { background: var(--mk-up, var(--accent)); }
+.dp__sw--bid { background: var(--mk-up, var(--up)); }
 .dp__sw--ask { background: var(--mk-down, var(--sell)); }
 .dp__sw--other { width: 10px; height: 0; border-top: 2px dashed var(--mk-series-2, #f59e0b); border-radius: 0; }
 .dp__legend { display: flex; flex-wrap: nowrap; gap: 4px 12px; margin: 0 0 0 auto; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
@@ -21,7 +21,7 @@
 .dp__empty--why { font-family: inherit; font-size: 12px; letter-spacing: 0; text-transform: none; line-height: 1.5; max-width: 42ch; margin-inline: auto; color: var(--muted); }
 .dp__readout { position: absolute; top: 30px; z-index: 2; display: flex; flex-direction: column; gap: 3px; width: 220px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--surf-1) 92%, transparent); font-size: 10px; letter-spacing: 0.04em; color: var(--muted); pointer-events: auto; }
 .dp__readout b { font-size: 13px; letter-spacing: 0; color: var(--fg); }
-.dp__readout[data-side="bid"] b { color: var(--mk-up, var(--accent)); }
+.dp__readout[data-side="bid"] b { color: var(--mk-up, var(--up)); }
 .dp__readout[data-side="ask"] b { color: var(--mk-down, var(--sell)); }
 .dp__cost { color: var(--fg); }
 .dp__act { margin-top: 4px; height: 26px; padding: 0 10px; border-radius: var(--r-pill); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink, #04140c); background: var(--accent); align-self: flex-start; }
@@ -30,7 +30,7 @@
 .dp__print { display: grid; grid-template-columns: 36px 1fr auto auto 54px; gap: 10px; align-items: baseline; height: 16px; line-height: 16px; white-space: nowrap; }
 .dp__print:first-child { color: var(--fg); animation: dp-flash .9s ease-out; }
 .dp__print-side { font-weight: 600; letter-spacing: 0.1em; }
-.dp__print--buy .dp__print-side { color: var(--mk-up, var(--accent)); }
+.dp__print--buy .dp__print-side { color: var(--mk-up, var(--up)); }
 .dp__print--sell .dp__print-side { color: var(--mk-down, var(--sell)); }
 .dp__print-usd { color: var(--fg); }
 .dp__print-tag { text-align: right; color: var(--muted-2); letter-spacing: 0.1em; text-transform: uppercase; }

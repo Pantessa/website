@@ -336,7 +336,7 @@ export default function WalletRebalance({
                       <span
                         className={cn(
                           'ml-auto mono tabular-nums',
-                          r.action === 'buy' ? 'text-[color:var(--accent)]' : r.action === 'sell' ? 'text-[color:var(--sell)]' : 'text-[color:var(--muted-2)]',
+                          r.action === 'buy' ? 'text-[color:var(--up)]' : r.action === 'sell' ? 'text-[color:var(--sell)]' : 'text-[color:var(--muted-2)]',
                         )}
                       >
                         {r.action === 'buy'

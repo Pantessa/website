@@ -10,7 +10,7 @@
 
 .pulse-seat { container-type: inline-size; container-name: pulse; min-width: 0; }
 .pulse {
-  --pulse-up: var(--mk-up, var(--accent));
+  --pulse-up: var(--mk-up, var(--up));
   --pulse-down: var(--mk-down, var(--sell));
   --pulse-plot-h: 96px;
   position: relative; display: flex; flex-direction: column;

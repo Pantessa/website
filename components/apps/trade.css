@@ -18,7 +18,7 @@
 .apgt-muted { color: var(--muted-2); }
 .apgt-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .apgt-r { text-align: right; justify-self: end; }
-.apgt-pos { color: var(--accent); }
+.apgt-pos { color: var(--up); }
 .apgt-neg { color: var(--sell, #f0776b); }
 .apgt-warn { color: var(--gold, #e5ae4a); }
 .apgt-lead { margin: 0; font-size: var(--fs-lg); line-height: 1.45; }
@@ -86,7 +86,7 @@
 .apgt-pnlbar { position: relative; flex: 1 1 auto; max-width: 64px; height: 6px; border-radius: 999px; background: var(--surf-2); overflow: hidden; }
 .apgt-pnlbar__mid { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--line-2); }
 .apgt-pnlbar__fill { position: absolute; top: 0; bottom: 0; border-radius: 999px; }
-.apgt-pnlbar__fill--pos { background: var(--accent); }
+.apgt-pnlbar__fill--pos { background: var(--up); }
 .apgt-pnlbar__fill--neg { background: var(--sell, #f0776b); }
 
 /* ── CoW: an order's fill bar under its row ──────────────────────────────── */

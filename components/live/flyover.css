@@ -4,7 +4,7 @@
    through the tokens probe (Flyover.tsx readTokens), never these variables. */
 
 .flyover {
-  --fly-up: var(--mk-up, var(--accent));
+  --fly-up: var(--mk-up, var(--up));
   --fly-down: var(--mk-down, var(--sell));
   --fly-glass: rgb(12 13 14 / 0.9);
   --fly-glass-line: rgb(255 255 255 / 0.12);

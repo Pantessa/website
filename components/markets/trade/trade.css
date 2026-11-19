@@ -73,7 +73,7 @@
 .mkt-route__tag--best { border-color: var(--accent); color: var(--accent); }
 .mkt-route__chip {
   grid-column: 3; grid-row: 1; justify-self: end;
-  min-height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--accent); background: var(--accent); color: var(--ink, #0b1210);
+  min-height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--up); background: var(--up); color: var(--ink, #0b1210);
   font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .mkt-route__chip:hover { filter: brightness(1.05); }
@@ -137,7 +137,7 @@
 .mkt-pos__label { color: var(--fg); min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .mkt-pos__sub { font-size: 10.5px; color: var(--muted-2); }
 .mkt-pos__val { font-variant-numeric: tabular-nums; color: var(--fg); white-space: nowrap; font-weight: 600; }
-.mkt-pos__val.is-pos { color: var(--accent); }
+.mkt-pos__val.is-pos { color: var(--up); }
 .mkt-pos__val.is-neg { color: var(--sell); }
 .mkt-pos__exits { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; }
 .mkt-pos__chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -176,8 +176,8 @@
 .mkt-compound__ask { display: flex; flex-direction: column; gap: 8px; }
 .mkt-compound__sentence { font-size: 13px; color: var(--fg); line-height: 1.5; margin: 0; }
 .mkt-compound__send {
-  align-self: flex-start; min-height: 38px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--accent);
-  background: var(--accent); color: var(--ink, #0b1210); font-size: 13px; font-weight: 700; cursor: pointer;
+  align-self: flex-start; min-height: 38px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--up);
+  background: var(--up); color: var(--ink, #0b1210); font-size: 13px; font-weight: 700; cursor: pointer;
 }
 .mkt-compound__send:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -203,7 +203,7 @@
 /* ── QuickAct (index-row chips; MARKETS reveals on row hover/focus) ─────── */
 .mkt-quick { display: inline-flex; gap: 4px; align-items: center; }
 .mkt-quick__chip { min-height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--line-2, var(--line)); background: transparent; color: var(--fg); font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-.mkt-quick__chip--buy { background: var(--accent); color: var(--ink, #0b1210); border-color: var(--accent); }
+.mkt-quick__chip--buy { background: var(--up); color: var(--ink, #0b1210); border-color: var(--up); }
 .mkt-quick__chip--sell { color: var(--sell); border-color: color-mix(in oklab, var(--sell) 55%, transparent); }
 .mkt-quick__chip:hover { border-color: var(--accent); }
 
@@ -289,7 +289,7 @@
 .mkt-ticket__problem { margin: 0; font-size: 12px; color: var(--sell); line-height: 1.4; overflow-wrap: anywhere; }
 .mkt-ticket__quote { margin: 0; font-size: 10.5px; color: var(--muted); letter-spacing: 0.02em; line-height: 1.4; overflow-wrap: anywhere; }
 .mkt-ticket__sent { margin: 0; font-size: 11.5px; color: var(--accent); line-height: 1.4; }
-.mkt-ticket__send { flex: 0 0 auto; min-height: 44px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--accent); background: var(--accent); color: var(--ink, #0b1210); font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; transition: filter 120ms ease, transform 120ms ease; }
+.mkt-ticket__send { flex: 0 0 auto; min-height: 44px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--up); background: var(--up); color: var(--ink, #0b1210); font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; transition: filter 120ms ease, transform 120ms ease; }
 .mkt-ticket__send:hover:not(:disabled) { filter: brightness(1.05); transform: translateY(-1px); }
 .mkt-ticket__send:disabled { opacity: 0.45; cursor: not-allowed; }
 .mkt-ticket__send--sell { background: var(--sell); border-color: var(--sell); color: #fff; }

@@ -11,7 +11,7 @@
   --army-3: #f06aa8;  /* magenta */
   --army-4: #a6e35a;  /* lime */
   --army-5: #b39cff;  /* violet */
-  --battle-up: var(--mk-up, var(--accent));
+  --battle-up: var(--mk-up, var(--up));
   --battle-down: var(--mk-down, var(--sell));
   --battle-grid: var(--mk-grid, rgb(255 255 255 / 0.07));
   --battle-horizon: var(--mk-rule, rgb(255 255 255 / 0.18));

@@ -8,7 +8,7 @@
    Site tokens only, so light mode is the token flip. */
 
 .xbd {
-  --xbd-right: var(--accent);
+  --xbd-right: var(--up);
   --xbd-wrong: var(--sell);
   --xbd-flat: var(--muted);
   --xbd-open: var(--gold);
@@ -50,7 +50,7 @@
 .xbd-card__id { display: flex; flex-direction: column; min-width: 0; }
 .xbd-card__name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 600; line-height: 1.3; }
 .xbd-card__name bdi { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.xbd-card__verified { flex: 0 0 auto; font-family: var(--xbd-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent); border-radius: var(--r-pill); padding: 1px 7px; }
+.xbd-card__verified { flex: 0 0 auto; font-family: var(--xbd-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--up); border: 1px solid var(--up); border-radius: var(--r-pill); padding: 1px 7px; }
 .xbd-card__handle { font-family: var(--xbd-mono); font-size: 11px; color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .xbd-card__tally { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }

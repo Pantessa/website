@@ -9,7 +9,7 @@
 
 .read { --read-tone: var(--muted); position: relative; display: flex; flex-direction: column; gap: var(--sp-4); margin: var(--sp-3) 0 0; padding: var(--sp-5) var(--sp-6) var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); container-type: inline-size; container-name: read; }
 .mk-lead-seat .read { margin-top: 0; }
-.read .is-up { --read-tone: var(--mk-up, var(--accent)); }
+.read .is-up { --read-tone: var(--mk-up, var(--up)); }
 .read .is-down { --read-tone: var(--mk-down, var(--sell)); }
 .read .is-flat { --read-tone: var(--muted); }
 
@@ -51,7 +51,7 @@
 .read__tile.is-on .read__tilelabel { color: var(--fg); }
 /* The tag is a dot: lit for a market that never closes, hollow for an index outside its session, absent while an index trades. */
 .read__tag { flex: 0 0 auto; width: 6px; height: 6px; border-radius: var(--r-pill); }
-.read__tag--always { background: var(--mk-up, var(--accent)); }
+.read__tag--always { background: var(--mk-up, var(--up)); }
 .read__tag--closed { box-shadow: inset 0 0 0 1px var(--muted-2); }
 .read__tilelast { font-size: var(--fs-base); font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .read__tilefoot { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
@@ -96,7 +96,7 @@
 .read__chip { min-height: 36px; padding: 0 var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--fg); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; white-space: nowrap; cursor: pointer; outline: none; transition: transform var(--dur-1) ease, filter var(--dur-1) ease, border-color var(--dur-1) ease; }
 .read__chip:hover { border-color: var(--accent); transform: translateY(-1px); }
 .read__chip:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
-.read__chip--buy { background: var(--accent); border-color: var(--accent); color: var(--ink, var(--bg)); }
+.read__chip--buy { background: var(--up); border-color: var(--up); color: var(--ink, var(--bg)); }
 .read__chip--buy:hover { filter: brightness(1.08); }
 .read__chip--sell { color: var(--mk-down, var(--sell)); border-color: color-mix(in srgb, var(--mk-down, var(--sell)) 55%, transparent); }
 .read__sentence { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--muted-2); }

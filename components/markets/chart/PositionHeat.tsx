@@ -82,7 +82,7 @@ export default function HeatView({ year, mark }: HeatViewProps) {
         <span className="poshet__k mono">Positioning by day{derivs?.source ? ` · ${derivs.source} accounts` : ''}</span>
         <span className={`poshet__v${lean === 'long' ? ' is-up' : lean === 'short' ? ' is-down' : ''}`}>{summary ? summary.headline : derivs ? 'No daily read for this coin' : failed ? 'Couldn’t read the year · retrying' : 'Reading the year…'}</span>
         <span className="poshet__key mono">
-          short <i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 100%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 55%, var(--surf-1))' }} /><i style={{ background: 'var(--surf-1)' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--accent)) 55%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--accent)) 100%, var(--surf-1))' }} /> long
+          short <i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 100%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 55%, var(--surf-1))' }} /><i style={{ background: 'var(--surf-1)' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--up)) 55%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--up)) 100%, var(--surf-1))' }} /> long
           {summary?.median != null ? ` · usual ${Math.round(summary.median * 100)}% long` : ''}
         </span>
       </header>
@@ -115,7 +115,7 @@ export function HeatGrid({ cells, source, onHover }: { cells: HeatCell[]; source
   const ink = (c: HeatCell) => {
     const tone = heatTone(c.long, center)
     if (tone === null) return 'var(--surf-1)'
-    const side = tone >= 0 ? 'var(--mk-up, var(--accent))' : 'var(--mk-down, var(--sell))'
+    const side = tone >= 0 ? 'var(--mk-up, var(--up))' : 'var(--mk-down, var(--sell))'
     return `color-mix(in oklch, ${side} ${Math.round(12 + 88 * Math.abs(tone))}%, var(--surf-1))`
   }
   const today = Math.floor(Date.now() / 1000 / DAY_SEC) * DAY_SEC

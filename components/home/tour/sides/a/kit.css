@@ -6,7 +6,7 @@
    panel answers to the frame it is given and never to the viewport. */
 
 .ta { container-type: inline-size; container-name: ta; display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; font-family: var(--mk-font-ui); color: var(--fg); }
-.ta .is-up { --ta-tone: var(--mk-up, var(--accent)); }
+.ta .is-up { --ta-tone: var(--mk-up, var(--up)); }
 .ta .is-down { --ta-tone: var(--mk-down, var(--sell)); }
 .ta .is-flat { --ta-tone: var(--muted); }
 

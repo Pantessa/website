@@ -126,7 +126,7 @@ html[data-theme='light'] .grp-choose__veil { background: rgba(16, 21, 18, .38); 
 .grp-check__steps { list-style: none; margin: 0; padding: 0; display: grid; }
 .grp-check__step { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 9px 0; box-shadow: 0 -1px 0 var(--line); min-height: 50px; }
 .grp-check__mark { display: grid; place-items: center; width: 20px; height: 20px; border: 1.5px solid var(--line-2); border-radius: 999px; color: var(--grp-ink); }
-.grp-check__step.is-done .grp-check__mark { background: var(--accent); border-color: var(--accent); }
+.grp-check__step.is-done .grp-check__mark { background: var(--up); border-color: var(--up); }
 .grp-check__text { display: grid; gap: 1px; min-width: 0; }
 .grp-check__title { font-size: 13.5px; font-weight: 600; color: var(--fg); }
 .grp-check__step.is-done .grp-check__title { color: var(--muted); }
@@ -210,7 +210,7 @@ html[data-theme='light'] .grp-choose__veil { background: rgba(16, 21, 18, .38); 
 .grp-field__k small { font-weight: 400; color: var(--muted-2); margin-left: 6px; font-size: 11.5px; }
 .grp-field__note { font-size: 12px; color: var(--muted-2); }
 .grp-field__note.is-bad { color: var(--sell); }
-.grp-field__note.is-good { color: var(--accent); }
+.grp-field__note.is-good { color: var(--up); }
 .grp-input { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surf-1); color: var(--fg); font-size: 14px; outline: none; transition: border-color .12s ease; }
 .grp-input::placeholder { color: var(--muted-2); }
 .grp-input:focus { border-color: var(--line-2); }

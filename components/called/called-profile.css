@@ -37,7 +37,7 @@
 .xpf-standing { margin: 0; display: flex; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-md); line-height: 1.45; color: var(--muted); }
 .xpf-standing::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); transform: translateY(-1px); }
 .xpf-standing.is-verified { color: var(--fg); }
-.xpf-standing.is-verified::before { background: var(--accent); }
+.xpf-standing.is-verified::before { background: var(--up); }
 
 /* ── The one line across markets: figures on a row, a thin rule per verdict ── */
 .xpf-sum { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-4); border-top: 1px solid var(--line); }
