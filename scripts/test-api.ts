@@ -11700,6 +11700,20 @@ async function main() {
       'wallet panel: both account menus open WalletPanel from "Wallet details" and keep RainbowKit one step inside as wallet settings',
       [navSrc, dashSrc].every((src) => src.includes('<WalletPanel') && src.includes('onWalletSettings={openAccountModal}') && /Wallet details/.test(src) && !/onClick=\{\(\) => \{\s*closeNow\(\)\s*openAccountModal\(\)\s*\}\}/.test(src)),
     )
+    {
+      // A wallet connected but never signed (the gray dot) had only "Sign in"
+      // in its menu: no way out (2026-11-19). The exit row is unconditional,
+      // reads "Disconnect" until signed, and both states take signOut's full
+      // teardown + a document load of the home page.
+      const navCode = navSrc.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      check(
+        'account menu: a connected-but-unsigned wallet gets "Disconnect" (the exit row is not gated on authed) and it runs signOut then a full load of /',
+        !/\{authed && \(\s*<>\s*<span className="navacct__sep"/.test(navCode) &&
+          /\{authed \? 'Sign out' : 'Disconnect'\}/.test(navCode) &&
+          /data-account-exit=\{authed \? 'sign-out' : 'disconnect'\}/.test(navCode) &&
+          /signOut\(\)\.then\(\(\) => \{\s*window\.location\.assign\('\/'\)/.test(navCode),
+      )
+    }
     check('fund chip: persists a FundWait when the on-ramp opens, watches it, and continues by itself', chipSrc.includes('saveFundWait(') && chipSrc.includes('useFundingArrival(') && chipSrc.includes('clearFundWait(') && chipSrc.includes("watch.status !== 'arrived'"))
 
     // THE WALLET PAGE (2026-09-11, Nate: "I love our wallet model, can we
