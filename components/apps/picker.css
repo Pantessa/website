@@ -196,6 +196,11 @@
 
 .apgk-foot { flex: none; margin: 0; padding: 10px 18px 12px; border-top: 1px solid var(--line); font-size: var(--fs-sm); color: var(--muted-2); }
 
+/* A glyph from the icon CDN is drawn white (components/BrandIcon): on the
+   light theme it would vanish into the mark's light seat. */
+:root[data-theme='light'] .apgk-opt__mark img[src*='simpleicons'],
+:root[data-theme='light'] .apgk-mark img[src*='simpleicons'] { filter: invert(1); }
+
 /* ── In the phone's sheet: the sheet scrolls, the list does not ──────────── */
 .apgk--sheet .apgk-search { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 0 8px 0 16px; }
 .apgk--sheet .apgk-list { overflow: visible; padding: 4px 6px 8px; }
