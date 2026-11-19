@@ -534,8 +534,23 @@ button.mk-held:hover { border-color: var(--accent); }
 .mk-how-seat:not(:empty) { margin-top: 12px; }
 .mk-close-seat:not(:empty) { margin-top: 12px; }
 .mk-suggest-seat:not(:empty) { margin-top: 12px; }
-/* The Called it shelf (2026-11-16): margins only, like the seats above. */
-.mk-called-seat:not(:empty) { margin-top: 16px; }
+/* The Called it shelf (2026-11-16): margins only, like the seats above. It
+   sits 40px under the read (28px on a phone) — the air the boards keep
+   between each other (.mkt-frame__data's 30px gap + a head), so the read
+   and the shelf read as two sections, not one block (2026-11-19, Nate:
+   "more spacing between divs to let them breathe"). The how / suggest /
+   close seats ride INSIDE the data column, whose gap already spaces them. */
+.mk-called-seat:not(:empty) { margin-top: 40px; }
+/* A returning visitor's tour is one strip of doors (tour.css drops its own
+   padding): it takes the same 40px above, and the boards the same 40px
+   below it, so read · called · strip · map step down evenly. A stranger's
+   full tour keeps its own padding (24px over, 12px under) and the 12px seat. */
+:root[data-home='return'] .mk-tour-seat:has(> .tour:not([data-tour-forced])) { margin-top: 40px; }
+:root[data-home='return'] .mk-tour-seat:has(> .tour:not([data-tour-forced])) + .mkt-frame__data { padding-top: 40px; }
+@media (max-width: 640px) {
+  .mk-called-seat:not(:empty), :root[data-home='return'] .mk-tour-seat:has(> .tour:not([data-tour-forced])) { margin-top: 28px; }
+  :root[data-home='return'] .mk-tour-seat:has(> .tour:not([data-tour-forced])) + .mkt-frame__data { padding-top: 28px; }
+}
 /* ONE gap above the band, every width: THE SEAT OWNS IT, the band none while
    seated. The band's own `margin: 12px 0 0` (pulse.css) is for a band standing
    alone; here it sat inside `.pulse-seat`, a size container (container-type:

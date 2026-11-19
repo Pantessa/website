@@ -7,7 +7,7 @@
    height is CSS, so nothing is measured and nothing shifts when a quote
    lands. Nothing sticky; no layer above the board tabs. */
 
-.read { --read-tone: var(--muted); position: relative; display: flex; flex-direction: column; gap: var(--sp-3); margin: var(--sp-3) 0 0; padding: var(--sp-4) var(--sp-5) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); container-type: inline-size; container-name: read; }
+.read { --read-tone: var(--muted); position: relative; display: flex; flex-direction: column; gap: var(--sp-4); margin: var(--sp-3) 0 0; padding: var(--sp-5) var(--sp-6) var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surf-1); container-type: inline-size; container-name: read; }
 .mk-lead-seat .read { margin-top: 0; }
 .read .is-up { --read-tone: var(--mk-up, var(--accent)); }
 .read .is-down { --read-tone: var(--mk-down, var(--sell)); }
@@ -23,7 +23,7 @@
 .read__share { text-transform: none; letter-spacing: 0; }
 
 /* ── The line ─────────────────────────────────────────────────────────── */
-.read__line { margin: 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.5rem, 3.5cqi, 2.25rem); line-height: 1.16; letter-spacing: -0.015em; color: var(--fg); text-wrap: balance; }
+.read__line { margin: var(--sp-2) 0 0; font-family: var(--mk-font-display); font-weight: 600; font-size: clamp(1.5rem, 3.5cqi, 2.25rem); line-height: 1.16; letter-spacing: -0.015em; color: var(--fg); text-wrap: balance; }
 .read__waiting { color: var(--muted); }
 /* A clause and its comma are one unbreakable unit; lines break between clauses. */
 .read__clausewrap { white-space: nowrap; }
@@ -41,7 +41,7 @@
 .read__mover:hover, .read__mover:focus-visible { border-color: var(--read-tone); outline: none; }
 
 /* ── The macro line ───────────────────────────────────────────────────── */
-.read__tiles { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: var(--sp-2); }
+.read__tiles { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: var(--sp-3); margin-top: var(--sp-1); }
 .read__tile { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: var(--sp-2) 10px 7px; border: 1px solid var(--line); border-radius: var(--r-md); background: transparent; color: var(--fg); font-family: var(--mk-font-ui); text-align: left; cursor: pointer; outline: none; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
 .read__tile:hover { border-color: color-mix(in srgb, var(--fg) 28%, var(--line)); }
 .read__tile:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
@@ -60,8 +60,8 @@
 .read__spark path { fill: none; stroke: var(--read-tone); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; opacity: 0.9; }
 
 /* ── The stage: the chart, and what can be done about it here ─────────── */
-.read__stage { display: grid; grid-template-columns: minmax(0, 1fr) 272px; gap: var(--sp-5); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
-.read__chart { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.read__stage { display: grid; grid-template-columns: minmax(0, 1fr) 272px; gap: var(--sp-6); margin-top: var(--sp-2); padding-top: var(--sp-5); border-top: 1px solid var(--line); }
+.read__chart { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
 .read__charthead { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-3); }
 .read__id { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px var(--sp-3); min-width: 0; }
 .read__name { flex: 0 0 100%; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
@@ -89,7 +89,7 @@
 .read__plot.is-flat .read__dot { background: var(--fg); }
 .read__empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; font-size: var(--fs-sm); color: var(--muted-2); text-align: center; }
 
-.read__act { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); padding-left: var(--sp-5); border-left: 1px solid var(--line); }
+.read__act { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); padding-left: var(--sp-6); border-left: 1px solid var(--line); }
 .read__venue { margin: 0; font-size: var(--fs-md); line-height: 1.45; color: var(--muted); }
 .read__actlab { margin: var(--sp-1) 0 0; font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
 .read__chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
@@ -108,32 +108,34 @@
 .read__door:hover, .read__door:focus-visible { color: var(--accent); outline: none; }
 .read__door--near { font-weight: 500; color: var(--muted); }
 
-.read__foot { padding-top: var(--sp-2); border-top: 1px solid var(--line); font-size: var(--fs-xs); line-height: 1.5; color: var(--muted-2); }
+.read__foot { margin-top: var(--sp-1); padding-top: var(--sp-3); border-top: 1px solid var(--line); font-size: var(--fs-xs); line-height: 1.5; color: var(--muted-2); }
 
 /* ── A narrower column: the tiles scroll as one row, the panel drops under the chart ── */
 @container read (max-width: 860px) {
-  .read__tiles { display: flex; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; margin: 0 calc(var(--sp-5) * -1); padding: 0 var(--sp-5); }
+  .read__tiles { display: flex; gap: var(--sp-2); overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; margin: var(--sp-1) calc(var(--sp-6) * -1) 0; padding: 0 var(--sp-6); scroll-padding: 0 var(--sp-6); }
   .read__tiles::-webkit-scrollbar { display: none; }
   .read__tile { flex: 0 0 104px; scroll-snap-align: start; }
 }
 @container read (max-width: 720px) {
-  .read__stage { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
-  .read__act { padding-left: 0; border-left: 0; padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+  .read__stage { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
+  .read__act { padding-left: 0; border-left: 0; padding-top: var(--sp-4); border-top: 1px solid var(--line); }
   .read__doors { margin-top: 0; flex-direction: row; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
 }
 
 /* ── Phone ────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
-  .read { padding: var(--sp-3) var(--sp-3) var(--sp-2); gap: 10px; border-radius: var(--r-md); }
+  .read { padding: var(--sp-4) var(--sp-4) var(--sp-3); gap: var(--sp-3); border-radius: var(--r-md); }
+  .read__line { margin-top: var(--sp-1); }
+  .read__stage { margin-top: 0; padding-top: var(--sp-4); }
   .read__always { display: none; }
   /* The share door ends the eyebrow's first line; the bell takes the second. */
   .read__share { order: 1; margin-left: auto; }
   .read__session { order: 2; flex: 0 0 100%; }
   /* The movers ride one scrolling row (a wrapped pair of rows cost the first screen 40px). */
-  .read__movers { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 calc(var(--sp-3) * -1); padding: 0 var(--sp-3); }
+  .read__movers { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 calc(var(--sp-4) * -1); padding: 0 var(--sp-4); }
   .read__movers::-webkit-scrollbar { display: none; }
   .read__moverslab, .read__mover { flex: 0 0 auto; white-space: nowrap; }
-  .read__tiles { margin: 0 calc(var(--sp-3) * -1); padding: 0 var(--sp-3); }
+  .read__tiles { margin: 0 calc(var(--sp-4) * -1); padding: 0 var(--sp-4); scroll-padding: 0 var(--sp-4); }
   .read__tile { flex-basis: 100px; }
   .read__charthead { align-items: flex-start; flex-direction: column; gap: var(--sp-2); }
   .read__plot { height: 168px; }
