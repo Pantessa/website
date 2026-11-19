@@ -128,7 +128,7 @@ export default function AppsPage({ address }: { address: string }) {
           {starting && <AppsStart address={address} start={start} onAsk={(text, slug) => sendAsk(text, { mcps: [slug] })} />}
 
           {density === 'empty' ? (
-            !starting && <p className="apg-muted apg-empty">Add an app from the row above. One app is shown in full; add more and the page makes room for each.</p>
+            !starting && <p className="apg-muted apg-empty">Press Add app above to pick one. One app is shown in full; add more and the page makes room for each.</p>
           ) : loading || tiles === null ? (
             <ChatLoader inline />
           ) : (

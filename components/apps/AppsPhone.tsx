@@ -22,12 +22,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MessageSquare, Plus } from 'lucide-react'
-import BrandIcon from '@/components/BrandIcon'
 import ChainPicker from '@/components/ChainPicker'
 import ChatLoader from '@/components/ChatLoader'
-import AppsRailTab from '@/components/AppsRailTab'
 import Sheet from '@/components/mobile/Sheet'
 import { useSoftKeyboard } from '@/components/mobile/useSoftKeyboard'
+import AppMarks from '@/components/apps/AppMarks'
+import AppPicker from '@/components/apps/AppPicker'
 import AppsStart from '@/components/apps/AppsStart'
 import NeedsYou from '@/components/apps/NeedsYou'
 import Recurring from '@/components/apps/Recurring'
@@ -74,7 +74,16 @@ export default function AppsPhone({ address, title }: { address: string; title: 
   const loading = fresh ? false : !cached && scan.loading
   const { sendAsk, setSuggestions, suggestions } = useAppsUi()
   const setPhoneScreen = useYeetfulStore((s) => s.setPhoneScreen)
+  // The picker (components/apps/AppPicker) in a sheet; a press on a mark
+  // opens it on that app's row. A new key per open re-takes its snapshot.
   const [addOpen, setAddOpen] = useState(false)
+  const [pickerKey, setPickerKey] = useState(0)
+  const [focusSlug, setFocusSlug] = useState<string | undefined>()
+  const openPicker = (slug?: string) => {
+    setFocusSlug(slug)
+    setPickerKey((k) => k + 1)
+    setAddOpen(true)
+  }
 
   const { layout, section } = phoneLayoutFor(active.length)
   const names = active.map((s) => cleanServerName(s.name))
@@ -147,27 +156,14 @@ export default function AppsPhone({ address, title }: { address: string; title: 
       </header>
 
       <div ref={scrollerRef} data-app-scroll="" className="apgm-scroll">
-        <div className="apgm-chips" role="group" aria-label="Apps on this page" data-apps-chips="">
-          {active.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              aria-pressed="true"
-              onClick={() => toggle(s)}
-              title={`${cleanServerName(s.name)} is on this page. Tap to remove it.`}
-              className="apgm-chip apgm-chip--on"
-              data-apps-chip={s.slug}
-            >
-              <BrandIcon server={s} size={16} />
-              <span>{cleanServerName(s.name)}</span>
-              <span aria-hidden className="apgm-chip__x">
-                ×
-              </span>
-            </button>
-          ))}
-          <button type="button" onClick={() => setAddOpen(true)} aria-haspopup="dialog" aria-expanded={addOpen} className="apgm-chip apgm-chip--add" data-apps-add="">
-            <Plus width={14} height={14} aria-hidden />
-            {active.length ? 'Add' : 'Add an app'}
+        {/* The apps that are on, as marks; one button opens the picker. */}
+        <div className="apgm-chips" data-apps-chips="">
+          <AppMarks active={active} onOpen={openPicker} />
+          <button type="button" onClick={() => openPicker()} aria-haspopup="dialog" aria-expanded={addOpen} className="apgk-add" data-apps-add="">
+            <span className="apgk-add__icon" aria-hidden>
+              <Plus width={14} height={14} strokeWidth={2.4} />
+            </span>
+            <span className="apgk-add__label">{active.length ? 'Add app' : 'Add an app'}</span>
           </button>
         </div>
 
@@ -182,7 +178,7 @@ export default function AppsPhone({ address, title }: { address: string; title: 
           {starting && <AppsStart address={address} start={start} onAsk={(text, slug) => ask(text, { mcps: [slug] })} />}
 
           {layout === 'empty' ? (
-            !starting && <p className="apg-muted apgm-empty">Add an app from the row above. One app is shown in full; add more and the page makes room for each.</p>
+            !starting && <p className="apg-muted apgm-empty">Press Add app above to pick one. One app is shown in full; add more and the page makes room for each.</p>
           ) : !contentReady ? (
             <ChatLoader inline />
           ) : (
@@ -231,10 +227,8 @@ export default function AppsPhone({ address, title }: { address: string; title: 
         onOpen={() => setPhoneScreen('chat')}
       />
 
-      <Sheet id="apps-add" open={addOpen} onClose={() => setAddOpen(false)} title="Add an app" size="full">
-        <div className="flex flex-col pb-2">
-          <AppsRailTab flat />
-        </div>
+      <Sheet id="apps-add" open={addOpen} onClose={() => setAddOpen(false)} title="Your apps" size="full">
+        <AppPicker key={pickerKey} sheet servers={servers} active={active} onToggle={toggle} focusSlug={focusSlug} />
       </Sheet>
     </section>
   )

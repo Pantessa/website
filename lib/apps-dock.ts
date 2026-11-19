@@ -1,51 +1,35 @@
-// The chat dock's pure rules (squad apps-page, DOCK lane, 2026-11-17): how
-// many offered app chips fit the row, what the "Browse all" tray lists and
-// says about each app, and when a key press means "take me to the chat".
+// The chat dock's pure rules (squad apps-page, DOCK lane, 2026-11-17; the app
+// row and its picker re-cut 2026-11-19): how many app marks fit the row, what
+// the picker lists and says about each app, and when a key press means "take
+// me to the chat".
 // No React, no DOM: scripts/apps-dock-pins.ts pins every rule here.
 
 import { appFamily, type AppFamily } from '@/lib/apps-page'
 import { fleetRank } from '@/lib/free-fleet'
 import { cleanServerName } from '@/lib/utils'
 
-// ── The chip row ────────────────────────────────────────────────────────────
+// ── The app row ─────────────────────────────────────────────────────────────
 
-/** How many of the offered (off) chips fit in `available` px, in order, with
- *  `gap` px before each one. Never a partial chip; a non-positive room or a
- *  missing measurement (0 or less) stops the count there, so a chip that has
- *  not been measured yet is never shown on a guess. */
-export function fitOffered(available: number, widths: number[], gap: number): number {
-  let used = 0
-  let n = 0
-  for (const w of widths) {
-    if (!(w > 0)) break
-    const next = used + gap + w
-    if (next > available) break
-    used = next
-    n += 1
-  }
-  return n
-}
-
-/** The row's plan for its one line. `onFull` / `onCompact` are each on-chip's
- *  width with its name and with its mark alone; `browse` is "Browse all".
- *  The names show whenever every on-chip fits with them; otherwise the
- *  on-chips go to marks (the name stays in the tooltip and the accessible
- *  name); if even the marks do not fit, the list scrolls sideways. Offered
- *  chips only take what is left, and only while every name shows. */
-export function rowPlan(p: { width: number; onFull: number[]; onCompact: number[]; browse: number; browseCompact?: number; offered: number[]; gap: number }): {
+/** The row's plan for its one line (2026-11-19). Every app that is on shows
+ *  as its MARK alone (the name lives in the picker, the tooltip and the
+ *  accessible name), followed by ONE button that opens the picker. `mark` is a
+ *  mark's width, `gap` the space after each one, `add` the button with its
+ *  words, `addCompact` the button as its icon. In order: every mark and the
+ *  whole button; then every mark and the icon; then as many marks as fit with
+ *  one seat kept for a "+N" count of the rest. An unmeasured row (no width
+ *  yet) shows everything, so the first paint never hides an app. */
+export function marksPlan(p: { width: number; count: number; mark: number; gap: number; add: number; addCompact: number }): {
+  shown: number
+  more: number
   compact: boolean
-  fit: number
-  overflowing: boolean
 } {
-  const fixed = (ws: number[], browse: number) => ws.reduce((sum, w) => sum + w + p.gap, 0) + browse
-  const fullRoom = p.width - fixed(p.onFull, p.browse)
-  const compact = fullRoom < 0 && p.onCompact.length > 0
-  const room = compact ? p.width - fixed(p.onCompact, p.browseCompact ?? p.browse) : fullRoom
-  return { compact, fit: room > 0 && !compact ? fitOffered(room, p.offered, p.gap) : 0, overflowing: room < -1 }
+  const need = (n: number, add: number) => n * (p.mark + p.gap) + add
+  if (!(p.width > 0) || need(p.count, p.add) <= p.width) return { shown: p.count, more: 0, compact: false }
+  if (need(p.count, p.addCompact) <= p.width) return { shown: p.count, more: 0, compact: true }
+  const seats = Math.floor((p.width - p.addCompact) / (p.mark + p.gap))
+  const shown = Math.max(0, Math.min(p.count - 1, seats - 1))
+  return { shown, more: p.count - shown, compact: true }
 }
-
-/** Most offered chips the row ever considers (the rest live in the tray). */
-export const OFFERED_MAX = 8
 
 interface ServerLike {
   id: string
@@ -54,16 +38,6 @@ interface ServerLike {
   gated?: boolean
   description?: string | null
   priceUsd?: number | string | null
-}
-
-/** The off apps the row offers, best first: free first-party apps only
- *  (never an internal utility, never a paid one), in the fleet's order. */
-export function offeredApps<T extends ServerLike>(servers: T[], activeIds: string[], cap = OFFERED_MAX): T[] {
-  const on = new Set(activeIds)
-  const picked = servers
-    .filter((s) => !on.has(s.id) && s.gated === false && !/^yeetful-tool-/.test(s.slug))
-    .sort((a, b) => fleetRank(a.slug) - fleetRank(b.slug))
-  return onePerName(picked, servers.filter((s) => on.has(s.id))).slice(0, cap)
 }
 
 const nameKey = (s: { name: string }) => cleanServerName(s.name).trim().toLowerCase()
@@ -83,13 +57,13 @@ export function onePerName<T extends { name: string }>(list: T[], onPage: { name
   return out
 }
 
-// ── The tray ────────────────────────────────────────────────────────────────
+// ── The picker ────────────────────────────────────────────────────────────────
 
 export type TrayView = 'free' | 'paid'
 
-/** The tray's list: every app NOT on the page, free (the fleet's order) or
- *  paid (as the catalog came). An app on the page is removed from the row,
- *  so the tray never lists it twice. */
+/** The picker's "More apps": every app NOT on the page, free (the fleet's order) or
+ *  paid (as the catalog came). An app on the page is listed under "Your
+ *  apps", so it is never listed twice. */
 export function trayApps<T extends ServerLike>(servers: T[], activeIds: string[], view: TrayView): T[] {
   const on = new Set(activeIds)
   const rest = servers.filter((s) => !on.has(s.id))
@@ -100,9 +74,37 @@ export function trayApps<T extends ServerLike>(servers: T[], activeIds: string[]
   return onePerName(list, servers.filter((s) => on.has(s.id)))
 }
 
+/** Most rows a search shows under "More apps" (the paid catalog is long). */
+export const PICKER_SEARCH_MAX = 40
+
+/** Does every word of `query` appear in the app's name, its one line or its
+ *  slug? An empty query matches everything. */
+export function pickerMatches(s: { slug: string; name: string; description?: string | null }, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (!words.length) return true
+  const hay = `${cleanServerName(s.name)} ${trayLine(s)} ${s.slug}`.toLowerCase()
+  return words.every((w) => hay.includes(w))
+}
+
+/** The picker's two lists. `pinnedIds` is the set that was on WHEN THE PICKER
+ *  OPENED, in its order: those rows are "Your apps" for as long as it stays
+ *  open, so a row never jumps away from the cursor when its switch flips (an
+ *  app switched off stays where it was, one tap from back). Everything else is
+ *  "More apps": free or paid by the switch, or both at once while a search is
+ *  typed (free first, capped). */
+export function pickerSections<T extends ServerLike>(p: { servers: T[]; pinnedIds: string[]; view: TrayView; query: string }): { yours: T[]; more: T[] } {
+  const q = p.query.trim()
+  const byId = new Map(p.servers.map((s) => [s.id, s]))
+  const yours = p.pinnedIds.map((id) => byId.get(id)).filter((s): s is T => !!s && pickerMatches(s, q))
+  const more = q
+    ? onePerName([...trayApps(p.servers, p.pinnedIds, 'free'), ...trayApps(p.servers, p.pinnedIds, 'paid')].filter((s) => pickerMatches(s, q))).slice(0, PICKER_SEARCH_MAX)
+    : trayApps(p.servers, p.pinnedIds, p.view)
+  return { yours, more }
+}
+
 /** What a first-party app adds to the page, in one plain line. The servers'
  *  own descriptions are written for a model (tool lists, "free and
- *  non-gated", API names); the tray speaks to a person. */
+ *  non-gated", API names); the picker speaks to a person. */
 const FAMILY_LINE: Partial<Record<AppFamily, string>> = {
   uniswap: 'Swaps on Uniswap, quoted across every pool.',
   snapshot: 'DAO votes for the tokens you hold.',
