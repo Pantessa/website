@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import {
@@ -16,7 +16,6 @@ import WalletPanel from '@/components/WalletPanel'
 import Sheet from '@/components/mobile/Sheet'
 import { cn } from '@/lib/utils'
 import { signInLandingHere, useSession } from '@/lib/session'
-import { isPublicAppPath } from '@/lib/app-entry'
 import { isPhoneViewport } from '@/lib/phone-shell'
 
 /**
@@ -35,7 +34,6 @@ import { isPhoneViewport } from '@/lib/phone-shell'
  * "Sign in" action surfaced at the top of the menu.
  */
 export default function NavAccount() {
-  const router = useRouter()
   const pathname = usePathname()
   const { address: sessionAddress, connectAndSignIn, signOut, signingIn } = useSession()
   const [open, setOpen] = useState(false)
@@ -169,13 +167,13 @@ export default function NavAccount() {
                   className="navacct__item navacct__item--danger"
                   onClick={() => {
                     closeNow()
-                    // Signing out on a public page (the markets surface,
-                    // 2026-09-14) stays on it: looking needs no wallet.
-                    // Everywhere else it lands on the home page, since the
-                    // signed-in app would send a signed-out visitor there
-                    // anyway (AppSpine).
+                    // Signing out lands on the stranger's home page with a
+                    // full load, from every page (Nate, 2026-11-19: "redirect
+                    // them to the home page where it starts fresh"). A soft
+                    // push kept the signed-in shell's watchlist rail and
+                    // client stores on screen; a document load drops them.
                     signOut().then(() => {
-                      if (!isPublicAppPath(pathname)) router.push('/')
+                      window.location.assign('/')
                     })
                   }}
                 >

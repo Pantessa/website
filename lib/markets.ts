@@ -433,7 +433,7 @@ export function parseMarketsNavAsk(message: string): { symbol: string; href: str
  * view and remove the header nav"). On these paths the app spine is the
  * navigation, the brochure nav is gone, and the Ask door + account control
  * dock in the watchlist column. Pure — pinned; shared by Navigation (hide),
- * NavAccount (stay here after sign-in / sign-out) and the shell.
+ * NavAccount (stay here after sign-in) and the shell.
  */
 export function isMarketsPath(pathname: string): boolean {
   // THE FRONT DOOR (squad front-door, 2026-10-06, Nate: "skip the brochure

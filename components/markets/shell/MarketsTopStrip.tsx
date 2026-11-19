@@ -7,8 +7,8 @@
 // bell (RailAlerts, 2026-10-13 — fired + armed alerts behind one icon, the
 // rail no longer spends two bands on them) and the site's account control
 // (SiteAccount — sign-in door when disconnected, the NavAccount pill
-// otherwise). Sign-in and sign-out both keep you on the page, query included
-// (?tab=trade survives): the door names no destination, so it lands on the
+// otherwise). Sign-in keeps you on the page, query included
+// (?tab=trade survives; sign-out goes home fresh): the door names no destination, so it lands on the
 // page it is pressed on (lib/app-entry signInLandingFor). Sticky at the top
 // of the side column on desktop; the page's top bar on phones. The lens
 // between Ask and the bell opens the symbol search (2026-11-17,
