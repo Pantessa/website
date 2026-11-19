@@ -68,7 +68,11 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   useEffect(() => {
     const raw = new URLSearchParams(window.location.search).get('prompt')
     const text = raw?.trim().slice(0, 2000)
-    if (text) setUrlPrompt({ text, send: false, at: Date.now() })
+    if (!text) return
+    setUrlPrompt({ text, send: false, at: Date.now() })
+    // Beside the apps page the dock may be closed (its state persists): an
+    // ask that came in the address lands in the dock, so open it.
+    useAppsUi.getState().setChatOpen(true)
   }, [])
 
   // Load the MCP directory once (DB-backed, static fallback).
