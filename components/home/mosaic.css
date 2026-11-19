@@ -82,7 +82,7 @@
    claim's own pieces move to the mosaic's edges: whose page it is and the
    quiet doors on a strip above the tiles, the three proofs on a strip below. */
 @container hero (min-width: 900px) {
-  :root:not([data-home='return']) .hm { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(124px, 1fr)); gap: var(--sp-2); padding: 44px 0 36px; }
+  :root:not([data-home='return']) .hm { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(124px, 1fr)); gap: var(--sp-3); padding: 44px 0 36px; }
   :root:not([data-home='return']) .hm__tiles { display: contents; }
   :root:not([data-home='return']) .hm__tile { flex: none; min-height: 0; }
   :root:not([data-home='return']) :is(.hm__tile--buy, .hm__tile--called) { grid-column: span 2; order: 0; }
