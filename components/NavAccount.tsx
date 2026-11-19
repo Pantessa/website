@@ -158,30 +158,35 @@ export default function NavAccount() {
               </button>
             )}
 
-            {authed && (
-              <>
-                <span className="navacct__sep" />
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="navacct__item navacct__item--danger"
-                  onClick={() => {
-                    closeNow()
-                    // Signing out lands on the stranger's home page with a
-                    // full load, from every page (Nate, 2026-11-19: "redirect
-                    // them to the home page where it starts fresh"). A soft
-                    // push kept the signed-in shell's watchlist rail and
-                    // client stores on screen; a document load drops them.
-                    signOut().then(() => {
-                      window.location.assign('/')
-                    })
-                  }}
-                >
-                  <LogOut width={15} height={15} strokeWidth={2.25} />
-                  Sign out
-                </button>
-              </>
-            )}
+            {/* Always offered, signed in or not (2026-11-19). A wallet that
+                is connected but never signed (the gray dot) used to get only
+                "Sign in" here: a visitor who did not want to sign, or whose
+                wallet never answered the signature, had no way out. Both
+                states take the same full teardown: the session cookie, the
+                CDP account, every wagmi connection, then a document load of
+                the home page, so they start over exactly as a new visitor. */}
+            <span className="navacct__sep" />
+            <button
+              type="button"
+              role="menuitem"
+              className="navacct__item navacct__item--danger"
+              data-account-exit={authed ? 'sign-out' : 'disconnect'}
+              onClick={() => {
+                closeNow()
+                // Lands on the stranger's home page with a full load, from
+                // every page (Nate, 2026-11-19: "redirect them to the home
+                // page where it starts fresh"). A soft push kept the
+                // signed-in shell's watchlist rail and client stores on
+                // screen; a document load drops them, and any signature
+                // request still pending with it.
+                signOut().then(() => {
+                  window.location.assign('/')
+                })
+              }}
+            >
+              <LogOut width={15} height={15} strokeWidth={2.25} />
+              {authed ? 'Sign out' : 'Disconnect'}
+            </button>
           </>
         )
 
