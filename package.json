@@ -120,6 +120,7 @@
     "pins:home-apps": "tsx scripts/home-apps-pins.ts",
     "pins:landing": "tsx scripts/landing-coord-pins.ts",
     "pins:landing-hero": "tsx scripts/landing-hero-pins.ts",
+    "pins:hero-mosaic": "tsx scripts/hero-mosaic-pins.ts",
     "pins:landing-stage": "tsx scripts/landing-stage-pins.ts",
     "pins:landing-sides-a": "tsx scripts/landing-sides-a-pins.ts",
     "pins:landing-sides-b": "tsx scripts/landing-sides-b-pins.ts",

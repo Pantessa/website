@@ -443,6 +443,7 @@ import { communityTelegramPins, communityTelegramPinsServed } from './community-
 import { communityDiscordPins, communityDiscordPinsServed } from './community-discord-pins'
 import { landingCoordPins, landingCoordPinsServed } from './landing-coord-pins'
 import { landingHeroPins, landingHeroPinsServed } from './landing-hero-pins'
+import { heroMosaicPins, heroMosaicPinsServed } from './hero-mosaic-pins'
 import { landingStagePins, landingStagePinsServed } from './landing-stage-pins'
 import { landingSidesAPins, landingSidesAPinsServed } from './landing-sides-a-pins'
 import { landingSidesBPins, landingSidesBPinsServed } from './landing-sides-b-pins'
@@ -2907,7 +2908,7 @@ async function main() {
   const storyHeroHtml = flat(await (await fetch(`${BASE}/story`)).text())
   check(
     "home: the brochure's hero (/story) claims the Markets line and types the reel (first beat's ask SSR'd under the lede); the splash carries the line as its claim",
-    storyHeroHtml.includes(HERO_REEL[0].ask) && /The chart that executes\./.test(storyHeroHtml) && /<h1 class="mk-claim__h1">The chart that executes\.<\/h1>/.test(homeHtml),
+    storyHeroHtml.includes(HERO_REEL[0].ask) && /The chart that executes\./.test(storyHeroHtml) && /<h1 class="mk-claim__h1">Trading for the AI age\.<\/h1>/.test(homeHtml), // RE-PINNED 2026-11-19 (the mosaic hero): the home's h1 is its own line, SPLASH.h1 ("Trading for the AI age."); HERO_LINE stays the <title>, the social card and /story's hero.
   )
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
   check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))
@@ -24191,7 +24192,7 @@ async function main() {
       // the index's sr-only "Markets" h1 steps aside. Still no brochure hero.
       '/markets → `/`: 200 full-screen frame — the claim (h1 = HERO_LINE) above the tool strip, no brochure hero, search + board tabs, the three boards, the watchlist slot docked in the rail, the footer under the data',
       !/class="mkt__hero"/.test(mkHtml) && !mkHtml.includes('MARKETS · STOCKS 24/7 · SPOT · PERPS') &&
-        /<h1 class="mk-claim__h1">The chart that executes\.<\/h1>/.test(mkHtml) && !/<h1 class="sr-only">Markets<\/h1>/.test(mkHtml) &&
+        /<h1 class="mk-claim__h1">Trading for the AI age\.<\/h1>/.test(mkHtml) /* RE-PINNED 2026-11-19 (the mosaic hero): the home's h1 is its own line, SPLASH.h1 ("Trading for the AI age."); HERO_LINE stays the <title>, the social card and /story's hero. */ && !/<h1 class="sr-only">Markets<\/h1>/.test(mkHtml) &&
         /class="mkt-frame__rail"[^>]*>[\s\S]*?data-slot="watchlist"/.test(mkHtml) &&
         /class="mkt-frame__foot"><footer class="footer"/.test(mkHtml) &&
         /aria-label="Search markets"/.test(mkHtml) &&
@@ -35997,6 +35998,9 @@ async function main() {
   await landingCoordPinsServed(check, BASE)
   landingHeroPins(check)
   await landingHeroPinsServed(check, BASE)
+  // The hero mosaic (2026-11-19): the tiles around the claim and the sentence that lights them.
+  heroMosaicPins(check)
+  await heroMosaicPinsServed(check, BASE)
   landingStagePins(check)
   await landingStagePinsServed(check, BASE)
   landingSidesAPins(check)

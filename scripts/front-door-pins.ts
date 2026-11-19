@@ -110,8 +110,9 @@ export async function frontDoorPins(check: Check): Promise<void> {
   // ── The words ─────────────────────────────────────────────────────────
   const sentences = (s: string) => (s.match(/[.!?](?=\s|$)/g) ?? []).length
   check(
-    'front door: the SPLASH words — the h1 IS HERO_LINE; the sentence under it is ONE sentence whose phrases all come from HERO_SUB / HOME_DESCRIPTION (no new slogan); the door says what it is; /story has its own title and a description that fits a result',
-    SPLASH.h1 === HERO_LINE && sentences(SPLASH.sub) === 1 &&
+    'front door: the SPLASH words — the h1 is its own one-sentence line (not HERO_LINE, which stays the title); the sentence under it is ONE sentence whose phrases all come from HERO_SUB / HOME_DESCRIPTION (no new slogan); the door says what it is; /story has its own title and a description that fits a result',
+    // RE-PINNED 2026-11-19 (the mosaic hero): the home's h1 is its own line, SPLASH.h1 ("Trading for the AI age."); HERO_LINE stays the <title>, the social card and /story's hero.
+    SPLASH.h1.length > 0 && (SPLASH.h1 as string) !== HERO_LINE && sentences(SPLASH.h1) === 1 && sentences(SPLASH.sub) === 1 &&
       HERO_SUB.includes('Stocks 24/7, perps, spot and yield in one wallet') && SPLASH.sub.includes('Stocks 24/7, perps, spot and yield in one wallet') &&
       HOME_DESCRIPTION.includes('every chart is the order form') && SPLASH.sub.includes('every chart is the order form') &&
       /you keep the pen/i.test(HERO_SUB) && /you keep the pen/i.test(SPLASH.sub) &&
@@ -239,7 +240,7 @@ export async function frontDoorHttpPins(check: Check, base: string): Promise<voi
   const home = flat(await homeRes.text())
   check(
     'front door (served): `/` is 200 and opens on the claim — HERO_LINE as the ONE visible h1 (one text node), the sentence, the "What is this?" door to /story (no prefetch is a client matter; the href is plain) — above the tool strip, the lead seat and the guide seat; the sr-only "Markets" h1 is gone',
-    homeRes.status === 200 && home.includes(`<h1 class="mk-claim__h1">${HERO_LINE}</h1>`) && (home.match(/<h1\b/g) ?? []).length === 1 && !home.includes('<h1 class="sr-only">Markets</h1>') &&
+    homeRes.status === 200 && home.includes(`<h1 class="mk-claim__h1">${SPLASH.h1}</h1>`) /* RE-PINNED 2026-11-19 (the mosaic hero): the home's h1 is its own line, SPLASH.h1 ("Trading for the AI age."); HERO_LINE stays the <title>, the social card and /story's hero. */ && (home.match(/<h1\b/g) ?? []).length === 1 && !home.includes('<h1 class="sr-only">Markets</h1>') &&
       home.includes(SPLASH.sub) && /<a class="mk-claim__door mono" data-splash-door="true" href="\/story">What is this\?/.test(home) &&
       home.indexOf('class="mk-claim"') < home.indexOf('class="mkt-frame__bar"') && home.indexOf('class="mkt-frame__bar"') < home.indexOf('data-seat="Lead"') && home.indexOf('data-seat="Lead"') < home.indexOf('data-seat="Guide"'),
     `status=${homeRes.status} h1s=${(home.match(/<h1\b/g) ?? []).length}`,
