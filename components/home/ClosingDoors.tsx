@@ -19,7 +19,7 @@ import './closing.css'
 /** The quiet row under the grid: the public pages a reader may want last. */
 export const CLOSING_QUIET = [
   { label: 'Leaderboard', href: '/leaderboard' },
-  { label: 'Analytics', href: '/analytics' },
+  // Analytics is off the landing until the numbers are up (2026-11-19).
   { label: 'Called it', href: '/x' },
   { label: 'Pricing', href: '/pricing' },
   { label: 'Docs', href: '/docs' },
