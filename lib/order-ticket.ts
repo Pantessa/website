@@ -39,7 +39,7 @@
 //    exponent (the grammars capture `\d+(?:\.\d+)?`).
 // ─────────────────────────────────────────────────────────────────────────
 
-import { isHip3Pair, type ChartPair } from '@/lib/charts'
+import { isHip3Pair, pairTicker, type ChartPair } from '@/lib/charts'
 import { composeAsk, execSidesFor, EXEC_SIDE_LABEL, type ExecSide } from '@/lib/trade-asks'
 
 /** Can a perp open on this pair chain a Guardian stop? Not on a builder-dex
@@ -268,7 +268,9 @@ export function composeTicketAsk(pair: ChartPair, st: TicketState, last: number 
       // watches the main book's ledger only (ticketOffersStop is the UI's rule too).
       const stop = st.withStop && ticketOffersStop(pair)
       const ask = stop ? `${open}, then protect my ${sym} ${st.side} with a ${st.stopPct}% stop` : open
-      const label = stop ? `${lev}${verb} ${usdWord(usd)} of ${sym} + ${st.stopPct}% stop` : `${lev}${verb} ${usdWord(usd)} of ${sym}`
+      // The button names the share; the sentence above keeps the pair's own symbol (a perp twin's spelling is the contract).
+      const tk = pairTicker(pair)
+      const label = stop ? `${lev}${verb} ${usdWord(usd)} of ${tk} + ${st.stopPct}% stop` : `${lev}${verb} ${usdWord(usd)} of ${tk}`
       return yes(ask, label, usd, units)
     }
     case 'protect': {

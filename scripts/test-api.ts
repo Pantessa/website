@@ -21571,7 +21571,12 @@ async function main() {
         ROBINHOOD_TICKER_SET.has('SATS') && chartPairFor('SATS') === null &&
         ROBINHOOD_TICKER_SET.has('PONS') && chartPairFor('PONS') === null &&
         chartPairFor('HOOD') === null &&
-        ROBINHOOD_TICKER_SET.size === 202,
+        // RE-PINNED 2026-11-19 (the Anthropic listing): 202 → 212. The live list
+        // reads Robinhood's own registry behind the Uniswap list, and ten
+        // equities only the registry carried joined the snapshot (ANT, BMNR,
+        // DIS, GDX, JPM, MCD, PYPL, SKHY, UBER, V).
+        ['ANT', 'BMNR', 'DIS', 'GDX', 'JPM', 'MCD', 'PYPL', 'SKHY', 'UBER', 'V'].every((t) => chartPairFor(t)?.source === 'robinhood') &&
+        ROBINHOOD_TICKER_SET.size === 212,
       `size=${ROBINHOOD_TICKER_SET.size}`,
     )
     // Coins resolve FIRST: a stock ticker that collides with a Coinbase

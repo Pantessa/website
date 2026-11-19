@@ -88,6 +88,27 @@ export const HL_USDC_TOKEN = {
   testnet: 'USDC:0xeb62eee3685fc4c43992febcd9e75443',
 } as const
 
+// ── The perp twin's spelling ───────────────────────────────────────────────
+// A stock with an xyz perp charts twice: the stock token keeps the ticker
+// (`ANT`) and the perp is the ticker + PERP (`ANTPERP`, typed `ANT-PERP`) —
+// lib/charts, "The perp twin". The twin's name means ONE market: the perp on
+// the twin dex, never a main-book coin that happens to share the ticker (the
+// main book lists coins whose tickers are also stocks). So the spelling
+// resolves on that dex alone, here and in the order grammar
+// (lib/hyperliquid-exec foldPerpTwins).
+export const HL_PERP_TWIN_SUFFIX = 'PERP'
+/** The builder dex that names equities by their own ticker. */
+export const HL_PERP_TWIN_DEX = 'xyz'
+/** The longest twin symbol: the order grammar reads a coin of at most ten characters. */
+export const HL_PERP_TWIN_MAX = 10
+
+/** `ANTPERP` / `ant-perp` → `ANT` (the share it names, upper-cased); null for any other shape. PURE. */
+export function perpTwinStem(input: string | null | undefined): string | null {
+  if (typeof input !== 'string') return null
+  const m = input.trim().match(/^([A-Za-z0-9]{1,6})-?PERP$/i)
+  return m ? m[1].toUpperCase() : null
+}
+
 /** The dex a venue coin name is on: `xyz:SP500` → `xyz`; a main-book coin → null. */
 export function hlDexOf(coin: string | null | undefined): string | null {
   if (typeof coin !== 'string') return null
@@ -177,6 +198,8 @@ const findCi = (names: Iterable<string>, want: string): string | null => {
  *   · a bare ticker is the MAIN book's first (the main book wins a ticker
  *     collision, as it does on the chart — lib/charts hlChartTableFrom), then
  *     each proven builder dex in registry order;
+ *   · a perp twin's spelling (`ANTPERP`) that none of those list is the
+ *     twin dex's market on its stem (`xyz:ANT`) and nothing else;
  *   · matching ignores case and returns the venue's own casing (`kPEPE`).
  * `main` / `dexes[name]` are the LISTED names (delisted markets already out).
  */
@@ -200,6 +223,12 @@ export function resolveHlCoin(
     const listed = listings.dexes?.[dex]
     const hit = listed ? findCi(listed, `${dex}:${raw}`) : null
     if (hit) return { coin: hit, dex, ticker: hlTickerOf(hit) }
+  }
+  const stem = perpTwinStem(raw)
+  if (stem && isOrderableHlDex(HL_PERP_TWIN_DEX)) {
+    const listed = listings.dexes?.[HL_PERP_TWIN_DEX]
+    const hit = listed ? findCi(listed, `${HL_PERP_TWIN_DEX}:${stem}`) : null
+    if (hit) return { coin: hit, dex: HL_PERP_TWIN_DEX, ticker: hlTickerOf(hit) }
   }
   return null
 }

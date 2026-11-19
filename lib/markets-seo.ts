@@ -20,9 +20,9 @@
 //  Server-safe and client-safe (pure; no fetch, no env beyond SITE_URL).
 // ─────────────────────────────────────────────────────────────────────────
 
-import { chartPairFor, normalizeChartSymbol, type Candle, type ChartPair } from '@/lib/charts'
+import { chartPairFor, normalizeChartSymbol, pairTicker, type Candle, type ChartPair } from '@/lib/charts'
 import { macroName } from '@/lib/macro'
-import { ROBINHOOD_TICKER_NAMES } from '@/lib/robinhood-tickers'
+import { ROBINHOOD_TICKER_NAMES, perpTwinCompany } from '@/lib/robinhood-tickers'
 import { FEATURED, MARKETS_HREF, marketSections, symbolStanding, type MarketSectionId } from '@/lib/markets'
 import { SITE_URL } from '@/lib/site-url'
 import { TAPE_FOOTNOTE } from '@/lib/markets-copy'
@@ -47,7 +47,7 @@ const MARKETS_URL = new URL(MARKETS_HREF, SITE_URL).href.replace(/\/$/, '')
  *  the coin's name for crypto, the symbol itself when we have no name. */
 export function symbolName(symbol: string): string {
   const s = normalizeChartSymbol(symbol)
-  return ROBINHOOD_TICKER_NAMES[s] ?? COIN_NAMES[s] ?? macroName(s) ?? s
+  return ROBINHOOD_TICKER_NAMES[s] ?? COIN_NAMES[s] ?? macroName(s) ?? perpTwinCompany(s) ?? s
 }
 
 export interface SymbolSeo {
@@ -92,8 +92,10 @@ export function symbolPageSeo(symbolRaw: string): SymbolSeo {
     title = `${symbol} 24/7 — trade ${name} on Robinhood Chain | Pantessa Markets`
     description = `Live ${symbol} chart from ${FEED_LINE.robinhood}. Buy or sell ${name} from the chart — guarded transactions, signed only by your wallet. Unlimited watchlists and alerts, free.`
   } else if (pair.source === 'hyperliquid') {
-    title = `${symbol} perps live chart — long or short from the chart | Pantessa Markets`
-    description = `Live ${symbol} / USD candles from ${FEED_LINE.hyperliquid}. Open a sized long or short with a stop from the chart — guarded, signed only by your wallet.`
+    // A stock's perp twin (`ANTPERP`) is titled by its share: "ANT perps".
+    const tk = pairTicker(pair)
+    title = `${tk} perps live chart — long or short from the chart | Pantessa Markets`
+    description = `Live ${tk} / USD candles from ${FEED_LINE.hyperliquid}. Open a sized long or short with a stop from the chart — guarded, signed only by your wallet.`
   } else {
     title = `${symbol} live chart — trade ${name} from the chart | Pantessa Markets`
     description = `Live ${symbol} / USD candles from ${FEED_LINE.coinbase}. Swap or protect ${name} from the chart — one sentence, guarded, your wallet signs.`

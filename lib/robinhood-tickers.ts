@@ -2,6 +2,13 @@
 // official token list for chain 4663 (https://tokens.uniswap.org), taken
 // 2026-09-10, refreshed 2026-10-13 (203 entries, PONS listed since; cbBTC dropped
 // — it is a coin and charts as BTC).
+// 2026-11-19 (the Anthropic listing): the live list reads Robinhood's own
+// stock-token registry behind the Uniswap list (lib/token-list
+// ROBINHOOD_REGISTRY_URL), which carried ten equities the Uniswap list had
+// not caught up with. Added here by hand from the registry, each with a quote
+// on Robinhood's feed that day: ANT, BMNR, DIS, GDX, JPM, MCD, PYPL, SKHY,
+// UBER, V (212 entries). A registry-only listing is added the same way: the
+// one-liner below reads the Uniswap list alone.
 // 2026-10-13 (squad polish, QA-X2): every 4663 listing that is a COIN (cbBTC, PONS —
 // CoinGecko `pons`; no Robinhood instrument, no Yahoo data) is named in
 // ROBINHOOD_CHAIN_COINS below and stays out of the stock set; the snapshot keeps it.
@@ -16,6 +23,8 @@
 //
 // Regenerate (paste the output over the table below):
 //   node -e "fetch('https://tokens.uniswap.org').then(r=>r.json()).then(j=>console.log(j.tokens.filter(t=>t.chainId===4663&&!['cbBTC','PONS'].includes(t.symbol)).sort((a,b)=>a.symbol.localeCompare(b.symbol)).map(t=>'  ['+JSON.stringify(t.symbol)+', '+JSON.stringify(t.name)+'],').join('\n')))"
+
+import { perpTwinStem } from '@/lib/hl-dex'
 
 /** [ticker, company name] for every listed equity, A→Z. */
 export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
@@ -33,6 +42,7 @@ export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
   ["AMKR", "Amkor Technology Inc."],
   ["AMZN", "Amazon"],
   ["ANET", "Arista Networks"],
+  ["ANT", "Anthropic"],
   ["APLD", "Applied Digital"],
   ["APP", "Applovin Corporation"],
   ["ARM", "Arm Holdings plc"],
@@ -47,6 +57,7 @@ export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
   ["BABA", "Alibaba"],
   ["BB", "BlackBerry Limited"],
   ["BE", "Bloom Energy"],
+  ["BMNR", "BitMine Immersion Technologies"],
   ["BND", "Vanguard Total Bond Market ETF"],
   ["BULL", "Webull Corporation"],
   ["CASHCAT", "Cash Cat"],
@@ -71,6 +82,7 @@ export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
   ["CVNA", "Carvana Co."],
   ["DDOG", "Datadog"],
   ["DELL", "Dell"],
+  ["DIS", "Disney"],
   ["DJT", "Trump Media & Technology Group Corp."],
   ["DOCN", "DigitalOcean Holdings Inc."],
   ["DRAM", "Roundhill Memory ETF"],
@@ -86,6 +98,7 @@ export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
   ["FLY", "Firefly Aerospace Inc."],
   ["FTNT", "Fortinet Inc."],
   ["FUTU", "Futu Holdings"],
+  ["GDX", "VanEck Gold Miners ETF"],
   ["GE", "GE Aerospace"],
   ["GEV", "GE Vernova Inc."],
   ["GLD", "SPDR Gold Shares"],
@@ -109,6 +122,7 @@ export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
   ["JBL", "Jabil Inc."],
   ["JNJ", "Johnson & Johnson"],
   ["JOBY", "Joby Aviation Inc."],
+  ["JPM", "JPMorgan Chase"],
   ["KLAC", "KLA Corporation"],
   ["KSS", "Kohl's Corporation"],
   ["KTOS", "Kratos Defense & Security Solutions Inc."],
@@ -119,6 +133,7 @@ export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
   ["LRCX", "Lam Research Corporation"],
   ["LULU", "Lululemon"],
   ["LUNR", "Intuitive Machines"],
+  ["MCD", "McDonald's"],
   ["MDB", "MongoDB"],
   ["META", "Meta Platforms"],
   ["MOD", "Modine Manufacturing Co"],
@@ -158,6 +173,7 @@ export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
   ["POWL", "Powell Industries Inc."],
   ["PR", "Permian Resources"],
   ["PWR", "Quanta Services Inc."],
+  ["PYPL", "PayPal"],
   ["QBTS", "D-Wave Quantum"],
   ["QCOM", "Qualcomm"],
   ["QNT", "Quantinuum Inc."],
@@ -178,6 +194,7 @@ export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
   ["SHOP", "Shopify"],
   ["SHY", "iShares 1-3 Year Treasury Bond ETF"],
   ["SIMO", "Silicon Motion Technology Corporation"],
+  ["SKHY", "SK hynix"],
   ["SLS", "SELLAS Life Sciences Group Inc."],
   ["SLV", "iShares Silver Trust"],
   ["SMCI", "Super Micro Computer"],
@@ -201,11 +218,13 @@ export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
   ["TSM", "Taiwan Semiconductor Manufacturing"],
   ["TTD", "The Trade Desk Inc."],
   ["TTWO", "Take-Two Interactive Software"],
+  ["UBER", "Uber"],
   ["UMC", "United Microelectronics"],
   ["UNH", "UnitedHealth Group Incorporated"],
   ["UPS", "UPS"],
   ["USAR", "USA Rare Earth"],
   ["USO", "United States Oil Fund"],
+  ["V", "Visa"],
   ["VICR", "Vicor Corporation"],
   ["VRT", "Vertiv Holdings Co"],
   ["VSAT", "ViaSat Inc."],
@@ -225,6 +244,14 @@ export const ROBINHOOD_TICKERS: ReadonlyArray<readonly [string, string]> = [
 
 /** Ticker → company name. */
 export const ROBINHOOD_TICKER_NAMES: Readonly<Record<string, string>> = Object.fromEntries(ROBINHOOD_TICKERS)
+
+/** The company a stock's perp twin names (`ANTPERP` → "Anthropic"; lib/charts,
+ *  "The perp twin"), or null. Read AFTER a symbol's own name: a listing that
+ *  really is called something-PERP keeps it. */
+export function perpTwinCompany(symbol: string): string | null {
+  const stem = perpTwinStem(symbol)
+  return stem ? (ROBINHOOD_TICKER_NAMES[stem] ?? null) : null
+}
 
 /** The ticker set, for membership checks. */
 export const ROBINHOOD_TICKER_SET: ReadonlySet<string> = new Set(ROBINHOOD_TICKERS.map(([s]) => s))

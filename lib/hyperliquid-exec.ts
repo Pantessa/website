@@ -34,6 +34,7 @@ import { HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE, TREASURY_ADDRESS } f
 import {
   HL_BUILDER_DEXES,
   HL_BUILDER_DEX_NAMES,
+  HL_PERP_TWIN_DEX,
   HL_USDC_TOKEN,
   hlAssetId,
   hlDexOf,
@@ -44,6 +45,7 @@ import {
   splitHlAssetId,
   type HlMarginMode,
 } from '@/lib/hl-dex'
+import { ROBINHOOD_TICKER_SET } from '@/lib/robinhood-tickers'
 
 // ── Venue constants (verified against official docs 2026-07-13) ────────────
 
@@ -236,11 +238,29 @@ export function parseHlIntent(message: string): HlIntent | null {
   // A builder-dex market typed the venue's way ("long $25 of xyz:SP500 on
   // hyperliquid"): the grammar reads the bare ticker, and the dex it named
   // rides back onto the coin, so the build looks on THAT dex and no other.
-  const { text, dexOf } = stripHlDexPrefixes(lowered)
+  const stripped = stripHlDexPrefixes(lowered)
+  const dexOf = stripped.dexOf
+  // A stock's perp twin spelled the chart's way ("long $25 of antperp on
+  // hyperliquid", "ant-perp"): the same ride — the bare ticker is read, and
+  // the twin dex is the only place the build looks.
+  const text = foldPerpTwins(stripped.text, dexOf)
   const intent = parseHlIntentText(text)
   if (!intent || intent.kind === 'deposit') return intent
   const dex = dexOf.get(intent.coin.toLowerCase())
   return dex ? { ...intent, coin: `${dex}:${intent.coin}` } : intent
+}
+
+/** `antperp` / `ant-perp` → `ant`, remembering the twin dex for it — only
+ *  when the stem is a Robinhood Chain stock ticker (the twin exists for those
+ *  alone, lib/charts), and never over a dex the sentence already named. A
+ *  word with a space ("syrup perp") is the grammar's own and is left alone.
+ *  PURE. */
+export function foldPerpTwins(lowered: string, dexOf: Map<string, string>): string {
+  return lowered.replace(/(?<![\w$.:/-])([a-z0-9]{1,6})-?perp(?![\w:/-])/g, (all, stem: string) => {
+    if (!ROBINHOOD_TICKER_SET.has(stem.toUpperCase())) return all
+    if (!dexOf.has(stem)) dexOf.set(stem, HL_PERP_TWIN_DEX)
+    return stem
+  })
 }
 
 /** `xyz:sp500` → `sp500`, remembering which dex each ticker named. A token

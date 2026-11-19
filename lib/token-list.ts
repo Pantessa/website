@@ -18,8 +18,62 @@
 // Per-chain source URLs, merged with the FIRST taking precedence on symbol
 // collisions (Uniswap official first — it's curated). tokens.uniswap.org is
 // one multi-chain document; the per-chain Coingecko lists fill the long tail
-// (Robinhood Chain has no Coingecko list — the Uniswap list carries it).
+// (Robinhood Chain has no Coingecko list — the Uniswap list carries it, and
+// Robinhood's own stock-token registry fills what that list has not caught
+// up with: see ROBINHOOD_REGISTRY_URL below).
 const UNISWAP_LIST = 'https://tokens.uniswap.org'
+
+/**
+ * Robinhood's stock-token registry (2026-11-19, the Anthropic listing): the
+ * issuer's own list of every Stock Token on Robinhood Chain, the document its
+ * docs point at for per-asset trading capabilities
+ * (docs.robinhood.com/chain/stock-tokens). The Uniswap list is curated by
+ * hand and lags a listing by days: on ANT's first day the registry carried it
+ * and nine older listings (V, JPM, DIS, UBER, PYPL, MCD, GDX, SKHY, BMNR)
+ * that the Uniswap list still did not, while every one of the 194 symbols the
+ * two shared had the SAME address. It is read SECOND, so a symbol the Uniswap
+ * list names keeps the address it always had; the registry only fills gaps.
+ */
+export const ROBINHOOD_REGISTRY_URL = 'https://api.robinhood.com/rhj/assets'
+const ROBINHOOD_REGISTRY_CHAIN_ID = 4663
+/** The registry writes a name as "Apple • Robinhood Token"; the company is the part before the dot. */
+const REGISTRY_NAME_SUFFIX = /\s*[•·]\s*Robinhood Token\s*$/i
+
+/**
+ * The registry document → token-list rows for one chain. PURE, fail-closed
+ * row by row: only an ACTIVE asset with a well-formed symbol, integer
+ * decimals and a deployment on this chain becomes a row; anything else is
+ * dropped, never guessed. The result goes through buildIndexes like any
+ * other list (address shape re-checked there).
+ */
+export function robinhoodRegistryTokens(doc: unknown, chainId: number = ROBINHOOD_REGISTRY_CHAIN_ID): RawListToken[] {
+  const assets = (doc as { assets?: unknown } | null)?.assets
+  if (!Array.isArray(assets)) return []
+  const out: RawListToken[] = []
+  for (const a of assets as Record<string, unknown>[]) {
+    if (!a || typeof a !== 'object' || a.status !== 'ASSET_STATUS_ACTIVE') continue
+    const symbol = typeof a.tokenSymbol === 'string' ? a.tokenSymbol.trim() : ''
+    if (!/^[A-Za-z0-9.]{1,12}$/.test(symbol)) continue
+    const decimals = a.tokenDecimals
+    if (typeof decimals !== 'number' || !Number.isInteger(decimals) || decimals < 0 || decimals > 36) continue
+    const deployments = Array.isArray(a.deployments) ? (a.deployments as Record<string, unknown>[]) : []
+    const here = deployments.filter((d) => d && typeof d === 'object' && d.chainId === chainId)
+    // One asset, one contract per chain: two rows for the same chain is not a shape we know.
+    if (here.length !== 1) continue
+    const address = typeof here[0].contractAddress === 'string' ? here[0].contractAddress : ''
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address)) continue
+    const name = typeof a.tokenName === 'string' ? a.tokenName.replace(REGISTRY_NAME_SUFFIX, '').trim() : ''
+    out.push({ chainId, address, symbol, decimals, ...(name ? { name } : {}) })
+  }
+  return out
+}
+
+/** One place a chain's tokens are read from: a URL, and how its document
+ *  becomes a token list (`parse` omitted = it already is one). */
+interface ListSource {
+  url: string
+  parse?: (doc: unknown) => { tokens?: RawListToken[] }
+}
 const COINGECKO_BY_CHAIN: Record<number, string> = {
   8453: 'https://tokens.coingecko.com/base/all.json',
   1: 'https://tokens.coingecko.com/ethereum/all.json',
@@ -36,12 +90,14 @@ const COINGECKO_BY_CHAIN: Record<number, string> = {
   5042: 'https://tokens.coingecko.com/arc/all.json',
 }
 
-function listUrlsFor(chainId: number): string[] {
+function listSourcesFor(chainId: number): ListSource[] {
   // TOKEN_LIST_URLS override keeps its original meaning: the Base sources.
-  if (chainId === 8453 && process.env.TOKEN_LIST_URLS) return process.env.TOKEN_LIST_URLS.split(',')
-  const urls = [UNISWAP_LIST]
-  if (COINGECKO_BY_CHAIN[chainId]) urls.push(COINGECKO_BY_CHAIN[chainId])
-  return urls
+  if (chainId === 8453 && process.env.TOKEN_LIST_URLS) return process.env.TOKEN_LIST_URLS.split(',').map((url) => ({ url }))
+  const sources: ListSource[] = [{ url: UNISWAP_LIST }]
+  if (COINGECKO_BY_CHAIN[chainId]) sources.push({ url: COINGECKO_BY_CHAIN[chainId] })
+  // After the Uniswap list, so it only ever ADDS a symbol (buildIndexes: the earlier list wins).
+  if (chainId === ROBINHOOD_REGISTRY_CHAIN_ID) sources.push({ url: ROBINHOOD_REGISTRY_URL, parse: (doc) => ({ tokens: robinhoodRegistryTokens(doc, chainId) }) })
+  return sources
 }
 
 const TTL_MS = 24 * 60 * 60 * 1000
@@ -155,12 +211,13 @@ export async function ensureTokenList(chainId: number = 8453): Promise<void> {
   if (c.inflight) return c.inflight
   c.inflight = (async () => {
     const lists: { tokens?: RawListToken[] }[] = []
-    const urls = listUrlsFor(chainId)
-    for (const url of urls) {
+    const sources = listSourcesFor(chainId)
+    for (const source of sources) {
       try {
-        const res = await fetch(url.trim(), { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8000) })
+        const res = await fetch(source.url.trim(), { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8000) })
         if (!res.ok) continue
-        lists.push((await res.json()) as { tokens?: RawListToken[] })
+        const doc: unknown = await res.json()
+        lists.push(source.parse ? source.parse(doc) : (doc as { tokens?: RawListToken[] }))
       } catch {
         /* try the next source */
       }
@@ -168,7 +225,7 @@ export async function ensureTokenList(chainId: number = 8453): Promise<void> {
     const built = buildIndexes(chainId, lists)
     if (Object.keys(built.bySymbol).length > 0) {
       // Never let a partial warm shrink a fuller list already in hand.
-      const partial = lists.length < urls.length
+      const partial = lists.length < sources.length
       if (partial && Object.keys(c.bySymbol).length > Object.keys(built.bySymbol).length) {
         c.loadedAt = Date.now() - TTL_MS + PARTIAL_TTL_MS
       } else {
