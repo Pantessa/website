@@ -19,7 +19,7 @@ import type { HouseLink } from '@/lib/house-links'
 //
 // SIGNED OUT there is nothing personal to show, so the public board stays —
 // it is the live proof, and its mint composer's press IS the sign-in door
-// (guestDoor). Data comes from GET /api/links/board; a mint from the
+// (the guest door). Data comes from GET /api/links/board; a mint from the
 // in-place composer re-reads with fresh=1 so the new link shows on Recently
 // minted immediately instead of after the route's 60s cache.
 
