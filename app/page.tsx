@@ -15,6 +15,8 @@ import HlPerpsPrime from '@/components/markets/shell/HlPerpsPrime'
 import { HL_PERPS_HANDOFF_GLOBAL, liveHlPerpNames } from '@/lib/charts'
 import CalledShelf from '@/components/home/CalledShelf'
 import { readCalledShelf } from '@/app/x/_lib/home-shelf'
+import { HeroCalledSeed } from '@/components/home/HeroMosaic'
+import { heroCalledFrom } from '@/lib/hero-mosaic'
 import SuggestionsBoard from '@/components/home/SuggestionsBoard'
 import { readSuggestions } from '@/lib/suggestions-server'
 
@@ -135,7 +137,11 @@ export default async function HomePage() {
       <script dangerouslySetInnerHTML={{ __html: HOME_MODE_BOOTSTRAP }} />
       <HlPerpsPrime hlPerps={hlPerps}>
         <MarketsShell>
+          {/* The hero's Called it tile wears the record's own photo and tally (2026-11-19):
+              read once above with the shelf, handed down beside it. */}
+          <HeroCalledSeed value={heroCalledFrom(called)}>
           <HomeSurface trending={trending} tradable={tradable} read={read} tour={tour} called={called.summaries.length ? <CalledShelf data={called} /> : undefined} suggest={<SuggestionsBoard data={suggestions} />} />
+          </HeroCalledSeed>
           <div className="mkt-frame__foot">
             <Footer />
           </div>

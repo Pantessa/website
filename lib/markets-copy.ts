@@ -36,8 +36,11 @@ export const HOME_DESCRIPTION =
 // and the door to the story. The words live here so the harness, the
 // social card and the page can never disagree.
 export const SPLASH = {
-  /** The claim — the page's h1, visible (the roster pin reads it on `/`). */
-  h1: HERO_LINE,
+  /** The claim — the page's h1, visible (the roster pin reads it on `/`).
+   *  Its own line since 2026-11-19 (the mosaic hero, Nate: "something
+   *  powerful like, trading for the AI age"); HERO_LINE stays the <title>,
+   *  the social card and /story's hero. */
+  h1: 'Trading for the AI age.',
   /** One sentence, from HERO_SUB + HOME_DESCRIPTION. A stranger reads it at
    *  every width (2026-11-10, the hero); the returning visitor's one-line
    *  claim folds it away. Always in the server HTML for a crawler. */
@@ -50,7 +53,7 @@ export const SPLASH = {
   // are the stranger's and say nothing the product does not do today.
   /** Whose page this is, then what kind of thing it is (the spine wears the
    *  mark, never the name). Mono, over the h1; a phone has no room for it. */
-  eyebrow: ['Pantessa', 'Markets you can act on'],
+  eyebrow: ['Pantessa', 'An intent is all you need'],
   /** Three short proofs: a bold lead and the rest of its sentence. Looking
    *  needs no wallet and no account (lib/app-entry isPublicAppPath); an
    *  action asks for the wallet (lib/use-connect-to-act); nothing is held

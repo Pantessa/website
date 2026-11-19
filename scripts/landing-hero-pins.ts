@@ -62,8 +62,10 @@ export function landingHeroPins(check: Check): void {
   const FENCE = /yeetful|\bdune\b|telegram|discord|prime broker|guarantee|risk[- ]free|\bpassive income\b|get rich|to the moon|financial advice|fully automatic/i
   const typed = words.filter((w) => /\d/.test(w.replace(/24\/7/g, '')))
   check(
-    "hero words: the h1 is HERO_LINE; the eyebrow says whose page this is first; three proofs, each a bold lead and the rest of its sentence (no custody, no sign-up to look, free to look); no count, fee or rate is typed (\"24/7\" is a word); nothing the product cannot keep (no bot, no partner, no guarantee, no advice, never the old brand)",
-    SPLASH.h1 === HERO_LINE &&
+    "hero words: the h1 is SPLASH.h1 (its own line, not HERO_LINE); the eyebrow says whose page this is first; three proofs, each a bold lead and the rest of its sentence (no custody, no sign-up to look, free to look); no count, fee or rate is typed (\"24/7\" is a word); nothing the product cannot keep (no bot, no partner, no guarantee, no advice, never the old brand)",
+    // RE-PINNED 2026-11-19 (the mosaic hero): the home's h1 is its own line, SPLASH.h1 ("Trading for the AI age."); HERO_LINE stays the <title>, the social card and /story's hero.
+    SPLASH.h1 === 'Trading for the AI age.' &&
+      (SPLASH.h1 as string) !== HERO_LINE &&
       SPLASH.eyebrow.length === 2 &&
       SPLASH.eyebrow[0] === 'Pantessa' &&
       SPLASH.eyebrow[1].length > 0 &&
@@ -101,7 +103,7 @@ export function landingHeroPins(check: Check): void {
       /import '\.\/hero\.css'/.test(claim),
   )
   check(
-    'hero markup: ONE h1 (HERO_LINE as one text node, the class the harness reads), the sentence, the eyebrow before it and the proofs after — every piece of both postures is in the one render',
+    'hero markup: ONE h1 (SPLASH.h1 as one text node, the class the harness reads), the sentence, the eyebrow before it and the proofs after — every piece of both postures is in the one render',
     (claim.match(/<h1\b/g) ?? []).length === 1 &&
       /<h1 className="mk-claim__h1">\{SPLASH\.h1\}<\/h1>/.test(claim) &&
       /<p className="mk-claim__sub">\{SPLASH\.sub\}<\/p>/.test(claim) &&
@@ -261,9 +263,9 @@ export async function landingHeroPinsServed(check: Check, base: string): Promise
   const from = html.indexOf('class="mk-claim"')
   const hero = from < 0 ? '' : html.slice(from, html.indexOf('class="mkt-frame__bar"', from))
   const at = (s: string) => hero.indexOf(s)
-  const order = ['class="mk-claim__eyebrow', `<h1 class="mk-claim__h1">${HERO_LINE}</h1>`, 'class="mk-claim__sub"', 'data-hero-door="tour"', 'data-hero-door="chart"', 'data-hero-door="reopen"', 'data-splash-door="true"', 'class="mk-claim__proofs"']
+  const order = ['class="mk-claim__eyebrow', `<h1 class="mk-claim__h1">${SPLASH.h1}</h1>`, 'class="mk-claim__sub"', 'data-hero-door="tour"', 'data-hero-door="chart"', 'data-hero-door="reopen"', 'data-splash-door="true"', 'class="mk-claim__proofs"']
   check(
-    "hero (served): `/` opens on the hero in the stranger's posture — the header keeps `mk-claim` + data-splash-claim, HERO_LINE is the page's ONE h1 (one text node), and the eyebrow, the sentence, both doors, the door back to the tour, the story door and the proofs are all in the server HTML in reading order, above the tool strip; no post-hydration flag is rendered",
+    "hero (served): `/` opens on the hero in the stranger's posture — the header keeps `mk-claim` + data-splash-claim, SPLASH.h1 is the page's ONE h1 (one text node), and the eyebrow, the sentence, both doors, the door back to the tour, the story door and the proofs are all in the server HTML in reading order, above the tool strip; no post-hydration flag is rendered",
     res.status === 200 &&
       hero.length > 0 &&
       /<header class="mk-claim" data-splash-claim="true">/.test(html) &&

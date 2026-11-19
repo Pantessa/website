@@ -28,6 +28,7 @@ import Link from 'next/link'
 import type { MouseEvent } from 'react'
 import SpineLink from '@/components/SpineLink'
 import ShareActions from '@/components/ShareActions'
+import HeroMosaic, { HeroComposer } from '@/components/home/HeroMosaic'
 import { setTourPref } from '@/components/home/HomeModeSync'
 import { TOUR_ANCHOR } from '@/lib/home-tour'
 import { STORY_HREF } from '@/lib/markets'
@@ -68,6 +69,10 @@ export default function SplashClaim() {
   }
   return (
     <header className="mk-claim" data-splash-claim>
+      {/* THE MOSAIC (2026-11-19, components/home/HeroMosaic): the tiles stand
+          around this block and own every bit of state; the block itself still
+          holds none. The sentence sits between the claim and its doors. */}
+      <HeroMosaic>
       <div className="mk-claim__in">
         <div className="mk-claim__main">
           <p className="mk-claim__eyebrow mono">
@@ -76,6 +81,7 @@ export default function SplashClaim() {
           </p>
           <h1 className="mk-claim__h1">{SPLASH.h1}</h1>
           <p className="mk-claim__sub">{SPLASH.sub}</p>
+          <HeroComposer />
           <div className="mk-claim__doors">
             <a href={TOUR_HREF} className="mk-claim__go" onClick={toTour} data-hero-door="tour" data-journey={`Hero: ${SPLASH.tourDoor}`}>
               {SPLASH.tourDoor} <span aria-hidden>↓</span>
@@ -106,6 +112,7 @@ export default function SplashClaim() {
           ))}
         </ul>
       </div>
+      </HeroMosaic>
     </header>
   )
 }

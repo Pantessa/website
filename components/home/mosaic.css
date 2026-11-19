@@ -1,0 +1,143 @@
+/* THE HERO MOSAIC (2026-11-19; components/home/HeroMosaic, table in
+   lib/hero-mosaic). Every market a tile, every dapp a tile, the claim in the
+   middle with one sentence that lights the tiles it would use.
+
+   hero.css still owns the claim block (`mk-claim`) and is not touched: this
+   sheet lays the claim's pieces INTO the mosaic for a stranger, and every
+   rule that does so keys on `:root:not([data-home='return'])`, so the
+   returning visitor's one line (hero.css) is exactly what it was. The server
+   HTML carries no attribute and is the stranger's.
+
+   Sized by the claim block's own width (hero.css makes `.mk-claim` the
+   container named `hero`): the mosaic from 900px, a stack with one scrolling
+   row of tiles below that. Tokens only, so light mode comes free. Prefix
+   `hm` (checked against every sheet in the repo). */
+
+.hm { --hm-tone: var(--muted); display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.hm__centre { min-width: 0; }
+
+/* ── The sentence ─────────────────────────────────────────────────────── */
+.hm-say { display: flex; align-items: center; gap: var(--sp-3); width: 100%; max-width: 560px; min-height: 52px; box-sizing: border-box; margin-top: var(--sp-4); padding: 4px 4px 4px var(--sp-4); border: 1px solid var(--accent); border-radius: var(--r-pill); background: var(--surf-1); text-align: left; }
+.hm-say__text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mk-font-ui); font-size: var(--fs-lg); color: var(--fg); animation: hm-say-in 320ms var(--ease-out) both; }
+.hm-say__go { flex: 0 0 auto; min-height: 44px; padding: 0 var(--sp-4); border: 0; border-radius: var(--r-pill); background: var(--accent); color: var(--ink, var(--bg)); font-family: var(--mk-font-ui); font-size: var(--fs-base); font-weight: 600; white-space: nowrap; cursor: pointer; outline: none; transition: filter var(--dur-1) ease; }
+.hm-say__go:hover { filter: brightness(1.08); }
+.hm-say__go:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.hm-say__go:disabled { opacity: 0.5; cursor: default; }
+
+/* ── A tile ───────────────────────────────────────────────────────────── */
+.hm__tiles { display: flex; gap: var(--sp-2); min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: none; }
+.hm__tiles::-webkit-scrollbar { display: none; }
+.hm__tile { position: relative; flex: 0 0 116px; min-width: 0; min-height: 112px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; gap: var(--sp-1); margin: 0; padding: var(--sp-3); border: 1px solid color-mix(in srgb, var(--line) 62%, transparent); border-radius: var(--r-md); background: var(--surf-1); color: var(--fg); font: inherit; text-align: left; text-decoration: none; scroll-snap-align: start; cursor: pointer; outline: none; transition: border-color var(--dur-2) ease, background-color var(--dur-2) ease, color var(--dur-2) ease; }
+.hm__tile:hover { border-color: var(--line-2); }
+.hm__tile:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.hm__tile.is-up { --hm-tone: var(--mk-up, var(--accent)); }
+.hm__tile.is-down { --hm-tone: var(--mk-down, var(--sell)); }
+.hm__tile.is-lit { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surf-1)); }
+
+/* A market: its name, the day as a line, the number and the move. */
+.hm__label { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); font-family: var(--mk-font-ui); font-size: var(--fs-md); font-weight: 600; white-space: nowrap; }
+.hm__tag { font-size: var(--fs-xs); font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
+.hm__spark { display: block; width: 100%; height: 36px; overflow: visible; animation: hm-grow 1400ms var(--ease-out) both; animation-delay: calc(var(--hm-i, 0) * 55ms + 120ms); }
+.hm__spark path { fill: none; stroke: var(--muted-2); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; transition: stroke var(--dur-2) ease; }
+.hm__tile:hover .hm__spark path { stroke: var(--hm-tone); }
+.hm__tile.is-lit .hm__spark { animation: hm-grow 1400ms var(--ease-out) both, hm-regrow 900ms var(--ease-out); animation-delay: calc(var(--hm-i, 0) * 55ms + 120ms), 0ms; }
+.hm__tile.is-lit .hm__spark path { stroke: var(--accent); stroke-width: 1.8; }
+.hm__nums { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0 var(--sp-2); font-variant-numeric: tabular-nums; }
+.hm__val { font-size: var(--fs-base); color: var(--fg); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hm__chg { font-size: var(--fs-sm); color: var(--hm-tone); white-space: nowrap; }
+.hm__big { font-size: var(--fs-xl); color: var(--hm-tone); font-variant-numeric: tabular-nums; }
+.hm__tile--stock .hm__val { font-size: var(--fs-sm); color: var(--muted); }
+
+/* A dapp: the mark, nothing else. */
+.hm__tile--app { align-items: center; justify-content: center; color: var(--muted); }
+.hm__tile--app:hover, .hm__tile--app:focus-visible, .hm__tile--app.is-lit { color: var(--fg); }
+.hm__mark { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; font-family: var(--mk-font-display, 'Fraunces', Georgia, serif); font-size: var(--fs-2xl); transition: transform var(--dur-2) var(--ease-out); }
+.hm__tile--app:hover .hm__mark, .hm__tile--app.is-lit .hm__mark { transform: scale(1.08); }
+
+/* The two wide tiles: the stock buy (the one filled tile) and the record. */
+.hm__tile--buy, .hm__tile--called { flex-basis: 232px; order: -1; }
+.hm__tile--buy { border-color: var(--accent); background: var(--accent); color: var(--ink, var(--bg)); }
+.hm__tile--buy:hover { border-color: var(--accent); filter: brightness(1.06); }
+.hm__tile--buy.is-lit { background: var(--accent); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent); }
+.hm__tile--called:hover { border-color: var(--accent); }
+.hm__eyebrow { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
+.hm__tile--called .hm__eyebrow { color: var(--muted); }
+.hm__title { font-family: var(--mk-font-display, 'Fraunces', Georgia, serif); font-weight: 600; font-size: var(--fs-xl); line-height: 1.08; letter-spacing: -0.015em; text-wrap: balance; }
+.hm__who { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.hm__avatar { flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--r-pill); object-fit: cover; box-shadow: 0 0 0 1px var(--line-2); }
+.hm__avatar--none { display: flex; align-items: center; justify-content: center; background: var(--surf-2); color: var(--muted); font-family: var(--mk-font-display, 'Fraunces', Georgia, serif); font-size: var(--fs-lg); }
+.hm__foot { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.hm__foot > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hm__tile--called .hm__foot { color: var(--muted); }
+.hm__arrow { font-size: var(--fs-lg); transition: transform var(--dur-2) var(--ease-out); }
+.hm__tile--called .hm__arrow { color: var(--accent); }
+.hm__tile:hover .hm__arrow { transform: translateX(3px); }
+
+@media (pointer: coarse) {
+  .hm-say__go { min-height: 44px; }
+}
+
+/* ── THE MOSAIC: a column of 900px or more, a stranger's page ─────────────
+   Eight columns, four equal rows, the claim in the middle four by two. The
+   claim's own pieces move to the mosaic's edges: whose page it is and the
+   quiet doors on a strip above the tiles, the three proofs on a strip below. */
+@container hero (min-width: 900px) {
+  :root:not([data-home='return']) .hm { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(124px, 1fr)); gap: var(--sp-2); padding: 44px 0 36px; }
+  :root:not([data-home='return']) .hm__tiles { display: contents; }
+  :root:not([data-home='return']) .hm__tile { flex: none; min-height: 0; }
+  :root:not([data-home='return']) :is(.hm__tile--buy, .hm__tile--called) { grid-column: span 2; order: 0; }
+  :root:not([data-home='return']) .hm__centre { grid-column: 3 / 7; grid-row: 2 / 4; display: flex; align-items: center; justify-content: center; padding: var(--sp-2) var(--sp-4); }
+  :root:not([data-home='return']) .hm .mk-claim__in { display: block; width: 100%; padding: 0; }
+  :root:not([data-home='return']) .hm .mk-claim__main { align-items: center; text-align: center; }
+  :root:not([data-home='return']) .hm .mk-claim__h1 { font-size: clamp(2.5rem, 6cqi, 4.5rem); line-height: 1; letter-spacing: -0.03em; font-weight: 600; }
+  :root:not([data-home='return']) .hm .mk-claim__sub { margin-top: var(--sp-3); font-size: var(--fs-base); }
+  :root:not([data-home='return']) .hm .mk-claim__doors { justify-content: center; margin-top: var(--sp-3); }
+  :root:not([data-home='return']) .hm .mk-claim__eyebrow { position: absolute; top: 0; left: 0; height: 32px; margin: 0; }
+  :root:not([data-home='return']) .hm .mk-claim__acts { position: absolute; top: 0; right: 0; }
+  :root:not([data-home='return']) .hm .mk-claim__proofs { position: absolute; left: 0; bottom: 0; flex-direction: row; gap: var(--sp-5); padding: 0; }
+  :root:not([data-home='return']) .hm .mk-claim__proofs::before { content: none; }
+  :root:not([data-home='return']) .hm .mk-claim__proof { font-size: var(--fs-sm); }
+}
+/* A narrow mosaic (the column beside the watchlist): the number over its move. */
+@container hero (min-width: 900px) and (max-width: 1139px) {
+  :root:not([data-home='return']) .hm__title { font-size: var(--fs-lg); }
+  :root:not([data-home='return']) .hm__mark { transform: scale(0.9); }
+  :root:not([data-home='return']) .hm__val { font-size: var(--fs-md); }
+}
+
+/* ── NO RAIL FOR A STRANGER (2026-11-19, Nate: "hide the watch list bar on
+   the right so the hero has more room"). On the home, in the stranger's
+   posture, the frame is one column: the ask + account strip becomes a bar
+   across the top (the layout the frame already has below 1024px) and the
+   docked watchlist is not drawn. A returning visitor (`data-home="return"`)
+   keeps the rail exactly as it was, and so does every other page that rides
+   the frame: the rule needs the claim block in the main column. The posture
+   is set before first paint (lib/home-mode), so nothing moves after it. */
+@media (min-width: 1024px) {
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "main" "foot"; --mkt-pad-r: var(--mkt-pad-l); }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__side { display: contents; }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__top { grid-area: top; justify-content: flex-end; padding: 0 var(--mkt-pad-l); border-left: 0; border-bottom-color: transparent; }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__alerts { margin-right: 0; }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__bar { top: var(--mkt-top-h); }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__rail { display: none; }
+}
+
+/* A phone's column: the sentence at reading size so it fits beside its button. */
+@container hero (max-width: 559px) {
+  .hm-say { margin-top: var(--sp-3); padding-left: var(--sp-3); gap: var(--sp-2); }
+  .hm-say__text { font-size: var(--fs-base); }
+}
+
+/* ── The returning visitor's line: no tiles, no sentence (hero.css does the rest) ── */
+:root[data-home='return'] .hm { display: block; }
+:root[data-home='return'] .hm__tiles, :root[data-home='return'] .hm-say { display: none; }
+
+@keyframes hm-grow { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes hm-regrow { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes hm-say-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .hm__spark, .hm__tile.is-lit .hm__spark, .hm-say__text { animation: none; }
+  .hm__tile, .hm__mark, .hm__arrow, .hm__spark path, .hm-say__go { transition: none; }
+  .hm__tile--app:hover .hm__mark, .hm__tile--app.is-lit .hm__mark, .hm__tile:hover .hm__arrow { transform: none; }
+}
