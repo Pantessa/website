@@ -8,8 +8,9 @@
 //   • a STRANGER (`<html data-home="new">`, and the server's own HTML) reads
 //     a real hero: whose page this is, HERO_LINE as the page's visible h1 at
 //     display size, one sentence, three short proofs, and the doors — down
-//     to the tour on this page (`#tour`), into a real chart, the share, and
-//     the long-form story;
+//     to the tour on this page (`#tour`) and into a real chart (the Share
+//     pill and the "What is this?" door to /story left the hero 2026-11-19;
+//     /story stays reachable from the footer);
 //   • someone who USES the app (`data-home="return"`) keeps the one line it
 //     has always been, plus one small door back to the tour.
 //
@@ -20,20 +21,14 @@
 // drawn. Words: lib/markets-copy SPLASH. Look: ./hero.css.
 //
 // Doors (standing rule 6): the chart is a SpineLink (a public page: a plain
-// link); the tour is an anchor on this page; /story is a brochure page, not
-// the app, so it stays a plain un-prefetched link (a SpineLink would hold a
-// stranger at the sign-in door for a page that needs none).
+// link); the tour is an anchor on this page.
 
-import Link from 'next/link'
 import type { MouseEvent } from 'react'
 import SpineLink from '@/components/SpineLink'
-import ShareActions from '@/components/ShareActions'
 import HeroMosaic, { HeroComposer } from '@/components/home/HeroMosaic'
 import { setTourPref } from '@/components/home/HomeModeSync'
 import { TOUR_ANCHOR } from '@/lib/home-tour'
-import { STORY_HREF } from '@/lib/markets'
 import { SPLASH } from '@/lib/markets-copy'
-import { marketsPost } from '@/lib/share-posts'
 import './hero.css'
 
 const TOUR_HREF = `#${TOUR_ANCHOR}`
@@ -95,13 +90,6 @@ export default function SplashClaim() {
           <a href={TOUR_HREF} className="mk-claim__tour mono" onClick={reopenTour} data-hero-door="reopen" data-journey={`Hero: ${SPLASH.returnTour}`}>
             {SPLASH.returnTour} <span aria-hidden>↓</span>
           </a>
-          {/* The board's own share. A phone's line has no room for it and hides it. */}
-          <ShareActions post={marketsPost()} variant="pill" label="Share" surface="splash" className="mk-claim__share" />
-          {/* A brochure page, not the shell: a plain link is right here. No
-              prefetch — every visitor would otherwise pull the story's payload. */}
-          <Link href={STORY_HREF} className="mk-claim__door mono" prefetch={false} data-splash-door>
-            {SPLASH.door} <span aria-hidden>→</span>
-          </Link>
         </div>
         <ul className="mk-claim__proofs" aria-label="Why it is safe to look">
           {SPLASH.proofs.map((p) => (
