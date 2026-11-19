@@ -143,9 +143,9 @@ export async function frontDoorPins(check: Check): Promise<void> {
   // `<html data-home>` (lib/home-mode, set before first paint) and components/home/hero.css folds the SAME markup, so the block
   // holds no state at all. The hero's own pins are scripts/landing-hero-pins.ts.
   check(
-    'front door: the claim is the visible h1 (HERO_LINE as one text node — the roster pin reads it), one sentence, and a plain un-prefetched link to /story; the one-line version is NOT a post-hydration decision any more — the block holds no state and reads nothing about the visitor (no guide record, session, wallet or storage); the posture attribute and the hero\'s sheet fold it',
+    'front door: the claim is the visible h1 (HERO_LINE as one text node — the roster pin reads it), one sentence, and no /story door any more; the one-line version is NOT a post-hydration decision any more — the block holds no state and reads nothing about the visitor (no guide record, session, wallet or storage); the posture attribute and the hero\'s sheet fold it',
     /<h1 className="mk-claim__h1">\{SPLASH\.h1\}<\/h1>/.test(claim) && /<p className="mk-claim__sub">\{SPLASH\.sub\}<\/p>/.test(claim) &&
-      /<Link href=\{STORY_HREF\} className="mk-claim__door mono" prefetch=\{false\} data-splash-door>/.test(claim) &&
+      /* RE-PINNED 2026-11-19: the "What is this?" door left the hero (Nate); /story stays in the footer. */ !/data-splash-door/.test(claim) &&
       /<header className="mk-claim" data-splash-claim>/.test(claim) && /import '\.\/hero\.css'/.test(claim) &&
       !/getGuideState|useState|useEffect|useSession|useAccount|data-compact/.test(claim) &&
       !/SPLASH_SEEN_KEY|localStorage|useGuideState|useLayoutEffect|window\.location/.test(claim),
@@ -241,9 +241,9 @@ export async function frontDoorHttpPins(check: Check, base: string): Promise<voi
   const homeRes = await get('/')
   const home = flat(await homeRes.text())
   check(
-    'front door (served): `/` is 200 and opens on the claim — HERO_LINE as the ONE visible h1 (one text node), the sentence, the "What is this?" door to /story (no prefetch is a client matter; the href is plain) — above the tool strip, the lead seat and the guide seat; the sr-only "Markets" h1 is gone',
+    'front door (served): `/` is 200 and opens on the claim — HERO_LINE as the ONE visible h1 (one text node), the sentence (the "What is this?" door left the hero 2026-11-19) — above the tool strip, the lead seat and the guide seat; the sr-only "Markets" h1 is gone',
     homeRes.status === 200 && home.includes(`<h1 class="mk-claim__h1">${SPLASH.h1}</h1>`) /* RE-PINNED 2026-11-19 (the mosaic hero): the home's h1 is its own line, SPLASH.h1 ("Trading for the AI age."); HERO_LINE stays the <title>, the social card and /story's hero. */ && (home.match(/<h1\b/g) ?? []).length === 1 && !home.includes('<h1 class="sr-only">Markets</h1>') &&
-      home.includes(SPLASH.sub) && /<a class="mk-claim__door mono" data-splash-door="true" href="\/story">What is this\?/.test(home) &&
+      home.includes(SPLASH.sub) && !/data-splash-door/.test(home) &&
       home.indexOf('class="mk-claim"') < home.indexOf('class="mkt-frame__bar"') && home.indexOf('class="mkt-frame__bar"') < home.indexOf('data-seat="Lead"') && home.indexOf('data-seat="Lead"') < home.indexOf('data-seat="Guide"'),
     `status=${homeRes.status} h1s=${(home.match(/<h1\b/g) ?? []).length}`,
   )

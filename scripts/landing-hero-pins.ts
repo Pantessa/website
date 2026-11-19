@@ -58,7 +58,7 @@ const STRANGER_ONLY = ['.mk-claim__eyebrow', '.mk-claim__sub', '.mk-claim__doors
 
 export function landingHeroPins(check: Check): void {
   // ── The words ──
-  const words = [SPLASH.eyebrow[0], SPLASH.eyebrow[1], SPLASH.sub, SPLASH.tourDoor, SPLASH.chartDoor, SPLASH.returnTour, SPLASH.door, ...SPLASH.proofs.flatMap((p) => [p.lead, p.rest])]
+  const words = [SPLASH.eyebrow[0], SPLASH.eyebrow[1], SPLASH.sub, SPLASH.tourDoor, SPLASH.chartDoor, SPLASH.returnTour, ...SPLASH.proofs.flatMap((p) => [p.lead, p.rest])]
   const FENCE = /yeetful|\bdune\b|telegram|discord|prime broker|guarantee|risk[- ]free|\bpassive income\b|get rich|to the moon|financial advice|fully automatic/i
   const typed = words.filter((w) => /\d/.test(w.replace(/24\/7/g, '')))
   check(
@@ -108,7 +108,7 @@ export function landingHeroPins(check: Check): void {
       /<h1 className="mk-claim__h1">\{SPLASH\.h1\}<\/h1>/.test(claim) &&
       /<p className="mk-claim__sub">\{SPLASH\.sub\}<\/p>/.test(claim) &&
       /\{SPLASH\.proofs\.map\(/.test(claim) &&
-      ['mk-claim__eyebrow', 'mk-claim__h1', 'mk-claim__sub', 'mk-claim__doors', 'mk-claim__acts', 'mk-claim__tour', 'mk-claim__door mono', 'mk-claim__proofs'].every((c, i, a) => claim.indexOf(`"${c}`) >= 0 && (i === 0 || claim.indexOf(`"${a[i - 1]}`) < claim.indexOf(`"${c}`))),
+      ['mk-claim__eyebrow', 'mk-claim__h1', 'mk-claim__sub', 'mk-claim__doors', 'mk-claim__acts', 'mk-claim__tour', 'mk-claim__proofs'].every((c, i, a) => claim.indexOf(`"${c}`) >= 0 && (i === 0 || claim.indexOf(`"${a[i - 1]}`) < claim.indexOf(`"${c}`))),
   )
 
   // ── The fold, both ways, in CSS ──
@@ -148,22 +148,22 @@ export function landingHeroPins(check: Check): void {
       /text-wrap: balance;/.test(rule(sheet, '.mk-claim__sub')),
   )
   check(
-    "hero budgets (phone): in a phone's column the eyebrow, the share and the symbol chip give up their room, both doors hold ONE row (no wrap) at 44px, and the returning line there is the claim and the door back to the tour only",
+    // RE-PINNED 2026-11-19: the Share pill and the "What is this?" door left the hero (Nate), so no phone rule hides them.
+    "hero budgets (phone): in a phone's column the eyebrow and the symbol chip give up their room, both doors hold ONE row (no wrap) at 44px, and the returning line there is the claim and the door back to the tour only",
     /\.mk-claim__eyebrow \{ display: none; \}/.test(phone) &&
-      /\.mk-claim__share \{ display: none; \}/.test(phone) &&
       /\.mk-claim__sym \{ display: none; \}/.test(phone) &&
       /\.mk-claim__doors \{ flex-wrap: nowrap;/.test(phone) &&
       /\.mk-claim__go \{ min-height: 44px;/.test(phone) &&
       /\.mk-claim__try \{ min-height: 44px;/.test(phone) &&
-      /\.mk-claim \.mk-claim__door, \.mk-claim \.mk-claim__tour \{ min-height: 44px;/.test(phone) &&
+      /\.mk-claim \.mk-claim__tour \{ min-height: 44px;/.test(phone) &&
       /\.mk-claim \.mk-claim__tour \{ min-width: 44px;/.test(phone) &&
-      /:root\[data-home='return'\] \.mk-claim \.mk-claim__door \{ display: none; \}/.test(phoneReturn),
+      !/mk-claim__(share|door)\b/.test(sheet) && phoneReturn.length > 0,
   )
   check(
     'hero look: tokens only (no literal colour, no px type, no px radius), the one signature is the proofs\' rule cut in the five gem steps, a thumb gets 44px on any coarse pointer, nothing is sticky or fixed, and the sheet answers reduced motion',
     !/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|font-size:\s*[\d.]+px|border-radius:\s*[1-9][\d.]*px/.test(sheet) &&
       [1, 2, 3, 4, 5].every((n) => rule(sheet, '.mk-claim__proofs::before').includes(`var(--gem-${n})`)) &&
-      /@media \(pointer: coarse\) \{\s*\.mk-claim__go, \.mk-claim__try, \.mk-claim \.mk-claim__door, \.mk-claim \.mk-claim__tour \{ min-height: 44px; \}/.test(sheet) &&
+      /@media \(pointer: coarse\) \{\s*\.mk-claim__go, \.mk-claim__try, \.mk-claim \.mk-claim__tour \{ min-height: 44px; \}/.test(sheet) &&
       !/position:\s*(sticky|fixed)/.test(sheet) &&
       /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*transition: none;/.test(sheet) &&
       !/animation\s*:/.test(sheet),
@@ -172,15 +172,14 @@ export function landingHeroPins(check: Check): void {
   // ── Doors ──
   const journeys = claim.match(/data-journey=\{`Hero: /g) ?? []
   check(
-    "hero doors: the tour is an anchor on this page (`#tour`, from the tour's own constant); the chart is a SpineLink to /t/<symbol> (a public page: a plain link); /story is a plain un-prefetched link (a brochure page — a SpineLink would hold a stranger at the sign-in door); no redirectTo, no `?prompt=`, no bare <Link> into the shell; every door of the hero carries a `Hero: …` journey label",
+    // RE-PINNED 2026-11-19: the hero carries no Share pill and no /story door any more (Nate); /story stays in the footer.
+    "hero doors: the tour is an anchor on this page (`#tour`, from the tour's own constant); the chart is a SpineLink to /t/<symbol> (a public page: a plain link); no Share pill and no /story door; no redirectTo, no `?prompt=`, no bare <Link> into the shell; every door of the hero carries a `Hero: …` journey label",
     /const TOUR_HREF = `#\$\{TOUR_ANCHOR\}`/.test(claim) &&
       TOUR_ANCHOR === 'tour' &&
       /<a href=\{TOUR_HREF\} className="mk-claim__go" onClick=\{toTour\} data-hero-door="tour"/.test(claim) &&
       /<SpineLink href=\{`\/t\/\$\{SPLASH\.chartSymbol\}`\} className="mk-claim__try" prefetch=\{false\} data-hero-door="chart"/.test(claim) &&
       /<a href=\{TOUR_HREF\} className="mk-claim__tour mono" onClick=\{reopenTour\} data-hero-door="reopen"/.test(claim) &&
-      /<Link href=\{STORY_HREF\} className="mk-claim__door mono" prefetch=\{false\} data-splash-door>/.test(claim) &&
-      STORY_HREF === '/story' &&
-      (claim.match(/<Link\b/g) ?? []).length === 1 &&
+      !/<Link\b|ShareActions|data-splash-door|STORY_HREF/.test(claim) &&
       !/redirectTo|\?prompt=|openConnectModal/.test(claim) &&
       journeys.length === 3,
     `${journeys.length} journey labels`,
@@ -263,9 +262,9 @@ export async function landingHeroPinsServed(check: Check, base: string): Promise
   const from = html.indexOf('class="mk-claim"')
   const hero = from < 0 ? '' : html.slice(from, html.indexOf('class="mkt-frame__bar"', from))
   const at = (s: string) => hero.indexOf(s)
-  const order = ['class="mk-claim__eyebrow', `<h1 class="mk-claim__h1">${SPLASH.h1}</h1>`, 'class="mk-claim__sub"', 'data-hero-door="tour"', 'data-hero-door="chart"', 'data-hero-door="reopen"', 'data-splash-door="true"', 'class="mk-claim__proofs"']
+  const order = ['class="mk-claim__eyebrow', `<h1 class="mk-claim__h1">${SPLASH.h1}</h1>`, 'class="mk-claim__sub"', 'data-hero-door="tour"', 'data-hero-door="chart"', 'data-hero-door="reopen"', 'class="mk-claim__proofs"']
   check(
-    "hero (served): `/` opens on the hero in the stranger's posture — the header keeps `mk-claim` + data-splash-claim, SPLASH.h1 is the page's ONE h1 (one text node), and the eyebrow, the sentence, both doors, the door back to the tour, the story door and the proofs are all in the server HTML in reading order, above the tool strip; no post-hydration flag is rendered",
+    "hero (served): `/` opens on the hero in the stranger's posture — the header keeps `mk-claim` + data-splash-claim, SPLASH.h1 is the page's ONE h1 (one text node), and the eyebrow, the sentence, both doors, the door back to the tour and the proofs are all in the server HTML in reading order, above the tool strip; no post-hydration flag is rendered",
     res.status === 200 &&
       hero.length > 0 &&
       /<header class="mk-claim" data-splash-claim="true">/.test(html) &&
@@ -274,19 +273,18 @@ export async function landingHeroPinsServed(check: Check, base: string): Promise
       hero.includes(SPLASH.sub) &&
       hero.includes(SPLASH.eyebrow[0]) &&
       hero.includes(SPLASH.eyebrow[1]) &&
-      !/data-compact/.test(hero),
+      !/data-compact/.test(hero) && !/data-splash-door|mk-claim__share/.test(hero),
     `status ${res.status} · missing ${order.filter((s) => at(s) < 0).join(' | ') || 'none'}`,
   )
   const tag = (marker: string) => (hero.match(new RegExp(`<a\\b[^>]*${marker}[^>]*>`)) ?? [''])[0]
   check(
-    "hero (served): the doors are real links a crawler and a script-less browser can follow — the primary one to `#tour` (and the page HAS that section), the chart to /t/<symbol>, the way back to `#tour`, the story to /story — each with its `Hero:` journey label; the hero writes no `/chat?prompt=` link",
+    "hero (served): the doors are real links a crawler and a script-less browser can follow — the primary one to `#tour` (and the page HAS that section), the chart to /t/<symbol>, the way back to `#tour` (no /story door: it left the hero 2026-11-19) — each with its `Hero:` journey label; the hero writes no `/chat?prompt=` link",
     /href="#tour"/.test(tag('data-hero-door="tour"')) &&
       tag('data-hero-door="tour"').includes(`data-journey="Hero: ${SPLASH.tourDoor}"`) &&
       new RegExp(`href="/t/${SPLASH.chartSymbol}"`).test(tag('data-hero-door="chart"')) &&
       /data-journey="Hero: /.test(tag('data-hero-door="chart"')) &&
       /href="#tour"/.test(tag('data-hero-door="reopen"')) &&
       /data-journey="Hero: /.test(tag('data-hero-door="reopen"')) &&
-      /<a class="mk-claim__door mono" data-splash-door="true" href="\/story">What is this\?/.test(hero) &&
       /id="tour"/.test(html) &&
       !/\/chat\?prompt=/.test(hero),
     tag('data-hero-door="tour"').slice(0, 120),
@@ -313,7 +311,8 @@ export async function landingHeroPinsServed(check: Check, base: string): Promise
     "hero (served): the CSS the page links folds the hero for a returning visitor — one rule on `:root[data-home=return]` hides the eyebrow, the sentence, the doors and the proofs — and shows the door back to the tour only there",
     sheets.length > 0 &&
       STRANGER_ONLY.every((s) => foldRule.includes(s)) &&
-      /\.mk-claim \.mk-claim__tour\{display:none\}/.test(all) &&
+      // (the minifier merges the hidden-by-default rule into the pill's own rule once no door shares it: read display:none anywhere in it)
+      /\.mk-claim \.mk-claim__tour\{[^}]*display:none[;}]/.test(all) &&
       /:root\[data-home=["']?return["']?\] \.mk-claim \.mk-claim__tour\{display:inline-flex\}/.test(all),
     `${sheets.length} sheets · fold: ${foldRule || 'not found'}`,
   )
