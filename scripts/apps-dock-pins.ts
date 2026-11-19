@@ -147,6 +147,10 @@ export function appsDockPins(check: Check) {
   const psel = pcss.match(/(^|\})\s*([^{}@]+)\{/g) ?? []
   const pown = psel.filter((x) => !/^\}?\s*(from|to|\d+%)/.test(x.replace(/\s+/g, ' ')))
   check('dock: every rule in picker.css is scoped by the apgk- prefix', pown.length > 40 && pown.every((x) => /apgk-|\.apgk\b/.test(x)), pown.filter((x) => !/apgk-|\.apgk\b/.test(x)).join(' | '))
+  // The switch is drawn beside the row's button, after it: a press on it must fall through to the
+  // button (2026-11-19: it did not, and every switch in the picker ignored a press). A real-mouse
+  // drive proves it: scripts/apps-page-shot.mjs --click presses like a mouse and --assert fails a miss.
+  check('dock: a press on a switch falls through to its row\'s button (the switch takes no pointer events)', /\.apgk-switch \{ pointer-events: none; \}/.test(pcss) && /<span className="apgk-switch" aria-hidden>/.test(picker))
   const reduce = pcss.slice(pcss.indexOf('@media (prefers-reduced-motion: reduce)'))
   check(
     'dock: every animation in picker.css is switched off under prefers-reduced-motion',
