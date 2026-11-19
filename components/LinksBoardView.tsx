@@ -84,13 +84,13 @@ export default function LinksBoardView({
         {/* Mint yours — the composer itself, not a button to a form behind
             sign-in. A stranger writes the sentence right here and watches
             the card their link will wear assemble; the mint press is the
-            sign-in door (guestDoor), carrying the ask through to the
+            sign-in door, carrying the ask through to the
             studio. */}
         <div className={inApp ? 'linkstudio__mint' : undefined}>
           <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
             Mint yours
           </h2>
-          <MintLinkForm guestDoor onMinted={onMinted} className="mb-6" />
+          <MintLinkForm onMinted={onMinted} className="mb-6" />
           <div className="flex items-center gap-3 flex-wrap">
             <Link href="/links/embed" className="btn btn--ghost text-[13px]">
               Put a button on your site

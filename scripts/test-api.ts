@@ -3776,6 +3776,18 @@ async function main() {
     // like live ones and kept offering "tweet"; the rail's bottom seat kept
     // "Name your page →" after a claim. Source-level pins — the browser
     // drives are in links.md.
+    // 2026-11-19 (Nate: "it says sign in to mint, we should offer the user
+    // to sign in here vs dead end them"): the rail's mint modal printed the
+    // API's 401 line under the button. Every surface now offers the unified
+    // door to a guest, and a 401 from the mint itself turns the button into
+    // that door instead of an error line.
+    check(
+      'mint form: a guest gets the sign-in door on EVERY surface (no guestDoor gate) and a mint 401 opens the door, never a dead-end line',
+      !/guestDoor/.test(linksChangedSrc.form) &&
+        /const showDoor = \(status === 'guest' \|\| needsSignIn\) && askReady/.test(linksChangedSrc.form) &&
+        /\{showDoor \? \(/.test(linksChangedSrc.form) &&
+        /if \(res\.status === 401\) \{\s*setNeedsSignIn\(true\)\s*return/.test(linksChangedSrc.form),
+    )
     const runtimeSrc = linksFs.readFileSync('components/IntentRuntime.tsx', 'utf8')
     check(
       'decline verb: rendered in the started view too (header chip), not only on the splash',

@@ -13,8 +13,8 @@
 // Contracts preserved from the extracted form (#599): same props, same
 // POST /api/intent-links body, same query-prefill (?ask= + ?mcps=) read, so
 // the dashboard page, the rail's MintLinkModal, and every chat handoff
-// compose it unchanged. New, opt-in: `guestDoor` lets a PUBLIC surface
-// (/links) render the stage signed-out — the mint press becomes the unified
+// compose it unchanged. Every surface renders the stage signed-out: a
+// guest's mint press (or a 401 from a lapsed session) becomes the unified
 // sign-in door (rule 6: CreateAccountButton / connectAndSignIn, never raw
 // RainbowKit) with redirectTo carrying the typed ask + picks back into
 // the links studio, where the query prefill re-lights everything.
@@ -70,7 +70,6 @@ export function MintLinkForm({
   prefill,
   externalError,
   onMinted,
-  guestDoor,
   className,
 }: {
   /** Read the chat handoff (?ask= + ?mcps=) from the URL once on mount —
@@ -91,10 +90,6 @@ export function MintLinkForm({
    *  "here's your link" moment (the rail's mint modal) read it; the
    *  dashboard just reloads its table and ignores the payload. */
   onMinted?: (link: { slug: string; url: string; ask: string }) => void
-  /** Public surfaces only (/links): a settled guest's mint press opens the
-   *  unified sign-in door with the typed ask carried in redirectTo instead
-   *  of firing a 401 mint. Auth surfaces (dashboard, rail modal) omit it. */
-  guestDoor?: boolean
   className?: string
 }) {
   const [ask, setAsk] = useState(() => (initialAsk ?? '').slice(0, 400))
@@ -107,6 +102,9 @@ export function MintLinkForm({
   const [finePrintOpen, setFinePrintOpen] = useState(false)
   const [minting, setMinting] = useState(false)
   const [mintError, setMintError] = useState<string | null>(null)
+  // Set by a 401 from the mint itself, for a session the status still read
+  // as signed in; cleared once the session says signed in again.
+  const [needsSignIn, setNeedsSignIn] = useState(false)
   // The share moment, inline: surfaces that keep the form mounted (the
   // dashboard, /links) get the minted link right where the card was. The
   // rail modal swaps to its own takeover on onMinted, so this never shows.
@@ -125,6 +123,9 @@ export function MintLinkForm({
   const [pickerOpen, setPickerOpen] = useState(false)
   const askRef = useRef<HTMLTextAreaElement>(null)
   const { status, connectAndSignIn } = useSession()
+  useEffect(() => {
+    if (status === 'authed') setNeedsSignIn(false)
+  }, [status])
 
   useEffect(() => {
     if (!prefill) return
@@ -150,6 +151,9 @@ export function MintLinkForm({
   }, [readQueryPrefill])
 
   const askReady = ask.trim().length >= 8
+  // Every surface offers the door to a guest (the rail's mint modal used to
+  // print the API's "Sign in to mint" 401 and stop there).
+  const showDoor = (status === 'guest' || needsSignIn) && askReady
   // What the card wears: hand-picked set, or the live compose of the ask.
   // Under 8 chars there's no sentence to read yet — the row shows its hint.
   const picks = useMemo(
@@ -198,6 +202,12 @@ export function MintLinkForm({
       })
       const data = await res.json()
       if (!res.ok) {
+        // A 401 is not a dead end: the session lapsed (or the status read
+        // was stale), so the button turns into the sign-in door right here.
+        if (res.status === 401) {
+          setNeedsSignIn(true)
+          return
+        }
         setMintError(data.error ?? 'Mint failed.')
         return
       }
@@ -439,7 +449,7 @@ export function MintLinkForm({
       )}
 
       <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-2">
-        {guestDoor && status === 'guest' && askReady ? (
+        {showDoor ? (
           cdpEnabled ? (
             <CreateAccountButton
               label="Sign in & mint it"
