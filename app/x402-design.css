@@ -5670,6 +5670,49 @@
 .mkt-frame__acct { display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
 .mkt-frame__acct .navacct__pill { max-width: 100%; }
 .mkt-frame__acct .navacct__addr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* THE STRIP FITS AT EVERY WIDTH (2026-11-19, Nate: "the account div is over
+   the alerts"). The rail is 300–360px; Ask with ⌘K (105) + lens + bell + gaps
+   left the account seat ~80px, and the 155px pill overflowed LEFT (the seat is
+   flex-end) across the bell and the lens. Now: every control is one 34px
+   height; the pill shrinks inside its seat (the name ellipsizes, it never
+   leaves the seat); where the rail cannot hold Ask + ⌘K, the icons and a
+   readable name, the account is a 34px avatar circle like the bell and the
+   lens (the chat phone bar's pattern), the name in its menu and its tooltip;
+   and on a wide rail, where the full pill shows, a signed-in strip drops the
+   ⌘K hint instead (the shortcut and the tooltip stay). */
+@media (min-width: 1024px) { .mkt-frame__top .mkt-frame__ask { height: 34px; } }
+.mkt-frame__acct > .navacct { min-width: 0; max-width: 100%; }
+.mkt-frame__acct .navacct__pill { min-width: 0; height: 34px; padding-block: 0; }
+.mkt-frame__acct .navacct__addr { min-width: 0; }
+.mkt-frame__acct > div[aria-hidden] { max-width: 100%; }
+@media (min-width: 1680px) { .mkt-frame__top:has(.navacct) .nav__ask-kbd { display: none; } }
+/* The avatar form: a rail under ~352px (21vw; the full pill needs ~155px
+   beside Ask, the lens and the bell) and a narrow phone bar. */
+@media (min-width: 1024px) and (max-width: 1679px), (max-width: 480px) {
+  .mkt-frame__acct > div[aria-hidden] { width: 34px !important; }
+  .mkt-frame__acct .navacct__pill { position: relative; width: 34px; padding: 0; gap: 0; justify-content: center; }
+  /* The name leaves the paint, not the accessibility tree: it stays the
+     button's accessible name. */
+  .mkt-frame__acct .navacct__addr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+  .mkt-frame__acct .navacct__chev { display: none; }
+  .mkt-frame__acct .navacct__pill::after {
+    content: ''; width: 15px; height: 15px; background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  /* The session dot rides the avatar's corner as a status badge. */
+  .mkt-frame__acct .navacct__dot { position: absolute; right: 3px; bottom: 3px; width: 8px; height: 8px; box-shadow: 0 0 0 2px var(--bg); }
+  .mkt-frame__acct .navacct__dot.is-authed { box-shadow: 0 0 0 2px var(--bg); }
+}
+/* On the phone bar (below lg) the account is the bell's and the lens's 44px. */
+@media (max-width: 1023px) { .mkt-frame__acct .navacct__pill { height: 44px; } }
+@media (max-width: 480px) {
+  .mkt-frame__acct > div[aria-hidden] { width: 44px !important; }
+  .mkt-frame__acct .navacct__pill { width: 44px; height: 44px; }
+  .mkt-frame__acct .navacct__pill::after { width: 18px; height: 18px; }
+  .mkt-frame__acct .navacct__pill::before { inset: 0; }
+  .mkt-frame__acct .navacct__dot { right: 7px; bottom: 7px; }
+}
 /* z-index above the tool strip (its import/alert scrims render inside the
    rail), below the strip's account menu. */
 .mkt-frame__rail {
