@@ -106,6 +106,11 @@ export function appsPagePins(check: Check) {
       pageHeadline({ count: 5, totalUsd: 6306.4, needs: 1 }) === 'You have $6,306 on this page. One thing needs you.' &&
       pageHeadline({ count: 2, totalUsd: null, needs: 2 }) === 'Two things need you.' && pageHeadline({ count: 2, totalUsd: 0, needs: 0 }) === 'Nothing needs you right now.')
 
+  check('apps page (headline): while the apps are still loading the headline says so, never "Nothing needs you" for a page it has not read yet',
+    pageHeadline({ count: 2, totalUsd: null, needs: 0, loading: true }) === 'Loading your apps…' &&
+      pageHeadline({ count: 1, totalUsd: null, needs: 0, loading: true }) === 'Loading your app…' &&
+      pageHeadline({ count: 0, totalUsd: null, needs: 0, loading: true }) === 'Pick an app to start.')
+
   check('apps page (headline): the total the headline names is what the OPEN APPS carry (never the wallet-level map: OpenSea alone read "$20 on this page"), never less than a section on the same page prints; nothing priced is null, never $0',
     pageTotalUsd([{ ...holdings, totalUsd: 28.4, facts: [{ bucket: 'spot', usd: 8, label: 'long tail' }] } as SplashTile]) === 28.4 &&
       pageTotalUsd([{ ...quietHl, facts: [{ bucket: 'earning', usd: 1121, label: 'supplied on Aave' }] } as SplashTile, votes]) === 1121 &&

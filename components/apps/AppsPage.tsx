@@ -77,9 +77,11 @@ export default function AppsPage({ address }: { address: string }) {
   const only = density === 'full' ? active[0] : null
   const needsFirst = needsLeads(density, only ? appFamily(only) : null)
   const onlyModule = only ? SECTIONS[appFamily(only)] : null
-  const headline =
-    (only && onlyModule?.headline?.({ server: only, tiles: page.bySlug.get(only.slug) ?? [], page, map })) ||
-    pageHeadline({ count: active.length, totalUsd, needs: needs.length })
+  const pageLoading = loading || tiles === null
+  const headline = pageLoading
+    ? pageHeadline({ count: active.length, totalUsd, needs: needs.length, loading: true })
+    : (only && onlyModule?.headline?.({ server: only, tiles: page.bySlug.get(only.slug) ?? [], page, map })) ||
+      pageHeadline({ count: active.length, totalUsd, needs: needs.length })
 
   // The one-line posture folds every quiet app into ONE sentence.
   const sectionsFor = active.map((server) => {
