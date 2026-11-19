@@ -77,7 +77,6 @@ import { useSymbolFills } from '@/lib/chart-fills'
 import { askDoorNav, useAskDoor } from '@/lib/ask-door'
 import { symbolAskApps, symbolAskNeedsWallet, symbolAskText } from '@/lib/symbol-ask'
 import { useOrderAim } from '@/lib/order-size'
-import GuideSeat from '@/components/guide/GuideSeat'
 import { appScrollTop, scrollAppTo } from '@/lib/app-scroller'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
@@ -662,9 +661,7 @@ export default function SymbolPage({
             <ExecStrip symbol={sym} pair={pair} onAsk={act} onBuild={orderToApp} last={stats?.last ?? null} autoOpen={false} />
           </div>
         )}
-        {/* The guide's one hint card: under the chips on a phone, right under
-            the tabs on a desktop (where the chips hide). */}
-        {pair && <GuideSeat surface="symbol" symbol={sym} ask={isChartOnlyPair(pair) || lookOnly ? null : composeAsk(pair, 'buy', { usd: 25 })} chartOnly={isChartOnlyPair(pair)} lookOnly={lookOnly} />}
+        {/* No guide card here (Nate, 2026-11-19: "a bit annoying" above the chart). */}
 
         {/* ── CALLED IT: who is plotted and their tally, as a band joined to the top of the chart card (nothing until a handle is plotted); parks with it ── */}
         {pair && <CalledHead symbol={sym} parked={!showChart} />}
