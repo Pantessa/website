@@ -5,7 +5,13 @@
 // server, no chain, no DB. Called from scripts/test-api.ts, and runnable alone:
 //   npx tsx scripts/symbol-search-pins.ts
 import { existsSync, readFileSync } from 'node:fs'
-import { primeHlPerps } from '../lib/charts'
+import { chartPairFor, isChartOnlyPair, isHip3Pair, isLiveOnlyHlPair, isPerpTwinPair, pairTicker, perpTwinOf, primeHlPerps, stockTwinOf } from '../lib/charts'
+import { perpTwinStem, resolveHlCoin } from '../lib/hl-dex'
+import { parseHlIntent } from '../lib/hyperliquid-exec'
+import { composeTicketAsk, freshTicket, ticketSidesFor } from '../lib/order-ticket'
+import { execAsks } from '../lib/trade-asks'
+import { robinhoodRegistryTokens } from '../lib/token-list'
+import { symbolName } from '../lib/watchlists'
 import { SEARCH_POPULAR, SEARCH_RECENT_MAX, hitsFor, isSearchKey, matchRange, parseRecent, pushRecent, searchHitFor, searchScore, searchSymbols } from '../lib/symbol-search'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -38,7 +44,11 @@ export function symbolSearchPins(check: Check) {
     stocksOnly.length > 0 && stocksOnly.every((h) => h.kind === 'stock') && macroOnly.every((h) => h.kind === 'macro') && searchSymbols('btc', { filter: 'stock' }).every((h) => h.symbol !== 'BTC'))
 
   // ── the live listing ────────────────────────────────────────────────────
-  primeHlPerps({ main: ['BTC', 'ETH', 'SOL', 'HYPE', 'ZEC', 'kPEPE', ...Array.from({ length: 60 }, (_, i) => `PIN${i}`)], xyz: ['xyz:GOLD', 'xyz:SP500', 'xyz:TLT', 'xyz:CL', ...Array.from({ length: 30 }, (_, i) => `xyz:PX${i}`)] })
+  // 2026-11-19: the listing also carries what the perp-twin pins below read —
+  // xyz perps on two charted stocks (ANT, NVDA), one on a feedless listing
+  // (SATS), and a MAIN-book coin that shares a stock's ticker (NOW) with no
+  // xyz market beside it.
+  primeHlPerps({ main: ['BTC', 'ETH', 'SOL', 'HYPE', 'ZEC', 'kPEPE', 'NOW', ...Array.from({ length: 60 }, (_, i) => `PIN${i}`)], xyz: ['xyz:GOLD', 'xyz:SP500', 'xyz:TLT', 'xyz:CL', 'xyz:ANT', 'xyz:NVDA', 'xyz:SATS', ...Array.from({ length: 30 }, (_, i) => `xyz:PX${i}`)] })
   const gold = searchSymbols('gold')
   const sp = searchSymbols('sp500')
   check('symbol search (live): with the venue\'s listing in hand a builder market leads its own name ("gold" → GOLD before GLD, "sp500" → SP500) and reads as Macro; a main-book perp nobody listed by hand is found',
@@ -47,6 +57,85 @@ export function symbolSearchPins(check: Check) {
   check('symbol search (empty state): the opening list is chartable, has no repeats, honours a filter and skips what an earlier section showed',
     popular.length >= 8 && new Set(popular.map((h) => h.symbol)).size === popular.length && hitsFor(SEARCH_POPULAR, 'coin').every((h) => h.kind === 'coin') &&
       !hitsFor(SEARCH_POPULAR, 'all', new Set(['BTC'])).some((h) => h.symbol === 'BTC') && searchHitFor('NOPE123456789') === null)
+
+  // ── one share, two instruments (2026-11-19, the Anthropic listing) ──────
+  {
+    // Nate, on ANT going live on Robinhood while /t/ANT charted the Hyperliquid
+    // perp: "show ANT like this one for perps and one for robinhood and let
+    // the user decide". A stock with an xyz perp is two chart symbols: the
+    // stock keeps the ticker, the perp is the ticker + PERP.
+    const stock = chartPairFor('ANT')
+    const twin = chartPairFor('ANTPERP')
+    check('perp twin (chart): the stock keeps the ticker and its xyz perp charts as ticker + PERP (typed with a hyphen too) — a builder market the order layer builds on, labelled by the share',
+      stock?.source === 'robinhood' && twin?.source === 'hyperliquid' && twin.pair === 'xyz:ANT' && twin.symbol === 'ANTPERP' && twin.label === 'ANT / USD' &&
+        chartPairFor('ant-perp')?.symbol === 'ANTPERP' && isHip3Pair(twin) && !isChartOnlyPair(twin) && isLiveOnlyHlPair(twin) && isPerpTwinPair(twin) && !isPerpTwinPair(stock) && !isPerpTwinPair(chartPairFor('SP500')),
+      JSON.stringify(twin))
+    check('perp twin (chart): each side names the other (ANT ↔ ANTPERP), both read as the share\'s ticker and company, and a stock the venue lists no perp for has no twin',
+      perpTwinOf('ANT') === 'ANTPERP' && perpTwinOf('ant') === 'ANTPERP' && stockTwinOf(twin) === 'ANT' && stockTwinOf(stock) === null && pairTicker(twin!) === 'ANT' && pairTicker(stock!) === 'ANT' &&
+        symbolName('ANTPERP') === symbolName('ANT') && symbolName('ANT') === 'Anthropic' && perpTwinOf('F') === null && chartPairFor('FPERP') === null && perpTwinOf('BTC') === null && perpTwinOf('SP500') === null)
+    check('perp twin (chart): only the xyz dex grows one — a MAIN-book coin that shares a stock\'s ticker never does (NOW the coin is not ServiceNow), and a feedless listing stays chartless both ways',
+      chartPairFor('NOW')?.source === 'robinhood' && perpTwinOf('NOW') === null && chartPairFor('NOWPERP') === null && chartPairFor('SATS') === null && perpTwinOf('SATS') === null && chartPairFor('SATSPERP') === null)
+    const ant = searchSymbols('ANT')
+    const anthropic = searchSymbols('anthropic')
+    check('perp twin (search): a stock the venue also lists is TWO rows, the stock token then its perp right under it, both shown by the share\'s ticker with their own class; the Stocks and Perps filters keep one each',
+      ant[0]?.symbol === 'ANT' && ant[0].kind === 'stock' && ant[1]?.symbol === 'ANTPERP' && ant[1].kind === 'perp' && ant[0].ticker === 'ANT' && ant[1].ticker === 'ANT' && ant[1].name === 'Anthropic' &&
+        anthropic[0]?.symbol === 'ANT' && anthropic[1]?.symbol === 'ANTPERP' && syms('ANT', { filter: 'stock' }).includes('ANT') && !syms('ANT', { filter: 'stock' }).includes('ANTPERP') &&
+        syms('ANT', { filter: 'perp' })[0] === 'ANTPERP' && !syms('ANT', { filter: 'perp' }).includes('ANT'),
+      `${ant.slice(0, 3).map((h) => `${h.symbol}:${h.kind}`)} | ${anthropic.slice(0, 2).map((h) => h.symbol)}`)
+    check('perp twin (search): typed as the perp (ANT-PERP, antperp) the perp leads; a loose match on a stock (a few letters inside its name) stays one row; a stock with no perp is one row',
+      syms('ANT-PERP')[0] === 'ANTPERP' && syms('antperp')[0] === 'ANTPERP' && syms('vidia').includes('NVDA') && !syms('vidia').includes('NVDAPERP') && syms('nvda').slice(0, 2).join() === 'NVDA,NVDAPERP' &&
+        syms('ford').includes('F') && !syms('ford').some((s) => s.endsWith('PERP')),
+      `${syms('ANT-PERP').slice(0, 2)} | ${syms('vidia').slice(0, 3)} | ${syms('nvda').slice(0, 3)}`)
+    const sides = twin ? ticketSidesFor(twin) : []
+    const long = twin ? composeTicketAsk(twin, freshTicket(twin, 'long', { usd: 25 }), 100) : null
+    const strip = twin ? execAsks(twin, { usd: 50, last: 100 }) : []
+    check('perp twin (order): its page offers Long and Short only; the SENTENCE keeps the twin\'s spelling and the button names the share; the stock page still offers Buy and Sell',
+      sides.join() === 'long,short' && !!long && long.ok && long.ask === 'Long $25 of ANTPERP on Hyperliquid' && long.label === 'Long $25 of ANT' &&
+        strip.map((a) => a.label).join() === 'Long ANT,Short ANT' && strip[0].ask === 'Long $50 of ANTPERP on Hyperliquid' && (stock ? ticketSidesFor(stock).join() : '') === 'buy,sell',
+      `${sides} | ${long && long.ok ? `${long.ask} / ${long.label}` : ''} | ${strip.map((a) => a.ask)}`)
+    const open = parseHlIntent('Long $25 of ANTPERP on Hyperliquid')
+    const lev = parseHlIntent('2x Short $50 of ant-perp on hyperliquid')
+    const close = parseHlIntent('Close my ANTPERP long on Hyperliquid')
+    const bare = parseHlIntent('Long $25 of ANT on Hyperliquid')
+    check('perp twin (order): the twin\'s spelling is read as the xyz market and no other (open, leveraged, hyphenated, close); a bare ticker, a non-stock "…PERP" and the grammar\'s own "syrup perp" read as before',
+      open?.kind === 'open' && open.coin === 'xyz:ANT' && lev?.kind === 'open' && lev.coin === 'xyz:ANT' && lev.leverage === 2 && !lev.isBuy && close?.kind === 'close' && close.coin === 'xyz:ANT' &&
+        bare?.kind === 'open' && bare.coin === 'ANT' && (parseHlIntent('Long $10 of BTCPERP on Hyperliquid') as { coin?: string } | null)?.coin === 'BTCPERP' &&
+        (parseHlIntent('buy 10 syrup perp on hyperliquid') as { coin?: string } | null)?.coin === 'SYRUP' && (parseHlIntent('Long $25 of xyz:SP500 on Hyperliquid') as { coin?: string } | null)?.coin === 'xyz:SP500',
+      `${JSON.stringify(open)} | ${JSON.stringify(close)} | ${JSON.stringify(bare)}`)
+    const books = { main: ['BTC', 'NOW', 'kPEPE'], dexes: { xyz: ['xyz:ANT', 'xyz:NOW', 'xyz:SP500'] } }
+    check('perp twin (venue): the resolver the venue gate reads takes the spelling to the twin dex ALONE — NOWPERP is xyz:NOW while a bare NOW is still the main book\'s coin; a stem the dex does not list resolves to nothing',
+      resolveHlCoin('ANTPERP', books)?.coin === 'xyz:ANT' && resolveHlCoin('ant-perp', books)?.coin === 'xyz:ANT' && resolveHlCoin('NOWPERP', books)?.coin === 'xyz:NOW' && resolveHlCoin('NOW', books)?.coin === 'NOW' &&
+        resolveHlCoin('BTCPERP', books) === null && resolveHlCoin('ANTPERP', { main: ['BTC'], dexes: {} }) === null && perpTwinStem('ANTPERP') === 'ANT' && perpTwinStem('ant-perp') === 'ANT' && perpTwinStem('PERP') === null && perpTwinStem('ANT') === null)
+    // The registry that listed ANT on day one (lib/token-list): the issuer's
+    // own document, read behind the Uniswap list. The converter is pure and
+    // fails closed row by row.
+    const ok = { tokenSymbol: 'ANT', tokenName: 'Anthropic, PBC Class A Common Stock • Robinhood Token', tokenDecimals: 18, status: 'ASSET_STATUS_ACTIVE', deployments: [{ contractAddress: '0xbbB6c29bCc3a1028A2B54310DF73F4F7A3bcB373', chainId: 4663 }] }
+    const rows = robinhoodRegistryTokens({ assets: [
+      ok,
+      { ...ok, tokenSymbol: 'OFF', status: 'ASSET_STATUS_INACTIVE' },
+      { ...ok, tokenSymbol: 'ELSE', deployments: [{ contractAddress: ok.deployments[0].contractAddress, chainId: 1 }] },
+      { ...ok, tokenSymbol: 'TWO', deployments: [ok.deployments[0], ok.deployments[0]] },
+      { ...ok, tokenSymbol: 'BADADDR', deployments: [{ contractAddress: '0x1234', chainId: 4663 }] },
+      { ...ok, tokenSymbol: 'BADDEC', tokenDecimals: '18' },
+      { ...ok, tokenSymbol: 'bad symbol!' },
+      null,
+    ] })
+    const tl = code('lib/token-list.ts')
+    check('stock registry: Robinhood\'s own token registry becomes list rows only for an ACTIVE asset with one well-formed deployment on the chain (the name loses its "• Robinhood Token" tail); it is read AFTER the Uniswap list, so it only ever adds a symbol',
+      rows.length === 1 && rows[0].symbol === 'ANT' && rows[0].chainId === 4663 && rows[0].decimals === 18 && rows[0].address === ok.deployments[0].contractAddress && rows[0].name === 'Anthropic, PBC Class A Common Stock' &&
+        robinhoodRegistryTokens(null).length === 0 && robinhoodRegistryTokens({ assets: 'x' }).length === 0 &&
+        /const sources: ListSource\[\] = \[\{ url: UNISWAP_LIST \}\][\s\S]*if \(chainId === ROBINHOOD_REGISTRY_CHAIN_ID\) sources\.push\(\{ url: ROBINHOOD_REGISTRY_URL/.test(tl) && /const partial = lists\.length < sources\.length/.test(tl),
+      JSON.stringify(rows))
+    // The page: a link a warm server draws and a cold browser does not is a
+    // hydration error, so a stock page warms the venue's table and hands it down.
+    const route = code('app/t/[symbol]/page.tsx')
+    const shell = code('components/markets/shell/SymbolPage.tsx')
+    check('perp twin (page): the header carries the Stock / Perp switch (the page you are on is marked, the other is a link), and a stock page warms the venue\'s table and hands it to the browser so both renders agree',
+      /if \(pair\?\.source === 'robinhood'\) await warmHlPerps\(\)/.test(route) && /isLiveOnlyHlPair\(pair\) \|\| \(pair\?\.source === 'robinhood' && perpTwinOf\(pair\.symbol\)\) \? liveHlPerpNames\(\) : null/.test(route) &&
+        /<nav className="sym__twin mono"/.test(shell) && /href=\{`\/t\/\$\{twinStock\}`\}/.test(shell) && /href=\{`\/t\/\$\{twinPerp\}`\}/.test(shell) && (shell.match(/aria-current="page"/g) ?? []).length >= 2 &&
+        /\.sym__twin-opt\[aria-current='page'\]/.test(rf('components/markets/markets.css')))
+
+  }
 
   // ── recents, the highlight, the key ─────────────────────────────────────
   const many = Array.from({ length: 12 }, (_, i) => `T${i}`).reduce<string[]>((l, s) => pushRecent(l, s), [])
@@ -69,7 +158,8 @@ export function symbolSearchPins(check: Check) {
   // (the home's eyebrow) at its left end, before Ask; MarketsSide hands it on.
   check('symbol search (wired): the lens sits in the strip between Ask and the bell (a phone\'s top bar), the pill beside the symbol on /t, and ONE panel is mounted per markets page',
     /\{lead \? <div className="mkt-frame__lead">\{lead\}<\/div> : null\}\s*<AskDoorTrigger variant="rail" \/>\s*<SymbolSearchTrigger variant="strip" \/>\s*<RailAlerts \/>/.test(strip) && /<MarketsTopStrip lead=\{lead\} \/>\s*<SymbolSearch \/>/.test(side) && (side.match(/<SymbolSearch \/>/g) ?? []).length === 1 &&
-      /<span className="sym__sym mono">\{sym\}<\/span>\s*<SymbolSearchTrigger variant="head" \/>/.test(page))
+      // RE-PINNED 2026-11-19: the header shows the share's ticker (a perp twin's `ANTPERP` reads ANT); for every other symbol it IS the symbol.
+      /<span className="sym__sym mono">\{ticker\}<\/span>\s*<SymbolSearchTrigger variant="head" \/>/.test(page))
   // 2026-11-19 (Nate: "same functionality as when on an asset page … only show
   // the style where it pops up"): the markets tool strip's box is a door to
   // the panel, and the in-place search it replaced is gone.

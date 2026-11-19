@@ -30,7 +30,7 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ChevronDown, ChevronUp, CornerDownLeft } from 'lucide-react'
-import { isChartOnlyPair, isLookOnlyPair, type ChartPair } from '@/lib/charts'
+import { isChartOnlyPair, isLookOnlyPair, type ChartPair, isPerpTwinPair, pairTicker } from '@/lib/charts'
 import LookOnlyCard from '@/components/markets/shell/LookOnlyCard'
 import OrderTicket from '@/components/markets/trade/OrderTicket'
 import { execAsks } from '@/lib/trade-asks'
@@ -133,7 +133,7 @@ export default function RailTicket({
   return (
     <section className="mkt-railticket" data-slot="order-ticket" data-open={open ? '1' : '0'} data-side={shown ?? undefined} data-acts={asks.length} aria-label={`Act on ${pair.symbol}`}>
       <div className="mkt-railticket__head">
-        <span className="mkt-railticket__k mono">ACT ON {pair.symbol}</span>
+        <span className="mkt-railticket__k mono">ACT ON {isPerpTwinPair(pair) ? `${pairTicker(pair)} PERP` : pair.symbol}</span>
         <span className="mkt-railticket__sub mono">YOUR WALLET SIGNS</span>
         <button type="button" className="mkt-railticket__fold" aria-expanded={open} aria-label={open ? 'Fold the order ticket' : 'Open the order ticket'} title={open ? 'Fold' : 'Open'} onClick={toggle}>
           {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}

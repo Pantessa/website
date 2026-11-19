@@ -609,6 +609,13 @@ button.mk-held:hover { border-color: var(--accent); }
 .sym--cockpit .sym__strip .sym__meta { margin-top: 3px; gap: 8px; flex-wrap: nowrap; }
 .sym--cockpit .sym__strip .sym__venue { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .sym--cockpit .sym__strip .sym__venue-tail { text-transform: none; letter-spacing: 0.08em; color: var(--muted); }
+/* The stock / perp switch (2026-11-19): a share with two instruments here, each its own page
+   (lib/charts, "The perp twin"). The page you are on is filled; the other is a link. */
+.sym__twin { display: inline-flex; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; white-space: nowrap; }
+.sym__twin-opt { padding: 3px 9px; color: var(--muted); text-decoration: none; }
+.sym__twin-opt[aria-current='page'] { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--fg); }
+a.sym__twin-opt:hover, a.sym__twin-opt:focus-visible { color: var(--fg); background: color-mix(in srgb, var(--fg) 9%, transparent); }
+@media (pointer: coarse) { .sym__twin-opt { padding: 8px 12px; } }
 .sym--cockpit .sym__sep { width: 1px; height: 28px; background: var(--line); flex: 0 0 auto; }
 .sym--cockpit .sym__strip > .sym__quote { flex: 0 0 auto; align-items: baseline; gap: 8px; flex-wrap: nowrap; }
 .sym--cockpit .sym__strip .sym__last { font-size: clamp(20px, 1.9vw, 26px); line-height: 1.1; }

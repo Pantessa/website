@@ -34,7 +34,7 @@ import TokenIcon from '@/components/TokenIcon'
 import { SymbolSearchTrigger } from '@/components/markets/search/SymbolSearch'
 import ChartMount, { type ChartStats } from '@/components/markets/chart/ChartMount'
 import type { ChartState } from '@/lib/chart-state'
-import { CHART_FEED_LABELS, chartPairFor, chartUnitOf, isChartOnlyPair, isLookOnlyPair, type ChartFeed, type ChartTf } from '@/lib/charts'
+import { CHART_FEED_LABELS, chartPairFor, chartUnitOf, isChartOnlyPair, isLookOnlyPair, pairTicker, perpTwinOf, stockTwinOf, type ChartFeed, type ChartTf } from '@/lib/charts'
 import { fmtIndexStat, fmtIndexValue, lookOnlyBasis, lookOnlySessionLine, macroChangeOf } from '@/lib/macro'
 import { fmtReadChange } from '@/lib/read'
 import {
@@ -120,6 +120,14 @@ export default function SymbolPage({
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
   const sym = pair?.symbol ?? symbol
   const name = symbolName(sym)
+  // A share with two instruments here (lib/charts, "The perp twin"): the
+  // stock token on Robinhood Chain and the perp on Hyperliquid, each its own
+  // page. The header calls both by the share's ticker and carries a switch
+  // between them; everything keyed by `sym` (quotes, alerts, the watchlist,
+  // the order sentences) stays on THIS page's instrument.
+  const ticker = pair ? pairTicker(pair) : sym
+  const twinStock = stockTwinOf(pair)
+  const twinPerp = pair?.source === 'robinhood' ? perpTwinOf(sym) : null
   // A LOOK-ONLY index (lib/charts isLookOnlyPair — US10Y, VIX, DXY, NDX, DJI,
   // RUT; 2026-11-09): the full chart, its frames, tools and alerts, and NO
   // order anywhere — no strip, no ticket, no Trade tab, no suggested order.
@@ -161,7 +169,8 @@ export default function SymbolPage({
   // title only when the route's metadata changes — no loop).
   const baseTitleRef = useRef<string | null>(null)
   useEffect(() => {
-    const title = unit === 'usd' ? liveTabTitle(sym, liveLast) : liveTabTitleOf(sym, unitTitle)
+    // A perp twin's tab reads "ANT perp", never the stock's bare ticker (a twin is always a dollar price).
+    const title = twinStock ? liveTabTitle(`${ticker} perp`, liveLast) : unit === 'usd' ? liveTabTitle(sym, liveLast) : liveTabTitleOf(sym, unitTitle)
     if (!title) return
     const assert = () => {
       if (!isLiveTabTitle(document.title)) baseTitleRef.current = document.title
@@ -171,7 +180,7 @@ export default function SymbolPage({
     const mo = new MutationObserver(assert)
     mo.observe(document.head, { childList: true, characterData: true, subtree: true })
     return () => mo.disconnect()
-  }, [sym, liveLast, unit, unitTitle])
+  }, [sym, ticker, twinStock, liveLast, unit, unitTitle])
   useEffect(() => () => {
     if (isLiveTabTitle(document.title) && baseTitleRef.current) document.title = baseTitleRef.current
   }, [])
@@ -470,11 +479,11 @@ export default function SymbolPage({
         <div className="sym__headseat sym__stripseat">
           <header className="sym__head sym__strip" data-seat="strip">
             <div className="sym__id">
-              <TokenIcon symbol={sym} size={32} {...markWhere} />
+              <TokenIcon symbol={ticker} size={32} {...markWhere} />
               <div className="sym__idtext min-w-0">
                 <div className="sym__titlerow">
                   <h1 className="sym__name truncate">{name}</h1>
-                  <span className="sym__sym mono">{sym}</span>
+                  <span className="sym__sym mono">{ticker}</span>
                   <SymbolSearchTrigger variant="head" />
                 </div>
                 <div className="sym__meta">
@@ -491,6 +500,21 @@ export default function SymbolPage({
                     {unknown ? 'Not listed' : venueLabel(pair)}
                     {pair && !unknown && <span className="sym__venue-tail">{session.tape ? (session.tape.open ? ' · open' : ' · closed') : ' · 24/7'}</span>}
                   </span>
+                  )}
+                  {(twinStock || twinPerp) && (
+                    // Two ways to act on one share: the page you are on is marked, the other is a link.
+                    <nav className="sym__twin mono" aria-label={`${ticker}: stock token or perp`} data-twin={twinStock ? 'perp' : 'stock'}>
+                      {twinStock ? (
+                        <Link className="sym__twin-opt" href={`/t/${twinStock}`} title={`${twinStock} stock token on Robinhood Chain: you hold it, no leverage`}>Stock</Link>
+                      ) : (
+                        <span className="sym__twin-opt" aria-current="page" title="The stock token on Robinhood Chain: you hold it, no leverage">Stock</span>
+                      )}
+                      {twinPerp ? (
+                        <Link className="sym__twin-opt" href={`/t/${twinPerp}`} title={`${ticker} perp on Hyperliquid: long or short, margin in USDC`}>Perp</Link>
+                      ) : (
+                        <span className="sym__twin-opt" aria-current="page" title="The perp on Hyperliquid: long or short, margin in USDC">Perp</span>
+                      )}
+                    </nav>
                   )}
                   {/* The session line in full — the words a reader and the harness get; the strip shows the dot + venue. */}
                   <p className="sym__session mono sr-only" data-tape={tapeState}>

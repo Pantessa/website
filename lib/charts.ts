@@ -16,6 +16,11 @@
 //                 table is the static set: server entry points call
 //                 resolveChartPair (miss → warm → retry) and the /t page
 //                 hands its client shell the live list (primeHlUniverse).
+//                 A stock with an xyz perp has BOTH (2026-11-19, the
+//                 Anthropic listing): `/t/ANT` is the stock token and
+//                 `/t/ANTPERP` (typed `/t/ANT-PERP`) the perp on the same
+//                 share — one symbol, one source, so every reader that
+//                 resolves by symbol stays right. See PERP_TWIN_SUFFIX.
 //   robinhood   — Robinhood's own market-data historicals for the tokenized
 //                 equities on Robinhood Chain (24/7 bounds — the same
 //                 round-the-clock tape the on-chain stock tokens track; the
@@ -49,7 +54,7 @@ export const CHART_FEED_LABELS: Record<ChartFeed, string> = {
 
 import { ROBINHOOD_TICKER_SET } from '@/lib/robinhood-tickers'
 import { hlPerpUniverseCached, hlPerpUniverseFresh, hlUniverses, primeHlUniverse, type HlDex } from '@/lib/hl-universe'
-import { hlDexOf, isOrderableHlCoin } from '@/lib/hl-dex'
+import { HL_PERP_TWIN_MAX, HL_PERP_TWIN_SUFFIX, hlDexOf, hlTickerOf, isOrderableHlCoin } from '@/lib/hl-dex'
 
 export type ChartTf = '10s' | '1m' | '15m' | '1h' | '4h' | '1d'
 
@@ -240,9 +245,12 @@ export function chartUnitOf(pair: ChartPair | null | undefined): ChartUnit {
 //   · Coinbase first — a coin Coinbase lists keeps its Coinbase pair
 //     (chartPairFor checks it before this table; the table skips it too).
 //   · Robinhood keeps its stocks — an xyz:NVDA perp never turns /t/NVDA into
-//     a perp chart (the stock tape is the chart; the xyz perp is a venue row),
-//     and a feedless listing (SATS) stays chartless rather than charting the
-//     venue's same-named coin.
+//     a perp chart, and a feedless listing (SATS) stays chartless rather than
+//     charting the venue's same-named coin. The xyz perp on a CHARTED stock
+//     gets its own symbol instead, the ticker + PERP (`NVDAPERP` →
+//     `xyz:NVDA`): the perp twin. Only the xyz dex names equities by their
+//     own ticker, so a main-book coin never grows one (SATS the coin is not
+//     SATS the listing), and a twin never takes a name something else holds.
 //   · stables never chart; the xyz index product (`:XYZ100`) is not a market
 //     (lib/tape pickTapeMarkets drops it the same way); delisted rows are not
 //     passed in (lib/hl-universe splits listed from delisted).
@@ -273,8 +281,60 @@ export function hlChartTableFrom(main: Iterable<string>, xyz: Iterable<string>):
     const ticker = coin.slice(i + 1)
     if (!ticker || /^XYZ100$/i.test(ticker)) continue
     take(coin, ticker)
+    const stock = normalizeChartSymbol(ticker)
+    if (!isChartedStock(stock)) continue
+    const twin = `${stock}${PERP_TWIN_SUFFIX}`
+    if (twin.length > HL_PERP_TWIN_MAX || COINBASE_USD.has(twin) || ROBINHOOD_TICKER_SET.has(twin) || INDEX_BY_NAME.has(twin) || out.has(twin)) continue
+    out.set(twin, coin)
   }
   return out
+}
+
+// ── The perp twin ──────────────────────────────────────────────────────────
+// A share can be reached two ways here: the stock token on Robinhood Chain
+// (you hold it, no leverage) and the perp on Hyperliquid's xyz dex (long or
+// short, margin in USDC). They are different instruments with different
+// tapes, so each is its OWN chart symbol: the stock keeps the ticker (`ANT`),
+// the perp is the ticker + PERP (`ANTPERP`; `/t/ANT-PERP` normalizes to it).
+// The search lists both and each page links to the other. A header, a label
+// and a search row call both by the share's ticker (pairTicker). A SENTENCE
+// keeps the pair's own symbol: "Long $25 of ANTPERP on Hyperliquid" means the
+// xyz perp and nothing else, where a bare ticker is the main book's coin
+// first (lib/hl-dex, "The perp twin's spelling").
+export const PERP_TWIN_SUFFIX = HL_PERP_TWIN_SUFFIX
+
+/** The stock a perp-twin symbol stands beside (`ANTPERP` on `xyz:ANT` → `ANT`), or null. */
+function twinStockOf(symbol: string, coin: string): string | null {
+  if (!symbol.endsWith(PERP_TWIN_SUFFIX) || !coin.includes(':')) return null
+  const stock = symbol.slice(0, -PERP_TWIN_SUFFIX.length)
+  return stock && normalizeChartSymbol(hlTickerOf(coin)) === stock && isChartedStock(stock) ? stock : null
+}
+
+/** For a perp-twin pair, the stock symbol it sits beside (`ANT`); null for every other pair. */
+export function stockTwinOf(pair: ChartPair | null | undefined): string | null {
+  return pair && pair.source === 'hyperliquid' ? twinStockOf(pair.symbol, pair.pair) : null
+}
+
+/** Is this pair the perp twin of a charted stock? */
+export function isPerpTwinPair(pair: ChartPair | null | undefined): boolean {
+  return stockTwinOf(pair) !== null
+}
+
+/** For a stock symbol, its perp twin's symbol (`ANT` → `ANTPERP`) when the
+ *  venue lists one; null otherwise, and null while the live table is cold. */
+export function perpTwinOf(symbolRaw: string): string | null {
+  const stock = normalizeChartSymbol(symbolRaw)
+  if (!isChartedStock(stock)) return null
+  const twin = `${stock}${PERP_TWIN_SUFFIX}`
+  const coin = liveHlTable().get(twin)
+  return coin && twinStockOf(twin, coin) === stock ? twin : null
+}
+
+/** The ticker a person READS for a pair (a header, a label, a search row):
+ *  the pair's symbol, except a perp twin, which is called by its share
+ *  (`ANTPERP` → `ANT`). Never for a sentence — that keeps pair.symbol. */
+export function pairTicker(pair: ChartPair): string {
+  return stockTwinOf(pair) ?? pair.symbol
 }
 
 /** The live table, rebuilt only when a universe read lands (identity-keyed
@@ -450,7 +510,8 @@ export function chartPairFor(symbolRaw: string): ChartPair | null {
   }
   const coin = hlPerpCoinFor(symbol)
   if (coin) {
-    return { symbol, source: 'hyperliquid', pair: coin, label: `${symbol} / USD` }
+    // A perp twin's label names the share (`ANT / USD`); the feed name beside it says which tape.
+    return { symbol, source: 'hyperliquid', pair: coin, label: `${twinStockOf(symbol, coin) ?? symbol} / USD` }
   }
   if (isChartedStock(symbol)) {
     return { symbol, source: 'robinhood', pair: symbol, label: `${symbol} / USD` }
@@ -545,6 +606,8 @@ const CHART_STOCK_NAMES: Record<string, string> = {
   COSTCO: 'COST', LULULEMON: 'LULU', UNITEDHEALTH: 'UNH', WORKDAY: 'WDAY', ATLASSIAN: 'TEAM',
   SERVICENOW: 'NOW', FORTINET: 'FTNT', ARISTA: 'ANET', MONGODB: 'MDB', CARVANA: 'CVNA',
   NUBANK: 'NU', RIGETTI: 'RGTI', CEREBRAS: 'CBRS', CARNIVAL: 'CCL', DELL: 'DELL', IBM: 'IBM',
+  ANTHROPIC: 'ANT', DISNEY: 'DIS', VISA: 'V', PAYPAL: 'PYPL', UBER: 'UBER', MCDONALDS: 'MCD',
+  JPMORGAN: 'JPM',
 }
 
 /** A household name → the ticker it charts ("apple" → AAPL, "bitcoin" →

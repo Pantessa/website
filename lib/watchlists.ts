@@ -11,7 +11,7 @@
 import { CHART_INDEXES, chartIndexFor, chartPairFor, chartUnitOf, isLookOnlyPair, normalizeChartSymbol, parseChartAsk, type ChartPair, type ChartSource } from '@/lib/charts'
 import { autoSellLive } from '@/lib/autopilot-live'
 import { ONRAMP_DEFAULT_NETWORK, ONRAMP_LANES_EVERYWHERE, onrampHasLane, type OnrampAsset, type OnrampLane, type OnrampNetwork } from '@/lib/onramp'
-import { ROBINHOOD_TICKERS } from '@/lib/robinhood-tickers'
+import { ROBINHOOD_TICKERS, perpTwinCompany } from '@/lib/robinhood-tickers'
 import { composeAsk } from '@/lib/trade-asks'
 
 // ── Shapes (README "Watchlists" contract) ───────────────────────────────────
@@ -237,7 +237,9 @@ export function symbolName(symbol: string): string {
   const index = chartIndexFor(symbol)
   if (index) return index.name
   const stock = ROBINHOOD_TICKERS.find(([s]) => s === symbol)
-  return stock ? stock[1] : symbol
+  if (stock) return stock[1]
+  // A stock's perp twin (`ANTPERP`, lib/charts) is the same company: the class beside it says which instrument.
+  return perpTwinCompany(symbol) ?? symbol
 }
 
 function hitFor(symbol: string): TickerHit | null {

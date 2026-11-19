@@ -9,7 +9,7 @@
 // always opens a chart. A search only navigates: it never fires a turn.
 
 import { create } from 'zustand'
-import { CHART_INDEXES, chartPairFor, liveHlPerpNames, parseChartAsk, type ChartPair } from '@/lib/charts'
+import { CHART_INDEXES, chartPairFor, liveHlPerpNames, pairTicker, parseChartAsk, perpTwinOf, type ChartPair } from '@/lib/charts'
 import { MACRO_ROWS, macroRow, macroRowMatches } from '@/lib/macro'
 import { ROBINHOOD_TICKERS } from '@/lib/robinhood-tickers'
 import { COIN_NAMES, symbolName } from '@/lib/watchlists'
@@ -28,7 +28,11 @@ export const SEARCH_FILTERS: readonly { id: SearchFilter; label: string }[] = [
 export const SEARCH_KIND_LABEL: Readonly<Record<SearchKind, string>> = { stock: 'Stock', coin: 'Crypto', perp: 'Perp', macro: 'Macro' }
 
 export interface SearchHit {
+  /** The chart symbol: what the row opens (`/t/<symbol>`) and is keyed by. */
   symbol: string
+  /** What the row SHOWS. The symbol, except a stock's perp twin (`ANTPERP`),
+   *  which reads as the share's ticker beside its Perp tag (lib/charts). */
+  ticker: string
   name: string
   kind: SearchKind
   pair: ChartPair
@@ -47,8 +51,12 @@ export function searchHitFor(symbol: string): SearchHit | null {
   const pair = chartPairFor(symbol)
   if (!pair) return null
   const name = macroRow(pair.symbol)?.name ?? symbolName(pair.symbol)
-  return { symbol: pair.symbol, name, kind: searchKindOf(pair), pair }
+  return { symbol: pair.symbol, ticker: pairTicker(pair), name, kind: searchKindOf(pair), pair }
 }
+
+/** A stock found this well also lists its perp twin (the exact ticker, the
+ *  company's name, a ticker or name prefix). A looser match stays one row. */
+export const SEARCH_TWIN_MIN_SCORE = 66
 
 /** The names a query is matched against: [symbol, name]. */
 function candidates(): (readonly [string, string])[] {
@@ -93,14 +101,28 @@ export function searchSymbols(queryRaw: string, opts: { filter?: SearchFilter; l
   const filter = opts.filter ?? 'all'
   const limit = opts.limit ?? 24
   const scored = new Map<string, { hit: SearchHit; score: number }>()
-  const offer = (symbol: string, score: number) => {
-    if (score <= 0) return
-    const hit = searchHitFor(symbol)
-    if (!hit || (filter !== 'all' && hit.kind !== filter)) return
+  const put = (hit: SearchHit, score: number) => {
+    if (filter !== 'all' && hit.kind !== filter) return
     const prev = scored.get(hit.symbol)
     if (!prev || prev.score < score) scored.set(hit.symbol, { hit, score })
   }
-  const upper = q.toUpperCase().replace(/^\$/, '')
+  const offer = (symbol: string, score: number) => {
+    if (score <= 0) return
+    const hit = searchHitFor(symbol)
+    if (!hit) return
+    put(hit, score)
+    // One share, two instruments (2026-11-19, Nate on ANT: "one for perps
+    // and one for robinhood and let the user decide"): a stock the venue
+    // also lists as a perp is TWO rows, the stock token and its perp twin
+    // right under it. Each opens its own page; the Stocks and Perps filters
+    // keep one each.
+    if (hit.pair.source !== 'robinhood' || score < SEARCH_TWIN_MIN_SCORE) return
+    const twin = perpTwinOf(hit.symbol)
+    const twinHit = twin ? searchHitFor(twin) : null
+    if (twinHit) put(twinHit, score - 0.5)
+  }
+  // `ANT-PERP` is how a perp twin is typed; the symbol carries no hyphen.
+  const upper = q.toUpperCase().replace(/^\$/, '').replace(/-(?=PERP$)/, '')
   // The exact ticker, live table included (a perp nobody listed by hand).
   if (/^[A-Z0-9]{1,12}$/.test(upper)) offer(upper, 100)
   // The chart-ask resolver's vocabulary: "apple" → AAPL, "bitcoin" → BTC, an index alias.

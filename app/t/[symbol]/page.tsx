@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { CHART_TFS, HL_PERPS_HANDOFF_GLOBAL, chartSymbolByName, isLiveOnlyHlPair, liveHlPerpNames, normalizeChartSymbol, resolveChartPair, type ChartTf } from '@/lib/charts'
+import { CHART_TFS, HL_PERPS_HANDOFF_GLOBAL, chartSymbolByName, isLiveOnlyHlPair, liveHlPerpNames, normalizeChartSymbol, perpTwinOf, resolveChartPair, warmHlPerps, type ChartTf } from '@/lib/charts'
 import { parseMarketTab, parseVsParam } from '@/lib/markets'
 import { symbolPageSeo } from '@/lib/markets-seo'
 import { depthPlanFor, parseDepthSettings } from '@/lib/depth'
@@ -114,7 +114,13 @@ export default async function TokenPage({ params, searchParams }: Params) {
   // browser runs at parse time (before hydration — lib/charts takes it on
   // its first lookup), and HlPerpsPrime for a soft navigation, which runs no
   // inline script but renders the wrapper before every child.
-  const hlPerps = isLiveOnlyHlPair(pair) ? liveHlPerpNames() : null
+  // A STOCK whose perp the venue lists (`/t/ANT` beside `/t/ANTPERP`, lib/charts
+  // "The perp twin") needs the table for the same reason: its header links to
+  // the twin, and a link a warm server draws and a cold browser does not is a
+  // hydration error. A stock resolves without the venue, so warm the table
+  // here (one read per ten minutes per process, never thrown).
+  if (pair?.source === 'robinhood') await warmHlPerps()
+  const hlPerps = isLiveOnlyHlPair(pair) || (pair?.source === 'robinhood' && perpTwinOf(pair.symbol)) ? liveHlPerpNames() : null
   const handoff = hlPerps ? `window.${HL_PERPS_HANDOFF_GLOBAL}=${JSON.stringify(hlPerps).replace(/</g, '\\u003c')}` : null
   // The /markets frame (no .x-main) inside the markets shell (the app spine
   // on the left, no brochure nav): SymbolPage's <main class="sym"> and the

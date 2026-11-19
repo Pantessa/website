@@ -8,7 +8,7 @@
 // the harness — a dead ticker must fail a gate, not render a dash forever).
 
 import { chartPairFor, parseChartAsk, type Candle, type ChartPair, type ChartSource } from '@/lib/charts'
-import { ROBINHOOD_TICKERS, ROBINHOOD_TICKER_NAMES } from '@/lib/robinhood-tickers'
+import { ROBINHOOD_TICKERS, ROBINHOOD_TICKER_NAMES, perpTwinCompany } from '@/lib/robinhood-tickers'
 import { APP_CHAINS } from '@/lib/chains'
 import { writeDepthParams, type DepthSettings } from '@/lib/depth'
 import { LOOK_ONLY_VENUE, lookOnlySessionLine, macroName } from '@/lib/macro'
@@ -146,7 +146,7 @@ export function marketSections(): MarketSection[] {
 export function symbolName(symbol: string): string {
   const pair = chartPairFor(symbol)
   const sym = pair?.symbol ?? symbol.toUpperCase()
-  return ROBINHOOD_TICKER_NAMES[sym] ?? COIN_NAMES[sym] ?? macroName(sym) ?? sym
+  return ROBINHOOD_TICKER_NAMES[sym] ?? COIN_NAMES[sym] ?? macroName(sym) ?? perpTwinCompany(sym) ?? sym
 }
 
 /** What /t/<symbol> can honestly say about a symbol with no chart.

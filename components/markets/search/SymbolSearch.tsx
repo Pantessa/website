@@ -378,10 +378,10 @@ function SearchPanel() {
                         open(h)
                       }}
                     >
-                      <TokenIcon symbol={h.symbol} size={30} {...(h.kind === 'stock' ? { chain: 'Robinhood Chain' } : {})} />
+                      <TokenIcon symbol={h.ticker} size={30} {...(h.kind === 'stock' ? { chain: 'Robinhood Chain' } : {})} />
                       <span className="ssx__id">
                         <span className="ssx__sym mono">
-                          <Hi text={h.symbol} q={typed} />
+                          <Hi text={h.ticker} q={typed} />
                           <span className="ssx__kind mono" data-kind={h.kind}>
                             {SEARCH_KIND_LABEL[h.kind]}
                           </span>
@@ -423,11 +423,11 @@ function SearchPanel() {
           {current && (
             <aside className="ssx__preview" aria-hidden>
               <div className="ssx__pvHead">
-                <TokenIcon symbol={current.symbol} size={44} {...(current.kind === 'stock' ? { chain: 'Robinhood Chain' } : {})} />
+                <TokenIcon symbol={current.ticker} size={44} {...(current.kind === 'stock' ? { chain: 'Robinhood Chain' } : {})} />
                 <div className="ssx__pvId">
                   <span className="ssx__pvName">{current.name}</span>
                   <span className="ssx__pvSym mono">
-                    {current.symbol} · {venueLabel(current.pair)}
+                    {current.ticker} · {venueLabel(current.pair)}
                   </span>
                 </div>
               </div>
@@ -441,7 +441,7 @@ function SearchPanel() {
               </div>
               <div className="ssx__pvActs">
                 <button type="button" className="ssx__go" tabIndex={-1} onClick={() => open(current)}>
-                  {current.symbol === viewing ? 'Back to the chart' : `Open ${current.symbol}`}
+                  {current.symbol === viewing ? 'Back to the chart' : `Open ${current.ticker}${current.ticker !== current.symbol ? ' perp' : ''}`}
                   <CornerDownLeft aria-hidden />
                 </button>
                 <button type="button" className="ssx__alt" tabIndex={-1} onClick={() => open(current, true)}>

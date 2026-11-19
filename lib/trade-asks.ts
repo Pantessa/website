@@ -4,7 +4,7 @@
 // contract), and the default chip row. Shared by the Trade panel, the symbol
 // page's header strip, the site-wide ask door and the harness.
 
-import { isChartOnlyPair, isHip3Pair, type ChartPair } from '@/lib/charts'
+import { isChartOnlyPair, isHip3Pair, pairTicker, type ChartPair } from '@/lib/charts'
 import { tokenHome } from '@/lib/token-home'
 import { autoSellLive } from '@/lib/autopilot-live'
 
@@ -88,9 +88,13 @@ export function composeAsk(pair: ChartPair, side: TradeSide, opts: { usd?: numbe
   }
 }
 
+// A LABEL names the share by its ticker (a perp twin's `ANTPERP` reads "Long
+// ANT": the page already says it is the perp). A SENTENCE keeps pair.symbol:
+// the twin's own spelling is the one that means the xyz perp and nothing else
+// (lib/hl-dex, "The perp twin's spelling").
 export const SIDE_LABEL: Record<TradeSide, (pair: ChartPair) => string> = {
-  buy: (p) => (p.source === 'hyperliquid' || tokenHome(p.symbol) ? `Long ${p.symbol}` : `Buy ${p.symbol}`),
-  sell: (p) => (p.source === 'hyperliquid' || tokenHome(p.symbol) ? `Short ${p.symbol}` : `Sell ${p.symbol}`),
+  buy: (p) => (p.source === 'hyperliquid' || tokenHome(p.symbol) ? `Long ${pairTicker(p)}` : `Buy ${p.symbol}`),
+  sell: (p) => (p.source === 'hyperliquid' || tokenHome(p.symbol) ? `Short ${pairTicker(p)}` : `Sell ${p.symbol}`),
   protect: () => 'Protect with a stop',
 }
 
@@ -167,8 +171,8 @@ export function composeExecAsk(pair: ChartPair, side: ExecSide, opts: { usd?: nu
 export const EXEC_SIDE_LABEL: Record<ExecSide, (pair: ChartPair) => string> = {
   buy: (p) => `Buy ${p.symbol}`,
   sell: (p) => `Sell ${p.symbol}`,
-  long: (p) => `Long ${p.symbol}`,
-  short: (p) => `Short ${p.symbol}`,
+  long: (p) => `Long ${pairTicker(p)}`,
+  short: (p) => `Short ${pairTicker(p)}`,
   stake: () => 'Stake on Lido',
   supply: () => 'Supply on Aave',
   protect: () => 'Protect with a stop',
