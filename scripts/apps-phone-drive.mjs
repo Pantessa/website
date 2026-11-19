@@ -209,7 +209,7 @@ try {
         await sleep(400)
         const mb = JSON.parse(await ev(`JSON.stringify(${measure})`))
         check(`${label}: the APPS tab brings the same page back at once, at the scroll it left`, mb.screen === 'apps' && mb.layout === 'stack' && mb.sections === 2 && Math.abs((mb.scroller?.top0 ?? 0) - before) <= 4, `screen ${mb.screen} sections ${mb.sections} before ${before} after ${mb.scroller?.top0}`)
-        const chipsOf = `[...document.querySelectorAll('[data-apps-phone] [data-apps-chip][aria-pressed="true"]')].map((e) => e.getAttribute('data-apps-chip')).join(',')`
+        const chipsOf = `[...document.querySelectorAll('[data-apps-phone] [data-apps-mark]')].map((e) => e.getAttribute('data-apps-mark')).join(',')`
         const setBefore = await ev(chipsOf)
         await ev(`(() => { const t = document.querySelector('[data-apps-ask-input]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(t, ${JSON.stringify(ASK)}); t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
         await sleep(200)

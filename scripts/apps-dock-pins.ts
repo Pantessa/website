@@ -6,7 +6,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { fitOffered, firstSentence, rowPlan, isChatShortcut, offeredApps, onePerName, trayApps, trayLine, trayPrice } from '../lib/apps-dock'
+import { firstSentence, isChatShortcut, marksPlan, onePerName, pickerMatches, pickerSections, trayApps, trayLine, trayPrice } from '../lib/apps-dock'
 import { chatScopeLabel } from '../lib/apps-page'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -30,44 +30,50 @@ const srv = (slug: string, o: Partial<{ name: string; gated: boolean; descriptio
 })
 
 export function appsDockPins(check: Check) {
-  // ── fitOffered: how many offered chips fit the row's room ─────────────────
-  check('dock: fitOffered counts whole chips with a gap each', fitOffered(300, [100, 100, 100], 8) === 2)
-  check('dock: fitOffered fits exactly at the edge', fitOffered(216, [100, 100], 8) === 2)
-  check('dock: fitOffered never shows a partial chip', fitOffered(215, [100, 100], 8) === 1)
-  check('dock: fitOffered with no room shows none', fitOffered(0, [50], 8) === 0 && fitOffered(-40, [50], 8) === 0)
-  check('dock: fitOffered stops at an unmeasured chip', fitOffered(1000, [80, 0, 80], 8) === 1)
-  check('dock: fitOffered keeps order (a wide chip blocks the ones after it)', fitOffered(200, [80, 300, 40], 8) === 1)
+  // ── marksPlan (2026-11-19): the row is marks and one button, on one line ──
+  // A mark is 36 wide with 6 after it; the button is 110 with its words, 42 as its icon.
+  const plan = (width: number, count: number) => marksPlan({ width, count, mark: 36, gap: 6, add: 110, addCompact: 42 })
+  const wide = plan(600, 5)
+  check('dock: marksPlan shows every mark and the whole button when they fit', wide.shown === 5 && wide.more === 0 && !wide.compact, JSON.stringify(wide))
+  const exact = plan(5 * 42 + 110, 5)
+  check('dock: marksPlan keeps the words at an exact fit', exact.shown === 5 && !exact.compact, JSON.stringify(exact))
+  const mid = plan(5 * 42 + 109, 5)
+  check('dock: marksPlan folds the button to its icon BEFORE it hides a mark', mid.shown === 5 && mid.more === 0 && mid.compact, JSON.stringify(mid))
+  const tight = plan(4 * 42 + 42, 9)
+  check('dock: marksPlan counts what does not fit in a "+N" that takes one seat', tight.compact && tight.shown === 3 && tight.more === 6 && tight.shown + tight.more === 9, JSON.stringify(tight))
+  const tiny = plan(50, 4)
+  check('dock: marksPlan never goes negative (no room: every app is in the count)', tiny.shown === 0 && tiny.more === 4, JSON.stringify(tiny))
+  const cold = plan(0, 6)
+  check('dock: marksPlan with no measurement yet shows every mark (the first paint hides nothing)', cold.shown === 6 && cold.more === 0 && !cold.compact, JSON.stringify(cold))
+  const none = plan(300, 0)
+  check('dock: marksPlan with no app on is just the button', none.shown === 0 && none.more === 0 && !none.compact, JSON.stringify(none))
 
-  // ── rowPlan: names while they fit, marks when not, scroll as the last resort
-  const plan = (width: number, offered: number[] = [90, 90]) => rowPlan({ width, onFull: [120, 130], onCompact: [50, 50], browse: 90, offered, gap: 8 })
-  const wide = plan(1000)
-  check('dock: rowPlan shows names and fills the room with offered chips', !wide.compact && !wide.overflowing && wide.fit === 2, JSON.stringify(wide))
-  const mid = plan(300)
-  check('dock: rowPlan goes to marks when the names do not fit', mid.compact && !mid.overflowing && mid.fit === 0, JSON.stringify(mid))
-  const tiny = plan(150)
-  check('dock: rowPlan scrolls only when even the marks do not fit', tiny.compact && tiny.overflowing && tiny.fit === 0, JSON.stringify(tiny))
-  const exact = rowPlan({ width: 356, onFull: [120, 130], onCompact: [50, 50], browse: 90, offered: [], gap: 8 })
-  check('dock: rowPlan keeps the names at an exact fit', !exact.compact && !exact.overflowing, JSON.stringify(exact))
-  const icon = rowPlan({ width: 200, onFull: [120, 130], onCompact: [50, 50], browse: 90, browseCompact: 38, offered: [], gap: 8 })
-  check('dock: rowPlan folds "Browse all" to its icon with the marks', icon.compact && !icon.overflowing, JSON.stringify(icon))
-  const none = rowPlan({ width: 200, onFull: [], onCompact: [], browse: 90, offered: [60, 60], gap: 8 })
-  check('dock: rowPlan with no app on fills with offered chips', !none.compact && none.fit === 1, JSON.stringify(none))
-
-  // ── offeredApps: free first-party apps only, each name once ───────────────
+  // ── The directory the picker reads ────────────────────────────────────────
   const dir = [
     srv('uniswap-free', { name: 'Uniswap (Free)' }),
     srv('snapshot-free', { name: 'Snapshot DAO (Free)' }),
     srv('aave', { name: 'Aave' }),
     srv('aave-free', { name: 'Aave (Free)' }),
     srv('yeetful-tool-wallet', { name: 'Pantessa Wallet' }),
-    srv('paid-x', { name: 'Paid X', gated: true, priceUsd: '0.01' }),
+    srv('paid-x', { name: 'Paid X', gated: true, priceUsd: '0.01', description: 'Weather for any city.' }),
   ]
-  const off = offeredApps(dir, ['uniswap-free']).map((s) => s.slug)
-  check('dock: offered never repeats an app on the page', !off.includes('uniswap-free'), off.join(','))
-  check('dock: offered never shows an internal tool or a paid app', !off.includes('yeetful-tool-wallet') && !off.includes('paid-x'), off.join(','))
-  check('dock: offered names each app once', off.filter((s) => s.startsWith('aave')).length === 1, off.join(','))
-  check('dock: offered caps', offeredApps(dir, [], 1).length === 1)
   check('dock: onePerName drops a name already on the page', onePerName([srv('aave-free', { name: 'Aave (Free)' })], [{ name: 'Aave' }]).length === 0)
+
+  // ── pickerSections: yours first and STILL, the rest by the switch ─────────
+  const sec = (pinnedIds: string[], view: 'free' | 'paid' = 'free', query = '') => {
+    const r = pickerSections({ servers: dir, pinnedIds, view, query })
+    return { yours: r.yours.map((s) => s.slug), more: r.more.map((s) => s.slug) }
+  }
+  const open2 = sec(['snapshot-free', 'uniswap-free'])
+  check('dock: "Your apps" is the set that was on when the picker opened, in its order', open2.yours.join(',') === 'snapshot-free,uniswap-free', open2.yours.join(','))
+  check('dock: "More apps" never repeats one of yours, and names each app once', !open2.more.includes('uniswap-free') && !open2.more.includes('snapshot-free') && open2.more.filter((x) => x.startsWith('aave')).length === 1, open2.more.join(','))
+  check('dock: the free list keeps the internal tools and shows no paid app', open2.more.includes('yeetful-tool-wallet') && !open2.more.includes('paid-x'), open2.more.join(','))
+  check('dock: the paid list is the paid catalog alone', sec(['uniswap-free'], 'paid').more.join(',') === 'paid-x')
+  const found = sec(['uniswap-free'], 'free', 'weather')
+  check('dock: a search looks through free AND paid at once, whatever the switch says', found.more.join(',') === 'paid-x' && found.yours.length === 0, JSON.stringify(found))
+  const mine = sec(['uniswap-free'], 'paid', 'uni')
+  check('dock: a search filters "Your apps" too', mine.yours.join(',') === 'uniswap-free' && mine.more.length === 0, JSON.stringify(mine))
+  check('dock: a search matches every word, in the name, the plain line or the slug', pickerMatches(dir[0], 'swaps uni') && pickerMatches(dir[0], 'UNISWAP-FREE') && !pickerMatches(dir[0], 'uni lending') && pickerMatches(dir[0], '   '))
 
   // ── trayApps: everything off the page, free or paid ───────────────────────
   const free = trayApps(dir, ['uniswap-free'], 'free').map((s) => s.slug)
@@ -107,10 +113,45 @@ export function appsDockPins(check: Check) {
   const dock = strip(read('components/apps/Dock.tsx'))
   check('dock: the shortcut never fires inside a dialog', /role="dialog"\]\[aria-modal="true"\]/.test(dock))
   check('dock: the controls keep expand + close', /data-dock-expand/.test(dock) && /data-dock-close/.test(dock))
+  // ── The app row and its picker (re-cut 2026-11-19) ───────────────────────
   const chips = strip(read('components/apps/AppChips.tsx'))
-  check('dock: the tray offers no "Add your own MCP"', !/AddMcpModal|data-tray-own|data-sheet-open="addmcp"/.test(chips))
-  check('dock: a spare chip is out of reach (no tab stop, hidden from readers)', /tabIndex=\{shown \? undefined : -1\}/.test(chips) && /aria-hidden=\{shown \? undefined : true\}/.test(chips))
-  check('dock: no sign button or tx hook in the dock lane', !/useSendTransaction|useSignTypedData|useWriteContract|SendTxChain/.test(chips + dock))
+  const marks = strip(read('components/apps/AppMarks.tsx'))
+  const picker = strip(read('components/apps/AppPicker.tsx'))
+  const phone = strip(read('components/apps/AppsPhone.tsx'))
+  check('dock: the picker offers no "Add your own MCP"', !/AddMcpModal|data-tray-own|data-sheet-open="addmcp"/.test(chips + marks + picker))
+  check('dock: no sign button or tx hook in the dock lane', !/useSendTransaction|useSignTypedData|useWriteContract|SendTxChain/.test(chips + marks + picker + dock))
+  check(
+    'dock: the row shows an app as its mark alone (the name is the tooltip and the accessible name, never text in the row)',
+    /<BrandIcon server=\{server\} size=\{18\} \/>/.test(marks) && /data-name=\{name\}/.test(marks) && /aria-label=\{`\$\{name\}, on this page\./.test(marks) && !/>\s*\{name\}\s*</.test(marks) && !/cleanServerName/.test(chips),
+  )
+  check('dock: a mark never removes its app (it opens the picker; the switch there removes)', !/toggle|onToggle|markManualMcp|setActiveServerIds/.test(marks) && /onClick=\{\(\) => onOpen\(server\.slug\)\}/.test(marks))
+  check('dock: a mark on its way out is out of reach (no tab stop, hidden from readers, disabled)', /aria-hidden=\{leaving \? true : undefined\}/.test(marks) && /tabIndex=\{leaving \? -1 : undefined\}/.test(marks) && /disabled=\{leaving\}/.test(marks))
+  check(
+    'dock: the row has ONE door to the picker, a button with words, and it says whether the picker is open',
+    (chips.match(/data-apps-add=""/g) ?? []).length === 1 && /aria-expanded=\{isOpen\}/.test(chips) && /aria-controls="apgk-pop"/.test(chips) && /'Add app'/.test(chips) && !/Browse all/.test(chips + picker),
+  )
+  check('dock: the row is planned by marksPlan and re-planned when its width changes', /marksPlan\(\{ width: list\.clientWidth, count: active\.length/.test(chips) && /new ResizeObserver\(\(\) => measure\(\)\)/.test(chips))
+  check(
+    'dock: the picker closes on Escape and on a press outside the marks, the button and itself',
+    /e\.key === 'Escape' && !e\.defaultPrevented/.test(chips) && /listRef\.current\?\.contains\(t\) \|\| popRef\.current\?\.contains\(t\)/.test(chips) && /addEventListener\('pointerdown', onDown\)/.test(chips),
+  )
+  check(
+    'dock: every app in the picker is a switch that says its state, with its page one link away',
+    /role="switch"/.test(picker) && /aria-checked=\{on\}/.test(picker) && /onClick=\{\(\) => onToggle\(s\)\}/.test(picker) && /href=\{`\/servers\/\$\{s\.slug\}`\}/.test(picker),
+  )
+  check('dock: the picker keeps the set it opened on (rows never move while it is open)', /const \[pinnedIds\] = useState\(\(\) => active\.map\(\(s\) => s\.id\)\)/.test(picker) && /pickerSections\(\{ servers, pinnedIds, view, query \}\)/.test(picker))
+  check('dock: in the search, the first Escape clears it and Enter switches the first match', /e\.key === 'Escape' && query/.test(picker) && /e\.preventDefault\(\)\s*setQuery\(''\)/.test(picker) && /e\.key === 'Enter' && searching/.test(picker))
+  check('dock: the desktop row and the phone render the SAME picker and the SAME marks', /<AppPicker\b/.test(chips) && /<AppPicker\b[^>]*\bsheet\b/.test(phone) && /<AppMarks\b/.test(chips) && /<AppMarks\b/.test(phone) && !/AppsRailTab/.test(phone))
+  check('dock: the phone never raises the keyboard on open (no autoFocus in the sheet)', !/<AppPicker\b[^>]*autoFocus/.test(phone) && /<AppPicker\b[^>]*autoFocus/.test(chips))
+  const pcss = read('components/apps/picker.css').replace(/\/\*[\s\S]*?\*\//g, '')
+  const psel = pcss.match(/(^|\})\s*([^{}@]+)\{/g) ?? []
+  const pown = psel.filter((x) => !/^\}?\s*(from|to|\d+%)/.test(x.replace(/\s+/g, ' ')))
+  check('dock: every rule in picker.css is scoped by the apgk- prefix', pown.length > 40 && pown.every((x) => /apgk-|\.apgk\b/.test(x)), pown.filter((x) => !/apgk-|\.apgk\b/.test(x)).join(' | '))
+  const reduce = pcss.slice(pcss.indexOf('@media (prefers-reduced-motion: reduce)'))
+  check(
+    'dock: every animation in picker.css is switched off under prefers-reduced-motion',
+    /\.apgk-pop,/.test(reduce) && /\.apgk-mark\[data-state\]/.test(reduce) && /\[data-entering\] \.apgk-opt/.test(reduce) && /\.apgk-opt\[data-flash\]/.test(reduce) && /animation: none/.test(reduce) && /transition: none/.test(reduce),
+  )
   const css = read('components/apps/dock.css')
   check('dock: dock.css styles the chat only under [data-chat-dock] or its own prefix', !/(^|\n)\s*\.(?!apgd-|apg-)[a-z]/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')))
 }

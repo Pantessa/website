@@ -17,7 +17,10 @@
 //     --wait=9000                    (ms to let the scan settle)
 //     --scroll=bottom                (scroll the page's scroller before the shot)
 //     --chat=closed                  (close the dock first; default leaves it)
-//     --click='[data-apps-browse]'   (click a selector before the shot)
+//     --click='[data-apps-add]'      (click a selector before the shot; a comma list clicks each in turn)
+//     --burst=6                      (with --click and --out: 6 frames right after the last click,
+//                                     saved as <out>-f0.png …, each with the animations then running)
+//     --type='[data-picker-search]=aave'    (type into an input after the clicks: selector=text)
 //     --ask='What is my biggest position?'  (type into the composer, no send)
 //     --path=/chat?tab=mcps          (override the whole path)
 //     --ls='key=value'               (write one localStorage entry before the page's scripts run;
@@ -156,8 +159,29 @@ try {
   }
   const click = arg('click')
   if (click && click !== true) {
-    await ev(`(() => { const b = document.querySelector(${JSON.stringify(click)}); if (b) b.click() })()`)
-    await sleep(700)
+    const sels = click.split(',')
+    const burst = Number(arg('burst', 0))
+    for (const [i, sel] of sels.entries()) {
+      await ev(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (b) b.click() })()`)
+      // --burst=N: N frames right after the LAST click, to look at motion.
+      if (burst && i === sels.length - 1 && OUT && OUT !== true) {
+        const t0 = Date.now()
+        for (let f = 0; f < burst; f++) {
+          const names = await ev(`JSON.stringify(document.getAnimations().map((a) => a.animationName || a.transitionProperty).filter(Boolean))`)
+          const frame = await send('Page.captureScreenshot', { format: 'png' }, sessionId)
+          const file = OUT.replace(/\.png$/, `-f${f}.png`)
+          fs.writeFileSync(file, Buffer.from(frame.result.data, 'base64'))
+          console.error(`frame ${f} +${Date.now() - t0}ms ${names} → ${file}`)
+        }
+      }
+      await sleep(700)
+    }
+  }
+  const type = arg('type')
+  if (type && type !== true) {
+    const at = type.lastIndexOf('=')
+    await ev(`(() => { const t = document.querySelector(${JSON.stringify(type.slice(0, at))}); if (!t) return; t.focus(); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(t, ${JSON.stringify(type.slice(at + 1))}); t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+    await sleep(400)
   }
   const ask = arg('ask')
   if (ask && ask !== true) {
@@ -182,7 +206,11 @@ try {
       appsPage: !!page,
       density: page ? page.getAttribute('data-density') : null,
       chat: page ? page.getAttribute('data-chat') : null,
-      chips: [...document.querySelectorAll('[data-apps-chip][aria-pressed="true"]')].map((e) => e.getAttribute('data-apps-chip')),
+      chips: [...document.querySelectorAll('[data-apps-mark]')].map((e) => e.getAttribute('data-apps-mark')),
+      picker: document.querySelector('[data-apps-chips]')?.getAttribute('data-picker') ?? null,
+      pickerRows: [...document.querySelectorAll('[data-picker-app]')].map((e) => (e.hasAttribute('data-on') ? '+' : '-') + e.getAttribute('data-picker-app')),
+      pop: r('[data-apps-pop]'),
+      add: r('[data-apps-add]'),
       sections: [...document.querySelectorAll('[data-apps-section]')].map((e) => e.getAttribute('data-apps-section')),
       lines: [...document.querySelectorAll('[data-apps-line]')].map((e) => e.getAttribute('data-apps-line')),
       needs: document.querySelector('[data-apps-needs]') ? Number(document.querySelector('[data-apps-needs]').getAttribute('data-apps-needs')) : 0,

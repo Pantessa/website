@@ -5,41 +5,16 @@
    the phone render exactly as before. */
 
 /* ── The app row: one line at every width ───────────────────────────────── */
-.apgd-chips { container: apgd-row / inline-size; position: relative; }
+/* Above the page's scroller: the picker hangs from this row, over the page. */
+.apgd-chips { container: apgd-row / inline-size; position: relative; z-index: 30; }
 .apgd-row { flex-wrap: nowrap; gap: 10px; }
 .apgd-label { flex: none; }
 @container apgd-row (max-width: 900px) {
   .apgd-row > .apgd-label { display: none; }
 }
-.apgd-list {
-  position: relative;
-  flex: 1 1 0; min-width: 0;
-  display: flex; flex-wrap: nowrap; align-items: center; gap: 8px;
-  overflow-x: auto; overflow-y: hidden;
-  padding-block: 4px;
-  scrollbar-width: none;
-}
-.apgd-list::-webkit-scrollbar { display: none; }
-.apgd-list > .apg-chip { flex: none; }
-/* The list clips: an outline drawn outside a chip would be cut off. */
-.apgd-list > .apg-chip:focus-visible { outline-offset: -3px; }
-/* An offered chip with no room: out of the flow, still measurable. */
-.apgd-list > .apgd-chip--spare { position: absolute; left: 0; top: 4px; visibility: hidden; pointer-events: none; }
-.apgd-list > .apgd-browse { flex: none; position: sticky; right: 0; }
-/* Only the on-chips can push the row past its width; then they scroll under
-   "Browse all", which stays put with the page's own colour behind it. */
-.apgd-list[data-overflowing] > .apgd-browse { background: var(--bg, #09090b); box-shadow: -14px 0 10px 2px var(--bg, #09090b); }
-.apgd-list[data-overflowing] > .apgd-browse.apg-chip--open { background: var(--bg, #09090b); }
-
-/* Not room for every name: the on-chips show their marks; the name stays
-   measurable (and in the tooltip and the accessible name). */
-.apgd-list[data-compact] > .apg-chip--on { padding: 0 10px 0 12px; }
-.apgd-list[data-compact] > .apg-chip--on > .apgd-chip__name { position: absolute; visibility: hidden; pointer-events: none; }
-
-.apgd-browse__icon { display: none; }
-.apgd-list[data-compact] > .apgd-browse { width: 38px; padding: 0; justify-content: center; }
-.apgd-list[data-compact] > .apgd-browse > .apgd-browse__icon { display: block; }
-.apgd-list[data-compact] > .apgd-browse > .apgd-browse__label { position: absolute; visibility: hidden; pointer-events: none; }
+/* The marks and the one button share what the row has left (the picker's
+   own pieces are in picker.css, prefix `apgk-`). */
+.apgd-list { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; }
 
 /* The chat's door on the row (AppsPage renders it; restyled here). Closed,
    it is the strongest outline on the row and names the "/" shortcut. */
@@ -54,35 +29,6 @@
 .apgd-chips .apg-chip--chat[aria-pressed='true'] { border-color: var(--line-2); color: var(--muted); }
 .apgd-chips .apg-chip--chat[aria-pressed='true'] svg { color: var(--accent); }
 .apgd-chips .apg-chip--chat[aria-pressed='true']:hover { color: var(--fg); }
-
-/* ── The tray ("Browse all") ─────────────────────────────────────────────── */
-.apgd-tray {
-  display: flex; flex-direction: column; gap: 14px;
-  max-height: min(60vh, 560px); overflow-y: auto; overscroll-behavior: contain;
-  padding: 20px 20px 22px;
-  border-top: 1px solid var(--line);
-  background: var(--surf-1);
-}
-.apgd-tray__head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 24px; }
-.apgd-tray__title { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.apgd-tray__h { margin: 0; font-family: var(--font-chat-display); font-weight: 600; font-size: 22px; line-height: 1.2; color: var(--fg); }
-.apgd-tray__sub { margin: 0; font-size: var(--fs-md); color: var(--muted); }
-.apgd-switch { flex: none; display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 999px; }
-.apgd-switch__btn { height: 30px; padding: 0 16px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-size: var(--fs-md); cursor: pointer; }
-.apgd-switch__btn[aria-selected='true'] { background: var(--surf-2); color: var(--fg); }
-.apgd-switch__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.apgd-tray__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0 32px; }
-.apgd-tray__none { margin: 0; padding: 14px 0; font-size: var(--fs-md); color: var(--muted); border-top: 1px solid var(--line); }
-.apgd-app { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 0; border-top: 1px solid var(--line); min-width: 0; }
-.apgd-app__mark { flex: none; width: 32px; height: 32px; display: grid; place-items: center; color: var(--fg); }
-.apgd-app__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.apgd-app__name { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: var(--fs-base); font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.apgd-app__price { font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 400; color: var(--muted-2); }
-.apgd-app__line { font-size: var(--fs-md); line-height: 1.35; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.apgd-app__info { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 999px; color: var(--muted-2); }
-.apgd-app__info:hover { color: var(--fg); background: color-mix(in oklch, var(--fg) 7%, transparent); }
-.apgd-app__info:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.apgd-app__add { height: 32px; padding: 0 14px; }
 
 /* ── The dock's header: one line, the names cut with an ellipsis ────────── */
 .apgd-scope { flex-wrap: nowrap; gap: 8px; overflow: hidden; }

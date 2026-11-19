@@ -1,102 +1,114 @@
 'use client'
 
-// YOUR APPS: the row that decides the page (squad apps-page). Every app that
-// is on is a pressed chip with its mark; a tap removes it. The apps that are
-// off fill only the room the row has left (measured, so the row is ONE line
-// at every width), an app just removed first so it is one tap from back;
-// everything else is in the tray under "Browse all": the whole free fleet,
-// the paid catalog and each app's page. Nothing the old drawer list
-// (components/AppsRailTab) could do is lost.
+// YOUR APPS: the row that decides the page (squad apps-page; re-cut
+// 2026-11-19, Nate: "Browse all seems hard to find as it's just more to
+// read... we could just show the logo but then show the MCP title when in
+// selecting more mode on the drop down").
 //
-// If even the on-chips do not fit, the list scrolls sideways inside itself;
-// "Browse all" and the right-hand controls never scroll away.
+// The apps that are on are MARKS (components/apps/AppMarks): no names in the
+// row, so five apps take the room one named chip did. The only words left on
+// the row's left are ONE button, "Add app", so it cannot be missed. It drops
+// the picker (components/apps/AppPicker): every app spelled out with a
+// switch, yours first, a search on top. Adding and removing both happen
+// there; a press on a mark opens it on that app's row.
+//
+// The row is one line at every width (lib/apps-dock marksPlan): the button
+// folds to its icon before any mark is hidden, and marks that still do not
+// fit are counted in a "+N". Nothing the old tray could do is lost: the whole
+// free fleet, the paid catalog and each app's page are in the picker.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
-import { Info, LayoutGrid } from 'lucide-react'
-import BrandIcon from '@/components/BrandIcon'
-import { cleanServerName, cn } from '@/lib/utils'
-import { offeredApps, rowPlan, trayApps, trayLine, trayPrice, type TrayView } from '@/lib/apps-dock'
-import type { McpServer } from '@/lib/store'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Plus } from 'lucide-react'
+import { marksPlan } from '@/lib/apps-dock'
+import AppMarks from '@/components/apps/AppMarks'
+import AppPicker from '@/components/apps/AppPicker'
 import { useAppSet } from '@/components/apps/useAppSet'
 import './dock.css'
+import './picker.css'
 
-/** The list's flex gap, px (dock.css `.apgd-list`). */
-const CHIP_GAP = 8
-/** "Browse all" as its icon alone, px (dock.css). */
-const BROWSE_COMPACT = 38
+/** A mark's width and the gap after it, px (picker.css `.apgk-mark`, `.apgk-marks`). */
+const MARK = 36
+const MARK_GAP = 6
+/** The button as its icon, and what surrounds its words (padding, icon, gap,
+ *  border), px. Both carry the 4px by which the gap before the button is
+ *  wider than the gap between marks (dock.css `.apgd-list`). */
+const ADD_COMPACT = 42
+const ADD_CHROME = 55
+/** The picker's exit, ms (picker.css `apgk-close`). */
+const CLOSE_MS = 140
+/** The picker's widest, and the room it keeps from the row's edges, px. */
+const POP_WIDTH = 540
+const POP_EDGE = 12
+
+type Phase = 'closed' | 'open' | 'closing'
 
 export default function AppChips({ right }: { right?: React.ReactNode }) {
   const { servers, active, toggle } = useAppSet()
-  const [trayOpen, setTrayOpen] = useState(false)
-  // Apps removed from the row this visit, newest first: they lead the
-  // offered chips so a removal is undone with one tap.
-  const [recent, setRecent] = useState<string[]>([])
+  const [phase, setPhase] = useState<Phase>('closed')
+  const [focusSlug, setFocusSlug] = useState<string | undefined>()
+  const [openCount, setOpenCount] = useState(0)
 
-  const activeIds = useMemo(() => active.map((s) => s.id), [active])
-  const offered = useMemo(() => {
-    const on = new Set(activeIds)
-    const back = recent.map((id) => servers.find((s) => s.id === id)).filter((s): s is McpServer => !!s && !on.has(s.id))
-    const backIds = new Set(back.map((s) => s.id))
-    return [...back, ...offeredApps(servers, activeIds).filter((s) => !backIds.has(s.id))]
-  }, [servers, activeIds, recent])
-
-  const remove = (s: McpServer) => {
-    setRecent((r) => [s.id, ...r.filter((id) => id !== s.id)].slice(0, 4))
-    toggle(s)
-  }
-
-  // ── One line: measure what fits ─────────────────────────────────────────
+  const rootRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  const [plan, setPlan] = useState({ compact: false, fit: 0, overflowing: false })
-  const { compact, fit, overflowing } = plan
+  const addRef = useRef<HTMLButtonElement>(null)
+  const popRef = useRef<HTMLDivElement>(null)
+
+  // ── One line: how many marks fit, and whether the button keeps its words ──
+  const [plan, setPlan] = useState({ shown: Number.POSITIVE_INFINITY, more: 0, compact: false })
+  // Where the picker hangs: under the marks, pulled in from the right edge
+  // when the row is narrow; it grows out of the button (`origin`).
+  const [pop, setPop] = useState({ left: POP_EDGE, origin: 40 })
   const measure = useCallback(() => {
     const list = listRef.current
-    if (!list) return
-    const on = [...list.querySelectorAll<HTMLElement>('[data-chip-kind="on"]')]
-    const off = [...list.querySelectorAll<HTMLElement>('[data-chip-kind="off"]')]
-    const browse = list.querySelector<HTMLElement>('[data-chip-kind="browse"]')
-    const isCompact = list.hasAttribute('data-compact')
-    // A compact chip keeps its name in the DOM, out of the flow but still
-    // measurable, so both widths are known in either state (one flex gap
-    // sits between the mark and the name).
-    const nameW = (el: HTMLElement) => (el.querySelector<HTMLElement>('.apgd-chip__name')?.offsetWidth ?? 0) + CHIP_GAP
-    const next = rowPlan({
-      width: list.clientWidth,
-      onFull: on.map((el) => (isCompact ? el.offsetWidth + nameW(el) : el.offsetWidth)),
-      onCompact: on.map((el) => (isCompact ? el.offsetWidth : el.offsetWidth - nameW(el))),
-      // "Browse all" keeps its words measurable too (padding 14 + border 1 a side).
-      browse: (browse?.querySelector<HTMLElement>('.apgd-browse__label')?.offsetWidth ?? 60) + 30,
-      browseCompact: BROWSE_COMPACT,
-      offered: off.map((el) => el.offsetWidth),
-      gap: CHIP_GAP,
-    })
-    setPlan((p) => (p.compact === next.compact && p.fit === next.fit && p.overflowing === next.overflowing ? p : next))
-  }, [])
+    const root = rootRef.current
+    if (!list || !root) return
+    const label = addRef.current?.querySelector<HTMLElement>('.apgk-add__label')?.offsetWidth ?? 56
+    const next = marksPlan({ width: list.clientWidth, count: active.length, mark: MARK, gap: MARK_GAP, add: label + ADD_CHROME, addCompact: ADD_COMPACT })
+    setPlan((p) => (p.shown === next.shown && p.more === next.more && p.compact === next.compact ? p : next))
+    const width = Math.min(POP_WIDTH, root.clientWidth - POP_EDGE * 2)
+    const left = Math.max(POP_EDGE, Math.min(list.offsetLeft, root.clientWidth - width - POP_EDGE))
+    const add = addRef.current
+    const origin = add ? add.offsetLeft + add.offsetWidth / 2 - left : 40
+    setPop((p) => (p.left === left && p.origin === origin ? p : { left, origin }))
+  }, [active.length])
   useLayoutEffect(() => {
     measure()
-  }, [measure, active, offered])
+  }, [measure, phase])
   useEffect(() => {
     const list = listRef.current
     if (!list || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => measure())
     ro.observe(list)
-    // The marks load late and change a chip's width.
-    for (const el of list.querySelectorAll('[data-chip-kind]')) ro.observe(el)
     return () => ro.disconnect()
-  }, [measure, active, offered])
+  }, [measure])
 
-  // ── The tray closes on Esc and on a click outside the row and the tray ──
-  const rootRef = useRef<HTMLDivElement>(null)
+  // ── Open and close ────────────────────────────────────────────────────────
+  const open = (slug?: string) => {
+    setFocusSlug(slug)
+    setOpenCount((n) => n + 1)
+    setPhase('open')
+  }
+  const close = useCallback((refocus = false) => {
+    setPhase((p) => (p === 'open' ? 'closing' : p))
+    if (refocus) addRef.current?.focus()
+  }, [])
   useEffect(() => {
-    if (!trayOpen) return
+    if (phase !== 'closing') return
+    const t = setTimeout(() => setPhase('closed'), CLOSE_MS)
+    return () => clearTimeout(t)
+  }, [phase])
+
+  // Escape (the search clears itself first: it prevents the default) and a
+  // press anywhere but the marks, the button and the picker close it.
+  useEffect(() => {
+    if (phase !== 'open') return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setTrayOpen(false)
+      if (e.key === 'Escape' && !e.defaultPrevented) close(!!popRef.current?.contains(document.activeElement))
     }
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node | null
-      if (t && rootRef.current?.contains(t)) return
-      setTrayOpen(false)
+      if (t && (listRef.current?.contains(t) || popRef.current?.contains(t))) return
+      close()
     }
     document.addEventListener('keydown', onKey)
     document.addEventListener('pointerdown', onDown)
@@ -104,142 +116,51 @@ export default function AppChips({ right }: { right?: React.ReactNode }) {
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('pointerdown', onDown)
     }
-  }, [trayOpen])
+  }, [phase, close])
+
+  const isOpen = phase === 'open'
+  const label = isOpen ? 'Done' : active.length ? 'Add app' : 'Add an app'
 
   return (
-    <div ref={rootRef} className="apg-chips apgd-chips" data-apps-chips="">
+    <div ref={rootRef} className="apg-chips apgd-chips" data-apps-chips="" data-picker={phase}>
       <div className="apg-chips__row apgd-row">
         <span className="apg-eyebrow apg-chips__label apgd-label">Your apps</span>
-        <div
-          ref={listRef}
-          className="apgd-list"
-          role="group"
-          aria-label="Apps on this page"
-          data-overflowing={overflowing ? '' : undefined}
-          data-compact={compact ? '' : undefined}
-          data-apps-fit={fit}
-        >
-          {active.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              aria-pressed="true"
-              onClick={() => remove(s)}
-              title={`${cleanServerName(s.name)} is on this page. Click to remove it.`}
-              aria-label={cleanServerName(s.name)}
-              className="apg-chip apg-chip--on"
-              data-apps-chip={s.slug}
-              data-chip-kind="on"
-            >
-              <BrandIcon server={s} size={16} />
-              <span className="apgd-chip__name">{cleanServerName(s.name)}</span>
-              <span aria-hidden className="apg-chip__x">
-                ×
-              </span>
-            </button>
-          ))}
-          {offered.map((s, i) => {
-            const shown = i < fit && !overflowing && !compact
-            return (
-              <button
-                key={s.id}
-                type="button"
-                aria-pressed="false"
-                onClick={() => toggle(s)}
-                title={`Add ${cleanServerName(s.name)} to this page`}
-                className={cn('apg-chip', !shown && 'apgd-chip--spare')}
-                data-apps-chip={shown ? s.slug : undefined}
-                data-apps-spare={shown ? undefined : s.slug}
-                data-chip-kind="off"
-                tabIndex={shown ? undefined : -1}
-                aria-hidden={shown ? undefined : true}
-              >
-                <BrandIcon server={s} size={16} />
-                <span>{cleanServerName(s.name)}</span>
-                <span aria-hidden className="apg-chip__x">
-                  +
-                </span>
-              </button>
-            )
-          })}
+        <div ref={listRef} className="apgd-list" data-compact={plan.compact ? '' : undefined}>
+          <AppMarks active={active} shown={Number.isFinite(plan.shown) ? plan.shown : undefined} onOpen={(slug) => (isOpen ? setFocusSlug(slug) : open(slug))} />
           <button
+            ref={addRef}
             type="button"
-            aria-expanded={trayOpen}
-            aria-controls="apgd-tray"
-            onClick={() => setTrayOpen((v) => !v)}
-            className={cn('apg-chip apg-chip--browse apgd-browse', trayOpen && 'apg-chip--open')}
-            data-apps-browse=""
-            data-chip-kind="browse"
-            aria-label={trayOpen ? 'Close the list of apps' : 'Browse all apps'}
-            title={trayOpen ? 'Close' : 'Browse all apps'}
+            aria-haspopup="dialog"
+            aria-expanded={isOpen}
+            aria-controls="apgk-pop"
+            onClick={() => (isOpen ? close() : open())}
+            className="apgk-add"
+            data-apps-add=""
+            aria-label={isOpen ? 'Close the app list' : 'Add or remove apps'}
+            title={isOpen ? 'Close' : 'Add or remove apps'}
           >
-            <LayoutGrid width={15} height={15} aria-hidden className="apgd-browse__icon" />
-            <span className="apgd-browse__label">{trayOpen ? 'Close' : 'Browse all'}</span>
+            <span className="apgk-add__icon" aria-hidden>
+              <Plus width={14} height={14} strokeWidth={2.4} />
+            </span>
+            <span className="apgk-add__label">{label}</span>
           </button>
         </div>
         {right && <div className="apg-chips__right">{right}</div>}
       </div>
-      {trayOpen && <Tray activeIds={activeIds} servers={servers} onToggle={toggle} />}
+      {phase !== 'closed' && (
+        <div
+          ref={popRef}
+          id="apgk-pop"
+          role="dialog"
+          aria-label="Add or remove apps"
+          className="apgk-pop"
+          data-apps-pop=""
+          data-state={phase}
+          style={{ left: pop.left, ['--apgk-ox' as string]: `${pop.origin}px` }}
+        >
+          <AppPicker key={openCount} servers={servers} active={active} onToggle={toggle} focusSlug={focusSlug} autoFocus />
+        </div>
+      )}
     </div>
-  )
-}
-
-function Tray({
-  servers,
-  activeIds,
-  onToggle,
-}: {
-  servers: McpServer[]
-  activeIds: string[]
-  onToggle: (s: McpServer) => void
-}) {
-  const [view, setView] = useState<TrayView>('free')
-  const list = useMemo(() => trayApps(servers, activeIds, view), [servers, activeIds, view])
-  return (
-    <section id="apgd-tray" className="apgd-tray" aria-label="Add an app" data-apps-tray="">
-      <div className="apgd-tray__head">
-        <div className="apgd-tray__title">
-          <h2 className="apgd-tray__h">Add an app</h2>
-          <p className="apgd-tray__sub">Each one adds its own section to the page and joins the chat.</p>
-        </div>
-        <div className="apgd-switch" role="tablist" aria-label="Free or paid apps">
-          <button type="button" role="tab" aria-selected={view === 'free'} onClick={() => setView('free')} className="apgd-switch__btn" data-tray-view="free">
-            Free
-          </button>
-          <button type="button" role="tab" aria-selected={view === 'paid'} onClick={() => setView('paid')} className="apgd-switch__btn" data-tray-view="paid">
-            Paid
-          </button>
-        </div>
-      </div>
-      <div className="apgd-tray__grid" data-tray-count={list.length}>
-        {list.map((s) => {
-          const name = cleanServerName(s.name)
-          const price = trayPrice(s)
-          return (
-            <div key={s.id} className="apgd-app" data-tray-app={s.slug}>
-              <span className="apgd-app__mark" aria-hidden>
-                <BrandIcon server={s} size={20} />
-              </span>
-              <span className="apgd-app__text">
-                <span className="apgd-app__name">
-                  {name}
-                  {price && <span className="apgd-app__price">{price}</span>}
-                </span>
-                <span className="apgd-app__line">{trayLine(s)}</span>
-              </span>
-              <Link href={`/servers/${s.slug}`} target="_blank" className="apgd-app__info" aria-label={`About ${name}`} title={`About ${name}: tools, pricing, reputation`}>
-                <Info width={15} height={15} aria-hidden />
-              </Link>
-              <button type="button" className="apg-btn apgd-app__add" onClick={() => onToggle(s)} aria-label={`Add ${name} to the page`} data-tray-add={s.slug}>
-                Add
-              </button>
-            </div>
-          )
-        })}
-        {list.length === 0 && (
-          <p className="apgd-tray__none">{view === 'free' ? 'Every free app is already on the page.' : 'No paid apps are loaded.'}</p>
-        )}
-      </div>
-    </section>
   )
 }
