@@ -57,7 +57,9 @@ export function useAppTiles(address: string | undefined, servers: McpServer[]): 
   useEffect(() => {
     if (!address || servers.length === 0) {
       coveredRef.current = null
-      commit(servers.length === 0 && address ? [] : null)
+      // No wallet: nothing to scan, so the page settles at once on the apps'
+      // own public boards (never a loader that waits for an address).
+      commit([])
       setPending([])
       setLoading(false)
       return

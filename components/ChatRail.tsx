@@ -20,7 +20,6 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PanelLeftClose } from 'lucide-react'
-import { useAccount } from 'wagmi'
 import { useYeetfulStore } from '@/lib/store'
 import { appsViewOn } from '@/lib/apps-page'
 import { PHONE_MQ } from '@/lib/phone-shell'
@@ -34,7 +33,6 @@ const RAIL_WIDTH = 248
 
 export default function ChatRail() {
   const { railTab, mcpRailOpen, setMcpRailOpen, mainView } = useYeetfulStore()
-  const { address } = useAccount()
 
   // Mount gate + breakpoint: the breakpoint is unknowable server-side, and
   // toggling an AnimatePresence child mid-hydration orphans it (panel sticks
@@ -54,8 +52,8 @@ export default function ChatRail() {
   if (!mounted || isMobile) return null
   // The APPS tab is a page now (components/apps/AppsPage, squad apps-page):
   // its chip row adds and removes apps, so the drawer's list would be the
-  // same control twice. No wallet → the classic drawer stands.
-  if (appsViewOn({ narrow: false, hasWallet: !!address, railTab, railOpen: mcpRailOpen, mainView })) return null
+  // same control twice, signed in or not.
+  if (appsViewOn({ narrow: false, railTab, railOpen: mcpRailOpen, mainView })) return null
 
   return (
     <AnimatePresence initial={false}>

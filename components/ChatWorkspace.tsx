@@ -257,7 +257,7 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   // would drop the thread's state); only its wrapper changes shape. A page
   // button hands its ask to the chat through lib/apps-page-ui; the newest of
   // that and the URL's ?prompt= is what the chat receives.
-  const appsView = appsViewOn({ narrow: isNarrow, hasWallet: !!address, railTab, railOpen: mcpRailOpen, mainView })
+  const appsView = appsViewOn({ narrow: isNarrow, railTab, railOpen: mcpRailOpen, mainView })
   const appsChatOpen = useAppsUi((s) => s.chatOpen)
   const appsAsk = useAppsUi((s) => s.ask)
   // On a phone the apps page is the APPS screen (components/apps/AppsPhone):
@@ -266,7 +266,7 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   const dockHidden = appsView && !appsChatOpen
   // A phone's APPS screen is the same page (components/apps/AppsPhone), so its
   // conversation is "beside the apps" as well: no card grid above the thread.
-  const besideApps = appsView || (isNarrow && !!address)
+  const besideApps = appsView || isNarrow
 
   const screenUp = isNarrow && phoneScreen !== 'chat'
   // A screen rising over the composer takes the keyboard with it.
@@ -314,7 +314,7 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
         {/* The page beside the chat. Mounted BEFORE the conversation's wrapper
             and as its own slot, so the wrapper keeps its position in the
             tree whether or not the page is showing. */}
-        {appsView && address && <AppsPage address={address} />}
+        {appsView && <AppsPage address={address} />}
         <div
           className={appsView ? 'apg-dock' : 'flex-1 min-h-0 flex flex-col'}
           data-chat-dock={appsView ? (dockHidden ? 'closed' : 'open') : undefined}

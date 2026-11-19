@@ -30,7 +30,6 @@ import { dismissOnboarding, onboardingDismissed, useOnboardingStatus } from '@/l
 import { absoluteUrl } from '@/lib/site-url'
 import PhoneScreen from '@/components/phone/PhoneScreen'
 import Sheet from '@/components/mobile/Sheet'
-import AppsRailTab from '@/components/AppsRailTab'
 import ChatsRailTab from '@/components/ChatsRailTab'
 import JobsRailTab from '@/components/JobsRailTab'
 import LinksRailTab, { JourneyStrip } from '@/components/LinksRailTab'
@@ -38,7 +37,6 @@ import TeamRailTab from '@/components/TeamRailTab'
 import LinksWorkspace from '@/components/LinksWorkspace'
 import AppsPhone from '@/components/apps/AppsPhone'
 import { useAccount } from 'wagmi'
-import { phoneAppsPageOn } from '@/lib/apps-phone'
 
 /** The screen headings, the same words the desktop drawer uses. */
 export const PHONE_SCREEN_TITLES: Record<Exclude<PhoneScreenName, 'chat'>, string> = {
@@ -136,18 +134,13 @@ function LinksScreen() {
   )
 }
 
-/** APPS (squad apps-page, 2026-11-17): for a connected wallet the screen
- *  IS the apps page (components/apps/AppsPhone, which owns its own panel so
- *  the ask bar can sit outside the scroller); with no wallet it stays the
- *  plain list of apps it always was. */
+/** APPS (squad apps-page, 2026-11-17): the screen IS the apps page
+ *  (components/apps/AppsPhone, which owns its own panel so the ask bar can
+ *  sit outside the scroller), signed in or not since 2026-11-19 (with no
+ *  wallet it runs on the apps' public boards). */
 function AppsScreen() {
   const { address } = useAccount()
-  if (phoneAppsPageOn(!!address) && address) return <AppsPhone address={address} title={PHONE_SCREEN_TITLES.apps} />
-  return (
-    <PhoneScreen name="apps" title={PHONE_SCREEN_TITLES.apps}>
-      <AppsRailTab flat />
-    </PhoneScreen>
-  )
+  return <AppsPhone address={address} title={PHONE_SCREEN_TITLES.apps} />
 }
 
 export default function PhoneScreens({ screen }: { screen: Exclude<PhoneScreenName, 'chat'> }) {

@@ -75,14 +75,21 @@ export function appFamily(s: { slug: string; name: string }): AppFamily {
 // ── Which place is showing ──────────────────────────────────────────────────
 
 /** The apps page owns the main area when the APPS tab is the lit, open tab
- *  on a desktop and a wallet is connected (its data is the wallet's). In
- *  every other state the classic surface stands: no wallet → the examples
- *  and the apps drawer; a collapsed tab → the full-width conversation; a
- *  phone → its own APPS screen (components/phone). Derived, never stored, so
- *  the spine, the URL (?tab=) and the store keep their existing meaning. */
-export function appsViewOn(s: { narrow: boolean; hasWallet: boolean; railTab: string; railOpen: boolean; mainView: string }): boolean {
-  return !s.narrow && s.hasWallet && s.railTab === 'mcps' && s.railOpen && s.mainView === 'chat'
+ *  on a desktop, signed in or not (2026-11-19, Nate: a signed-out press on
+ *  APPS landed on the old drawer and read as "the old UI"). With no wallet the
+ *  page runs on the apps' public boards and asks for a wallet for the rest
+ *  (APPS_NO_WALLET_HEADLINE). In every other state the classic surface
+ *  stands: a collapsed tab → the full-width conversation; a phone → its own
+ *  APPS screen (components/phone). Derived, never stored, so the spine, the
+ *  URL (?tab=) and the store keep their existing meaning. */
+export function appsViewOn(s: { narrow: boolean; railTab: string; railOpen: boolean; mainView: string }): boolean {
+  return !s.narrow && s.railTab === 'mcps' && s.railOpen && s.mainView === 'chat'
 }
+
+/** The page's headline with no wallet connected: nothing of the wallet's can
+ *  be read, so the page says what a wallet adds instead of "Nothing needs
+ *  you", which would be a claim about a wallet it never saw. */
+export const APPS_NO_WALLET_HEADLINE = 'Connect a wallet to see what you hold in these apps.'
 
 // ── The chat's scope, in words ──────────────────────────────────────────────
 
@@ -230,8 +237,9 @@ const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven'
 /** The page's one headline when no single app owns it (2+ apps, or an app
  *  with no headline of its own): what the page can see, then what it asks of
  *  you. Never a number it was not given. */
-export function pageHeadline(p: { count: number; totalUsd: number | null; needs: number; loading?: boolean }): string {
+export function pageHeadline(p: { count: number; totalUsd: number | null; needs: number; loading?: boolean; noWallet?: boolean }): string {
   if (p.count <= 0) return 'Pick an app to start.'
+  if (p.noWallet) return APPS_NO_WALLET_HEADLINE
   // While the apps are still reading, "Nothing needs you" would be a claim
   // the page cannot make yet (Nate, 2026-11-19).
   if (p.loading) return p.count === 1 ? 'Loading your app…' : 'Loading your apps…'

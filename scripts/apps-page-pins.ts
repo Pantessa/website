@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import {
   APP_FAMILIES,
   appFamily,
+  APPS_NO_WALLET_HEADLINE,
   appsViewOn,
   askPlaceholder,
   chatScopeLabel,
@@ -71,10 +72,22 @@ export function appsPagePins(check: Check) {
     APP_FAMILIES.every((f) => (f === 'other' ? /other: generic/.test(idx) : new RegExp(`\\n  ${f},`).test(idx))))
 
   // ── which place is showing ────────────────────────────────────────────────
-  const on = { narrow: false, hasWallet: true, railTab: 'mcps', railOpen: true, mainView: 'chat' }
-  check('apps page (place): it owns the main area only for a connected wallet on a desktop with the APPS tab lit and open; a phone, no wallet, a collapsed tab, another tab and the links board all keep the classic surface',
-    appsViewOn(on) && !appsViewOn({ ...on, narrow: true }) && !appsViewOn({ ...on, hasWallet: false }) && !appsViewOn({ ...on, railOpen: false }) &&
+  const on = { narrow: false, railTab: 'mcps', railOpen: true, mainView: 'chat' }
+  check('apps page (place): it owns the main area on a desktop with the APPS tab lit and open, signed in or not (2026-11-19: a signed-out press on APPS met the old drawer); a phone, a collapsed tab, another tab and the links board keep the classic surface',
+    appsViewOn(on) && !appsViewOn({ ...on, narrow: true }) && !appsViewOn({ ...on, railOpen: false }) &&
       !appsViewOn({ ...on, railTab: 'chats' }) && !appsViewOn({ ...on, mainView: 'links' }))
+  check('apps page (no wallet): the headline asks for a wallet instead of claiming nothing needs you, and the page mounts with no address',
+    pageHeadline({ count: 2, totalUsd: null, needs: 0, noWallet: true }) === APPS_NO_WALLET_HEADLINE &&
+      pageHeadline({ count: 0, totalUsd: null, needs: 0, noWallet: true }) === 'Pick an app to start.' &&
+      code('components/ChatWorkspace.tsx').includes('{appsView && <AppsPage address={address} />}') &&
+      /address\?: string/.test(code('components/apps/AppsPage.tsx')) &&
+      code('components/apps/AppsPage.tsx').includes('{starting && address && <AppsStart'))
+  check('apps page (no wallet): no app folds into "Nothing new from …" (a claim about a wallet the page never read), on the desktop or the phone',
+    /sectionDensity === 'line' && !!address && !isPending/.test(code('components/apps/AppsPage.tsx')) &&
+      /section === 'line' && !!address && !isPending/.test(code('components/apps/AppsPhone.tsx')))
+  check('apps page (no wallet): the scan settles empty at once (never a loader waiting for an address) and the first run reads nothing',
+    /if \(!address \|\| servers\.length === 0\) \{[\s\S]{0,240}commit\(\[\]\)/.test(code('components/apps/useAppTiles.ts')) &&
+      /if \(!address\) \{\s*setRead\(null\)/.test(code('components/apps/useAppsStart.ts')))
 
   // ── the chat's scope, in words ────────────────────────────────────────────
   check('apps page (chat scope): one app is named, two are joined, more are counted; the composer asks the same way',
@@ -125,8 +138,8 @@ export function appsPagePins(check: Check) {
   // ── wired ─────────────────────────────────────────────────────────────────
   const ws = code('components/ChatWorkspace.tsx')
   check('apps page (wired, one chat): the workspace docks the SAME ChatInterface beside the page (one mount, never a second runtime) and the page is its own slot before it, so the thread keeps its tree position',
-    (ws.match(/<ChatInterface /g) ?? []).length === 1 && ws.includes("<ChatInterface injectedPrompt={injected} beside={besideApps ? 'apps' : undefined} />") && ws.includes('const besideApps = appsView || (isNarrow && !!address)') &&
-      ws.indexOf('{appsView && address && <AppsPage address={address} />}') > 0 && ws.indexOf('{appsView && address && <AppsPage address={address} />}') < ws.indexOf('<ChatInterface '))
+    (ws.match(/<ChatInterface /g) ?? []).length === 1 && ws.includes("<ChatInterface injectedPrompt={injected} beside={besideApps ? 'apps' : undefined} />") && ws.includes('const besideApps = appsView || isNarrow') &&
+      ws.indexOf('{appsView && <AppsPage address={address} />}') > 0 && ws.indexOf('{appsView && <AppsPage address={address} />}') < ws.indexOf('<ChatInterface '))
   check('apps page (wired, chat in reach): the chat is its own column beside the page\'s scroller, never inside it; with the dock closed the page keeps ONE ask bar pinned outside its scroller',
     ws.includes("className={appsView ? 'apg-dock' : 'flex-1 min-h-0 flex flex-col'}") && (() => {
       const pg = code('components/apps/AppsPage.tsx')
@@ -144,7 +157,7 @@ export function appsPagePins(check: Check) {
       /setUrlPrompt\(\{ text, send: false, at: Date\.now\(\) \}\)\s*useAppsUi\.getState\(\)\.setChatOpen\(true\)/.test(ws))
   const rail = code('components/ChatRail.tsx')
   check('apps page (wired, drawer): while the page owns the APPS tab the drawer does not draw the same list twice; with no wallet the classic drawer stands',
-    rail.includes('if (appsViewOn({ narrow: false, hasWallet: !!address, railTab, railOpen: mcpRailOpen, mainView })) return null') && rail.includes('<AppsRailTab />'))
+    rail.includes('if (appsViewOn({ narrow: false, railTab, railOpen: mcpRailOpen, mainView })) return null') && rail.includes('<AppsRailTab />'))
   const pg = code('components/apps/AppsPage.tsx')
   check('apps page (wired, asks): a button on the page builds nothing — every section\'s ask goes to the chat through sendAsk; no section file imports a sign button or a tx builder',
     pg.includes('sendAsk(text, { send: opts?.send, mcps: slug ? [slug] : undefined })') &&

@@ -50,7 +50,7 @@ import {
 import { cleanServerName } from '@/lib/utils'
 import './apps.css'
 
-export default function AppsPage({ address }: { address: string }) {
+export default function AppsPage({ address }: { address?: string }) {
   const { active, servers } = useAppSet()
   const { tiles, map, loading, pending, retry } = useAppTiles(address, active)
   const { chatOpen, setChatOpen, sendAsk, setSuggestions } = useAppsUi()
@@ -63,7 +63,7 @@ export default function AppsPage({ address }: { address: string }) {
   const needs = needsYouRows(page.briefing)
   // An empty wallet's first run (lib/apps-start): it takes the headline and
   // leads the page; the apps' own sections stay under it.
-  const start = useAppsStart({ address, servers, active, ready: !loading && tiles !== null, totalUsd, needs: needs.length })
+  const start = useAppsStart({ address: address ?? '', servers, active, ready: !loading && tiles !== null, totalUsd, needs: needs.length })
   const starting = start.phase === 'start'
 
   // The dock's empty state offers the open apps' own first asks.
@@ -78,7 +78,9 @@ export default function AppsPage({ address }: { address: string }) {
   const needsFirst = needsLeads(density, only ? appFamily(only) : null)
   const onlyModule = only ? SECTIONS[appFamily(only)] : null
   const pageLoading = loading || tiles === null
-  const headline = pageLoading
+  const headline = !address
+    ? pageHeadline({ count: active.length, totalUsd, needs: 0, noWallet: true })
+    : pageLoading
     ? pageHeadline({ count: active.length, totalUsd, needs: needs.length, loading: true })
     : (only && onlyModule?.headline?.({ server: only, tiles: page.bySlug.get(only.slug) ?? [], page, map })) ||
       pageHeadline({ count: active.length, totalUsd, needs: needs.length })
@@ -89,8 +91,10 @@ export default function AppsPage({ address }: { address: string }) {
     const mod = SECTIONS[family]
     const group = page.bySlug.get(server.slug) ?? []
     const isPending = pending.some((p) => p.id === server.id)
+    // With no wallet nothing was read, so no app is "quiet": "Nothing new
+    // from …" would describe a wallet the page never saw. Each keeps its line.
     const quiet =
-      sectionDensity === 'line' && !isPending && (mod.quiet ? mod.quiet({ server, tiles: group, page, map }) : lineFor(group).quiet)
+      sectionDensity === 'line' && !!address && !isPending && (mod.quiet ? mod.quiet({ server, tiles: group, page, map }) : lineFor(group).quiet)
     return { server, family, mod, group, isPending, quiet }
   })
   const loud = sectionsFor.filter((s) => !s.quiet)
@@ -127,7 +131,7 @@ export default function AppsPage({ address }: { address: string }) {
             </h1>
           </header>
 
-          {starting && <AppsStart address={address} start={start} onAsk={(text, slug) => sendAsk(text, { mcps: [slug] })} />}
+          {starting && address && <AppsStart address={address} start={start} onAsk={(text, slug) => sendAsk(text, { mcps: [slug] })} />}
 
           {density === 'empty' ? (
             !starting && <p className="apg-muted apg-empty">Press Add app above to pick one. One app is shown in full; add more and the page makes room for each.</p>
@@ -149,7 +153,7 @@ export default function AppsPage({ address }: { address: string }) {
                       density="line"
                       page={page}
                       map={map}
-                      address={address}
+                      address={address ?? ''}
                       onAsk={askFor(server.slug)}
                       onRetry={retry}
                     />
@@ -176,7 +180,7 @@ export default function AppsPage({ address }: { address: string }) {
                       density={sectionDensity}
                       page={page}
                       map={map}
-                      address={address}
+                      address={address ?? ''}
                       onAsk={askFor(server.slug)}
                       onRetry={retry}
                     />
