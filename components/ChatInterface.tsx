@@ -100,6 +100,7 @@ import { useSoftKeyboard } from '@/components/mobile/useSoftKeyboard'
 import { keyboardLift, threadOwnsAppScroll } from '@/lib/chat-phone'
 import { screenForTab } from '@/lib/phone-nav'
 import { SCROLL_ATTR } from '@/lib/phone-shell'
+import { useAppsUi } from '@/lib/apps-page-ui'
 
 // Typed-data signing request shipped from the server for the wallet to sign.
 interface SigningRequest {
@@ -923,7 +924,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     if (!pathname?.startsWith('/chat')) return
     arrivalTakenRef.current = true
     const taken = takeArrivalIntent()
-    if (taken) setArrival(taken)
+    if (!taken) return
+    setArrival(taken)
+    // A press on another page (a hero logo, a row chip) runs HERE. Beside the
+    // apps page the dock may be closed (its state persists), and the turn
+    // then ran unseen: the visitor saw the apps page and nothing of the ask.
+    useAppsUi.getState().setChatOpen(true)
   }, [embedded, simple, pathname])
 
   // Hold the fire until the surface can actually run it: a wallet is HERE

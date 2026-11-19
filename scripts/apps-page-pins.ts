@@ -134,6 +134,9 @@ export function appsPagePins(check: Check) {
   check('apps page (wired, dock): beside the page the chat mints no splash cards (the page is the dashboard), shows the dock\'s own empty state, names its scope and carries expand + close',
     ci.includes('const besideApps = beside === \'apps\' && !embedded && !simple && !docked') && ci.includes('const splashableServers = simple || besideApps') &&
       ci.includes('!besideApps &&\n') && ci.includes('<DockEmpty count={activeServers.length} onPick={runExample} phone={isNarrow} />') && ci.includes('<DockScope servers={activeServers} />') && ci.includes('{besideApps && <DockControls />}'))
+  check('apps page (wired, arrival opens the dock): an ask handed over from another page (a hero logo, a row chip) or carried in ?prompt= opens the dock, so a closed dock never runs it unseen beside the page',
+    /const taken = takeArrivalIntent\(\)\s*if \(!taken\) return\s*setArrival\(taken\)\s*useAppsUi\.getState\(\)\.setChatOpen\(true\)/.test(ci) &&
+      /setUrlPrompt\(\{ text, send: false, at: Date\.now\(\) \}\)\s*useAppsUi\.getState\(\)\.setChatOpen\(true\)/.test(ws))
   const rail = code('components/ChatRail.tsx')
   check('apps page (wired, drawer): while the page owns the APPS tab the drawer does not draw the same list twice; with no wallet the classic drawer stands',
     rail.includes('if (appsViewOn({ narrow: false, hasWallet: !!address, railTab, railOpen: mcpRailOpen, mainView })) return null') && rail.includes('<AppsRailTab />'))
