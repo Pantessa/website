@@ -5,9 +5,9 @@
    column sits between the spine and the rail. Prefix `xrc-shelf`, checked
    against every stylesheet in the repo. */
 
-.xrc.xrc--shelf { padding: 0; container-type: inline-size; display: flex; flex-direction: column; gap: 12px; }
+.xrc.xrc--shelf { padding: 0; container-type: inline-size; display: flex; flex-direction: column; gap: 20px; }
 .xrc-shelf__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
-.xrc-shelf__say { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.xrc-shelf__say { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .xrc .xrc-shelf__eyebrow { align-self: flex-start; font-family: var(--xrc-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-weight: 600; text-decoration: none; }
 .xrc .xrc-shelf__eyebrow:hover, .xrc .xrc-shelf__eyebrow:focus-visible { text-decoration: underline; text-underline-offset: 0.2em; }
 .xrc-shelf__title { margin: 0; font-family: var(--xrc-display); font-weight: 600; font-size: clamp(1.25rem, 1.05rem + 0.9vw, 1.625rem); line-height: 1.2; letter-spacing: -0.015em; }
