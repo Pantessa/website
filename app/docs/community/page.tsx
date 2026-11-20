@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
 import { BOT_COMMANDS } from '@/lib/community/spec'
+import { DISCORD_ROOMS } from '@/lib/community/features'
 import { COMPOSER_KINDS, VIDEO_HOSTS_LINE, composeHref } from '@/components/community/feed-rules'
 
 // /docs/community (squad community, lane SHARE, 2026-11-09): what a room is,
@@ -110,15 +111,19 @@ export default function CommunityDocsPage() {
         </ul>
         <p>Until the owner of this deployment has created the bot, the room page says Telegram is &ldquo;not set up on this deployment&rdquo;.</p>
 
-        <h2>Connect a Discord channel</h2>
-        <p>
-          In Discord, create a webhook for the channel and paste its URL on the room page. New posts are announced there. The{' '}
-          <code>/pantessa</code>{' '}slash commands need a Discord app: until the owner of this deployment has created it they answer &ldquo;not set up on this deployment&rdquo;.
-        </p>
+        {DISCORD_ROOMS && (
+          <>
+            <h2>Connect a Discord channel</h2>
+            <p>
+              In Discord, create a webhook for the channel and paste its URL on the room page. New posts are announced there. The{' '}
+              <code>/pantessa</code>{' '}slash commands need a Discord app: until the owner of this deployment has created it they answer &ldquo;not set up on this deployment&rdquo;.
+            </p>
+          </>
+        )}
 
         <h2>Who gets announced</h2>
         <p>
-          By default only posts by the owner and the mods are announced to a linked Telegram group or Discord channel. The owner can switch that to every member on
+          By default only posts by the owner and the mods are announced to a linked Telegram group{DISCORD_ROOMS ? ' or Discord channel' : ''}. The owner can switch that to every member on
           the room page.
         </p>
 

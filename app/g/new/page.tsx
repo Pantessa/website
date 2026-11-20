@@ -2,12 +2,13 @@ import type { Metadata } from 'next'
 import SpineLink from '@/components/SpineLink'
 import { GroupFrame, RoomsAside } from '@/components/community/group/GroupFrame'
 import NewRoomForm from '@/components/community/group/NewRoomForm'
+import { DISCORD_ROOMS } from '@/lib/community/features'
 
 // /g/new — start a room (squad community, lane GROUP). Public to look at:
 // the form is the page, and the wallet is asked for at the send.
 
 const TITLE = 'Start a room on Pantessa'
-const DESCRIPTION = 'Name it, say what it is about, pick the markets it follows. Members join in one tap, and you can link your Telegram group or Discord channel.'
+const DESCRIPTION = `Name it, say what it is about, pick the markets it follows. Members join in one tap, and you can link your Telegram group${DISCORD_ROOMS ? ' or Discord channel' : ''}.`
 
 export const metadata: Metadata = {
   title: TITLE,
