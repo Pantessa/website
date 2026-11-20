@@ -162,9 +162,15 @@ export interface ReadSnapshot {
   quotes: Partial<Record<ReadId, ReadQuote>>
   /** The biggest moves among the household stocks listed here, largest first (at most four). */
   movers: ReadMover[]
+  /** THE DESK (2026-11-20, lib/read-desk): the crypto desk's tokens that are
+   *  not among the nine, keyed by symbol, so the first frame's tiles are the
+   *  server's. Absent on a snapshot composed before the desk existed. */
+  desk?: Record<string, ReadQuote>
+  /** The biggest moves among the tokens listed here, by their own floor. */
+  tokenMovers?: ReadMover[]
 }
 
-export const EMPTY_READ: ReadSnapshot = { asOf: 0, quotes: {}, movers: [] }
+export const EMPTY_READ: ReadSnapshot = { asOf: 0, quotes: {}, movers: [], desk: {}, tokenMovers: [] }
 
 /** A quote from a last and the value it is measured from. Yields change in
  *  basis points (4.84% from 4.86% is −2 bp); everything else in percent. */
@@ -404,6 +410,10 @@ export interface ReadChart {
   /** Per point: x and y in viewBox units. */
   xs: number[]
   ys: number[]
+  /** The plot's own floor and ceiling (the span with its air): what a level
+   *  drawn over the chart is placed against (lib/read-desk deskLevels). */
+  lo: number
+  hi: number
 }
 
 /**
@@ -412,7 +422,7 @@ export interface ReadChart {
  * lines. `base` (the previous close / the value 24h ago) widens the scale so
  * the baseline is always on the plot. Fewer than two points draw nothing.
  */
-export function readChart(points: readonly ReadPoint[], base: number | null = null, w = READ_CHART_W, h = READ_CHART_H, pad = READ_CHART_PAD): ReadChart | null {
+export function readChart(points: readonly ReadPoint[], base: number | null = null, w = READ_CHART_W, h = READ_CHART_H, pad = READ_CHART_PAD, also: readonly number[] = []): ReadChart | null {
   const vals = points.map((p) => p[1]).filter((v) => Number.isFinite(v))
   if (vals.length < 2 || vals.length !== points.length) return null
   let min = Math.min(...vals)
@@ -420,6 +430,12 @@ export function readChart(points: readonly ReadPoint[], base: number | null = nu
   if (base != null && Number.isFinite(base)) {
     min = Math.min(min, base)
     max = Math.max(max, base)
+  }
+  // Values the scale also makes room for (the action levels the desk chose to keep in view).
+  for (const v of also) {
+    if (!Number.isFinite(v)) continue
+    min = Math.min(min, v)
+    max = Math.max(max, v)
   }
   if (max === min) {
     max += Math.abs(max) * 0.001 || 1
@@ -435,7 +451,7 @@ export function readChart(points: readonly ReadPoint[], base: number | null = nu
   const ys = vals.map((v) => round2(y(v)))
   const line = xs.map((px, i) => `${i === 0 ? 'M' : 'L'}${px} ${ys[i]}`).join(' ')
   const area = `${line} L${w} ${h} L0 ${h} Z`
-  return { line, area, min, max, baseY: base != null && Number.isFinite(base) ? round2(y(base)) : null, xs, ys }
+  return { line, area, min, max, baseY: base != null && Number.isFinite(base) ? round2(y(base)) : null, xs, ys, lo, hi }
 }
 
 function round2(n: number): number {

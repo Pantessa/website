@@ -20,7 +20,9 @@ import { HL_PERPS_HANDOFF_GLOBAL, liveHlPerpNames } from '@/lib/charts'
 // signed in and anytime they hit logo and they are signed in it goes to
 // that"). `/` stays the stranger's page: the hero mosaic, the tour, the trust
 // section and the closing doors, with no watchlist rail. This is the same
-// markets index with none of that: THE READ leads, the watchlist rail is on
+// markets index with none of that: THE READ leads (a desk of tokens since
+// 2026-11-20, lib/read-desk: the visitor's open watchlist, or the crypto
+// desk when there is none), the watchlist rail is on
 // the right (the no-rail rule in components/home/mosaic.css keys on the
 // claim block, which this page never mounts), then the boards.
 //
@@ -33,7 +35,7 @@ import { HL_PERPS_HANDOFF_GLOBAL, liveHlPerpNames } from '@/lib/charts'
 
 export const metadata: Metadata = {
   title: 'Markets · Pantessa',
-  description: 'Stocks 24/7, crypto, perps and macro, live. Every chart is the order form; your wallet signs.',
+  description: 'Crypto, stocks 24/7, perps and macro, live. Your watchlist leads; every chart is the order form and your wallet signs.',
   alternates: { canonical: `${SITE}/markets` },
 }
 
