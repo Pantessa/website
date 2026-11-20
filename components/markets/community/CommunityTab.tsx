@@ -275,6 +275,14 @@ function PostCard({
           <span className="mkp__author">{post.authorLabel}</span>
           <span aria-hidden>·</span>
           <time dateTime={new Date(post.createdAt * 1000).toISOString()}>{ageLabel(post.createdAt)}</time>
+          {post.community && (
+            <>
+              <span aria-hidden>·</span>
+              <Link href={`/g/${post.community.slug}`} className="mkp__room" data-journey="Market post: open its room">
+                in {post.community.name}
+              </Link>
+            </>
+          )}
           {post.forkOf && (
             <>
               <span aria-hidden>·</span>

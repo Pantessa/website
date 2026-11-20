@@ -37,11 +37,15 @@ import { ageLabel } from '@/lib/news-shared'
 import { useSession } from '@/lib/session'
 import { COMPOSER_FOLDED_LINE, COMPOSER_KINDS, FILLS_SEEN_KEY, VIDEO_HOSTS_LINE, VIDEO_HOST_NAME, fillsSeenMark, postPath, preselectFill, readComposeQuery, stripComposeQuery, type ComposeQuery } from './feed-rules'
 import { useIdentityDoor } from './useIdentityDoor'
+import { visibleLines } from '@/components/markets/community/ChartSketch'
+import { DRAFT_KEY, DRAFT_TTL_MS, clearDrawFor, handOffDraw } from './draw-handoff'
 import './community.css'
 
 export interface ComposerProps {
   /** Post into this room. */
   community?: string
+  /** That room's name, for the bar the chart shows after "Draw it on the chart". */
+  communityName?: string
   /** Pre-pick the market (the symbol page). */
   symbol?: string
   /** The page's live chart — "attach my current chart". */
@@ -53,8 +57,6 @@ export interface ComposerProps {
 export const COMPOSER_TITLE_MAX = 120
 export const COMPOSER_BODY_MAX = 2000
 
-const DRAFT_KEY = 'pantessa.community.draft'
-const DRAFT_TTL_MS = 30 * 60_000
 
 interface Draft {
   kind: FeedKind
@@ -65,7 +67,7 @@ interface Draft {
   room: string
 }
 
-export default function Composer({ community, symbol, chartState = null, onPosted }: ComposerProps) {
+export default function Composer({ community, communityName, symbol, chartState = null, onPosted }: ComposerProps) {
   const { address } = useSession()
   const scope = `${community ?? ''}|${symbol ?? ''}`
   const [open, setOpen] = useState(false)
@@ -137,12 +139,14 @@ export default function Composer({ community, symbol, chartState = null, onPoste
   const pair = useMemo(() => (market.trim() ? resolveTickerQuery(market) : null), [market])
   const sym = pair?.symbol ?? ''
   const video = useMemo(() => (kind === 'video' && url.trim() ? parseVideoUrl(url) : null), [kind, url])
-  const attachable = !!chartState && !!sym && chartState.symbol === sym && chartState.lines.length > 0
-  const hasAction = attachable && chartState!.lines.some((l) => (l.kind === 'h' || l.kind === 'zone') && l.action)
+  // The lines worth sending: a stray click on the chart (a zero-width trend) is not part of the idea.
+  const drawn = useMemo(() => (chartState ? { ...chartState, lines: visibleLines(chartState.lines) } : null), [chartState])
+  const attachable = !!drawn && !!sym && drawn.symbol === sym && drawn.lines.length > 0
+  const hasAction = attachable && drawn!.lines.some((l) => (l.kind === 'h' || l.kind === 'zone') && l.action)
   const fill = fills?.find((f) => f.turnId === picked) ?? null
   // A link or a video inside a room may stand without a market; an idea and a trade never do.
   const marketOptional = (kind === 'link' || kind === 'video') && !!room
-  const roomName = rooms.find((r) => r.slug === room)?.name ?? null
+  const roomName = rooms.find((r) => r.slug === room)?.name ?? (community && room === community ? (communityName ?? null) : null)
 
   // ── the caller's rooms (the "Post in" picker on a page that is not a room) ──
   useEffect(() => {
@@ -228,7 +232,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
         if (kind !== 'trade' && sym) payload.symbol = sym
         if (room) payload.community = room
         if (kind === 'idea' && attachable && attach) {
-          payload.chartState = chartState
+          payload.chartState = drawn
           payload.mint = mint && hasAction
         }
         if (kind === 'link') payload.linkUrl = url.trim()
@@ -255,6 +259,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
         } catch {
           // nothing stored
         }
+        clearDrawFor()
         setTitle('')
         setBody('')
         setUrl('')
@@ -268,7 +273,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
         setBusy(false)
       }
     },
-    [kind, title, body, sym, room, roomName, attachable, attach, chartState, mint, hasAction, url, video, picked, showSize, hold, onPosted],
+    [kind, title, body, sym, room, roomName, attachable, attach, drawn, mint, hasAction, url, video, picked, showSize, hold, onPosted],
   )
 
   // The held post runs the LATEST send (the session it waited for changes nothing in the draft).
@@ -456,7 +461,7 @@ export default function Composer({ community, symbol, chartState = null, onPoste
             <div className="cmy-compose__row">
               <label className="cmy-compose__check">
                 <input type="checkbox" checked={attach} onChange={(e) => setAttach(e.target.checked)} />
-                Attach my current chart ({chartState!.lines.length} line{chartState!.lines.length === 1 ? '' : 's'})
+                Attach my current chart ({drawn!.lines.length} line{drawn!.lines.length === 1 ? '' : 's'})
               </label>
               {attach && hasAction && (
                 <label className="cmy-compose__check">
@@ -469,7 +474,13 @@ export default function Composer({ community, symbol, chartState = null, onPoste
             <p className="cmy-compose__hint" data-draw-door="">
               A chart idea reads best with its lines.{' '}
               {sym ? (
-                <Link href={`/t/${sym}?tab=chart`}>Draw it on the {sym} chart</Link>
+                <Link
+                  href={`/t/${sym}`}
+                  onClick={() => handOffDraw({ symbol: sym, room, label: roomName ?? `the ${sym} board`, kind, title, body, url })}
+                  data-journey="Composer: draw it on the chart"
+                >
+                  Draw it on the {sym} chart
+                </Link>
               ) : (
                 'Name the market to draw it on its chart.'
               )}{' '}

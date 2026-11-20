@@ -67,6 +67,8 @@ import RailTicket from '@/components/markets/trade/RailTicket'
 import OverviewTab from '@/components/markets/tabs/OverviewTab'
 import NewsTab from '@/components/markets/tabs/NewsTab'
 import CommunityTab from '@/components/markets/tabs/CommunityTab'
+import DrawForBar from '@/components/markets/community/DrawForBar'
+import { visibleLines } from '@/components/markets/community/ChartSketch'
 import TechnicalsTab from '@/components/markets/tabs/TechnicalsTab'
 import TradeTab from '@/components/markets/tabs/TradeTab'
 import { composeAsk, sideOf, type TradeAsk } from '@/lib/trade-asks'
@@ -689,6 +691,9 @@ export default function SymbolPage({
 
         {/* ── CALLED IT: who is plotted and their tally, as a band joined to the top of the chart card (nothing until a handle is plotted); parks with it ── */}
         {pair && <CalledHead symbol={sym} parked={!showChart} />}
+
+        {/* ── the way back after a composer's "Draw it on the chart" (only while one is pending) ── */}
+        {pair && showChart && <DrawForBar symbol={sym} lines={visibleLines(chartState?.lines ?? []).length} onPost={() => setTab('community')} />}
 
         {/* ── Chart: always mounted; shown on Overview + Chart, parked elsewhere ── */}
         <div ref={shellRef} className={`tchart sym__chart${expanded ? ' tchart--expanded' : ''}${showChart ? '' : ' is-parked'}`} data-chart-tab={tab} aria-hidden={showChart ? undefined : true}>
