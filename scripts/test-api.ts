@@ -27302,15 +27302,14 @@ async function main() {
         sparksSrc.includes('/api/markets/viz/sparks?symbols=') && sparksSrc.includes('const BATCH = 60') &&
         /<ChartMount [^>]*compare=\{vs\}/.test(await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')),
     )
-    // AI's request: the Morning tape at the top of the /markets rail, its
-    // chips through the rail's own connect-to-act door (which hands the ask
-    // to /chat since squad ARRIVAL — lib/arrival-intent).
+    // The Morning tape left the /markets rail (Nate, 2026-11-20: "too much
+    // info"): the watchlist sits directly under the ask strip. The board
+    // chips still hand the ask to the app through the index's one door.
     const idxSrc = await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')
     check(
-      'mk2/markets: the /markets rail seats AI\'s MorningTape above the watchlist rows (a seat in the aside before data-slot="watchlist"; empty seats collapse), and its chips hand the ask to the app through useConnectToAct like the rail\'s own (ARRIVAL 2026-09-16: `handOff`, was a ?prompt= push)',
-      /<aside class="mkt-frame__rail"[^>]*><div class="mk-rail-seat" data-seat="MorningTape">[\s\S]*?<\/div><div data-slot="watchlist"/.test(mkHtml) &&
-        idxSrc.includes('<MorningTape onAsk={indexAct} />') && idxSrc.includes('useConnectToAct({ run: handOff, redirectFor: promptHref })') &&
-        idxSrc.includes('{indexDoor}') && /\.mk-rail-seat:empty \{ display: none; \}/.test(await readFile('components/markets/markets.css', 'utf8')),
+      'mk2/markets: the /markets rail seats NO Morning tape (removed 2026-11-20) — the watchlist slot is the aside\'s first seat — and the index chips hand the ask to the app through useConnectToAct (ARRIVAL 2026-09-16: `handOff`)',
+      !mkHtml.includes('data-seat="MorningTape"') && !idxSrc.includes('MorningTape') &&
+        idxSrc.includes('useConnectToAct({ run: handOff, redirectFor: promptHref })') && idxSrc.includes('{indexDoor}'),
     )
     // EXEC's QuickAct on every index row (hover/focus reveal, the index's one
     // act door) + VIZ's fills on the chart for the connected wallet.
@@ -28386,7 +28385,7 @@ async function main() {
     const idxSrcA = await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')
     const railSrcA = await readFile('components/markets/watchlist/WatchlistRail.tsx', 'utf8')
     check(
-      'arrival/core: BOTH /markets senders (the index act door every board · QuickAct · MorningTape · EarnBoard chip rides, and the rail\'s own chips) write the intent with their own pathname and push ARRIVAL_APP_HREF, falling back to promptHref when the write is refused',
+      'arrival/core: BOTH /markets senders (the index act door every board · QuickAct · EarnBoard chip rides, and the rail\'s own chips) write the intent with their own pathname and push ARRIVAL_APP_HREF, falling back to promptHref when the write is refused',
       [idxSrcA, railSrcA].every(
         (s) =>
           // SECURITY: the real pathname or nothing — never a forged '/markets'.
