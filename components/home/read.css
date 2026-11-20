@@ -112,7 +112,7 @@
 .read__range.is-on { background: var(--fg); color: var(--bg); font-weight: 600; }
 
 /* The plot is the canvas (the series, under the pointer) and the price rail to its right (the levels' tags). */
-.read__plot { --read-rail: 136px; position: relative; height: clamp(190px, 25cqi, 264px); }
+.read__plot { position: relative; height: clamp(190px, 25cqi, 264px); --read-rail: 136px; }
 .read__plot[data-loading] { opacity: 0.55; }
 .read__canvas { position: absolute; inset: 0 var(--read-rail) 0 0; touch-action: pan-y; cursor: crosshair; }
 .read__svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
@@ -228,6 +228,11 @@ button.read__lvtag:hover, button.read__lvtag:focus-visible, button.read__lvtag.i
     .read__door { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; }
     .read__clause { text-underline-offset: 0.24em; }
   }
+}
+
+/* A screen with no hover shows the watch door outright, at any width. */
+@media (hover: none) {
+  .read__watch { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
