@@ -40,7 +40,6 @@ import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
 import MarketMap from '@/components/markets/slots/MarketMap'
 import EarnBoard from '@/components/markets/earn/EarnBoard'
-import MorningTape from '@/components/markets/ai/MorningTape'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import type { TrendingRow } from '@/app/markets/trending'
@@ -364,8 +363,8 @@ export default function MarketsIndex({
     }
   }, [boardsAreMapped, ids, setActive])
   const open = useCallback((symbol: string) => router.push(`/t/${symbol}`), [router])
-  // ONE act door for the index: the rail's Morning tape (AI) and every row's
-  // QuickAct chips (EXEC) run in the app the way the rail's own chips do —
+  // ONE act door for the index: every board's and every row's QuickAct
+  // chips (EXEC) run in the app the way the rail's own chips do —
   // a visitor with no wallet connects first (lib/use-connect-to-act, the
   // WatchlistRail pattern), and the tap itself is the SEND: the ask travels
   // out of band (lib/arrival-intent — same tab, 60s, one shot) and /chat
@@ -538,9 +537,6 @@ export default function MarketsIndex({
       {/* ── The side column: ask + account on top, the watchlist docked
           under it at full height ── */}
       <MarketsSide label="Your watchlist" lead={stripLead}>
-        <div className="mk-rail-seat" data-seat="MorningTape">
-          <MorningTape onAsk={indexAct} />
-        </div>
         <WatchlistSlot />
       </MarketsSide>
       {indexDoor}
