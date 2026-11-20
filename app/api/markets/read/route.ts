@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readSeries, readSnapshot } from '@/lib/read-server'
+import { readDeskQuotes, readSeries, readSnapshot, readSymbolSeries } from '@/lib/read-server'
 import { parseReadId, parseReadRange } from '@/lib/read'
+import { DESK_SYMBOLS_MAX } from '@/lib/read-desk'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,6 +13,11 @@ export const dynamic = 'force-dynamic'
 //                        object `/` rendered its headline from.
 //   ?id=<id>&range=<r>   one instrument's series for a longer range
 //                        (1w · 1m · 6m; 1d answers too).
+//   ?symbols=A,B,C       THE DESK (lib/read-desk, 2026-11-20): the quotes
+//                        behind a visitor's own tiles — each symbol's last,
+//                        change and today's series (at most 40 symbols; one
+//                        the app has no chart for is named in `unknown`).
+//   ?symbol=<S>&range=<r> one desk symbol's series for a range.
 //
 // Public market data: keyless, no auth, no wallet, nothing written. NEVER a
 // 500 — a feed that did not answer is an absent quote / an empty series, and
@@ -24,6 +30,21 @@ const SERIES_CACHE = 'public, max-age=0, s-maxage=120, stale-while-revalidate=60
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   const idRaw = sp.get('id')
+  const symbolsRaw = sp.get('symbols')
+  if (symbolsRaw !== null) {
+    const asked = symbolsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+    if (asked.length === 0 || asked.length > DESK_SYMBOLS_MAX || asked.some((s) => !/^[A-Za-z0-9$._:-]{1,16}$/.test(s))) return NextResponse.json({ error: 'bad symbols' }, { status: 400, headers: { 'cache-control': 'no-store' } })
+    const body = await readDeskQuotes(asked)
+    return NextResponse.json({ asOf: Date.now(), ...body }, { headers: { 'cache-control': SNAPSHOT_CACHE } })
+  }
+  const symbolRaw = sp.get('symbol')
+  if (symbolRaw !== null) {
+    const range = parseReadRange(sp.get('range') ?? '1d')
+    if (!/^[A-Za-z0-9$._:-]{1,16}$/.test(symbolRaw)) return NextResponse.json({ error: 'bad symbol' }, { status: 400, headers: { 'cache-control': 'no-store' } })
+    if (!range) return NextResponse.json({ error: 'unknown range' }, { status: 400, headers: { 'cache-control': 'no-store' } })
+    const points = await readSymbolSeries(symbolRaw, range)
+    return NextResponse.json({ symbol: symbolRaw.toUpperCase(), range, points }, { headers: { 'cache-control': points.length ? SERIES_CACHE : 'no-store' } })
+  }
   if (idRaw === null) {
     const snapshot = await readSnapshot()
     return NextResponse.json(snapshot, { headers: { 'cache-control': SNAPSHOT_CACHE } })

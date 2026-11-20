@@ -62,6 +62,32 @@ import {
   type ReadSnapshot,
 } from '../lib/read'
 import { indexQuoteOf, READ_DAY_BARS } from '../lib/read-server'
+import {
+  DESK_ALERT_PCT,
+  DESK_FILL_TO,
+  DESK_LIMIT_PCT,
+  DESK_MACRO_ITEMS,
+  DESK_TILES_MAX,
+  READ_DESK_DEFAULT,
+  READ_DESK_SERVER_SYMBOLS,
+  deskActs,
+  deskActsFor,
+  deskBackdrop,
+  deskBreadth,
+  deskFetchSymbols,
+  deskHeadline,
+  deskHeadlineText,
+  deskItemFor,
+  deskLevelSpecs,
+  deskMovers,
+  deskPlan,
+  deskQuote,
+  deskScaleAlso,
+  fmtDeskValue,
+  parseDeskMemory,
+  placeDeskLevels,
+} from '../lib/read-desk'
+import { DEFAULT_ALERT_PCT } from '../lib/pick-alerts'
 import { readPost, xIntentHref } from '../lib/share-posts'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -249,30 +275,37 @@ export function readPins(check: Check): void {
   const route = code('app/api/markets/read/route.ts')
   const card = code('components/home/TheRead.tsx')
   const css = src('components/home/read.css')
+  const deskSrc = code('lib/read-desk.ts')
   const index = code('components/markets/shell/MarketsIndex.tsx')
   check(
     'read: `/` seats THE READ in the lead seat after the sent-home notice (the live deck is not mounted on the splash), reads its snapshot at render THROUGH the data cache so the page stays ISR at one minute (the readers fetch no-store), and the route serves the same object with a short shared cache, a 400 by name for a bad parameter and never a 500',
     /<SentHomeNotice \/>\s*<TheRead initial=\{read\} \/>/.test(home) && !/Deck/.test(home) && /guide=\{<AppsRow \/>\}/.test(home) &&
       /export const revalidate = 60/.test(page) && /readSnapshotForRender\(\)/.test(page) && /<HomeSurface trending=\{trending\} tradable=\{tradable\} read=\{read\} tour=\{tour\} called=\{called\.summaries\.length \? <CalledShelf data=\{called\} \/> : undefined\} suggest=\{<SuggestionsBoard data=\{suggestions\} \/>\} \/>/.test(page) && // RE-PINNED 2026-11-10 (landing): the page hands the tour's snapshot beside the read's. RE-PINNED 2026-11-17 (harness-zero): + the Called it shelf (#1075, only when it has records) and the suggestions board
      
-      /unstable_cache\(async \(\) => readSnapshot\(\), \['read-snapshot-v1'\], \{ revalidate: 60 \}\)/.test(server) &&
+      /unstable_cache\(async \(\) => readSnapshot\(\), \['read-snapshot-v2'\], \{ revalidate: 60 \}\)/.test(server) &&
       /const snapshot = await readSnapshot\(\)/.test(route) && /s-maxage=20/.test(route) && /status: 400/.test(route) && !/status: 500/.test(route) && /export const dynamic = 'force-dynamic'/.test(route),
   )
   check(
     'read: the card opens NO stream and fires no turn — it re-reads one cached route while the tab is in view, every chip is gated by the measured venue verdicts and goes through the connect-to-act door into the ask door\'s sheet, a builder-market perp is offered as a chart (never an order the app cannot build), and every link out is the app\'s own door',
     !/WebSocket|EventSource|connectTape|openDuneTape|openHlTape/.test(card) && !/fetch\(['"`]\/api\/chat/.test(card) &&
       /if \(document\.visibilityState !== 'visible'\) return/.test(card) && /fetch\('\/api\/markets\/read', \{ cache: 'no-store' \}\)/.test(card) &&
-      /canTradeAsk\(a\.ask, tradable\)/.test(card) && /useConnectToAct\(\{ run, redirectFor: promptHref \}\)/.test(card) && /openDoor\(ask, \{ send: true, mcps: askAppSlugs\(ask\) \}\)/.test(card) &&
+      // RE-PINNED 2026-11-20 (the desk): the acts are composed in lib/read-desk (deskActs / deskActsFor) from the routes table, each passed by the card's own
+      // gate (the measured venue verdicts); the card hands that gate down and sends what comes back through the same door.
+      /const canAct = useCallback\(\(ask: string\) => canTradeAsk\(ask, tradable\), \[tradable\]\)/.test(card) && /deskActs\(item, last, hasQuote, canAct\)/.test(card) &&
+      /rows\.find\(\(r\) => r\.kind === kind && r\.side === side && canAct\(r\.ask\)\)/.test(deskSrc) &&
+      /useConnectToAct\(\{ run, redirectFor: promptHref \}\)/.test(card) && /openDoor\(ask, \{ send: true, mcps: askAppSlugs\(ask\) \}\)/.test(card) &&
       // RE-PINNED 2026-11-09 (hip3 orders): the bar is lib/charts isChartOnlyPair (a builder dex the order layer does NOT build on), and an instrument that takes
       // orders on itself is offered FIRST with every one of its chips, the nearest listed thing after it with one.
-      /pair && !isChartOnlyPair\(pair\) \? quickActs\(n\.symbol, pair\)\.filter\(\(a\) => canTradeAsk\(a\.ask, tradable\)\) : \[\]/.test(card) &&
-      /const targets = inst\.direct \? \[\{ symbol: inst\.symbol, as: '' \}, \.\.\.inst\.near\] : inst\.near/.test(card) && /for \(const a of own \? acts : acts\.slice\(0, 1\)\)/.test(card) &&
-      /const stated = own \? readOwnPair\(inst\) : null/.test(card) && /const pair = stated \? \(hasQuote \? stated : null\) : chartPairFor\(n\.symbol\)/.test(card) && /const hasQuote = !!snap\.quotes\[inst\.id\]/.test(card) &&
+      // RE-PINNED 2026-11-20 (the desk): the same rule, one file over (lib/read-desk deskActs). A token, a stock or a perp is its own only target.
+      /const found = pair && !isChartOnlyPair\(pair\) \? deskActsFor\(n\.symbol, pair, own \? last : null, canAct\) : \[\]/.test(deskSrc) &&
+      /const targets: readonly ReadNear\[\] = inst \? \(inst\.direct \? \[\{ symbol: inst\.symbol, as: '' \}, \.\.\.inst\.near\] : inst\.near\) : \[\{ symbol: item\.key, as: '' \}\]/.test(deskSrc) &&
+      /if \(own\) acts\.push\(\.\.\.found\)/.test(deskSrc) && /acts\.push\(\{ \.\.\.found\[0\], label: `\$\{found\[0\]\.label\} of \$\{n\.symbol\}` \}\)/.test(deskSrc) &&
+      /const stated = own && inst \? readOwnPair\(inst\) : null/.test(deskSrc) && /const pair = stated \? \(hasQuote \? stated : null\) : chartPairFor\(n\.symbol\)/.test(deskSrc) && /const hasQuote = !!q\b/.test(card) &&
       /<SpineLink /.test(card) && !/<Link[\s>]/.test(card) && /\{door\}/.test(card),
   )
   check(
     'read: the first frame is the server\'s — the line is one h2 whose aria-label is the whole sentence, each clause a pressed-state button, the tiles a tablist with roving focus and arrow keys, the chart an SVG in a stretched viewBox inside a box whose height is CSS; clock words wait for the browser; nothing animates under reduced motion',
-    /<h2 className="read__line" aria-label=\{headline\}>/.test(card) && /aria-pressed=\{c\.id === sel\}/.test(card) && /role="tablist"/.test(card) && /role="tab" aria-selected=\{on\} tabIndex=\{on \? 0 : -1\}/.test(card) &&
+    /<h2 className="read__line" aria-label=\{headline\}>/.test(card) && /aria-pressed=\{c\.key === sel\}/.test(card) /* RE-PINNED 2026-11-20 (the desk): a clause is keyed by its symbol */ && /role="tablist"/.test(card) && /role="tab" aria-selected=\{on\} tabIndex=\{on \? 0 : -1\}/.test(card) &&
       /e\.key !== 'ArrowRight' && e\.key !== 'ArrowLeft'/.test(card) && /viewBox="0 0 1000 300" preserveAspectRatio="none"/.test(card) && /vectorEffect="non-scaling-stroke"/.test(card) &&
       /useState<Date \| null>\(null\)/.test(card) && /suppressHydrationWarning/.test(card) &&
       /\.read__plot \{ position: relative; height: clamp\(/.test(css) && /prefers-reduced-motion: reduce/.test(css) && /@media \(hover: none\) \{[\s\S]*\.read__chip \{ min-height: 44px; \}/.test(css) &&
@@ -286,11 +319,93 @@ export function readPins(check: Check): void {
       index.indexOf('<Board key={s.id}') < index.indexOf('className="mk-guide-seat"') && index.indexOf('className="mk-guide-seat"') < index.indexOf('<EarnBoard'),
   )
 
+  // ── THE DESK (2026-11-20, lib/read-desk) ──────────────────────────────
+  const dq = (last: number, chg: number | null, live = true): ReadQuote => ({ last, prev: chg == null ? null : last / (1 + chg / 100), chg, asOf: NOW, live, points: [[1, last * 0.99], [2, last]] })
+  const near = deskItemFor('near')!
+  const aapl = deskItemFor('AAPL')
+  check(
+    'read desk: a symbol becomes a desk item only when the app can chart it — one of the nine IS that instrument (BTC, WETH → ether, US10Y → the 10-year, in its own unit), a token is a ticker with a crypto day as its measure, a stock a stock\'s, and a stablecoin or junk is no tile; the nine keep their page symbols',
+    deskItemFor('BTC')?.inst?.id === 'btc' && deskItemFor('weth')?.inst?.id === 'eth' && deskItemFor('US10Y')?.inst?.id === 'us10y' && deskItemFor('US10Y')?.unit === 'yield' && deskItemFor('SP500')?.inst?.id === 'spx' &&
+      near.key === 'NEAR' && near.inst === null && near.kind === 'crypto' && near.subject === 'NEAR' && !near.common && near.icon === 'NEAR' &&
+      (!aapl || (aapl.kind === 'stock' && aapl.typical < near.typical)) &&
+      deskItemFor('USDC') === null && deskItemFor('') === null && deskItemFor('<script>') === null && deskItemFor(null) === null &&
+      DESK_MACRO_ITEMS.map((i) => i.key).join() === 'SP500,NDX,US10Y,VIX,DXY,GOLD,CL,BTC,ETH' && DESK_MACRO_ITEMS.every((i) => i.common && i.inst !== null),
+    `${near.key}/${near.kind} · ${DESK_MACRO_ITEMS.map((i) => i.key).join()}`,
+  )
+  const deskOnly = deskPlan(null)
+  const short = deskPlan(['NEAR', 'USDC', 'btc', 'NEAR'])
+  const sixteen = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'DOT', 'SUI', 'APT', 'NEAR', 'ATOM', 'ARB', 'OP', 'UNI']
+  const longPlan = deskPlan(sixteen)
+  const longAll = deskPlan(sixteen, { all: true })
+  check(
+    'read desk: no list (or a list of nothing chartable) is THE CRYPTO DESK — eight tokens led by bitcoin and ether, every tile a suggestion; a list is YOURS — its own symbols, deduped, tokens leading the wall (then stocks, then macro markets, the list\'s order inside each), a short one filled out to eight with the desk\'s tokens it lacks, a long one cut to eleven tiles and a "more" door until "show all"; the backdrop is whichever of the nine is not a tile',
+    deskOnly.mode === 'desk' && deskOnly.tiles.map((t) => t.item.key).join() === READ_DESK_DEFAULT.join() && READ_DESK_DEFAULT.length === 8 && READ_DESK_DEFAULT.slice(0, 2).join() === 'BTC,ETH' && deskOnly.tiles.every((t) => !t.own) &&
+      deskPlan(['USDC']).mode === 'desk' && deskPlan([]).mode === 'desk' &&
+      short.mode === 'yours' && short.owned.map((i) => i.key).join() === 'NEAR,BTC' && short.tiles.length === DESK_FILL_TO && short.tiles.filter((t) => t.own).length === 2 && short.tiles.slice(2).map((t) => t.item.key).join() === 'ETH,SOL,HYPE,UNI,AAVE,LINK' &&
+      longPlan.owned.length === 16 && longPlan.tiles.length === DESK_TILES_MAX - 1 && longPlan.hidden === 5 && longPlan.tiles.every((t) => t.own) && longAll.tiles.length === 16 && longAll.hidden === 0 &&
+      deskPlan(['GOLD', 'US10Y', 'NEAR', 'HYPE']).tiles.slice(0, 4).map((t) => t.item.key).join() === 'NEAR,HYPE,GOLD,US10Y' && deskPlan(['GOLD', 'US10Y', 'NEAR', 'HYPE']).owned.map((i) => i.key).join() === 'GOLD,US10Y,NEAR,HYPE' &&
+      deskBackdrop(deskOnly).map((i) => i.key).join() === 'SP500,NDX,US10Y,VIX,DXY,GOLD,CL' && deskBackdrop(deskPlan(['GOLD', 'NEAR'])).map((i) => i.key).join() === 'SP500,NDX,US10Y,VIX,DXY,CL' &&
+      READ_DESK_SERVER_SYMBOLS.join() === 'SOL,HYPE,UNI,AAVE,LINK,DOGE',
+    `desk ${deskOnly.tiles.length} · short ${short.tiles.map((t) => t.item.key).join()} · long ${longPlan.tiles.length}+${longPlan.hidden}`,
+  )
+  const deskSnap: ReadSnapshot = { ...snap({ spx: q('spx', -3.5), gold: q('gold', -1), us10y: { ...q('us10y', 9), live: false }, btc: q('btc', -3.1), eth: q('eth', -2.9) }, [{ symbol: 'AMD', chgPct: -4.9 }, { symbol: 'INTC', chgPct: 4.6 }]), desk: { HYPE: dq(40, 12), SOL: dq(150, -4.6), DOGE: dq(0.1234, 0.1) }, tokenMovers: [{ symbol: 'ENA', chgPct: -9 }, { symbol: 'HYPE', chgPct: 12 }, { symbol: 'WLD', chgPct: 7 }] }
+  const deskLine = deskHeadline(deskOnly, (i) => deskQuote(i, deskSnap))
+  const yoursQuotes: Record<string, ReadQuote> = { NEAR: dq(3, -11.3), LINK: dq(14, 2.62), AERO: dq(0.42, -2.88), UNI: dq(4.8, -7.4) }
+  const yours = deskPlan(['AERO', 'UNI', 'NEAR', 'LINK', 'BTC'])
+  const yoursLine = deskHeadline(yours, (i) => deskQuote(i, deskSnap, yoursQuotes))
+  const two = deskPlan(['NEAR', 'LINK'])
+  check(
+    'read desk: the crypto desk\'s line is bitcoin, then the desk token that surprised most, then the macro market trading now that surprised most (a closed one stays out); a list\'s line is its breadth as a sentence (from three quoted symbols up) and its three biggest surprises by each market\'s own typical day, a ticker never lower-cased; the list read asks only for what the snapshot does not carry',
+    deskHeadlineText(deskLine) === 'Bitcoin falls 3.1%, HYPE jumps 12%, stocks slump 3.5%.' && deskLine.lead === '' && deskLine.clauses.map((c) => c.key).join() === 'BTC,HYPE,SP500' &&
+      deskHeadlineText(deskHeadline(deskOnly, () => undefined)) === `${READ_WAITING}.` &&
+      deskHeadlineText(yoursLine) === '4 of your 5 are down. NEAR slumps 11%, UNI falls 7.4%, bitcoin falls 3.1%.' && yoursLine.clauses.map((c) => c.key).join() === 'NEAR,UNI,BTC' &&
+      deskBreadth(yours.owned, (i) => deskQuote(i, deskSnap, yoursQuotes)).down === 4 && deskBreadth(two.owned, (i) => deskQuote(i, deskSnap, yoursQuotes)).text === '' &&
+      deskHeadlineText(deskHeadline(two, (i) => deskQuote(i, deskSnap, yoursQuotes))) === 'NEAR slumps 11%, LINK edges up 2.6%.' &&
+      deskBreadth([near, near, near], () => dq(1, 2)).text === 'All 3 on your list are up.' && deskBreadth([near, near, near, near], (i) => dq(1, 0)).text === 'Your list is flat.' &&
+      deskFetchSymbols(deskOnly, deskSnap).join() === 'UNI,AAVE,LINK' && deskFetchSymbols(yours, deskSnap).join() === 'AERO,UNI,NEAR,LINK,SOL,HYPE' &&
+      deskMovers(deskSnap, deskOnly).tokens.map((m) => m.symbol).join() === 'ENA,WLD' && deskMovers(deskSnap, deskOnly).stocks.map((m) => m.symbol).join() === 'AMD,INTC',
+    `${deskHeadlineText(deskLine)} | ${deskHeadlineText(yoursLine)} | ${deskFetchSymbols(yours, deskSnap).join()}`,
+  )
+  const ethPair = chartPairFor('ETH')!
+  const ethActs = deskActsFor('ETH', ethPair, 3000, () => true)
+  const ethItem = deskItemFor('ETH')!
+  const limit = ethActs.find((a) => a.price !== null)
+  const specs = deskLevelSpecs(ethItem, 3000, ethActs, true)
+  const quiet: ReadPoint[] = [[1, 2990], [2, 3010], [3, 3000]]
+  const placed = placeDeskLevels(specs, 2980, 3020)
+  const wideDay: ReadPoint[] = [[1, 2800], [2, 3100], [3, 3000]]
+  check(
+    'read desk: every act is a sentence the routes table composes and the gate passed, naming where it routes (buy at the market, a resting limit 3% under it only with a live price, long and short on Hyperliquid); a limit is a LEVEL on the chart with the price now and the alert\'s ±5% band (the alerts\' own distance); an act joins the scale only while the series keeps its share of the plot, else it is pinned to the edge it lies beyond; the alert\'s band never widens the scale and is drawn only when the range in view reaches it; tags on the rail never overlap',
+    ethActs.length >= 2 && ethActs[0].label === 'Buy $25' && ethActs[0].tone === 'buy' && /^Buy \$25 of ETH/.test(ethActs[0].ask) && /^Uniswap · /.test(ethActs[0].where) &&
+      !!limit && limit.label === `Buy ${DESK_LIMIT_PCT}% lower` && Math.abs(limit.price! - 2910) < 1e-6 && /^limit order: buy [\d.]+ ETH for at most [\d.]+ USDC on /.test(limit.ask) && /^CoW Swap · /.test(limit.where) &&
+      deskActsFor('ETH', ethPair, null, () => true).every((a) => a.price === null) && deskActsFor('ETH', ethPair, 3000, () => false).length === 0 &&
+      deskActsFor('ETH', ethPair, 3000, (ask) => !/^limit order/.test(ask)).every((a) => a.price === null) &&
+      deskActs(deskItemFor('NDX')!, 26000, true, () => true).acts.every((a) => / of QQQ$/.test(a.label)) && deskActs(deskItemFor('VIX')!, 29, true, () => true).acts.length === 0 &&
+      DESK_ALERT_PCT === DEFAULT_ALERT_PCT && specs.map((l) => l.kind).join() === 'now,limit,alert,alert' && specs[1].act === limit && specs[1].label === 'Buy at $2,910' && deskLevelSpecs(ethItem, null, ethActs, true).length === 0 &&
+      deskLevelSpecs(deskItemFor('US10Y')!, 5.05, [], true).length === 1 &&
+      deskScaleAlso(quiet, 3000, specs).join() === '3000' && deskScaleAlso(wideDay, 3000, specs).join() === '3000,2910' &&
+      placed.map((l) => `${l.kind}:${l.off}`).join() === 'now:0,limit:1' && placed[0].tagY === 50 && placed[1].tagY === 93 &&
+      placeDeskLevels(specs, 2800, 3200).length === 4 && placeDeskLevels(specs, 2800, 3200).every((l) => l.off === 0) && placeDeskLevels(specs, 2990, 3010.5).every((l, i, a) => i === 0 || l.tagY - a[i - 1].tagY >= 10.99) && placeDeskLevels(specs, 5, 5).length === 0 &&
+      fmtDeskValue(near, 0.000672) === '$0.000672' && fmtDeskValue(near, 0.4208) === '$0.4208' && fmtDeskValue(near, 61718) === '$61,718' && fmtDeskValue(near, null) === '—' &&
+      parseDeskMemory('["BTC","near","<x>",5]').join() === 'BTC,near' && parseDeskMemory('{') .length === 0 && parseDeskMemory(null).length === 0,
+    `${ethActs.map((a) => `${a.label} [${a.where}]`).join(' · ')} | levels ${placed.map((l) => `${l.kind}@${l.tagY}`).join(' ')}`,
+  )
+  const hook = code('components/markets/watchlist/useWatchlists.ts')
+  check(
+    'read desk: the card is built from the OPEN watchlist through a second instance of the rail\'s hook (no holdings read), opens on what this browser last drew while the lists load, and a write in any instance reaches the others (the rail adds a token, the read has it); the snapshot is rendered through the data cache under a new key, with the desk\'s tokens and the token movers in it',
+    /const wl = useWatchlists\(\{ holdings: false \}\)/.test(card) && /const listSymbols = listReady \? \(wl\.active\?\.symbols \?\? null\) : memory/.test(card) && /parseDeskMemory\(window\.localStorage\.getItem\(DESK_MEMORY_KEY\)\)/.test(card) &&
+      /useState<string\[\]>\(\[\]\)/.test(card) && /fetch\(`\/api\/markets\/read\?symbols=\$\{encodeURIComponent\(fetchKey\)\}`, \{ cache: 'no-store' \}\)/.test(card) &&
+      /announceLists\(selfLists\.current, modeKeyRef\.current, next, null\)/.test(hook) && /announceLists\(selfLists\.current, modeKeyRef\.current, null, id\)/.test(hook) && /if \(fn !== from\) fn\(modeKey, lists, activeId\)/.test(hook) &&
+      /return \{ asOf: nowMs, quotes, movers, desk, tokenMovers \}/.test(server) && /readDeskQuotes\(asked\)/.test(route) && /readSymbolSeries\(symbolRaw, range\)/.test(route) &&
+      !/linearGradient|radial-gradient|linear-gradient|box-shadow: 0 0 \d+px \d+px/.test(card + css),
+  )
+
   // ── The line is a post ────────────────────────────────────────────────
   const post = readPost('Stocks rise 0.9%, oil slumps 4.1%, bitcoin slips 1.2%.')
   check(
     'read: the line is a post — the card mounts the app\'s own share door with the sentence as composed (only once there is a sentence), the post leads with it, fits one X post with its link, and points at `/`',
-    /\{clauses\.length > 0 && <ShareActions post=\{readPost\(headline\)\} variant="pill" label="Post the read" surface="read" className="read__share" \/>\}/.test(card) &&
+    // RE-PINNED 2026-11-20 (the desk): only the MARKET's line is a post; a list's line is its owner's and wears no share door.
+    /\{plan\.mode === 'desk' && clauses\.length > 0 && <ShareActions post=\{readPost\(headline\)\} variant="pill" label="Post the read" surface="read" className="read__share" \/>\}/.test(card) &&
       post.text.startsWith('Stocks rise 0.9%, oil slumps 4.1%, bitcoin slips 1.2%.\n\n') && /@askPantessa/.test(post.text) && post.text.length + 24 <= 280 &&
       /^https:\/\/www\.pantessa\.com\/?$/.test(post.url) && xIntentHref(post.text, post.url).startsWith('https://twitter.com/intent/tweet?text=Stocks+rise+0.9%25'),
     `${post.text.length} chars · ${post.url}`,
@@ -343,11 +458,26 @@ export async function readServedPins(check: Check, BASE: string): Promise<void> 
       bad.status === 400 && badRange.status === 400 && series.status === 200 && sBody.id === 'btc' && sBody.range === '1w' && Array.isArray(sBody.points),
       `points=${sBody.points?.length}`,
     )
+    const list = await get('/api/markets/read?symbols=SOL,UNI,BTC,NOPE9')
+    const lBody = (await list.json()) as { quotes?: Record<string, ReadQuote>; unknown?: string[] }
+    const badList = await get('/api/markets/read?symbols=' + encodeURIComponent('SOL,<x>'))
+    const sym = await get('/api/markets/read?symbol=SOL&range=1w')
+    const symBody = (await sym.json()) as { symbol?: string; range?: string; points?: ReadPoint[] }
+    const symBad = await get('/api/markets/read?symbol=SOL&range=5y')
+    check(
+      'read desk (served): `?symbols=` answers a list\'s own quotes (a token\'s last, change and series; one of the nine is left to the snapshot; a symbol with no chart is named in `unknown`), a malformed list is a 400, `?symbol=&range=` answers a token\'s series and a 400 for an unknown range, and the snapshot carries the crypto desk\'s tokens',
+      list.status === 200 && !!lBody.quotes && !('BTC' in lBody.quotes) && (lBody.unknown ?? []).includes('NOPE9') &&
+        Object.values(lBody.quotes).every((x) => x.last > 0 && Array.isArray(x.points) && (x.chg === null || Number.isFinite(x.chg))) &&
+        badList.status === 400 && sym.status === 200 && symBody.symbol === 'SOL' && symBody.range === '1w' && Array.isArray(symBody.points) && symBad.status === 400 &&
+        typeof body.desk === 'object' && Object.keys(body.desk ?? {}).every((k) => READ_DESK_SERVER_SYMBOLS.includes(k)) && Array.isArray(body.tokenMovers),
+      `list=${Object.keys(lBody.quotes ?? {}).join(',')} unknown=${(lBody.unknown ?? []).join(',')} series=${symBody.points?.length} desk=${Object.keys(body.desk ?? {}).join(',')}`,
+    )
     const html = await (await get('/')).text()
     const line = html.match(/class="read__line" aria-label="([^"]*)"/)?.[1] ?? null
     check(
-      'read (served): `/` server-renders the read — the line (a real sentence or the waiting words), nine tiles, the chart\'s stage — and none of the deck, the first-run sheet, the session strip or the movers tape',
-      !!line && (/^[A-Z].+\.$/.test(line) || line === `${READ_WAITING}.`) && (html.match(/data-read-tile="/g) ?? []).length === 9 && /class="read__stage" role="tabpanel"/.test(html) &&
+      // RE-PINNED 2026-11-20 (the desk): the first frame is the crypto desk — eight token tiles, and the seven macro markets that are not a tile on the backdrop row.
+      'read (served): `/` server-renders the read — the line (a real sentence or the waiting words), the crypto desk\'s eight tiles, the seven backdrop markets, the chart\'s stage — and none of the deck, the first-run sheet, the session strip or the movers tape',
+      !!line && (/^[A-Z].+\.$/.test(line) || line === `${READ_WAITING}.`) && (html.match(/data-read-tile="/g) ?? []).length === 8 && (html.match(/data-read-back="/g) ?? []).length === 7 && /data-mode="desk"/.test(html) && /class="read__stage" role="tabpanel"/.test(html) &&
         !/data-deck|class="picksheet|class="mk-session"|data-seat="MoversTape"/.test(html),
       String(line),
     )

@@ -21,9 +21,11 @@
 // and GET /api/markets/read serves the same object to the browser's refresh.
 
 import { unstable_cache } from 'next/cache'
-import { chartPairFor, type ChartTf } from '@/lib/charts'
+import { chartPairFor, resolveChartPair, type ChartTf } from '@/lib/charts'
 import { loadCandleSeries } from '@/lib/candles-server'
+import { marketSections } from '@/lib/markets'
 import { readQuotes } from '@/lib/quotes'
+import { DESK_SYMBOLS_MAX, READ_DESK_SERVER_SYMBOLS, READ_TOKEN_MOVER_FLOOR_PCT, deskItemFor, type DeskItem } from '@/lib/read-desk'
 import {
   EMPTY_READ,
   READ_APP_SYMBOLS,
@@ -160,16 +162,41 @@ export function readMoverSymbols(): string[] {
   return READ_MOVER_POOL.filter((s) => chartPairFor(s)?.source === 'robinhood')
 }
 
+/** The tokens the movers line may name: the crypto board and the perps board (lib/markets), as listed. */
+export function readTokenMoverSymbols(): string[] {
+  return marketSections()
+    .filter((s) => s.id === 'crypto' || s.id === 'perps')
+    .flatMap((s) => s.rows.map((r) => r.symbol))
+}
+
+/** A desk token's quote from the app's own readers: the same last and change a board row shows, with today's series. */
+function deskQuoteFrom(item: DeskItem, q: { last: number; chg: number; asOf: number; session: string } | undefined, points: ReadPoint[]): ReadQuote | null {
+  if (!q) return null
+  return readQuoteOf({ unit: item.unit } as ReadInstrument, q.last, Number.isFinite(q.chg) ? q.last - q.chg : null, q.asOf, q.session !== 'closed', points)
+}
+
+/** Today's series for a desk symbol: 24 hours of 15-minute closes; a market with sessions keeps its latest day of bars. */
+async function deskDayPoints(item: DeskItem): Promise<ReadPoint[]> {
+  const points = await appPoints(item.key, '15m', READ_DAY_BARS)
+  if (item.kind === 'crypto' || item.kind === 'perp' || points.length < 2) return points
+  const from = points[points.length - 1][0] - 24 * 3600
+  const day = points.filter((p) => p[0] >= from)
+  return day.length >= READ_MIN_SESSION_BARS ? day : points.slice(-32)
+}
+
 async function composeSnapshot(nowMs: number): Promise<ReadSnapshot> {
   const pool = readMoverSymbols()
-  const [quoteRead, appSeries, indexCharts] = await Promise.all([
+  const tokenPool = readTokenMoverSymbols()
+  const deskItems = READ_DESK_SERVER_SYMBOLS.map((s) => deskItemFor(s)).filter((i): i is DeskItem => i !== null)
+  const [quoteRead, appSeries, indexCharts, deskSeries] = await Promise.all([
     withTimeout(
-      readQuotes([...READ_APP_SYMBOLS, ...pool]).then((r) => r.quotes),
+      readQuotes([...READ_APP_SYMBOLS, ...pool, ...deskItems.map((i) => i.key), ...tokenPool]).then((r) => r.quotes),
       READ_TIMEOUT_MS,
       {} as Awaited<ReturnType<typeof readQuotes>>['quotes'],
     ),
     Promise.all(READ_APP_SYMBOLS.map((s) => withTimeout(appPoints(s, '15m', READ_DAY_BARS), READ_TIMEOUT_MS, [] as ReadPoint[]))),
     Promise.all(READ_INSTRUMENTS.filter((i) => i.source === 'index').map(async (i) => [i.id, await fetchIndexChart(i.symbol, '15m', '5d')] as const)),
+    Promise.all(deskItems.map((i) => withTimeout(deskDayPoints(i), READ_TIMEOUT_MS, [] as ReadPoint[]))),
   ])
   const quotes: ReadSnapshot['quotes'] = {}
   for (const inst of READ_INSTRUMENTS) {
@@ -186,7 +213,64 @@ async function composeSnapshot(nowMs: number): Promise<ReadSnapshot> {
     }
   }
   const movers = rankReadMovers(pool.map((symbol) => ({ symbol, chgPct: quoteRead[symbol]?.chgPct ?? null })))
-  return { asOf: nowMs, quotes, movers }
+  // THE DESK (lib/read-desk): the crypto desk's tokens beside the nine, and the tokens that moved most.
+  const desk: Record<string, ReadQuote> = {}
+  deskItems.forEach((item, i) => {
+    const made = deskQuoteFrom(item, quoteRead[item.key], deskSeries[i] ?? [])
+    if (made) desk[item.key] = made
+  })
+  const tokenMovers = rankReadMovers(tokenPool.map((symbol) => ({ symbol, chgPct: quoteRead[symbol]?.chgPct ?? null })), undefined, READ_TOKEN_MOVER_FLOOR_PCT)
+  return { asOf: nowMs, quotes, movers, desk, tokenMovers }
+}
+
+// ── A list's read ────────────────────────────────────────────────────────────
+
+const deskCache = new Map<string, { at: number; quote: ReadQuote }>()
+
+/**
+ * The quotes behind a visitor's own tiles (lib/read-desk): each symbol's
+ * last, change and today's series, from the same readers the snapshot uses.
+ * One of the nine is not read here (the snapshot carries it). Cached per
+ * symbol for READ_SERVER_TTL_MS, fail-soft per symbol: a feed that did not
+ * answer leaves the symbol out, and a symbol the app has no chart for is
+ * named in `unknown`. Never throws.
+ */
+export async function readDeskQuotes(symbolsRaw: readonly string[], nowMs = Date.now()): Promise<{ quotes: Record<string, ReadQuote>; unknown: string[] }> {
+  const asked = [...new Set(symbolsRaw.map((s) => String(s).trim().toUpperCase()).filter((s) => /^[A-Z0-9$._:-]{1,16}$/.test(s)))].slice(0, DESK_SYMBOLS_MAX)
+  // A symbol only the venue's live table knows (a Hyperliquid listing on a cold process): warm it once.
+  const cold = asked.find((s) => !chartPairFor(s))
+  if (cold) await withTimeout(resolveChartPair(cold).then(() => null), READ_TIMEOUT_MS, null)
+  const quotes: Record<string, ReadQuote> = {}
+  const unknown: string[] = []
+  const todo: DeskItem[] = []
+  for (const s of asked) {
+    const item = deskItemFor(s)
+    if (!item) {
+      unknown.push(s)
+      continue
+    }
+    if (item.inst) continue
+    const hit = deskCache.get(item.key)
+    if (hit && nowMs - hit.at < READ_SERVER_TTL_MS) quotes[item.key] = hit.quote
+    else if (!todo.some((t) => t.key === item.key)) todo.push(item)
+  }
+  if (todo.length > 0) {
+    const [quoteRead, series] = await Promise.all([
+      withTimeout(
+        readQuotes(todo.map((i) => i.key)).then((r) => r.quotes),
+        READ_TIMEOUT_MS,
+        {} as Awaited<ReturnType<typeof readQuotes>>['quotes'],
+      ),
+      Promise.all(todo.map((i) => withTimeout(deskDayPoints(i), READ_TIMEOUT_MS, [] as ReadPoint[]))),
+    ])
+    todo.forEach((item, i) => {
+      const made = deskQuoteFrom(item, quoteRead[item.key], series[i] ?? [])
+      const kept = made ?? deskCache.get(item.key)?.quote
+      if (made) deskCache.set(item.key, { at: nowMs, quote: made })
+      if (kept) quotes[item.key] = kept
+    })
+  }
+  return { quotes, unknown }
 }
 
 let snapCache: { at: number; value: ReadSnapshot } | null = null
@@ -224,7 +308,7 @@ export async function readSnapshot(nowMs = Date.now()): Promise<ReadSnapshot> {
  * re-reads at once when the copy it was served is older than its refresh.
  * Never throws.
  */
-const cachedSnapshot = unstable_cache(async () => readSnapshot(), ['read-snapshot-v1'], { revalidate: 60 })
+const cachedSnapshot = unstable_cache(async () => readSnapshot(), ['read-snapshot-v2'], { revalidate: 60 })
 
 export async function readSnapshotForRender(): Promise<ReadSnapshot> {
   try {
@@ -277,9 +361,25 @@ export async function readSeries(id: ReadId, range: ReadRange, nowMs = Date.now(
   return points.length >= 2 ? points : (hit?.points ?? [])
 }
 
+/** A desk symbol's series for a longer range (a token, a stock or a perp: anything that is not one of the nine). [] when the feed did not answer. */
+export async function readSymbolSeries(symbolRaw: string, range: ReadRange, nowMs = Date.now()): Promise<ReadPoint[]> {
+  const item = deskItemFor(symbolRaw) ?? ((await withTimeout(resolveChartPair(symbolRaw).then(() => null), READ_TIMEOUT_MS, null)), deskItemFor(symbolRaw))
+  if (!item) return []
+  if (item.inst) return readSeries(item.inst.id, range, nowMs)
+  const key = `s:${item.key}:${range}`
+  const hit = seriesCache.get(key)
+  if (hit && nowMs - hit.at < READ_SERIES_TTL_MS[range]) return hit.points
+  const spec = APP_RANGE[range]
+  const raw = range === '1d' ? await withTimeout(deskDayPoints(item), READ_TIMEOUT_MS, [] as ReadPoint[]) : await withTimeout(appPoints(item.key, spec.tf, spec.keep), READ_TIMEOUT_MS, [] as ReadPoint[])
+  const points = thinReadPoints(raw)
+  if (points.length >= 2) seriesCache.set(key, { at: nowMs, points })
+  return points.length >= 2 ? points : (hit?.points ?? [])
+}
+
 /** For the pins and a cold start in a test: forget what was read. */
 export function resetReadCache(): void {
   snapCache = null
   snapInflight = null
   seriesCache.clear()
+  deskCache.clear()
 }

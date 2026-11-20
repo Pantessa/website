@@ -116,6 +116,20 @@ function announceHeldFill(fill: HeldFill, from: FillListener | null): void {
 
 // The guest ledger's bookkeeping. Only the owner's own gestures call these;
 // the autofill writes the ledger itself (its adds are never "by hand").
+// ── One page, one copy of the lists (2026-11-20) ────────────────────────────
+// The rail, the Morning tape and THE READ (components/home/TheRead, which is
+// built from the open list) each run this hook. A write in one used to stay
+// in that one: a token added in the rail reached the others at the next
+// navigation. Every write and every "open this list" is now told to the other
+// instances of the same account (or the same guest browser), which take the
+// lists as they are. A listener never re-announces what it was told.
+type ListsListener = (modeKey: string, lists: WatchlistShape[] | null, activeId: string | null) => void
+const listsListeners = new Set<ListsListener>()
+function announceLists(from: ListsListener | null, modeKey: string | null, lists: WatchlistShape[] | null, activeId: string | null): void {
+  if (!modeKey) return
+  for (const fn of [...listsListeners]) if (fn !== from) fn(modeKey, lists, activeId)
+}
+
 function ledgerRemoved(symbols: readonly string[]): void {
   if (!symbols.length) return
   const l = readHeldLedger()
@@ -234,11 +248,32 @@ export function useWatchlists(opts: WatchlistsOptions = {}): WatchlistsApi {
   // NOW. The guest branches used to map over the render's closure: a
   // create-then-add in one gesture mapped over the pre-create list and
   // persisted [] — signed-out adds never stuck (found 2026-09-11).
+  const modeKeyRef = useRef<string | null>(modeKey)
+  modeKeyRef.current = modeKey
+  const selfLists = useRef<ListsListener | null>(null)
   const update = useCallback((fn: (prev: WatchlistShape[]) => WatchlistShape[]): WatchlistShape[] => {
     const next = fn(listsRef.current)
     listsRef.current = next
     setListsState(next)
+    announceLists(selfLists.current, modeKeyRef.current, next, null)
     return next
+  }, [])
+  // The other instances' writes land here (see announceLists).
+  useEffect(() => {
+    const fn: ListsListener = (key, lists, active) => {
+      if (key !== modeKeyRef.current) return
+      if (lists && lists !== listsRef.current) {
+        listsRef.current = lists
+        setListsState(lists)
+      }
+      if (active && active !== activeIdRef.current) setActiveIdState(active)
+    }
+    selfLists.current = fn
+    listsListeners.add(fn)
+    return () => {
+      listsListeners.delete(fn)
+      if (selfLists.current === fn) selfLists.current = null
+    }
   }, [])
 
   const updateGuest = useCallback(
@@ -252,6 +287,7 @@ export function useWatchlists(opts: WatchlistsOptions = {}): WatchlistsApi {
 
   const setActiveId = useCallback((id: string) => {
     setActiveIdState(id)
+    announceLists(selfLists.current, modeKeyRef.current, null, id)
     try {
       window.localStorage.setItem(ACTIVE_KEY, id)
     } catch {
