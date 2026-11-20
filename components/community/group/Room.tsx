@@ -399,7 +399,7 @@ export function RoomMain() {
       <section className="grp-feed" aria-label={`Posts in ${room.name}`}>
         {member ? (
           <div id="room-compose" className="grp-feed__compose">
-            <Composer community={slug} onPosted={() => { bumpFeed(); refresh() }} />
+            <Composer community={slug} communityName={room.name} onPosted={() => { bumpFeed(); refresh() }} />
           </div>
         ) : (
           <div className="grp-feed__door" data-join-to-post>

@@ -116,7 +116,7 @@ export function lineFromShape(s: ShapeSnapshot): ChartLine | null {
     const p1 = price(a?.price)
     const p2 = price(b?.price)
     if (t1 === null || t2 === null || p1 === null || p2 === null) return null
-    if (t1 === t2 && p1 === p2) return null
+    if (t1 === t2) return null // no width in time: a stray click, not a line (2026-11-20)
     const both = s.name === 'extended' || (s.props.extendLeft === true && s.props.extendRight === true)
     const right = s.name === 'ray' || s.props.extendRight === true
     return { id, kind: 'trend', t1, p1, t2, p2, ...(label ? { label } : {}), ...(both ? { extend: 'both' as const } : right ? { extend: 'right' as const } : {}) }

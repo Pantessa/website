@@ -247,8 +247,8 @@ export function communityFeedPins(check: Check): void {
         /r\.status === 403 && d\.needsJoin/.test(comp) && /fetch\(`\/api\/communities\/\$\{room\}\/join`, \{ method: 'POST'/.test(comp) && /and post/.test(comp),
     )
     check(
-      'community feed: an idea attaches the page\'s chart when it has one for the market, else a door to draw it on /t/<sym>?tab=chart',
-      /Attach my current chart/.test(comp) && /href=\{`\/t\/\$\{sym\}\?tab=chart`\}/.test(comp) && /payload\.chartState = chartState/.test(comp),
+      'community feed: an idea attaches the page\'s chart when it has one for the market (stray zero-width lines dropped), else a door to draw it on /t/<sym> that hands the draft over (draw-handoff) so the chart offers the way back',
+      /Attach my current chart/.test(comp) && /href=\{`\/t\/\$\{sym\}`\}/.test(comp) && /handOffDraw\(/.test(comp) && /payload\.chartState = drawn/.test(comp) && /visibleLines\(chartState\.lines\)/.test(comp),
     )
   }
 
