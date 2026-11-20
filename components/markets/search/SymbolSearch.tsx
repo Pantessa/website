@@ -19,6 +19,7 @@ import { createPortal } from 'react-dom'
 import { usePathname, useRouter } from 'next/navigation'
 import { ArrowUpRight, Clock, CornerDownLeft, Search, Sparkles, TrendingUp, Wallet, X } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
+import { HyperliquidMark, RobinhoodMark } from '@/components/protocol-marks'
 import { useAskDoor } from '@/lib/ask-door'
 import { hlPerpsWarm, warmHlPerps } from '@/lib/charts'
 import { fmtIndexValue } from '@/lib/macro'
@@ -140,6 +141,30 @@ function useTapes(symbols: readonly string[], on: boolean): Record<string, Tape 
   const out: Record<string, Tape | undefined> = {}
   for (const s of symbols) out[s] = tapes.get(s)
   return out
+}
+
+// The venue a row's trade runs on, as its mark: Robinhood Chain for stocks,
+// Hyperliquid for perps (and the builder macro markets). A row with no single
+// venue mark (spot crypto routes across DEXs; a look-only index) keeps its word.
+const VENUE_MARK = {
+  robinhood: { Mark: RobinhoodMark, name: 'Robinhood Chain' },
+  hyperliquid: { Mark: HyperliquidMark, name: 'Hyperliquid' },
+} as const
+
+function KindTag({ hit }: { hit: SearchHit }) {
+  const venue = VENUE_MARK[hit.pair.source as keyof typeof VENUE_MARK]
+  if (venue) {
+    return (
+      <span className="ssx__venue" data-kind={hit.kind} data-venue={hit.pair.source} title={`Trades on ${venue.name}`} aria-label={`${SEARCH_KIND_LABEL[hit.kind]} on ${venue.name}`} role="img">
+        <venue.Mark size={14} />
+      </span>
+    )
+  }
+  return (
+    <span className="ssx__kind mono" data-kind={hit.kind}>
+      {SEARCH_KIND_LABEL[hit.kind]}
+    </span>
+  )
 }
 
 function priceOf(hit: SearchHit, q: Quote | undefined): string {
@@ -382,9 +407,7 @@ function SearchPanel() {
                       <span className="ssx__id">
                         <span className="ssx__sym mono">
                           <Hi text={h.ticker} q={typed} />
-                          <span className="ssx__kind mono" data-kind={h.kind}>
-                            {SEARCH_KIND_LABEL[h.kind]}
-                          </span>
+                          <KindTag hit={h} />
                           {h.symbol === viewing && <span className="ssx__here mono">viewing</span>}
                         </span>
                         <span className="ssx__name">
