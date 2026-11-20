@@ -2,13 +2,14 @@ import type { Metadata } from 'next'
 import SpineLink from '@/components/SpineLink'
 import DirectoryBrowser from '@/components/community/group/DirectoryBrowser'
 import { GroupFrame, RoomsAside } from '@/components/community/group/GroupFrame'
+import { DISCORD_ROOMS } from '@/lib/community/features'
 
 // /g — every room (squad community, lane GROUP). Public: looking needs no
 // wallet, and a Join from a stranger opens the sign-in door and finishes by
 // itself when they land back. Static shell; the list is read in the browser.
 
 const TITLE = 'Rooms on Pantessa'
-const DESCRIPTION = 'Rooms for chart ideas, links, videos and trades with proof. Joining takes one tap, and a room can reach its Telegram group or Discord channel.'
+const DESCRIPTION = `Rooms for chart ideas, links, videos and trades with proof. Joining takes one tap, and a room can reach its Telegram group${DISCORD_ROOMS ? ' or Discord channel' : ''}.`
 
 export const metadata: Metadata = {
   title: TITLE,

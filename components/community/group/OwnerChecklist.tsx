@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from 'react'
 import { Check, X } from 'lucide-react'
+import { DISCORD_ROOMS } from '@/lib/community/features'
 import { useRoom } from './Room'
 import { checklistDone, checklistKey, inviteUrl, type ChecklistStep } from './room-logic'
 
@@ -33,7 +34,9 @@ export default function OwnerChecklist() {
 
   if (!room || !me || me.role !== 'owner' || dismissed !== false) return null
   const done = checklistDone(room)
-  const left = STEPS.filter((s) => !done[s.id]).length
+  // Discord is off for now (lib/community/features): its step shows only if a channel is already linked.
+  const steps = STEPS.filter((s) => s.id !== 'discord' || DISCORD_ROOMS || done.discord)
+  const left = steps.filter((s) => !done[s.id]).length
   if (left === 0) return null
 
   const dismiss = () => {
@@ -66,14 +69,14 @@ export default function OwnerChecklist() {
           Get your room going
         </h2>
         <span className="grp-check__left">
-          {STEPS.length - left} of {STEPS.length} done
+          {steps.length - left} of {steps.length} done
         </span>
         <button type="button" className="grp-check__x" onClick={dismiss} aria-label="Hide this checklist" data-journey="Room checklist: hide">
           <X width={15} height={15} />
         </button>
       </div>
       <ol className="grp-check__steps">
-        {STEPS.map((s) => (
+        {steps.map((s) => (
           <li key={s.id} className={`grp-check__step${done[s.id] ? ' is-done' : ''}`} data-step={s.id} data-done={done[s.id] ? '' : undefined}>
             <span className="grp-check__mark" aria-hidden>
               {done[s.id] && <Check width={12} height={12} />}

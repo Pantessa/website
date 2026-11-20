@@ -8,6 +8,7 @@
 
 import { useState, type ReactNode } from 'react'
 import type { AnnounceFrom } from '@/lib/community/spec'
+import { DISCORD_ROOMS } from '@/lib/community/features'
 import { MessageCircle, Send } from 'lucide-react'
 import { DiscordPanel, TelegramPanel } from './channel-panels'
 import { useRoom } from './Room'
@@ -105,9 +106,12 @@ export default function ChannelsPanel() {
           <Seat id="telegram" title={telegram[0]?.title ?? null} linked={telegram.length > 0} focused={focused === 'telegram'}>
             {TelegramPanel ? <TelegramPanel slug={slug} canManage={canManage} /> : null}
           </Seat>
-          <Seat id="discord" title={discord[0]?.title ?? null} linked={discord.length > 0} focused={focused === 'discord'}>
-            {DiscordPanel ? <DiscordPanel slug={slug} canManage={canManage} /> : null}
-          </Seat>
+          {/* Discord is off for now (lib/community/features); a room already linked keeps its seat so it can unlink. */}
+          {(DISCORD_ROOMS || discord.length > 0) && (
+            <Seat id="discord" title={discord[0]?.title ?? null} linked={discord.length > 0} focused={focused === 'discord'}>
+              {DiscordPanel ? <DiscordPanel slug={slug} canManage={canManage} /> : null}
+            </Seat>
+          )}
         </>
       )}
     </section>

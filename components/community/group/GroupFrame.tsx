@@ -3,6 +3,7 @@ import Footer from '@/components/Footer'
 import MarketsShell from '@/components/markets/shell/MarketsShell'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
 import SpineLink from '@/components/SpineLink'
+import { DISCORD_ROOMS } from '@/lib/community/features'
 import './group.css'
 
 // The frame the /g pages share: the markets frame (spine, main, the side
@@ -47,7 +48,7 @@ export function RoomsAside({ startDoor = true }: { startDoor?: boolean }) {
             <strong>Proof is literal.</strong> A trade post shows a fill the chain confirmed, not a screenshot.
           </li>
           <li>
-            <strong>It reaches your chat.</strong> An owner links a Telegram group or a Discord channel, and new posts are announced there.
+            <strong>It reaches your chat.</strong> An owner links a Telegram group{DISCORD_ROOMS ? ' or a Discord channel' : ''}, and new posts are announced there.
           </li>
         </ol>
         {startDoor && (
