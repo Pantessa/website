@@ -28,6 +28,8 @@ import {
   fmtDepthUsd,
   levelActsFor,
   levelAt,
+  mirrorPrice,
+  pctFromMid,
   limitAimAt,
   parseCoinbaseL2,
   parseCoinbaseTicker,
@@ -152,6 +154,13 @@ export function depthPins(check: Check): void {
     })())
   check('depth: costToMove sums the dollars resting between the mid and the price on the side the price is on; zero inside the spread or at the mid',
     near(costToMove(BOOK, 7.26), 11.23 * 7.246 + 100 * 7.25) && near(costToMove(BOOK, 7.2), 42.97 * 7.2418 + 11.23 * 7.2417 + 500 * 7.24) && costToMove(BOOK, BOOK.mid!) === 0 && costToMove(BOOK, 7.2435) === 0 && costToMove(EMPTY_BOOK, 5) === 0)
+  check('depth: the hover mirrors to the same distance from the mid on the other side (Coinbase\'s double readout): null at the mid or past the window; the range reads signed percent',
+    (() => {
+      const w = depthWindow(BOOK, 2)!
+      const m = mirrorPrice(w, w.mid - 0.05)
+      const all = depthWindow(BOOK, null)!
+      return m !== null && near(m, w.mid + 0.05) && mirrorPrice(w, w.mid) === null && mirrorPrice(w, w.mid * 0.97) === null && near(pctFromMid(w, w.mid * 1.01), 1) && near(pctFromMid(w, w.mid * 0.99), -1) && mirrorPrice(all, all.lo) !== null
+    })())
   check('depth: a buy lifts the asks, a sell hits the bids; with no side the price decides, at the mid the asks',
     printOnBook({ price: 1, side: 'buy' }, 10) === 'ask' && printOnBook({ price: 100, side: 'sell' }, 10) === 'bid' && printOnBook({ price: 9 }, 10) === 'bid' && printOnBook({ price: 10 }, 10) === 'ask' && printOnBook({ price: 3 }, null) === 'ask')
   check('depth: the walls are the largest single levels by dollars, per side',
