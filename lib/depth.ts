@@ -278,6 +278,20 @@ export function levelAt(w: DepthWindow, price: number): { side: DepthSide; level
   return hit < 0 ? null : { side, level: rows[hit], index: hit }
 }
 
+/** The same distance from the mid on the OTHER side (Coinbase's double
+ *  readout): hover a bid 8% under the mid, read the asks 8% over it. Null at
+ *  the mid or when the mirror falls outside the window. */
+export function mirrorPrice(w: DepthWindow, price: number): number | null {
+  if (!finitePos(price) || price === w.mid) return null
+  const m = 2 * w.mid - price
+  return m > 0 && m >= w.lo && m <= w.hi ? m : null
+}
+
+/** A price's distance from the mid, in percent (signed: under the mid is negative). */
+export function pctFromMid(w: DepthWindow, price: number): number {
+  return ((price - w.mid) / w.mid) * 100
+}
+
 /** Dollars of resting orders between the mid and `price`: what a taker
  *  would have to buy (above) or sell (below) to move the mid there. Zero at
  *  or inside the spread. */

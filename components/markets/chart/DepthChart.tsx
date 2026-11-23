@@ -51,6 +51,8 @@ import {
   fmtDepthUsd,
   levelAt,
   limitAimAt,
+  mirrorPrice,
+  pctFromMid,
   printAlpha,
   printOnBook,
   printRadius,
@@ -426,24 +428,32 @@ export default function DepthChart({ symbol, pair, tokens, last, perpListed, pri
       void side
     }
 
-    // The hover: a vertical line and a dot on the curve.
+    // The hover: a vertical line and a dot on the curve, and the same
+    // distance from the mid on the other side (dashed), so both sides read at once.
     if (hoverPx != null && hoverPx >= win.lo && hoverPx <= win.hi) {
-      const x = Math.round(xOf(hoverPx, win, g)) + 0.5
-      ctx.strokeStyle = tokens.crosshair
-      ctx.beginPath()
-      ctx.moveTo(x, PAD.t)
-      ctx.lineTo(x, bottom)
-      ctx.stroke()
-      const lv = levelAt(win, hoverPx)
-      if (lv) {
-        const y = yOf(val(lv.level), g, yMax)
+      const mark = (px: number, dashed: boolean) => {
+        const x = Math.round(xOf(px, win, g)) + 0.5
+        ctx.strokeStyle = tokens.crosshair
+        if (dashed) ctx.setLineDash([3, 3])
         ctx.beginPath()
-        ctx.arc(x, y, 4, 0, Math.PI * 2)
-        ctx.fillStyle = lv.side === 'bid' ? tokens.up : tokens.down
-        ctx.fill()
-        ctx.strokeStyle = tokens.bg
+        ctx.moveTo(x, PAD.t)
+        ctx.lineTo(x, bottom)
         ctx.stroke()
+        ctx.setLineDash([])
+        const lv = levelAt(win, px)
+        if (lv) {
+          const y = yOf(val(lv.level), g, yMax)
+          ctx.beginPath()
+          ctx.arc(x, y, 4, 0, Math.PI * 2)
+          ctx.fillStyle = lv.side === 'bid' ? tokens.up : tokens.down
+          ctx.fill()
+          ctx.strokeStyle = tokens.bg
+          ctx.stroke()
+        }
       }
+      mark(hoverPx, false)
+      const m = mirrorPrice(win, hoverPx)
+      if (m != null) mark(m, true)
     }
   }
 
@@ -479,6 +489,14 @@ export default function DepthChart({ symbol, pair, tokens, last, perpListed, pri
     if (!lv) return { px: hoverPx, side: hoverPx < win.mid ? ('bid' as const) : ('ask' as const), level: null, cost: 0 }
     return { px: hoverPx, side: lv.side, level: lv.level, cost: costToMove(main, lv.level.px) }
   }, [win, hoverPx, main])
+  // The other side at the same distance from the mid (Coinbase's double readout).
+  const mirror = useMemo(() => {
+    if (!win || hoverPx == null) return null
+    const px = mirrorPrice(win, hoverPx)
+    if (px == null) return null
+    const lv = levelAt(win, px)
+    return { px, side: px < win.mid ? ('bid' as const) : ('ask' as const), level: lv?.level ?? null }
+  }, [win, hoverPx])
   const acts = !!onLevel && plan.main === 'coinbase'
   const act = () => {
     if (!acts || !hover?.level || !onLevel) return
@@ -492,6 +510,8 @@ export default function DepthChart({ symbol, pair, tokens, last, perpListed, pri
   }
 
   const readoutLeft = hover && win ? Math.min(geom.w - 230, Math.max(0, xOf(hover.px, win, geom) + (hover.side === 'bid' ? 12 : -232))) : 0
+  const mirrorLeft = mirror && win ? Math.min(geom.w - 230, Math.max(0, xOf(mirror.px, win, geom) + (mirror.side === 'bid' ? -232 : 12))) : 0
+  const fmtPct = (p: number) => `${p > 0 ? '+' : p < 0 ? '−' : ''}${Math.abs(p).toFixed(2)}%`
   const tape = prints.slice(-DEPTH_TAPE_ROWS).reverse()
   const mainWords = bookWords(plan.main, mainStatus)
   const pWords = printWords(printLabel, printStatus, prints.length)
@@ -550,7 +570,9 @@ export default function DepthChart({ symbol, pair, tokens, last, perpListed, pri
         {!plan.main && <p className="dp__empty dp__empty--why">{plan.why}</p>}
         {hover && win && (
           <div className="dp__readout mono" style={{ left: readoutLeft }} data-side={hover.side}>
-            <b>${fmtDepthPrice(hover.level ? hover.level.px : hover.px)}</b>
+            <b>
+              ${fmtDepthPrice(hover.level ? hover.level.px : hover.px)} <em className="dp__range">{fmtPct(pctFromMid(win, hover.px))}</em>
+            </b>
             {hover.level ? (
               <>
                 <span>
@@ -565,6 +587,23 @@ export default function DepthChart({ symbol, pair, tokens, last, perpListed, pri
                     limit {hover.side === 'bid' ? 'buy' : 'sell'} {pair.symbol} at ${fmtDepthPrice(hover.level.px)}
                   </button>
                 )}
+              </>
+            ) : (
+              <span>inside the spread · nothing rests here</span>
+            )}
+          </div>
+        )}
+        {hover && mirror && win && (
+          <div className="dp__readout dp__readout--mirror mono" style={{ left: mirrorLeft }} data-side={mirror.side} aria-hidden="true">
+            <b>
+              ${fmtDepthPrice(mirror.level ? mirror.level.px : mirror.px)} <em className="dp__range">{fmtPct(pctFromMid(win, mirror.px))}</em>
+            </b>
+            {mirror.level ? (
+              <>
+                <span>
+                  {fmtDepthSize(mirror.level.cum)} {pair.symbol} between the mid and here
+                </span>
+                <span className="dp__cost">{fmtDepthUsd(mirror.level.cumUsd)} to move the mid here</span>
               </>
             ) : (
               <span>inside the spread · nothing rests here</span>

@@ -24,6 +24,10 @@
 .dp__readout[data-side="bid"] b { color: var(--mk-up, var(--up)); }
 .dp__readout[data-side="ask"] b { color: var(--mk-down, var(--sell)); }
 .dp__cost { color: var(--fg); }
+/* The other side at the same distance from the mid: lower, so it never sits on the main readout. */
+.dp__readout--mirror { top: auto; bottom: 40px; z-index: 1; pointer-events: none; }
+.dp__readout:not(.dp__readout--mirror) { z-index: 3; }
+.dp__range { font-style: normal; font-size: 10px; letter-spacing: 0.04em; color: var(--muted); margin-left: 4px; }
 .dp__act { margin-top: 4px; height: 26px; padding: 0 10px; border-radius: var(--r-pill); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink, #04140c); background: var(--accent); align-self: flex-start; }
 .dp__readout[data-side="ask"] .dp__act { color: #fff; background: var(--mk-down, var(--sell)); }
 .dp__tape { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 4px 10px 2px; list-style: none; overflow: hidden; border-top: 1px solid var(--line); font-size: 10px; letter-spacing: 0.04em; color: var(--muted); }
