@@ -274,3 +274,56 @@ a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, text
 @media (min-width: 1024px) {
   :root .footer__cols { grid-template-columns: 1.5fr repeat(4, minmax(0, 1fr)); }
 }
+
+/* ── SLEEK, ROUND 2: the stragglers beside the square shell ────────────────
+   Tailwind's `rounded-full` drew every pill on the surfaces no lane owns
+   (the chat, the wallet, the share and sign-in doors). One rule instead of
+   two hundred class edits, and the harness's class-string pins stay true: a
+   CONTROL or a PADDED chip that says rounded-full is hard-edged; a dot, an
+   avatar and a switch (role="switch") have no padding and stay round. */
+:where(button, a, [role='button'], input, textarea, select, summary, label):not([role='switch']).rounded-full,
+.rounded-full:where([class*='px-'], [class*='pl-'], [class*='py-']):not([role='switch']) { border-radius: var(--r-pill); }
+/* The few literal radii spelled in a class name. */
+:root :where([class*='rounded-[10px]'], [class*='rounded-[14px]'], [class*='rounded-[26px]']) { border-radius: var(--r-md); }
+/* No frosted glass: a translucent bar is a flat bar. */
+:root [class*='backdrop-blur'] { -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* The chat composer and its send: a hard field on a hairline, no lift, no glow. */
+:root [data-composer-pill], :root [data-composer-pill]:focus-within { border-radius: var(--r-md); background: var(--surf-1); box-shadow: none; }
+:root [data-composer-pill]:focus-within { border-color: var(--accent); }
+:root [data-composer-pill] button { box-shadow: none; }
+
+/* The sign-in door (components/CreateAccountButton): a hard panel on a flat
+   scrim. The bloom behind the mark, the lit top edge, the lift under the
+   panel and the glow under "Connect a wallet" are gone; the one filled
+   button wears the cut. Behaviour is untouched. */
+:root:root .ca__backdrop { background: var(--scrim); -webkit-backdrop-filter: none; backdrop-filter: none; }
+:root .ca__glow { display: none; }
+:root .ca__crest::before, :root .ca__panel::before { content: none; }
+:root:root .ca__gem { filter: none; }
+:root .ca__panel { background: var(--bg); border-color: var(--line-2); box-shadow: none; }
+:root .ca__wallet, :root .ca__wallet:hover { box-shadow: none; transform: none; }
+:root .ca__wallet--lead { clip-path: polygon(var(--sk-cut, 10px) 0, 100% 0, 100% calc(100% - var(--sk-cut, 10px)), calc(100% - var(--sk-cut, 10px)) 100%, 0 100%, 0 var(--sk-cut, 10px)); }
+:root .ca__or span { background: var(--line); }
+:root .ca__input:focus { box-shadow: none; }
+
+/* The phone Sheet (components/mobile): a square top on a hairline, no lift,
+   a hard close button. */
+:root .sheet__panel { box-shadow: none; }
+:root .sheet__close { border: 1px solid var(--line); border-radius: 0; }
+
+/* The brochure bar on a phone (the /x pages, docs, pricing): the same two
+   controls as the markets bar. Sign in is a 44px hard button; the menu is a
+   44px hard square on a hairline. The bar keeps its 64px (the docs rail
+   sticks under it). */
+@media (max-width: 900px) {
+  :root .nav__acct .hit-44 { height: 44px; padding-inline: 14px; font-size: var(--fs-md); white-space: nowrap; }
+  :root .nav__acct .hit-44::before { inset: 0; }
+  :root .nav__burger { margin-right: 0; border: 1px solid var(--line-2); border-radius: 0; background: var(--surf-1); }
+  :root .nav__burger:hover { background: var(--surf-2); }
+}
+/* The footer on a phone: less air above the columns (the page above it ends on a hairline). */
+@media (max-width: 640px) {
+  :root .footer { margin-top: var(--sp-5); }
+  :root .footer__cols { padding-top: var(--sp-6); gap: 20px 16px; }
+}

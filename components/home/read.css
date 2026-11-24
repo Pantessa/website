@@ -250,3 +250,10 @@ button.read__lvtag:hover, button.read__lvtag:focus-visible, button.read__lvtag.i
   .read .read__back { min-height: 44px; }
   .read .read__watch::after { content: ''; position: absolute; inset: -8px; }
 }
+/* Round 2: the headline's clauses and the chart's ranges take a thumb. A
+   clause is a 44px box whose extra height is given back with a negative
+   margin, so the headline's lines sit exactly where they did. */
+@media (hover: none) {
+  .read .read__clause { display: inline-block; padding-block: 8px; margin-block: -8px; }
+  .read .read__range { height: 44px; min-width: 44px; }
+}

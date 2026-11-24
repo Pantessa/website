@@ -115,7 +115,16 @@ export default function HowItWorks({ data }: { data?: TourSnapshot }) {
         ))}
       </ol>
 
-      <div className="how__cols">
+      {/* On a stranger's phone the two lists fold behind one press (squad
+          mobile-sleek): a checkbox and its label, so the fold needs no script
+          and the lists are always in the HTML. From 641px up the control is
+          not drawn and the lists are open (sleek-home.css). */}
+      <input type="checkbox" id="how-more" className="how__foldbox" aria-controls="how-cols" />
+      <label htmlFor="how-more" className="how__fold">
+        <span>What it costs, and what Pantessa never does</span>
+        <span className="how__foldmark mono" aria-hidden="true" />
+      </label>
+      <div className="how__cols" id="how-cols">
         <section className="how__col" aria-labelledby="how-costs">
           <h3 id="how-costs" className="how__coltitle">
             What it costs
