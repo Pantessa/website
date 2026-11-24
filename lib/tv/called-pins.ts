@@ -293,6 +293,8 @@ const RAIL_AIR_PX = 18
 
 /** Px over the highest candle that a marks-only pane keeps for the marks themselves (two tiles and their lift). */
 export const MARKS_HEAD_PX = 46
+/** The deepest foot (percent of the pane) the candles are lifted by to clear an opened call's card. */
+export const COVER_MARGIN_MAX = 58
 
 export interface PaneSize {
   width: number
@@ -681,12 +683,21 @@ const DAY_SEC = 86_400
 const FIT_MIN_DAYS = 120
 
 /** Daily bars from a little before the first call to now: every pin on screen. Seconds. */
-export function fitRange(calls: readonly Pick<CalledCall, 'barTime'>[], nowSec: number): { from: number; to: number } | null {
+export function fitRange(calls: readonly Pick<CalledCall, 'barTime'>[], nowSec: number, paneWidth?: number): { from: number; to: number } | null {
   if (!calls.length) return null
   const first = calls.reduce((m, c) => Math.min(m, c.barTime), Infinity)
   const start = Math.min(first, nowSec - FIT_MIN_DAYS * DAY_SEC)
-  const pad = Math.max(10 * DAY_SEC, Math.round((nowSec - start) * 0.07))
+  // Air before the first call: 7% of the span, and on a narrow pane (a phone) at least the width of a mark's column,
+  // so the first stack is never cut by the pane's edge.
+  const share = paneWidth && paneWidth > 0 ? Math.max(0.07, Math.min(0.2, FIT_AIR_PX / paneWidth)) : 0.07
+  const pad = Math.max(10 * DAY_SEC, Math.round((nowSec - start) * share))
   return { from: start - pad, to: nowSec }
+}
+/** Px of air the fit leaves beside the first call (half a mark's column and a little). */
+export const FIT_AIR_PX = 36
+/** Percent of the pane left empty after the newest bar by the fit: more on a phone, where a column is a larger share. */
+export function fitRightMargin(paneWidth: number): number {
+  return paneWidth > 0 && paneWidth < CARDS_MIN_PANE_W ? 9 : 5
 }
 
 // ── Nothing of a plot is ever kept ──────────────────────────────────────
@@ -791,6 +802,8 @@ export interface CalledPinsController {
   cleanLayout(layout: object): object
   /** The site's theme flipped: re-ink. */
   retheme(): void
+  /** Px of the pane's foot that the opened call's card covers (a phone's bottom dock); 0 when nothing does. */
+  setCover(px: number): void
 }
 
 const RELAYOUT_MS = 170
@@ -863,8 +876,16 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   /** What the layer draws: every call with no card. Set by `render`. */
   let scene: { key: string; calls: CalledCall[]; keepTop: number; keepBottom: number; cards?: CardSpec[]; layout?: (pane: PaneSize, anchors: PinAnchor[]) => CardBox[] } | null = null
   let plan: CalloutPlan = calloutPlan({ width: 0, height: 0 })
+  /** Px of the pane's foot under the opened call's card (a phone's bottom dock). 0 = nothing covers the pane. */
+  let cover = 0
+  /** The margins the last render asked for, before the cover is added. */
+  let marginWant: ((base: PaneMargins) => PaneMargins) | null = null
+  /** The range the last fit left the chart on: while the viewer has not moved it, a new pane width fits again. */
+  let fitView: { from: number; to: number; width: number } | null = null
+  let revealAt = 0
   let startAbove = true
   let margins: { original: PaneMargins; applied: PaneMargins } | null = null
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null
   let relayoutTimer: ReturnType<typeof setTimeout> | null = null
   let relayoutTries = 0
   let renderTimer: ReturnType<typeof setTimeout> | null = null
@@ -992,7 +1013,8 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     },
     host: () => hostEl,
     chart: () => chart,
-    scene: () => (scene && plotted() ? { ...scene, focusId: input.focusId, keepCorner: corner() } : null),
+    // Under the opened call's card nothing is drawn: the marks (and the opened call's own tile) stay above it.
+    scene: () => (scene && plotted() ? { ...scene, keepBottom: Math.max(scene.keepBottom, cover ? cover + 6 : 0), focusId: input.focusId, keepCorner: corner() } : null),
     inks: markInks,
     onPick: (postId) => hooks.onPick(postId),
     onMount: (on) => {
@@ -1058,14 +1080,82 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     }
   }
 
+  /** The render's margins, and under an opened call's card (a phone) a foot deep enough that the candles end above it. */
+  const applyMargins = () => {
+    const want = marginWant
+    if (!want) return
+    const height = paneSize()?.height ?? 0
+    setMargins((base) => {
+      const m = want(base)
+      if (!(cover > 0) || !(height > 0)) return m
+      const foot = Math.min(COVER_MARGIN_MAX, Math.ceil(((cover + 10) / height) * 100))
+      // The head gives back what it can: with half the pane under the card, the candles need the rest.
+      return { top: Math.min(m.top, Math.max(base.top, 14)), bottom: Math.max(m.bottom, foot) }
+    })
+  }
+  /**
+   * The opened call's bar is on the pane, clear of its edges. A step to a call
+   * that is off screen, or a pane that just got narrower (the side column
+   * opening, a phone turned), pans the chart by as little as shows it. A call
+   * that is already in view never moves the chart.
+   */
+  const revealFocus = () => {
+    const c = chart
+    const record = plotted()
+    const call = record && input.focusId ? record.calls.find((x) => x.postId === input.focusId) : null
+    if (!c || !call || Date.now() - revealAt < 350) return
+    try {
+      const pane = paneSize()
+      if (!pane) return
+      const x = xForTime(sampleAxis(pane.width), call.barTime)
+      const pad = Math.min(72, pane.width * 0.2)
+      if (x !== null && x >= pad && x <= pane.width - pad) return
+      const r = c.getVisibleRange()
+      const span = r.to - r.from
+      if (!(span > 0)) return
+      const left = x === null ? call.barTime < r.from : x < pad
+      const from = call.barTime - span * (left ? 0.3 : 0.7)
+      revealAt = Date.now()
+      fitView = null
+      void c.setVisibleRange({ from, to: from + span }).catch(() => undefined)
+    } catch {
+      /* the call card still names the call */
+    }
+  }
+  /** The pane changed width while the chart was still on the fit's own view: fit again (every call back on the pane). */
+  const refitIfUntouched = () => {
+    const c = chart
+    const record = plotted()
+    const was = fitView
+    if (!c || !record || !was) return false
+    try {
+      const pane = paneSize()
+      const now = c.getVisibleRange()
+      if (!pane || Math.abs(pane.width - was.width) < 24) return false
+      // Bars keep their width when the pane does not: the newest stays put and the oldest slide off (or air opens).
+      if (Math.abs(now.to - was.to) > 2 * DAY_SEC) {
+        fitView = null
+        return false
+      }
+      void fit(record)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   const fit = async (record: CalledRecord): Promise<void> => {
     const c = chart
-    const range = fitRange(record.calls, Math.floor(Date.now() / 1000))
+    const width = paneSize()?.width ?? 0
+    const range = fitRange(record.calls, Math.floor(Date.now() / 1000), width)
     if (!c || !range) return
     try {
       const res = c.resolution().toUpperCase()
       if (res !== '1D' && res !== 'D') await Promise.race([Promise.resolve(c.setResolution('1D')), sleep(4000)])
-      await Promise.race([c.setVisibleRange(range, { percentRightMargin: 5 }), sleep(5000)])
+      await Promise.race([c.setVisibleRange(range, { percentRightMargin: fitRightMargin(width) }), sleep(5000)])
+      await sleep(60)
+      const now = c.getVisibleRange()
+      fitView = { from: now.from, to: now.to, width: paneSize()?.width ?? width }
     } catch {
       /* the chart keeps the view it has; "Fit all calls" asks again */
     }
@@ -1167,6 +1257,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     const c = chart
     if (!c) return
     void syncFocus()
+    revealFocus()
     for (const d of cards.values()) {
       try {
         const shape = c.getShapeById(d.shapeId)
@@ -1238,6 +1329,8 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       marks = []
       scene = null
       drawnKey = ''
+      marginWant = null
+      fitView = null
       setMargins(null)
       void syncFocus()
       if (had) refreshMarks()
@@ -1285,7 +1378,8 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     const maxH = Math.max(0, ...Object.values(sizes).map((s) => s.h))
     const label = tallyLabel(record, pane, measureTally(pane))
     const keepTop = keepTopFor(legendBottom())
-    setMargins((base) => railMargins(pane, plan, maxH, label.keepBottom, base, keepTop))
+    marginWant = (base) => railMargins(pane, plan, maxH, label.keepBottom, base, keepTop)
+    applyMargins()
     // The margins move the candles: read the view after the chart has drawn them.
     await sleep(80)
     if (my !== gen) return
@@ -1385,7 +1479,15 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
         /* the pins still draw; they are placed again on the next render */
       }
       if (host && typeof ResizeObserver !== 'undefined') {
-        resizeWatch = new ResizeObserver(() => scheduleRelayout())
+        resizeWatch = new ResizeObserver(() => {
+          scheduleRelayout()
+          if (resizeTimer) clearTimeout(resizeTimer)
+          resizeTimer = setTimeout(() => {
+            resizeTimer = null
+            applyMargins()
+            if (!refitIfUntouched()) revealFocus()
+          }, 320)
+        })
         resizeWatch.observe(host)
       }
       driftTimer = setInterval(() => {
@@ -1399,6 +1501,11 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       gen++
       if (relayoutTimer) clearTimeout(relayoutTimer)
       if (renderTimer) clearTimeout(renderTimer)
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = null
+      marginWant = null
+      fitView = null
+      cover = 0
       if (driftTimer) clearInterval(driftTimer)
       relayoutTimer = renderTimer = null
       driftTimer = null
@@ -1455,6 +1562,14 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     // While the marks layer draws them, the library is given none (it would draw its discs under the tiles).
     marks: (ticker) => (!layerOn && plotted() && sameSym(ticker, hooks.symbol) ? marks : []),
     cleanLayout: (layout) => cleanLayout(layout, (id) => owned.has(id), margins),
+    setCover(px) {
+      const next = Number.isFinite(px) && px > 8 ? Math.round(px) : 0
+      if (Math.abs(next - cover) < 4) return
+      cover = next
+      applyMargins()
+      layer.invalidate()
+      setTimeout(revealFocus, 380)
+    },
     retheme() {
       layer.invalidate()
       drawnKey = ''

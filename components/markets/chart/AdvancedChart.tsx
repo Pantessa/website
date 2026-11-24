@@ -627,6 +627,101 @@ export default function AdvancedChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [armed, pair?.symbol, pair?.source])
 
+  // A PHONE'S PLOT FITS THE FIRST SCREEN. The plot and the bar-size row under it end above the page's docked act
+  // bar: with a handle plotted, when the band is at the top of the scrollport (where a link from X lands); without
+  // one, on the page as it loads. Measured from the layout itself (what stands above the plot is other lanes' and
+  // changes), never under 300px. Until it is measured the stylesheet's own sum stands (`--sym-chart-room`).
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const root = rootRef.current
+    const seat = seatRef.current
+    if (!root || !seat || typeof window === 'undefined' || typeof ResizeObserver === 'undefined') return
+    const mq = window.matchMedia('(max-width: 640px)')
+    let last = ''
+    const measure = () => {
+      if (!mq.matches || root.closest('.tchart--expanded')) {
+        if (last) root.style.removeProperty('--tvx-plot-h')
+        last = ''
+        return
+      }
+      const band = document.querySelector<HTMLElement>('.sym .xch:not(.is-parked)')
+      const tabs = document.querySelector<HTMLElement>('.sym__tabs')
+      const dock = document.querySelector<HTMLElement>('.sym__exec:has(.sym__act-chips), .sk-dock')
+      const seatTop = seat.getBoundingClientRect().top
+      // Where the plot's top is on the first screen.
+      let plotTop: number
+      if (band) {
+        const cs = tabs ? getComputedStyle(tabs) : null
+        const pinned = tabs && cs && cs.position === 'sticky' ? (parseFloat(cs.top) || 0) + tabs.offsetHeight : 0
+        plotTop = pinned + 6 + (seatTop - band.getBoundingClientRect().top)
+      } else {
+        const scroller = root.closest<HTMLElement>('[data-scrollport]')
+        plotTop = seatTop + (scroller ? scroller.scrollTop : window.scrollY)
+      }
+      const dockTop = dock && getComputedStyle(dock).position === 'fixed' ? dock.getBoundingClientRect().top : window.innerHeight - 110
+      const tfRow = root.querySelector<HTMLElement>('.tvx-tf')?.offsetHeight ?? 44
+      const h = Math.max(300, Math.min(560, Math.floor(dockTop - plotTop - tfRow - 20)))
+      const next = `${h}px`
+      if (next !== last) {
+        last = next
+        root.style.setProperty('--tvx-plot-h', next)
+      }
+    }
+    measure()
+    const watch = new ResizeObserver(measure)
+    watch.observe(document.documentElement)
+    const column = root.closest('.sym') ?? root.parentElement
+    if (column) watch.observe(column)
+    mq.addEventListener('change', measure)
+    const late = setTimeout(measure, 1200)
+    return () => {
+      watch.disconnect()
+      mq.removeEventListener('change', measure)
+      clearTimeout(late)
+    }
+  }, [])
+
+  // THE OPENED CALL'S CARD OVER THE PLOT'S FOOT (a phone's bottom dock): the pins are told how much of the pane it
+  // covers, so the opened call's tile, its bar and the candles around it stay on the part still in sight.
+  useEffect(() => {
+    const seat = seatRef.current
+    const host = hostRef.current
+    if (!seat || !host || typeof MutationObserver === 'undefined' || typeof ResizeObserver === 'undefined') return
+    let sizes: ResizeObserver | null = null
+    const measure = () => {
+      const card = Array.from(seat.children).find((el) => el !== host) as HTMLElement | undefined
+      if (!card) return called.setCover(0)
+      const plot = host.getBoundingClientRect()
+      const box = card.getBoundingClientRect()
+      // A card across the whole plot is a bottom dock; one beside the bars (a tablet) covers no foot.
+      called.setCover(box.width >= plot.width * 0.8 ? Math.max(0, Math.min(plot.height, plot.bottom - Math.max(box.top, plot.top))) : 0)
+    }
+    const rewatch = () => {
+      sizes?.disconnect()
+      sizes = new ResizeObserver(measure)
+      sizes.observe(host)
+      for (const el of Array.from(seat.children)) if (el !== host) sizes.observe(el)
+      measure()
+    }
+    const kids = new MutationObserver(rewatch)
+    kids.observe(seat, { childList: true })
+    rewatch()
+    // The card is fixed to the screen and the plot is not: where the page comes to rest decides what it covers.
+    let settle: ReturnType<typeof setTimeout> | null = null
+    const onScroll = () => {
+      if (settle) clearTimeout(settle)
+      settle = setTimeout(measure, 260)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true, capture: true })
+    return () => {
+      kids.disconnect()
+      sizes?.disconnect()
+      if (settle) clearTimeout(settle)
+      window.removeEventListener('scroll', onScroll, { capture: true })
+      called.setCover(0)
+    }
+  }, [called, wide])
+
   // The frame is a shareable address on the symbol page.
   useEffect(() => {
     if (urlTf) syncTfParam(tf, DEFAULT_CHART_TF)
@@ -855,7 +950,7 @@ export default function AdvancedChart({
     )
 
   return (
-    <div className={fill ? 'mkt-chart tvx min-h-0 flex-1' : 'mkt-chart tvx'} data-engine="advanced" data-tail={liveFeed && tailIsLive(tf, liveFeed) ? tailStatus : 'polled'} data-ready={ready ? '' : undefined} data-resize={String(resizeKey ?? '')}>
+    <div ref={rootRef} className={fill ? 'mkt-chart tvx min-h-0 flex-1' : 'mkt-chart tvx'} data-engine="advanced" data-tail={liveFeed && tailIsLive(tf, liveFeed) ? tailStatus : 'polled'} data-ready={ready ? '' : undefined} data-resize={String(resizeKey ?? '')}>
       <div className="mkt-chart__bar">
         {battlefield && !lookOnly && (
           <div className="mkt-view" role="group" aria-label="Chart view">
