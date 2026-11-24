@@ -93,9 +93,13 @@ export function venueManifestPins(check: Check): void {
   check('venues: the Aave and Morpho op selectors ride in 0x form, one per op, straight from the guards’ pinned maps',
     a.venues.find((v) => v.slug === 'aave')!.selectors.length === 4 && a.venues.find((v) => v.slug === 'morpho')!.selectors.length === 6 &&
       a.venues.find((v) => v.slug === 'aave')!.selectors.every((s) => s.source.startsWith('lib/aave-supply.ts#AAVE_OP_SELECTORS.')))
-  check('venues: the fee block is lib/fees.ts verbatim (treasury, bps) and every tx-shaped venue carries the kill switch or the planner guard in its guard list',
+  // RE-PINNED 2026-11-24 (docs-clean qa): the manifest now lists the kill switch only on the venues whose
+  // build or relay really checks the freeze (write-safety). Pin that exact set, so /docs/trust's list of
+  // what a freeze refuses cannot drift from the manifest, and keep a guard on every tx-shaped venue.
+  check('venues: the fee block is lib/fees.ts verbatim (treasury, bps); every tx-shaped venue has a guard; the kill switch is listed on exactly the venues whose build or relay checks the freeze',
     a.fees.treasury === TREASURY_ADDRESS && a.fees.swapFeeBps > 0 &&
-      a.venues.filter((v) => v.produces === 'tx-shaped').every((v) => v.guards.some((g) => /kill switch|guardPlannerArtifact/.test(g.function))))
+      a.venues.filter((v) => v.produces === 'tx-shaped').every((v) => v.guards.length > 0) &&
+      a.venues.filter((v) => v.guards.some((g) => /kill switch/.test(g.function))).map((v) => v.slug).join(',') === 'uniswap,cow,aave,morpho,hyperliquid,lifi,opensea,transfers')
   check('venues: Hyperliquid is marked UNMEASURED through custody and names the 1337 signing domain; no venue claims a drilled custody lane',
     /UNMEASURED/.test(a.venues.find((v) => v.slug === 'hyperliquid')!.custody) && a.venues.find((v) => v.slug === 'hyperliquid')!.bounds.signingDomainChainId === 1337 &&
       a.venues.every((v) => !/drilled\.$/.test(v.custody) || /not yet drilled/i.test(v.custody)) && /No institutional custody lane .* has been drilled end to end/.test(a.signing.custody))
@@ -104,7 +108,7 @@ export function venueManifestPins(check: Check): void {
 
   // The docs page renders THIS object: it maps manifest.venues, prints the
   // integrity + commit, links the JSON and GUARDRAILS.md; the registry lists it
-  // under the user door, ready; the route is CORS-open and edge-cached.
+  // in the safety group, ready; the route is CORS-open and edge-cached.
   const page = readFileSync('app/docs/venues/page.tsx', 'utf8')
   const docs = readFileSync('lib/docs.ts', 'utf8')
   const route = readFileSync('app/api/venues/manifest/route.ts', 'utf8')
@@ -112,9 +116,10 @@ export function venueManifestPins(check: Check): void {
     page.includes('manifest.venues.map((v) =>') && page.includes('{manifest.integrity}') && page.includes("{manifest.commit ?? 'unknown") && page.includes('{manifest.generatedAt}') &&
       page.includes("'/api/venues/manifest'") && page.includes('GUARDRAILS.md') && page.includes("'read-only'") && page.includes('custody lane unmeasured') &&
       page.includes('explorerAddressUrl(c.chainId, k.address)') && page.includes('export const revalidate = 300'))
-  check('venues: lib/docs.ts registers slug venues under the user door, ready, seoTitle ≤ 60 and description ≤ 160',
+  // RE-PINNED 2026-11-24 (docs-clean qa): doors became groups; venues sits in SAFETY.
+  check('venues: lib/docs.ts registers slug venues in the safety group, ready, seoTitle ≤ 60 and description ≤ 160',
     (() => {
-      const m = docs.match(/slug: 'venues',\s*title: '([^']+)',\s*seoTitle: '([^']+)',\s*description:\s*'((?:[^'\\]|\\.)+)',\s*ready: true,\s*door: 'user'/)
+      const m = docs.match(/slug: 'venues',\s*title: '([^']+)',\s*seoTitle: '([^']+)',\s*description:\s*'((?:[^'\\]|\\.)+)',\s*ready: true,\s*group: 'safety'/)
       return !!m && m[2].length <= 60 && m[3].length <= 160
     })())
   check('venues: the route is GET + OPTIONS, nodejs, CORS-open, cached five minutes at the edge, 404s an unknown ?venue= with the slug list',
