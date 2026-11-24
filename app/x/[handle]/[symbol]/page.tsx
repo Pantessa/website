@@ -160,7 +160,20 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
 /** The headline: who and the market as the display line. The counts stay in the h1 to the letter (read aloud, read by a crawler) and are drawn by the score bar under it. */
 function Headline({ record }: { record: CalledRecord }) {
   const parts = headlineParts(record.words.headline)
-  if (!parts) return <h1 className="xrc-headline">{record.words.headline}</h1>
+  if (!parts) {
+    // No tally to draw (no calls found, or posts a viewer pasted with no scan): who and the market are the display line, the rest of the record's own sentence reads under it, to the letter.
+    const cut = record.words.headline.indexOf(': ')
+    if (cut < 0) return <h1 className="xrc-headline">{record.words.headline}</h1>
+    return (
+      <h1 className="xrc-headline">
+        <span className="xrc-headline__who">
+          {record.words.headline.slice(0, cut)}
+          <span className="xrc-sr">: </span>
+        </span>
+        <span className="xrc-headline__rest">{record.words.headline.slice(cut + 2)}</span>
+      </h1>
+    )
+  }
   // Read with the tags off, this is the headline to the letter: the colon, the commas and the full stop are in the
   // text for a reader and a crawler, and out of sight where the chips already separate the counts.
   return (
@@ -414,7 +427,8 @@ export default async function RecordPage(props: Props) {
                 )}
                 {/* ONE primary press, under the thumb on a phone: the live chart. Share is the quiet one beside it. */}
                 <div className="xrc-dock" data-dock>
-                  <Link href={live} className="xrc-dock__go sk-btn" prefetch={false} data-journey="called_open_chart_dock">
+                  {/* With no scan behind the posts, the scan above is the primary press and this one steps back. */}
+                  <Link href={live} className={`xrc-dock__go sk-btn${pasteOnly ? ' sk-btn--quiet is-quiet' : ''}`} prefetch={false} data-journey="called_open_chart_dock">
                     Open the live {record.symbol} chart <span aria-hidden>&rarr;</span>
                   </Link>
                   {record.calls.length > 0 && (

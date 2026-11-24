@@ -24,3 +24,8 @@
   :root .mkt-frame__tab { flex: 0 0 auto; min-width: 44px; justify-content: center; }
   :root .mkt-frame__bar .ssx-field { height: 44px; border-radius: 0; }
 }
+
+/* The earn rows' act buttons take a thumb. */
+@media (hover: none) {
+  :root .mk-earn__go { min-height: 44px; }
+}

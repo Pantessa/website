@@ -1,0 +1,42 @@
+/* /pricing in the squad's language (squad mobile-sleek, lane SYMBOL, 2026-11-24).
+ *
+ * A brochure page: the copy and the markup are untouched; this sheet restates
+ * a few of its rules (x402-design.css, `.pricing__*`) one class heavier, so it
+ * wins wherever the bundler orders it. Flat fills, hairlines, mono numbers,
+ * the one headline in the display face, the one paid button with the cut.
+ */
+
+/* The headline is the page's display line; the second sentence keeps its quiet colour, upright. */
+.pricing .pricing__h1 { font-family: var(--sk-display); font-weight: 600; letter-spacing: -0.015em; line-height: 1.05; }
+.pricing .pricing__em { font-style: normal; }
+
+/* The numbers a reader compares are mono. */
+.pricing .pricing__laddernum { font-family: var(--font-mono); font-weight: 600; font-size: 28px; letter-spacing: -0.02em; }
+
+/* The plan people pay for carries the page's one filled button, with the tile's cut. */
+.pricing .pricing__cta.btn--solid {
+  --sk-cut: 8px;
+  min-height: 48px; border: 0; background: var(--accent); color: var(--ink); font-weight: 600;
+  clip-path: polygon(var(--sk-cut) 0, 100% 0, 100% calc(100% - var(--sk-cut)), calc(100% - var(--sk-cut)) 100%, 0 100%, 0 var(--sk-cut));
+}
+.pricing .pricing__cta.btn--solid:hover:not(:disabled) { filter: brightness(1.06); transform: none; }
+.pricing .pricing__cta.btn--ghost { min-height: 48px; }
+
+/* The questions: hairline rows, not seven boxes. */
+.pricing .pricing__faq { gap: 0 28px; }
+.pricing .pricing__faqitem { padding: 18px 0 20px; border: 0; border-top: 1px solid var(--line); background: none; }
+
+/* Under a thumb: the Monthly / Yearly switch and the two inline links are 44px targets. */
+@media (hover: none) {
+  .pricing .pricing__toggle button { min-height: 44px; padding-inline: 10px; }
+  .pricing .pricing__toggle button::before { content: none; }
+  /* (An inline box: its block padding makes the target and moves no line.) */
+  .pricing .pricing__fine a, .pricing .pricing__enterprise a { padding-block: 14px; }
+}
+
+/* A phone: less air over the headline, the sections closer together. */
+@media (max-width: 640px) {
+  .pricing.pricing { padding: 36px 0 56px; }
+  .pricing .pricing__h1 { font-size: clamp(2rem, 9.5vw, 2.6rem); }
+  .pricing .pricing__faqitem { padding: 16px 0 18px; }
+}

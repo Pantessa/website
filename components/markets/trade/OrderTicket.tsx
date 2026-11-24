@@ -402,7 +402,11 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
 
   const sideTab = (s: TicketSide) => (
     <button key={s} type="button" role="tab" aria-selected={side === s} className={`mkt-ticket__tab ${sideTone(s) === 'sell' ? 'mkt-ticket__tab--sell' : ''}`} onClick={() => onSide(s)} data-side={s}>
-      {ticketSideLabel(pair, s)}
+      {/* A column has room for the verb; the full label ("Long ETH", "Stake on Lido") is the tab's name for a reader. */}
+      <span className="mkt-ticket__verb" aria-hidden>
+        {ticketSideLabel(pair, s).split(' ')[0]}
+      </span>
+      <span className="sr-only">{ticketSideLabel(pair, s)}</span>
     </button>
   )
 

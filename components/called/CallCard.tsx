@@ -12,6 +12,10 @@
 // A LONG POST IS CLAMPED, NEVER REWRITTEN. The whole text is in the page once;
 // a long one shows its first lines and a "More" that opens the rest in place
 // with no script (a checkbox ahead of the paragraph, its label after it).
+// When the words the label quoted sit past those first lines, the clamp
+// starts AT them: the head of the post steps out of sight behind a marked
+// ellipsis (the sheet draws the mark; the head's words stay in the page, in
+// place, and "More" puts them back). No word is moved, cut or rewritten.
 //
 // The text sits inside <bdi>: a post may carry right-to-left or override
 // characters, and they must not reorder the date, the verdict or the numbers
@@ -36,6 +40,9 @@ const STANCE_WORDS = { bull: 'Bull', bear: 'Bear' } as const
 /** A post longer than this (or with more lines than CLAMP_LINES) is clamped behind a "More". */
 const CLAMP_CHARS = 190
 const CLAMP_LINES = 4
+/** A head (the words before the quoted span) longer than this, or with this many line breaks, would push the quoted words past the clamp. */
+const HEAD_CHARS = 110
+const HEAD_BREAKS = 2
 
 export default function CallCard({ call, n, handle, unit = 'usd', lead = false }: CallCardProps) {
   const parts = splitQuote(call.text, call.quote)
@@ -45,7 +52,9 @@ export default function CallCard({ call, n, handle, unit = 'usd', lead = false }
     [`${JUDGE_DAYS} days`, call.d30],
     ['90 days', call.d90],
   ]
-  const long = Array.from(call.text).length > CLAMP_CHARS || call.text.split('\n').length > CLAMP_LINES
+  // The quoted span would fall under the fold: the clamp starts at it, behind a marked ellipsis.
+  const cutHead = !!parts && (Array.from(parts[0]).length > HEAD_CHARS || parts[0].split('\n').length > HEAD_BREAKS)
+  const long = cutHead || Array.from(call.text).length > CLAMP_CHARS || call.text.split('\n').length > CLAMP_LINES
   const moreId = `more-${call.postId}`
   return (
     <li className={`xrc-call sk-card is-${call.verdict}${call.picked ? ' is-picked' : ''}${call.origin === 'added' ? ' is-added' : ''}${lead ? ' xcl-leadcard' : ''}`} id={`call-${n}`} data-call={call.postId} data-verdict={call.verdict} data-origin={call.origin} data-lead={lead ? 'yes' : undefined}>
@@ -72,7 +81,13 @@ export default function CallCard({ call, n, handle, unit = 'usd', lead = false }
           <bdi>
             {parts ? (
               <>
-                {parts[0]}
+                {cutHead ? (
+                  <span className="xrc-call__cut">
+                    <span>{parts[0]}</span>
+                  </span>
+                ) : (
+                  parts[0]
+                )}
                 <mark className="xrc-call__quote">{parts[1]}</mark>
                 {parts[2]}
               </>
