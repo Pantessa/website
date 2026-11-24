@@ -194,7 +194,7 @@
 .sym:not(#_) .tvx > .mkt-chart__bar { gap: 8px 10px; }
 .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view { display: inline-flex; gap: 0; padding: 0; border: 1px solid var(--line); border-radius: 0; background: var(--bg); }
 .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn {
-  height: 30px; padding: 0 12px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: none; color: var(--muted); font-size: 11px; letter-spacing: 0.08em;
+  height: 30px; padding: 0 12px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: none; color: var(--muted); font-size: var(--fs-xs); letter-spacing: 0.08em;
 }
 .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn:first-child { border-left: 0; }
 .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn:hover { color: var(--fg); }
@@ -211,16 +211,19 @@
 
 @media (max-width: 640px) {
   /* One row over the plot: the view switch, the live dot, then four square cells. Every one a 44px press. */
-  /* Seven cells of 44px where the card has the room (390 wide); on a 375 phone they give a few px each, never the height. */
-  .sym:not(#_) .tvx > .mkt-chart__bar { gap: 4px; flex-wrap: nowrap; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view { flex: 0 1 134px; border-radius: 0; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn { flex: 1 1 0; width: auto; min-width: 38px; height: 44px; padding: 0; justify-content: center; }
+  /* Seven cells, every one 44 by 44 down to a 375 phone: the view switch is one joined box, the four cells after it
+     share their edges, and the live dot gives its room up (the foot under the plot says what the feed is doing). */
+  .sym:not(#_) .tvx > .mkt-chart__bar { gap: 0; flex-wrap: nowrap; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view { flex: 0 0 auto; margin-right: auto; border-radius: 0; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn { flex: 0 0 44px; width: 44px; min-width: 44px; height: 44px; padding: 0; justify-content: center; }
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn > span { display: none; }
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn::after { content: none; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :first-child { font-size: 0; gap: 0; flex: 1 1 6px; min-width: 6px; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open) { flex: 0 1 44px; width: auto; min-width: 38px; height: 44px; border-radius: 0; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :first-child { display: none; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open) { flex: 0 0 44px; width: 44px; min-width: 44px; height: 44px; margin-left: -1px; border-radius: 0; }
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open)::after { content: none; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span:not(:first-child) { flex: 0 1 44px; min-width: 38px; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span:not(:first-child) { flex: 0 0 44px; min-width: 44px; margin-left: -1px; }
+  /* The attribution keeps its look; its link is a 44px press. */
+  .sym:not(#_) .tvx .mkt-attrib { display: inline-flex; align-items: center; min-height: 44px; }
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open) { align-content: center; line-height: 0; }
   /* The plot owns the first screen. */
   /* The plot and the bar-size row end above the page's docked act bar. The height is measured (AdvancedChart sets

@@ -713,6 +713,16 @@ export function fitRange(calls: readonly Pick<CalledCall, 'barTime'>[], nowSec: 
   const pad = Math.max(10 * DAY_SEC, Math.round((nowSec - start) * share))
   return { from: start - pad, to: nowSec }
 }
+/**
+ * Is the chart on the view the fit asked for? The library snaps a range to its bars and may start at the first bar
+ * it has, so "the same" is: it starts no more than a fifth of the span before the asked start and no more than a
+ * third after it. (The failure this catches starts YEARS before.)
+ */
+export function fitHolds(now: { from: number; to: number }, asked: { from: number; to: number }): boolean {
+  const span = asked.to - asked.from
+  if (!(span > 0) || !Number.isFinite(now.from)) return true
+  return now.from >= asked.from - span * 0.2 && now.from <= asked.from + span * 0.34
+}
 /** Px of air the fit leaves beside the first call (half a mark's column and a little). */
 export const FIT_AIR_PX = 36
 /** Percent of the pane left empty after the newest bar by the fit: more on a phone, where a column is a larger share. */
@@ -906,6 +916,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   let fitView: { from: number; to: number; width: number } | null = null
   let revealAt = 0
   let fitting = false
+  let fitSeq = 0
   let startAbove = true
   let margins: { original: PaneMargins; applied: PaneMargins } | null = null
   let resizeTimer: ReturnType<typeof setTimeout> | null = null
@@ -1143,6 +1154,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       const left = x === null ? call.barTime < r.from : x < pad
       const from = call.barTime - span * (centre ? 0.5 : left ? 0.3 : 0.7)
       revealAt = Date.now()
+      fitSeq++
       fitView = null
       void c.setVisibleRange({ from, to: from + span }).catch(() => undefined)
     } catch {
@@ -1186,11 +1198,34 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       fitView = { from: now.from, to: now.to, width: paneSize()?.width ?? width }
     } catch {
       /* the chart keeps the view it has; "Fit all calls" asks again */
-    } finally {
-      fitting = false
     }
-    // A call that was opened before the fit landed (a link to one call) is brought into view on the fitted chart.
-    setTimeout(revealFocus, 420)
+    // THE FIT MUST HOLD. The library sets a range of its own when a symbol's first bars arrive, and on a market whose
+    // history is slow to load (a stock) that can land AFTER the fit: the chart then opened on five years with the
+    // calls in its last sliver. So the view is read back three times over the next seconds and the fit is put again
+    // while it is not the one asked for. Not awaited: the pins draw meanwhile.
+    const seq = ++fitSeq
+    void (async () => {
+      const span = range.to - range.from
+      for (const wait of [450, 900, 1500]) {
+        await sleep(wait)
+        if (seq !== fitSeq || chart !== c) return
+        try {
+          if (fitHolds(c.getVisibleRange(), range)) continue
+          await Promise.race([c.setVisibleRange(range, { percentRightMargin: fitRightMargin(paneSize()?.width ?? width) }), sleep(4000)])
+          await sleep(60)
+          const now = c.getVisibleRange()
+          fitView = { from: now.from, to: now.to, width: paneSize()?.width ?? width }
+        } catch {
+          /* read again on the next pass */
+        }
+      }
+      void span
+      if (seq === fitSeq) {
+        fitting = false
+        // A call that was opened before the fit landed (a link to one call) is brought into view on the fitted chart.
+        setTimeout(revealFocus, 120)
+      }
+    })()
   }
 
   /** Where everything is, right now. Null while the chart cannot say (no bars yet). */
@@ -1537,6 +1572,8 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       resizeTimer = null
       marginWant = null
       fitView = null
+      fitSeq++
+      fitting = false
       cover = 0
       if (driftTimer) clearInterval(driftTimer)
       relayoutTimer = renderTimer = null
@@ -1603,10 +1640,12 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     setCover(px) {
       const next = Number.isFinite(px) && px > 8 ? Math.round(px) : 0
       if (Math.abs(next - cover) < 4) return
+      // The card arriving or leaving is a new view for the opened bar; a few px of the page scrolling under it is not.
+      const arrived = (next > 0) !== (cover > 0) || Math.abs(next - cover) > 40
       cover = next
       applyMargins()
       layer.invalidate()
-      setTimeout(revealFocus, 380)
+      if (arrived) setTimeout(revealFocus, 380)
     },
     retheme() {
       layer.invalidate()

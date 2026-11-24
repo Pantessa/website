@@ -411,6 +411,52 @@ try {
     await shot('chart-r2-gaps-1440')
   }
 
+  // ── THE FIT HOLDS: a stranger who lands on a stock's record sees the fitted year, every time ──
+  if (want('fit')) {
+    const gapCalls = await recordOf(GAP_HANDLE, GAP_SYMBOL)
+    const first = gapCalls.reduce((m, k) => Math.min(m, k.barTime), Infinity)
+    const wantDays = (Date.now() / 1000 - first) / 86400
+    const seen = []
+    for (const phone of [false, true]) {
+      await viewport(phone ? 390 : 1440, phone ? 844 : 900, phone)
+      for (let i = 0; i < 5; i++) {
+        const s = await open(`/t/${GAP_SYMBOL}?x=${GAP_HANDLE}`, gapCalls, 6000)
+        await sleep(3200)
+        const t = await ev(READ(gapCalls))
+        seen.push(Math.round((t.to - t.from) / 86400))
+        void s
+      }
+    }
+    check(`the fit holds on a market that closes: 10 loads of /t/${GAP_SYMBOL}?x=${GAP_HANDLE} (5 at 1440, 5 at 390), every one on the fitted span (the calls' own ${Math.round(wantDays)} days and the air before them), never the symbol's whole history`, seen.length === 10 && seen.every((d) => d > wantDays * 0.9 && d < wantDays * 1.45), seen)
+  }
+
+  // ── THE SHARE PICTURE ON A PHONE, through the dialog ──────────────────
+  if (want('share')) {
+    await viewport(390, 844, true)
+    let s = await open(`/t/${SYMBOL}?x=${HANDLE}`, all)
+    await sleep(3200)
+    const p = await centerOf('.tvx .mkt-sharebtn')
+    await tapAt(p.x, p.y)
+    let src = null
+    for (let i = 0; i < 40 && !src; i++) {
+      await sleep(300)
+      src = await ev(`(() => { const im = document.querySelector('.mkt-share img, [role="dialog"] img[src^="data:"], [role="dialog"] img[src^="blob:"]'); return im && im.complete && im.naturalWidth > 0 ? im.src : null })()`)
+    }
+    let saved = null
+    if (src) {
+      const data = src.startsWith('data:') ? src : await ev(`(async () => { const b = await (await fetch(${JSON.stringify(src)})).blob(); return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b) }) })()`)
+      if (SHOTS && SHOTS !== true && typeof data === 'string') {
+        fs.mkdirSync(String(SHOTS), { recursive: true })
+        saved = path.join(String(SHOTS), 'chart-r3-share-picture-390.png')
+        fs.writeFileSync(saved, Buffer.from(data.slice(data.indexOf(',') + 1), 'base64'))
+      }
+    }
+    const size = await ev(`(() => { const im = document.querySelector('.mkt-share img, [role="dialog"] img'); return im ? [im.naturalWidth, im.naturalHeight] : null })()`)
+    check(`phone, Share pressed on the chart's own bar: the dialog draws a picture (${size ? size.join('x') : 'none'})${saved ? `, saved to ${path.basename(saved)}` : ''}`, !!src && !!size && size[0] > 200, { src: src ? src.slice(0, 40) : null })
+    await shot('chart-r3-share-dialog-390')
+    void s
+  }
+
   const errors = events.filter((e) => e.sessionId === sessionId && e.method === 'Runtime.exceptionThrown').map((e) => (e.params.exceptionDetails.exception?.description ?? e.params.exceptionDetails.text ?? '').split('\n')[0])
   check('no page error through the whole drive', errors.length === 0, errors.slice(0, 3))
   ws.close()

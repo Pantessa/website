@@ -164,6 +164,19 @@ export function placeMarks(input: PlaceInput): PlacedMark[] {
   const floor = pane.height - input.keepBottom - 4
   const out: PlacedMark[] = []
   const focusCall = input.focusId ? (input.calls.find((c) => c.postId === input.focusId) ?? null) : null
+  // The opened call first: alone, on its own bar, over its price. Everything else makes way for it.
+  let focusBox: { x: number; y: number; s: number } | null = null
+  let focusTip: { x: number; y: number } | null = null
+  if (focusCall) {
+    const fx = input.x(focusCall.barTime)
+    const fy = input.y(focusCall.priceAt)
+    if (fy !== null && fx >= 0 && fx <= pane.width) {
+      const s = MARK_PX.focus
+      const x = Math.round(Math.max(4, Math.min(fx - s / 2, pane.width - s - 4)))
+      focusBox = { x, y: Math.round(Math.max(topAt(x) + 2, Math.min(fy - MARK_PX.lift - 8 - s, floor - s))), s }
+      focusTip = { x: fx, y: fy }
+    }
+  }
   // The columns on the pane, each as wide as its widest chip, then spread like the cards' rail: every column as close
   // to its own stretch as it can be, none over its neighbour, none off the pane (a stretch half off the edge slides in).
   const cols = binMarks(input.calls, input.barSec, binBars, focusCall?.postId)
@@ -171,25 +184,53 @@ export function placeMarks(input: PlaceInput): PlacedMark[] {
       // The middle of the stretch; where the stretch runs past the newest bar (no bars there yet), the middle of its calls.
       const xs = bin.calls.map((c) => input.x(c.barTime))
       const mid = (input.x(bin.t0) + input.x(bin.t1)) / 2
-      return { bin, cx: Math.max(Math.min(...xs) - slot / 2, Math.min(mid, Math.max(...xs) + slot / 2)), w: Math.max(...bin.chips.map((chip) => chipWidth(tile, chip.ids.length))) }
+      let high: number | null = null
+      for (const c of bin.calls) {
+        const y = input.y(c.priceAt)
+        if (y !== null && Number.isFinite(y) && (high === null || y < high)) high = y
+      }
+      return { bin, high, cx: Math.max(Math.min(...xs) - slot / 2, Math.min(mid, Math.max(...xs) + slot / 2)), w: Math.max(...bin.chips.map((chip) => chipWidth(tile, chip.ids.length))), h: bin.chips.length * tile + (bin.chips.length - 1) * MARK_PX.gap }
     })
-    .filter((c) => c.cx >= -slot / 2 && c.cx <= pane.width + slot / 2)
+    .filter((c) => c.high !== null && c.cx >= -slot / 2 && c.cx <= pane.width + slot / 2)
   const left = cols.map((c) => c.cx - c.w / 2)
   const air = 4
-  for (let i = 0; i < cols.length; i++) left[i] = Math.max(left[i], i === 0 ? 2 : left[i - 1] + cols[i - 1].w + air)
-  for (let i = cols.length - 1; i >= 0; i--) left[i] = Math.min(left[i], i === cols.length - 1 ? pane.width - cols[i].w - 2 : left[i + 1] - air - cols[i].w)
+  const lo = 2
+  const hi = (k: number) => pane.width - cols[k].w - 2
+  for (let i = 0; i < cols.length; i++) left[i] = Math.max(left[i], i === 0 ? lo : left[i - 1] + cols[i - 1].w + air)
+  for (let i = cols.length - 1; i >= 0; i--) left[i] = Math.min(left[i], i === cols.length - 1 ? hi(i) : left[i + 1] - air - cols[i].w)
+  const yOf = (k: number, x: number) => Math.max(topAt(x), Math.min(Math.round((cols[k].high as number) - MARK_PX.lift - cols[k].h), floor - cols[k].h))
+  const top = cols.map((_, k) => yOf(k, left[k]))
+  // NOTHING SITS UNDER THE OPENED TILE. A column that would touch it steps aside (and pushes its neighbours along);
+  // where the pane has no room on that side it goes to the other, and failing both it stands over or under the tile.
+  if (focusBox) {
+    const f = focusBox
+    const gap = 4
+    const hits = (k: number) => left[k] < f.x + f.s + gap && f.x - gap < left[k] + cols[k].w && top[k] < f.y + f.s + gap && f.y - gap < top[k] + cols[k].h
+    const push = (k: number, dir: -1 | 1): boolean => {
+      const next = left.slice()
+      next[k] = dir < 0 ? f.x - gap - cols[k].w : f.x + f.s + gap
+      if (dir < 0) for (let i = k - 1; i >= 0; i--) next[i] = Math.min(next[i], next[i + 1] - air - cols[i].w)
+      else for (let i = k + 1; i < cols.length; i++) next[i] = Math.max(next[i], next[i - 1] + cols[i - 1].w + air)
+      if (next[0] < lo || next[cols.length - 1] > hi(cols.length - 1)) return false
+      for (let i = 0; i < cols.length; i++) left[i] = next[i]
+      return true
+    }
+    const stacked = new Set<number>()
+    for (let k = 0; k < cols.length; k++) {
+      if (!hits(k)) continue
+      const first: -1 | 1 = left[k] + cols[k].w / 2 <= f.x + f.s / 2 ? -1 : 1
+      if (push(k, first) || push(k, first < 0 ? 1 : -1)) continue
+      const over = f.y - gap - cols[k].h
+      top[k] = over >= topAt(left[k]) ? over : Math.min(floor - cols[k].h, f.y + f.s + gap)
+      stacked.add(k)
+    }
+    // A column that moved sideways stands at the height its new place allows (the legend's corner is not everywhere).
+    for (let k = 0; k < cols.length; k++) if (!stacked.has(k)) top[k] = yOf(k, left[k])
+  }
   for (let k = 0; k < cols.length; k++) {
     const { bin } = cols[k]
     const cx = left[k] + cols[k].w / 2
-    let high: number | null = null
-    for (const c of bin.calls) {
-      const y = input.y(c.priceAt)
-      if (y !== null && Number.isFinite(y) && (high === null || y < high)) high = y
-    }
-    if (high === null) continue
-    const stackH = bin.chips.length * tile + (bin.chips.length - 1) * MARK_PX.gap
-    let y = Math.round(high - MARK_PX.lift - stackH)
-    y = Math.max(topAt(left[k]), Math.min(y, floor - stackH))
+    let y = top[k]
     const lone = bin.calls.length === 1 ? bin.calls[0] : null
     for (const chip of bin.chips) {
       const w = chipWidth(tile, chip.ids.length)
@@ -199,23 +240,8 @@ export function placeMarks(input: PlaceInput): PlacedMark[] {
       y += tile + MARK_PX.gap
     }
   }
-  if (focusCall) {
-    const fx = input.x(focusCall.barTime)
-    const fy = input.y(focusCall.priceAt)
-    if (fy !== null && fx >= 0 && fx <= pane.width) {
-      const s = MARK_PX.focus
-      const x = Math.round(Math.max(4, Math.min(fx - s / 2, pane.width - s - 4)))
-      let y = Math.round(Math.max(topAt(x) + 2, Math.min(fy - MARK_PX.lift - 8 - s, floor - s)))
-      // It stands clear of the crowd beside it: above the stack it would cover, when the pane has the room.
-      for (let pass = 0; pass < 3; pass++) {
-        const under = out.filter((m) => m.x < x + s + 3 && x < m.x + m.w + 3 && m.y < y + s + 3 && y < m.y + m.h + 3)
-        if (!under.length) break
-        const above = Math.min(...under.map((m) => m.y)) - s - 6
-        if (above < topAt(x) + 2) break
-        y = above
-      }
-      out.push({ key: `focus:${focusCall.postId}`, ids: [focusCall.postId], verdict: focusCall.verdict, added: focusCall.origin === 'added', count: 1, x, y, w: s, h: s, tile: s, focus: true, tip: { x: fx, y: fy } })
-    }
+  if (focusCall && focusBox && focusTip) {
+    out.push({ key: `focus:${focusCall.postId}`, ids: [focusCall.postId], verdict: focusCall.verdict, added: focusCall.origin === 'added', count: 1, x: focusBox.x, y: focusBox.y, w: focusBox.s, h: focusBox.s, tile: focusBox.s, focus: true, tip: focusTip })
   }
   return out
 }
@@ -442,9 +468,13 @@ function paintMark(ctx: Ctx, m: PlacedMark, inks: MarkInks, mono: string, hover:
 }
 
 /** The whole layer: leaders first, the crowd, then the opened call on top. */
-export function paintMarks(ctx: Ctx, marks: readonly PlacedMark[], inks: MarkInks, mono: string, hoverKey: string | null): void {
+/** How strongly every other mark is drawn while one call is open: it reads alone. */
+export const REST_ALPHA = 0.35
+
+export function paintMarks(ctx: Ctx, marks: readonly PlacedMark[], inks: MarkInks, mono: string, hoverKey: string | null, quiet: boolean = marks.some((m) => m.focus)): void {
   for (const m of marks) {
     if (!m.tip) continue
+    ctx.globalAlpha = quiet && !m.focus && m.key !== hoverKey ? REST_ALPHA : 1
     const ink = markInk(m.verdict, inks)
     const fromX = m.x + m.w / 2
     const fromY = m.y + m.h
@@ -465,7 +495,12 @@ export function paintMarks(ctx: Ctx, marks: readonly PlacedMark[], inks: MarkInk
     ctx.fillStyle = ink
     ctx.fillRect(Math.round(m.tip.x - d / 2), Math.round(m.tip.y - d / 2), d, d)
   }
-  for (const m of marks) if (!m.focus) paintMark(ctx, m, inks, mono, m.key === hoverKey)
+  for (const m of marks) {
+    if (m.focus) continue
+    ctx.globalAlpha = quiet && m.key !== hoverKey ? REST_ALPHA : 1
+    paintMark(ctx, m, inks, mono, m.key === hoverKey)
+  }
+  ctx.globalAlpha = 1
   for (const m of marks) if (m.focus) paintMark(ctx, m, inks, mono, false)
 }
 
@@ -869,10 +904,12 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
           const focus = box.id === scene.focusId
           if (!card || !box.inView || focus !== pass) continue
           const ty = price.priceToCoordinate(card.priceAt)
+          b.globalAlpha = scene.focusId && !focus && hover !== `card:${box.id}` ? 0.5 : 1
           paintCard(b, card, box, ty === null ? null : { x: xOf(card.barTime), y: ty }, inks, fonts, { focus, hover: hover === `card:${box.id}` })
+          b.globalAlpha = 1
         }
       }
-      paintMarks(b, marks, inks, fonts.mono, hover)
+      paintMarks(b, marks, inks, fonts.mono, hover, !!scene.focusId)
       // The mark under the mouse says what it is: the call a press would open, as a card beside it.
       const over = hover && !hover.startsWith('card:') ? marks.find((m) => m.key === hover) : null
       const nextId = over && !over.focus ? pickFrom(over, scene.focusId) : null
