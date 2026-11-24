@@ -68,8 +68,8 @@
 .mkt-frame.mkt-frame--sym .sym__body .mkt-card__rows { margin-inline: 0; }
 .mkt-frame.mkt-frame--sym .sym__body .mk-overview, .mkt-frame.mkt-frame--sym .sym__body .mk-trade { gap: 0 28px; }
 /* A tab without the chart opens straight under the tabs' own hairline: its first section draws none. */
-.mkt-frame.mkt-frame--sym .sym[data-chart='parked'] .sym__body .mk-trade > :first-child:is(.mkt-card),
-.mkt-frame.mkt-frame--sym .sym[data-chart='parked'] .sym__body .mk-trade > :first-child > .mkt-card:first-child { border-top-color: transparent; }
+.mkt-frame.mkt-frame--sym .sym[data-chart='parked'] .sym__body .mk-trade > .mkt-card:first-child,
+.mkt-frame.mkt-frame--sym .sym[data-chart='parked'] .sym__body .mk-trade > :first-child > .mkt-card:first-child { border-top: 0; padding-top: 4px; }
 /* Chips inside a section: hard cells. */
 .mkt-frame.mkt-frame--sym .sym__body .mkt-chip, .mkt-frame.mkt-frame--sym .sym__body .mkt-order__preset, .mkt-frame.mkt-frame--sym .sym__body .mkt-order__custom,
 .mkt-frame.mkt-frame--sym .sym__body .mkt-routes__filter, .mkt-frame.mkt-frame--sym .sym__body .mkt-routes__fold, .mkt-frame.mkt-frame--sym .sym__body .mkt-route__tag,
@@ -106,7 +106,8 @@
 .mkt-frame.mkt-frame--sym .mk-askdock__k { font-size: 11px; font-weight: 500; letter-spacing: 0.12em; color: var(--fg); }
 .mkt-frame.mkt-frame--sym .mk-askdock__body { padding: 0 0 14px; }
 .mkt-frame.mkt-frame--sym .sym--cockpit .sym__main { margin-top: 0; }
-.mkt-frame.mkt-frame--sym .sym--cockpit .mk-askdock.is-parked + .sym__main { margin-top: 4px; }
+/* A tab without the chart: air between the tabs' hairline and its first line. */
+.mkt-frame.mkt-frame--sym .sym--cockpit .mk-askdock.is-parked + .sym__main { margin-top: 14px; }
 
 /* ── The right column's ticket (desktop) ─────────────────────────────── */
 
