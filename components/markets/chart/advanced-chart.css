@@ -202,16 +202,18 @@
 
 @media (max-width: 640px) {
   /* One row over the plot: the view switch, the live dot, then four square cells. Every one a 44px press. */
-  .sym:not(#_) .tvx > .mkt-chart__bar { gap: 6px; flex-wrap: nowrap; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view { border-radius: 0; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  /* Seven cells of 44px where the card has the room (390 wide); on a 375 phone they give a few px each, never the height. */
+  .sym:not(#_) .tvx > .mkt-chart__bar { gap: 4px; flex-wrap: nowrap; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view { flex: 0 1 134px; border-radius: 0; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn { flex: 1 1 0; width: auto; min-width: 38px; height: 44px; padding: 0; justify-content: center; }
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn > span { display: none; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn::after { inset: -2px 0; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :first-child { font-size: 0; gap: 0; flex: 1 1 0; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open) { position: relative; width: 40px; height: 40px; border-radius: 0; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open)::after { content: ''; position: absolute; inset: -2px; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn::after { content: none; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :first-child { font-size: 0; gap: 0; flex: 1 1 6px; min-width: 6px; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open) { flex: 0 1 44px; width: auto; min-width: 38px; height: 44px; border-radius: 0; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open)::after { content: none; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span:not(:first-child) { flex: 0 1 44px; min-width: 38px; }
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open) { align-content: center; line-height: 0; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span > button:not(#_) { width: 40px; height: 40px; border-radius: 0; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span > button:not(#_) { width: 100%; height: 44px; border-radius: 0; }
   /* The plot owns the first screen. */
   .sym:not(#_) .tchart:not(.tchart--expanded) .mkt-chart__canvas.tvx__canvas { height: clamp(380px, 60dvh, 560px); min-height: 380px; }
   .tvx-tf { display: flex; width: 100%; }
@@ -219,5 +221,8 @@
   .tvx-tf > button:disabled { opacity: 0.5; }
   /* Your drawings, folded: its title alone. Opened, the scenario picks and the tools come with it. */
   .tvx-plan.is-folded .tvx-scn__pick, .tvx-plan.is-folded .tvx-plan__tools { display: none; }
-  .tvx-plan__title { min-height: 36px; }
+  .tvx-plan__title { min-height: 44px; }
 }
+
+/* The plot: true black, square, on one hairline (the card around it is the page's). */
+.sym:not(#_) .tvx > .tvx__canvas { border-radius: 0; border: 1px solid var(--line); overflow: hidden; }

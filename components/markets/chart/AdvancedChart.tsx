@@ -50,7 +50,7 @@ import { planFor, type PlanItem } from '@/lib/tv/plan'
 import { pageTfOfResolution, resolutionsForSource, tvResolution, TF_SECONDS } from '@/lib/tv/resolution'
 import { linesFromShapes, sameLines, shapeFromLine, type ShapeSnapshot } from '@/lib/tv/shapes'
 import { externalApplied, layoutForChart, legacyMoved, markExternalApplied, markLegacyMoved, readStoredLayout, writeStoredLayout } from '@/lib/tv/store'
-import { tvCssProperties, tvOverrides, tvPhoneOverrides, tvStudyOverrides } from '@/lib/tv/theme'
+import { TV_FONT_CSS_URL, TV_FONT_FAMILY, tvCssProperties, tvOverrides, tvPhoneOverrides, tvStudyOverrides } from '@/lib/tv/theme'
 import type { TvChartApi, TvWidget } from '@/lib/tv/types'
 import CallFocus from '@/components/called/CallFocus'
 import { useCalledPins } from '@/lib/called-it/use-record'
@@ -405,6 +405,7 @@ export default function AdvancedChart({
           enabled_features: ['seconds_resolution', ...TV_IFRAME_FEATURES, ...(phone ? ['hide_left_toolbar_by_default'] : [])],
           overrides: { ...tvOverrides(tokens), ...(phone ? tvPhoneOverrides() : {}) },
           studies_overrides: tvStudyOverrides(tokens),
+          custom_font_family: TV_FONT_FAMILY,
           loading_screen: { backgroundColor: tokens.bg, foregroundColor: tokens.accent },
           favorites: { intervals: resolutionsForSource(pair.source) },
           time_frames: [
@@ -445,6 +446,26 @@ export default function AdvancedChart({
           const chart = w.activeChart()
           chartRef.current = chart
           applyTheme(tokens)
+          // The scales' face: the frame has its own document, so it is handed the page's mono, and the chart is
+          // drawn again once the face is in (until then, and if it never comes, the system's mono).
+          try {
+            const doc = host.querySelector('iframe')?.contentDocument
+            if (doc && !doc.querySelector('link[data-tvx-font]')) {
+              const link = doc.createElement('link')
+              link.rel = 'stylesheet'
+              link.href = TV_FONT_CSS_URL
+              link.setAttribute('data-tvx-font', '')
+              doc.head.appendChild(link)
+              link.addEventListener('load', () => {
+                void doc.fonts
+                  ?.load("12px 'Geist Mono'")
+                  .then(() => !dead && applyTheme(tokensRef.current ?? tokens))
+                  .catch(() => undefined)
+              })
+            }
+          } catch {
+            /* the system's mono stands */
+          }
 
           // A saved layout remembers the symbol and frame it was saved on: this page decides both.
           try {

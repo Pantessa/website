@@ -164,9 +164,18 @@ export function placeMarks(input: PlaceInput): PlacedMark[] {
   const floor = pane.height - input.keepBottom - 4
   const out: PlacedMark[] = []
   const focusCall = input.focusId ? (input.calls.find((c) => c.postId === input.focusId) ?? null) : null
-  for (const bin of binMarks(input.calls, input.barSec, binBars, focusCall?.postId)) {
-    const cx = (input.x(bin.t0) + input.x(bin.t1)) / 2
-    if (cx < -slot / 2 || cx > pane.width + slot / 2) continue
+  // The columns on the pane, each as wide as its widest chip, then spread like the cards' rail: every column as close
+  // to its own stretch as it can be, none over its neighbour, none off the pane (a stretch half off the edge slides in).
+  const cols = binMarks(input.calls, input.barSec, binBars, focusCall?.postId)
+    .map((bin) => ({ bin, cx: (input.x(bin.t0) + input.x(bin.t1)) / 2, w: Math.max(...bin.chips.map((chip) => chipWidth(tile, chip.ids.length))) }))
+    .filter((c) => c.cx >= -slot / 2 && c.cx <= pane.width + slot / 2)
+  const left = cols.map((c) => c.cx - c.w / 2)
+  const air = 4
+  for (let i = 0; i < cols.length; i++) left[i] = Math.max(left[i], i === 0 ? 2 : left[i - 1] + cols[i - 1].w + air)
+  for (let i = cols.length - 1; i >= 0; i--) left[i] = Math.min(left[i], i === cols.length - 1 ? pane.width - cols[i].w - 2 : left[i + 1] - air - cols[i].w)
+  for (let k = 0; k < cols.length; k++) {
+    const { bin } = cols[k]
+    const cx = left[k] + cols[k].w / 2
     let high: number | null = null
     for (const c of bin.calls) {
       const y = input.y(c.priceAt)
@@ -175,12 +184,11 @@ export function placeMarks(input: PlaceInput): PlacedMark[] {
     if (high === null) continue
     const stackH = bin.chips.length * tile + (bin.chips.length - 1) * MARK_PX.gap
     let y = Math.round(high - MARK_PX.lift - stackH)
-    const widest = Math.max(...bin.chips.map((chip) => chipWidth(tile, chip.ids.length)))
-    y = Math.max(topAt(cx - widest / 2), Math.min(y, floor - stackH))
+    y = Math.max(topAt(left[k]), Math.min(y, floor - stackH))
     const lone = bin.calls.length === 1 ? bin.calls[0] : null
     for (const chip of bin.chips) {
       const w = chipWidth(tile, chip.ids.length)
-      const x = Math.round(Math.max(2, Math.min(cx - w / 2, pane.width - w - 2)))
+      const x = Math.round(cx - w / 2)
       const tipY = lone ? input.y(lone.priceAt) : null
       out.push({ key: `${bin.key}:${chip.added ? '+' : ''}${chip.verdict}`, ids: chip.ids, verdict: chip.verdict, added: chip.added, count: chip.ids.length, x, y, w, h: tile, tile, focus: false, tip: lone && tipY !== null ? { x: input.x(lone.barTime), y: tipY } : null })
       y += tile + MARK_PX.gap

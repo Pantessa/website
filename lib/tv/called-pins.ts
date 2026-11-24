@@ -42,6 +42,7 @@
 import { ADDED_MARK, PIN_URL_MAX, VERDICT_WORDS, cmpPostId, fmtDay, judgedLine, moveLine, recordHref, sinceLine, type CallVerdict, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
 import { cardFont, cardSize, createMarksLayer, pageFonts, pageMeasure, type CardBox, type CardInks, type CardSpec } from './called-overlay'
 import type { ShapeSnapshot } from './shapes'
+import { TV_FONT_FAMILY } from './theme'
 import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvPriceScaleApi, TvShapeOptions, TvWidget } from './types'
 
 // ── The words on a pin ──────────────────────────────────────────────────
@@ -803,7 +804,8 @@ function canvasMeasure(fontPx: number): Measure {
   try {
     const ctx = document.createElement('canvas').getContext('2d')
     if (!ctx) throw new Error('no canvas')
-    ctx.font = `${fontPx}px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif`
+    // The family the chart's canvas is set in (lib/tv/theme): the page has the same face loaded.
+    ctx.font = `${fontPx}px ${TV_FONT_FAMILY}`
     // A hair over the measure: a line planned to fit is never wrapped again by the library.
     return (s) => ctx.measureText(s).width * 1.02 + 1
   } catch {
