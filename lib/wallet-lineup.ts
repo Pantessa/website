@@ -16,12 +16,19 @@
 // a Robinhood Chain (4663) build on Phantom ends at the wallet's own refusal
 // (surfaced as a wallet-refused beacon) — see WALLET-MATRIX.md.
 //
+// Ledger (2026-11-24, Nate) rides RainbowKit's ledgerWallet: a WalletConnect
+// lane that pairs with Ledger Live (desktop or phone), so it joins only when a
+// WC project id is set. Someone whose Ledger sits behind MetaMask or Rabby
+// already signs through those lanes; this one is for Ledger Live users.
+// Signing on the device itself (blind signing, one press per step) is in
+// WALLET-MATRIX.md.
+//
 // Why gated: WC wallets init the WC SignClient, which touches browser-only
 // indexedDB during SSR (fatal under Next 16) and needs a real project id.
 // The Coinbase gotchas (CLAUDE.md) are untouched: eoaOnly stays pinned in
 // lib/wagmi.ts (popup-after-await breaks Smart-Wallet second signatures).
 
-export type WalletLaneId = 'injected' | 'metaMask' | 'coinbase' | 'phantom' | 'rainbow' | 'walletConnect'
+export type WalletLaneId = 'injected' | 'metaMask' | 'coinbase' | 'phantom' | 'rainbow' | 'ledger' | 'walletConnect'
 
 /** A real WC Cloud project id — set AND not the placeholder. */
 export function wcConfigured(projectId: string | null | undefined): boolean {
@@ -31,7 +38,7 @@ export function wcConfigured(projectId: string | null | undefined): boolean {
 /** The wallet lineup for the RainbowKit modal, in display order. */
 export function walletLineup(projectId: string | null | undefined): WalletLaneId[] {
   const base: WalletLaneId[] = ['injected', 'metaMask', 'coinbase', 'phantom']
-  return wcConfigured(projectId) ? [...base, 'rainbow', 'walletConnect'] : base
+  return wcConfigured(projectId) ? [...base, 'rainbow', 'ledger', 'walletConnect'] : base
 }
 
 /** The unified sign-in modal's wallet-lane subtitle (rule 6 — the lane lives
@@ -39,7 +46,7 @@ export function walletLineup(projectId: string | null | undefined): WalletLaneId
  *  WC arrives, so env-absent stays byte-identical). */
 export function walletLaneHint(projectId: string | null | undefined): string {
   return wcConfigured(projectId)
-    ? 'MetaMask, Coinbase, Phantom, Rainbow — or scan the QR with any mobile wallet (WalletConnect).'
+    ? 'MetaMask, Coinbase, Phantom, Rainbow, Ledger — or scan the QR with any mobile wallet (WalletConnect).'
     : 'MetaMask, Coinbase, Phantom, or any installed browser wallet.'
 }
 
@@ -51,6 +58,7 @@ export const WALLET_LANE_NAMES: Record<WalletLaneId, string> = {
   coinbase: 'Coinbase Wallet',
   phantom: 'Phantom',
   rainbow: 'Rainbow',
+  ledger: 'Ledger',
   walletConnect: 'WalletConnect',
   injected: 'Any browser wallet',
 }

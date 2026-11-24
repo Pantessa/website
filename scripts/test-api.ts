@@ -6029,7 +6029,8 @@ async function main() {
       return (
         JSON.stringify(dark) === JSON.stringify(['injected', 'metaMask', 'coinbase', 'phantom']) &&
         JSON.stringify(placeholder) === JSON.stringify(dark) &&
-        JSON.stringify(lit) === JSON.stringify(['injected', 'metaMask', 'coinbase', 'phantom', 'rainbow', 'walletConnect']) &&
+        // Ledger joins the WC lanes (2026-11-24): it pairs through Ledger Live.
+        JSON.stringify(lit) === JSON.stringify(['injected', 'metaMask', 'coinbase', 'phantom', 'rainbow', 'ledger', 'walletConnect']) &&
         wcConfigured(undefined) === false &&
         wcConfigured('abc123realprojectid') === true &&
         // the modal lane's one env-sensitive line: absent = today's copy,
@@ -6065,6 +6066,33 @@ async function main() {
         // the catch-all rule is unchanged by the new lane: last without WC, gone with it
         chipDark[chipDark.length - 1].id === 'injected' &&
         !chipLit.some((c) => c.id === 'injected')
+      )
+    })(),
+  )
+  // Ledger (2026-11-24): a WalletConnect lane (Ledger Live), so it shows ONLY
+  // with a real WC id, sits before the WalletConnect catch-all, wears its own
+  // mark, and is RainbowKit's ledgerWallet — never Ledger Connect Kit (the
+  // library hijacked in the December 2023 supply-chain attack).
+  check(
+    'wallet lineup: Ledger is a WC lane (absent without a project id), named in the lit hint, a chip with its mark, wired to RainbowKit ledgerWallet and never Connect Kit',
+    (() => {
+      const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const wagmi = strip(readFileSync(pathJoin(process.cwd(), 'lib/wagmi.ts'), 'utf8'))
+      const marks = strip(readFileSync(pathJoin(process.cwd(), 'components/wallet-marks.tsx'), 'utf8'))
+      const pkg = readFileSync(pathJoin(process.cwd(), 'package.json'), 'utf8')
+      const lit = walletLineup('abc123realprojectid')
+      return (
+        !walletLineup(null).includes('ledger') &&
+        !walletLaneChips(null).some((c) => c.id === 'ledger') &&
+        lit.indexOf('ledger') > lit.indexOf('rainbow') &&
+        lit.indexOf('ledger') < lit.indexOf('walletConnect') &&
+        WALLET_LANE_NAMES.ledger === 'Ledger' &&
+        /Ledger/.test(walletLaneHint('abc123realprojectid')) &&
+        !/Ledger/.test(walletLaneHint(null)) &&
+        walletLaneChips('abc123realprojectid').some((c) => c.id === 'ledger' && c.name === 'Ledger') &&
+        /ledgerWallet,/.test(wagmi) && /\bledger:\s*ledgerWallet\b/.test(wagmi) &&
+        /export function LedgerWalletMark/.test(marks) &&
+        !/connect-kit/i.test(pkg) && !/connect-kit/i.test(wagmi)
       )
     })(),
   )

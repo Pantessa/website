@@ -157,6 +157,17 @@ export function PhantomWalletMark({ size = 22 }: { size?: number }) {
   )
 }
 
+/** Ledger's official mark (rainbowkit src/wallets/walletConnectors/
+ *  ledgerWallet/ledgerWallet.svg): the white corner brackets on black. */
+export function LedgerWalletMark({ size = 22 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 28 28" width={size} height={size} fill="none" aria-hidden style={box}>
+      <rect width="28" height="28" fill="#000"/>
+<path fill="#fff" fillRule="evenodd" clipRule="evenodd" d="M11.65 4.4H4.4V9h1.1V5.5l6.15-.04V4.4Zm.05 5.95v7.25h4.6v-1.1h-3.5l-.04-6.15H11.7ZM4.4 23.6h7.25v-1.06L5.5 22.5V19H4.4v4.6ZM16.35 4.4h7.25V9h-1.1V5.5l-6.15-.04V4.4Zm7.25 19.2h-7.25v-1.06l6.15-.04V19h1.1v4.6Z"/>
+    </svg>
+  )
+}
+
 /** The catch-all lane has no brand of its own — whatever extension is
  *  installed. A neutral wallet glyph on a surface tile keeps the strip's
  *  rhythm without inventing a logo for it. */
@@ -180,6 +191,7 @@ export const WALLET_MARKS: Record<WalletLaneId, WalletMark> = {
   coinbase: CoinbaseWalletMark,
   phantom: PhantomWalletMark,
   rainbow: RainbowWalletMark,
+  ledger: LedgerWalletMark,
   walletConnect: WalletConnectWalletMark,
   injected: InjectedWalletMark,
 }

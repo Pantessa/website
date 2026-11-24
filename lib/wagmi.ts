@@ -6,6 +6,7 @@ import {
   rainbowWallet,
   walletConnectWallet,
   injectedWallet,
+  ledgerWallet,
 } from '@rainbow-me/rainbowkit/wallets'
 import { createConnector, createConfig } from 'wagmi'
 import { injected } from 'wagmi/connectors'
@@ -154,6 +155,9 @@ const WALLET_FACTORIES: Record<WalletLaneId, Parameters<typeof connectorsForWall
   // Wrapped so the lane can only ever bind to Phantom — see above.
   phantom: phantomOwnProviderWallet,
   rainbow: rainbowWallet,
+  // WalletConnect lane that pairs with Ledger Live (`ledgerlive://wc?uri=…`);
+  // the device signs inside Ledger Live. Never Ledger Connect Kit.
+  ledger: ledgerWallet,
   walletConnect: walletConnectWallet,
 }
 
