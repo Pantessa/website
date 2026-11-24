@@ -516,6 +516,7 @@ export default function SymbolPage({
                 <div className="sym__titlerow">
                   <h1 className="sym__name truncate">{name}</h1>
                   <span className="sym__sym mono">{ticker}</span>
+                  <SymbolSearchTrigger variant="head" />
                   {/* The folded row of a plotted page has no venue label: a shut market still says so (symbol-sleek.css shows this there only; the label's own words stay for readers). */}
                   {tapeState === 'closed' && (
                     <span className="sym__closed sk-label" aria-hidden>
@@ -523,7 +524,6 @@ export default function SymbolPage({
                       Closed
                     </span>
                   )}
-                  <SymbolSearchTrigger variant="head" />
                 </div>
                 <div className="sym__meta">
                   {lookOnly ? (
