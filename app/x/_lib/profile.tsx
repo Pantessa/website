@@ -331,7 +331,7 @@ export function PlotDoor({ heading = 'Plot anyone', initialHandle, initialMarket
       <h2 className="xpf-aside__title">{heading}</h2>
       <p className="xpf-aside__lede">Type any X handle. Every post where the account took a side is pinned to the day it was posted and judged the same way.</p>
       <div className="xpf-aside__form">
-        <HandleDoor variant="page" initialHandle={initialHandle} initialMarket={initialMarket} className="xcc-door--flat" />
+        <HandleDoor variant="page" initialHandle={initialHandle} initialMarket={initialMarket} />
       </div>
     </section>
   )

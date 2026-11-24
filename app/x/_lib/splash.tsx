@@ -3,14 +3,14 @@
 // the hero wears, and the scoreline (the tally drawn as one segmented rule).
 //
 // FLAT (2026-11-16): no card, no shadow, no gradient. Structure is hairlines
-// and type; the one mark is the scoreline, the same on a tile and in the hero.
+// and type; the one mark is the tally's bar (components/sleek/ScoreBar), the same on a tile and in the hero.
 //
 // Server components, no script. The line is an SVG stretched over a box whose
 // height is CSS; each dot is a span placed by percentages, so nothing is
 // measured and a dot stays round. A verdict is a colour AND a word everywhere.
 import Link from 'next/link'
 import ScoreBar from '@/components/sleek/ScoreBar'
-import { VERDICT_WORDS, chartHref, type CalledTally } from '@/lib/called-it/spec'
+import { VERDICT_WORDS, chartHref } from '@/lib/called-it/spec'
 import { cleanLine, fmtCount, fmtUtcDate } from '@/lib/called-it/card-layout'
 import { agoWords } from './plotted'
 import { Avatar } from './parts'
@@ -28,67 +28,6 @@ export function Spark({ summary, size }: { summary: PlotSummary; size: 'tile' | 
       {summary.dots.map((d, i) => (
         <span key={i} className={`xrc-spark__dot is-${d.verdict}${d.picked ? ' is-picked' : ''}`} style={{ left: `${d.x}%`, top: `${d.y}%` }} />
       ))}
-    </div>
-  )
-}
-
-/** The tally as words with their colours. Zero counts are left out; the total always shows. */
-export function Counts({ tally, compact }: { tally: CalledTally; compact?: boolean }) {
-  return (
-    <span className={`xrc-counts${compact ? ' xrc-counts--compact' : ''}`}>
-      <span className="xrc-counts__n">
-        {tally.total} {tally.total === 1 ? 'call' : 'calls'}
-      </span>
-      {tally.right > 0 && (
-        <span className="xrc-counts__n is-right">
-          {tally.right} {VERDICT_WORDS.right}
-        </span>
-      )}
-      {tally.wrong > 0 && (
-        <span className="xrc-counts__n is-wrong">
-          {tally.wrong} {VERDICT_WORDS.wrong}
-        </span>
-      )}
-      {!compact && tally.open > 0 && (
-        <span className="xrc-counts__n is-open">
-          {tally.open} {VERDICT_WORDS.open}
-        </span>
-      )}
-    </span>
-  )
-}
-
-const SCORE_ORDER = ['right', 'wrong', 'flat', 'open'] as const
-
-/** THE SCORELINE: the tally as one rule, a segment per verdict, as wide as its share of the calls. Decorative: the counts beside it carry the numbers. */
-export function Scoreline({ tally }: { tally: CalledTally }) {
-  if (tally.total < 1) return null
-  return (
-    <span className="xrc-line" aria-hidden>
-      {SCORE_ORDER.filter((k) => tally[k] > 0).map((k) => (
-        <span key={k} className={`xrc-line__seg is-${k}`} style={{ flexGrow: tally[k] }} />
-      ))}
-    </span>
-  )
-}
-
-/** The hero's scorecard: every count the record holds, as a figure over its word, then the scoreline. */
-export function Score({ tally }: { tally: CalledTally }) {
-  return (
-    <div className="xrc-score">
-      <dl className="xrc-score__row">
-        <div>
-          <dd>{tally.total}</dd>
-          <dt>{tally.total === 1 ? 'call' : 'calls'}</dt>
-        </div>
-        {SCORE_ORDER.filter((k) => tally[k] > 0).map((k) => (
-          <div key={k} className={`is-${k}`}>
-            <dd>{tally[k]}</dd>
-            <dt>{VERDICT_WORDS[k]}</dt>
-          </div>
-        ))}
-      </dl>
-      <Scoreline tally={tally} />
     </div>
   )
 }
@@ -122,9 +61,12 @@ export function Tile({ summary, avatar, now }: { summary: PlotSummary; avatar: s
         <span className="xrc-tile__sym">{summary.symbol}</span>
       </span>
       <Spark summary={summary} size="tile" />
-      <Scoreline tally={summary.tally} />
+      {/* The tally as the kit's bar (squad mobile-sleek, round 3): every verdict the scan counted, misses beside hits. */}
+      <ScoreBar counts={summary.tally} words={VERDICT_WORDS} />
       <span className="xrc-tile__foot">
-        <Counts tally={summary.tally} compact />
+        <span className="xrc-tile__total">
+          {summary.tally.total} {summary.tally.total === 1 ? 'call' : 'calls'}
+        </span>
         <span className="xrc-tile__when">{agoWords(summary.scannedAt, now)}</span>
       </span>
     </Link>
