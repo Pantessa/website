@@ -109,3 +109,15 @@ export function tvPhoneOverrides(): Record<string, unknown> {
 export const TV_FONT_FAMILY = "'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
 /** The same face the page itself loads, for the chart's frame (a frame does not share its parent's fonts). */
 export const TV_FONT_CSS_URL = 'https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap'
+
+/**
+ * A price as the scale prints it: grouped thousands, the instrument's own
+ * decimals, and NOTHING below zero. A price is never negative, but the scale
+ * runs under zero when the pane keeps a deep foot (the rail of cards, the
+ * tally): those ticks read "-400.00" under the candles of an asset at 1,600.
+ */
+export function tvPriceFormat(price: number, pricescale: number): string {
+  if (!Number.isFinite(price) || price < 0) return ''
+  const decimals = Math.max(0, Math.min(10, Math.round(Math.log10(Math.max(1, pricescale)))))
+  return price.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+}

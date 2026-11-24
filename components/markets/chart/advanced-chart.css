@@ -5,6 +5,16 @@
    so the two engines look like one card. */
 
 .tvx__canvas { background: var(--bg); min-height: 280px; }
+/* The body: the plot, and beside it (1100px and wider) the opened call's own column. */
+.tvx__body { position: relative; display: flex; align-items: stretch; min-width: 0; }
+.tvx__body > .tvx__canvas { flex: 1 1 0; min-width: 0; min-height: 280px; }
+.tvx__dock { display: none; }
+@media (min-width: 1100px) {
+  /* In normal flow, the plot's full height, one hairline between them. Empty (no call open) it takes no room. */
+  .tvx__dock { display: flex; flex-direction: column; flex: 0 0 380px; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border: 1px solid var(--line); border-left: 0; background: var(--bg); }
+  .tvx__dock:empty { display: none; }
+  /* (The card seated here is styled for the slot by its own sheet, through `[data-call-dock="side"]`.) */
+}
 .tvx__host { position: absolute; inset: 0; }
 .tvx__host iframe { display: block; width: 100%; height: 100%; border: 0; }
 
@@ -192,8 +202,6 @@
 .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .mk-vs__open, .tchart__fs) { height: 30px; border: 1px solid var(--line); border-radius: 0; }
 .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > .tchart__fs { width: 30px; }
 .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .mk-vs__open, .tchart__fs):hover { color: var(--fg); border-color: var(--line-2); background: none; }
-/* A control seated in the bar by the page (the plotted handle's door) is a cell like the rest. */
-.sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span > button { height: 30px; border-radius: 0; }
 .sym:not(#_) .tvx .tvx-tool, .sym:not(#_) .tvx .tvx-scn__clear, .sym:not(#_) .tvx .tvx-chip { border-radius: 0; }
 .sym:not(#_) .tvx .tvx-card, .sym:not(#_) .tvx .tvx-scn { border-radius: 0; }
 .tvx-pending { border-radius: 0; }
@@ -214,16 +222,19 @@
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open)::after { content: none; }
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span:not(:first-child) { flex: 0 1 44px; min-width: 38px; }
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open) { align-content: center; line-height: 0; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span > button:not(#_) { width: 100%; height: 44px; border-radius: 0; }
   /* The plot owns the first screen. */
-  .sym:not(#_) .tchart:not(.tchart--expanded) .mkt-chart__canvas.tvx__canvas { height: clamp(380px, 60dvh, 560px); min-height: 380px; }
+  /* The plot and the bar-size row end above the page's docked act bar. The height is measured (AdvancedChart sets
+     `--tvx-plot-h`); before that, the page's own sum for the whole card (`--sym-chart-room`) less this card's two rows. */
+  .sym:not(#_) .tchart:not(.tchart--expanded) .mkt-chart__canvas.tvx__canvas { height: var(--tvx-plot-h, max(300px, calc(var(--sym-chart-room, 62dvh) - 150px))); min-height: 300px; }
+  .sym:not(#_) .tchart:not(.tchart--expanded) .tvx__body > .tvx__canvas { flex: 0 0 auto; width: 100%; }
   .tvx-tf { display: flex; width: 100%; }
   .tvx-tf > button { flex: 1 1 0; min-height: var(--sk-tap, 44px); padding: 0; }
   .tvx-tf > button:disabled { opacity: 0.5; }
   /* Your drawings, folded: its title alone. Opened, the scenario picks and the tools come with it. */
   .tvx-plan.is-folded .tvx-scn__pick, .tvx-plan.is-folded .tvx-plan__tools { display: none; }
+  /* The measured plot height is the plot's own: the body wraps it. */
   .tvx-plan__title { min-height: 44px; }
 }
 
 /* The plot: true black, square, on one hairline (the card around it is the page's). */
-.sym:not(#_) .tvx > .tvx__canvas { border-radius: 0; border: 1px solid var(--line); overflow: hidden; }
+.sym:not(#_) .tvx .tvx__canvas { border-radius: 0; border: 1px solid var(--line); overflow: hidden; }

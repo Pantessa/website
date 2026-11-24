@@ -207,6 +207,27 @@ const WICK_ALPHA = 0.62
 
 const alpha = (hex: string, a: number) => `${hex}${Math.round(a * 255).toString(16).padStart(2, '0')}`
 
+/**
+ * The ink of a plotted handle's call on the built-in chart, read from the mark's own label (the verdict's glyph leads
+ * it): the market's green for a call that came true, its red for a miss, gold for "too early to say", grey for no real
+ * move. Null for any other marker (a news item).
+ */
+function calledInk(label: string, tokens: { up: string; down: string; muted: string }): string | null {
+  const glyph = label.trimStart().charAt(0)
+  if (glyph === '\u2713') return tokens.up
+  if (glyph === '\u2715') return tokens.down
+  if (glyph === '?') {
+    try {
+      const gold = getComputedStyle(document.documentElement).getPropertyValue('--gold').trim()
+      return gold || tokens.muted
+    } catch {
+      return tokens.muted
+    }
+  }
+  if (glyph === '\u2013') return tokens.muted
+  return null
+}
+
 /** Nearest-bar snap for markers: the last bar opened at or before t. */
 function barTimeFor(candles: Candle[], t: number): number | null {
   if (!candles.length) return null
@@ -1387,6 +1408,13 @@ export default function MarketChart({
     markers?.forEach((m, i) => {
       const bt = barTimeFor(bars, m.t)
       if (bt === null) return
+      // A plotted handle's call (its label opens with the verdict's glyph): a square in the verdict's ink, the brand's
+      // hard edge, and no words on the bars (sixty labels made a heap; the hover and the strip under the chart say them).
+      const ink = calledInk(m.label, tokens)
+      if (ink) {
+        out.push({ time: bt as UTCTimestamp, position: 'aboveBar', shape: 'square', color: ink, size: 1, id: `news-${i}-${m.t}` })
+        return
+      }
       out.push({ time: bt as UTCTimestamp, position: 'aboveBar', shape: 'circle', color: alpha(tokens.fg, 0.75), size: 1, id: `news-${i}-${m.t}`, text: m.label.length > 28 ? `${m.label.slice(0, 27)}…` : m.label })
     })
     fills?.forEach((f) => {
