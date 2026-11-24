@@ -160,7 +160,7 @@ export default function MarketsDocsPage() {
           </li>
           <li>
             A swap that came through someone&rsquo;s shared link pays <span className="mono">{LINK_FEE_PCT}</span>, and{' '}
-            {CREATOR_SHARE} of it goes to the link&rsquo;s creator. Perp orders do not pay creators.
+            {CREATOR_SHARE}{' '}of it goes to the link&rsquo;s creator. Perp orders do not pay creators.
           </li>
         </ul>
         <p>
@@ -182,7 +182,7 @@ export default function MarketsDocsPage() {
         <h3>Chart engine</h3>
         <p>
           The main chart is TradingView&rsquo;s Advanced Charts; its foot reads &ldquo;{CHART_ATTRIBUTION.text}&rdquo;. The{' '}
-          <strong>Classic chart</strong> button switches to the built-in chart, made with TradingView&rsquo;s Lightweight
+          <strong>Classic chart</strong>{' '}button switches to the built-in chart, made with TradingView&rsquo;s Lightweight
           Charts; its foot reads &ldquo;{CHART_ATTRIBUTION.classic}&rdquo;. Both link to{' '}
           <a href={CHART_ATTRIBUTION.href} target="_blank" rel="noopener noreferrer">
             tradingview.com

@@ -84,17 +84,17 @@ export default function FirstFiveMinutesPage() {
 
         <h2>Ask in words</h2>
         <p>
-          The chat takes the same asks as the chips. These links fill in the ask and wait; nothing sends until you press
-          enter:{' '}
-          <SpineLink href={ask('What is the current price and 24h change for ETH?', 'uniswap-free')}>
-            &ldquo;What&apos;s the price of ETH?&rdquo;
-          </SpineLink>
-          ,{' '}
-          <SpineLink href={ask('Swap $1 worth of ETH to USDC on Base', 'uniswap-free')}>
-            &ldquo;Swap $1 of ETH to USDC&rdquo;
-          </SpineLink>
-          .
+          The chat takes the same asks as the chips. These links fill in the ask and wait. Nothing sends until you press
+          enter.
         </p>
+        <ul>
+          <li>
+            <SpineLink href={ask('What is the current price and 24h change for ETH?', 'uniswap-free')}>{'“What’s the price of ETH?”'}</SpineLink>
+          </li>
+          <li>
+            <SpineLink href={ask('Swap $1 worth of ETH to USDC on Base', 'uniswap-free')}>{'“Swap $1 of ETH to USDC”'}</SpineLink>
+          </li>
+        </ul>
 
         <h2>Where to go next</h2>
         <ul>

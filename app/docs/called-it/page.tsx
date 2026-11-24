@@ -138,7 +138,7 @@ export default function CalledItDocsPage() {
             The chart pins up to {PICK_MAX} calls. When there are both, they always include the best hit and the worst miss.
           </li>
           <li>
-            A hit rate appears only after {MIN_JUDGED} judged calls (hits plus misses), always as words like &ldquo;5 of 8
+            A hit rate appears only after {MIN_JUDGED}{' '}judged calls (hits plus misses), always as words like &ldquo;5 of 8
             judged calls&rdquo;, never a bare percent.
           </li>
           <li>
