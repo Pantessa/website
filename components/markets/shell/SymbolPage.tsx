@@ -552,7 +552,8 @@ export default function SymbolPage({
                 <>
                   {unit === 'level' ? <span className="sym__last mono" data-unit="level">{fmtLivePrice(stats.last)}</span> : <span className="sym__last mono">${fmtLivePrice(stats.last)}</span>}
                   <span className={`sym__chg mono mkt-chg ${chgClass}`}>{chgLabel}</span>
-                  <span className="sym__feed mono">{feedLabel}</span>
+                  {/* The venue label under the name already names the feed; this stays for a stand-in feed (the CSS hides the repeat). */}
+                  <span className="sym__feed mono" data-feed-same={feed === pair.source ? '' : undefined}>{feedLabel}</span>
                 </>
               ) : pair ? (
                 <span className="sym__feed mono">{statsLate ? `${feedLabel} didn’t answer · retrying` : `loading ${feedLabel} candles…`}</span>

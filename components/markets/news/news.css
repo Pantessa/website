@@ -419,3 +419,21 @@
   font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase;
 }
 .gaz__showall:hover { border-color: var(--fg); }
+
+/* A phone's caps (the same numbers as NewsTab's PHONE_*_CAP): each section
+   previews, one press lists it. A `--phone` button is one only a phone needs. */
+@media (min-width: 641px) { .gaz__showall--phone { display: none; } }
+@media (max-width: 640px) {
+  .gaz__brieflist[data-capped] > :nth-child(n + 3),
+  .gaz__grid[data-capped] > :nth-child(n + 3),
+  .gaz__xgrid[data-capped] > :nth-child(n + 3),
+  .gaz__archive[data-capped] > :nth-child(n + 4) { display: none; }
+}
+/* Under a thumb: the pin and the short chips are 44px targets (the pin keeps
+   its place in the row: the extra height is taken back in margin). */
+@media (hover: none) {
+  .gaz__pin { min-width: 44px; min-height: 44px; margin-block: -9px; }
+  .gaz__srcchip { min-width: 44px; }
+  .gaz__xby button { min-width: 44px; min-height: 44px; }
+  .gaz__xout a { display: inline-flex; align-items: center; min-width: 44px; min-height: 44px; }
+}

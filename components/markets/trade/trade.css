@@ -448,3 +448,11 @@
     font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase;
   }
 }
+
+/* Under a thumb the text-sized controls of a route ("details", "why best?")
+   are 44px boxes; the extra height is taken back in margin so a row keeps its
+   rhythm. (They carried an invisible hit area before; this is the box itself.) */
+@media (hover: none) {
+  .mkt-route__toggle, .mkt-routes__why { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin-block: -14px; }
+  .mkt-route__toggle::after, .mkt-routes__why::after { content: none; }
+}
