@@ -28,8 +28,8 @@ const GLYPH: Record<Verdict, string> = {
   right: 'M 7 12.4 L 10.6 16 L 17.2 8.6',
   wrong: 'M 8 8 L 16 16 M 16 8 L 8 16',
   flat: 'M 7.5 12 L 16.5 12',
-  // A question mark in three straight strokes; its dot is a square below.
-  open: 'M 9 9 L 9 7.6 L 15 7.6 L 15 11.4 L 12 11.4 L 12 13.6',
+  // Not judged yet: three square dots, drawn as rects below (no stroke).
+  open: '',
 }
 
 export interface VerdictTileProps {
@@ -60,8 +60,8 @@ export default function VerdictTile({ verdict, size = 24, bare, label, className
     >
       <path className="sk-tile__lit" d={LIT} />
       <path className="sk-tile__shade" d={SHADE} />
-      {showGlyph && <path className="sk-tile__glyph" d={GLYPH[verdict]} />}
-      {showGlyph && verdict === 'open' && <rect className="sk-tile__dot" x="10.7" y="15.4" width="2.6" height="2.6" />}
+      {showGlyph && verdict !== 'open' && <path className="sk-tile__glyph" d={GLYPH[verdict]} />}
+      {showGlyph && verdict === 'open' && [6.2, 10.6, 15].map((x) => <rect key={x} className="sk-tile__dot" x={x} y="10.6" width="2.8" height="2.8" />)}
     </svg>
   )
 }
