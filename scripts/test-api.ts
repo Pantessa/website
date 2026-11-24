@@ -24591,7 +24591,7 @@ async function main() {
         "signed out → home keeps the way back: the spine and the dashboard's layout remember the page a signed-out arrival opened and replace to a plain '/'; a deliberate sign-out (signedOutJustNow) remembers nothing, forgets any way back, and a landed sign-in forgets it too",
         /if \(!signedOut \|\| publicPage\) return\s*if \(!signedOutJustNow\(\)\) rememberSignInReturn\(pathname \+ window\.location\.search\)\s*router\.replace\('\/'\)/.test(spineSrc) &&
           /if \(!signedOut\) return\s*if \(!signedOutJustNow\(\)\) rememberSignInReturn\(pathname \+ window\.location\.search\)\s*router\.replace\('\/'\)/.test(dashLayoutS) &&
-          /const signOut = useCallback\(async \(\) => \{\s*signedOutAt = Date\.now\(\)\s*forgetSignInReturn\(\)\s*await endSession\(\)\s*signedOutAt = Date\.now\(\)\s*\}, \[endSession\]\)/.test(sessS) &&
+          /const signOut = useCallback\(async \(\) => \{\s*signedOutAt = Date\.now\(\)\s*forgetSignInReturn\(\)\s*try \{\s*setSignOutHold\(window\.localStorage, Date\.now\(\)\)\s*\} catch \{[^}]*\}\s*await endSession\(\)\s*signedOutAt = Date\.now\(\)\s*\}, \[endSession\]\)/.test(sessS) &&
           /if \(status === 'authed' && walletStatus === 'disconnected'\) \{\s*void endSession\(\)\s*\}/.test(sessS) &&
           /\(redirectTo\?: string\) => \{\s*forgetSignInReturn\(\)\s*if \(!redirectTo\) return/.test(sessS) &&
           !/homeFor|\?next=/.test(spineSrc + dashLayoutS),
