@@ -27,6 +27,48 @@ const TILE_SHADE = 'M 24 0 L 24 18.67 L 18.67 24 L 0 24 Z'
 /** Two tiles on one row of the rail never touch on a phone's plot (a 26px tile on about 320px). */
 const TILE_MIN_DX = 0.09
 
+/** Unpinned calls posted within this share of the window of each other (about eight days of a year) stand in one column. */
+const STACK_DX = 0.022
+/** A column's step in px (the sheet's square is 6px on a 1.5px outline) and the plot's least height, to choose which way a column grows. */
+const STACK_STEP = 10
+const PLOT_MIN_H = 184
+const VERDICT_ORDER = { right: 0, wrong: 1, flat: 2, open: 3 } as const
+
+type Placed<P> = { pin: P; x: number; y: number; i: number; dir: 1 | -1; count: number; folded: boolean }
+
+/**
+ * WHERE CALLS CLUSTER, THE SQUARES THIN. Unpinned calls that fall within a
+ * few days of each other used to pile on one spot of the line. A cluster now
+ * shows ONE square per verdict it holds (hits first, then misses), standing
+ * in a short column on the line at the cluster's mean day and close, so a
+ * miss inside a run of hits is still in sight. A square that stands for
+ * several calls is a step larger. Every call keeps its own mark in the page
+ * (the folded ones are out of sight, still read aloud), and the key under
+ * the plot says how many calls there are and that near ones share a square.
+ */
+function stackSquares<P extends { x: number; y: number; n: number; verdict: keyof typeof VERDICT_ORDER }>(rest: readonly P[]): Placed<P>[] {
+  const out: Placed<P>[] = []
+  let bucket: P[] = []
+  const flush = () => {
+    if (!bucket.length) return
+    const x = bucket.reduce((s, p) => s + p.x, 0) / bucket.length
+    const y = bucket.reduce((s, p) => s + p.y, 0) / bucket.length
+    const kinds = [...new Set(bucket.map((p) => p.verdict))].sort((a, b) => VERDICT_ORDER[a] - VERDICT_ORDER[b])
+    const dir: 1 | -1 = y * PLOT_MIN_H >= kinds.length * STACK_STEP ? -1 : 1
+    kinds.forEach((kind, i) => {
+      const group = bucket.filter((p) => p.verdict === kind).sort((a, b) => a.n - b.n)
+      group.forEach((pin, k) => out.push({ pin, x, y, i, dir, count: group.length, folded: k > 0 }))
+    })
+    bucket = []
+  }
+  for (const p of [...rest].sort((a, b) => a.x - b.x || a.n - b.n)) {
+    if (bucket.length && p.x - bucket[0].x > STACK_DX) flush()
+    bucket.push(p)
+  }
+  flush()
+  return out
+}
+
 /** The brand's tile with a call's number cut into it: the pin on the chart and the badge on its card. */
 export function NumberTile({ n, className }: { n: number; className?: string }) {
   return (
@@ -72,6 +114,8 @@ export default function RecordChart({ symbol, closes, calls, unit = 'usd', actio
   const anyAdded = pins.some((p) => p.added)
   const label = (p: (typeof pins)[number]) => `Call ${p.n}, ${VERDICT_WORDS[p.verdict]}, ${fmtUtcDate(calls[p.n - 1].postedAt)}${p.added ? `, ${ADDED_MARK}` : ''}`
   const mid = (scale.hi + scale.lo) / 2
+  const squares = stackSquares(pins.filter((p) => !p.picked))
+  const shared = squares.some((q) => q.folded)
 
   return (
     <section className="xrc-chart sk-card" id="chart" aria-label={`${symbol} daily closes${calls.length ? `, ${pinned} pinned of ${calls.length} calls` : ''}`}>
@@ -102,11 +146,9 @@ export default function RecordChart({ symbol, closes, calls, unit = 'usd', actio
           <span className="xrc-plot__axis xrc-plot__axis--min">{fmtCallPrice(scale.lo, unit)}</span>
 
           {/* Squares first, tiles over them. */}
-          {pins
-            .filter((p) => !p.picked)
-            .map((p) => (
-              <i key={p.postId} className={`xrc-dot is-${p.verdict}${p.added ? ' is-added' : ''}`} style={{ left: pct(p.x), '--xrc-y': p.y } as CSSProperties} role="img" aria-label={label(p)} title={`Call ${p.n}: ${VERDICT_WORDS[p.verdict]}${p.added ? ` (${ADDED_MARK})` : ''}`} />
-            ))}
+          {squares.map(({ pin: p, x, y, i, dir, count, folded }) => (
+            <i key={p.postId} className={`xrc-dot is-${p.verdict}${p.added ? ' is-added' : ''}${folded ? ' xrc-dot--folded' : ''}`} data-count={!folded && count > 1 ? count : undefined} style={folded ? undefined : ({ left: pct(x), '--xrc-y': Math.round(y * 10000) / 10000, '--xrc-stack': i * dir } as CSSProperties)} role="img" aria-label={label(p)} title={`Call ${p.n}: ${VERDICT_WORDS[p.verdict]}${p.added ? ` (${ADDED_MARK})` : ''}`} />
+          ))}
           {pins
             .filter((p) => p.picked)
             .map((p) => (
@@ -155,7 +197,7 @@ export default function RecordChart({ symbol, closes, calls, unit = 'usd', actio
               </li>
             )}
           </ul>
-          {pinned < calls.length && <p className="xrc-chart__keynote">A numbered tile is a pinned call: press it for the post. A small square is one of the rest.{anyAdded ? ' A hollow mark is a post a viewer added: shown, not counted.' : ' Every call the scan found counts.'}</p>}
+          {pinned < calls.length && <p className="xrc-chart__keynote">A numbered tile is a pinned call: press it for the post. A small square is one of the other {calls.length - pinned}{shared ? '; calls posted within days of each other share one square per verdict' : ''}.{anyAdded ? ' A hollow mark is a post a viewer added: shown, not counted.' : ' Every call the scan found counts.'}</p>}
         </div>
       )}
     </section>

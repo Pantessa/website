@@ -9,6 +9,7 @@
 // height is CSS; each dot is a span placed by percentages, so nothing is
 // measured and a dot stays round. A verdict is a colour AND a word everywhere.
 import Link from 'next/link'
+import ScoreBar from '@/components/sleek/ScoreBar'
 import { VERDICT_WORDS, chartHref, type CalledTally } from '@/lib/called-it/spec'
 import { cleanLine, fmtCount, fmtUtcDate } from '@/lib/called-it/card-layout'
 import { agoWords } from './plotted'
@@ -140,7 +141,13 @@ export function Featured({ summary, avatar }: { summary: PlotSummary; avatar: st
         <span className="xrc-feat__sym">on {summary.symbol}</span>
       </div>
       <Spark summary={summary} size="hero" />
-      <Score tally={summary.tally} />
+      {/* The tally as one bar (squad mobile-sleek): every verdict the scan counted has a segment, misses beside hits. */}
+      <div className="xrc-feat__tally">
+        <p className="xrc-feat__total">
+          {summary.tally.total} {summary.tally.total === 1 ? 'call' : 'calls'}
+        </p>
+        <ScoreBar counts={summary.tally} words={VERDICT_WORDS} size="lg" />
+      </div>
       <ul className="xrc-feat__quotes">
         {summary.quotes.map((q) => (
           <li key={q.postId} className={`xrc-quote is-${q.verdict}`}>

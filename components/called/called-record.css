@@ -126,7 +126,7 @@
 .xrc-chart__action a::after { content: '\2192'; margin-left: 6px; color: var(--accent); }
 .xrc .xrc-chart__action a:hover, .xrc .xrc-chart__action a:focus-visible { color: var(--fg); }
 
-.xrc-plot { --xrc-line-h: clamp(184px, 36vw, 320px); --xrc-tile: 26px; --xrc-gutter: 50px; --xrc-rail-row: calc(var(--xrc-tile) + 4px); --xrc-rail-h: calc(var(--xrc-levels, 0) * var(--xrc-rail-row) + 8px); padding: var(--sp-2) calc(var(--xrc-gutter) + 6px) 0 20px; }
+.xrc-plot { --xrc-line-h: clamp(184px, 36vw, 320px); --xrc-tile: 26px; --xrc-gutter: 50px; --xrc-rail-row: calc(var(--xrc-tile) + 4px); --xrc-rail-h: calc(var(--xrc-levels, 0) * var(--xrc-rail-row) + 12px); padding: var(--sp-2) calc(var(--xrc-gutter) + 6px) 0 20px; }
 .xrc-plot__area { position: relative; height: calc(var(--xrc-rail-h) + var(--xrc-line-h)); }
 .xrc-plot__svg { position: absolute; left: 0; top: var(--xrc-rail-h); width: 100%; height: var(--xrc-line-h); display: block; overflow: visible; }
 .xrc-plot__line { fill: none; stroke: var(--fg); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: square; }
@@ -154,7 +154,8 @@
 .xrc-ntile svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .xrc-ntile__lit { fill: var(--xrc-tone); }
 .xrc-ntile__shade { fill: color-mix(in oklab, var(--xrc-tone) 70%, var(--neon-ink)); }
-.xrc-ntile b { position: relative; font-family: var(--xrc-mono); font-size: var(--fs-xs); font-weight: 700; line-height: 1; letter-spacing: -0.03em; color: var(--neon-ink); font-variant-numeric: tabular-nums; }
+/* The number is the ink for a filled tone (--ink): the ground colour, so it is dark on the dark theme's bright tones and light on the light theme's deep ones. */
+.xrc-ntile b { position: relative; font-family: var(--xrc-mono); font-size: var(--fs-xs); font-weight: 700; line-height: 1; letter-spacing: -0.03em; color: var(--ink, var(--bg)); font-variant-numeric: tabular-nums; }
 
 /* A pinned call: its tile on the rail, a hairline down to a square on its day's close. */
 .xrc-pin { --xrc-flag-top: calc(var(--xrc-lvl, 0) * var(--xrc-rail-row)); --xrc-point-top: calc(var(--xrc-rail-h) + var(--xrc-y) * var(--xrc-line-h)); position: absolute; top: 0; bottom: 0; width: 0; text-decoration: none; outline: none; }
@@ -172,8 +173,12 @@
 .xrc-pin.is-added .xrc-pin__stem { background: none; border-left: 1px dashed var(--xrc-tone); width: 0; opacity: 0.7; }
 .xrc-pin.is-added .xrc-pin__point { background: var(--bg); outline: 1.5px solid var(--xrc-tone); outline-offset: -1.5px; }
 /* The rest of the calls: a small square on its day's close. */
-.xrc-dot { position: absolute; top: calc(var(--xrc-rail-h) + var(--xrc-y) * var(--xrc-line-h)); width: 6px; height: 6px; margin: -3px 0 0 -3px; background: var(--xrc-tone); outline: 1.5px solid var(--bg); }
+/* Where calls cluster the squares stand in a column: --xrc-stack is the square's place in it (negative grows up). */
+.xrc-dot { position: absolute; top: calc(var(--xrc-rail-h) + var(--xrc-y) * var(--xrc-line-h) + var(--xrc-stack, 0) * 10px); width: 6px; height: 6px; margin: -3px 0 0 -3px; background: var(--xrc-tone); outline: 1.5px solid var(--bg); }
 .xrc-dot.is-added { background: var(--bg); outline: 1.5px solid var(--xrc-tone); outline-offset: -1.5px; }
+/* A square that stands for several near calls is a step larger; the calls it stands for keep their marks out of sight. */
+.xrc-dot[data-count] { width: 8px; height: 8px; margin: -4px 0 0 -4px; }
+.xrc-dot--folded { width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); outline: 0; }
 
 /* The key: each verdict's tile with its glyph and its word. */
 .xrc-chart__key { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); padding: var(--sp-3) var(--sp-4) 0; border-top: 1px solid var(--line); }
@@ -205,6 +210,9 @@
 /* The clamp: a checkbox ahead of the words, its label after them. No script; the words are in the page once, whole. */
 .xrc-call__toggle { position: absolute; width: 1px; height: 1px; margin: -1px; opacity: 0; pointer-events: none; }
 .xrc-call__toggle:not(:checked) + .xrc-call__text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+/* A long head steps behind a marked ellipsis while the card is clamped, so the quoted words are inside the four lines. */
+.xrc-call__toggle:not(:checked) + .xrc-call__text .xrc-call__cut > span { display: none; }
+.xrc-call__toggle:not(:checked) + .xrc-call__text .xrc-call__cut::before { content: '\2026\00a0'; color: var(--muted-2); }
 .xrc-call__more { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; margin-block: -14px; font-family: var(--xrc-mono); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .xrc-call__more-shut { display: none; }
 .xrc-call__toggle:checked ~ .xrc-call__more .xrc-call__more-open { display: none; }
@@ -473,6 +481,7 @@
 .xrc-headline { font-size: clamp(1.875rem, 1.35rem + 2.4vw, 2.75rem); line-height: 1.05; }
 .xrc-who__name { font-size: var(--fs-base); }
 .xrc-avatar--lg { width: 44px; height: 44px; font-size: var(--fs-xl); }
+.xrc-headline__rest { display: block; margin-top: var(--sp-2); font-family: var(--xrc-ui); font-weight: 400; font-size: var(--fs-base); line-height: 1.45; letter-spacing: 0; color: var(--muted); }
 .xrc-tally { display: grid; gap: var(--sp-2); min-width: 0; }
 .xrc-tally__total { margin: 0; font-family: var(--xrc-mono); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
 .xrc-tally__total b { color: var(--fg); font-weight: 600; }
@@ -490,6 +499,7 @@
 .xrc-dock { display: flex; align-items: stretch; gap: var(--sp-2); }
 .xrc .xrc-dock__go { flex: 1 1 auto; min-height: 48px; color: var(--ink, var(--bg)); }
 .xrc .xrc-dock__alt { flex: none; min-height: 48px; color: var(--fg); }
+.xrc .xrc-dock__go.is-quiet { color: var(--fg); }
 .xrc-dockpad { display: none; }
 
 /* Buttons: hard edges; the lead one wears the cut. */
@@ -551,4 +561,61 @@
 @media (prefers-reduced-motion: reduce) {
   .xrc .xrc-pin__flag { transition: none; }
   .xrc-pin:hover .xrc-pin__flag, .xrc-pin:focus-visible .xrc-pin__flag { transform: none; }
+}
+
+/* ── SLEEK, round 2: the door (/x) as a short phone page ───────────────────
+   One display line in the squad's face (upright, sentence case, a full stop),
+   the door as the one primary press, a real record with its tally as one bar,
+   the scanned accounts capped behind "Show all", the steps as tight rows. */
+.xrc-hero__title { font-weight: 600; font-size: clamp(2.25rem, 1.5rem + 3.6vw, 4.25rem); line-height: 1.02; letter-spacing: -0.02em; color: var(--fg); }
+.xrc-hero__say { gap: var(--sp-4); padding-block: var(--sp-5); }
+.xrc-hero__lede { font-size: var(--fs-base); line-height: 1.5; }
+.xrc-hero__you { padding-top: var(--sp-3); font-size: var(--fs-sm); }
+.xrc-hero__show { padding-block: var(--sp-4) var(--sp-5); }
+.xrc-feat { gap: var(--sp-3); }
+.xrc-feat__tally { display: grid; gap: var(--sp-2); min-width: 0; }
+.xrc-feat__total { margin: 0; font-family: var(--xrc-mono); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg); }
+.xrc-spark--hero { height: clamp(112px, 80px + 9vw, 220px); }
+.xrc-quote { padding: var(--sp-3) 0; }
+.xrc-quote__text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+.xrc-gallery, .xrc-how { padding-top: var(--sp-5); gap: var(--sp-3); }
+.xrc-gallery__title { font-weight: 600; font-size: var(--fs-xl); letter-spacing: -0.01em; }
+.xrc--splash .xrc-tile { gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); }
+.xrc--splash .xrc-spark--tile { height: 44px; }
+/* The cap: a checkbox ahead of the list, its label after it. */
+.xrc-tiles__toggle { position: absolute; width: 1px; height: 1px; margin: -1px; opacity: 0; pointer-events: none; }
+.xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 4) { display: none; }
+.xrc-tiles__more { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 48px; border: 1px solid var(--line-2); font-family: var(--xrc-mono); font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.xrc-tiles__more::after { content: '\2193'; color: var(--accent); }
+.xrc-tiles__more-shut { display: none; }
+.xrc-tiles__toggle:checked ~ .xrc-tiles__more .xrc-tiles__more-open { display: none; }
+.xrc-tiles__toggle:checked ~ .xrc-tiles__more .xrc-tiles__more-shut { display: inline; }
+.xrc-tiles__toggle:checked ~ .xrc-tiles__more::after { content: '\2191'; }
+.xrc-tiles__toggle:focus-visible ~ .xrc-tiles__more { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The steps: a number, a title, one line. */
+.xrc-steps li { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: var(--sp-2); row-gap: var(--sp-1); padding: var(--sp-3) 0; }
+.xrc-steps li::before { grid-row: 1 / span 2; padding-top: 5px; }
+.xrc-steps h3 { font-weight: 600; font-size: var(--fs-base); font-family: var(--xrc-ui); letter-spacing: 0; }
+.xrc-steps p { grid-column: 2; font-size: var(--fs-sm); line-height: 1.5; }
+.xrc-how .xrc-method { padding-top: var(--sp-4); }
+@media (min-width: 640px) {
+  .xrc-steps li { display: flex; padding: var(--sp-4) 0 var(--sp-5); }
+  .xrc-steps li::before { padding-top: 0; }
+  /* Two columns show two rows before the press. */
+  .xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 4) { display: block; }
+  .xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 5) { display: none; }
+  .xrc-gallery:not(:has(.xrc-tiles > li:nth-child(5))) .xrc-tiles__more { display: none; }
+}
+@media (max-width: 640px) {
+  /* A phone's door stays short: the featured record keeps its line, its tally and its press; its two sample posts wait on the chart. */
+  .xrc-feat__quotes { display: none; }
+  /* The featured record's four counts as a tidy two-by-two under the bar. */
+  .xrc-feat__tally ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-1) var(--sp-4); }
+}
+@media (min-width: 1024px) {
+  /* A desk shows two rows of three before the press. */
+  .xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 5) { display: block; }
+  .xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 7) { display: none; }
+  .xrc-gallery:not(:has(.xrc-tiles > li:nth-child(7))) .xrc-tiles__more { display: none; }
+  .xrc--splash .xrc-tile { padding: var(--sp-4) var(--sp-5); }
 }
