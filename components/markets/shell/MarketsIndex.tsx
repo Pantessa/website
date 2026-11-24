@@ -35,6 +35,7 @@ import { chgClass, fmtPct, fmtQuotePrice, useQuotes, type QuoteMap } from '@/lib
 import { MACRO_ROWS, MACRO_SECTION, MACRO_SYMBOLS, macroBoardRows, macroRow, macroRowTag } from '@/lib/macro'
 import MarketTable, { type TableRow } from '@/components/markets/shell/MarketTable'
 import './macro.css'
+import './sleek-markets.css' // the sleek re-dress of the tool strip and the boards (squad mobile-sleek)
 import { SymbolSearchTrigger } from '@/components/markets/search/SymbolSearch'
 import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
 import MarketsSide from '@/components/markets/shell/MarketsSide'

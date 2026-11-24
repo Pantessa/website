@@ -63,7 +63,8 @@ const SCALE: Record<string, string | [string, string]> = {
   '--gutter-phone': '16px',
   '--fs-xs': '11px', '--fs-sm': '12px', '--fs-md': '13px', '--fs-base': '15px', '--fs-lg': '17px', '--fs-xl': '20px', '--fs-2xl': '24px',
   '--fs-input': '16px',
-  '--r-sm': '8px', '--r-md': '12px', '--r-lg': '16px', '--r-pill': '999px', '--r-card': 'var(--r-md)', '--r-sheet': 'var(--r-lg)',
+  // RE-PINNED 2026-11-24 (squad mobile-sleek, the token flip): hard edges. Cards and sheets 0, controls 2px; --r-pill is a name, no longer a pill; --r-round is the one true circle.
+  '--r-sm': '2px', '--r-md': '0px', '--r-lg': '0px', '--r-pill': '2px', '--r-round': '999px', '--r-card': 'var(--r-md)', '--r-sheet': 'var(--r-lg)',
   '--sh-1': ['0 1px 2px rgb(0 0 0 / 0.4)', '0 1px 2px rgb(16 21 18 / 0.08)'],
   '--sh-2': ['0 16px 40px rgb(0 0 0 / 0.35)', '0 12px 32px rgb(16 21 18 / 0.12)'],
   '--sh-3': ['0 24px 64px rgb(0 0 0 / 0.45)', '0 24px 64px rgb(16 21 18 / 0.18)'],

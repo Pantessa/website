@@ -38,7 +38,7 @@
 .tlk__part--house { background: color-mix(in srgb, var(--fg) 22%, transparent); }
 .tlk__legend { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-1) var(--sp-3); margin: 0; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
 .tlk__key { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.tlk__key::before { content: ''; width: 8px; height: 8px; border-radius: var(--r-pill); }
+.tlk__key::before { content: ''; width: 8px; height: 8px; border-radius: var(--r-round); }
 .tlk__key--you::before { background: var(--accent); }
 .tlk__key--house::before { background: color-mix(in srgb, var(--fg) 22%, transparent); }
 

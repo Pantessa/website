@@ -91,7 +91,15 @@ const TABS = [...TABS_ABOVE_WALLET, ...TABS_BELOW_WALLET]
 
 // Drawer tabs the PHONE bar folds behind MORE (see the capacity note in the
 // component). The desktop column has room for every seat.
-const PHONE_MORE_TABS: ReadonlySet<RailTab> = new Set<RailTab>(['team'])
+// FIVE SEATS ON A PHONE (squad mobile-sleek, 2026-11-24): MARKETS · JOBS ·
+// WALLET · CHATS · MORE. APPS (the chat's app drawer) rides in MORE below sm
+// with TEAM; it leads where it always did.
+const PHONE_MORE_TABS: ReadonlySet<RailTab> = new Set<RailTab>(['mcps', 'team'])
+// What a folded seat is called in the MORE sheet.
+const PHONE_MORE_COPY: Partial<Record<RailTab, { name: string; line: string }>> = {
+  mcps: { name: 'Apps', line: 'The apps this chat can use' },
+  team: { name: 'Team', line: 'Your wallet\u2019s staff' },
+}
 
 // ADMIN-ONLY SEATS (2026-11-19, Nate: "hide Links and analytics for non admin
 // until we can get our numbers up, also team as no one needs that right now,
@@ -418,7 +426,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   }
 
   const jobsBadge = badgeCount > 0 && (
-    <span className="absolute -top-0.5 right-0 mono text-[9px] leading-4 px-1 rounded-full bg-amber-500/15 text-amber-400 ring-1 ring-[var(--surf-1)]">
+    <span className="absolute -top-0.5 right-0 mono text-[9px] leading-4 px-1 rounded-sm bg-amber-500/15 text-amber-400 ring-1 ring-[var(--surf-1)]">
       {badgeCount > 99 ? '99+' : badgeCount}
     </span>
   )
@@ -444,7 +452,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
       >
         {/* The notch: the accent tick that says "you are here". */}
         {selected && (
-          <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+          <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-[var(--accent)]" />
         )}
         <span className="relative"><Icon className="w-[18px] h-[18px]" />{(tab === 'jobs' || tab === 'links') && <SpineGuideDot tab={tab} />}</span>
         <span className="mono text-[9px] font-medium tracking-wide">{label}</span>
@@ -476,7 +484,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         )}
       >
         {selected && (
-          <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+          <span aria-hidden className="absolute -top-px inset-x-2 h-0.5 bg-[var(--accent)]" />
         )}
         <span className="relative">
           <Icon className="w-[18px] h-[18px]" />
@@ -490,8 +498,11 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
 
   // What MORE holds on a phone, and whether it wears the "you are here" tick
   // (the settings page, or the TEAM screen showing over the chat).
-  const moreTab = TABS.find((t) => PHONE_MORE_TABS.has(t.tab) && seatShown(t))
-  const moreLit = moreLitFor(surface, phoneScreen) || onCommunity
+  const moreTabs = TABS.filter((t) => PHONE_MORE_TABS.has(t.tab) && seatShown(t))
+  // MORE is only drawn below sm, where the folded seats are hidden: it wears
+  // the tick for them there (a folded screen showing over the chat).
+  const foldedLit = !offChat && PHONE_MORE_TABS.has(seatForScreen(phoneScreen) as RailTab)
+  const moreLit = moreLitFor(surface, phoneScreen) || onCommunity || foldedLit
   // The one sheet-row class (components/mobile/Sheet SHEET_ROW, polish R1):
   // every lane's sheet list wears it, so MORE is the reference.
   const moreItem = SHEET_ROW
@@ -540,7 +551,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             )}
           >
             {onMarkets && (
-              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-[var(--accent)]" />
             )}
             <CandlestickChart className="w-[18px] h-[18px]" />
             <span className="mono text-[9px] font-medium tracking-wide">MARKETS</span>
@@ -566,7 +577,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             )}
           >
             {onWallet && (
-              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-[var(--accent)]" />
             )}
             <span className="relative"><Wallet className="w-[18px] h-[18px]" /><SpineGuideDot tab="wallet" /></span>
             <span className="mono text-[9px] font-medium tracking-wide">WALLET</span>
@@ -593,7 +604,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             )}
           >
             {onCommunity && (
-              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-[var(--accent)]" />
             )}
             <Flame className="w-[18px] h-[18px]" />
             <span className="mono text-[8px] font-medium tracking-normal">COMMUNITY</span>
@@ -611,7 +622,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             )}
           >
             {onLeaderboard && (
-              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-[var(--accent)]" />
             )}
             <Trophy className="w-[18px] h-[18px]" />
             <span className="mono text-[9px] font-medium tracking-wide">LEADERS</span>
@@ -630,7 +641,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             )}
           >
             {onAnalytics && (
-              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-[var(--accent)]" />
             )}
             <ChartColumn className="w-[18px] h-[18px]" />
             <span className="mono text-[9px] font-medium tracking-wide">ANALYTICS</span>
@@ -668,7 +679,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           )}
         >
           {onDashboard && (
-            <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+            <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-[var(--accent)]" />
           )}
           <Settings className="w-[18px] h-[18px]" />
           <span className="mono text-[9px] font-medium tracking-wide">SETTINGS</span>
@@ -680,7 +691,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           surface shells reserve its height (the frame, lib/phone-shell). ── */}
       <nav
         data-spine-bar=""
-        className="lg:hidden fixed inset-x-0 bottom-0 z-50 flex items-stretch border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur-md pb-[env(safe-area-inset-bottom)]"
+        className="lg:hidden fixed inset-x-0 bottom-0 z-50 flex items-stretch border-t border-[var(--line)] bg-[var(--bg)] pb-[env(safe-area-inset-bottom)]"
         aria-label="Workspace"
       >
         <Link
@@ -692,7 +703,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           className={cn(PHONE_SEAT, onMarkets ? 'text-white' : 'text-[color:var(--muted)]')}
         >
           {onMarkets && (
-            <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+            <span aria-hidden className="absolute -top-px inset-x-2 h-0.5 bg-[var(--accent)]" />
           )}
           <CandlestickChart className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">MARKETS</span>
@@ -707,7 +718,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           className={cn(PHONE_SEAT, onWallet ? 'text-white' : 'text-[color:var(--muted)]')}
         >
           {onWallet && (
-            <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+            <span aria-hidden className="absolute -top-px inset-x-2 h-0.5 bg-[var(--accent)]" />
           )}
           <span className="relative"><Wallet className="w-[18px] h-[18px]" /><SpineGuideDot tab="wallet" /></span>
           <span className="mono text-[10px] font-medium tracking-wide">WALLET</span>
@@ -721,7 +732,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           className={cn(PHONE_SEAT, 'max-sm:hidden', onCommunity ? 'text-white' : 'text-[color:var(--muted)]')}
         >
           {onCommunity && (
-            <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+            <span aria-hidden className="absolute -top-px inset-x-2 h-0.5 bg-[var(--accent)]" />
           )}
           <Flame className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">COMMUNITY</span>
@@ -735,7 +746,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           className={cn(PHONE_SEAT, 'max-sm:hidden', onLeaderboard ? 'text-white' : 'text-[color:var(--muted)]')}
         >
           {onLeaderboard && (
-            <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+            <span aria-hidden className="absolute -top-px inset-x-2 h-0.5 bg-[var(--accent)]" />
           )}
           <Trophy className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">LEADERS</span>
@@ -750,7 +761,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           className={cn(PHONE_SEAT, 'max-sm:hidden', onAnalytics ? 'text-white' : 'text-[color:var(--muted)]')}
         >
           {onAnalytics && (
-            <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+            <span aria-hidden className="absolute -top-px inset-x-2 h-0.5 bg-[var(--accent)]" />
           )}
           <ChartColumn className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">ANALYTICS</span>
@@ -773,7 +784,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           className={cn(PHONE_SEAT, 'max-sm:hidden', onDashboard ? 'text-white' : 'text-[color:var(--muted)]')}
         >
           {onDashboard && (
-            <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+            <span aria-hidden className="absolute -top-px inset-x-2 h-0.5 bg-[var(--accent)]" />
           )}
           <Settings className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">SETTINGS</span>
@@ -794,7 +805,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             className={cn(PHONE_SEAT, moreLit || moreOpen ? 'text-white' : 'text-[color:var(--muted)]')}
           >
             {moreLit && (
-              <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+              <span aria-hidden className="absolute -top-px inset-x-2 h-0.5 bg-[var(--accent)]" />
             )}
             <Ellipsis className="w-[18px] h-[18px]" />
             <span className="mono text-[10px] font-medium tracking-wide">MORE</span>
@@ -803,24 +814,25 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
       </nav>
       <Sheet id="more" open={moreOpen} onClose={() => setMoreOpen(false)} title="More" size="auto">
         <div role="menu" aria-label="More destinations" className="p-2 pb-3">
-          {moreTab && (
+          {moreTabs.map((t) => (
             <button
+              key={t.tab}
               type="button"
               role="menuitem"
-              aria-current={!offChat && phoneScreen === 'team' ? 'page' : undefined}
+              aria-current={!offChat && seatForScreen(phoneScreen) === t.tab ? 'page' : undefined}
               onClick={() => {
                 setMoreOpen(false)
-                pickPhone(moreTab.tab)
+                pickPhone(t.tab)
               }}
               className={moreItem}
             >
-              <moreTab.Icon className="w-[18px] h-[18px] flex-shrink-0" />
+              <t.Icon className="w-[18px] h-[18px] flex-shrink-0" />
               <span className="min-w-0">
-                <span className="block text-[15px] font-medium text-[color:var(--fg)]">Team</span>
-                <span className="block text-[12px] truncate">Your wallet&rsquo;s staff</span>
+                <span className="block text-[15px] font-medium text-[color:var(--fg)]">{PHONE_MORE_COPY[t.tab]?.name ?? t.label}</span>
+                <span className="block text-[12px] truncate">{PHONE_MORE_COPY[t.tab]?.line ?? t.title}</span>
               </span>
             </button>
-          )}
+          ))}
           <Link href={COMMUNITY_HREF} role="menuitem" aria-current={onCommunity ? 'page' : undefined} onClick={() => setMoreOpen(false)} className={moreItem}>
             <Flame className="w-[18px] h-[18px] flex-shrink-0" />
             <span className="min-w-0">

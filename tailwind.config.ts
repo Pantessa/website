@@ -31,6 +31,18 @@ const config: Config = {
           '100%': { backgroundPosition: '200% 0' },
         },
       },
+      // HARD EDGES (squad mobile-sleek, 2026-11-24): the Tailwind radius
+      // scale follows the tokens in app/x402-design.css (--r-sm 2px, cards
+      // and sheets 0). `rounded-full` stays a true circle (avatars, dots).
+      borderRadius: {
+        sm: '2px',
+        DEFAULT: '2px',
+        md: '2px',
+        lg: '0px',
+        xl: '0px',
+        '2xl': '0px',
+        '3xl': '0px',
+      },
       fontFamily: {
         sans: ['var(--font-inter)', 'Inter', 'system-ui', 'sans-serif'],
         mono: ['var(--font-mono)', 'JetBrains Mono', 'monospace'],
