@@ -162,6 +162,24 @@
   .mkt-frame.mkt-frame--sym .sym--cockpit .sym__st--range .mk-range__k { justify-self: end; padding-left: 4px; }
   .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip > .mk-held { order: 6; margin-top: 6px; }
 
+  /* A PLOTTED HANDLE (`data-plotted`, the page's `?x=`): the band and the chart
+     are what that visitor came for, so the strip is ONE compact row: the mark,
+     the ticker, the price in mono and the change. The name, the venue label and
+     the day's range stay in the page for readers and come back when the plot
+     is closed. (A share's Stock / Perp switch keeps a line of its own.) */
+  .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__strip { min-height: 0; padding: 8px 0 6px; gap: 4px 10px; align-items: center; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__strip .sym__titlerow { flex: 0 1 auto; align-items: center; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__strip .sym__name,
+  .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__strip .sym__venue { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__strip .sym__sym { font-size: 14px; font-weight: 600; letter-spacing: 0.06em; color: var(--fg); }
+  .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__strip .sym__meta { order: 5; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__strip:not(:has(.sym__twin)) .sym__meta { display: none; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__strip > .sym__quote { order: 2; flex: 0 0 auto; margin: 0 0 0 auto; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__strip .sym__last { font-size: 22px; line-height: 1.2; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__strip .sym__chg { font-size: 13px; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__stats { display: none; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__chart { margin-top: 10px; }
+
   /* The tabs bleed to the screen's edges (the hairline runs the full width). */
   .mkt-frame.mkt-frame--sym .sym__tabs { margin-inline: calc(-1 * var(--sym-gutter)); padding-inline: var(--sym-gutter); scroll-padding-inline: var(--sym-gutter); overscroll-behavior-x: contain; }
   .mkt-frame.mkt-frame--sym .sym__tab { min-height: 44px; padding: 0 8px; font-size: 11px; letter-spacing: 0.06em; }

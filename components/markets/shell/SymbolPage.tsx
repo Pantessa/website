@@ -58,6 +58,7 @@ import { useDayStats } from '@/components/markets/shell/useDayStats'
 import HeldPill from '@/components/markets/shell/HeldPill'
 import CompareControl from '@/components/markets/shell/CompareControl'
 import CallsPanel, { CalledHead } from '@/components/called/CallsPanel'
+import { useCalled } from '@/lib/called-it/use-record'
 import { PlotHandleButton } from '@/components/called/HandleDoor'
 import ExecStrip from '@/components/markets/slots/ExecStrip'
 import AskChart from '@/components/markets/slots/AskChart'
@@ -107,12 +108,16 @@ export default function SymbolPage({
   initialTab,
   initialTf,
   initialVs = null,
+  initialPlotted = false,
   tradable: seeded,
 }: {
   symbol: string
   initialTab?: MarketTab
   initialTf?: ChartTf
   initialVs?: string | null
+  /** The address plots an X handle (`?x=`): the server's read, so the first
+   *  paint already wears the compact header a plotted page gets on a phone. */
+  initialPlotted?: boolean
   /** The measured venue verdicts from the server render (lib/tradability-store),
    *  so the act strip is right on the first paint. */
   tradable?: TradabilityMap
@@ -187,6 +192,14 @@ export default function SymbolPage({
   useEffect(() => () => {
     if (isLiveTabTitle(document.title) && baseTitleRef.current) document.title = baseTitleRef.current
   }, [])
+  // A PLOTTED HANDLE (Called it, `?x=`): the handle's band and the chart are
+  // what that visitor came for, so a phone's strip folds to one compact row
+  // (symbol-sleek.css reads `data-plotted`). The store knows once the page has
+  // read its address (it also follows a handle plotted or closed on the page);
+  // until then the server's read of the same address stands, so the first
+  // paint and the hydrated one agree.
+  const plottedNow = useCalled((s) => (s.symbol === sym && s.opened ? s.plot !== null : null))
+  const plotted = plottedNow ?? initialPlotted
   const [expanded, setExpanded] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
 
@@ -475,7 +488,7 @@ export default function SymbolPage({
   // from the nav down.
   return (
     <>
-      <main className="sym sym--cockpit" data-symbol={sym} data-vs={vs ?? undefined} data-tab={tab} data-chart={showChart ? 'shown' : 'parked'}>
+      <main className="sym sym--cockpit" data-symbol={sym} data-vs={vs ?? undefined} data-tab={tab} data-chart={showChart ? 'shown' : 'parked'} data-plotted={plotted && showChart ? '' : undefined}>
         {/* ── The strip ── (its seat is the size container the folds read,
             markets.css: an element can't query itself, and .sym must stay a
             plain block for the full-screen chart) */}
