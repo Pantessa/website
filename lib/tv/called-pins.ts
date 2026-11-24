@@ -40,7 +40,7 @@
 // lib/tv/types (the library itself is licensed and never in this repository).
 
 import { ADDED_MARK, PIN_URL_MAX, VERDICT_WORDS, cmpPostId, fmtDay, judgedLine, moveLine, recordHref, sinceLine, type CallVerdict, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
-import { cardFont, cardSize, createMarksLayer, pageFonts, pageMeasure, type CardBox, type CardInks, type CardSpec } from './called-overlay'
+import { cardFont, cardSize, createMarksLayer, pageFonts, pageMeasure, type CardBox, type CardFonts, type CardInks, type CardSpec } from './called-overlay'
 import type { ShapeSnapshot } from './shapes'
 import { TV_FONT_FAMILY } from './theme'
 import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvPriceScaleApi, TvShapeOptions, TvWidget } from './types'
@@ -974,7 +974,22 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     }
     return cornerNow
   }
+  /** One call as a card of the layer: the verdict's word and the day, the post's own words (cut and wrapped by `pinText`, never reworded), the move. */
+  const cardSpecOf = (call: CalledCall, handle: string, textWidth: number, wordLines: number, pageText: (font: string, text: string) => number, fonts: CardFonts): CardSpec => {
+    const wide: Measure = (t) => Math.max(pageText(cardFont.words(fonts), t), pageText(cardFont.result(fonts), t))
+    const text = pinText(call, handle, { textWidth, measure: wide, wordLines })
+    const spec = { id: call.postId, barTime: call.barTime, priceAt: call.priceAt, verdict: call.verdict, added: text.added ? ADDED_MARK : null, word: VERDICT_WORDS[call.verdict], date: pinDate(call.postedAt), words: text.words, result: text.lines.slice(text.lines.lastIndexOf(text.words[text.words.length - 1]) + 1) }
+    return { ...spec, ...cardSize(spec, fonts, pageText) }
+  }
+  let previewText: ((font: string, text: string) => number) | null = null
   const layer = createMarksLayer({
+    // A mark under the mouse shows its call as a card (what the library's tooltip used to say, set as the cards are).
+    preview: (postId) => {
+      const record = plotted()
+      const call = record?.calls.find((c) => c.postId === postId)
+      previewText = previewText ?? pageMeasure()
+      return record && call && previewText ? cardSpecOf(call, record.handle, 236, 3, previewText, pageFonts()) : null
+    },
     host: () => hostEl,
     chart: () => chart,
     scene: () => (scene && plotted() ? { ...scene, focusId: input.focusId, keepCorner: corner() } : null),
@@ -1257,12 +1272,9 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       const call = byId.get(id)
       if (!call) continue
       if (pageText) {
-        const wide: Measure = (t) => Math.max(pageText(cardFont.words(fonts), t), pageText(cardFont.result(fonts), t))
-        const text = pinText(call, record.handle, { textWidth: plan.textWidth, measure: wide, wordLines: plan.wordLines })
-        const spec = { id, barTime: call.barTime, priceAt: call.priceAt, verdict: call.verdict, added: text.added ? ADDED_MARK : null, word: VERDICT_WORDS[call.verdict], date: pinDate(call.postedAt), words: text.words, result: text.lines.slice(text.lines.lastIndexOf(text.words[text.words.length - 1]) + 1) }
-        const size = cardSize(spec, fonts, pageText)
-        specs.push({ ...spec, ...size })
-        sizes[id] = size
+        const spec = cardSpecOf(call, record.handle, plan.textWidth, plan.wordLines, pageText, fonts)
+        specs.push(spec)
+        sizes[id] = { w: spec.w, h: spec.h }
         continue
       }
       const text = pinText(call, record.handle, { textWidth: plan.textWidth, measure, wordLines: plan.wordLines })

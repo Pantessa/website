@@ -515,6 +515,9 @@ function paintCard(ctx: Ctx, card: CardSpec, box: CardBox, tip: { x: number; y: 
     ctx.fillRect(Math.round(tip.x) - 3, Math.round(tip.y) - 3, 6, 6)
   }
   // The card: a calm ground with a breath of the verdict's tone, one hairline edge, the brand's two cut corners.
+  cutPath(ctx, x - 2, y - 2, w + 4, h + 4, P.cut + 1)
+  ctx.fillStyle = inks.bg
+  ctx.fill()
   cutPath(ctx, x, y, w, h, P.cut)
   ctx.fillStyle = mix(ink, inks.bg, state.focus ? 0.13 : 0.07)
   ctx.fill()
@@ -585,6 +588,8 @@ export interface MarksLayerHooks {
   /** What to draw, or null for nothing. */
   scene(): MarksScene | null
   inks(): CardInks
+  /** The card for one call, shown while the mouse is over its mark. */
+  preview?(postId: string): CardSpec | null
   onPick(postId: string): void
   /** The layer is drawing (true) or cannot (false): the caller falls back to the library's own marks. */
   onMount(on: boolean): void
@@ -824,6 +829,14 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
         }
       }
       paintMarks(b, marks, inks, fonts.mono, hover)
+      // The mark under the mouse says what it is: the call a press would open, as a card beside it.
+      const over = hover && !hover.startsWith('card:') ? marks.find((m) => m.key === hover) : null
+      const tipCard = over && !over.focus ? (hooks.preview?.(pickFrom(over, scene.focusId)) ?? null) : null
+      if (over && tipCard) {
+        const above = over.y - tipCard.h - 10 >= scene.keepTop
+        const box: CardBox = { id: tipCard.id, side: above ? 'above' : 'below', inView: true, x: Math.round(Math.max(6, Math.min(over.x + over.w / 2 - tipCard.w / 2, width - tipCard.w - 6))), y: Math.round(above ? over.y - tipCard.h - 10 : over.y + over.h + 10), w: tipCard.w, h: tipCard.h }
+        paintCard(b, tipCard, box, null, inks, fonts, { focus: false, hover: true })
+      }
       c.clearRect(0, 0, pw, ph)
       c.drawImage(buf, 0, 0)
       canvas.dataset.marks = String(marks.length)
