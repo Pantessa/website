@@ -23,7 +23,7 @@ import NavAccount from '@/components/NavAccount'
 // wherever this pill does: the brochure bar, the markets strip, the chat's
 // top bar.
 export const signInPill =
-  'hit-44 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/15 text-zinc-200 text-xs font-semibold hover:bg-white/10 hover:border-white/25 transition-colors'
+  'hit-44 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[var(--r-pill)] bg-white/5 border border-white/15 text-zinc-200 text-xs font-semibold hover:bg-white/10 hover:border-white/25 transition-colors'
 export const signInLabel = (
   <>
     <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} /> Sign in

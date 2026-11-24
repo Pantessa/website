@@ -203,3 +203,54 @@ a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, text
 .ca__close { z-index: 2; }
 /* r2 contrast: /story's market-band ticker marks ("AAPL", 9.5px accent on a 12% accent tint) read 4.44:1 on paper. */
 :root[data-theme='light'] .mkt__mark { color: color-mix(in oklch, var(--accent) 80%, #000); }
+
+/* ── SLEEK CHROME (squad mobile-sleek, 2026-11-24; lane SHELL) ─────────────
+   The top bar and the phone's tab bar in the brand's language: flat ground,
+   hairlines, hard edges. Markup is unchanged (the harness reads it); these
+   rules ride `:root` so they win over the strip's older rules in
+   x402-design.css, markets.css and search.css without editing those.
+
+   THE TAB BAR'S HEIGHT IS `--tabbar-h` (on :root): 0 where no bar is drawn
+   (desktop, a page without the spine, the soft keyboard up), otherwise the
+   bar's seat + hairline + the home-indicator inset. A lane that docks a bar
+   over the tab bar uses `bottom: var(--tabbar-h)`; the kit's `.sk-dock`
+   already does, through `--sk-dock-bottom`. */
+:root { --tabbar-h: 0px; --sk-dock-bottom: var(--tabbar-h); }
+@media (max-width: 1023px) {
+  :root:has([data-spine-bar]) { --tabbar-h: calc(var(--bar-h, 49px) + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 1023px) and (orientation: landscape) and (max-height: 480px) {
+  :root:has([data-spine-bar]) { --tabbar-h: calc(41px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 1023px) {
+  html[data-keyboard]:has([data-spine-bar]) { --tabbar-h: 0px; }
+}
+
+/* The bell is an account's (alerts need a session): a signed-out stranger's
+   bar does not draw it. The account seat holds `.navacct` once there is a
+   session or a wallet; until then the lens keeps the strip's spacing the
+   bell used to keep. */
+:root .mkt-frame__top:not(:has(.mkt-frame__acct .navacct)) .mkt-frame__alerts { display: none; }
+:root .mkt-frame__top:not(:has(.mkt-frame__acct .navacct)) .ssx-lens { margin-right: auto; }
+
+/* The phone's top bar: ONE field (the mark, "Ask anything", the search lens
+   as its last cell) and the account seat. The page's long placeholder used to
+   be cut mid-word beside three round buttons; the field now says two words
+   that always fit, and the door it opens still carries the page's own hint. */
+@media (max-width: 1023px) {
+  :root .mkt-frame__top { gap: 0; padding: 0 var(--gutter-phone, 16px); }
+  :root .mkt-frame__top .mkt-frame__ask { flex: 1 1 0; min-width: 0; height: 44px; gap: 10px; padding: 0 12px; border: 1px solid var(--line-2); border-right: 0; border-radius: 0; background: var(--surf-1); box-shadow: none; }
+  :root .mkt-frame__top .mkt-frame__askhint { display: none; }
+  :root .mkt-frame__top .mkt-frame__askword { display: block; min-width: 0; overflow: hidden; white-space: nowrap; font-size: var(--fs-base); font-weight: 400; color: var(--muted); }
+  :root .mkt-frame__top .mkt-frame__askword::after { content: ' anything'; }
+  :root .mkt-frame__top .ssx-lens { width: 44px; height: 44px; margin-right: 0; border: 1px solid var(--line-2); border-radius: 0; background: var(--surf-1); color: var(--fg); box-shadow: none; }
+  :root .mkt-frame__top .mkt-frame__alerts { margin: 0 0 0 8px; }
+  :root .mkt-frame__top .mkt-frame__bell { border-radius: 0; background: none; }
+  :root .mkt-frame__top .mkt-frame__acct { margin-left: 8px; }
+  :root .mkt-frame__top .mkt-frame__acct .hit-44 { height: 44px; padding-inline: 14px; font-size: var(--fs-md); white-space: nowrap; }
+  :root .mkt-frame__top .mkt-frame__acct .hit-44::before { inset: 0; }
+}
+/* The phone bar is five plain seats: the "new here" dots (components/guide)
+   stay on the desktop column and step out of the bar, where they read as
+   noise beside the accent rule that says "you are here". */
+[data-spine-bar] .guide-dot { display: none; }

@@ -83,7 +83,7 @@
 .hm__tile--called .hm__eyebrow { color: var(--muted); }
 .hm__title { font-family: var(--mk-font-display, 'Fraunces', Georgia, serif); font-weight: 600; font-size: var(--fs-xl); line-height: 1.08; letter-spacing: -0.015em; text-wrap: balance; }
 .hm__who { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
-.hm__avatar { flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--r-pill); object-fit: cover; box-shadow: 0 0 0 1px var(--line-2); }
+.hm__avatar { flex: 0 0 auto; width: 40px; height: 40px; border-radius: var(--r-round); object-fit: cover; box-shadow: 0 0 0 1px var(--line-2); }
 .hm__avatar--none { display: flex; align-items: center; justify-content: center; background: var(--surf-2); color: var(--muted); font-family: var(--mk-font-display, 'Fraunces', Georgia, serif); font-size: var(--fs-lg); }
 .hm__foot { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .hm__foot > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -137,6 +137,7 @@
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__side { display: contents; }
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__top { grid-area: top; justify-content: flex-end; padding: 0 var(--mkt-pad-l); border-left: 0; border-bottom-color: transparent; }
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__alerts { margin-right: 0; }
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__top .ssx-lens { margin-right: 0; }
   /* The tool strip under the hero (2026-11-19, Nate: "looks a bit awkward,
      maybe no line and it just sits above … it's supposed to be there when
      it's a nav header in /markets"): here it is a row over the boards, not a

@@ -82,7 +82,7 @@ export function HeroComposer() {
       <span className="hm-say__text" key={say?.ask ?? 'none'}>
         {say?.ask ?? 'Say what you want to do'}
       </span>
-      <button type="button" className="hm-say__go" disabled={!say} onClick={() => say && act(say.ask)} aria-label={say ? `Build it: ${say.ask}` : 'Build it'} data-ask={say?.ask} data-journey={`Hero build: ${say?.ask ?? ''}`}>
+      <button type="button" className="hm-say__go sk-btn sk-btn--hot" disabled={!say} onClick={() => say && act(say.ask)} aria-label={say ? `Build it: ${say.ask}` : 'Build it'} data-ask={say?.ask} data-journey={`Hero build: ${say?.ask ?? ''}`}>
         Build it
       </button>
     </div>
@@ -173,7 +173,7 @@ export default function HeroMosaic({ children }: { children: ReactNode }) {
                 <button
                   key="buy"
                   type="button"
-                  className={`hm__tile hm__tile--buy${isLit('aapl') ? ' is-lit' : ''}`}
+                  className={`hm__tile hm__tile--buy sk-cut${isLit('aapl') ? ' is-lit' : ''}`}
                   style={delay}
                   onClick={() => act(HERO_BUY.ask)}
                   onPointerEnter={hold(mine)}
@@ -197,7 +197,7 @@ export default function HeroMosaic({ children }: { children: ReactNode }) {
               )
             }
             return (
-              <LandingLink key="called" href={HERO_CALLED.href} prefetch={false} className="hm__tile hm__tile--called" style={delay} data-hero-tile="called" data-journey={`Hero tile: called ${HERO_CALLED.handle}`}>
+              <LandingLink key="called" href={HERO_CALLED.href} prefetch={false} className="hm__tile hm__tile--called sk-card" style={delay} data-hero-tile="called" data-journey={`Hero tile: called ${HERO_CALLED.handle}`}>
                 <span className="hm__eyebrow mono">
                   <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden>
                     <path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" />
