@@ -241,3 +241,16 @@
 
 /* The plot: true black, square, on one hairline (the card around it is the page's). */
 .sym:not(#_) .tvx .tvx__canvas { border-radius: 0; border: 1px solid var(--line); overflow: hidden; }
+
+/* ── THE BUILT-IN ENGINE'S BAR in the same language (2026-11-24). It is what a
+   visitor gets when the library cannot start (lib/tv/config: a frame that
+   never reports ready, a build without it, `?chart=classic`): the bar sizes
+   and the view switch are joined hard cells with the picked one in the page's
+   ink, the overlay and drawing buttons are square. Colours and layout stay
+   the engine's own; only the shape and the picked state change. ── */
+.sym:not(#_) .mkt-chart:not(.tvx) > .mkt-chart__bar :is(.tok__tf, .mkt-view) { gap: 0; padding: 0; border: 1px solid var(--line); border-radius: 0; background: var(--bg); }
+.sym:not(#_) .mkt-chart:not(.tvx) > .mkt-chart__bar :is(.tok__tfbtn, .mkt-view__btn) { border: 0; border-left: 1px solid var(--line); border-radius: 0; background: none; color: var(--muted); }
+.sym:not(#_) .mkt-chart:not(.tvx) > .mkt-chart__bar :is(.tok__tfbtn, .mkt-view__btn):first-child { border-left: 0; }
+.sym:not(#_) .mkt-chart:not(.tvx) > .mkt-chart__bar :is(.tok__tfbtn, .mkt-view__btn).is-active { background: var(--fg); color: var(--bg); }
+.sym:not(#_) .mkt-chart:not(.tvx) > .mkt-chart__bar :is(.mkt-tool, .mkt-sharebtn, .mk-vs__open, .tchart__fs, .mkt-chart__ind > *, .mkt-chart__tools) { border-radius: 0; }
+.sym:not(#_) .mkt-chart:not(.tvx) > .mkt-chart__canvas { border-radius: 0; }
