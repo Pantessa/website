@@ -288,7 +288,6 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xch__headline { grid-column: 1 / -1; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 15px; line-height: 1.3; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
 .xch__state { display: inline-flex; align-items: center; gap: 8px; color: var(--fg); white-space: nowrap; }
 .xch__state:empty { display: none; }
-.xch__state[data-kind='refused'], .xch__state[data-kind='failed'] { color: var(--sell); }
 .xch__pulse { width: 6px; height: 6px; background: var(--accent); animation: xch-pulse 1s steps(2, jump-none) infinite; }
 @keyframes xch-pulse { from { opacity: 1; } to { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .xch__pulse { animation: none; } }
@@ -510,10 +509,10 @@ a.xcf__x:hover { border-color: var(--fg); }
   .xch__counts { grid-column: 1 / -1; grid-row: 3; margin: 7px 10px 0 0; gap: 2px 12px; font-size: 11.5px; }
   .xch__count.is-total { display: none; }
   .xch__num { margin-right: 0.35em; font-size: 13px; letter-spacing: 0; }
-  .xch__headline { grid-column: 1 / -1; grid-row: 2; margin: 4px 10px 0 0; }
+  .xch__headline { grid-column: 1 / -1; grid-row: 2; margin: 4px 10px 0 0; font-size: 14px; }
   .xch__sides { grid-column: 1; grid-row: 4; margin-top: 10px; }
   .xch__side { min-height: 44px; padding: 0 12px; }
-  .xch__facts { grid-column: 2 / -1; grid-row: 4; justify-self: stretch; display: flex; align-items: center; min-width: 0; max-width: none; margin: 10px 0 0 12px; padding: 0; font-size: 11px; line-height: 1.4; text-align: left; text-wrap: wrap; }
+  .xch__row .xch__facts { grid-column: 2 / -1; grid-row: 4; justify-self: stretch; display: flex; align-items: center; min-width: 0; max-width: none; margin: 10px 0 0 12px; padding: 0; font-size: 11px; line-height: 1.4; text-align: left; text-wrap: wrap; }
   .xch__row:not(:has(.xch__sides)) .xch__facts { grid-column: 1 / -1; grid-row: 4; margin: 2px 0 0; }
   .xch__factstext { flex: 1 1 auto; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; overflow-wrap: anywhere; }
   .xch__row:not(:has(.xch__sides)) .xch__factstext { display: block; font-size: 12px; line-height: 1.45; }
