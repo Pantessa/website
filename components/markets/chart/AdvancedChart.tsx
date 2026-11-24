@@ -632,9 +632,9 @@ export default function AdvancedChart({
   }, [armed, pair?.symbol, pair?.source])
 
   // A PHONE'S PLOT FITS THE FIRST SCREEN. The plot and the bar-size row under it end above the page's docked act
-  // bar: with a handle plotted, when the band is at the top of the scrollport (where a link from X lands); without
-  // one, on the page as it loads. Measured from the layout itself (what stands above the plot is other lanes' and
-  // changes), never under 300px. Until it is measured the stylesheet's own sum stands (`--sym-chart-room`).
+  // bar on the page as it loads (scroll 0), with a handle's band above the card or without one: the row of bar
+  // sizes is never cut by the act bar. Measured from the layout itself (what stands above the plot is other lanes'
+  // and changes), never under 260px. Until it is measured the stylesheet's own sum stands (`--sym-chart-room`).
   const rootRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     const root = rootRef.current
@@ -648,23 +648,13 @@ export default function AdvancedChart({
         last = ''
         return
       }
-      const band = document.querySelector<HTMLElement>('.sym .xch:not(.is-parked)')
-      const tabs = document.querySelector<HTMLElement>('.sym__tabs')
       const dock = document.querySelector<HTMLElement>('.sym__exec:has(.sym__act-chips), .sk-dock')
-      const seatTop = seat.getBoundingClientRect().top
-      // Where the plot's top is on the first screen.
-      let plotTop: number
-      if (band) {
-        const cs = tabs ? getComputedStyle(tabs) : null
-        const pinned = tabs && cs && cs.position === 'sticky' ? (parseFloat(cs.top) || 0) + tabs.offsetHeight : 0
-        plotTop = pinned + 6 + (seatTop - band.getBoundingClientRect().top)
-      } else {
-        const scroller = root.closest<HTMLElement>('[data-scrollport]')
-        plotTop = seatTop + (scroller ? scroller.scrollTop : window.scrollY)
-      }
+      // Where the plot's top is on the first screen, before any scroll.
+      const scroller = root.closest<HTMLElement>('[data-scrollport]')
+      const plotTop = seat.getBoundingClientRect().top + (scroller ? scroller.scrollTop : window.scrollY)
       const dockTop = dock && getComputedStyle(dock).position === 'fixed' ? dock.getBoundingClientRect().top : window.innerHeight - 110
       const tfRow = root.querySelector<HTMLElement>('.tvx-tf')?.offsetHeight ?? 44
-      const h = Math.max(300, Math.min(560, Math.floor(dockTop - plotTop - tfRow - 20)))
+      const h = Math.max(260, Math.min(560, Math.floor(dockTop - plotTop - tfRow - 20)))
       const next = `${h}px`
       if (next !== last) {
         last = next
