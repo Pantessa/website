@@ -26,7 +26,7 @@ export default function CalledShelf({ data }: { data: CalledShelfData }) {
             Called it
           </Link>
           <h2 id="called-shelf-title" className="xrc-shelf__title">
-            Who actually called it?
+            See who actually called it.
           </h2>
           <p className="xrc-shelf__sub">Every market call an X account made, pinned to its day and judged by the price {JUDGE_DAYS} days later.</p>
         </div>

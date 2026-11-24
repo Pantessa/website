@@ -25,7 +25,7 @@
 .apg-chip {
   display: inline-flex; align-items: center; gap: 8px;
   height: 38px; padding: 0 12px 0 13px;
-  border: 1px solid var(--line); border-radius: 999px;
+  border: 1px solid var(--line); border-radius: var(--r-pill);
   font-size: var(--fs-md); color: var(--muted);
   background: none; cursor: pointer; white-space: nowrap;
   transition: border-color 0.15s, color 0.15s;
@@ -80,7 +80,7 @@
 .apg-start__err { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--apg-needs); }
 .apg-start__link { padding: 0; border: 0; background: none; color: var(--fg); text-decoration: underline; cursor: pointer; font: inherit; }
 .apg-start__receive { display: flex; align-items: flex-start; gap: 16px; padding-top: 4px; }
-.apg-start__qr { flex: none; display: block; padding: 6px; background: #fff; border-radius: 6px; line-height: 0; }
+.apg-start__qr { flex: none; display: block; padding: 6px; background: #fff; border-radius: var(--r-sm); line-height: 0; }
 .apg-start__receiveText { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .apg-start__addr { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 0; border: 0; background: none; color: var(--fg); cursor: pointer; text-align: left; }
 .apg-start__addr code { min-width: 0; font-family: var(--font-mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
@@ -113,7 +113,7 @@
 .apg-btn {
   flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   height: 36px; padding: 0 16px;
-  border: 1px solid var(--line-2); border-radius: 999px;
+  border: 1px solid var(--line-2); border-radius: var(--r-pill);
   font-size: var(--fs-md); font-weight: 500; color: var(--fg);
   background: none; cursor: pointer; white-space: nowrap;
   transition: border-color 0.15s, background-color 0.15s;
@@ -185,7 +185,7 @@
 .apg-line__act { margin-left: auto; }
 
 /* ── Loading ─────────────────────────────────────────────────────────────── */
-.apg-skel { border-radius: 6px; background: color-mix(in oklch, var(--fg) 7%, transparent); animation: apg-pulse 1.4s ease-in-out infinite; }
+.apg-skel { border-radius: var(--r-sm); background: color-mix(in oklch, var(--fg) 7%, transparent); animation: apg-pulse 1.4s ease-in-out infinite; }
 .apg-skel--block { height: 88px; }
 .apg-skel--short { height: 44px; width: 60%; }
 .apg-skel--text { display: inline-block; height: 14px; width: min(320px, 60%); vertical-align: middle; }
@@ -194,12 +194,12 @@
 
 /* ── The pinned ask bar (the chat's door while the dock is closed) ───────── */
 .apg-askbar { flex: none; border-top: 1px solid var(--line); padding: 12px 20px 16px; display: flex; justify-content: center; }
-.apg-askbar__pill { width: 100%; max-width: 860px; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 8px 0 20px; border: 1px solid var(--line-2); border-radius: 16px; }
+.apg-askbar__pill { width: 100%; max-width: 860px; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 8px 0 20px; border: 1px solid var(--line-2); border-radius: var(--r-lg); }
 .apg-askbar__pill:focus-within { border-color: var(--fg); }
 .apg-askbar__icon { flex: none; color: var(--muted); }
 .apg-askbar__input { flex: 1 1 auto; min-width: 0; background: none; border: 0; outline: none; color: var(--fg); font: inherit; font-size: var(--fs-input); }
 .apg-askbar__input::placeholder { color: var(--muted-2); }
-.apg-askbar__send { flex: none; width: 40px; height: 40px; border-radius: 999px; border: 0; background: var(--surf-2); color: var(--fg); display: grid; place-items: center; cursor: pointer; }
+.apg-askbar__send { flex: none; width: 40px; height: 40px; border-radius: var(--r-pill); border: 0; background: var(--surf-2); color: var(--fg); display: grid; place-items: center; cursor: pointer; }
 .apg-askbar__send:disabled { opacity: 0.4; cursor: default; }
 
 /* ── The dock (components/ChatWorkspace wraps ChatInterface in it) ───────── */
@@ -209,7 +209,7 @@
 .apg-dock__scope { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; }
 .apg-dock__marks { display: inline-flex; align-items: center; gap: 6px; }
 .apg-dock__name { font-size: var(--fs-base); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.apg-dock__btn { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 999px; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.apg-dock__btn { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: var(--r-pill); border: 0; background: none; color: var(--muted); cursor: pointer; }
 .apg-dock__btn:hover { color: var(--fg); background: color-mix(in oklch, var(--fg) 7%, transparent); }
 .apg-dock__body { flex: 1 1 0; min-height: 0; }
 

@@ -322,8 +322,39 @@ a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, text
   :root .nav__burger { margin-right: 0; border: 1px solid var(--line-2); border-radius: 0; background: var(--surf-1); }
   :root .nav__burger:hover { background: var(--surf-2); }
 }
-/* The footer on a phone: less air above the columns (the page above it ends on a hairline). */
-@media (max-width: 640px) {
+/* THE FOOTER ON A PHONE (round 3): it was about 1,200px, a third of every
+   short page. Now: the wordmark with the four social squares on its line, the
+   four link groups as closed rows on hairlines (44px each; a press opens one;
+   every link is in the HTML), then the legal lines beside the theme switch.
+   About 330px closed. It holds for the whole phone frame (below 1024px: a
+   tablet's two-column footer ran 1,100px); from 1024px up nothing here
+   applies and the fold's box and mark are not drawn. */
+.footer__foldbox, .footer__foldmark { display: none; }
+@media (max-width: 1023px) {
   :root .footer { margin-top: var(--sp-5); }
-  :root .footer__cols { padding-top: var(--sp-6); gap: 20px 16px; }
+  :root .footer__cols { display: block; padding: var(--sp-4) var(--gutter-phone, 16px) 0; }
+  :root .footer__brand { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); max-width: none; padding-bottom: var(--sp-4); }
+  :root .footer__tag { display: none; }
+  :root .footer__socials { margin-top: 0; gap: var(--sp-2); }
+  :root .footer__group { border-top: 1px solid var(--line); }
+  :root .footer__grouptitle { margin: 0; }
+  :root .footer__foldlabel { position: relative; display: flex; align-items: center; justify-content: space-between; min-height: 44px; cursor: pointer; }
+  :root .footer__foldbox { display: block; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  :root .footer__foldmark { display: inline; font-family: var(--font-mono); font-size: var(--fs-lg); font-weight: 400; letter-spacing: 0; color: var(--accent); }
+  :root .footer__foldmark::before { content: '+'; }
+  :root .footer__foldlabel:has(.footer__foldbox:checked) .footer__foldmark::before { content: '\2212'; }
+  :root .footer__foldlabel:has(.footer__foldbox:checked) { color: var(--fg); }
+  :root .footer__foldlabel:has(.footer__foldbox:focus-visible) { outline: 2px solid var(--fg); outline-offset: -2px; }
+  :root .footer__group:has(.footer__foldbox:not(:checked)) .footer__grouplinks { display: none; }
+  :root .footer__grouplinks { padding-bottom: var(--sp-2); }
+  :root .footer__bottom { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px var(--sp-3); padding: var(--sp-3) var(--gutter-phone, 16px) calc(var(--sp-3) + env(safe-area-inset-bottom, 0px)); }
+  :root .footer__bottomright { display: contents; }
+  :root .footer__bottom > span, :root .footer__bottomright > span { grid-column: 1; }
+  :root .footer__bottomright > :last-child { grid-column: 2; grid-row: 1 / span 2; }
+}
+/* A wide footer's group title stays on its line (the last one measured a pixel wider than its column). */
+@media (min-width: 1024px) { :root .footer__grouptitle { white-space: nowrap; } }
+/* The brochure bar's account seat on a phone, signed in: the same 44px as the menu beside it. */
+@media (max-width: 900px) {
+  :root .nav__acct .navacct__pill { height: 44px; }
 }

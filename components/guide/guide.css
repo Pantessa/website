@@ -24,7 +24,7 @@
   padding: 12px 14px 12px 13px;
   border: 1px solid var(--line);
   background: var(--mk-surface, var(--surf-1));
-  border-radius: 12px;
+  border-radius: var(--r-md);
   color: var(--fg);
   font-family: var(--mk-font-ui, var(--font-chat-body, system-ui, sans-serif));
   animation: guide-in var(--mk-dur-base, .22s) var(--mk-ease, ease) both;
@@ -58,7 +58,7 @@
   min-height: 28px;
   padding: 0 12px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--accent);
   color: var(--ink);
   font-family: inherit;
@@ -79,7 +79,7 @@
   min-height: 28px;
   padding: 0 6px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--muted);
   font-family: inherit;
@@ -96,7 +96,7 @@
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   color: var(--muted-2);
   font-size: 13px;
   letter-spacing: .08em;
@@ -174,7 +174,7 @@
   .guide--compact .guide__cta { min-height: 44px; padding: 0 12px; }
   /* The chip's SHORT label is picked in GuideCard from this same query (one
      text node on screen = one label in the journey log), not swapped here. */
-  .guide--compact .guide__x { display: inline-grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; color: var(--muted-2); cursor: pointer; }
+  .guide--compact .guide__x { display: inline-grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--muted-2); cursor: pointer; }
   .guide--compact .guide__x:hover { color: var(--fg); }
   /* The symbol header on a phone (R3): the row sits under the act strip and
      the chart follows — the chart stays primary, so the seat spends as little
@@ -213,7 +213,7 @@
   width: 100%;
   padding: 18px 18px 16px 16px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--r-md);
   color: var(--fg);
   text-align: left;
   font-family: var(--mk-font-ui, var(--font-chat-body, system-ui, sans-serif));
@@ -247,7 +247,7 @@
   min-height: 36px;
   padding: 0 16px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--accent);
   color: var(--ink);
   font-family: inherit;
@@ -282,7 +282,7 @@
 .door__link:hover { color: var(--fg); }
 .door__cta:focus-visible, .door__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* The rail's column (≈300px): the mark sits above the words, type a step down. */
-.door--compact { grid-template-columns: minmax(0, 1fr); row-gap: 10px; padding: 16px 14px 14px; border-radius: 12px; }
+.door--compact { grid-template-columns: minmax(0, 1fr); row-gap: 10px; padding: 16px 14px 14px; border-radius: var(--r-md); }
 .door--compact .door__mark { width: 22px; height: 22px; margin: 0; }
 .door--compact .door__title { font-size: 16.5px; }
 .door--compact .door__text { font-size: 12.5px; }
@@ -312,7 +312,7 @@
   margin: 0 auto;
   padding: 12px 14px 12px 14px;
   border: 1px solid color-mix(in oklch, var(--accent) 35%, var(--line));
-  border-radius: 14px;
+  border-radius: var(--r-md);
   color: var(--fg);
   text-align: left;
   font-family: var(--mk-font-ui, var(--font-chat-body, system-ui, sans-serif));
@@ -332,7 +332,7 @@
 .keep__acts { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
 .keep__cta {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  min-height: 38px; padding: 0 16px; border: 1px solid transparent; border-radius: 999px;
+  min-height: 38px; padding: 0 16px; border: 1px solid transparent; border-radius: var(--r-pill);
   background: var(--accent); color: var(--ink); font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: .01em; line-height: 1; white-space: nowrap; cursor: pointer;
   transition: filter var(--mk-dur-fast, .12s) ease, transform var(--mk-dur-fast, .12s) ease;
 }
@@ -341,7 +341,7 @@
 .keep__later { min-height: 28px; padding: 0 6px; border: 0; background: transparent; color: var(--muted-2); font-family: inherit; font-size: 12px; cursor: pointer; }
 .keep__later:hover { color: var(--fg); }
 .keep__cta:focus-visible, .keep__later:focus-visible, .keep__receipt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.keep--compact { grid-template-columns: 24px minmax(0, 1fr) auto; padding: 8px 8px 8px 12px; border-radius: 12px; column-gap: 10px; }
+.keep--compact { grid-template-columns: 24px minmax(0, 1fr) auto; padding: 8px 8px 8px 12px; border-radius: var(--r-md); column-gap: 10px; }
 .keep--compact .keep__mark { width: 24px; height: 24px; }
 .keep--compact .keep__title { font-size: 14.5px; }
 .keep--compact .keep__ask { display: none; }

@@ -40,3 +40,5 @@
 .sgb__empty { margin: 0; padding: var(--sp-3) 0; border-top: 1px solid var(--line); font-size: var(--fs-sm); color: var(--muted); }
 .sgb__all { align-self: flex-start; font-size: var(--fs-xs); font-weight: 600; color: var(--accent); text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; gap: 0.3em; }
 .sgb__all:hover, .sgb__all:focus-visible { text-decoration: underline; text-underline-offset: 0.2em; outline: none; }
+/* A thumb gets 44px on the board's "see them all" link. */
+@media (hover: none) { .sgb__all { min-height: 44px; } }

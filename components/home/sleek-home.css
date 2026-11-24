@@ -110,3 +110,11 @@
 @media (min-width: 1024px) {
   :root:not([data-home='return']) body:has(.mkt-frame__main > .mk-claim) .askdoor-pill { display: none; }
 }
+
+/* The tour's sideways rows end on a hard edge: the fade that hinted at more
+   was a blend (a mask gradient). The row still scrolls and still snaps. */
+:root .tour__striprow[data-more], :root .tour__list[data-more] { -webkit-mask-image: none; mask-image: none; }
+/* The tour's chart: a flat tint under the line, not a fade. */
+:root .tc__stop { stop-opacity: 0.12; }
+/* A thumb: a short door under "how it works" (Pricing) is still 44px wide. */
+@media (hover: none) { :root .how__door { min-width: 44px; } }
