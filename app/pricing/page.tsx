@@ -6,6 +6,7 @@ import PricingPlans from '@/components/PricingPlans'
 import StayUpToDate from '@/components/StayUpToDate'
 import Footer from '@/components/Footer'
 import { CREATOR_FEE_SPLIT, LINK_FEE_PCT, LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, SWAP_FEE_PCT } from '@/lib/fees'
+import './pricing-sleek.css'
 
 /** /pricing (pricing v2) — the take rate is the business; a plan prices house
  * answers and nothing else. Server component for SEO; cards + checkout are the

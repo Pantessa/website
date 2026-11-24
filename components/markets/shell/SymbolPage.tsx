@@ -26,7 +26,7 @@
 // Fullscreen API the old full-bleed page had; Compare rides beside it in the
 // chart's own toolbar now (it is a chart control).
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react'
@@ -99,6 +99,16 @@ export const chartShowsOn = (tab: MarketTab): boolean => CHART_TABS.includes(tab
 /** The rail docks (and the ticket moves into it) from this viewport width — markets.css's breakpoint. */
 const RAIL_DOCK_MIN_PX = 1024
 const compactNumber = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
+
+/** The width under which an opened call's card docks at the foot of the screen, over the act bar (called-chart.css). */
+const CALL_CARD_DOCKS_QUERY = '(max-width: 640px)'
+const subscribeCallDock = (cb: () => void) => {
+  if (typeof window === 'undefined' || !window.matchMedia) return () => {}
+  const mq = window.matchMedia(CALL_CARD_DOCKS_QUERY)
+  mq.addEventListener('change', cb)
+  return () => mq.removeEventListener('change', cb)
+}
+const readCallDock = () => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia(CALL_CARD_DOCKS_QUERY).matches
 
 type FsDoc = Document & { webkitExitFullscreen?: () => Promise<void>; webkitFullscreenElement?: Element | null }
 type FsEl = HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> }
@@ -200,6 +210,12 @@ export default function SymbolPage({
   // paint and the hydrated one agree.
   const plottedNow = useCalled((s) => (s.symbol === sym && s.opened ? s.plot !== null : null))
   const plotted = plottedNow ?? initialPlotted
+  // An OPENED CALL's card docks over the act bar on a phone (its own button is
+  // that call's trade). The bar under it steps out of the tab order and out of
+  // a screen reader's way until the card closes; the store says a call is open,
+  // the width says the card is docked. (Never true on the server render.)
+  const callOpen = useCalled((s) => s.symbol === sym && s.focusId !== null)
+  const callCardDocks = useSyncExternalStore(subscribeCallDock, readCallDock, () => false)
   const [expanded, setExpanded] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
 
@@ -501,6 +517,13 @@ export default function SymbolPage({
                   <h1 className="sym__name truncate">{name}</h1>
                   <span className="sym__sym mono">{ticker}</span>
                   <SymbolSearchTrigger variant="head" />
+                  {/* The folded row of a plotted page has no venue label: a shut market still says so (symbol-sleek.css shows this there only; the label's own words stay for readers). */}
+                  {tapeState === 'closed' && (
+                    <span className="sym__closed sk-label" aria-hidden>
+                      <span className="mk-dot mk-dot--closed" />
+                      Closed
+                    </span>
+                  )}
                 </div>
                 <div className="sym__meta">
                   {lookOnly ? (
@@ -698,7 +721,7 @@ export default function SymbolPage({
             + ticket: hidden by markets.css from the rail-docking width, where
             the right column's ticket takes over. */}
         {pair && (
-          <div className="sym__exec" data-seat="ExecStrip">
+          <div className="sym__exec" data-seat="ExecStrip" inert={callOpen && callCardDocks && showChart ? true : undefined}>
             <ExecStrip symbol={sym} pair={pair} onAsk={act} onBuild={orderToApp} last={stats?.last ?? null} autoOpen={false} />
           </div>
         )}

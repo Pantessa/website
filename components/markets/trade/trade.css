@@ -431,11 +431,10 @@
 /* Inside the phone's sheet the sheet is the frame: no second box, the screen's gutters. */
 .sheet__panel.mkt-ticketsheet .mkt-ticket--strip { gap: 14px; padding: 2px 16px calc(14px + env(safe-area-inset-bottom, 0px)); }
 /* The side row of a column ticket (the right column's): every side in one row,
-   an equal cell each, named by its verb (the symbol is in the head over it and
-   in the button under it). The full label stays the button's text for readers. */
+   an equal cell each, showing its verb (the symbol is in the head over it and
+   in the button under it). The full label is in the markup for readers. */
 .mkt-ticket__sides { overflow: hidden; }
-.mkt-ticket__sides > .mkt-ticket__tab { flex: 1 1 0; min-width: 0; padding: 0 2px; font-size: 0; letter-spacing: 0; }
-.mkt-ticket__sides > .mkt-ticket__tab::before { content: attr(data-side); font-size: 11px; letter-spacing: 0.05em; }
+.mkt-ticket__sides > .mkt-ticket__tab { flex: 1 1 0; min-width: 0; padding: 0 2px; font-size: 11px; letter-spacing: 0.05em; }
 
 /* The Overview's routes on a phone: the first three kinds, then one "show all"
    (the Trade tab, and every wider screen, lists them all). */

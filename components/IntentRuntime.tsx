@@ -44,7 +44,7 @@ import { useSession } from '@/lib/session'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { bootHoldingFor, initialHoldElapsed } from '@/lib/wallet-reconnect'
 import { useHydrated } from '@/lib/use-hydrated'
-import { brandBloomTint, brandCtaStyle, brandThemeStyle, type LinkBrand } from '@/lib/brand-theme'
+import { brandCtaStyle, brandThemeStyle, type LinkBrand } from '@/lib/brand-theme'
 import { isTransferShaped, linkEyebrow } from '@/lib/intent-links'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
@@ -505,7 +505,7 @@ export default function IntentRuntime({
   // redirectTo, per the sign-in UX contract.
   const mintHref = linksStudioHref({ ask, mcps: mcps || undefined })
   const chipClass =
-    'flex items-center gap-1.5 px-2.5 min-h-[32px] [@media(hover:none)]:min-h-10 rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors mono text-[11px] font-medium whitespace-nowrap'
+    'flex items-center gap-1.5 px-2.5 min-h-[32px] [@media(hover:none)]:min-h-10 rounded-[var(--r-sm)] border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors mono text-[11px] font-medium whitespace-nowrap'
 
   if (!started) {
     const ctaLabel = (
@@ -513,8 +513,12 @@ export default function IntentRuntime({
         <Zap className="w-4 h-4" /> Connect &amp; build my path
       </>
     )
-    const ctaClass =
-      'btn btn--solid inline-flex items-center justify-center gap-2 h-[54px] px-8 rounded-full text-[15px]'
+    // The ONE button (squad mobile-sleek, 2026-11-24): the kit's cut-corner
+    // button, green when the ask buys or goes long, red when it sells or goes
+    // short, the brand violet for everything else (a bridge, a look). A
+    // creator's brand still repaints it (ctaStyle). Full width on a phone.
+    const ctaTone = /^\s*(?:\d+(?:\.\d+)?x\s+)?(?:sell|short)\b/i.test(ask) ? ' sk-btn--sell' : /^\s*(?:\d+(?:\.\d+)?x\s+)?(?:buy|long)\b/i.test(ask) ? ' sk-btn--buy' : ''
+    const ctaClass = `isplash__cta sk-btn${ctaTone} min-h-[54px] px-8 text-[15px] max-sm:flex max-sm:w-full`
     // On a branded splash the stock fg-on-bg pill reads as a dark blob —
     // repaint the CTA in the creator's accent with luminance-picked ink.
     const ctaStyle = brandCtaStyle(brand)
@@ -527,19 +531,9 @@ export default function IntentRuntime({
       // The splash wears the creator's brand wholesale (bg + accent + logo,
       // scoped here) — the post-connect chat keeps Pantessa's own legibility.
       <main className="relative min-h-dvh overflow-hidden" style={brandThemeStyle(brand)}>
-        {/* One soft bloom behind the ask — the fusion-core glow. It has to
-            LIFT: on a light brand an accent-tinted radial darkens the middle
-            of the page and reads as a screen over the design, so the tint
-            flips to white there (brandBloomTint). */}
+        {/* (The bloom behind the ask is gone, squad mobile-sleek 2026-11-24: a flat ground, the creator's colours carried by the theme and the button.) */}
         <div
-          aria-hidden
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: `radial-gradient(ellipse 60% 42% at 50% 34%, ${brandBloomTint(brand)}, transparent 70%)`,
-          }}
-        />
-        <div
-          className={`relative max-w-3xl mx-auto px-4 py-16 min-h-dvh flex flex-col items-center justify-center text-center transition-opacity duration-700 ${autoStarting ? 'opacity-0' : 'opacity-100'}`}
+          className={`isplash relative max-w-3xl mx-auto px-4 py-16 max-sm:py-7 min-h-dvh flex flex-col items-center justify-center max-sm:justify-start text-center transition-opacity duration-700 ${autoStarting ? 'opacity-0' : 'opacity-100'}`}
         >
           {/* flex-wrap: the branded creator lockup is four segments wide
               (logo · brand · CALL · powered-by) and 375px is the drill
@@ -549,7 +543,7 @@ export default function IntentRuntime({
               <>
                 {/* the creator's mark (data URI from our DB, capped at scan) */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={brand.logo} alt={brand.name ?? brand.domain ?? 'logo'} className="w-7 h-7 rounded-lg object-contain" />
+                <img src={brand.logo} alt={brand.name ?? brand.domain ?? 'logo'} className="w-7 h-7 rounded-[var(--r-sm)] object-contain" />
                 <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
                   {brand.name ?? brand.domain}
                 </span>
@@ -587,7 +581,7 @@ export default function IntentRuntime({
           {/* THE ROSTER (R2): the slot badge — which mandate is speaking.
               DB-stored canonical text only (threat T2). */}
           {roster && (
-            <div className="mb-6 inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3.5 py-1.5 max-w-2xl">
+            <div className="mb-6 inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-[var(--r-pill)] border border-[var(--line)] bg-[var(--surf-1)] px-3.5 py-1.5 max-w-2xl">
               <span className="mono text-[10px] uppercase tracking-widest text-[color:var(--accent)]">
                 {roster.label} mandate
               </span>
@@ -597,12 +591,15 @@ export default function IntentRuntime({
               <span className="mono text-[10px] text-[color:var(--muted-2)]">${roster.capUsd} cap</span>
             </div>
           )}
-          <h1
-            className="text-[clamp(1.9rem,4.6vw,3.2rem)] leading-[1.12] font-medium text-[color:var(--fg)] max-w-2xl [text-wrap:balance] [overflow-wrap:anywhere]"
-            style={{ fontFamily: 'var(--font-serif)' }}
-          >
-            &ldquo;{ask}&rdquo;
-          </h1>
+          {/* THE TRADE (squad mobile-sleek, 2026-11-24): the ask is the page's one
+              display line, on the kit's cut card, with the three things the
+              contract below promises as its mono facts. */}
+          <div className="isplash__ask sk-card sk-card--raised w-full max-w-2xl px-5 py-6 sm:px-8 sm:py-9" data-i-ask="">
+            <h1 className="sk-display text-[clamp(1.75rem,4.6vw,3.1rem)] leading-[1.1] text-[color:var(--fg)] [text-wrap:balance] [overflow-wrap:anywhere]">
+              &ldquo;{ask}&rdquo;
+            </h1>
+            <p className="isplash__facts sk-label mt-4 leading-relaxed">Guarded build · Your wallet signs · Receipted</p>
+          </div>
 
           {/* The DECLINE verb (doors run): an addressed card offers its
               recipient a real "no" — session declines in one tap, otherwise
@@ -630,7 +627,7 @@ export default function IntentRuntime({
           {/* ≤sm the CTA leads and the three contract cards follow (flex
               order): on a phone the cards pushed the door below the fold —
               the recruit saw guardrail prose and no button. */}
-          <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl text-left max-sm:order-3 max-sm:mt-8">
+          <div className="isplash__contract mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3 max-sm:gap-0 w-full max-w-2xl text-left max-sm:order-3 max-sm:mt-7">
             {CONTRACT.map((c) => (
               <div
                 key={c.title}
@@ -638,9 +635,9 @@ export default function IntentRuntime({
                 // brand bg the alpha composites the card straight back into
                 // the field, and the three contract points stop reading as
                 // cards at all.
-                className="rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] px-4 py-4"
+                className="rounded-[var(--r-card)] border border-[var(--line)] bg-[var(--surf-1)] px-4 py-4 max-sm:border-0 max-sm:border-t max-sm:bg-transparent max-sm:px-0 max-sm:py-3.5"
               >
-                <c.icon className="w-4 h-4 mb-2.5" style={{ color: 'var(--accent)' }} />
+                <c.icon className="w-4 h-4 mb-2.5 max-sm:float-left max-sm:mb-0 max-sm:mr-2 max-sm:mt-px" style={{ color: 'var(--accent)' }} />
                 <p className="text-[12.5px] font-semibold text-[color:var(--fg)]">{c.title}</p>
                 <p className="mt-1 text-[12px] leading-relaxed text-[color:var(--muted)]">{c.body}</p>
               </div>
@@ -656,7 +653,7 @@ export default function IntentRuntime({
           {browser?.inApp && !browser.canLaunchApps && (
             <InAppEscape browser={browser} />
           )}
-          <div className="mt-10 max-sm:order-1">
+          <div className="isplash__go mt-10 max-sm:order-1 max-sm:mt-5 max-sm:w-full">
             {autoStarting ? (
               <ChatLoader compact lines={['wallet connected — building your path']} />
             ) : walletResolving ? (
@@ -863,7 +860,7 @@ export default function IntentRuntime({
                 aria-label="Pantessa home"
                 // A phone: a 44px target in the same 32px footprint (the
                 // negative margin keeps the header's layout; QA measured 32×32).
-                className="flex-shrink-0 grid place-items-center w-8 h-8 max-lg:w-11 max-lg:h-11 max-lg:-m-1.5 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
+                className="flex-shrink-0 grid place-items-center w-8 h-8 max-lg:w-11 max-lg:h-11 max-lg:-m-1.5 rounded-[var(--r-sm)] text-white hover:bg-[var(--surf-1)] transition-colors"
               >
                 <YeetfulMark size={15} />
               </Link>
@@ -1005,7 +1002,7 @@ export default function IntentRuntime({
       )}
       {transferShaped && !heldTurnSeen && (
         <div className="relative flex-shrink-0 max-w-3xl w-full mx-auto px-4 sm:px-6 pt-4" data-origin-fence="held">
-          <div className="yenter rounded-2xl border border-amber-400/40 bg-[color-mix(in_srgb,var(--surf-1)_88%,transparent)] px-4 py-4 sm:px-5 max-sm:max-h-[42dvh] max-sm:overflow-y-auto">
+          <div className="yenter rounded-[var(--r-card)] border border-amber-400/40 bg-[color-mix(in_srgb,var(--surf-1)_88%,transparent)] px-4 py-4 sm:px-5 max-sm:max-h-[42dvh] max-sm:overflow-y-auto">
             <p className="mono text-[11px] uppercase tracking-widest text-amber-400 leading-none">Held for you to send</p>
             <p className="mt-2 text-[15px] leading-snug text-[color:var(--fg)]" style={{ fontFamily: 'var(--font-serif)' }}>
               This link doesn&apos;t run itself.
@@ -1148,7 +1145,7 @@ function InAppEscape({ browser }: { browser: InAppBrowser }) {
   }
   return (
     <div
-      className="mt-8 w-full max-w-md text-left rounded-2xl border border-amber-400/40 bg-[var(--surf-1)] px-4 py-4 max-sm:order-1"
+      className="mt-8 w-full max-w-md text-left rounded-[var(--r-card)] border border-amber-400/40 bg-[var(--surf-1)] px-4 py-4 max-sm:order-1"
       data-inapp-browser={browser.vendor ?? 'webview'}
     >
       <p className="mono text-[11px] uppercase tracking-widest text-amber-400 leading-none">You&apos;re in {app}&apos;s browser</p>
@@ -1167,7 +1164,7 @@ function InAppEscape({ browser }: { browser: InAppBrowser }) {
         <button
           type="button"
           onClick={() => void copy()}
-          className="flex items-center gap-1.5 px-2.5 min-h-10 rounded-lg border border-solid border-amber-400/60 bg-amber-400/10 text-[color:var(--fg)] hover:border-amber-400 transition-colors mono text-[11px] font-medium whitespace-nowrap"
+          className="flex items-center gap-1.5 px-2.5 min-h-10 rounded-[var(--r-sm)] border border-solid border-amber-400/60 bg-amber-400/10 text-[color:var(--fg)] hover:border-amber-400 transition-colors mono text-[11px] font-medium whitespace-nowrap"
           data-inapp-copy
         >
           {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} {copied ? 'COPIED' : 'COPY THIS LINK'}
@@ -1175,7 +1172,7 @@ function InAppEscape({ browser }: { browser: InAppBrowser }) {
         {intent && (
           <a
             href={intent}
-            className="flex items-center gap-1.5 px-2.5 min-h-10 rounded-lg border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] transition-colors mono text-[11px] font-medium whitespace-nowrap"
+            className="flex items-center gap-1.5 px-2.5 min-h-10 rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] transition-colors mono text-[11px] font-medium whitespace-nowrap"
             data-inapp-intent
           >
             <ExternalLink className="w-4 h-4" /> OPEN IN CHROME
@@ -1206,7 +1203,7 @@ function ReturnCard({
   const copy = returnCopy(verdict, ask, Date.now())
   return (
     <div className="relative flex-shrink-0 max-w-3xl w-full mx-auto px-4 sm:px-6 pt-4" data-link-return={verdict.kind}>
-      <div className="yenter rounded-2xl border border-amber-400/40 bg-[color-mix(in_srgb,var(--surf-1)_88%,transparent)] px-4 py-4 sm:px-5 max-sm:max-h-[48dvh] max-sm:overflow-y-auto">
+      <div className="yenter rounded-[var(--r-card)] border border-amber-400/40 bg-[color-mix(in_srgb,var(--surf-1)_88%,transparent)] px-4 py-4 sm:px-5 max-sm:max-h-[48dvh] max-sm:overflow-y-auto">
         <p className="mono text-[11px] uppercase tracking-widest text-amber-400 leading-none">{copy.eyebrow}</p>
         <p className="mt-2 text-[15px] leading-snug text-[color:var(--fg)]" style={{ fontFamily: 'var(--font-serif)' }}>
           {copy.title}
