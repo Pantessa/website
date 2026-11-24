@@ -42,7 +42,7 @@
 .tpn__body { margin: 0; max-width: 56ch; font-family: var(--mk-font-ui); font-size: var(--fs-base); line-height: 1.5; color: var(--muted); text-wrap: pretty; }
 .tpn__facts { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
 .tpn__fact { position: relative; padding-left: var(--sp-4); font-family: var(--mk-font-ui); font-size: var(--fs-md); line-height: 1.45; color: var(--fg); text-wrap: pretty; }
-.tpn__fact::before { content: ''; position: absolute; left: 1px; top: 0.62em; width: 5px; height: 5px; border-radius: var(--r-pill); background: var(--accent); }
+.tpn__fact::before { content: ''; position: absolute; left: 1px; top: 0.62em; width: 5px; height: 5px; border-radius: var(--r-round); background: var(--accent); }
 
 /* ── The sentences ────────────────────────────────────────────────────── */
 .tpn__asks { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }

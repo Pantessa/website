@@ -64,7 +64,7 @@
 .read__tilelabel { font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.01em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .read__tile.is-on .read__tilelabel { color: var(--fg); }
 /* The tag is a dot: lit for a market that never closes, hollow for one outside its session, absent while a session trades. */
-.read__tag { flex: 0 0 auto; width: 6px; height: 6px; border-radius: var(--r-pill); }
+.read__tag { flex: 0 0 auto; width: 6px; height: 6px; border-radius: var(--r-round); }
 .read__tag--always { background: var(--mk-up, var(--up)); }
 .read__tag--closed { box-shadow: inset 0 0 0 1px var(--muted-2); }
 .read__tilelast { margin-top: 2px; font-size: var(--fs-base); font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -124,7 +124,7 @@
 .read__axis--max { top: 0; }
 .read__axis--min { bottom: 0; }
 .read__cursor { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--mk-crosshair, var(--muted)); pointer-events: none; }
-.read__dot { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: var(--r-pill); background: var(--read-tone); box-shadow: 0 0 0 2px var(--surf-1); pointer-events: none; }
+.read__dot { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: var(--r-round); background: var(--read-tone); box-shadow: 0 0 0 2px var(--surf-1); pointer-events: none; }
 .read__plot.is-flat .read__dot { background: var(--fg); }
 .read__empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; font-size: var(--fs-sm); color: var(--muted-2); text-align: center; }
 
@@ -238,4 +238,15 @@ button.read__lvtag:hover, button.read__lvtag:focus-visible, button.read__lvtag.i
 @media (prefers-reduced-motion: reduce) {
   .read__clause, .read__tile, .read__range, .read__chip, .read__mover, .read__back, .read__view, .read__watch, .read__more, .read__lvline, .read__lvtag, .read__where { transition: none; }
   .read__chip:hover { transform: none; }
+}
+
+/* THE READ's share door is the shared pill (components/ShareActions): hard-edged here (squad mobile-sleek). */
+.read .read__share button, .read .read__share a { border-radius: var(--r-pill); }
+/* A thumb's targets (squad mobile-sleek): the mover chips and the backdrop
+   row take the 44px floor; the tile's + keeps its 28px look inside a 44px
+   hit area. The headline's clauses stay words in a sentence. */
+@media (hover: none) {
+  .read .read__mover { min-height: 44px; align-items: center; }
+  .read .read__back { min-height: 44px; }
+  .read .read__watch::after { content: ''; position: absolute; inset: -8px; }
 }

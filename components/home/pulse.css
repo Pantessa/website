@@ -15,7 +15,7 @@
   --pulse-plot-h: 96px;
   position: relative; display: flex; flex-direction: column;
   min-height: 260px; margin: 12px 0 0; padding: 12px 16px 10px;
-  border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1);
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surf-1);
 }
 
 /* ── Head: the dot, the name, the status, the door ─────────────────────── */
@@ -37,16 +37,16 @@
    height holds whether the venue answers 12 markets or the fallback's. ─── */
 .pulse__markets { display: flex; gap: 6px; height: 28px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
 .pulse__markets::-webkit-scrollbar { display: none; }
-.pulse__m { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: color .12s ease, border-color .12s ease, background .12s ease; }
+.pulse__m { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: color .12s ease, border-color .12s ease, background .12s ease; }
 .pulse__m:hover { color: var(--fg); border-color: var(--muted-2); }
 .pulse__m.is-on { color: var(--fg); background: var(--surf-2, var(--surf-1)); border-color: var(--fg); }
 .pulse__m:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .pulse__mown, .pulse__mseat { flex: 0 0 auto; display: inline-flex; align-items: center; }
 .pulse__mown .pulse__m { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; }
-.pulse__mx { height: 28px; padding: 0 8px 0 5px; border: 1px solid var(--line); border-left: 0; border-top-right-radius: 999px; border-bottom-right-radius: 999px; background: transparent; color: var(--muted-2); font-size: 13px; line-height: 1; cursor: pointer; }
+.pulse__mx { height: 28px; padding: 0 8px 0 5px; border: 1px solid var(--line); border-left: 0; border-top-right-radius: var(--r-pill); border-bottom-right-radius: var(--r-pill); background: transparent; color: var(--muted-2); font-size: 13px; line-height: 1; cursor: pointer; }
 .pulse__mx:hover { color: var(--fg); border-color: var(--muted-2); }
 .pulse__add { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; }
-.pulse__add input { height: 28px; width: 112px; padding: 0 10px; border: 1px dashed var(--line); border-radius: 999px; background: transparent; color: var(--fg); font-size: 12px; }
+.pulse__add input { height: 28px; width: 112px; padding: 0 10px; border: 1px dashed var(--line); border-radius: var(--r-pill); background: transparent; color: var(--fg); font-size: 12px; }
 .pulse__add input:focus { outline: none; border-color: var(--accent); border-style: solid; width: 180px; }
 .pulse__add input::placeholder { color: var(--muted-2); }
 .pulse__add input:disabled { opacity: .5; }
@@ -70,7 +70,7 @@
 .pulse__hoverband { fill: color-mix(in srgb, var(--fg) 8%, transparent); pointer-events: none; }
 .pulse__ax { position: absolute; font-size: 10px; line-height: 1; color: var(--muted-2); font-variant-numeric: tabular-nums; pointer-events: none; }
 .pulse__ax--max { left: 0; top: 0; }
-.pulse__split { position: relative; height: 5px; margin-top: 8px; border-radius: 3px; background: var(--pulse-down); overflow: hidden; }
+.pulse__split { position: relative; height: 5px; margin-top: 8px; border-radius: var(--r-sm); background: var(--pulse-down); overflow: hidden; }
 .pulse__split[data-empty] { background: var(--mk-grid, var(--line)); }
 .pulse__split[data-empty] .pulse__split-buy { display: none; }
 .pulse__split-buy { position: absolute; inset: 0 auto 0 0; background: var(--pulse-up); transition: width .4s var(--mk-ease, ease); }
@@ -82,7 +82,7 @@
 
 /* ── Tiles: fixed rows, so a chip arriving changes nothing but the chip ── */
 .pulse__tiles { display: grid; grid-template-rows: repeat(3, 44px); gap: 6px; min-width: 0; }
-.pulse__tile { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 11px 17px 12px; align-items: center; column-gap: 10px; min-width: 0; padding: 2px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.pulse__tile { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 11px 17px 12px; align-items: center; column-gap: 10px; min-width: 0; padding: 2px 10px; border: 1px solid var(--line); border-radius: var(--r-md); }
 .pulse__tk { grid-column: 1; grid-row: 1; font-family: var(--mk-font-mono); font-size: 9.5px; line-height: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pulse__tv { grid-column: 1; grid-row: 2; display: flex; align-items: baseline; gap: 6px; font-size: 15px; line-height: 17px; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pulse__ts { grid-column: 1; grid-row: 3; font-size: 10px; line-height: 12px; color: var(--muted-2); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -92,7 +92,7 @@
 
 /* ── Chips: the /live idiom (components/live/live.css .live__chip), carried
    here because live.css only loads on /live ─────────────────────────────── */
-.pulse__chip { grid-column: 2; grid-row: 1 / -1; align-self: center; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border: 1px solid transparent; border-radius: 999px; font-family: var(--mk-font-ui); font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; cursor: pointer; transition: transform .12s ease, filter .12s ease; }
+.pulse__chip { grid-column: 2; grid-row: 1 / -1; align-self: center; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--r-pill); font-family: var(--mk-font-ui); font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; cursor: pointer; transition: transform .12s ease, filter .12s ease; }
 .pulse__chip:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .pulse__chip:active { transform: translateY(0); }
 .pulse__chip--buy { background: color-mix(in srgb, var(--pulse-up) 18%, var(--surf-1)); border-color: color-mix(in srgb, var(--pulse-up) 55%, transparent); color: var(--pulse-up); }
