@@ -141,3 +141,36 @@
 
 /* Before the engine is decided (one frame after mount): the card keeps its shape. */
 .tvx-pending { flex: 1; min-height: 280px; border-radius: 10px; background: var(--bg); }
+
+/* ── THE PHONE'S BAR, ONE ROW (2026-11-24). The bar was three rows on a phone
+   (the view switch + full screen · LIVE + Share · the handle door + Compare,
+   140px before a candle). Now it is one: the view switch, the live dot, then
+   four 36px icon buttons (the door, Compare, Share, full screen); every label
+   stays in the page for a reader. A stock's pool pill and an open Compare
+   take a row of their own under it. `:not(#_)` outranks the nine-class
+   selectors the older phone layout needed (markets.css, called-chart.css),
+   which still lay out the built-in engine's bar. ── */
+@media (max-width: 640px) {
+  .sym:not(#_) .tvx > .mkt-chart__bar { flex-wrap: wrap; align-items: center; gap: 6px; }
+  .sym:not(#_) .tvx > .mkt-chart__bar::before { content: none; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view { order: 1; flex: 0 0 auto; margin: 0; border-radius: 11px; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > * { order: 3; flex: 0 0 auto; min-width: 0; margin: 0; }
+  /* The live dot takes what is left; under 380px it is the dot alone. */
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :first-child { order: 2; flex: 1 1 0; margin-left: 4px; overflow: hidden; white-space: nowrap; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open) {
+    display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; gap: 0; border: 1px solid var(--line); border-style: solid; border-radius: 10px; background: transparent; color: var(--muted); font-size: 0; letter-spacing: 0;
+  }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open) svg { width: 15px; height: 15px; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open):active { background: color-mix(in srgb, var(--fg) 9%, transparent); color: var(--fg); }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-pool, .mk-vs) { order: 9; flex: 1 1 100%; }
+  /* The door and Compare (what is on the chart), then Share and full screen (what to do with it). */
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > .mkt-sharebtn { order: 4; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > .tchart__fs { order: 5; }
+  /* The plot keeps the room the two rows gave back. */
+  .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas.tvx__canvas { height: min(440px, 56dvh); min-height: 360px; }
+  /* What your drawings can do: its long how-to is the tools' own titles on a phone. */
+  .tvx-plan__empty { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+}
+@media (max-width: 379px) {
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :first-child { font-size: 0; }
+}

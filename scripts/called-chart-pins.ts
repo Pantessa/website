@@ -597,12 +597,34 @@ export function calledChartPins(check: Check): void {
   }
   for (const d of ['app', 'components']) walk(new URL(`../${d}`, import.meta.url).pathname)
   const others = sheets.filter((f) => !f.endsWith('components/called/called-chart.css'))
-  const foreign = (css.replace(/\/\*[\s\S]*?\*\//g, '').match(/\.[a-zA-Z][\w-]*/g) ?? []).filter((c) => !/^\.(xcc|xch|xcf|is-[a-z]+$|sym$|tchart$|tchart--expanded$|mkt-chart__bar$|mkt-chart__right$|mkt-view$|mkt-pool$|mkt-sharebtn$|tchart__fs$|mk-vs__open$|\d)/.test(c))
+  const foreign = (css.replace(/\/\*[\s\S]*?\*\//g, '').match(/\.[a-zA-Z][\w-]*/g) ?? []).filter((c) => !/^\.(xcc|xch|xcf|is-[a-z]+$|sym$|tchart$|tchart--expanded$|mkt-chart__bar$|mkt-chart__right$|mkt-view$|mkt-pool$|mkt-sharebtn$|tchart__fs$|mk-vs__open$|tvx$|\d)/.test(c))
   check(
     'called chart css: every class this lane styles wears its own prefix (`xcc`, `xch` for the band above the chart and `xcf` for the call card on it, RE-PINNED 2026-11-16 (called head, call card); a state class like `is-focus` only ever on one of them), the few host classes it reaches into are the chart bar\'s on a phone and the chart card the band joins, and no other stylesheet in the repo uses either prefix',
     sheets.length > 20 && others.every((f) => !/\.(xcc|xch|xcf)[-_\w]*/.test(readFileSync(f, 'utf8'))) && foreign.length === 0 && !/(^|[\s,>+~])\.is-[a-z]+/m.test(css.replace(/\/\*[\s\S]*?\*\//g, '')),
     foreign.slice(0, 8).join(' '),
   )
+
+  // ── The phone, native (2026-11-24): a compact band, a one-row bar, a folded list ─────
+  {
+    const advCss = read('components/markets/chart/advanced-chart.css')
+    const mkCss = read('components/markets/markets.css')
+    const phone = css.slice(css.indexOf('THE PHONE, NATIVE'))
+    check(
+      'called chart phone (2026-11-24): on a phone the calls list is folded to the pinned calls (the first five when none is pinned) behind one button, in CSS only, so every row is in the page at every width and a focused row is never hidden; a count\'s number wears its own tag and the text reads the same',
+      /data-fold=\{folded && tails > 0 \? '' : undefined\}/.test(panel) && /data-tail=\{tail \? '' : undefined\}/.test(panel) && /pinned > 0 \? !c\.picked : i >= FOLD_ROWS/.test(panel) && /className="xcc-more" aria-expanded=\{!folded\}/.test(panel) &&
+        /\.xcc__rows\[data-fold\] > \.xcc-row\[data-tail\]:not\(\.is-focus\) \{ display: none; \}/.test(phone) && /^\.xcc-more \{ display: none; \}/m.test(css) && !/\.xcc__rows\[data-fold\]/.test(css.slice(0, css.indexOf('THE PHONE, NATIVE'))) &&
+        /<b className="xch__num">\{m\[1\]\}<\/b>\s+\{m\[2\]\}/.test(panel),
+    )
+    check(
+      'called chart phone (2026-11-24): the band on a phone is who (Share and Clear at its corner), the tally as stats (the total is the control\'s All), one segmented control, then the fine print; the door on the chart\'s bar is an icon and its note is the band\'s to say',
+      /@media \(max-width: 640px\)/.test(phone) && /\.xch__count\.is-total \{ display: none; \}/.test(phone) && /\.xch__tally \{ display: contents; \}/.test(phone) && /\.xch__tools \.xcc-share \{ position: absolute;/.test(phone) && /\.xcc-open__label,[^{]*\.xcc-open__state \{ display: none; \}/.test(phone) && /\.xcc-note \{ display: none; \}/.test(phone),
+    )
+    check(
+      'symbol page phone (2026-11-24): the Advanced chart\'s bar is ONE row on a phone (the view switch, the live dot, four 36px icon buttons whose labels stay in the page), a pool pill or an open Compare takes its own row, and the header drops the feed\'s name after the change so high / low ride the price\'s row',
+      /\.sym:not\(#_\) \.tvx > \.mkt-chart__bar::before \{ content: none; \}/.test(advCss) && /:is\(\.mkt-sharebtn, \.tchart__fs, \.mk-vs__open\) \{[^}]*width: 36px; height: 36px;[^}]*font-size: 0;/.test(advCss) && /:is\(\.mkt-pool, \.mk-vs\) \{ order: 9; flex: 1 1 100%; \}/.test(advCss) &&
+        /\.sym--cockpit \.sym__strip \.sym__chg \+ \.sym__feed \{ display: none; \}/.test(mkCss) && /Share2 className="h-3 w-3" \/> Share/.test(adv),
+    )
+  }
 
   // ── The call card: a call opened on the chart never moves the page ─────
   {
