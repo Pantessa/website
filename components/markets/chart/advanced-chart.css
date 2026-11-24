@@ -145,8 +145,9 @@
 /* ── THE PHONE'S BAR, ONE ROW (2026-11-24). The bar was three rows on a phone
    (the view switch + full screen · LIVE + Share · the handle door + Compare,
    140px before a candle). Now it is one: the view switch, the live dot, then
-   four 36px icon buttons (the door, Compare, Share, full screen); every label
-   stays in the page for a reader. A stock's pool pill and an open Compare
+   four icon cells (the door, Compare, Share, full screen); every label stays
+   in the page for a reader. (Their size and edges are set in THE BAR, SLEEK
+   at the foot of this file.) A stock's pool pill and an open Compare
    take a row of their own under it. `:not(#_)` outranks the nine-class
    selectors the older phone layout needed (markets.css, called-chart.css),
    which still lay out the built-in engine's bar. ── */

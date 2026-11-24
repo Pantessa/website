@@ -1000,7 +1000,8 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       layerOn = on
       refreshMarks()
       // The cards change hands with the marks: the layer's own when it draws, the library's callouts when it cannot.
-      if (drawnKey) {
+      // (A render already under way is dropped by the next one: it would have drawn for the other hand.)
+      if (chart && plotted()) {
         drawnKey = ''
         schedule()
       }

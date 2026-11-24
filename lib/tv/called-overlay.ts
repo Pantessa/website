@@ -851,6 +851,8 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
     start() {
       if (running || typeof requestAnimationFrame === 'undefined' || typeof document === 'undefined') return
       running = true
+      // Mounted at once where the pane is already there, so the first render of a plot knows who draws its cards.
+      if (hooks.chart() && mount()) setOn(true)
       raf = requestAnimationFrame(frame)
     },
     stop() {
