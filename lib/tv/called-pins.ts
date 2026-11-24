@@ -1018,20 +1018,21 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     return cornerNow
   }
   /** One call as a card of the layer: the verdict's word and the day, the post's own words (cut and wrapped by `pinText`, never reworded), the move. */
-  const cardSpecOf = (call: CalledCall, handle: string, textWidth: number, wordLines: number, pageText: (font: string, text: string) => number, fonts: CardFonts): CardSpec => {
+  const cardSpecOf = (call: CalledCall, handle: string, textWidth: number, wordLines: number, pageText: (font: string, text: string) => number, fonts: CardFonts, dateNote?: string): CardSpec => {
     const wide: Measure = (t) => Math.max(pageText(cardFont.words(fonts), t), pageText(cardFont.result(fonts), t))
     const text = pinText(call, handle, { textWidth, measure: wide, wordLines })
-    const spec = { id: call.postId, barTime: call.barTime, priceAt: call.priceAt, verdict: call.verdict, added: text.added ? ADDED_MARK : null, word: VERDICT_WORDS[call.verdict], date: pinDate(call.postedAt), words: text.words, result: text.lines.slice(text.lines.lastIndexOf(text.words[text.words.length - 1]) + 1) }
+    const spec = { id: call.postId, barTime: call.barTime, priceAt: call.priceAt, verdict: call.verdict, added: text.added ? ADDED_MARK : null, word: VERDICT_WORDS[call.verdict], date: dateNote ? `${pinDate(call.postedAt)} \u00b7 ${dateNote}` : pinDate(call.postedAt), words: text.words, result: text.lines.slice(text.lines.lastIndexOf(text.words[text.words.length - 1]) + 1) }
     return { ...spec, ...cardSize(spec, fonts, pageText) }
   }
   let previewText: ((font: string, text: string) => number) | null = null
   const layer = createMarksLayer({
     // A mark under the mouse shows its call as a card (what the library's tooltip used to say, set as the cards are).
-    preview: (postId) => {
+    // Over a crowd it is the call a press would open, and says which of how many (`1 of 7`): each press steps on.
+    preview: (postId, at) => {
       const record = plotted()
       const call = record?.calls.find((c) => c.postId === postId)
       previewText = previewText ?? pageMeasure()
-      return record && call && previewText ? cardSpecOf(call, record.handle, 236, 3, previewText, pageFonts()) : null
+      return record && call && previewText ? cardSpecOf(call, record.handle, 236, 3, previewText, pageFonts(), at && at.of > 1 ? `${at.index} of ${at.of}` : undefined) : null
     },
     host: () => hostEl,
     chart: () => chart,

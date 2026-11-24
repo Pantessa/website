@@ -50,7 +50,7 @@ import { planFor, type PlanItem } from '@/lib/tv/plan'
 import { pageTfOfResolution, resolutionsForSource, tvResolution, TF_SECONDS } from '@/lib/tv/resolution'
 import { linesFromShapes, sameLines, shapeFromLine, type ShapeSnapshot } from '@/lib/tv/shapes'
 import { externalApplied, layoutForChart, legacyMoved, markExternalApplied, markLegacyMoved, readStoredLayout, writeStoredLayout } from '@/lib/tv/store'
-import { TV_FONT_CSS_URL, TV_FONT_FAMILY, tvCssProperties, tvOverrides, tvPhoneOverrides, tvStudyOverrides } from '@/lib/tv/theme'
+import { TV_FONT_CSS_URL, TV_FONT_FAMILY, tvCssProperties, tvOverrides, tvPhoneOverrides, tvPriceFormat, tvStudyOverrides } from '@/lib/tv/theme'
 import type { TvChartApi, TvWidget } from '@/lib/tv/types'
 import CallFocus from '@/components/called/CallFocus'
 import { useCalledPins } from '@/lib/called-it/use-record'
@@ -192,11 +192,10 @@ export default function AdvancedChart({
   const [lines, setLines] = useState<ChartLine[]>([])
   const [focusId, setFocusId] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
-  const [planOpen, setPlanOpen] = useState(true)
-  // On a phone the drawings' plan starts folded to its one-line title: the first screen is the chart's.
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches) setPlanOpen(false)
-  }, [])
+  // What your drawings can do starts folded to its one-line title (its how-to is behind that press); it opens by
+  // itself the first time there is a drawing to act on, and when one is made or a scenario is drawn.
+  const [planOpen, setPlanOpen] = useState(false)
+  const planSeenRef = useRef(false)
   const [scn, setScn] = useState<ScenarioState>({ status: 'idle' })
 
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -418,6 +417,10 @@ export default function AdvancedChart({
           overrides: { ...tvOverrides(tokens), ...(phone ? tvPhoneOverrides() : {}) },
           studies_overrides: tvStudyOverrides(tokens),
           custom_font_family: TV_FONT_FAMILY,
+          // The scale prints no tick below zero (lib/tv/theme `tvPriceFormat`). Volume and percent keep the library's own.
+          custom_formatters: {
+            priceFormatterFactory: (info) => (info && info.format === 'price' && info.pricescale > 0 ? { format: (price: number) => tvPriceFormat(price, info.pricescale) } : null),
+          },
           loading_screen: { backgroundColor: tokens.bg, foregroundColor: tokens.accent },
           favorites: { intervals: resolutionsForSource(pair.source) },
           time_frames: [
@@ -809,6 +812,12 @@ export default function AdvancedChart({
       }))
       .filter((it) => it.kind !== 'level' || it.rows.some((r) => r.offers.length > 0))
   }, [shapes, pair, last, lookOnly, actionUsd, held, tradable])
+  useEffect(() => {
+    if (plan.length > 0 && !planSeenRef.current) {
+      planSeenRef.current = true
+      setPlanOpen(true)
+    }
+  }, [plan.length])
   const missing = pair ? missingActionNote(pair.symbol, pair.source) : null
 
   const pickTf = useCallback((next: ChartTf) => {

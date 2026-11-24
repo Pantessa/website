@@ -218,6 +218,8 @@ export interface TvWidgetOptions {
   custom_css_url?: string
   /** The family the chart's canvas sets its text in (the scales, the price labels). */
   custom_font_family?: string
+  /** Our own wording of a price on the scale and in the legend (null = the library's). */
+  custom_formatters?: { priceFormatterFactory?: (symbolInfo: TvSymbolInfo | null, minTick: string) => { format(price: number): string } | null }
   time_frames?: { text: string; resolution: string; description?: string; title?: string }[]
   debug?: boolean
 }

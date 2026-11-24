@@ -652,7 +652,7 @@ export interface MarksLayerHooks {
   scene(): MarksScene | null
   inks(): CardInks
   /** The card for one call, shown while the mouse is over its mark. */
-  preview?(postId: string): CardSpec | null
+  preview?(postId: string, at?: { index: number; of: number }): CardSpec | null
   onPick(postId: string): void
   /** The layer is drawing (true) or cannot (false): the caller falls back to the library's own marks. */
   onMount(on: boolean): void
@@ -875,7 +875,8 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
       paintMarks(b, marks, inks, fonts.mono, hover)
       // The mark under the mouse says what it is: the call a press would open, as a card beside it.
       const over = hover && !hover.startsWith('card:') ? marks.find((m) => m.key === hover) : null
-      const tipCard = over && !over.focus ? (hooks.preview?.(pickFrom(over, scene.focusId)) ?? null) : null
+      const nextId = over && !over.focus ? pickFrom(over, scene.focusId) : null
+      const tipCard = over && nextId ? (hooks.preview?.(nextId, { index: over.ids.indexOf(nextId) + 1, of: over.ids.length }) ?? null) : null
       if (over && tipCard) {
         const above = over.y - tipCard.h - 10 >= scene.keepTop
         const box: CardBox = { id: tipCard.id, side: above ? 'above' : 'below', inView: true, x: Math.round(Math.max(6, Math.min(over.x + over.w / 2 - tipCard.w / 2, width - tipCard.w - 6))), y: Math.round(above ? over.y - tipCard.h - 10 : over.y + over.h + 10), w: tipCard.w, h: tipCard.h }

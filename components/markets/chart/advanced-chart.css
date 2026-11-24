@@ -232,6 +232,7 @@
   .tvx-tf > button:disabled { opacity: 0.5; }
   /* Your drawings, folded: its title alone. Opened, the scenario picks and the tools come with it. */
   .tvx-plan.is-folded .tvx-scn__pick, .tvx-plan.is-folded .tvx-plan__tools { display: none; }
+  /* The measured plot height is the plot's own: the body wraps it. */
   .tvx-plan__title { min-height: 44px; }
 }
 
