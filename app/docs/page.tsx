@@ -52,7 +52,7 @@ function StartSteps() {
         <p>
           Open <SpineLink href={MARKETS_HREF}>the markets</SpineLink> and pick a stock, a coin or a
           perp. Charts and prices are public: no account, no wallet. On{' '}
-          <Link href="/docs/called-it">Called it</Link> you can see an X account&apos;s calls pinned on
+          <Link href="/docs/called-it">Called it</Link>{' '}you can see an X account’s calls pinned on
           the same chart. More in <Link href="/docs/markets">Markets</Link>.
         </p>
       </DocsStep>

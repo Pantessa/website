@@ -11,7 +11,6 @@
 // the registry; next.config redirects the three retired addresses.
 
 import { SITE_URL } from './site-url'
-import { LINK_FEE_PCT } from './fees'
 
 /** Re-exported: docs pages have imported `SITE` from here since before
  *  lib/site-url existed. */
@@ -99,20 +98,16 @@ export const DOCS_PAGES: DocsPage[] = [
   {
     slug: 'links',
     title: 'Links that carry a trade',
-    seoTitle: 'Links: share a trade anyone can open and sign',
-    description:
-      `Make a short link that carries a trade. Whoever opens it connects their own wallet and signs. On a swap made through your link you earn half the ${LINK_FEE_PCT} fee.`,
+    seoTitle: 'Intent links: share a trade as a link',
+    description: 'Make a link that carries a trade as a sentence. The visitor connects their own wallet and signs, and you get half of Pantessa’s fee on swaps.',
     ready: true,
     group: 'earn',
   },
   {
     slug: 'creator-earnings',
     title: 'Creator earnings',
-    seoTitle: 'Creator earnings: half the fee on your link swaps',
-    description:
-      // Fee from lib/fees (LINK_FEE_PCT, CREATOR_FEE_SPLIT = half). Swaps pay
-      // creators; perp trades do not yet, so the line names swaps only.
-      `A swap made through your link pays a ${LINK_FEE_PCT} fee and half of it is yours. Part is paid inside the swap; the rest is claimable as USDC on Base from $10.`,
+    seoTitle: 'Creator earnings: half the fee on link swaps',
+    description: 'How creators are paid: half of Pantessa’s fee on swaps through their links, paid in the swap or claimed as USDC on Base. Perp trades do not pay yet.',
     ready: true,
     group: 'earn',
   },
@@ -131,17 +126,15 @@ export const DOCS_PAGES: DocsPage[] = [
     slug: 'trust',
     title: 'Why you can sign it',
     seoTitle: 'Why you can sign what Pantessa builds',
-    description:
-      'Pantessa never holds your money and cannot withdraw it. Code, not the AI, builds each trade from live prices and checks it before your wallet sees it.',
+    description: 'Pantessa never holds your money. Code builds each trade from live venue data, a second check runs, the fee is shown, and you sign.',
     ready: true,
     group: 'safety',
   },
   {
     slug: 'guardian',
     title: 'Guardian: stops and take-profits',
-    seoTitle: 'Guardian: stops and take-profits on Hyperliquid',
-    description:
-      'Arm a stop-loss or take-profit on a Hyperliquid position. You approve an agent key once; Pantessa’s guard lets each Guardian close only reduce that position.',
+    seoTitle: 'Guardian: stops on Hyperliquid positions',
+    description: 'A stop-loss or take-profit on a Hyperliquid position, checked every minute. It runs on an agent key you approve once, which cannot withdraw.',
     ready: true,
     group: 'safety',
   },
@@ -150,8 +143,8 @@ export const DOCS_PAGES: DocsPage[] = [
   {
     slug: 'venues',
     title: 'Venues and checks',
-    seoTitle: 'Venues and checks: what a Pantessa build may touch',
-    description: 'Every venue Pantessa builds for, its chains, the contracts and selectors a build may use, and the check that fences each one. Served from the code as JSON.',
+    seoTitle: 'Venues: what Pantessa can ask you to sign',
+    description: 'Every venue, chain and contract a Pantessa build can use, with the check in front of each signature. Read from the code, served as JSON.',
     ready: true,
     group: 'safety',
   },
@@ -160,9 +153,8 @@ export const DOCS_PAGES: DocsPage[] = [
   {
     slug: 'host-buttons',
     title: 'Site buttons',
-    seoTitle: 'Site buttons: a trade button any site can wear',
-    description:
-      'Make a copy-paste HTML button that carries a trade. Visitors tap it, sign with their own wallet on Pantessa, and come back to your site. No script, no iframe.',
+    seoTitle: 'Site buttons: a trade button for your website',
+    description: 'Put a plain HTML button on your site that opens a trade on Pantessa. Visitors sign with their own wallet and come back to your return URL.',
     ready: true,
     group: 'build',
   },
