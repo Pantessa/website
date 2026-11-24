@@ -112,8 +112,8 @@
 .mk-range { display: grid; grid-template-columns: auto minmax(120px, 220px) auto; grid-template-areas: "lo bar hi" "k k k"; align-items: center; gap: 2px 8px; margin-top: 6px; }
 .mk-range__lo { grid-area: lo; font-size: 10.5px; color: var(--muted); }
 .mk-range__hi { grid-area: hi; font-size: 10.5px; color: var(--muted); }
-.mk-range__bar { grid-area: bar; position: relative; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--fg) 12%, transparent); overflow: visible; }
-.mk-range__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: linear-gradient(90deg, color-mix(in srgb, var(--mk-down, var(--sell)) 70%, transparent), var(--mk-up, var(--up))); }
+.mk-range__bar { grid-area: bar; position: relative; height: 4px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--fg) 12%, transparent); overflow: visible; }
+.mk-range__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--r-sm); background: linear-gradient(90deg, color-mix(in srgb, var(--mk-down, var(--sell)) 70%, transparent), var(--mk-up, var(--up))); }
 .mk-range__tick { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--fg); box-shadow: 0 0 0 2px var(--bg); }
 .mk-range__k { grid-area: k; justify-self: center; font-size: 8.5px; letter-spacing: 0.16em; color: var(--muted-2); }
 /* What you hold — one pill. */
@@ -606,7 +606,7 @@ button.mk-held:hover { border-color: var(--accent); }
 .sym--cockpit .sym__strip .sym__venue-tail { text-transform: none; letter-spacing: 0.08em; color: var(--muted); }
 /* The stock / perp switch (2026-11-19): a share with two instruments here, each its own page
    (lib/charts, "The perp twin"). The page you are on is filled; the other is a link. */
-.sym__twin { display: inline-flex; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; white-space: nowrap; }
+.sym__twin { display: inline-flex; flex: 0 0 auto; border: 1px solid var(--line); border-radius: var(--r-pill); overflow: hidden; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; white-space: nowrap; }
 .sym__twin-opt { padding: 3px 9px; color: var(--muted); text-decoration: none; }
 .sym__twin-opt[aria-current='page'] { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--fg); }
 a.sym__twin-opt:hover, a.sym__twin-opt:focus-visible { color: var(--fg); background: color-mix(in srgb, var(--fg) 9%, transparent); }
@@ -646,20 +646,20 @@ a.sym__twin-opt:hover, a.sym__twin-opt:focus-visible { color: var(--fg); backgro
    rules above are more specific and still win when they apply.) */
 
 /* The right column's ticket. */
-.mkt-railticket { flex: 0 0 auto; max-height: 70%; overflow: auto; scrollbar-width: thin; margin: 10px 12px 0; padding: 12px 12px 10px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: 14px; background: var(--surf-1); min-width: 0; }
+.mkt-railticket { flex: 0 0 auto; max-height: 70%; overflow: auto; scrollbar-width: thin; margin: 10px 12px 0; padding: 12px 12px 10px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: var(--r-lg); background: var(--surf-1); min-width: 0; }
 .mkt-railticket__head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .mkt-railticket__k { font-size: 10px; letter-spacing: 0.14em; color: var(--fg); white-space: nowrap; }
 .mkt-railticket__sub { font-size: 9px; letter-spacing: 0.14em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.mkt-railticket__fold { margin-left: auto; width: 28px; height: 28px; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; flex: 0 0 auto; }
+.mkt-railticket__fold { margin-left: auto; width: 28px; height: 28px; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--muted); cursor: pointer; flex: 0 0 auto; }
 .mkt-railticket__fold:hover { color: var(--fg); border-color: var(--fg); }
 .mkt-railticket > .mkt-ticket { margin-top: 10px; }
 .mkt-railticket .mkt-ticket__sides { max-width: 100%; }
 .mkt-railticket__shut { margin: 10px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 .mkt-railticket__say { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
-.mkt-railticket__in { flex: 1 1 auto; min-width: 0; height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--fg); font-size: 12.5px; outline: 0; }
+.mkt-railticket__in { flex: 1 1 auto; min-width: 0; height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--bg); color: var(--fg); font-size: 12.5px; outline: 0; }
 .mkt-railticket__in::placeholder { color: var(--muted-2); }
 .mkt-railticket__in:focus { border-color: var(--accent); }
-.mkt-railticket__go { width: 34px; height: 34px; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; flex: 0 0 auto; }
+.mkt-railticket__go { width: 34px; height: 34px; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--muted); cursor: pointer; flex: 0 0 auto; }
 .mkt-railticket__go:hover:not(:disabled) { color: var(--fg); border-color: var(--fg); }
 .mkt-railticket__go:disabled { opacity: .45; cursor: default; }
 
@@ -786,7 +786,7 @@ a.sym__twin-opt:hover, a.sym__twin-opt:focus-visible { color: var(--fg); backgro
   .sym--cockpit .sym__strip > .mk-held { order: 5; }
   .sym--cockpit .sym__strip > .sym__quote { flex: 0 1 auto; align-items: center; gap: 8px; min-width: 0; }
   .sym--cockpit .sym__strip .sym__last { font-size: 28px; letter-spacing: -0.02em; }
-  .sym--cockpit .sym__strip .sym__chg { padding: 3px 7px; border-radius: 7px; background: color-mix(in srgb, currentColor 15%, transparent); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .sym--cockpit .sym__strip .sym__chg { padding: 3px 7px; border-radius: var(--r-sm); background: color-mix(in srgb, currentColor 15%, transparent); font-size: 12px; font-weight: 600; white-space: nowrap; }
   .sym--cockpit .sym__strip .sym__chg + .sym__feed { display: none; }
   .sym--cockpit .sym__stats { margin-left: auto; padding-bottom: 2px; text-align: right; }
   .sym--cockpit .sym__stats .sym__st { align-items: flex-end; }

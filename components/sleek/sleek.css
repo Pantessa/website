@@ -221,3 +221,6 @@
 @media (prefers-reduced-motion: no-preference) {
   .sk-btn, .sk-seg > * { transition: filter 0.12s ease, background-color 0.12s ease, color 0.12s ease; }
 }
+
+/* The counts in two columns: four verdicts read as a tidy 2x2 on a phone. */
+.sk-score--grid .sk-score__nums { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
