@@ -93,11 +93,12 @@ const TABS = [...TABS_ABOVE_WALLET, ...TABS_BELOW_WALLET]
 // component). The desktop column has room for every seat.
 // FIVE SEATS ON A PHONE (squad mobile-sleek, 2026-11-24): MARKETS · JOBS ·
 // WALLET · CHATS · MORE. APPS (the chat's app drawer) rides in MORE below sm
-// with TEAM; it leads where it always did.
-const PHONE_MORE_TABS: ReadonlySet<RailTab> = new Set<RailTab>(['mcps', 'team'])
+// with the two admin-only seats, LINKS and TEAM; each leads where it always did.
+const PHONE_MORE_TABS: ReadonlySet<RailTab> = new Set<RailTab>(['mcps', 'links', 'team'])
 // What a folded seat is called in the MORE sheet.
 const PHONE_MORE_COPY: Partial<Record<RailTab, { name: string; line: string }>> = {
   mcps: { name: 'Apps', line: 'The apps this chat can use' },
+  links: { name: 'Links', line: 'Your intent links: mint and share' },
   team: { name: 'Team', line: 'Your wallet\u2019s staff' },
 }
 
@@ -431,6 +432,14 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     </span>
   )
 
+  // On the phone bar the count hangs off the icon's top-right corner on the
+  // bar's own ground, so it never sits on the icon (it did at two digits).
+  const jobsBadgePhone = badgeCount > 0 && (
+    <span className="absolute -top-1.5 left-[calc(100%-5px)] mono text-[9px] leading-[14px] px-1 rounded-sm bg-[var(--bg)] text-amber-400 ring-1 ring-amber-500/40">
+      {badgeCount > 99 ? '99+' : badgeCount}
+    </span>
+  )
+
   // A drawer tab's seat, one per posture. Both postures render the tabs in
   // two runs (TABS_ABOVE_WALLET, TABS_BELOW_WALLET) with the WALLET page seat
   // between them.
@@ -488,7 +497,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         )}
         <span className="relative">
           <Icon className="w-[18px] h-[18px]" />
-          {tab === 'jobs' && jobsBadge}
+          {tab === 'jobs' && jobsBadgePhone}
           {(tab === 'jobs' || tab === 'links') && <SpineGuideDot tab={tab} />}
         </span>
         <span className="mono text-[10px] font-medium tracking-wide">{label}</span>

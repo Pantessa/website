@@ -146,7 +146,19 @@ export default function Footer() {
 
           {GROUPS.map((group) => (
             <nav key={group.title} className="footer__group" aria-label={group.title}>
-              <h3 className="footer__grouptitle">{group.title}</h3>
+              {/* On a phone each group is a closed row that one press opens
+                  (squad mobile-sleek): a checkbox inside the title's label, so
+                  it needs no script, every link stays in the HTML, and from
+                  641px up the box is not drawn and the list is simply there
+                  (app/native-shell.css). A <details> cannot be held open on a
+                  desktop without a script, which is why this is not one. */}
+              <h3 className="footer__grouptitle">
+                <label className="footer__foldlabel">
+                  <input type="checkbox" className="footer__foldbox" aria-label={`Show ${group.title} links`} />
+                  <span>{group.title}</span>
+                  <span className="footer__foldmark" aria-hidden />
+                </label>
+              </h3>
               <ul className="footer__grouplinks">
                 {group.links.map((link) => (
                   <li key={link.label}>

@@ -29,3 +29,17 @@
 @media (hover: none) {
   :root .mk-earn__go { min-height: 44px; }
 }
+
+/* Round 3. The stuck tabs step out once every drawn board has scrolled above
+   them (MarketsIndex useBoardsPast sets data-past), so they no longer ride
+   over "how it works" and the footer with no board under them. */
+@media (max-width: 640px), (max-width: 1023px) and (max-height: 500px) {
+  :root .mkt-frame__bar > .mkt-frame__tabs[data-past] { visibility: hidden; }
+}
+/* Map falls back to the list at this width (MarketsIndex usePhone, 640px), so
+   the control that picks between them is not drawn here and the search takes
+   the row. It stays in the HTML and returns the moment the screen is wider. */
+@media (max-width: 640px) {
+  :root .mkt-frame__bar > .mk-view { display: none; }
+  :root .mkt-frame__bar > .mkt-search { display: block; width: 100%; }
+}
