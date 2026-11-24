@@ -39,7 +39,7 @@ const HOSTS: Row[] = [
     g: 'pause',
     t: 'Kill switch and org caps',
     d: 'Pause an agent or freeze an account server-side, instantly and reversibly. Orgs get a daily cap above per-key budgets.',
-    href: '/docs/spend-policy',
+    href: '/docs/trust',
   },
   {
     g: 'rise',
@@ -60,7 +60,7 @@ const USERS: Row[] = [
     g: 'gate',
     t: 'Guardrails, re-fired per step',
     d: 'Recipient, amount, selector, price and caps re-checked before every step, on fresh state, at your turn. Over-cap gets dropped, not built.',
-    href: '/docs/spend-policy',
+    href: '/docs/trust',
   },
   {
     g: 'receipt',

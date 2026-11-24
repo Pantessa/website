@@ -4,16 +4,20 @@ import SpineLink from '@/components/SpineLink'
 import { ArrowUpRight } from 'lucide-react'
 import EmbedDemo from '@/components/EmbedDemo'
 import EmbedInstall from '@/components/EmbedInstall'
-import { DOCS_PAGES, DOORS, docsJsonLd, docsUrl, doorPages } from '@/lib/docs'
-import { LINK_FEE_PCT } from '@/lib/fees'
+import { DocsStep, DocsSteps } from '@/components/docs'
+import { DOCS_GROUPS, DOCS_PAGES, docsJsonLd, docsUrl, groupPages, type DocsGroupId } from '@/lib/docs'
+import { SWAP_FEE_PCT } from '@/lib/fees'
+import { MARKETS_HREF } from '@/lib/markets'
 import { SITE_CARD } from '@/lib/og-defaults'
 
-// The /docs landing — told story-first: Pantessa is the non-custodial back
-// office for autonomous money, and the docs open three doors for three
-// readers — embed it (hosts), trust it (users), pay it (agent devs). The
-// intent→build→receipt spine and the $0 jobs curl stay; the embed demo
-// lives under the host door's teaser. Server-rendered so the copy is
-// crawlable — EmbedDemo and EmbedInstall are the only client islands.
+// The /docs landing (squad docs-clean, 2026-11-24). It says what Pantessa is
+// today in the brand's own lines, walks the START HERE path as three steps,
+// then gives one section per group (lib/docs DOCS_GROUPS, reading order) with
+// that group's cards from the registry. BUILD carries the one developer
+// block (the $0 jobs dry run and the embed install). Server-rendered so the
+// copy is crawlable: EmbedDemo and EmbedInstall are the only client islands.
+// The markets door reads MARKETS_HREF through a SpineLink (the harness pins
+// both: no hand-typed /markets, no bare Link into the app from /docs).
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === '')!
 
@@ -25,212 +29,64 @@ export const metadata: Metadata = {
   twitter: { card: 'summary_large_image', title: PAGE.seoTitle, description: PAGE.description, images: SITE_CARD },
 }
 
-// The three doors — the landing's primary navigation. Each leads with its
-// reader and its first page.
-const DOOR_CARDS = [
-  {
-    id: 'host' as const,
-    kicker: 'EMBED IT · FOR HOSTS',
-    title: 'The chat on your site, in five lines',
-    lead: (
-      <>
-        Mount the full Pantessa chat on any page — guarded builds, receipts, and signing with the
-        wallet <strong>already connected to your site</strong> (<code>wallet: &apos;auto&apos;</code>).
-        A publishable <code>yfe_</code> key attributes every session to your dashboard: funnel,
-        dead-ends, money moved.
-      </>
-    ),
-    href: '/docs/embed',
-    cta: 'Embed the chat',
-  },
-  {
-    id: 'user' as const,
-    kicker: 'TRUST IT · FOR USERS',
-    title: 'Why you can sign what it builds',
-    lead: (
-      <>
-        Non-custodial, checked, and receipted: the model never writes calldata, every artifact is
-        re-checked fail-closed before your wallet sees it, and standing intents — jobs and the
-        Guardian — <strong>never sign for you</strong> beyond what you explicitly delegated.
-      </>
-    ),
-    href: '/docs/trust',
-    cta: 'The trust model',
-  },
-  {
-    id: 'creator' as const,
-    kicker: 'EARN WITH IT · FOR CREATORS',
-    title: 'A link that carries an ask — and pays you on conversions',
-    lead: (
-      <>
-        Mint <code>/i/&lt;slug&gt;</code> links that carry a plain-English ask. Whoever opens
-        one connects <strong>their own wallet</strong>, Pantessa builds the guarded path, they
-        sign — and you earn half of the {LINK_FEE_PCT} link fee on every conversion your link produces, with
-        a live funnel to prove it.
-      </>
-    ),
-    href: '/docs/links',
-    cta: 'Intent links',
-  },
-  {
-    id: 'agent' as const,
-    kicker: 'GIVE IT HANDS · FOR AGENT DEVS',
-    title: 'Money-hands for your agent, over MCP',
-    lead: (
-      <>
-        Connect any agent to Pantessa over MCP and it can move money safely: it plans in{' '}
-        <strong>plain sentences</strong>, a human (or its own key, under caps) signs, and{' '}
-        <strong>no AI ever writes calldata</strong>. The hands MCP for one-shot handoffs, the desk
-        for a negotiation loop that tells you when your human signed.
-      </>
-    ),
-    href: '/docs/desk',
-    cta: 'Give your agent hands',
-  },
-]
+function GroupCards({ group }: { group: DocsGroupId }) {
+  const pages = groupPages(group)
+  if (pages.length === 0) return null
+  return (
+    <div className="docs__cards">
+      {pages.map((p) => (
+        <Link key={p.slug} href={`/docs/${p.slug}`} className="docs__card">
+          <span className="docs__cardtitle">{p.title}</span>
+          <span className="docs__carddesc">{p.description}</span>
+        </Link>
+      ))}
+    </div>
+  )
+}
 
-const STEPS = [
-  {
-    num: 'STEP 1 · INTENT',
-    title: 'Say what should happen — once',
-    lead: (
-      <>
-        &ldquo;Swap 20 USDC for ETH on Base.&rdquo; &ldquo;Buy $10 of AAPL.&rdquo;
-        &ldquo;Bridge 5 USDC from Base to Arbitrum, then deposit 5 USDC to Hyperliquid, then long
-        $12 of ETH on Hyperliquid, then protect my ETH long with a 5% stop.&rdquo; Money asks are claimed by{' '}
-        <strong>deterministic parsers</strong>, not sampled from a model — the same sentence hits
-        the same code path every time, and compound asks compile into{' '}
-        <Link href="/docs/jobs">jobs</Link> the runner walks step by step.
-      </>
-    ),
-    links: [
-      { href: '/docs/jobs', label: 'Jobs: standing intents' },
-      { href: '/docs/transactions', label: 'How parsing works' },
-    ],
-  },
-  {
-    num: 'STEP 2 · GUARDED BUILD',
-    title: 'Every artifact earns its signature',
-    lead: (
-      <>
-        Per-venue builders — CoW, Uniswap v3/v4, NEAR Intents, Aave, Hyperliquid, Snapshot —
-        derive each transaction from <strong>live venue state</strong>, and a fail-closed guard
-        re-checks it before your wallet sees it. The model never writes calldata, amounts, or
-        addresses. When a check fails you get the reason, not a guess.
-      </>
-    ),
-    links: [
-      { href: '/docs/transactions', label: 'Venues & guards' },
-      { href: '/docs/guardian', label: 'Guardian: autonomy, no custody' },
-    ],
-  },
-  {
-    num: 'STEP 3 · SIGN & RECEIPT',
-    title: 'Your wallet signs. Everything is receipted.',
-    lead: (
-      <>
-        Nothing is custodial: the layer produces artifacts, <strong>only your signature moves
-        money</strong>. Built, signed, or refused — every decision lands with its priced value
-        on your <SpineLink href="/dashboard">dashboard</SpineLink> and traces live on{' '}
-        <Link href="/activity">/activity</Link>. Autonomy you can audit beats autonomy you have
-        to trust.
-      </>
-    ),
-    links: [
-      { href: '/docs/trust', label: 'The full trust model' },
-      { href: '/activity', label: 'Watch it decide live' },
-    ],
-  },
-]
+/** The START HERE path: look, connect, press and sign. */
+function StartSteps() {
+  return (
+    <DocsSteps>
+      <DocsStep title="Look at a chart, free">
+        <p>
+          Open <SpineLink href={MARKETS_HREF}>the markets</SpineLink> and pick a stock, a coin or a
+          perp. Charts and prices are public: no account, no wallet. On{' '}
+          <Link href="/docs/called-it">Called it</Link> you can see an X account&apos;s calls pinned on
+          the same chart. More in <Link href="/docs/markets">Markets</Link>.
+        </p>
+      </DocsStep>
+      <DocsStep title="Connect a wallet when you want to act">
+        <p>
+          Press any action and the sign-in door opens. Connect the wallet you already use, or continue
+          with Google or email to get a wallet that only you control. More in{' '}
+          <Link href="/docs/embedded-wallet">Sign in and wallets</Link>.
+        </p>
+      </DocsStep>
+      <DocsStep title="Press and sign">
+        <p>
+          Press a price, a button or a sentence. Pantessa builds the trade on the right venue, checks
+          it, and shows you the card with its fee ({SWAP_FEE_PCT} on a normal swap). Your wallet
+          signs it, and the signature is the confirmation. More in{' '}
+          <Link href="/docs/first-five-minutes">Your first five minutes</Link>.
+        </p>
+      </DocsStep>
+    </DocsSteps>
+  )
+}
 
-const ELSEWHERE = [
-  { href: 'https://www.npmjs.com/package/pantessa', label: 'pantessa on npm', sub: 'the embed helper plus x402 client/server helpers — MIT, TypeScript', ext: true },
-  { href: 'https://github.com/Pantessa', label: 'Pantessa on GitHub', sub: 'the SDK, free MCPs, and the rest — open source', ext: true },
-  { href: '/activity', label: 'Network activity', sub: 'every settled call on the network, anonymized and on-chain verifiable', ext: false },
-]
-
-export default function DocsIndexPage() {
+/** BUILD's one developer block: the $0 jobs dry run and the embed install. */
+function BuildBlock() {
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-
-      {/* ── Hero ── */}
-      <p className="splash__eyebrow mono">BUILD ON PANTESSA</p>
-      <h1 className="splash__h1">
-        The non-custodial back office <em className="hero__em">for autonomous money.</em>
-      </h1>
-      <p className="splash__lead">
-        Tell Pantessa what should happen — once. It compiles the sentence into deterministic,
-        guard-checked transactions; <strong>your own wallet is the only thing that can
-        sign</strong>; every build is priced, capped, receipted, and killable. These docs open
-        four doors: <Link href="/docs/links">earn with it</Link> as a creator,{' '}
-        <Link href="/docs/embed">embed it</Link> on your site,{' '}
-        <Link href="/docs/trust">trust it</Link> with your signature, or{' '}
-        <Link href="/docs/desk">give your agent hands</Link>.
-      </p>
-      <div className="splash__ctas">
-        <Link href="/docs/jobs" className="btn btn--solid">
-          Run a job for $0
-        </Link>
-        <Link href="/docs/trust" className="btn btn--ghost">
-          The trust model
-        </Link>
-      </div>
-
-      {/* ── The three doors ── */}
-      <div className="svc__section">
-        <div className="svc__sectionhead">
-          <h2 className="svc__h2">Four doors, four readers</h2>
-        </div>
-        <div className="splash__steps">
-          {DOOR_CARDS.map((d) => (
-            <section key={d.id} className="splash__step">
-              <p className="splash__stepnum mono">{d.kicker}</p>
-              <h3 className="splash__steptitle">{d.title}</h3>
-              <p className="splash__steplead">{d.lead}</p>
-              <div className="splash__more">
-                <Link href={d.href}>
-                  {d.cta} <ArrowUpRight width={13} height={13} />
-                </Link>
-              </div>
-            </section>
-          ))}
-        </div>
-      </div>
-
-      {/* ── The layer, in three moves ── */}
-      <div className="svc__section">
-        <div className="svc__sectionhead">
-          <h2 className="svc__h2">Intent → guarded build → receipt</h2>
-        </div>
-        <div className="splash__steps">
-          {STEPS.map((s) => (
-            <section key={s.num} className="splash__step">
-              <p className="splash__stepnum mono">{s.num}</p>
-              <h3 className="splash__steptitle">{s.title}</h3>
-              <p className="splash__steplead">{s.lead}</p>
-              <div className="splash__more">
-                {s.links.map((l) => (
-                  <Link key={l.href} href={l.href}>
-                    {l.label} <ArrowUpRight width={13} height={13} />
-                  </Link>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Try it now: the $0 quickstart ── */}
       <div className="splash__npm">
         <div>
-          <p className="splash__kicker mono">TRY IT · $0</p>
+          <p className="splash__kicker mono">TRY THE JOBS API · $0</p>
           <p className="splash__npmlead">
-            <code>dryRun</code> compiles a compound intent and builds step 1 against{' '}
-            <strong>live venues</strong>{' '}— real quote, real guard report — without creating or
-            costing anything. Mint a <code>yf_</code> key at{' '}
-            <SpineLink href="/dashboard/keys">/dashboard/keys</SpineLink> and paste. The{' '}
-            <Link href="/docs/jobs">Jobs page</Link> shows the real response.
+            A <code>dryRun</code> compiles a multi-step ask and builds step one against live venues,
+            without creating or costing anything. Make a <code>yf_</code> key at{' '}
+            <SpineLink href="/dashboard/keys">/dashboard/keys</SpineLink> and paste it in. The{' '}
+            <Link href="/docs/jobs">Jobs API</Link> page explains the response.
           </p>
         </div>
         <pre className="splash__code mono">{`curl -s https://www.pantessa.com/api/jobs \\
@@ -239,81 +95,81 @@ export default function DocsIndexPage() {
   -d '{"ask": "swap 5 usdc from base to arbitrum, then deposit 5 usdc to hyperliquid", "dryRun": true}'`}</pre>
       </div>
 
-      {/* ── The embed: the host door's teaser ── */}
       <div className="splash__embedgrid" id="embed">
         <div className="splash__embedcopy">
-          <p className="splash__kicker mono">EMBED IT · 5 LINES</p>
-          <h2 className="splash__pathtitle">The same rails, on your site</h2>
+          <p className="splash__kicker mono">EMBED THE CHAT</p>
+          <h3 className="splash__pathtitle">The Pantessa chat, on your site</h3>
           <p className="splash__pathlead">
-            Everything above ships as a chat you can mount on any page — routing, guarded
-            builds, receipts, signing with the wallet already connected to your site. Copy the
-            Claude Code prompt and Claude does the install end to end, or take the raw snippet
-            and mount it yourself.
+            Mount the chat on any page with the <code>pantessa</code> npm package. It builds checked
+            trades and signs with the wallet already connected to your site. Copy the Claude Code
+            prompt and Claude does the install, or take the snippet and mount it yourself.
           </p>
           <EmbedInstall />
           <div className="splash__more">
-            <Link href="/docs/embed">The full embed docs <ArrowUpRight width={13} height={13} /></Link>
-            <SpineLink href="/dashboard/keys">Mint an embed key <ArrowUpRight width={13} height={13} /></SpineLink>
+            <Link href="/docs/embed">
+              The embed docs <ArrowUpRight width={13} height={13} />
+            </Link>
+            <SpineLink href="/dashboard/keys">
+              Make an embed key <ArrowUpRight width={13} height={13} />
+            </SpineLink>
           </div>
         </div>
         <EmbedDemo />
       </div>
 
-      {/* ── The SDK, demoted but reachable ── */}
-      <div className="splash__npm">
-        <div>
-          <p className="splash__kicker mono">ONE PACKAGE</p>
-          <p className="splash__npmlead">
-            Everything ships in the <code>pantessa</code> npm package — <code>pantessa/embed</code>{' '}
-            mounts the full chat on your site in five lines (see{' '}
-            <Link href="/docs/embed">the embed docs</Link>), with agent-payment and MCP-earnings
-            helpers included for the deep end. MIT, TypeScript.
-          </p>
-        </div>
-        <pre className="splash__code mono">npm install pantessa</pre>
+      <div className="docs__prose">
+        <p>
+          The code is open:{' '}
+          <a href="https://www.npmjs.com/package/pantessa" target="_blank" rel="noopener noreferrer">
+            pantessa on npm
+          </a>{' '}
+          (<code>npm install pantessa</code>) and{' '}
+          <a href="https://github.com/Pantessa" target="_blank" rel="noopener noreferrer">
+            Pantessa on GitHub
+          </a>
+          .
+        </p>
+      </div>
+    </>
+  )
+}
+
+export default function DocsIndexPage() {
+  return (
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
+
+      {/* ── Hero: what Pantessa is today, in the brand's own lines ── */}
+      <p className="splash__eyebrow mono">PANTESSA DOCS</p>
+      <h1 className="splash__h1">The live market you can act on.</h1>
+      <p className="splash__lead">
+        You have an intent. We do the rest. Looking is free and needs no account. Acting needs a
+        wallet: press a price and Pantessa builds the trade, checks it, and hands it to your own
+        wallet to sign. <strong>Pantessa never holds your money.</strong>
+      </p>
+      <div className="splash__ctas">
+        <Link href="/docs/first-five-minutes" className="btn btn--solid">
+          Start here
+        </Link>
+        <SpineLink href={MARKETS_HREF} className="btn btn--ghost">
+          Open the markets
+        </SpineLink>
       </div>
 
-      {/* ── Go deeper, door by door ── */}
-      {DOORS.map((door) => {
-        const pages = doorPages(door.id)
-        if (pages.length === 0) return null
-        return (
-          <div className="svc__section" key={door.id}>
-            <div className="svc__sectionhead">
-              <h2 className="svc__h2">{door.label}</h2>
-              <span className="svc__count mono">{door.reader.toUpperCase()}</span>
-            </div>
-            <div className="docs__cards">
-              {pages.map((p) => (
-                <Link key={p.slug} href={`/docs/${p.slug}`} className="docs__card">
-                  <span className="docs__cardtitle">{p.title}</span>
-                  <span className="docs__carddesc">{p.description}</span>
-                </Link>
-              ))}
-            </div>
+      {/* ── One section per group, in reading order. The h2s sit inside
+          .docs__prose so they take the docs heading style, get anchors, and
+          feed the "On this page" column. ── */}
+      {DOCS_GROUPS.map((g) => (
+        <section key={g.id}>
+          <div className="docs__prose">
+            <h2>{g.title}</h2>
+            <p>{g.reader}</p>
+            {g.id === 'start' && <StartSteps />}
           </div>
-        )
-      })}
-
-      {/* ── Elsewhere ── */}
-      <div className="svc__section">
-        <div className="svc__sectionhead">
-          <h2 className="svc__h2">The rest of the stack</h2>
-        </div>
-        <div className="dev__links">
-          {ELSEWHERE.map((l) => (
-            <a
-              key={l.href}
-              className="dev__biglink"
-              href={l.href}
-              {...(l.ext ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-            >
-              {l.label} <ArrowUpRight width={14} height={14} />
-              <span>{l.sub}</span>
-            </a>
-          ))}
-        </div>
-      </div>
+          <GroupCards group={g.id} />
+          {g.id === 'build' && <BuildBlock />}
+        </section>
+      ))}
     </>
   )
 }

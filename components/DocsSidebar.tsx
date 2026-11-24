@@ -1,18 +1,18 @@
 'use client'
 
-// Docs left rail (top scroll-row on phones — same pattern as the dashboard).
+// Docs left rail (top scroll-row on phones, same pattern as the dashboard).
 // Pathname-driven active state; pages appear as their iterations ship them.
-// Legal pages render in their own labeled group at the bottom.
+// The five groups (START HERE, EARN, SAFETY, BUILD, LEGAL) come from
+// lib/docs DOCS_GROUPS in reading order, LEGAL last.
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Fragment, useEffect, useRef } from 'react'
-import { DOORS, doorPages, legalPages } from '@/lib/docs'
+import { DOCS_GROUPS, groupPages } from '@/lib/docs'
 
 export default function DocsSidebar() {
   const pathname = usePathname()
   const nav = useRef<HTMLElement>(null)
-  const legal = legalPages()
 
   // Keep the active entry in view on the mobile scroll-row. Scroll the ROW
   // itself, never scrollIntoView: on desktop the rail is a plain column and
@@ -43,18 +43,16 @@ export default function DocsSidebar() {
       {link('', 'Overview')}
       {/* Fragments, not wrappers: the phone layout flattens the list into a
           horizontal scroll-row, so links must stay direct flex children. */}
-      {DOORS.map((d) => (
-        <Fragment key={d.id}>
-          <p className="docs__sidegroup mono">{`${d.label} · ${d.reader}`.toUpperCase()}</p>
-          {doorPages(d.id).map((p) => link(p.slug, p.title))}
-        </Fragment>
-      ))}
-      {legal.length > 0 && (
-        <>
-          <p className="docs__sidegroup mono">LEGAL</p>
-          {legal.map((p) => link(p.slug, p.title))}
-        </>
-      )}
+      {DOCS_GROUPS.map((g) => {
+        const pages = groupPages(g.id)
+        if (pages.length === 0) return null
+        return (
+          <Fragment key={g.id}>
+            <p className="docs__sidegroup mono">{g.label}</p>
+            {pages.map((p) => link(p.slug, p.title))}
+          </Fragment>
+        )
+      })}
     </nav>
   )
 }
