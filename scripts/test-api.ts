@@ -24058,7 +24058,8 @@ async function main() {
       'markets/msg: /compare — our column is ∞ at every meter and €0, and the six lines + the killer line are on the page',
       (cmp.match(/>∞</g) ?? []).length >= 5 &&
         /€0</.test(cmp) &&
-        /The alert executes\./.test(cmp) && /The line is the order\./.test(cmp) && /You keep the pen\./.test(cmp) &&
+        /The alert comes with the trade\./.test(cmp) && /The line is the order\./.test(cmp) && /You keep the pen\./.test(cmp) &&
+        !/The alert executes|Only your wallet can sign/.test(cmp) &&
         cmp.includes('data-killer-line') && cmp.includes(KILLER_LINE.sentence),
     )
     check(

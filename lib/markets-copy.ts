@@ -217,8 +217,8 @@ export const PANTESSA_PRICING_ROW: PricingRow = {
  *  (BUSINESS-MODEL-chart-first §1). Title + one sentence each. */
 export const SIX_LINES: { title: string; body: string }[] = [
   {
-    title: 'The alert executes.',
-    body: 'Their alert pings your phone. Ours closes the position, buys the dip, takes the profit — signed once, runs while you sleep, non-custodial.',
+    title: 'The alert comes with the trade.',
+    body: 'Their alert pings your phone. Ours hands you the trade to sign when it fires. Or arm a Guardian stop or a limit order now, and it watches the price for you.',
   },
   {
     title: 'The idea executes.',
@@ -238,7 +238,7 @@ export const SIX_LINES: { title: string; body: string }[] = [
   },
   {
     title: 'You keep the pen.',
-    body: 'No custody, no broker account, no sign-up to look. Only your wallet can sign.',
+    body: 'No custody, no broker account, no sign-up to look. Pantessa builds the trade and your wallet signs. It never holds your money.',
   },
 ]
 

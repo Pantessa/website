@@ -37,8 +37,8 @@ const HOSTS: Row[] = [
   },
   {
     g: 'pause',
-    t: 'Kill switch and org caps',
-    d: 'Pause an agent or freeze an account server-side, instantly and reversibly. Orgs get a daily cap above per-key budgets.',
+    t: 'No caps, and one switch',
+    d: 'Spend caps are retired: the signature is the consent. Freeze an account on the dashboard and Pantessa refuses swaps within one chain, sends and Hyperliquid orders for it until it resumes.',
     href: '/docs/trust',
   },
   {
@@ -58,8 +58,8 @@ const USERS: Row[] = [
   },
   {
     g: 'gate',
-    t: 'Guardrails, re-fired per step',
-    d: 'Recipient, amount, selector, price and caps re-checked before every step, on fresh state, at your turn. Over-cap gets dropped, not built.',
+    t: 'Checked before you sign',
+    d: 'Code builds each trade from live venue data, then a second check decodes it: the pinned contract, the exact amount, the proceeds back to your wallet. A failed check means nothing is offered.',
     href: '/docs/trust',
   },
   {
