@@ -434,9 +434,12 @@ a.xcf__x:hover { border-color: var(--fg); }
    the whole post with no "more" (the words scroll in their own box if they are long), the table of numbers, the trade's
    button across the card, and Share, the post on X and the pin as one quiet row at the foot. */
 @media (min-width: 1100px) {
-  [data-call-dock='side'] .xcf, [data-call-dock='side'] .xcf[data-dock] { position: static; width: auto; height: 100%; max-height: 100%; animation: none; }
-  [data-call-dock='side'] .xcf__body { padding: 16px 16px 18px; }
-  [data-call-dock='side'] .xcf__text { display: block; overflow: visible; }
+  /* Top-down, nothing stretched: the header, the post, the numbers, the button, its caption, the quiet row. What is left of
+     the slot falls under the card; a long post scrolls in its own box. */
+  [data-call-dock='side'] .xcf, [data-call-dock='side'] .xcf[data-dock] { position: static; flex: 0 1 auto; width: auto; height: auto; min-height: 0; max-height: 100%; animation: none; }
+  [data-call-dock='side'] .xcf__body { flex: 0 1 auto; padding: 18px 16px 20px; }
+  /* There is room here: the post's own words in the display face, the quoted span marked. */
+  [data-call-dock='side'] .xcf__text { display: block; overflow: visible; font-family: var(--sk-display, Georgia, serif); font-size: 19px; font-weight: 600; line-height: 1.38; letter-spacing: -0.01em; }
   /* The numbers as rows: a label and its value on a line each, so a long judged line never wraps into the next cell. */
   [data-call-dock='side'] .xcf__nums { flex-direction: column; }
   [data-call-dock='side'] .xcf__num, [data-call-dock='side'] .xcf__num:first-child { flex: none; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 16px; padding: 9px 16px; }
@@ -466,17 +469,27 @@ a.xcf__x:hover { border-color: var(--fg); }
   }
   /* Flush with the screen's sides and the tab bar: the one cut is the top-left corner, and nothing shows through around it. */
   .xcf::before { inset: 1px 0 0; clip-path: polygon(calc(var(--xcf-cut) + 0.4px) 0, 100% 0, 100% 100%, 0 100%, 0 calc(var(--xcf-cut) + 0.4px)); }
-  .xcf__band { min-height: 52px; padding: 0 0 0 12px; gap: 8px; }
+  .xcf__band { min-height: 44px; padding: 0 0 0 12px; gap: 8px; }
+  .xcf__tile { width: 28px; height: 28px; }
+  .xcf__lead { gap: 2px; }
+  .xcf__verdict { font-size: 15px; }
   .xcf__icon { width: 44px; height: 44px; }
   .xcf__at { min-width: 0; font-size: 10.5px; letter-spacing: -0.02em; }
   .xcf__when { gap: 6px; }
   .xcf__stance { padding-left: 6px; }
-  .xcf__body { gap: 8px; padding: 10px 14px 10px; }
-  .xcf__text { font-size: 14.5px; line-height: 1.42; -webkit-line-clamp: 3; }
-  .xcf__words[data-clamped] .xcf__more { font-size: 14.5px; line-height: 1.42; }
+  .xcf__body { position: relative; min-height: 0; gap: 8px; padding: 8px 14px 8px; }
+  .xcf__text { font-size: 14.5px; line-height: 20px; -webkit-line-clamp: 3; }
+  .xcf__words[data-clamped] .xcf__more { font-size: 14.5px; line-height: 20px; }
   /* A real 44px box for a thumb: the padding over the word is clear, so the line above still reads through it. */
   .xcf__more { min-width: 44px; min-height: 44px; padding: 12px 0; text-align: right; }
   .xcf__words[data-clamped] .xcf__more { padding: 24px 0 0; }
+  /* A post that fits (one, two or three whole lines) is not cut, so "more" (the numbers, the share link, the pin) sits at
+     the end of the move's line under it: no row of its own, no hole. */
+  .xcf:not([data-more]) .xcf__words:not([data-clamped]) { position: static; }
+  .xcf:not([data-more]) .xcf__words:not([data-clamped]) .xcf__more { position: absolute; right: 14px; bottom: 0; margin: 0; padding: 21px 0 8px; font-size: 12px; line-height: 15px; }
+  .xcf:not([data-more]) .xcf__move { padding-right: 56px; }
+  /* Opened: "less" directly under the words. */
+  .xcf[data-more] .xcf__more { margin: -6px 0 -10px auto; }
   .xcf__nums { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
   .xcf__num { padding: 8px 8px 9px; gap: 3px; }
   .xcf__num:first-child { padding-left: 14px; }
@@ -486,8 +499,7 @@ a.xcf__x:hover { border-color: var(--fg); }
      table of numbers, the share link and the pin wait behind "more". */
   .xcf:not([data-more]) .xcf__move { display: block; }
   .xcf:not([data-more]) .xcf__nums { display: none; }
-  .xcf:not([data-more]) .xcf__body { padding-bottom: 12px; }
-  .xcf:not([data-more]) .xcf__acts { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px 8px; padding: 10px 12px 12px; border-top: 1px solid var(--line); }
+  .xcf:not([data-more]) .xcf__acts { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px 8px; padding: 8px 12px 10px; border-top: 1px solid var(--line); }
   .xcf:not([data-more]) .xcf__foot { grid-column: 2; grid-row: 1; padding: 0; }
   .xcf:not([data-more]) .xcf__acts:not(:has([data-called-acts])) .xcf__foot { grid-column: 1 / -1; }
   .xcf:not([data-more]) .xcf__pin { display: none; }

@@ -60,6 +60,8 @@
      caption is one clamped line under it, and the share link waits behind "more". */
   .xca-band[data-sheet]:not([data-more] *), .xca-band[data-sheet]:not([data-more] *) > .xca.xca--card { display: contents; }
   .xca-band[data-sheet]:not([data-more] *) .xca__chips { grid-column: 1; grid-row: 1; }
-  .xca-band[data-sheet]:not([data-more] *) .xca__note { grid-column: 1 / -1; grid-row: 2; font-size: 10.5px; line-height: 1.35; text-wrap: pretty; }
+  .xca-band[data-sheet]:not([data-more] *) .xca__note { grid-column: 1 / -1; grid-row: 2; font-size: 10.5px; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* One line on the short card: the caption's first and last sentences. The ones between open with the card's "more". */
+  .xca-band[data-sheet]:not([data-more] *) .xca__mid { display: none; }
   .xca-band[data-sheet]:not([data-more] *) .xca-share { display: none; }
 }
