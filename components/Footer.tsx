@@ -6,8 +6,14 @@ import { X_PROFILE_URL } from '@/lib/social'
 import { MARKETS_HREF } from '@/lib/markets'
 
 /** `app`: the link lands inside the app shell, which sends a signed-out
- *  visitor home — so it renders as a SpineLink (the sign-in door for them). */
-type FooterLink = { label: string; href: string; ext?: boolean; app?: boolean }
+ *  visitor home — so it renders as a SpineLink (the sign-in door for them).
+ *  `file`: the link is a file in public/ — a plain anchor that downloads it. */
+type FooterLink = { label: string; href: string; ext?: boolean; app?: boolean; file?: boolean }
+
+/** The public brand kit (2026-11-24): logos, palette, tiles, backgrounds and
+ *  the guidelines PDF, zipped. Built by `brand-kit/src/build-public.mjs` in the
+ *  Drive brand folder, which holds the master; this is the copy the site serves. */
+const BRAND_KIT_HREF = '/brand/kit/pantessa-brand-kit.zip'
 
 /** The subreddit, r/Pantessa (2026-11-24). */
 const REDDIT_URL = 'https://www.reddit.com/r/Pantessa/'
@@ -33,6 +39,7 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
       { label: 'Live Activity', href: '/activity' },
       { label: 'Pricing', href: '/pricing' },
       { label: 'Blog', href: '/blog' },
+      { label: 'Brand Kit', href: BRAND_KIT_HREF, file: true },
       { label: 'Terms', href: '/docs/terms' },
       { label: 'Privacy', href: '/docs/privacy' },
       // The public record of the 2026-08-05 rename — kept in the footer so
@@ -145,6 +152,10 @@ export default function Footer() {
                   <li key={link.label}>
                     {link.ext ? (
                       <a href={link.href} target="_blank" rel="noopener noreferrer">
+                        {link.label}
+                      </a>
+                    ) : link.file ? (
+                      <a href={link.href} download>
                         {link.label}
                       </a>
                     ) : link.app ? (
