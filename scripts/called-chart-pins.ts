@@ -60,6 +60,7 @@ import {
   type PinAnchor,
   type PlacedBox,
 } from '../lib/tv/called-pins'
+import { CARD_PX, MARK_PX, binBarsFor, binMarks, cardSize, hitMark, markInk, pickFrom, placeMarks, slotFor, tileFor, type MarkCall, type PlacedMark } from '../lib/tv/called-overlay'
 import { planFor } from '../lib/tv/plan'
 import { linesFromShapes, type ShapeSnapshot } from '../lib/tv/shapes'
 import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvShapeOptions, TvSymbolInfo, TvWidget } from '../lib/tv/types'
@@ -388,6 +389,62 @@ export function calledChartPins(check: Check): void {
     'called chart marks: a mark\'s tooltip says who, when, the move and the verdict\'s word, then the post\'s own words; a clicked mark names its post and nobody else\'s mark does',
     markTooltip(miss, rec.handle).startsWith(`@${rec.handle} ${DOT} ${pinDate(miss.postedAt)} ${DOT} `) && markTooltip(miss, rec.handle).includes(VERDICT_WORDS.wrong) && markTooltip(miss, rec.handle).endsWith(clampPost(miss.text, miss.quote)) && postIdOfMark(`${CALLED_MARK_PREFIX}123`) === '123' && postIdOfMark('fill:123') === null && postIdOfMark(7) === null,
   )
+  // ── the marks layer (lib/tv/called-overlay, 2026-11-24): tiles, counted where they crowd ──
+  {
+    const DAY = 86_400
+    const mk = (i: number, day: number, verdict: CallVerdict, over: Partial<MarkCall> = {}): MarkCall => ({ postId: String(1000 + i), barTime: day * DAY, priceAt: 100 + day, verdict, impact: i, ...over })
+    const crowd: MarkCall[] = [mk(1, 400, 'right'), mk(2, 400, 'right'), mk(3, 401, 'wrong'), mk(4, 402, 'right', { origin: 'added' }), mk(5, 403, 'open'), mk(6, 460, 'flat'), mk(7, 461, 'wrong')]
+    const bins = binMarks(crowd, DAY, 8)
+    const inChips = bins.flatMap((b) => b.chips.flatMap((c) => c.ids))
+    check(
+      'called chart marks layer: calls that would touch are counted, never dropped: every call is under exactly one chip of exactly one stretch, a chip holds one verdict, and a post a viewer pasted is never counted in with the scanned ones',
+      inChips.length === crowd.length && new Set(inChips).size === crowd.length && bins.every((b) => b.chips.every((c) => c.ids.every((id) => { const call = crowd.find((x) => x.postId === id); return !!call && call.verdict === c.verdict && (call.origin === 'added') === c.added }))) && bins[0].chips.some((c) => c.added && c.ids.length === 1 && c.ids[0] === '1004') && bins[0].chips.find((c) => c.verdict === 'right' && !c.added)?.ids.length === 2,
+      JSON.stringify(bins.map((b) => b.chips.map((c) => `${c.added ? '+' : ''}${c.verdict}${c.ids.length}`))),
+    )
+    check(
+      'called chart marks layer: a stretch is cut in time, so a pan never reshuffles a crowd (the same calls share a chip wherever the pane is), and under a chip the call that moved furthest comes first',
+      JSON.stringify(binMarks(crowd, DAY, 8).map((b) => b.chips.map((c) => c.ids))) === JSON.stringify(binMarks([...crowd].reverse(), DAY, 8).map((b) => b.chips.map((c) => c.ids))) && bins[0].chips.find((c) => c.verdict === 'right' && !c.added)?.ids.join() === '1002,1001' && binBarsFor(2, slotFor(18)) > binBarsFor(40, slotFor(18)) && binBarsFor(400, slotFor(18)) === 1,
+    )
+    const place = (focusId: string | null, shift = 0) => placeMarks({ calls: crowd, focusId, pane: { width: 400, height: 380 }, keepTop: 34, keepBottom: 60, barSec: DAY, spacing: 4, x: (t) => (t / DAY - 380) * 4 + shift, y: (p) => 600 - p })
+    const placed = place(null)
+    const touch = (a: PlacedMark, b: PlacedMark) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    check(
+      'called chart marks layer: no two marks touch, none leaves the pane or sits on the legend or the tally, the counts on the pane add up to the calls, and a lone call points at its own bar and price',
+      placed.every((a, i) => placed.every((b, j) => i === j || !touch(a, b))) && placed.every((m) => m.x >= 0 && m.x + m.w <= 400 && m.y >= 34 && m.y + m.h <= 380 - 60) && placed.reduce((n, m) => n + m.count, 0) === crowd.length && placed.filter((m) => m.tip).every((m) => m.count === 1),
+      JSON.stringify(placed.map((m) => [m.key, m.count, m.x, m.y])),
+    )
+    const open = place('1003')
+    const focus = open.find((m) => m.focus)
+    check(
+      'called chart marks layer: the opened call is lifted out of its crowd and drawn alone, larger, on its own bar (its crowd counts one fewer; nothing is counted twice)',
+      !!focus && focus.ids.join() === '1003' && focus.w === MARK_PX.focus && focus.w > tileFor(400) && !!focus.tip && focus.tip.x === (401 - 380) * 4 && open.reduce((n, m) => n + m.count, 0) === crowd.length && open.filter((m) => !m.focus).every((m) => !m.ids.includes('1003')),
+    )
+    const lone = placed.find((m) => m.ids.includes('1007'))! // the top chip of the last column: nothing stands above it
+    const cx = lone.x + lone.w / 2
+    const cy = lone.y + lone.h / 2
+    check(
+      'called chart marks layer: a press opens the nearest mark inside a 44px target and nothing outside it; a second press on a crowd walks to its next call; the opened call wins a tie',
+      MARK_PX.tap === 44 && hitMark(placed, cx + 21, cy - 21)?.key === lone.key && hitMark(placed, cx + 60, cy - 60) === null && pickFrom({ ids: ['a', 'b', 'c'] }, null) === 'a' && pickFrom({ ids: ['a', 'b', 'c'] }, 'a') === 'b' && pickFrom({ ids: ['a', 'b', 'c'] }, 'c') === 'a' && hitMark(open, focus!.x + focus!.w / 2, focus!.y + focus!.h / 2)?.focus === true,
+    )
+    const MI = { up: '#22c55e', down: '#ef4444', open: '#f0b454', flat: '#9a9a9a', fg: '#ffffff', bg: '#000000' }
+    const overlaySrc = readFileSync(new URL('../lib/tv/called-overlay.ts', import.meta.url), 'utf8')
+    check(
+      'called chart marks layer: the four verdicts are four inks (the market\'s green and red for a hit and a miss, never violet or magenta) AND four glyphs; only a hit and a miss are filled; the layer is paint (it creates no chart shape, so nothing of it can be saved, selected or listed) and takes no pointer events',
+      new Set((['right', 'wrong', 'open', 'flat'] as const).map((v) => markInk(v, MI))).size === 4 && markInk('right', MI) === MI.up && markInk('wrong', MI) === MI.down && /const filled = !m\.added && \(m\.verdict === 'right' \|\| m\.verdict === 'wrong'\)/.test(overlaySrc) && /right: \[\[/.test(overlaySrc) && /wrong: \[\s*\[/.test(overlaySrc) && /flat: \[\[/.test(overlaySrc) && /open: \[\[/.test(overlaySrc) && !/createShape|createMultipointShape|createAnchoredShape/.test(overlaySrc.replace(/\/\/[^\n]*/g, '')) && overlaySrc.includes('pointer-events:none') && !/\bwindow\./.test(overlaySrc.replace(/\/\/[^\n]*/g, '')) && !/from 'react'/.test(overlaySrc),
+    )
+    check(
+      'called chart marks layer: a card\'s box is sized from the lines it will draw (the verdict line, the post\'s own words as given, the move), and a pasted post\'s card says so on a line of its own',
+      (() => {
+        const measure = (_f: string, t: string) => t.length * 7
+        const base = { word: 'missed', date: '13 Jan 2026', words: ['one line of the post', 'and a second'], result: ['-41.4% in 30 days'], added: null as string | null }
+        const a = cardSize(base, { sans: 's', mono: 'm' }, measure)
+        const b = cardSize({ ...base, words: [...base.words, 'a third line'] }, { sans: 's', mono: 'm' }, measure)
+        const c = cardSize({ ...base, added: ADDED_MARK }, { sans: 's', mono: 'm' }, measure)
+        return b.h - a.h === CARD_PX.wordsLine && c.h - a.h === CARD_PX.addedLine && a.w >= 'one line of the post'.length * 7 + 2 * CARD_PX.pad
+      })(),
+    )
+  }
+
   const feedMark: TvMark = { id: 'fill:1', time: 100, color: { border: '#fff', background: '#fff' }, text: 'Bought', label: 'B', labelFontColor: '#000', minSize: 18 }
   const ours: TvMark[] = [
     { ...feedMark, id: 'called:1', time: 150 },
