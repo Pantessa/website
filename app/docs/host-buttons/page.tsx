@@ -75,14 +75,14 @@ export default function HostButtonsDocsPage() {
         <h2>What comes back to your site</h2>
         <p>
           Your return URL is checked and stored when you mint. Nothing on the link can send the visitor anywhere
-          else. After they sign, the <strong>Return to</strong>{' '}button opens your URL with two query parameters
+          else. After they sign, the <strong>Return to yoursite.com</strong>{' '}button (named after your site) opens your URL with two query parameters
           added:
         </p>
         <pre>
           <code>https://yoursite.com/thanks?yeetful=signed&amp;ilink=&lt;slug&gt;</code>
         </pre>
         <p>
-          <code>yeetful=signed</code> says the visitor came back from a signature, and <code>ilink</code> is the
+          <code>yeetful=signed</code> says the visitor came back from a signature, and <code>ilink</code>{' '}is the
           link&apos;s slug. If your URL already has a query, they are added after an <code>&amp;</code>. Anyone can
           type this address, so treat it as a sign that someone came back, not as proof of a trade.
         </p>

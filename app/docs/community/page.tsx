@@ -38,9 +38,8 @@ export default function CommunityDocsPage() {
 
       <DocsSummary>
         <li>Reading the feed and the rooms is free. No account.</li>
-        <li>Joining a room is one tap with a Pantessa sign-in or a Telegram account. No wallet app needed.</li>
+        <li>Joining a room is one tap. No wallet app needed.</li>
         <li>A trade post carries one line read from the chain. The market and side are the author&apos;s tag.</li>
-        <li>Invites are counted, never paid.</li>
       </DocsSummary>
 
       <div className="docs__prose">
