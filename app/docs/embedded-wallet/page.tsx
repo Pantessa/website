@@ -1,7 +1,12 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { DocsCallout, DocsCrumbs, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
+
+// Signing in, for a trader (squad docs-clean, 2026-11-24). Three ways in:
+// a wallet, Google, email (components/CreateAccountButton). Worded as what
+// the sign-in door offers. The developer notes (wagmi, CDP env) are gone.
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'embedded-wallet')!
 
@@ -17,56 +22,80 @@ export default function EmbeddedWalletPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> CREATE AN ACCOUNT (EMAIL)
-      </p>
-      <h1 className="docs__h1">Create an account (email)</h1>
+      <DocsCrumbs slug="embedded-wallet" />
+      <h1 className="docs__h1">Sign in: a wallet, Google or email</h1>
       <p className="docs__lead">
-        Not everyone has a wallet extension. <strong>&ldquo;Create an account&rdquo;</strong> lets a
-        newcomer sign up with just an email — Pantessa spins up a Coinbase{' '}
-        <strong>non-custodial</strong>{' '}wallet they fully control, no extension, no seed phrase. Once
-        it&apos;s connected it behaves <em>exactly</em> like MetaMask.
+        You need a wallet to sign a trade, not to look. Bring your own, or continue with Google or email and get a wallet
+        only you control.
       </p>
+
+      <DocsSummary>
+        <li>Charts and markets need no sign-in at all.</li>
+        <li>The sign-in door offers three ways in: a wallet, Google, or email.</li>
+        <li>Google or email gives you a Coinbase embedded wallet: no extension, no seed phrase.</li>
+        <li>Pantessa never holds your money or your keys.</li>
+      </DocsSummary>
 
       <div className="docs__prose">
-        <h2>The flow</h2>
+        <h2>The three ways in</h2>
+        <ul>
+          <li>
+            <strong>A wallet you already have.</strong> MetaMask, Coinbase Wallet, Phantom, Rainbow, or any wallet through WalletConnect. Connect it and sign
+            with it.
+          </li>
+          <li>
+            <strong>Continue with Google.</strong> Pantessa sets up a Coinbase embedded wallet for you.
+          </li>
+          <li>
+            <strong>Continue with email.</strong> The same embedded wallet, unlocked with a code sent to your inbox.
+          </li>
+        </ul>
         <p>
-          Enter an email → get a one-time code → you&apos;re in. Behind it is a Coinbase CDP embedded
-          wallet (email/OTP auth). The same email always returns the same wallet, so the one button
-          is both sign-up and sign-in: new email, we create the wallet; returning, we sign you back
-          in. Day to day, a returning visitor with a live session is <strong>auto-reconnected</strong>{' '}
-          — no code needed; you only re-enter one after an explicit sign-out or on a new device.
+          The embedded wallet is non-custodial: you control it, not Pantessa. Once connected it signs like any other
+          wallet.
         </p>
 
-        <h2>Why it just works everywhere else</h2>
+        <h2>Sign in with email</h2>
+        <DocsSteps>
+          <DocsStep title="Press Sign in, or press any price">
+            <p>The door opens. On a chart, your ask waits while you sign in.</p>
+          </DocsStep>
+          <DocsStep title="Choose Continue with email and type your address" />
+          <DocsStep title="Enter the 6-digit code">
+            <p>It comes to your inbox.</p>
+          </DocsStep>
+          <DocsStep title="You are in">
+            <p>Press a price or a chip and sign the trade.</p>
+          </DocsStep>
+        </DocsSteps>
+        <p>Continue with Google works the same way, without the code.</p>
+
+        <h2>Coming back</h2>
         <p>
-          The embedded wallet is wired in as a <strong>wagmi connector</strong>. So the moment
-          it&apos;s connected, it&apos;s a normal connected account — SIWE sign-in, EIP-712
-          x402 signing, and your spend grant all treat it identically to an
-          extension wallet. None of that code is connector-aware; nothing special to handle.
+          With a live session, Pantessa reconnects you by itself. After you sign out, or on a new device, you sign in
+          again.
         </p>
 
-        <h2>EOA, on purpose</h2>
-        <p>
-          Accounts are created as plain <strong>EOAs</strong>, not smart accounts. x402 settles via an
-          EIP-3009 signature, and a smart-account popup that fires <em>after</em> an <code>await</code>{' '}
-          is no longer a user gesture — the browser blocks it, which would break the second signature
-          in a paid turn. The EOA flow keeps every signature in-page.
-        </p>
-
-        <h2>Configuration</h2>
-        <p>
-          The &ldquo;Create an account&rdquo; CTA appears when{' '}
-          <code>NEXT_PUBLIC_CDP_PROJECT_ID</code> is set and your domain is allow­listed in the CDP
-          portal. Absent that, the option is simply hidden and the app falls back to extension/
-          wallet-connect logins — nothing else changes.
-        </p>
+        <DocsCallout kind="warn" title="Opened from X or another app?">
+          <p>
+            Inside the X app, open pantessa.com in Safari or Chrome. Your wallet lives there. An app&rsquo;s built-in
+            browser often cannot open a wallet app, and Google sign-in does not work inside one.
+          </p>
+        </DocsCallout>
 
         <p>
-          New here? Start with{' '}
-          <Link href="/docs/first-five-minutes">your first five minutes</Link>.
+          At sign-up you agree to the <Link href="/docs/terms">Terms</Link> and the{' '}
+          <Link href="/docs/privacy">Privacy policy</Link>.
         </p>
       </div>
+
+      <DocsNext
+        links={[
+          { href: '/docs/first-five-minutes', desc: 'Look, press, sign.' },
+          { href: '/docs/markets', desc: 'What a chart can do.' },
+          { href: '/docs/trust', desc: 'Why you can sign what Pantessa builds.' },
+        ]}
+      />
     </>
   )
 }

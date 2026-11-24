@@ -442,8 +442,9 @@ export function communityFeedPins(check: Check): void {
     // the docs page is registered beside its siblings
     const i = DOCS_PAGES.findIndex((d) => d.slug === 'community')
     check(
-      'community share: /docs/community is in the docs registry (ready, the creators\' door, right after Creator earnings), so the sidebar, the landing and the sitemap list it',
-      i > 0 && DOCS_PAGES[i].ready && DOCS_PAGES[i].door === 'creator' && DOCS_PAGES[i - 1].slug === 'creator-earnings' && DOCS_PAGES[i].seoTitle.length <= 60 && DOCS_PAGES[i].description.length <= 160,
+      // RE-PINNED 2026-11-24 (docs-clean qa): the creators' door is the EARN group now.
+      'community share: /docs/community is in the docs registry (ready, the EARN group, right after Creator earnings), so the sidebar, the landing and the sitemap list it',
+      i > 0 && DOCS_PAGES[i].ready && DOCS_PAGES[i].group === 'earn' && DOCS_PAGES[i - 1].slug === 'creator-earnings' && DOCS_PAGES[i].seoTitle.length <= 60 && DOCS_PAGES[i].description.length <= 160,
       `i=${i} seo=${DOCS_PAGES[i]?.seoTitle.length} desc=${DOCS_PAGES[i]?.description.length}`,
     )
   }
@@ -533,7 +534,7 @@ export async function communityFeedPinsServed(check: Check, base: string): Promi
     check(
       'community share (served): /docs/community answers 200 in the docs layout, listed in the sidebar; it says what verified means (this wallet moved $X on a chain) and what it does not (the tag is the author\'s, no Hyperliquid proof yet); under 800 words',
       dres.status === 200 && /<h1 class="docs__h1">Community and rooms<\/h1>/.test(d) && /href="\/docs\/community"/.test(d) && /Verified on-chain: this wallet moved \$25\.00 on Base/.test(d) && /Tagged by the author/.test(d) &&
-        /Hyperliquid fills cannot be posted as proof yet/.test(d) && /balance of one asset went down and its balance of another went up/.test(d.replace(/\s+/g, ' ')) && /cross-chain swaps and bridges/.test(d) && /not set up on this deployment/.test(d) && words > 300 && words < 800, // RE-PINNED 2026-11-09 (coordinator): 700 → 800; review 4 added what the verified line does NOT say (Q4)
+        /Hyperliquid fills cannot be posted as proof yet/.test(d) && /balance of one asset went down and its balance of another went up/.test(d.replace(/\s+/g, ' ')) && /cross-chain swaps and bridges/.test(d) && !/not set up on this deployment/.test(d) && /a solver sends that transaction/.test(d) && words > 300 && words < 800, // RE-PINNED 2026-11-09 (coordinator): 700 → 800; review 4 added what the verified line does NOT say (Q4). RE-PINNED 2026-11-24 (docs-clean qa): the "not set up on this deployment" sentence was false on prod (the bot is configured) and is gone; the page now says a CoW order cannot be proof
       `status=${dres.status} words=${words}`,
     )
     const sm2 = await (await fetch(`${base}/sitemap.xml`, { cache: 'no-store' })).text()

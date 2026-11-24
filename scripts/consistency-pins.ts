@@ -189,7 +189,7 @@ async function served() {
   // (QA's filter, scripts/polish-crawl.ts): SSR text only — scripts, styles
   // and attributes are not words a visitor reads. /rebrand names it on purpose.
   const WIRE = /formerly yeetful|yeetful,? inc\.?|@yeetful\/[\w-]+|yeetful[-_.@/][\w.-]*|[\w-]+\.yeetful\.com|YEETFUL_\w+|['"\x60]yeetful['"\x60]|npm (?:i(?:nstall)? )?yeetful/gi
-  const ROUTES = ['/', '/t/ETH', '/t/AAPL', '/live', '/chat', '/links', '/story', '/docs', '/docs/first-five-minutes', '/docs/markets', '/docs/embed', '/docs/links', '/docs/trust', '/docs/transactions', '/docs/privacy', '/docs/terms', '/pricing', '/blog', '/servers', '/compare', '/activity', '/agents', '/roster', '/mosaic', '/tools', '/benchmarks', '/incidents', '/router', '/servers/add', '/i/buy-aapl', '/nope-404-polish']
+  const ROUTES = ['/', '/t/ETH', '/t/AAPL', '/live', '/chat', '/links', '/story', '/docs', '/docs/first-five-minutes', '/docs/markets', '/docs/embed', '/docs/links', '/docs/trust', '/docs/venues', '/docs/called-it', '/docs/privacy', '/docs/terms', '/pricing', '/blog', '/servers', '/compare', '/activity', '/agents', '/roster', '/mosaic', '/tools', '/benchmarks', '/incidents', '/router', '/servers/add', '/i/buy-aapl', '/nope-404-polish']
   const leaks: string[] = []
   for (const r of ROUTES) {
     const page = await (await fetch(`${BASE}${r}`)).text()

@@ -109,7 +109,7 @@ function routes(): string[] {
     '/links',
     '/dashboard', '/dashboard/links', '/dashboard/plan', '/dashboard/customize', '/dashboard/guardian', '/dashboard/admin', '/dashboard/admin/flows', '/dashboard/failures',
     // The brochure.
-    '/story', '/docs', '/docs/first-five-minutes', '/docs/links', '/docs/markets', '/docs/embed', '/docs/trust', '/docs/transactions', '/docs/privacy', '/docs/terms',
+    '/story', '/docs', '/docs/first-five-minutes', '/docs/links', '/docs/markets', '/docs/embed', '/docs/trust', '/docs/venues', '/docs/called-it', '/docs/privacy', '/docs/terms',
     '/pricing', '/blog', '/servers', '/rebrand', '/compare', '/activity', '/agents', '/roster', '/mosaic',
     '/this-route-does-not-exist',
   ]

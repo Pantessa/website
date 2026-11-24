@@ -26,58 +26,70 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, '') // trim leading/trailing
 }
 
+/**
+ * Give every docs heading its slug id + copy-link button. Idempotent, so
+ * DocsToc (components/docs/DocsToc) can call it too and never race this
+ * component's effect: whichever runs first assigns the ids, the other reuses
+ * them. Returns the headings it saw.
+ */
+export function anchorDocsHeadings(): HTMLElement[] {
+  const main = document.querySelector('.docs__main')
+  if (!main) return []
+
+  const headings = Array.from(main.querySelectorAll<HTMLElement>('.docs__h1, .docs__prose h2, .docs__prose h3'))
+  const used = new Set<string>()
+  headings.forEach((h) => {
+    if (h.dataset.anchored === 'true' && h.id) used.add(h.id)
+  })
+
+  headings.forEach((h) => {
+    // Idempotent: a re-run (route change / fast refresh) must not double-inject.
+    if (h.dataset.anchored === 'true') return
+
+    const base = slugify(h.textContent || '')
+    if (!base) return
+    let id = base
+    let n = 2
+    while (used.has(id)) id = `${base}-${n++}`
+    used.add(id)
+    h.id = id
+    h.dataset.anchored = 'true'
+    h.classList.add('docs__heading')
+
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'docs__anchor'
+    btn.setAttribute('aria-label', 'Copy link to this section')
+    btn.title = 'Copy link to this section'
+    btn.innerHTML = LINK_SVG
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault()
+      const url = `${window.location.origin}${window.location.pathname}#${id}`
+      // Update the address bar without yanking the scroll position.
+      history.replaceState(null, '', `#${id}`)
+      const flash = () => {
+        btn.innerHTML = CHECK_SVG
+        btn.classList.add('is-copied')
+        window.setTimeout(() => {
+          btn.innerHTML = LINK_SVG
+          btn.classList.remove('is-copied')
+        }, 1600)
+      }
+      navigator.clipboard.writeText(url).then(flash).catch(flash)
+    })
+
+    h.appendChild(btn)
+  })
+  return headings
+}
+
 export default function DocsHeadingAnchors() {
   const pathname = usePathname()
 
   useEffect(() => {
-    const main = document.querySelector('.docs__main')
-    if (!main) return
-
-    const headings = main.querySelectorAll<HTMLElement>('.docs__h1, .docs__prose h2, .docs__prose h3')
-    const used = new Set<string>()
-
-    headings.forEach((h) => {
-      // Idempotent: a re-run (route change / fast refresh) must not double-inject.
-      if (h.dataset.anchored === 'true') {
-        if (h.id) used.add(h.id)
-        return
-      }
-
-      const base = slugify(h.textContent || '')
-      if (!base) return
-      let id = base
-      let n = 2
-      while (used.has(id)) id = `${base}-${n++}`
-      used.add(id)
-      h.id = id
-      h.dataset.anchored = 'true'
-      h.classList.add('docs__heading')
-
-      const btn = document.createElement('button')
-      btn.type = 'button'
-      btn.className = 'docs__anchor'
-      btn.setAttribute('aria-label', 'Copy link to this section')
-      btn.title = 'Copy link to this section'
-      btn.innerHTML = LINK_SVG
-
-      btn.addEventListener('click', (e) => {
-        e.preventDefault()
-        const url = `${window.location.origin}${window.location.pathname}#${id}`
-        // Update the address bar without yanking the scroll position.
-        history.replaceState(null, '', `#${id}`)
-        const flash = () => {
-          btn.innerHTML = CHECK_SVG
-          btn.classList.add('is-copied')
-          window.setTimeout(() => {
-            btn.innerHTML = LINK_SVG
-            btn.classList.remove('is-copied')
-          }, 1600)
-        }
-        navigator.clipboard.writeText(url).then(flash).catch(flash)
-      })
-
-      h.appendChild(btn)
-    })
+    if (!document.querySelector('.docs__main')) return
+    anchorDocsHeadings()
 
     // Ids are assigned after hydration, so the browser's native hash jump on
     // first paint missed them — scroll the targeted section into view now.

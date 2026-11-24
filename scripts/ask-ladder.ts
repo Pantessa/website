@@ -128,7 +128,7 @@ function simulateLadderInner(message: string): Outcome {
   const dm = parseDcaManage(message)
   if (dm) return { gate: 'dca', kind: 'action', note: dm.op }
   // DCA autopilot toggles ("make my ETH dca autonomous", "turn off my dca
-  // autopilot") — /docs/dca teaches both; they were invisible to this
+  // autopilot") — the retired /docs/dca taught both; they were invisible to this
   // replica until the 2026-09-08 squad replay (they read as planner falls).
   const da = parseDcaAutoToggle(message)
   if (da) return { gate: 'dca-auto', kind: 'action', note: da.op }

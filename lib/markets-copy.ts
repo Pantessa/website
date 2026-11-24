@@ -93,7 +93,7 @@ export const TAPE_FOOTNOTE = 'Computed from our own tape · not advice'
 
 /** Where the candles come from, said honestly on every chart. */
 export const FEED_NOTE =
-  'Stocks: Robinhood’s 24/7 market-data tape (the print the on-chain token tracks; Yahoo Finance when it’s down, and the chart says so). Crypto: Coinbase spot. Perps: Hyperliquid. Indexes (the 10-year yield, the VIX, the dollar index, the Nasdaq 100, the Dow, the Russell 2000): index data from that same fallback feed, delayed up to 15 minutes — charts to read, with no order on them.'
+  'Stocks: Robinhood’s 24/7 market-data tape (the print the on-chain token tracks; Yahoo Finance when it’s down, and the chart says so). Crypto: Coinbase spot. Perps: Hyperliquid. Indexes (the 10-year yield, the VIX, the dollar index, the Nasdaq 100, the Dow, the Russell 2000): index data from that same fallback feed, delayed up to 15 minutes. These are charts to read, with no order on them.'
 
 // ── Session lines ─────────────────────────────────────────────────────────
 // Robinhood-Chain stocks trade 24/7 on-chain while the underlying tape
@@ -143,11 +143,15 @@ export const EMPTY = {
 } as const
 
 // ── Alerts ────────────────────────────────────────────────────────────────
-/** The two things an alert can do — the second is the one a charting
- *  subscription cannot sell. */
+/** The alert form's three choices, in the words the form itself shows
+ *  (components/markets/watchlist/AlertForm.tsx): a ping; a ping that also
+ *  hands you a chip to send (your wallet signs); or, instead of an alert,
+ *  arm a Guardian or a CoW limit order that runs by itself. The alert itself
+ *  never trades. Read by /docs/markets; keep in step with the form. */
 export const ALERT_MODES = {
   notify: 'Notify me',
-  act: 'Act on it',
+  chip: '…and hand me',
+  auto: 'Or let it run by itself',
 } as const
 
 // ── TradingView import ────────────────────────────────────────────────────
@@ -161,13 +165,17 @@ export const TV_IMPORT = {
 } as const
 
 // ── Attribution ───────────────────────────────────────────────────────────
-/** The chart engine's license requires a visible notice with a link
- *  (lightweight-charts, Apache-2.0 + attribution). Text + link only — never
- *  a logo lockup (rule 7). CHART renders it under the canvas; docs cite it. */
+/** What each chart engine's own foot says (text + link only, never a logo
+ *  lockup, rule 7). The main chart on /t is TradingView's Advanced Charts
+ *  when the build ships the library (lib/tv/config engineFor); its foot reads
+ *  `text` (components/markets/chart/AdvancedChart.tsx). The built-in chart
+ *  ("Classic chart", and the Depth / Tape / Heatmap / Wall views) is
+ *  Lightweight Charts; its foot reads `classic`
+ *  (components/markets/chart/MarketChart.tsx). Docs cite both. */
 export const CHART_ATTRIBUTION = {
-  text: 'Charting by TradingView Lightweight Charts™',
+  text: 'Charts by TradingView',
+  classic: 'Charts by TradingView Lightweight Charts™',
   href: 'https://www.tradingview.com/',
-  license: 'Apache-2.0',
 } as const
 
 // ── /compare: their meters, verbatim, dated ───────────────────────────────
@@ -209,8 +217,8 @@ export const PANTESSA_PRICING_ROW: PricingRow = {
  *  (BUSINESS-MODEL-chart-first §1). Title + one sentence each. */
 export const SIX_LINES: { title: string; body: string }[] = [
   {
-    title: 'The alert executes.',
-    body: 'Their alert pings your phone. Ours closes the position, buys the dip, takes the profit — signed once, runs while you sleep, non-custodial.',
+    title: 'The alert comes with the trade.',
+    body: 'Their alert pings your phone. Ours hands you the trade to sign when it fires. Or arm a Guardian stop or a limit order now, and it watches the price for you.',
   },
   {
     title: 'The idea executes.',
@@ -222,7 +230,7 @@ export const SIX_LINES: { title: string; body: string }[] = [
   },
   {
     title: 'The line is the order.',
-    body: 'Draw a level and it becomes a limit order or a stop. Draw a ladder and it becomes a schedule.',
+    body: 'Draw a level and it becomes a limit order or a stop.',
   },
   {
     title: 'Say it.',
@@ -230,7 +238,7 @@ export const SIX_LINES: { title: string; body: string }[] = [
   },
   {
     title: 'You keep the pen.',
-    body: 'No custody, no broker account, no sign-up to look. Only your wallet can sign.',
+    body: 'No custody, no broker account, no sign-up to look. Pantessa builds the trade and your wallet signs. It never holds your money.',
   },
 ]
 

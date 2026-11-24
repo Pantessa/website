@@ -124,9 +124,9 @@ export default function Footer() {
               <span className="logo__word">pantessa</span>
             </Link>
             <p className="footer__tag">
-              The chart that executes. Stocks 24/7, perps, spot and yield in one wallet;
-              Pantessa builds guarded transactions only your wallet can sign, and keeps
-              working between your turns. You keep the pen.
+              The chart that executes. Stocks 24/7, perps, spot and yield in one wallet.
+              Pantessa builds the trade and your wallet signs. It never holds your money.
+              You keep the pen.
             </p>
             <div className="footer__socials">
               {SOCIALS.map((s) => (

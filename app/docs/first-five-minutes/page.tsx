@@ -2,17 +2,20 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
 import { JobOfferLine } from '@/components/JobOfferDoor'
+import { DocsCrumbs, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
+import { SWAP_FEE_PCT } from '@/lib/fees'
+import { MARKETS_HREF } from '@/lib/markets'
 import { SITE_CARD } from '@/lib/og-defaults'
 
-// The user door's welcome mat: a stranger's literal first five minutes,
-// minute by minute, every ask a prefill deep link (?prompt= never
-// auto-sends). The deep dives (trust model, venues, jobs) stay their own
-// pages — this one just walks the path and hands off.
+// A stranger's first five minutes (squad docs-clean, 2026-11-24): look at a
+// chart for free, press a price, connect when asked, sign, see the receipt.
+// Then where to go next. Links to /markets and /t/* are SpineLinks (a pin
+// requires it); the chat prefill links never send by themselves.
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'first-five-minutes')!
 
-/** Prefill deep link into /chat — the ask arrives in the composer, unsent. */
+/** Prefill deep link into /chat: the ask arrives in the composer, unsent. */
 const ask = (prompt: string, mcps?: string) =>
   `/chat?${mcps ? `mcps=${mcps}&` : ''}prompt=${encodeURIComponent(prompt)}`
 
@@ -28,88 +31,102 @@ export default function FirstFiveMinutesPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> YOUR FIRST FIVE MINUTES
-      </p>
+      <DocsCrumbs slug="first-five-minutes" />
       <h1 className="docs__h1">Your first five minutes</h1>
       <p className="docs__lead">
-        You don&apos;t need a wallet to start, and nothing here can move money without your
-        signature. This is the whole path — free ask, guarded build, signature, standing
-        intent — with a link at every step that lands in the chat with the ask already typed.
-        Nothing sends until you press enter.
+        Look at any market for free. When you want to act, press the price and sign with your own wallet.
       </p>
 
+      <DocsSummary>
+        <li>Looking needs no wallet and no account.</li>
+        <li>Every price and chip on a chart is a button that builds a trade.</li>
+        <li>You see the venue, amounts and fee before you sign.</li>
+        <li>Pantessa never holds your money. Your signature is the confirmation.</li>
+        <li>
+          A normal swap costs <span className="mono">{SWAP_FEE_PCT}</span>.
+        </li>
+      </DocsSummary>
+
       <div className="docs__prose">
-        <h2>Minute 1 — ask something free</h2>
+        <h2>The path</h2>
+        <DocsSteps>
+          <DocsStep title="Open a chart">
+            <p>
+              Start at <SpineLink href={MARKETS_HREF}>Markets</SpineLink>, or go straight to one market, like{' '}
+              <SpineLink href="/t/AAPL">/t/AAPL</SpineLink> or <SpineLink href="/t/ETH">/t/ETH</SpineLink>. The chart is
+              live. Nobody asks you to sign in.
+            </p>
+          </DocsStep>
+          <DocsStep title="Press a price or a chip">
+            <p>A chip reads like what it does: &ldquo;Buy $10 of AAPL&rdquo;. Pressing it is your ask.</p>
+          </DocsStep>
+          <DocsStep title="Connect a wallet when asked">
+            <p>
+              The door opens and your ask waits for you. Use a wallet you already have, or{' '}
+              <Link href="/docs/embedded-wallet">sign in with Google or email</Link>.
+            </p>
+          </DocsStep>
+          <DocsStep title="Read the sign card, then sign">
+            <p>
+              Pantessa builds the trade and shows the venue, amounts, chain and fee. Sign it in your wallet, or decline.
+              Nothing moves until you sign.
+            </p>
+          </DocsStep>
+          <DocsStep title="See what happened">
+            <p>The receipt stays in the chat where you signed it.</p>
+          </DocsStep>
+        </DocsSteps>
         <p>
-          Questions cost nothing and need no wallet. Open the chat and ask{' '}
-          <SpineLink href={ask('What is the current price and 24h change for ETH?', 'uniswap-free')}>
-            &ldquo;What&apos;s the price of ETH?&rdquo;
-          </SpineLink>{' '}
-          or{' '}
-          <SpineLink href={ask('List the recent active proposals in the aave.eth Snapshot space.', 'snapshot-free')}>
-            &ldquo;List the active proposals in aave.eth&rdquo;
-          </SpineLink>
-          . The agent answers from the MCPs in your set — the bar above the chat shows which
-          ones are on, and <Link href="/servers">the directory</Link> has the rest.
+          Why it is safe to sign: <Link href="/docs/trust">the guardrails</Link>.
         </p>
 
-        <h2>Minute 2 — ask for something that moves money</h2>
+        <h2>Ask in words</h2>
         <p>
-          Try{' '}
-          <SpineLink href={ask('Swap $1 worth of ETH to USDC on Base', 'uniswap-free')}>
-            &ldquo;Swap $1 of ETH to USDC&rdquo;
-          </SpineLink>
-          . What comes back is not an execution — it&apos;s a <strong>transaction artifact</strong>:
-          quoted at a real venue, built deterministically (the model never writes calldata or
-          addresses), re-checked by an independent guard, priced in dollars, and parked behind a
-          sign button. If the quote goes stale, it re-quotes; if a guard fails, you get a refusal,
-          not a worse trade. The full claim-by-claim version is{' '}
-          <Link href="/docs/trust">the trust page</Link>.
+          The chat takes the same asks as the chips. These links fill in the ask and wait. Nothing sends until you press
+          enter.
         </p>
-
-        <h2>Minute 3 — sign it</h2>
-        <p>
-          Connect any wallet and sign. Your wallet is the only thing that can sign — there is no
-          deposit, no Pantessa balance, no key we hold. Every signed move lands as a receipt in
-          the chat and on <Link href="/activity">the public activity feed</Link>, linked to the
-          transaction on-chain.
-        </p>
-
-        <h2>Minutes 4 and 5 — tell it once</h2>
-        <p>
-          This is the part that stays working after you close the tab. Say{' '}
-          <SpineLink href={ask('Set a stop-loss on my ETH position at -8%', 'hyperliquid-free')}>
-            &ldquo;Stop-loss my ETH perp at -8%&rdquo;
-          </SpineLink>{' '}
-          and <Link href="/docs/guardian">Guardian</Link>{' '}watches it every minute with a key that
-          can only reduce that position — revocable with one click. Say{' '}
-          {/* An example, as text (squad lane1, 2026-11-17): this was a link
-              that prefilled one fixed job for every reader, whatever their
-              wallet held. JobOfferLine adds a link only when the reader's
-              wallet can run a job, carrying that wallet's own sentence. */}
-          <JobOfferLine example="Fund Robinhood Chain with $50 from Base including gas, then buy $40 of AAPL" />{' '}
-          and you get <Link href="/docs/jobs">a job</Link>{' '}that waits for the bridge to settle, then
-          offers the buy. The Jobs tab in the chat rail shows everything that&apos;s running and flags
-          the moments that need you.
-        </p>
-
-        <h2>Where to go from here</h2>
         <ul>
           <li>
-            <Link href="/docs/trust">Trust: the guardrails</Link> — why a signature on a Pantessa
-            artifact is safe to give.
+            <SpineLink href={ask('What is the current price and 24h change for ETH?', 'uniswap-free')}>{'“What’s the price of ETH?”'}</SpineLink>
           </li>
           <li>
-            <Link href="/docs/jobs">Jobs: standing intents</Link>{' '}— multi-step asks and what
-            &ldquo;tell it once&rdquo; compiles into.
+            <SpineLink href={ask('Swap $1 worth of ETH to USDC on Base', 'uniswap-free')}>{'“Swap $1 of ETH to USDC”'}</SpineLink>
+          </li>
+        </ul>
+
+        <h2>Where to go next</h2>
+        <ul>
+          <li>
+            <strong>Watch and get alerts.</strong> Watchlists and alerts are free and unlimited. See{' '}
+            <Link href="/docs/markets">Markets</Link>.
           </li>
           <li>
-            <Link href="/docs/embed">Embed the chat</Link>{' '}— this whole thing on your own site, in
-            five lines, signing with your page&apos;s wallet.
+            <strong>See who called it.</strong> Type an X handle and see every call it made on a market, judged by the
+            price. See <Link href="/docs/called-it">Called it</Link>.
+          </li>
+          <li>
+            <strong>Protect a position.</strong> &ldquo;Stop-loss my ETH perp at -8%&rdquo; arms a{' '}
+            <Link href="/docs/guardian">Guardian</Link> that checks it every minute.
+          </li>
+          <li>
+            <strong>Tell it once.</strong> Say <JobOfferLine example="Fund Robinhood Chain with $50 from Base including gas, then buy $40 of AAPL" />{' '}
+            and you get <Link href="/docs/jobs">a job</Link> that waits for the bridge, then offers the buy. The Jobs tab
+            in the chat shows what is running.
+          </li>
+          <li>
+            <strong>Share a trade.</strong> Make a link to a trade and earn on the swaps it brings. See{' '}
+            <Link href="/docs/links">Links</Link>.
           </li>
         </ul>
       </div>
+
+      <DocsNext
+        links={[
+          { href: '/docs/markets', desc: 'What a chart can do: trade, protect, watch, alert.' },
+          { href: '/docs/called-it', desc: 'An X account’s calls on the chart, judged by the price.' },
+          { href: '/docs/embedded-wallet', desc: 'A wallet, Google or email.' },
+        ]}
+      />
     </>
   )
 }

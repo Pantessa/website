@@ -1,10 +1,10 @@
-# Yeetful Guardrails
+# Pantessa Guardrails
 
 **The transaction layer is the product, and the guardrails are the moat.** An
 agent — ours or anyone's — never writes calldata. Every artifact a user is
-asked to sign was built deterministically by Yeetful's own venue layer,
-re-verified byte-by-byte against what the user asked for, and refused outright
-while their account's kill switch is on. When any of that fails, Yeetful refuses. A refusal is a
+asked to sign was built deterministically by Pantessa's own venue layer,
+re-verified byte-by-byte against what the user asked for, and refused
+while their account's kill switch is on, on the builds that check it (§4). When any of that fails, Pantessa refuses. A refusal is a
 first-class outcome: it names the reason, it's ledgered, and nothing signable
 leaves the server.
 
@@ -110,24 +110,26 @@ refresh param validation, junk-`validUntil` rejection.
 
 - **Retired 2026-10-30.** The expense account's allowlist, per-call cap,
   daily/lifetime budgets, expiry and master switch no longer gate anything
-  Yeetful runs (`checkGrant`, `lib/spend-grant.ts`; `policyCheck`,
+  Pantessa runs (`checkGrant`, `lib/spend-grant.ts`; `policyCheck`,
   `lib/tx-guardrails.ts`). A $3 send walled behind "approve the agent on
   your dashboard" was friction, not protection: nothing that moves a user's
   money leaves the server unsigned, and the signature is the consent.
-- **The kill switch always wins.** A frozen (`paused`) or revoked grant
-  refuses everything — both directions, self-signed or autonomous, on every
-  build path and every submit relay. It is the only refusal the gate returns
+- **The kill switch wins where it is checked.** A frozen (`paused`) grant
+  refuses the builds and relays whose guard list names the kill switch in the
+  venue manifest (`/api/venues/manifest`): swaps within one chain, sends, Aave
+  and Morpho moves, NFT trades and Hyperliquid orders, self-signed or
+  autonomous; Guardian stops stand down. It is the only refusal the gate returns
   (`ACCOUNT_FROZEN`, `REVOKED`), plus `POLICY_ERROR` when the gate itself
   cannot run (fail-closed, unchanged).
 - **Inflows were never spend-gated** and still aren't (`policyCheckInflow`).
-- Every builder still loads the live grant server-side — for the kill switch
-  and the ledger — and every refusal is still ledgered.
+- Those builders load the live grant server-side, for the kill switch and
+  the ledger, and every refusal is still ledgered.
 - The open-core SDK (`guard-sdk/`) keeps its own in-process grant for agents
   paying from their own wallet. That is the operator's configuration, not a
-  Yeetful gate; `GET /api/agent/policy` still serves it.
+  Pantessa gate; `GET /api/agent/policy` still serves it.
 
-**Tested:** the retired allowlist/caps/expiry never refuse; frozen/revoked
-refuse on every path (self-signed included); `POLICY_ERROR` fail-closed;
+**Tested:** the retired allowlist/caps/expiry never refuse; frozen
+refuses on the gated paths (self-signed included); `POLICY_ERROR` fail-closed;
 inflow gate; the structured `policyBlock` on a kill-switch refusal.
 
 ### 5. Submit relays re-gate on the server — the client can't skip the checks
@@ -179,7 +181,7 @@ independent guard and takes the **full** (non-exempt) policy gate
   the sign-time re-quote. Block-level everywhere the data is available.
 - **The generic planner path allows ordinary contract calls** (unknown
   selectors on app chains) after the drain shapes are excluded — that's the
-  bring-your-own-MCP contract. Your wallet renders native value; Yeetful
+  bring-your-own-MCP contract. Your wallet renders native value; Pantessa
   refuses the shapes wallets render worst.
 - **Snapshot vote relay forwards signed votes without content re-derivation.**
   Votes carry no economic outflow; Snapshot validates signature and voting

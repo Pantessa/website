@@ -27,9 +27,9 @@ const ONLY = onlyIdx >= 0 ? args[onlyIdx + 1].split(',') : null
 const SYMBOLS = ['AAPL', 'ETH', 'HYPE', 'BTC', 'TSLA', 'SOL', 'ZZQQXX']
 const TABS = ['overview', 'chart', 'news', 'community', 'technicals', 'trade']
 const DOCS = [
-  '', 'creator-earnings', 'dca', 'desk', 'embed', 'embedded-wallet', 'first-five-minutes',
+  '', 'called-it', 'community', 'creator-earnings', 'desk', 'embed', 'embedded-wallet', 'first-five-minutes',
   'guardian', 'host-buttons', 'jobs', 'links', 'markets', 'privacy', 'roster', 'snapshot',
-  'spend-policy', 'terms', 'transactions', 'trust',
+  'terms', 'trust', 'venues',
 ]
 
 /** The route list is data; keep it in sync with app/. */

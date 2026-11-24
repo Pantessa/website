@@ -185,7 +185,8 @@ import {
   showOrdinals,
   ORDINALS_MIN_QUALIFIED,
 } from '../lib/league'
-import { DOCS_PAGES } from '../lib/docs'
+import { DOCS_GROUPS, DOCS_PAGES, groupPages, readyPages } from '../lib/docs'
+import { VERDICT_WORDS } from '../lib/called-it/spec'
 import prisma from '../lib/db'
 import { identiconCells } from '../components/ManagerMark'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
@@ -2310,8 +2311,10 @@ async function main() {
       '/docs', '/docs/desk', '/docs/embed', '/docs/links', '/docs/jobs', '/docs/trust',
       '/docs/venues',
       '/docs/first-five-minutes', '/docs/host-buttons', '/docs/embedded-wallet',
-      '/docs/creator-earnings', '/docs/spend-policy', '/docs/transactions',
-      '/docs/privacy', '/docs/terms', '/docs/dca', '/docs/guardian', '/docs/snapshot',
+      '/docs/creator-earnings',
+      '/docs/privacy', '/docs/terms', '/docs/guardian', '/docs/snapshot',
+      // DOCS-CLEAN (RE-PINNED 2026-11-24): spend-policy, transactions and dca are redirects now (pinned below); called-it and community are pages
+      '/docs/called-it', '/docs/community',
       // MARKETS/MSG (2026-09-11)
       '/compare', '/docs/markets',
       // FRONT DOOR (RE-PINNED 2026-10-06 (front-door)): the brochure's prose moved to /story; `/` (the splash) stays in the list
@@ -2322,6 +2325,76 @@ async function main() {
       const hits = body.match(ENTITY_SPACE_RE) ?? []
       check(`entity-space fence: ${path} has no glued inline-element text`, hits.length === 0, hits.slice(0, 3).join(' '))
     }
+  }
+
+  // DOCS-CLEAN (squad docs-clean, 2026-11-24). The docs were rewritten to the
+  // product as it is: groups led by the trader, three pages retired, a Called
+  // it page, and the claims the code no longer backs taken out. These pins keep
+  // the fixes from coming back.
+  {
+    const docsText = (html: string) =>
+      html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ')
+        .replace(/&rsquo;|&#x27;|&#39;|&apos;/g, "'").replace(/&amp;/g, '&').replace(/&nbsp;|&#160;/g, ' ').replace(/\s+/g, ' ')
+    // Recurring buys are never offered (company rule), in any docs page or registry text.
+    const RECURRING_OFFER = /recurring buy|every week|\bDCA\b|becomes a schedule/i
+    check(
+      'docs-clean: no registry title, seoTitle or description offers a recurring buy',
+      DOCS_PAGES.every((p) => !RECURRING_OFFER.test(`${p.title} ${p.seoTitle} ${p.description}`)),
+      DOCS_PAGES.filter((p) => RECURRING_OFFER.test(`${p.title} ${p.seoTitle} ${p.description}`)).map((p) => p.slug).join(', '),
+    )
+    const recurringHits: string[] = []
+    // LEGAL is out of this fence: /docs/terms names recurring buys in its
+    // automated-execution clause, and the legal text is Nate's, not the docs'.
+    for (const p of readyPages().filter((d) => d.group !== 'legal')) {
+      const t = docsText(await (await fetch(`${BASE}/docs${p.slug ? `/${p.slug}` : ''}`)).text())
+      const m = t.match(RECURRING_OFFER)
+      if (m) recurringHits.push(`/docs/${p.slug}: …${t.slice(Math.max(0, (m.index ?? 0) - 40), (m.index ?? 0) + 40)}…`)
+    }
+    check('docs-clean (served): no guide docs page offers a recurring buy ("recurring buy", "every week", "DCA", "becomes a schedule")', recurringHits.length === 0, recurringHits.slice(0, 3).join(' | '))
+
+    // The three retired pages redirect permanently to their new homes.
+    const RETIRED: Array<[string, string]> = [['/docs/dca', '/docs/markets'], ['/docs/spend-policy', '/docs/trust'], ['/docs/transactions', '/docs/venues']]
+    for (const [from, to] of RETIRED) {
+      const r = await fetch(`${BASE}${from}`, { redirect: 'manual' })
+      const loc = r.headers.get('location') ?? ''
+      check(`docs-clean: ${from} redirects permanently to ${to}`, (r.status === 308 || r.status === 301) && new URL(loc, BASE).pathname === to, `${r.status} → ${loc}`)
+    }
+
+    // Perp trades do not pay creators (swaps pay; the perp fee is not switched on).
+    const ce = docsText(await (await fetch(`${BASE}/docs/creator-earnings`)).text())
+    check(
+      'docs-clean: /docs/creator-earnings says perp trades do not pay creators, and no registry text says a perp pays one',
+      /Perp trades do not pay creators/i.test(ce) && !DOCS_PAGES.some((p) => /perps? (trades? )?(pay|earn)s? (the )?creator/i.test(p.description)),
+    )
+
+    // Safety wording: never "the only thing that can sign" (the Hyperliquid agent key signs orders too).
+    const trust = docsText(await (await fetch(`${BASE}/docs/trust`)).text())
+    check(
+      'docs-clean: /docs/trust never says the wallet is the only thing that can sign, and names the Hyperliquid exception',
+      !/only thing that can sign/i.test(trust) && /agent key/i.test(trust) && /withdraw/i.test(trust),
+    )
+
+    // Called it has a page, and it renders the four verdict words from the spec.
+    const ciRes = await fetch(`${BASE}/docs/called-it`)
+    const ci = docsText(await ciRes.text())
+    check(
+      'docs-clean: /docs/called-it renders, in the registry (START HERE), with the four verdict words from lib/called-it/spec',
+      ciRes.status === 200 && Object.values(VERDICT_WORDS).every((w) => ci.toLowerCase().includes(w.toLowerCase())) &&
+        DOCS_PAGES.some((p) => p.slug === 'called-it' && p.ready && p.group === 'start'),
+      `status=${ciRes.status} missing=${Object.values(VERDICT_WORDS).filter((w) => !ci.toLowerCase().includes(w.toLowerCase())).join(',')}`,
+    )
+
+    // The trader leads: the sidebar's first group is START HERE and its first page is first-five-minutes.
+    const sideHtml = await (await fetch(`${BASE}/docs`)).text()
+    const side = sideHtml.slice(sideHtml.indexOf('class="docs__side"'))
+    const firstGroup = side.match(/class="docs__sidegroup[^"]*">([^<]+)</)?.[1] ?? ''
+    const afterGroup = side.slice(side.indexOf(firstGroup))
+    const firstPage = afterGroup.match(/href="(\/docs\/[^"]+)"/)?.[1] ?? ''
+    check(
+      'docs-clean: the docs sidebar opens with START HERE, and its first page is first-five-minutes (registry and served rail)',
+      DOCS_GROUPS[0]?.label === 'START HERE' && groupPages('start')[0]?.slug === 'first-five-minutes' && firstGroup === 'START HERE' && firstPage === '/docs/first-five-minutes',
+      `group=${firstGroup} page=${firstPage}`,
+    )
   }
 
   // Token-tint fence (2026-09-16). Tailwind 3 can't opacity-modify a
@@ -19460,14 +19533,14 @@ async function main() {
     const disarmAnon = await fetch(`${BASE}/api/dca/nonexistent/arm`, { method: 'DELETE' })
     check('dca autopilot: disarm without a session → 401', disarmAnon.status === 401)
 
-    // The docs page: the two-tier story must stay routed and keep its spine —
-    // confirm-mode for every wallet, autopilot for smart wallets, and the
-    // honest EOA custody explanation (never a silent capability claim).
-    const docsRes = await fetch(`${BASE}/docs/dca`)
-    const docsHtml = await docsRes.text()
+    // RE-PINNED 2026-11-24 (docs-clean qa): /docs/dca is retired. The company
+    // does not offer recurring buys in copy, so the page that taught them is
+    // gone; its address redirects to /docs/markets. The API checks above stay.
+    const docsRes = await fetch(`${BASE}/docs/dca`, { redirect: 'manual' })
     check(
-      'dca autopilot: /docs/dca routes and keeps the two-tier + EOA-honesty spine',
-      docsRes.status === 200 && docsHtml.includes('confirm-mode') && docsHtml.includes('autopilot') && /EOA/.test(docsHtml) && docsHtml.includes('Spend Permission'),
+      'dca autopilot: /docs/dca no longer serves a page; it redirects permanently to /docs/markets',
+      (docsRes.status === 308 || docsRes.status === 301) && new URL(docsRes.headers.get('location') ?? '', BASE).pathname === '/docs/markets',
+      `${docsRes.status} → ${docsRes.headers.get('location')}`,
     )
 
     // The chat turn: connect-first (the toggle layer answers, not the planner).
@@ -24066,7 +24139,8 @@ async function main() {
       'markets/msg: /compare — our column is ∞ at every meter and €0, and the six lines + the killer line are on the page',
       (cmp.match(/>∞</g) ?? []).length >= 5 &&
         /€0</.test(cmp) &&
-        /The alert executes\./.test(cmp) && /The line is the order\./.test(cmp) && /You keep the pen\./.test(cmp) &&
+        /The alert comes with the trade\./.test(cmp) && /The line is the order\./.test(cmp) && /You keep the pen\./.test(cmp) &&
+        !/The alert executes|Only your wallet can sign/.test(cmp) &&
         cmp.includes('data-killer-line') && cmp.includes(KILLER_LINE.sentence),
     )
     check(
@@ -24173,8 +24247,10 @@ async function main() {
     // /docs/markets — registered, ready, in the sidebar + sitemap.
     const docs = await (await fetch(`${BASE}/docs/markets`)).text()
     check(
-      'markets/msg: /docs/markets renders — the chip contract, watchlists, alerts that act, the TradingView import, the attribution note',
-      /A chip sends\. A link prefills\./.test(docs) && /Alerts that act/.test(docs) && /Import your TradingView watchlist/.test(docs) &&
+      // RE-PINNED 2026-11-24 (docs-clean qa): "Alerts that act" is gone (an alert never trades by itself); the
+      // alert section names the form's own third choice, which arms a Guardian or a limit order instead.
+      'markets/msg: /docs/markets renders — the chip contract, watchlists, alerts (and the form\'s arm-now choice), the TradingView import, the attribution note',
+      /A chip sends\. A link prefills\./.test(docs) && />Alerts</.test(docs) && /Or let it run by itself/.test(docs) && !/Alerts that act/.test(docs) && /Import your TradingView watchlist/.test(docs) &&
         /Lightweight Charts/.test(docs) && /Computed from our own tape/.test(docs),
     )
   }
