@@ -1,0 +1,226 @@
+/* SLEEK on the symbol page (squad mobile-sleek, lane SYMBOL, 2026-11-24).
+ *
+ * The /t/<SYM> page outside the chart card, redrawn in the squad's look:
+ * black ground, flat fills, hairlines, hard edges, the cut corner on the one
+ * button that acts. Phone first.
+ *
+ * Every rule is scoped `.mkt-frame.mkt-frame--sym` (the symbol page's own
+ * frame), one class heavier than the rules it restyles in markets.css and
+ * x402-design.css, so this sheet wins wherever the bundler orders it and
+ * those sheets keep the text the harness pins. Nothing here reaches inside
+ * the chart card, the Called it band or the top / tab bars.
+ */
+
+.mkt-frame.mkt-frame--sym {
+  /* Where the act bar docks: the top edge of the phone's tab bar. Whoever owns
+     the tab bar may set --sk-dock-bottom; this is the same sum native-shell.css
+     pads the frame by. */
+  --symx-dock-bottom: var(--sk-dock-bottom, calc(var(--spine-bar-h, 49px) + env(safe-area-inset-bottom, 0px)));
+  --symx-dock-h: 61px; /* 44 + 8 + 8 + the hairline */
+}
+
+/* ── The strip ───────────────────────────────────────────────────────── */
+
+/* The name is the page's one display line. */
+.mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__name { font-family: var(--sk-display); font-weight: 600; letter-spacing: -0.015em; }
+.mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__sym { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.12em; color: var(--muted-2); }
+/* The venue: a quiet label with the session dot, not a pill. */
+.mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__venue { padding: 0; border: 0; border-radius: 0; font-size: 10.5px; font-weight: 500; letter-spacing: 0.12em; color: var(--muted-2); }
+.mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__venue-tail { letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+.mkt-frame.mkt-frame--sym .sym--cockpit .mk-dot { border-radius: 0; box-shadow: none; }
+/* The price in mono; the change wears its tone as flat type. */
+.mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__last { font-family: var(--font-mono); font-weight: 600; letter-spacing: -0.03em; }
+.mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__chg { padding: 0; border-radius: 0; background: none; font-size: 13px; font-weight: 600; letter-spacing: 0; white-space: nowrap; }
+.mkt-frame.mkt-frame--sym .sym--cockpit .sym__st-k, .mkt-frame.mkt-frame--sym .sym--cockpit .mk-range__k { font-size: 10px; font-weight: 500; letter-spacing: 0.12em; color: var(--muted-2); }
+/* The day's range: one hairline, one hard tick where the price sits. */
+.mkt-frame.mkt-frame--sym .sym--cockpit .mk-range__bar { height: 1px; border-radius: 0; background: var(--line-2); }
+.mkt-frame.mkt-frame--sym .sym--cockpit .mk-range__fill { display: none; }
+.mkt-frame.mkt-frame--sym .sym--cockpit .mk-range__tick { width: 3px; height: 11px; margin: -5.5px 0 0 -1.5px; border-radius: 0; background: var(--fg); box-shadow: none; }
+.mkt-frame.mkt-frame--sym .sym--cockpit .mk-range__lo, .mkt-frame.mkt-frame--sym .sym--cockpit .mk-range__hi { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* The stock / perp switch and YOU HOLD: hard cells. */
+.mkt-frame.mkt-frame--sym .sym__twin { border-radius: 0; font-size: 10px; letter-spacing: 0.12em; }
+.mkt-frame.mkt-frame--sym .sym__twin-opt + .sym__twin-opt { border-left: 1px solid var(--line); }
+.mkt-frame.mkt-frame--sym .sym__twin-opt[aria-current='page'] { background: var(--fg); color: var(--bg); }
+.mkt-frame.mkt-frame--sym .mk-held { border-radius: 0; border-color: var(--line-2); background: none; }
+.mkt-frame.mkt-frame--sym .sym--cockpit .ssx-pill { border-radius: 0; }
+
+/* ── The tabs: hairline underline, mono capitals ─────────────────────── */
+
+.mkt-frame.mkt-frame--sym .sym__tabs { gap: 0; }
+.mkt-frame.mkt-frame--sym .sym__tab { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); text-decoration: none; white-space: nowrap; }
+.mkt-frame.mkt-frame--sym .sym__tab:first-child { padding-left: 0; }
+.mkt-frame.mkt-frame--sym .sym__tab:hover { color: var(--fg); }
+.mkt-frame.mkt-frame--sym .sym__tab.is-on { color: var(--fg); font-weight: 500; }
+.mkt-frame.mkt-frame--sym .sym__tab.is-on::after { left: 14px; right: 14px; bottom: -1px; height: 2px; border-radius: 0; background: var(--accent); }
+.mkt-frame.mkt-frame--sym .sym__tab:first-child.is-on::after { left: 0; }
+.mkt-frame.mkt-frame--sym .sym__tab:active { transform: none; }
+
+/* ── The blocks under the chart: hairline sections, label headings ───── */
+
+/* A card on this page is a section: a hairline over it, a label, its body.
+   (The chart card and the Called it band are other lanes' and keep their own
+   boxes; these selectors stop at the tab body and the ask dock.) */
+.mkt-frame.mkt-frame--sym .sym__body .mkt-card { --mkt-card-px: 0px; padding: 18px 0 20px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; }
+.mkt-frame.mkt-frame--sym .sym__body .mkt-card--coming { border-top-style: dashed; }
+.mkt-frame.mkt-frame--sym .sym__body .mkt-card__head { margin-bottom: 14px; }
+.mkt-frame.mkt-frame--sym .sym__body .mkt-card__title { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg); }
+.mkt-frame.mkt-frame--sym .sym__body .mkt-card__eyebrow { font-size: 10px; letter-spacing: 0.12em; color: var(--muted-2); }
+.mkt-frame.mkt-frame--sym .sym__body .mkt-card__rows { margin-inline: 0; }
+.mkt-frame.mkt-frame--sym .sym__body .mk-overview, .mkt-frame.mkt-frame--sym .sym__body .mk-trade { gap: 0 28px; }
+/* Chips inside a section: hard cells. */
+.mkt-frame.mkt-frame--sym .sym__body .mkt-chip, .mkt-frame.mkt-frame--sym .sym__body .mkt-order__preset, .mkt-frame.mkt-frame--sym .sym__body .mkt-order__custom,
+.mkt-frame.mkt-frame--sym .sym__body .mkt-routes__filter, .mkt-frame.mkt-frame--sym .sym__body .mkt-routes__fold, .mkt-frame.mkt-frame--sym .sym__body .mkt-route__tag,
+.mkt-frame.mkt-frame--sym .sym__body .mkt-compound__leg, .mkt-frame.mkt-frame--sym .sym__body .mkt-pos__pill, .mkt-frame.mkt-frame--sym .sym__body .mkt-exec__chip,
+.mkt-frame.mkt-frame--sym .sym__body .mkt-routes__rule, .mkt-frame.mkt-frame--sym .sym__body .mkt-route__more, .mkt-frame.mkt-frame--sym .sym__body .mkt-route__mark { border-radius: 0; }
+/* A route's act: the market's colour, hard edged; the best one keeps its fill. */
+.mkt-frame.mkt-frame--sym .sym__body .mkt-route__chip, .mkt-frame.mkt-frame--sym .sym__body .mkt-compound__send { border-radius: 0; }
+.mkt-frame.mkt-frame--sym .sym__body .mkt-route.is-best::before, .mkt-frame.mkt-frame--sym .sym__body .mkt-route--level::before { background: color-mix(in oklab, var(--accent) 7%, transparent); }
+.mkt-frame.mkt-frame--sym .sym__body .mkt-compound__n { border-radius: 0; }
+
+/* Ask the chart: a hairline section too, folded to one row. */
+.mkt-frame.mkt-frame--sym .mk-askdock { margin-top: 14px; border: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; background: none; }
+.mkt-frame.mkt-frame--sym .mk-askdock__bar { padding: 12px 0; }
+.mkt-frame.mkt-frame--sym .mk-askdock__bar:hover { background: none; }
+.mkt-frame.mkt-frame--sym .mk-askdock__k { font-size: 11px; font-weight: 500; letter-spacing: 0.12em; color: var(--fg); }
+.mkt-frame.mkt-frame--sym .mk-askdock__body { padding: 0 0 14px; }
+.mkt-frame.mkt-frame--sym .sym--cockpit .sym__main { margin-top: 0; }
+.mkt-frame.mkt-frame--sym .sym--cockpit .mk-askdock.is-parked + .sym__main { margin-top: 4px; }
+
+/* ── The right column's ticket (desktop) ─────────────────────────────── */
+
+.mkt-frame.mkt-frame--sym .mkt-railticket { margin: 0; padding: 16px 16px 14px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; }
+.mkt-frame.mkt-frame--sym .mkt-railticket__k { font-size: 11px; font-weight: 500; letter-spacing: 0.12em; }
+.mkt-frame.mkt-frame--sym .mkt-railticket__sub { font-size: 10px; letter-spacing: 0.12em; }
+.mkt-frame.mkt-frame--sym .mkt-railticket__fold { border-radius: 0; border-color: transparent; }
+.mkt-frame.mkt-frame--sym .mkt-railticket__fold:hover { border-color: var(--line-2); }
+.mkt-frame.mkt-frame--sym .mkt-railticket > .mkt-ticket { margin-top: 12px; }
+.mkt-frame.mkt-frame--sym .mkt-railticket__say { margin-top: 14px; padding-top: 12px; gap: 0; }
+.mkt-frame.mkt-frame--sym .mkt-railticket__in { height: 38px; border-radius: 0; border-right: 0; }
+.mkt-frame.mkt-frame--sym .mkt-railticket__go { width: 38px; height: 38px; border-radius: 0; }
+
+/* ── Phone ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .mkt-frame.mkt-frame--sym { --sym-gutter: 16px; }
+
+  /* THE FIRST SCREEN. Three quiet rows, the price the loudest thing on them:
+       (mark) Ethereum ETH                     · COINBASE SPOT · 24/7
+       $1,683.97  -1.44% 24h
+       $1,666 ────────|──── $1,778             24H RANGE
+     The identity box dissolves (display: contents) so the name row, the venue
+     label and the quote are the strip's own rows; no markup moved. The strip
+     keeps its height while the day's range loads, so the chart never jumps. */
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip { flex-wrap: wrap; align-items: center; gap: 2px 10px; min-height: 104px; padding: 12px 0 10px; align-content: flex-start; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip > .sym__id, .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__idtext { display: contents; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip > .sym__id > :first-child { order: 1; width: 24px !important; height: 24px !important; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__titlerow { order: 1; flex: 1 1 0; min-width: 0; align-items: baseline; gap: 7px; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__name { font-size: 19px; line-height: 1.2; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .ssx-pill { display: none; } /* the top bar's lens is the phone's search */
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__meta { order: 2; flex: 0 1 auto; margin: 0; gap: 6px 10px; flex-wrap: nowrap; justify-content: flex-end; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip:has(.sym__twin) .sym__meta { flex: 1 0 100%; order: 3; justify-content: space-between; min-height: 30px; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip > .sym__quote { order: 4; flex: 1 0 100%; align-items: baseline; gap: 10px; min-width: 0; margin-top: 2px; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__last { font-size: 34px; line-height: 1.1; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__chg { font-size: 14px; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__feed { font-size: 10px; letter-spacing: 0.12em; }
+  /* The day's facts: the range bar alone (it prints the low and the high). */
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__stats { order: 5; flex: 1 0 100%; margin: 4px 0 0; padding: 0; text-align: left; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__stats .sym__st { display: none; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__stats .sym__st--range { display: block; flex: 1 1 auto; min-width: 0; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__st--range .mk-range { grid-template-columns: auto minmax(40px, 1fr) auto auto; grid-template-areas: "lo bar hi k"; gap: 0 10px; margin: 0; align-items: center; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__st--range .mk-range__k { justify-self: end; padding-left: 4px; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip > .mk-held { order: 6; margin-top: 6px; }
+
+  /* The tabs bleed to the screen's edges (the hairline runs the full width). */
+  .mkt-frame.mkt-frame--sym .sym__tabs { margin-inline: calc(-1 * var(--sym-gutter)); padding-inline: var(--sym-gutter); scroll-padding-inline: var(--sym-gutter); overscroll-behavior-x: contain; }
+  .mkt-frame.mkt-frame--sym .sym__tab { min-height: 44px; padding: 0 8px; font-size: 11px; letter-spacing: 0.06em; }
+  .mkt-frame.mkt-frame--sym .sym__tab.is-on::after { left: 8px; right: 8px; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__chart { margin-top: 12px; }
+
+  /* Sections: a phone's rhythm. */
+  .mkt-frame.mkt-frame--sym .sym__body .mkt-card { padding: 16px 0 18px; }
+  .mkt-frame.mkt-frame--sym .mk-askdock__hint { font-size: 12px; }
+}
+
+/* ── THE ACT BAR (phone and tablet: wherever the tab bar is) ──────────── */
+
+/* Outside the bar the "More" seat is not shown: a wide strip lists every chip. */
+.sym__act-moreseat { display: none; }
+
+@media (max-width: 1023px) {
+  /* A clean docked bar on the tab bar's top edge: flat black, one hairline. */
+  .mkt-frame.mkt-frame--sym .sym__exec:has(.sym__act-chips) {
+    bottom: var(--symx-dock-bottom);
+    padding: 8px var(--sk-gutter, 16px);
+    background: var(--bg);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+    border-top: 1px solid var(--line);
+  }
+  .mkt-frame.mkt-frame--sym .sym--cockpit { padding-bottom: calc(var(--symx-dock-h) + 16px); }
+  .mkt-frame.mkt-frame--sym .sym__exec:has(.sym__act-chips) .sym__act-chips {
+    display: flex; gap: 6px; margin: 0; padding: 0; overflow: visible;
+    -webkit-mask-image: none; mask-image: none; scroll-snap-type: none;
+  }
+  .mkt-frame.mkt-frame--sym .sym__exec:has(.sym__act-chips) .sym__act-chips::after { content: none; }
+  /* A button: a hard block with the tile's cut, 44px, an equal share of the bar. */
+  .mkt-frame.mkt-frame--sym .sym__exec:has(.sym__act-chips) .sym__act-chip {
+    --sk-cut: 8px;
+    flex: 1 1 0; min-width: 0; min-height: 44px; justify-content: center; padding: 0 8px;
+    border: 0; border-radius: 0; box-shadow: none; transform: none; opacity: 1;
+    font-family: var(--font-sans); font-size: 14.5px; font-weight: 600; letter-spacing: 0; line-height: 1;
+    overflow: hidden; text-overflow: ellipsis;
+    clip-path: polygon(var(--sk-cut) 0, 100% 0, 100% calc(100% - var(--sk-cut)), calc(100% - var(--sk-cut)) 100%, 0 100%, 0 var(--sk-cut));
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* The market's colours, flat: the lead side filled, its neighbours a dark
+     wash of the same colour (one loud button per screen). */
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-chip[data-tone='buy'] { background: color-mix(in oklab, var(--up) 18%, var(--bg)); color: var(--up); }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-chip[data-tone='sell'] { background: color-mix(in oklab, var(--sell) 22%, var(--bg)); color: color-mix(in oklab, var(--sell) 80%, var(--fg)); }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-chip[data-tone='neutral'] { background: var(--surf-2); color: var(--fg); }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-chip[data-tone='buy'][data-rank='lead'],
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-chip[data-tone='buy'][aria-pressed='true'] { background: var(--up); color: var(--ink); }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-chip[data-tone='sell'][data-rank='lead'],
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-chip[data-tone='sell'][aria-pressed='true'] { background: var(--sell); color: #fff; }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-chip:active, .mkt-frame.mkt-frame--sym .sym__exec .sym__act-more:active { transform: none; filter: brightness(0.88); }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-chip:focus-visible, .mkt-frame.mkt-frame--sym .sym__exec .sym__act-more:focus-visible { outline: 2px solid var(--fg); outline-offset: -4px; }
+  /* Everything that is not a market side waits behind More. */
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-chip[data-rank='more'] { display: none; }
+  /* Four market sides (a wallet that holds it): the verb alone, so none is cut. */
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act[data-market='4'] .sym__act-chip { font-size: 0; }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act[data-market='4'] .sym__act-chip::before { content: attr(data-verb); font-size: 14.5px; }
+
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-moreseat { position: relative; display: flex; flex: 0 0 auto; }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-more {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 68px; min-height: 44px; padding: 0 14px;
+    border: 1px solid var(--line-2); border-radius: 0; background: var(--bg); color: var(--fg);
+    font-family: var(--font-sans); font-size: 14.5px; font-weight: 600; line-height: 1; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-more[aria-expanded='true'], .mkt-frame.mkt-frame--sym .sym__exec .sym__act-more[aria-pressed='true'] { background: var(--fg); border-color: var(--fg); color: var(--bg); }
+  /* The menu rises from the bar's top edge: hairline rows, hard edges. */
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-menu {
+    position: absolute; right: 0; bottom: calc(100% + 9px); z-index: 2;
+    display: flex; flex-direction: column; width: min(300px, calc(100vw - 2 * var(--sk-gutter, 16px)));
+    border: 1px solid var(--line-2); background: var(--bg);
+  }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-menuitem {
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; min-height: 56px; padding: 10px 14px;
+    border: 0; border-top: 1px solid var(--line); background: none; color: var(--fg); text-align: left; cursor: pointer;
+  }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-menuitem:first-child { border-top: 0; }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-menuitem:active { background: var(--surf-2); }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-menulabel { font-size: 14.5px; font-weight: 600; line-height: 1.2; }
+  .mkt-frame.mkt-frame--sym .sym__exec .sym__act-menuline { font-size: 12px; line-height: 1.35; color: var(--muted); }
+}
+
+/* ── Desktop: the same language, more air ────────────────────────────── */
+
+@media (min-width: 641px) {
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip { gap: 18px; padding: 22px 0 14px; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__last { font-size: clamp(24px, 2.1vw, 30px); }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip > .sym__quote { gap: 10px; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__chg { font-size: 14px; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__st-v { font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__st { gap: 4px; }
+  .mkt-frame.mkt-frame--sym .sym__tab { min-height: 44px; }
+  .mkt-frame.mkt-frame--sym .sym__body .mkt-card { padding: 22px 0 26px; }
+}

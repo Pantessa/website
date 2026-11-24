@@ -87,6 +87,7 @@ import { seedTradable } from '@/lib/tradable-read'
 import type { TradabilityMap } from '@/lib/tradability'
 import { useTradable } from '@/lib/use-tradable'
 import type { TicketSide } from '@/lib/order-ticket'
+import './symbol-sleek.css'
 
 /** Where an unknown /t/<symbol> points: one of each family. */
 const UNKNOWN_SYMBOL_PICKS = ['AAPL', 'ETH', 'HYPE'] as const
