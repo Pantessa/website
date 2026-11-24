@@ -41,6 +41,7 @@ import {
   pinText,
   postIdOfMark,
   railMargins,
+  MARKS_HEAD_PX,
   railOf,
   readMargins,
   spreadRail,
@@ -371,8 +372,8 @@ export function calledChartPins(check: Check): void {
   const m = railMargins(LAPTOP, plan, 68, label.keepBottom, { top: 10, bottom: 8 })
   const mPhone = railMargins(PHONE, calloutPlan(PHONE), 0, tallyLabel(rec, PHONE).keepBottom, { top: 10, bottom: 8 })
   check(
-    'called chart layout: while a plot is up the pane\'s margins make room for the two rails (the candles stay between them); marks only, they make room for the tally line and nothing else; never tighter than the viewer\'s own, never more than 38%',
-    m.top >= Math.ceil(((PANE_KEEP.top + 68) / LAPTOP.height) * 100) && m.bottom >= Math.ceil(((label.keepBottom + 68) / LAPTOP.height) * 100) && m.top <= 38 && m.bottom <= 38 && mPhone.top === 10 && mPhone.bottom >= 8 && railMargins(LAPTOP, plan, 68, label.keepBottom, { top: 37, bottom: 37 }).top === 37 && railMargins({ width: 825, height: 0 }, plan, 68, 30, { top: 10, bottom: 8 }).top === 10,
+    'called chart layout: while a plot is up the pane\'s margins make room for the two rails (the candles stay between them); marks only (RE-PINNED 2026-11-24, the marks layer), they make room for a stack of two marks over the highest bar and for the tally line; never tighter than the viewer\'s own, never more than 38%',
+    m.top >= Math.ceil(((PANE_KEEP.top + 68) / LAPTOP.height) * 100) && m.bottom >= Math.ceil(((label.keepBottom + 68) / LAPTOP.height) * 100) && m.top <= 38 && m.bottom <= 38 && mPhone.top === Math.ceil(((PANE_KEEP.top + MARKS_HEAD_PX) / PHONE.height) * 100) && mPhone.top <= 38 && mPhone.bottom >= 8 && railMargins(LAPTOP, plan, 68, label.keepBottom, { top: 37, bottom: 37 }).top === 37 && railMargins({ width: 825, height: 0 }, plan, 68, 30, { top: 10, bottom: 8 }).top === 10,
     JSON.stringify([m, mPhone]),
   )
 

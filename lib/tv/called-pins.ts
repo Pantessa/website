@@ -34,6 +34,7 @@
 // lib/tv/types (the library itself is licensed and never in this repository).
 
 import { ADDED_MARK, PIN_URL_MAX, VERDICT_WORDS, cmpPostId, fmtDay, judgedLine, moveLine, recordHref, sinceLine, type CallVerdict, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
+import { createMarksLayer, type MarkInks } from './called-overlay'
 import type { ShapeSnapshot } from './shapes'
 import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvPriceScaleApi, TvShapeOptions, TvWidget } from './types'
 
@@ -283,6 +284,9 @@ const CARDS_MIN_PANE_H = 300
 /** Air between a rail of cards and the candles. */
 const RAIL_AIR_PX = 18
 
+/** Px over the highest candle that a marks-only pane keeps for the marks themselves (two tiles and their lift). */
+export const MARKS_HEAD_PX = 58
+
 export interface PaneSize {
   width: number
   height: number
@@ -463,7 +467,8 @@ export function boxesOverlap(a: Pick<PlacedBox, 'x' | 'y' | 'w' | 'h'>, b: Pick<
 export function railMargins(pane: PaneSize, plan: CalloutPlan, maxBoxH: number, keepBottom: number, base: { top: number; bottom: number }, keepTop: number = PANE_KEEP.top): { top: number; bottom: number } {
   if (!(pane.height > 0)) return base
   const pct = (px: number) => Math.min(38, Math.ceil((px / pane.height) * 100))
-  if (plan.total === 0) return { top: base.top, bottom: Math.max(base.bottom, pct(keepBottom + 6)) }
+  // Marks only (a phone): room at the head for a stack of two marks over the highest bar, and for the tally at the foot.
+  if (plan.total === 0) return { top: Math.max(base.top, pct(keepTop + MARKS_HEAD_PX)), bottom: Math.max(base.bottom, pct(keepBottom + 6)) }
   return { top: Math.max(base.top, pct(keepTop + maxBoxH + RAIL_AIR_PX)), bottom: Math.max(base.bottom, pct(keepBottom + maxBoxH + RAIL_AIR_PX)) }
 }
 
@@ -845,6 +850,10 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   let focusLine: { id: string; key: string } | null = null
   let focusSeq = 0
   let marks: TvMark[] = []
+  /** The marks layer is drawing (lib/tv/called-overlay): the library's own bar marks stand down. */
+  let layerOn = false
+  /** What the layer draws: every call with no card. Set by `render`. */
+  let scene: { key: string; calls: CalledCall[]; keepTop: number; keepBottom: number } | null = null
   let plan: CalloutPlan = calloutPlan({ width: 0, height: 0 })
   let startAbove = true
   let margins: { original: PaneMargins; applied: PaneMargins } | null = null
@@ -899,6 +908,22 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       return null
     }
   }
+  /** Where the whole legend ends (its Volume row and fold button included), px down the pane, and how wide that corner is. */
+  const legendCorner = (): { width: number; top: number } | undefined => {
+    try {
+      const root = hostEl?.querySelector('iframe')?.contentDocument?.querySelector('[data-qa-id="legend"]')
+      if (!root) return undefined
+      const box = root.getBoundingClientRect()
+      const rows = [...root.querySelectorAll('[data-qa-id="legend-source-item"], [data-qa-id="legend-toggler"], button')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0)
+      if (!rows.length) return undefined
+      const pane = root.parentElement?.getBoundingClientRect()
+      const left = pane?.left ?? box.left
+      const top = pane?.top ?? box.top
+      return { width: Math.min(220, Math.max(...rows.map((r) => r.right - left)) + 8), top: Math.max(...rows.map((r) => r.bottom - top)) + 6 }
+    } catch {
+      return undefined
+    }
+  }
   const sampleAxis = (width: number): AxisSample[] => {
     const scale = chart?.getTimeScale()
     if (!scale) return []
@@ -918,6 +943,41 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     const ink = hooks.inks()
     return [r.handle, r.symbol, r.side, r.verified ? 'v' : 'n', r.words.headline, r.words.coverage ?? '', r.words.added ?? '', p.perRail, p.textWidth, p.wordLines, ink.bg, ink.fg, ink.up, r.calls.map((c) => `${c.postId}${c.picked ? '*' : ''}${c.origin === 'added' ? '+' : ''}${c.verdict[0]}${Math.round(c.judgedPct * 1000)}`).join(',')].join('|')
   }
+
+  /** The verdict inks of the marks layer: the market's green and red, gold for "too early to say", grey for no real move. */
+  const markInks = (): MarkInks => {
+    const ink = hooks.inks()
+    let gold = ''
+    try {
+      gold = typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue('--gold').trim()
+    } catch {
+      /* the muted ink stands in */
+    }
+    return { up: ink.up, down: ink.down, open: /^#[0-9a-f]{6}$/i.test(gold) ? gold : ink.muted, flat: ink.muted, fg: ink.fg, bg: ink.bg }
+  }
+  // The legend's corner is read from the frame's document: once a second is plenty (it moves when a study is added).
+  let cornerAt = 0
+  let cornerNow: { width: number; top: number } | undefined
+  const corner = () => {
+    const now = Date.now()
+    if (now - cornerAt > 1000) {
+      cornerAt = now
+      cornerNow = legendCorner()
+    }
+    return cornerNow
+  }
+  const layer = createMarksLayer({
+    host: () => hostEl,
+    chart: () => chart,
+    scene: () => (scene && plotted() ? { ...scene, focusId: input.focusId, keepCorner: corner() } : null),
+    inks: markInks,
+    onPick: (postId) => hooks.onPick(postId),
+    onMount: (on) => {
+      if (layerOn === on) return
+      layerOn = on
+      refreshMarks()
+    },
+  })
 
   const removeShape = (id: string) => {
     removing.add(id)
@@ -1147,6 +1207,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       const had = cards.size > 0 || labelId !== null || marks.length > 0
       clearShapes()
       marks = []
+      scene = null
       drawnKey = ''
       setMargins(null)
       void syncFocus()
@@ -1196,6 +1257,8 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
 
     clearShapes()
     marks = calledMarks(record, ids, inks)
+    const boxed = new Set(ids)
+    scene = { key, calls: record.calls.filter((call) => !boxed.has(call.postId)), keepTop: view.keepTop, keepBottom: label.keepBottom }
     const next = new Map<string, Drawn>()
     for (const box of placed) {
       const call = byId.get(box.id)
@@ -1276,6 +1339,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
         if (cards.size && !relayoutTimer && !renderTimer && typeof document !== 'undefined' && !document.hidden) relayout()
       }, DRIFT_CHECK_MS)
       hooks.onAttach?.(true)
+      layer.start()
       schedule()
     },
     detach() {
@@ -1303,7 +1367,9 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       } catch {
         /* the widget is going away */
       }
+      layer.stop()
       marks = []
+      scene = null
       drawnKey = ''
       fitDone = 0
       if (widget) hooks.onAttach?.(false)
@@ -1333,9 +1399,11 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       }
       return true
     },
-    marks: (ticker) => (plotted() && sameSym(ticker, hooks.symbol) ? marks : []),
+    // While the marks layer draws them, the library is given none (it would draw its discs under the tiles).
+    marks: (ticker) => (!layerOn && plotted() && sameSym(ticker, hooks.symbol) ? marks : []),
     cleanLayout: (layout) => cleanLayout(layout, (id) => owned.has(id), margins),
     retheme() {
+      layer.invalidate()
       drawnKey = ''
       if (chart) schedule()
     },
