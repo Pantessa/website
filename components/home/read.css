@@ -257,3 +257,8 @@ button.read__lvtag:hover, button.read__lvtag:focus-visible, button.read__lvtag.i
   .read .read__clause { display: inline-block; padding-block: 8px; margin-block: -8px; }
   .read .read__range { height: 44px; min-width: 44px; }
 }
+/* QA's small targets (round 3): the tile's + is a real 44px box; the 28px square it shows is drawn inside it. */
+@media (hover: none) {
+  .read .read__watch { isolation: isolate; top: -2px; right: -2px; width: 44px; height: 44px; border-color: transparent; background: none; }
+  .read .read__watch::after { inset: 8px; z-index: -1; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surf-1); }
+}

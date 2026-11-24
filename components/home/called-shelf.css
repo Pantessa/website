@@ -29,3 +29,18 @@
   .xrc-shelf__go { width: 100%; justify-content: center; }
 }
 @media (hover: none) { .xrc .xrc-shelf__go { min-height: 44px; } }
+
+/* Round 3 (squad mobile-sleek). With fewer records than columns the grid
+   left an empty cell beside the tiles: the columns follow the count. On a
+   phone the row bleeds to the page's own 16px gutter, so the first tile's
+   edge sits on the column's edge like everything above it. */
+.xrc--shelf .xrc-tiles:has(> li:nth-child(2):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.xrc--shelf .xrc-tiles:has(> li:only-child) { grid-template-columns: minmax(0, 1fr); max-width: 640px; }
+@container (max-width: 559px) {
+  .xrc--shelf .xrc-tiles, .xrc--shelf .xrc-tiles:has(> li:nth-child(2):last-child) { grid-template-columns: none; margin: 0 calc(var(--gutter-phone, 16px) * -1); padding: 0 var(--gutter-phone, 16px); scroll-padding-inline: var(--gutter-phone, 16px); }
+  .xrc--shelf .xrc-tiles:has(> li:only-child) { grid-auto-columns: 100%; max-width: none; }
+}
+/* A thumb: the eyebrow link and the door are 44px presses; the eyebrow's extra height is given back so the head keeps its rhythm. */
+@media (hover: none) {
+  .xrc .xrc-shelf__eyebrow { padding-block: 15px; margin-block: -15px; }
+}

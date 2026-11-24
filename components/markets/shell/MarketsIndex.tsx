@@ -178,6 +178,43 @@ function Trending({ rows }: { rows: TrendingRow[] }) {
 /** A board the tab strip can light: the three market sections, the Macro board and the Earn board. */
 type BoardId = MarketSectionId | 'macro' | 'earn'
 
+/** The board tabs stick under the top strip on a phone. They used to stay
+ *  stuck to the end of the page (their sticky range is the whole column), so
+ *  they sat over "how it works" and the footer with no board under them
+ *  (squad mobile-sleek, round 3). This says when every board that is drawn
+ *  has scrolled above the strip; the strip's nav wears `data-past` then and a
+ *  phone hides it (sleek-markets.css). One passive scroll listener (capture:
+ *  the phone frame scrolls inside an element), read once a frame; an
+ *  observer would miss a jump that carries a board past the strip unseen. */
+const TABS_LINE = 104 // the top strip (52px) + the stuck tabs (≈52px)
+function useBoardsPast(): boolean {
+  const [past, setPast] = useState(false)
+  useEffect(() => {
+    let frame = 0
+    const read = () => {
+      frame = 0
+      let bottom = -Infinity
+      for (const el of Array.from(document.querySelectorAll('section.mkt-sec'))) {
+        const r = el.getBoundingClientRect()
+        if (r.height > 0) bottom = Math.max(bottom, r.bottom) // a board the tabs switched away has no box
+      }
+      setPast(bottom !== -Infinity && bottom <= TABS_LINE)
+    }
+    const queue = () => {
+      if (!frame) frame = requestAnimationFrame(read)
+    }
+    read()
+    document.addEventListener('scroll', queue, { capture: true, passive: true })
+    window.addEventListener('resize', queue)
+    return () => {
+      document.removeEventListener('scroll', queue, { capture: true })
+      window.removeEventListener('resize', queue)
+      if (frame) cancelAnimationFrame(frame)
+    }
+  }, [])
+  return past
+}
+
 function useActiveBoard(ids: readonly BoardId[]) {
   const [active, setActive] = useState<BoardId | null>(ids[0] ?? null)
   useEffect(() => {
@@ -323,6 +360,7 @@ export default function MarketsIndex({
   const ids = useMemo(() => sections.map((s) => s.id), [sections])
   const boardIds = useMemo<readonly BoardId[]>(() => [...ids, 'macro', 'earn'], [ids])
   const [active, setActive] = useActiveBoard(boardIds)
+  const boardsPast = useBoardsPast()
   const [view, setView] = useMarketsView()
   const phone = usePhone()
   const showMap = view === 'map'
@@ -405,7 +443,7 @@ export default function MarketsIndex({
               <span>List</span>
             </button>
           </div>
-          <nav className="mkt-frame__tabs" aria-label="Boards">
+          <nav className="mkt-frame__tabs" aria-label="Boards" data-past={boardsPast || undefined}>
             {sections.map((s) => (
               <a
                 key={s.id}

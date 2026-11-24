@@ -23,7 +23,7 @@
   content: '/';
   display: inline-grid; place-items: center;
   min-width: 20px; height: 20px; padding: 0 5px; margin-left: 2px;
-  border: 1px solid var(--line-2); border-radius: 6px;
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
   font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 400; color: var(--muted);
 }
 .apgd-chips .apg-chip--chat[aria-pressed='true'] { border-color: var(--line-2); color: var(--muted); }
@@ -38,7 +38,7 @@
 .apgd-scope__name { flex: 0 1 auto; min-width: min(7ch, 100%); }
 /* Share keeps its door in the dock, as its icon (the label is its tooltip). */
 [data-chat-dock] [data-sheet-open='share'] > span { display: none; }
-[data-chat-dock] [data-sheet-open='share'] { padding: 0; width: 32px; height: 32px; justify-content: center; border-radius: 999px; }
+[data-chat-dock] [data-sheet-open='share'] { padding: 0; width: 32px; height: 32px; justify-content: center; border-radius: var(--r-pill); }
 
 /* ── The thread in a 400 to 520px column ─────────────────────────────────
    The chat's lg: variants think they have a wide screen here. In the dock a
@@ -61,7 +61,7 @@
 .apgd-empty__list { display: flex; flex-direction: column; gap: 8px; }
 .apgd-say {
   display: flex; align-items: center; width: 100%; min-height: 44px;
-  padding: 10px 16px; border: 1px solid var(--line-2); border-radius: 12px;
+  padding: 10px 16px; border: 1px solid var(--line-2); border-radius: var(--r-md);
   background: none; color: var(--fg); font-size: var(--fs-base); line-height: 1.35; text-align: left; cursor: pointer;
   transition: border-color 0.15s, background-color 0.15s;
 }
@@ -71,6 +71,6 @@
 .apgd-empty__hint { margin: 0; font-size: var(--fs-md); color: var(--muted-2); }
 .apgd-kbd {
   display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; margin: 0 4px;
-  border: 1px solid var(--line-2); border-radius: 6px;
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
   font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); vertical-align: 1px;
 }

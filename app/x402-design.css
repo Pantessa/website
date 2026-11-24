@@ -5277,11 +5277,13 @@
      (app/i/[slug]/opengraph-image.tsx is the reference art). Deliberately
      dark in both site themes — it previews the feed artifact, not a form
      surface — so every color here is the OG card's own fixed palette, not a
-     theme token. */
+     theme token. Since 2026-11-24 that palette is the brand's: the #07080D
+     ground, white ink, the brand violet (green is the market's), square dots,
+     the ask upright in the display face. */
   .mintstage {
     position: relative; isolation: isolate; overflow: hidden; cursor: text;
     border-radius: var(--r-lg); padding: 22px 24px 18px;
-    background: #050708;
+    background: #07080D;
     border: 1px solid rgba(255, 255, 255, 0.11);
   }
   /* Flat since 2026-11-24 (squad mobile-sleek): no drop shadow under the card, no glow inside it. */
@@ -5301,13 +5303,13 @@
     white-space: nowrap;
   }
   .mintstage__dot {
-    display: inline-block; width: 6px; height: 6px; border-radius: var(--r-round);
-    background: #34e3a0; flex-shrink: 0;
+    display: inline-block; width: 6px; height: 6px; border-radius: 0;
+    background: #9F7AFF; flex-shrink: 0;
   }
   /* the ask — the hero, written in the card's own serif voice */
   .mintstage__askwrap { display: flex; align-items: flex-start; margin-top: 20px; }
   .mintstage__quote {
-    font-family: var(--font-serif); font-style: italic; font-weight: 500;
+    font-family: var(--sk-display, var(--font-serif)); font-style: normal; font-weight: 600;
     font-size: clamp(22px, 4vw, 30px); line-height: 1.2;
     color: rgba(242, 251, 247, 0.28); transition: color 0.3s ease;
     user-select: none;
@@ -5321,15 +5323,15 @@
   .mintstage__input {
     display: block; width: 100%; resize: none; overflow: hidden;
     background: transparent; border: none; outline: none; padding: 0;
-    font-family: var(--font-serif); font-style: italic; font-weight: 500;
+    font-family: var(--sk-display, var(--font-serif)); font-style: normal; font-weight: 600;
     font-optical-sizing: auto;
     font-size: clamp(22px, 4vw, 30px); line-height: 1.2;
-    color: #f2fbf7; caret-color: #34e3a0;
+    color: #f2fbf7; caret-color: #9F7AFF;
   }
   .mintstage__input:focus-visible { outline: none; }
   .mintstage__mirror {
     pointer-events: none; white-space: pre-wrap; overflow-wrap: break-word;
-    font-family: var(--font-serif); font-style: italic; font-weight: 500;
+    font-family: var(--sk-display, var(--font-serif)); font-style: normal; font-weight: 600;
     font-optical-sizing: auto;
     font-size: clamp(22px, 4vw, 30px); line-height: 1.2;
     color: rgba(242, 251, 247, 0.34);
@@ -5338,15 +5340,14 @@
   .mintstage__mirror--typed { color: transparent; }
   .mintstage__caret {
     display: inline-block; width: 2px; height: 0.9em; margin-left: 2px;
-    background: rgba(52, 227, 160, 0.7); vertical-align: -0.12em;
+    background: rgba(159, 122, 255, 0.7); vertical-align: -0.12em;
     animation: mintstage-blink 1.1s steps(1) infinite;
   }
   @keyframes mintstage-blink { 50% { opacity: 0; } }
-  /* the promise line — the OG card's tri-color gradient, verbatim */
+  /* the promise line: flat white, as on the OG card (its gradient went with the old look, 2026-11-24) */
   .mintstage__promise {
     margin-top: 12px; font-weight: 600; font-size: 14.5px; letter-spacing: -0.2px;
-    background: linear-gradient(92deg, #7df0bd 6%, #34e3a0 46%, #ffd25e 104%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
+    color: #FFFFFF;
     width: fit-content;
   }
   /* runs on — the dapps the sentence needs */
@@ -5355,7 +5356,7 @@
     margin-top: 16px; cursor: default;
   }
   .mintstage__runslabel { font-size: 10.5px; letter-spacing: 0.22em; color: rgba(242, 251, 247, 0.6); margin-right: 2px; } /* .42 → .6 (pre-gtm POLISH: 3.9:1 → AA) */
-  .mintstage__runshint { font-size: var(--fs-sm); font-style: italic; color: rgba(242, 251, 247, 0.58); } /* .38 → .58 (pre-gtm POLISH: 3.3:1 → AA) */
+  .mintstage__runshint { font-size: var(--fs-sm); font-style: normal; color: rgba(242, 251, 247, 0.58); } /* .38 → .58 (pre-gtm POLISH: 3.3:1 → AA) */
   .mintstage__pill {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 4px 10px; border-radius: var(--r-pill);
@@ -5389,7 +5390,7 @@
   }
   .mintstage__chip:hover { border-color: rgba(255, 255, 255, 0.32); color: #f2fbf7; }
   .mintstage__chip--on {
-    border-color: #34e3a0; background: rgba(52, 227, 160, 0.12); color: #f2fbf7;
+    border-color: #9F7AFF; background: rgba(159, 122, 255, 0.12); color: #f2fbf7;
   }
   .mintstage__chip--auto { border-style: dashed; font-size: 10.5px; letter-spacing: 0.06em; }
   .mintstage__cap { font-size: 10px; color: rgba(242, 251, 247, 0.38); margin-left: 2px; }
@@ -5405,21 +5406,21 @@
     color: rgba(242, 251, 247, 0.55);
   }
   .mintstage__contract .mintstage__dot { width: 5px; height: 5px; }
-  .mintstage__site { margin-left: auto; font-size: 10.5px; color: #34e3a0; font-weight: 600; }
+  .mintstage__site { margin-left: auto; font-size: 10.5px; color: #9F7AFF; font-weight: 600; }
   /* the minted share moment reuses the card frame */
   .mintstage__ask--set {
     margin-top: 18px;
-    font-family: var(--font-serif); font-style: italic; font-weight: 500;
+    font-family: var(--sk-display, var(--font-serif)); font-style: normal; font-weight: 600;
     font-size: clamp(20px, 3.4vw, 27px); line-height: 1.2; color: #f2fbf7;
   }
   .mintstage__url {
     display: inline-flex; align-items: center; gap: 7px; margin-top: 12px;
     padding: 8px 14px; border-radius: var(--r-pill);
-    border: 1px solid rgba(52, 227, 160, 0.4); background: rgba(52, 227, 160, 0.08);
-    font-size: 13.5px; color: #34e3a0; cursor: pointer;
+    border: 1px solid rgba(159, 122, 255, 0.4); background: rgba(159, 122, 255, 0.08);
+    font-size: 13.5px; color: #9F7AFF; cursor: pointer;
     transition: background var(--dur-1), border-color var(--dur-1);
   }
-  .mintstage__url:hover { background: rgba(52, 227, 160, 0.16); border-color: #34e3a0; }
+  .mintstage__url:hover { background: rgba(159, 122, 255, 0.16); border-color: #9F7AFF; }
   @media (max-width: 480px) {
     .mintstage { padding: 18px 16px 14px; }
     .mintstage__eyebrow { display: none; }
@@ -5498,7 +5499,7 @@
     container-type: inline-size;
     position: relative; isolation: isolate; overflow: hidden;
     aspect-ratio: 1200 / 630; border-radius: var(--r-md);
-    background: #050708; border: 1px solid rgba(255, 255, 255, 0.11);
+    background: #07080D; border: 1px solid rgba(255, 255, 255, 0.11);
     color: #fafaf7;
   }
   .pagestage::before {

@@ -7,7 +7,7 @@
 .xca__chips { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .xca__chip { display: block; min-height: 40px; max-width: 100%; padding: 0 16px; font-size: 14px; line-height: 40px; text-align: center; overflow: hidden; text-overflow: ellipsis; }
 .xca__chip:hover { filter: brightness(1.08); }
-.xca__note { margin: 0; font-size: 11px; line-height: 1.4; color: var(--muted-2, var(--muted)); }
+.xca__note { margin: 0; font-size: var(--fs-xs); line-height: 1.4; color: var(--muted-2, var(--muted)); }
 
 /* Full-width buttons: a phone sheet, a hero. */
 .xca[data-variant='stack'] .xca__chips { flex-direction: column; }
@@ -30,7 +30,7 @@
 .xca-band[data-sheet] > .xca.xca--card { display: flex; }
 .xca-share {
   flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 2px;
-  font-size: 12px; font-weight: 500; color: var(--muted); text-decoration: none; white-space: nowrap;
+  font-size: var(--fs-sm); font-weight: 500; color: var(--muted); text-decoration: none; white-space: nowrap;
 }
 .xca-band[data-sheet] .xca-share { margin-left: 0; align-self: flex-start; }
 .xca-share svg { width: 13px; height: 13px; }
@@ -60,6 +60,8 @@
      caption is one clamped line under it, and the share link waits behind "more". */
   .xca-band[data-sheet]:not([data-more] *), .xca-band[data-sheet]:not([data-more] *) > .xca.xca--card { display: contents; }
   .xca-band[data-sheet]:not([data-more] *) .xca__chips { grid-column: 1; grid-row: 1; }
-  .xca-band[data-sheet]:not([data-more] *) .xca__note { grid-column: 1 / -1; grid-row: 2; font-size: 10.5px; line-height: 1.35; text-wrap: pretty; }
+  .xca-band[data-sheet]:not([data-more] *) .xca__note { grid-column: 1 / -1; grid-row: 2; font-size: 10.5px; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* One line on the short card: the caption's first and last sentences. The ones between open with the card's "more". */
+  .xca-band[data-sheet]:not([data-more] *) .xca__mid { display: none; }
   .xca-band[data-sheet]:not([data-more] *) .xca-share { display: none; }
 }

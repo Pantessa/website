@@ -31,7 +31,7 @@ import { agoWords } from './plotted'
 import { TAKEDOWN_EMAIL, creatorShareWords, rateSentence, sumTally, type ProfileCall } from './profile-rules'
 
 /** More markets than this fold behind one press (squad mobile-sleek): a phone's page stays short. */
-export const PROFILE_MARKETS_SHOWN = 3
+export const PROFILE_MARKETS_SHOWN = 2
 
 // ── The one line across markets ─────────────────────────────────────────
 
@@ -215,8 +215,10 @@ function MarketTile({ entry, now }: { entry: BoardEntry; now: number }) {
 
 export function ProfileMarkets({ entries, now }: { entries: readonly BoardEntry[]; now: number }) {
   // The top markets are shown; the rest are in the page behind one press (a <details>, no script).
-  const shown = entries.slice(0, PROFILE_MARKETS_SHOWN)
-  const more = entries.slice(PROFILE_MARKETS_SHOWN)
+  // A fold that would hide fewer than three is not drawn: they are all shown instead.
+  const fold = entries.length - PROFILE_MARKETS_SHOWN >= 3
+  const shown = fold ? entries.slice(0, PROFILE_MARKETS_SHOWN) : entries
+  const more = fold ? entries.slice(PROFILE_MARKETS_SHOWN) : []
   return (
     <section className="xpf-sec" aria-labelledby="xpf-markets" data-xpf="markets" data-count={entries.length}>
       <h2 className="xpf-sec__title" id="xpf-markets">
@@ -331,7 +333,7 @@ export function PlotDoor({ heading = 'Plot anyone', initialHandle, initialMarket
       <h2 className="xpf-aside__title">{heading}</h2>
       <p className="xpf-aside__lede">Type any X handle. Every post where the account took a side is pinned to the day it was posted and judged the same way.</p>
       <div className="xpf-aside__form">
-        <HandleDoor variant="page" initialHandle={initialHandle} initialMarket={initialMarket} className="xcc-door--flat" />
+        <HandleDoor variant="page" initialHandle={initialHandle} initialMarket={initialMarket} className="xcc-door--stack" />
       </div>
     </section>
   )

@@ -410,11 +410,11 @@ export function guidePins(check: Check): void {
       })(),
   )
   check(
-    'guide: the look is tokens only (surface, line, fg, muted, accent, ink; rounded corners, never the facet clip that cuts the border), reduced motion drops the entrance, and a thumb gets ≥44px controls',
+    'guide: the look is tokens only (surface, line, fg, muted, accent, ink; the card token for its corners, never the facet clip that cuts the border), reduced motion drops the entrance, and a thumb gets ≥44px controls',
     /var\(--accent\)/.test(css) &&
       /var\(--ink\)/.test(css) &&
       /var\(--line\)/.test(css) &&
-      /\.guide \{[^}]*border-radius: 12px;/.test(css) &&
+      /\.guide \{[^}]*border-radius: var\(--r-md\);/.test(css) && // RE-PINNED 2026-11-24 (squad mobile-sleek, the token flip): the card's corner is the card token (hard-edged now), no longer a 12px literal; still a radius, never the facet clip
       !/clip-path: var\(--mk-facet/.test(css) &&
       !/#[0-9a-fA-F]{3,8}\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')) &&
       /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.guide \{ animation: none; \}/.test(css) &&

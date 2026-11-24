@@ -32,6 +32,8 @@ export interface HandleDoorProps {
   /** Chart variant: called with a valid handle and side instead of navigating. */
   onPlot?: (handle: string, side: CalledSide) => void
   className?: string
+  /** The page's one primary press is elsewhere (a record nobody has plotted offers Scan): Plot stays quiet while the handle is still the one the page prefilled. */
+  quiet?: boolean
 }
 
 export const SIDES: readonly { side: CalledSide; label: string; title: string }[] = [
@@ -48,7 +50,7 @@ interface Suggestion {
   name: string | null
 }
 
-export default function HandleDoor({ symbol, initialMarket, initialHandle = '', side: sideProp = 'all', variant, onPlot, className }: HandleDoorProps) {
+export default function HandleDoor({ symbol, initialMarket, initialHandle = '', side: sideProp = 'all', variant, onPlot, className, quiet = false }: HandleDoorProps) {
   const [value, setValue] = useState(initialHandle ? `@${initialHandle}` : '')
   const [side, setSide] = useState<CalledSide>(sideProp)
   const [market, setMarket] = useState(symbol ?? initialMarket ?? 'BTC')
@@ -62,6 +64,8 @@ export default function HandleDoor({ symbol, initialMarket, initialHandle = '', 
   const sym = (symbol ?? market).trim().toUpperCase()
   const marketOk = MARKET_RE.test(sym)
   const typed = value.trim().length > 0
+  // The accent fill is for a handle the visitor can plot, unless the page keeps its primary elsewhere for this very handle.
+  const filled = !!handle && marketOk && !(quiet && handle === normalizeHandle(initialHandle))
 
   useEffect(() => setSide(sideProp), [sideProp])
   useEffect(() => {
@@ -95,7 +99,8 @@ export default function HandleDoor({ symbol, initialMarket, initialHandle = '', 
       data-variant={variant}
       onSubmit={(e) => {
         e.preventDefault()
-        if (!handle || !marketOk) return
+        // The button is always live: with nothing to plot yet, the press puts the cursor where the handle goes.
+        if (!handle || !marketOk) return inputRef.current?.focus()
         go(handle, side, sym)
       }}
     >
@@ -108,7 +113,7 @@ export default function HandleDoor({ symbol, initialMarket, initialHandle = '', 
             className="xcc-door__input"
             value={value.replace(/^@/, '')}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="handle or profile link"
+            placeholder="handle"
             aria-label="X handle"
             aria-invalid={typed && !handle ? true : undefined}
             aria-describedby={typed && !handle ? `${id}-e` : undefined}
@@ -127,11 +132,12 @@ export default function HandleDoor({ symbol, initialMarket, initialHandle = '', 
             <input className="xcc-door__market mono" value={market} onChange={(e) => setMarket(e.target.value.toUpperCase())} aria-label="Market" aria-invalid={!marketOk || undefined} autoCapitalize="characters" autoCorrect="off" autoComplete="off" spellCheck={false} size={6} maxLength={24} />
           </label>
         )}
-        <button type="submit" className="xcc-btn xcc-btn--go" disabled={!handle || !marketOk} data-journey="called_plot">
+        {/* The kit's button: the accent fill once there is a handle to plot, quiet (and still live) before. */}
+        <button type="submit" className={`xcc-btn xcc-btn--go sk-btn${filled ? '' : ' sk-btn--quiet'}`} data-ready={filled ? 'yes' : 'no'} data-journey="called_plot">
           Plot
         </button>
       </div>
-      <div className="xcc-seg" role="group" aria-label="Which calls to plot">
+      <div className="xcc-seg sk-seg" role="group" aria-label="Which calls to plot">
         {SIDES.map((s) => (
           <button key={s.side} type="button" className="xcc-seg__btn mono" aria-pressed={side === s.side} title={s.title} onClick={() => setSide(s.side)}>
             {s.label}
@@ -146,7 +152,8 @@ export default function HandleDoor({ symbol, initialMarket, initialHandle = '', 
       {plotted.length > 0 && (
         <div className="xcc-door__more">
           <span className="xcc-door__k mono">Already plotted</span>
-          <span className="xcc-door__chips">
+          {/* One row that scrolls sideways (the kit's rail): hard chips a thumb can hit. */}
+          <span className="xcc-door__chips sk-rail">
             {plotted.map((p) => (
               <button key={p.handle} type="button" className="xcc-chip" title={p.name ? `${p.name} (@${p.handle})` : `@${p.handle}`} onClick={() => go(p.handle, side, symbol ? sym : (p.symbol ?? sym))} data-journey="called_plot_suggested">
                 @{p.handle}
@@ -165,7 +172,7 @@ export default function HandleDoor({ symbol, initialMarket, initialHandle = '', 
                 @{me} on {sym}
               </button>
             ) : null}
-            <VerifyWithX variant="line" symbol={marketOk ? sym : undefined} className="xcc-door__verify" />
+            <VerifyWithX variant="line" symbol={marketOk ? sym : undefined} className="xcc-door__verify xva-boxed" />
           </span>
         </div>
       ) : null}

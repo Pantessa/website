@@ -45,8 +45,9 @@ export const metadata: Metadata = {
 }
 
 const LIST_ROWS = 12
-/** A phone shows this many scanned accounts before "Show all" (two columns show four, a desk six: the sheet's rules). */
+/** A phone shows this many scanned accounts before "Show all" (two columns show four, a desk six: the sheet's rules). A fold that would hide fewer than three is never drawn: the sheet shows them all instead. */
 const TILES_SHOWN = 3
+const TILES_FOLD_MIN = 3
 
 export default async function CalledDoorPage() {
   const list = await readPlotted({ limit: LIST_ROWS })
@@ -67,7 +68,7 @@ export default async function CalledDoorPage() {
                 Type any X handle. Pantessa reads a year of their posts, pins every market call to the day it was posted, and checks it against the price {JUDGE_DAYS} days later.
               </p>
               <div className="xrc-hero__door" id="plot">
-                <HandleDoor variant="page" className="xcc-door--flat" />
+                <HandleDoor variant="page" />
               </div>
               <div className="xrc-hero__you">
                 <span>Is it your account? Your own record says Verified.</span>
@@ -87,7 +88,7 @@ export default async function CalledDoorPage() {
           {summaries.length > 0 ? (
             <>
               {/* The list is capped: the first few are shown, the rest are in the page behind one press (a checkbox and its label, no script). */}
-              {summaries.length > TILES_SHOWN && <input type="checkbox" id="xrc-all-tiles" className="xrc-tiles__toggle" aria-label={`Show all ${summaries.length} scanned accounts`} data-journey="called_door_show_all" />}
+              {summaries.length >= TILES_SHOWN + TILES_FOLD_MIN && <input type="checkbox" id="xrc-all-tiles" className="xrc-tiles__toggle" aria-label={`Show all ${summaries.length} scanned accounts`} data-journey="called_door_show_all" />}
               <ul className="xrc-tiles">
                 {summaries.map((s, i) => (
                   <li key={`${s.handle}:${s.symbol}`}>
@@ -95,7 +96,7 @@ export default async function CalledDoorPage() {
                   </li>
                 ))}
               </ul>
-              {summaries.length > TILES_SHOWN && (
+              {summaries.length >= TILES_SHOWN + TILES_FOLD_MIN && (
                 <label htmlFor="xrc-all-tiles" className="xrc-tiles__more" aria-hidden>
                   <span className="xrc-tiles__more-open">Show all {summaries.length}</span>
                   <span className="xrc-tiles__more-shut">Show fewer</span>
