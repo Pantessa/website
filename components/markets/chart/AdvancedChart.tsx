@@ -200,6 +200,18 @@ export default function AdvancedChart({
   const [scn, setScn] = useState<ScenarioState>({ status: 'idle' })
 
   const hostRef = useRef<HTMLDivElement | null>(null)
+  const seatRef = useRef<HTMLDivElement | null>(null)
+  const dockRef = useRef<HTMLElement | null>(null)
+  // Wide enough for the opened call to stand beside the plot instead of on it.
+  const [wide, setWide] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(min-width: 1100px)')
+    const on = () => setWide(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
   const widgetRef = useRef<TvWidget | null>(null)
   const chartRef = useRef<TvChartApi | null>(null)
   const feedRef = useRef<PantessaDatafeed | null>(null)
@@ -892,10 +904,18 @@ export default function AdvancedChart({
         </span>
       </div>
 
-      <div className={`mkt-chart__canvas tvx__canvas${fill ? ' min-h-0 flex-1' : ''}`} style={fill ? undefined : { height: heightProp }}>
-        <div ref={hostRef} className="tvx__host" />
-        {/* One call, opened on the chart: a dot or a bubble pressed never scrolls the page. */}
-        <CallFocus symbol={sym} />
+      {/* The body: the plot and, at 1100px and wider, a side column that holds the opened call in normal flow, so the
+          card never covers a candle or a picked card. The plot resizes by itself when the column opens. Narrower than
+          that the call card is docked over the plot's foot (the band lane's own bottom dock). */}
+      <div className={`tvx__body${fill ? ' min-h-0 flex-1' : ''}`} style={fill ? undefined : { height: heightProp }}>
+        <div ref={seatRef} className="mkt-chart__canvas tvx__canvas">
+          <div ref={hostRef} className="tvx__host" />
+          {/* One call, opened on the chart: a dot or a bubble pressed never scrolls the page. */}
+          {!wide && <CallFocus symbol={sym} />}
+        </div>
+        <aside ref={dockRef} className="tvx__dock" data-call-dock="side" aria-label="The opened call">
+          {wide && <CallFocus symbol={sym} />}
+        </aside>
       </div>
 
       {/* A phone's bar sizes: the library's own top bar is off there, so they sit here, under the plot. */}
