@@ -412,19 +412,7 @@
 .xrc-spark--hero .xrc-spark__dot { width: 8px; height: 8px; margin: -4px 0 0 -4px; outline-width: 2px; }
 .xrc-spark__dot.is-picked { outline-color: var(--xrc-tone); outline-offset: 2px; outline-width: 1px; }
 
-.xrc-score { display: flex; flex-direction: column; gap: var(--sp-3); }
-.xrc-score__row { margin: 0; display: flex; flex-wrap: wrap; gap: var(--sp-3) var(--sp-6); }
-.xrc-score__row div { display: flex; flex-direction: column; gap: var(--sp-1); }
-.xrc-score__row dd { margin: 0; font-family: var(--xrc-display); font-weight: 500; font-size: clamp(2rem, 1.5rem + 1.8vw, 3rem); line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums lining-nums; color: var(--xrc-tone); }
-.xrc-score__row div:first-child dd { color: var(--fg); }
-.xrc-score__row dt { font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
-.xrc-line { display: flex; gap: 2px; width: 100%; height: 3px; }
-.xrc-line__seg { flex: 1 1 0; min-width: 3px; background: var(--xrc-tone); }
 
-.xrc-counts { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); font-size: var(--fs-md); font-weight: 600; }
-.xrc-counts--compact { font-size: var(--fs-sm); font-weight: 500; gap: var(--sp-1) var(--sp-3); }
-.xrc-counts__n { color: var(--muted); white-space: nowrap; }
-.xrc-counts__n.is-right, .xrc-counts__n.is-wrong, .xrc-counts__n.is-open { color: var(--xrc-tone); }
 
 /* The scanned accounts: a ruled grid, one hairline between neighbours, nothing rounded. */
 .xrc-gallery, .xrc-how { width: 100%; max-width: 1200px; margin: 0 auto; padding: var(--sp-6) var(--xrc-gut) 0; display: flex; flex-direction: column; gap: var(--sp-4); }
@@ -439,6 +427,7 @@
 .xrc-tile__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-width: 0; }
 .xrc-tile__sym { flex: none; font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.14em; color: var(--muted); }
 .xrc-tile__foot { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
+.xrc-tile__total { font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .xrc-tile__when { flex: none; font-family: var(--xrc-mono); font-size: var(--fs-xs); color: var(--muted-2); }
 
 .xrc-steps { list-style: none; counter-reset: xrc-step; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); column-gap: var(--sp-6); }

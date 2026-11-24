@@ -64,7 +64,7 @@ export function DoorBlock({ symbol, side, initialHandle, heading = 'Plot anyone'
       <H className={level === 1 ? 'xrc-door__title xrc-door__title--page' : 'xrc-door__title'}>{heading}</H>
       <p className="xrc-door__lede">{lede ?? `Type any X handle. Every post where the account took a side${symbol ? ` on ${symbol}` : ''} is pinned to the day it was posted and judged the same way.`}</p>
       <div className="xrc-door__form">
-        <HandleDoor variant="page" symbol={symbol} side={side} initialHandle={initialHandle} className="xcc-door--flat" />
+        <HandleDoor variant="page" symbol={symbol} side={side} initialHandle={initialHandle} className="xcc-door--stack" />
       </div>
       <div className="xrc-door__you">
         <h3 className="xrc-door__sub">{owner === 'this' ? 'Is this you?' : 'Plot yourself'}</h3>

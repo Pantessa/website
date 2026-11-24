@@ -67,7 +67,7 @@ export default async function CalledDoorPage() {
                 Type any X handle. Pantessa reads a year of their posts, pins every market call to the day it was posted, and checks it against the price {JUDGE_DAYS} days later.
               </p>
               <div className="xrc-hero__door" id="plot">
-                <HandleDoor variant="page" className="xcc-door--flat" />
+                <HandleDoor variant="page" />
               </div>
               <div className="xrc-hero__you">
                 <span>Is it your account? Your own record says Verified.</span>
