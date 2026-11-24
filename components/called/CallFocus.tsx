@@ -19,7 +19,7 @@
 // spec's. A post's text is rendered as text.
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, ExternalLink, Heart, Pin, Share2, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ExternalLink, Pin, Share2, X } from 'lucide-react'
 import { fmtPrice } from '@/components/CandleChart'
 import CallActs from '@/components/called/CallActs'
 import { PostText } from '@/components/called/CallsPanel'
@@ -32,13 +32,13 @@ import { useCalled } from '@/lib/called-it/use-record'
 import { pinDate } from '@/lib/tv/called-pins'
 import './called-chart.css'
 
-const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
-
 // The card is a bottom card on a phone (called-chart.css, max-width 640px): its trade buttons stack there.
 // A sideways swipe this long, and at least twice as wide as it is tall, walks to the next call.
 const SWIPE_PX = 56
-// Where the band's top lands when a phone arrives on a linked call: under the top bar and the stuck tabs.
-const ARRIVAL_LANDS_AT = 108
+// Where the band's top lands when a phone's page moves for an opened call: under the top bar and the stuck tabs.
+const PHONE_LANDS_AT = 108
+// The chart a phone must show over the card before the page is left where it is.
+const PHONE_CHART_ROOM = 200
 const SHEET_QUERY = '(max-width: 640px)'
 const onSheetChange = (cb: () => void) => {
   const mq = window.matchMedia(SHEET_QUERY)
@@ -62,18 +62,33 @@ export default function CallFocus({ symbol }: { symbol: string }) {
   const open = index >= 0
 
   useEffect(() => setMore(false), [focusId])
-  // A phone that ARRIVES on a linked call (`?call=`, the link a follower pressed) lands once with the handle's band under the
-  // tabs, so the chart and its pins fill the screen over this card. Only that arrival: a call opened by a press never moves the page.
-  const linked = useCalled((s) => s.linkedCall)
-  const landed = useRef(false)
+  // A PHONE, once per open: when the card opens and would leave the chart mostly covered (the page at its top, or down at
+  // the list under the chart), the page moves ONCE so the handle's band sits under the tabs and the chart fills the screen
+  // over this card. Walking older / newer never moves it again, and the visitor's own scroll afterwards is theirs.
+  const moved = useRef(false)
   useEffect(() => {
-    if (!open || !sheet || landed.current || !focusId || linked !== focusId) return
-    landed.current = true
-    const band = document.querySelector('[data-called-head]')
-    if (!band) return
-    const top = band.getBoundingClientRect().top
-    if (top > ARRIVAL_LANDS_AT + 4) scrollAppTo(appScrollTop() + top - ARRIVAL_LANDS_AT)
-  }, [open, sheet, focusId, linked])
+    if (!open) {
+      moved.current = false
+      return
+    }
+    if (!sheet || moved.current) return
+    moved.current = true
+    const raf = requestAnimationFrame(() => {
+      const card = ref.current
+      const canvas = card?.parentElement
+      const band = document.querySelector('[data-called-head]')
+      if (!card || !canvas || !band) return
+      const pane = canvas.getBoundingClientRect()
+      const seen = Math.min(card.getBoundingClientRect().top, pane.bottom) - Math.max(pane.top, PHONE_LANDS_AT)
+      const by = band.getBoundingClientRect().top - PHONE_LANDS_AT
+      if (seen >= PHONE_CHART_ROOM || Math.abs(by) <= 8) return
+      const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      scrollAppTo(appScrollTop() + by, calm ? 'auto' : 'smooth')
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [open, sheet])
+
+  // Whether the post's words are cut where they stand: "more" marks the cut only when there is one.
   useLayoutEffect(() => {
     const el = textRef.current
     if (!el || more) return
@@ -141,12 +156,6 @@ export default function CallFocus({ symbol }: { symbol: string }) {
             <span className="xcf__stance" data-stance={call.stance}>
               {call.stance === 'bull' ? 'Bull' : 'Bear'}
             </span>
-            {call.likes !== null ? (
-              <span className="xcf__likes" title={`${call.likes.toLocaleString('en-US')} likes on X`}>
-                <Heart aria-hidden />
-                {compact.format(call.likes)}
-              </span>
-            ) : null}
           </span>
         </span>
         <span className="xcf__step mono" role="group" aria-label="Walk the calls, oldest to newest">
@@ -174,7 +183,7 @@ export default function CallFocus({ symbol }: { symbol: string }) {
           </p>
           {canMore ? (
             <button type="button" className="xcf__more" aria-expanded={more} aria-controls="xcf-text" onClick={() => setMore((m) => !m)} data-journey="called_card_more">
-              {more ? 'less' : clamped ? '… more' : 'more'}
+              <span className="xcf__moreword">{more ? 'less' : clamped ? '… more' : 'more'}</span>
             </button>
           ) : null}
         </div>
