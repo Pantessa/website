@@ -426,7 +426,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   }
 
   const jobsBadge = badgeCount > 0 && (
-    <span className="absolute -top-0.5 right-0 mono text-[9px] leading-4 px-1 rounded-full bg-amber-500/15 text-amber-400 ring-1 ring-[var(--surf-1)]">
+    <span className="absolute -top-0.5 right-0 mono text-[9px] leading-4 px-1 rounded-sm bg-amber-500/15 text-amber-400 ring-1 ring-[var(--surf-1)]">
       {badgeCount > 99 ? '99+' : badgeCount}
     </span>
   )

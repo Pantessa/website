@@ -36,7 +36,6 @@
 /* ── A phone's column ──────────────────────────────────────────────────── */
 @container hero (max-width: 559px) {
   :root .mk-claim__in { padding-top: var(--sp-3); }
-  :root .mk-claim__sub { text-wrap: pretty; }
   :root .hm-say { margin-top: var(--sp-4); padding-left: var(--sp-3); }
   /* the doors are two plain links on one row: nothing here competes with "Build it" */
   :root .mk-claim__doors { gap: var(--sp-5); margin-top: var(--sp-2); }
@@ -49,5 +48,9 @@
   :root .hm__tile--buy, :root .hm__tile--called { flex-basis: min(82cqi, 304px); min-height: 124px; }
 }
 
-/* THE READ's share door is the shared pill (components/ShareActions): hard here. */
-:root .read__share button, :root .read__share a { border-radius: var(--r-pill); }
+/* The stranger's desktop bar (mosaic.css, "no rail"): the search sits beside
+   Sign in. The bell is not drawn signed out (app/native-shell.css), and the
+   lens does not take the spacing the bell used to keep on a rail. */
+@media (min-width: 1024px) {
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__top .ssx-lens { margin-right: 0; }
+}

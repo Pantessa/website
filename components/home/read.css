@@ -239,3 +239,6 @@ button.read__lvtag:hover, button.read__lvtag:focus-visible, button.read__lvtag.i
   .read__clause, .read__tile, .read__range, .read__chip, .read__mover, .read__back, .read__view, .read__watch, .read__more, .read__lvline, .read__lvtag, .read__where { transition: none; }
   .read__chip:hover { transform: none; }
 }
+
+/* THE READ's share door is the shared pill (components/ShareActions): hard-edged here (squad mobile-sleek). */
+.read .read__share button, .read .read__share a { border-radius: var(--r-pill); }
