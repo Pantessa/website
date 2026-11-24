@@ -223,8 +223,11 @@ export default function CallFocus({ symbol }: { symbol: string }) {
 
         <footer className="xcf__foot">
           {call.url ? (
-            <a className="xcf__x" href={call.url} target="_blank" rel="noopener noreferrer nofollow" data-journey="called_card_x">
-              Open the post on X
+            <a className="xcf__x" href={call.url} target="_blank" rel="noopener noreferrer nofollow" aria-label="Open the post on X" data-journey="called_card_x">
+              {/* A phone's short card keeps the row for the trade's whole sentence: the link reads "X" there, and says all of it aloud. */}
+              <span className="xcf__xword">
+                <span className="xcf__xpre">Open the post on </span>X
+              </span>
               <ExternalLink aria-hidden />
             </a>
           ) : (

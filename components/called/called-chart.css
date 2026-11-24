@@ -372,9 +372,9 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcf[data-verdict='flat'] .xcf__verdict { color: var(--fg); }
 .xcf__verdict::first-letter { text-transform: uppercase; }
 /* A part that does not fit wraps out of sight whole: a number is never cut mid-way. */
-.xcf__when { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; min-width: 0; height: 13px; overflow: hidden; font-size: 11px; line-height: 1.1; color: var(--muted); white-space: nowrap; }
-.xcf__stance { flex: none; padding-left: 8px; border-left: 1px solid var(--line-2); letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px; }
-.xcf__likes { flex: none; display: inline-flex; align-items: center; gap: 4px; padding-left: 8px; border-left: 1px solid var(--line-2); color: var(--muted-2); }
+.xcf__when { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; min-width: 0; height: 13px; overflow: hidden; font-size: 10.5px; line-height: 1.1; color: var(--muted); white-space: nowrap; }
+.xcf__stance { flex: none; padding-left: 6px; border-left: 1px solid var(--line-2); letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px; }
+.xcf__likes { flex: none; display: inline-flex; align-items: center; gap: 3px; padding-left: 6px; border-left: 1px solid var(--line-2); color: var(--muted-2); }
 .xcf__likes svg { width: 11px; height: 11px; }
 .xcf__step { flex: none; display: inline-flex; align-items: center; font-size: 11px; color: var(--muted); white-space: nowrap; }
 .xcf__at { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
@@ -433,7 +433,12 @@ a.xcf__x:hover { border-color: var(--fg); }
    own button is this call's trade) and above the tab bar. Short: three lines of the post, the numbers, one row of actions.
    "More" opens the whole post, the share link and the pin, and the card grows to most of the screen. */
 @media (max-width: 640px) {
-  .xcf, .xcf[data-dock='left'], .xcf[data-dock='right'] { position: fixed; z-index: 45; top: auto; left: 8px; right: 8px; bottom: calc(var(--spine-bar-h, 49px) + env(safe-area-inset-bottom, 0px) + 8px); width: auto; max-height: min(70dvh, 560px); }
+  .xcf, .xcf[data-dock='left'], .xcf[data-dock='right'] {
+    position: fixed; z-index: 45; top: auto; left: 0; right: 0; bottom: calc(var(--spine-bar-h, 49px) + env(safe-area-inset-bottom, 0px)); width: auto; max-height: min(70dvh, 560px); padding: 1px 0 0;
+    clip-path: polygon(var(--xcf-cut) 0, 100% 0, 100% 100%, 0 100%, 0 var(--xcf-cut));
+  }
+  /* Flush with the screen's sides and the tab bar: the one cut is the top-left corner, and nothing shows through around it. */
+  .xcf::before { inset: 1px 0 0; clip-path: polygon(calc(var(--xcf-cut) + 0.4px) 0, 100% 0, 100% 100%, 0 100%, 0 calc(var(--xcf-cut) + 0.4px)); }
   .xcf__band { min-height: 52px; padding: 0 0 0 12px; gap: 8px; }
   .xcf__icon { width: 44px; height: 44px; }
   .xcf__at { min-width: 0; font-size: 10.5px; letter-spacing: -0.02em; }
@@ -460,6 +465,10 @@ a.xcf__x:hover { border-color: var(--fg); }
   .xcf:not([data-more]) .xcf__foot { grid-column: 2; grid-row: 1; padding: 0; }
   .xcf:not([data-more]) .xcf__acts:not(:has([data-called-acts])) .xcf__foot { grid-column: 1 / -1; }
   .xcf:not([data-more]) .xcf__pin { display: none; }
+  .xcf:not([data-more]) .xcf__xpre { display: none; }
+  .xcf:not([data-more]) .xcf__acts:not(:has([data-called-acts])) .xcf__xpre { display: inline; }
+  .xcf:not([data-more]) .xcf__x { min-width: 68px; padding: 0 14px; }
+  .xcf__pin { margin-right: 0; }
 }
 
 /* The fold's button (a phone only: a wider page scrolls the list in its own box). */
@@ -500,7 +509,6 @@ a.xcf__x:hover { border-color: var(--fg); }
   .xch__score { grid-column: 1 / -1; grid-row: 2; margin: 4px 10px 0 0; }
   .xch__counts { grid-column: 1 / -1; grid-row: 3; margin: 7px 10px 0 0; gap: 2px 12px; font-size: 11.5px; }
   .xch__count.is-total { display: none; }
-  @media (max-width: 380px) { .xch__counts { gap: 2px 8px; font-size: 11px; } .xch__num { font-size: 12.5px; } }
   .xch__num { margin-right: 0.35em; font-size: 13px; letter-spacing: 0; }
   .xch__headline { grid-column: 1 / -1; grid-row: 2; margin: 4px 10px 0 0; }
   .xch__sides { grid-column: 1; grid-row: 4; margin-top: 10px; }
@@ -518,6 +526,8 @@ a.xcf__x:hover { border-color: var(--fg); }
   .xch[data-facts] .xch__facts { padding-bottom: 4px; }
   /* A plot with no record yet: the scan's button takes a row. */
   .xch__scan { grid-column: 1 / -1; grid-row: 6; margin: 8px 10px 2px 0; }
+  /* The narrowest phones: the counts and the control give the standing its room. */
+  @media (max-width: 380px) { .xch__counts { gap: 2px 8px; font-size: 11px; } .xch__num { font-size: 12.5px; } .xch__side { padding: 0 8px; } .xch__row:has(.xch__sides) .xch__facts { margin-left: 8px; } .xch__more { padding: 0 8px 0 6px; } }
 
   /* The chart's bar: the door is an icon button; the band over the chart names the handle and says what the plot is doing. */
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > .xcc-seat { position: static; order: 3; flex: 0 0 auto; margin: 0; }
