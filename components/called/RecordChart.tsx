@@ -64,7 +64,8 @@ export default function RecordChart({ symbol, closes, calls, unit = 'usd', actio
   }
   const { line } = linePaths(closes, scale, BOX)
   const { pins, levels } = railPins(calls, scale, TILE_MIN_DX)
-  const ticks = monthTicks(scale.t0, scale.t1)
+  // Five month marks at most: on a phone's plot six run into each other.
+  const ticks = monthTicks(scale.t0, scale.t1, 5)
   const last = closes[closes.length - 1]
   const pinned = pins.filter((p) => p.picked).length
   const unread = unreadShare(scale, readFrom)
