@@ -54,7 +54,7 @@ export default function GuardianDocsPage() {
           </DocsStep>
           <DocsStep title="Ask for the stop">
             <p>
-              On that market&apos;s chart, press <strong>Protect</strong> and pick how far away the stop sits. Or
+              On that market&apos;s chart, press <strong>Protect with a stop</strong> and pick how far away the stop sits. Or
               type it in <SpineLink href="/chat">chat</SpineLink>:
             </p>
             <pre>{`protect my eth long with a 5% stop
