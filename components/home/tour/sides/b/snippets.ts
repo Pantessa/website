@@ -11,7 +11,7 @@
 //            (broker_open, broker_handoff, broker_status).
 //   sdk    — app/docs/desk/page.tsx "The agent-signed path" (entry point
 //            `pantessa/desk`); the install line is the SDK README's
-//            (`npm install pantessa viem`, also app/docs/_quickstart).
+//            (`npm install pantessa viem`, also app/docs/desk and app/docs/embed).
 //
 // Pure and client-safe.
 

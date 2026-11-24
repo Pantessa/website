@@ -199,8 +199,8 @@ export function landingSidesBPins(check: Check): void {
   const sdkReadme = ['../sdk/README.md', '../../sdk/README.md'].map((p) => path.join(ROOT, p)).find((p) => fs.existsSync(p))
   const readme = sdkReadme ? fs.readFileSync(sdkReadme, 'utf8') : null
   check(
-    'sides-b (build): the SDK block is the desk docs page\'s agent-signed snippet, character for character; the install line is the quickstart\'s (and the SDK README\'s, where the README is on this machine)',
-    deskDocsCode.includes(SDK_SNIPPET) && read('app/docs/_quickstart/page.tsx').includes(SDK_INSTALL_SNIPPET) && (readme == null || (readme.includes(SDK_INSTALL_SNIPPET) && readme.includes("import { openAndExecute, driveJob } from 'pantessa/desk'"))),
+    'sides-b (build): the SDK block is the desk docs page\'s agent-signed snippet, character for character; the install line is on the desk and embed docs pages (and the SDK README\'s, where the README is on this machine)',
+    deskDocsCode.includes(SDK_SNIPPET) && deskDocs.includes(SDK_INSTALL_SNIPPET) && read('app/docs/embed/page.tsx').includes(SDK_INSTALL_SNIPPET) && (readme == null || (readme.includes(SDK_INSTALL_SNIPPET) && readme.includes("import { openAndExecute, driveJob } from 'pantessa/desk'"))),
     readme == null ? 'sdk README not on this machine: checked against the repo only' : 'README read',
   )
   const pinned = new Set([EMBED_SNIPPET, DESK_MCP_SNIPPET, SDK_INSTALL_SNIPPET, SDK_SNIPPET])

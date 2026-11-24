@@ -9,7 +9,7 @@
 // Every sentence is checked against the docs that enforce it — the line
 // behind each one is in squad-landing-2026-11-10/CLOSE.md:
 //   GUARDRAILS.md §1–§3, §6, §7 · THREAT-MODEL.md (money follows the
-//   receipt) · app/docs/trust · app/docs/transactions · lib/fees.
+//   receipt) · app/docs/trust · app/docs/venues · lib/fees.
 // A guard that only some venues run says "where", never "always".
 //
 // NO NUMBER IS TYPED HERE. The fee lines read `data.fees` (lib/fees through

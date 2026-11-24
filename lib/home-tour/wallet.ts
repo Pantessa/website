@@ -25,7 +25,7 @@ export const meta: TourSideMeta = {
   facts: ['Your own wallet: Pantessa never holds your money', 'Each chain priced, with its gas and recent transfers', 'Sign in with a wallet, Google or email'],
   doors: [
     { label: 'Open your wallet', href: '/wallet', kind: 'primary' },
-    { label: 'How a transaction is built', href: '/docs/transactions', kind: 'quiet' },
+    { label: 'How a transaction is built', href: '/docs/trust', kind: 'quiet' },
   ],
   asks: [],
 }
