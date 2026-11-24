@@ -255,7 +255,9 @@ export default function CallLead({ record, call, avatar, unit = 'usd', closes, s
         {/* ONE primary press, docked under the thumb on a phone; Share is the quiet one beside it. */}
         <div className="xcl-dock" data-dock>
           <Link href={chartCallHref(handle, symbol, call.postId)} className="xcl-btn" prefetch={false} data-journey="called_call_open_chart">
-            Open the live {symbol} chart<span className="xcl-btn__tail"> on this call</span>
+            <span>
+              Open the live {symbol} chart<span className="xcl-btn__tail"> on this call</span>
+            </span>
           </Link>
           {share && (
             <a href="#share" className="xcl-dock__alt" data-journey="called_call_jump_share">

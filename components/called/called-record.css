@@ -212,8 +212,10 @@
 .xrc-call__toggle:focus-visible ~ .xrc-call__more { outline: 2px solid var(--accent); outline-offset: -8px; }
 /* The span the label quoted: a flat rule under the words in the verdict's colour. */
 .xrc-call__quote { background: none; color: inherit; text-decoration: underline; text-decoration-color: var(--xrc-tone); text-decoration-thickness: 2px; text-underline-offset: 0.22em; }
-.xrc-call__moves { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5); margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+/* The price that day reads across the card; the four moves sit under it in one row. */
+.xrc-call__moves { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3) var(--sp-2); margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--line); }
 .xrc-call__moves div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.xrc-call__moves div:first-child, .xrc-call__moves div[data-target] { grid-column: 1 / -1; flex-direction: row; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
 .xrc-call__moves dt { font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
 .xrc-call__moves dd { margin: 0; font-family: var(--xrc-mono); font-size: var(--fs-md); color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .xrc-call__moves .is-judged dd { color: var(--xrc-tone); font-weight: 600; }
@@ -398,7 +400,7 @@
 .xrc-spark svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
 .xrc-spark__line { fill: none; stroke: var(--fg); stroke-width: 1.25; stroke-linejoin: round; }
 .xrc-spark__area { display: none; }
-.xrc-spark__dot { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--xrc-tone); outline: 1.5px solid var(--xrc-paper); }
+.xrc-spark__dot { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px; background: var(--xrc-tone); outline: 1.5px solid var(--xrc-paper); }
 .xrc-spark--hero .xrc-spark__dot { width: 8px; height: 8px; margin: -4px 0 0 -4px; outline-width: 2px; }
 .xrc-spark__dot.is-picked { outline-color: var(--xrc-tone); outline-offset: 2px; outline-width: 1px; }
 
@@ -540,13 +542,11 @@
   .xrc { padding-top: var(--sp-3); }
   /* The four counts as a tidy two-by-two under the bar (the bar's own list, addressed by element: the kit's classes are the kit's). */
   .xrc-tally ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-1) var(--sp-4); }
-  /* The price that day reads across the card; the four moves sit under it in one row. */
-  .xrc-call__moves { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3) var(--sp-2); }
-  .xrc-call__moves div:first-child, .xrc-call__moves div[data-target] { grid-column: 1 / -1; flex-direction: row; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
 }
 @media (hover: none) {
   .xrc .xrc-sides__tab { min-height: 44px; }
   .xrc .xrc-eyebrow__jump { min-height: 44px; }
+  .xrc-next__also { display: inline-flex; align-items: center; min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .xrc .xrc-pin__flag { transition: none; }
