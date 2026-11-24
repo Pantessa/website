@@ -4730,7 +4730,8 @@ async function main() {
       // clipped it on both sides). The held card's eyebrow was 10px; at a
       // keyboard-height viewport the 309px card pushed the composer off-screen
       // — it scrolls inside itself on phones instead.
-      check('mobile: /i runtime chips (header + held card) are 40px on touch', /min-h-\[32px\] \[@media\(hover:none\)\]:min-h-10 rounded-lg border bg-\[var\(--surf-1\)\]/.test(runtime))
+      // RE-PINNED 2026-11-24 (squad mobile-sleek): the chips' corner is the radius token (rounded-lg → rounded-[var(--r-sm)]); the 40px touch floor is unchanged.
+      check('mobile: /i runtime chips (header + held card) are 40px on touch', /min-h-\[32px\] \[@media\(hover:none\)\]:min-h-10 rounded-\[var\(--r-sm\)\] border bg-\[var\(--surf-1\)\]/.test(runtime))
       check('mobile: the /i splash headline wraps an address-bearing ask instead of clipping it', /\[text-wrap:balance\] \[overflow-wrap:anywhere\]"[\s\S]{0,120}&ldquo;\{ask\}&rdquo;/.test(runtime))
       check(
         'mobile: the /i held card keeps the composer on a keyboard-height phone (internal scroll) and its eyebrow is ≥11px',
@@ -20494,10 +20495,13 @@ async function main() {
       signSrcs.every((src) => /Confirm in your wallet…/.test(src) && !/Sign in wallet…/.test(src)) &&
         /\{\(signed \|\| flowNudge\) && \(/.test(runtimeSrc) && /MAKE A LINK/.test(runtimeSrc),
     )
+    // RE-PINNED 2026-11-24 (squad mobile-sleek): the CTA's wrapper gained a class
+    // and phone spacing (`isplash__go … max-sm:mt-5 max-sm:w-full`); it still
+    // leads (order-1) the contract cards (order-3) on a phone.
     check(
       '/i door + splash + mint stage: walletConnectOnly title "Connect a wallet", no "Starting…" stall, CTA leads the cards ≤sm, eyebrow says YOUR WALLET SIGNS',
       /walletConnectOnly \? 'Connect a wallet' : 'Sign in to Pantessa'/.test(doorSrc) && !/'Starting…'/.test(doorSrc) &&
-        /className="mt-10 max-sm:order-1"/.test(runtimeSrc) && /max-sm:order-3/.test(runtimeSrc) &&
+        /className="isplash__go mt-10 max-sm:order-1[ "]/.test(runtimeSrc) && /max-sm:order-3/.test(runtimeSrc) &&
         /INTENT LINK · YOUR WALLET SIGNS/.test(mintSrc) && !/TAP TO RUN/.test(mintSrc),
     )
     check(
@@ -36092,7 +36096,8 @@ async function main() {
       /if \(!engineWindowOpen\) setArmed\(true\)/.test(engineSrc) && /<Sheet open=\{armed && engineWindowOpen\} onClose=\{close\} id="engine"/.test(engineSrc) && !/lg:hidden fixed inset-0 z-50 flex/.test(engineSrc))
     check('native chat r2: the whole composer pill is the field — a tap on its padding (not a button) focuses the textarea — and the textarea itself is 44px tall on a phone (QA measured 213×24)',
       /if \(!\(e\.target as HTMLElement\)\.closest\('button, textarea, a'\)\) textareaRef\.current\?\.focus\(\)/.test(ci) && /data-composer-pill=""/.test(ci))
-    check('native chat r2: /i\'s home mark is a 44px target on a phone in its 32px footprint (QA measured 32×32)', /w-8 h-8 max-lg:w-11 max-lg:h-11 max-lg:-m-1\.5 rounded-lg/.test(rt2))
+    // RE-PINNED 2026-11-24 (squad mobile-sleek): the mark's corner is the radius token (rounded-lg → rounded-[var(--r-sm)]); the 44px phone target is unchanged.
+    check('native chat r2: /i\'s home mark is a 44px target on a phone in its 32px footprint (QA measured 32×32)', /w-8 h-8 max-lg:w-11 max-lg:h-11 max-lg:-m-1\.5 rounded-\[var\(--r-sm\)\]/.test(rt2))
     check('native chat r3: on a short landscape phone (≤480px tall) the top bar is one 44px row, the guest banner steps aside, the composer tightens and grows to 2 lines at most — portrait is untouched (SHELL measured 165px of thread at 844×390)',
       /@media \(max-width: 1023px\) and \(max-height: 480px\) \{\s*\.chat-phonebar \{ min-height: 44px; \}\s*\.chat-phonebar__head \{ flex-direction: row;[\s\S]*?\[data-chat-gate-banner-slot\] \{ display: none; \}[\s\S]*?\[data-composer-input\]\[data-composer-input\] \{ max-height: 68px; \}/.test(barCss))
     const addMcpSrc = rf('components/AddMcpModal.tsx', 'utf8')
