@@ -668,9 +668,9 @@ export function calledChartPins(check: Check): void {
     const mkCss = read('components/markets/markets.css')
     const phone = css.slice(css.indexOf('THE PHONE, NATIVE'))
     check(
-      'called chart phone (2026-11-24): on a phone the calls list is folded to the pinned calls (the first five when none is pinned) behind one button, in CSS only, so every row is in the page at every width and a focused row is never hidden; a count\'s number wears its own tag and the text reads the same',
+      'called chart fold (2026-11-24, RE-PINNED by squad mobile-sleek lane BAND round 2: the fold is at EVERY width now, a desktop caps its list too): the calls list is folded to the pinned calls (the first five when none is pinned) behind one button, in CSS only, so every row is in the page at every width and a focused row is never hidden; a count\'s number wears its own tag and the text reads the same',
       /data-fold=\{folded && tails > 0 \? '' : undefined\}/.test(panel) && /data-tail=\{tail \? '' : undefined\}/.test(panel) && /pinned > 0 \? !c\.picked : i >= FOLD_ROWS/.test(panel) && /className="xcc-more" aria-expanded=\{!folded\}/.test(panel) &&
-        /\.xcc__rows\[data-fold\] > \.xcc-row\[data-tail\]:not\(\.is-focus\) \{ display: none; \}/.test(phone) && /^\.xcc-more \{ display: none; \}/m.test(css) && !/\.xcc__rows\[data-fold\]/.test(css.slice(0, css.indexOf('THE PHONE, NATIVE'))) &&
+        /^\.xcc__rows\[data-fold\] > \.xcc-row\[data-tail\]:not\(\.is-focus\) \{ display: none; \}/m.test(css) && (css.match(/\.xcc__rows\[data-fold\]/g) ?? []).length === 1 && /^\.xcc-more \{[^}]*display: inline-flex;/m.test(css) && !/\.xcc-more \{ display: none; \}/.test(css) &&
         /<b className="xch__num">\{m\[1\]\}<\/b>\s+\{m\[2\]\}/.test(panel),
     )
     check(
@@ -691,7 +691,7 @@ export function calledChartPins(check: Check): void {
     const adv = readFileSync(new URL('../components/markets/chart/AdvancedChart.tsx', import.meta.url), 'utf8')
     const hook = readFileSync(new URL('../lib/called-it/use-record.ts', import.meta.url), 'utf8')
     check(
-      'called chart call card (2026-11-16): a dot or a bubble pressed on the chart opens that call IN a card on the chart (the whole post, the verdict, the numbers, the post on X in a new tab, older / newer, pin, close) and the page never scrolls for it: no `scrollIntoView` anywhere in the Calls strip (only the list\'s own box moves), the card is mounted inside the chart\'s canvas seat, and a dot pressed twice closes it',
+      'called chart call card (2026-11-16): a dot or a bubble pressed on the chart opens that call IN a card on the chart (the whole post, the verdict, the numbers, the post on X in a new tab, older / newer, pin, close) and a desktop\'s page never scrolls for it (squad mobile-sleek lane BAND, round 2: a PHONE moves its page once per open, to seat the band under the tabs when the card would leave the chart mostly covered): no `scrollIntoView` anywhere in the Calls strip (only the list\'s own box moves), the card is mounted inside the chart\'s canvas seat, and a dot pressed twice closes it',
       !/scrollIntoView/.test(panel) && /list\.scrollTop/.test(panel) && /<CallFocus symbol=\{sym\} \/>/.test(adv) && adv.indexOf('<CallFocus') > adv.indexOf('className="tvx__host"') && /href=\{call\.url\} target="_blank" rel="noopener noreferrer nofollow"/.test(card) && /<PostText call=\{call\} \/>/.test(card) && !/dangerouslySetInnerHTML/.test(card) && /judgedLine\(call\)/.test(card) && /focusId === postId \? null : postId/.test(hook) && /e\.key === 'Escape'/.test(card),
     )
   }
