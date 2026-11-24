@@ -7,7 +7,7 @@
 .xca__chips { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .xca__chip { display: block; min-height: 40px; max-width: 100%; padding: 0 16px; font-size: 14px; line-height: 40px; text-align: center; overflow: hidden; text-overflow: ellipsis; }
 .xca__chip:hover { filter: brightness(1.08); }
-.xca__note { margin: 0; font-size: 11px; line-height: 1.4; color: var(--muted-2, var(--muted)); }
+.xca__note { margin: 0; font-size: var(--fs-xs); line-height: 1.4; color: var(--muted-2, var(--muted)); }
 
 /* Full-width buttons: a phone sheet, a hero. */
 .xca[data-variant='stack'] .xca__chips { flex-direction: column; }
@@ -30,7 +30,7 @@
 .xca-band[data-sheet] > .xca.xca--card { display: flex; }
 .xca-share {
   flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 2px;
-  font-size: 12px; font-weight: 500; color: var(--muted); text-decoration: none; white-space: nowrap;
+  font-size: var(--fs-sm); font-weight: 500; color: var(--muted); text-decoration: none; white-space: nowrap;
 }
 .xca-band[data-sheet] .xca-share { margin-left: 0; align-self: flex-start; }
 .xca-share svg { width: 13px; height: 13px; }
