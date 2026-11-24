@@ -35,17 +35,16 @@
 
 /* ── A phone's column ──────────────────────────────────────────────────── */
 @container hero (max-width: 559px) {
-  :root .mk-claim__in { padding-top: var(--sp-3); }
-  :root .hm-say { margin-top: var(--sp-4); padding-left: var(--sp-3); }
+  :root .hm-say { min-height: 54px; margin-top: var(--sp-3); padding-left: var(--sp-3); }
   /* the doors are two plain links on one row: nothing here competes with "Build it" */
-  :root .mk-claim__doors { gap: var(--sp-5); margin-top: var(--sp-2); }
+  :root .mk-claim__doors { gap: var(--sp-5); margin-top: var(--sp-1); }
   :root .mk-claim__go, :root .mk-claim__try { padding: 0; border: 0; font-weight: 500; color: var(--muted); }
   :root .mk-claim__in { row-gap: var(--sp-1); }
   :root .mk-claim__proofs { gap: 3px; }
   /* the record leads the row: it is the first thing under the fold line */
   :root .hm__tile--called { order: -2; }
   :root .hm__tiles { margin-inline: calc(var(--gutter-phone, 16px) * -1); padding-inline: var(--gutter-phone, 16px); scroll-padding-inline: var(--gutter-phone, 16px); gap: 10px; }
-  :root .hm__tile--buy, :root .hm__tile--called { flex-basis: min(82cqi, 304px); min-height: 124px; }
+  :root .hm__tile--buy, :root .hm__tile--called { flex-basis: min(82cqi, 304px); min-height: 112px; }
 }
 
 /* The stranger's desktop bar (mosaic.css, "no rail"): the search sits beside
