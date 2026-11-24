@@ -45,8 +45,8 @@ export const metadata: Metadata = {
 }
 
 const LIST_ROWS = 12
-/** A phone shows this many scanned accounts before "Show all" (a desk shows six: the sheet's rule). */
-const TILES_SHOWN = 4
+/** A phone shows this many scanned accounts before "Show all" (two columns show four, a desk six: the sheet's rules). */
+const TILES_SHOWN = 3
 
 export default async function CalledDoorPage() {
   const list = await readPlotted({ limit: LIST_ROWS })

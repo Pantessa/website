@@ -584,7 +584,7 @@
 .xrc--splash .xrc-spark--tile { height: 44px; }
 /* The cap: a checkbox ahead of the list, its label after it. */
 .xrc-tiles__toggle { position: absolute; width: 1px; height: 1px; margin: -1px; opacity: 0; pointer-events: none; }
-.xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 5) { display: none; }
+.xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 4) { display: none; }
 .xrc-tiles__more { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 48px; border: 1px solid var(--line-2); font-family: var(--xrc-mono); font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg); cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .xrc-tiles__more::after { content: '\2193'; color: var(--accent); }
 .xrc-tiles__more-shut { display: none; }
@@ -601,8 +601,14 @@
 @media (min-width: 640px) {
   .xrc-steps li { display: flex; padding: var(--sp-4) 0 var(--sp-5); }
   .xrc-steps li::before { padding-top: 0; }
+  /* Two columns show two rows before the press. */
+  .xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 4) { display: block; }
+  .xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 5) { display: none; }
+  .xrc-gallery:not(:has(.xrc-tiles > li:nth-child(5))) .xrc-tiles__more { display: none; }
 }
 @media (max-width: 640px) {
+  /* A phone's door stays short: the featured record keeps its line, its tally and its press; its two sample posts wait on the chart. */
+  .xrc-feat__quotes { display: none; }
   /* The featured record's four counts as a tidy two-by-two under the bar. */
   .xrc-feat__tally ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-1) var(--sp-4); }
 }
