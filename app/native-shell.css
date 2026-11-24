@@ -326,10 +326,11 @@ a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, text
    short page. Now: the wordmark with the four social squares on its line, the
    four link groups as closed rows on hairlines (44px each; a press opens one;
    every link is in the HTML), then the legal lines beside the theme switch.
-   About 330px closed. From 641px up nothing here applies and the fold's box
-   and mark are not drawn. */
+   About 330px closed. It holds for the whole phone frame (below 1024px: a
+   tablet's two-column footer ran 1,100px); from 1024px up nothing here
+   applies and the fold's box and mark are not drawn. */
 .footer__foldbox, .footer__foldmark { display: none; }
-@media (max-width: 640px) {
+@media (max-width: 1023px) {
   :root .footer { margin-top: var(--sp-5); }
   :root .footer__cols { display: block; padding: var(--sp-4) var(--gutter-phone, 16px) 0; }
   :root .footer__brand { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); max-width: none; padding-bottom: var(--sp-4); }

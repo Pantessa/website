@@ -194,7 +194,7 @@ function useBoardsPast(): boolean {
     const read = () => {
       frame = 0
       let bottom = -Infinity
-      for (const el of Array.from(document.querySelectorAll('.mkt-frame__data > .mkt-sec'))) {
+      for (const el of Array.from(document.querySelectorAll('section.mkt-sec'))) {
         const r = el.getBoundingClientRect()
         if (r.height > 0) bottom = Math.max(bottom, r.bottom) // a board the tabs switched away has no box
       }

@@ -149,7 +149,7 @@ export default function Footer() {
               {/* On a phone each group is a closed row that one press opens
                   (squad mobile-sleek): a checkbox inside the title's label, so
                   it needs no script, every link stays in the HTML, and from
-                  641px up the box is not drawn and the list is simply there
+                  1024px up the box is not drawn and the list is simply there
                   (app/native-shell.css). A <details> cannot be held open on a
                   desktop without a script, which is why this is not one. */}
               <h3 className="footer__grouptitle">

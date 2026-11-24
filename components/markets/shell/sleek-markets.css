@@ -43,3 +43,8 @@
   :root .mkt-frame__bar > .mk-view { display: none; }
   :root .mkt-frame__bar > .mkt-search { display: block; width: 100%; }
 }
+/* QA's small targets (round 3): the earn board's short chips are at least 44px wide, and the line's one link is a 44px press that leaves the line where it was. */
+@media (hover: none) {
+  :root .mk-earn__chip { min-width: 44px; justify-content: center; text-align: center; }
+  :root .mkt-frame .mkt-sec__foot .mkt-link, :root .mkt-frame p > .mkt-link { display: inline-block; padding-block: 14px; margin-block: -14px; }
+}
