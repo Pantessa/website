@@ -181,7 +181,7 @@ mountPantessaChat({
         </pre>
         <ul>
           <li>
-            <code>key</code>: a publishable <code>yfe_</code> key. It can read and spend nothing that
+            <code>key</code>: a publishable <code>yfe_</code>{' '}key. It can read and spend nothing that
             is not already yours. Each visitor gets a few free house-model answers a day. Past those,
             answers draw on your account&apos;s pool, which refills from the trades your visitors sign.
             To run them on your own AI key instead, opt in under{' '}
@@ -192,7 +192,7 @@ mountPantessaChat({
             dropped and the list is capped at 4. If none resolve, the chat uses its default set.
           </li>
           <li>
-            <code>address</code>: context only. It fills <code>$USER_ADDRESS</code> (&quot;show my open
+            <code>address</code>: context only. It fills <code>$USER_ADDRESS</code>{' '}(&quot;show my open
             orders&quot;) and shows as a small indicator. It can never sign.
           </li>
           <li>
@@ -249,7 +249,7 @@ mountPantessaChat({
 
         <h2>Reference: wallet bridge (v1.1)</h2>
         <p>
-          With <code>wallet: &apos;auto&apos;</code> or a provider you pass, the SDK relays your page&apos;s
+          With <code>wallet: &apos;auto&apos;</code>{' '}or a provider you pass, the SDK relays your page&apos;s
           EIP-1193 provider into the iframe over the same origin-pinned channel. Every signature and
           transaction opens the visitor&apos;s own wallet on your page.
         </p>

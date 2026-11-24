@@ -335,7 +335,7 @@ export default function JobsDocsPage() {
             <strong>400</strong> <code>ask is required.</code>
           </li>
           <li>
-            <strong>400</strong> <code>Not a compound ask.</code> A single action belongs in the chat or
+            <strong>400</strong> <code>Not a compound ask.</code>{' '}A single action belongs in the chat or
             on a chart; a job chains two or more steps with &ldquo;then&rdquo;.
           </li>
           <li>

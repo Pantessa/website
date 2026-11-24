@@ -68,7 +68,7 @@ export default function DeskDocsPage() {
         <h2>Pick a server</h2>
         <ul>
           <li>
-            <strong>The hands</strong>: fire and forget. <code>scan_wallet</code> reads a wallet&apos;s
+            <strong>The hands</strong>: fire and forget. <code>scan_wallet</code>{' '}reads a wallet&apos;s
             movable money on Base, Arbitrum and Ethereum, keeping some ETH back for gas.{' '}
             <code>prepare_handoff</code> turns one plain sentence into a <code>pantessa.com/sign</code>{' '}
             link for a person. It never returns calldata, typed data or addresses. Free, no key.
@@ -84,7 +84,7 @@ export default function DeskDocsPage() {
         <DocsSteps>
           <DocsStep title="Open the ask">
             <p>
-              <code>broker_open</code> with one plain sentence with amounts, such as &ldquo;Buy $15 of
+              <code>broker_open</code>{' '}with one plain sentence with amounts, such as &ldquo;Buy $15 of
               AAPL&rdquo;. Pass the person&apos;s <code>wallet</code> to get a real funding scan and
               funding-route options.
             </p>
@@ -119,7 +119,7 @@ export default function DeskDocsPage() {
         <h2>The agent-signed path</h2>
         <p>
           When your agent holds the funds and the key, it does not need a person.{' '}
-          <code>broker_execute</code> compiles a sequenced ask (fund, wait for settlement, act) into a job
+          <code>broker_execute</code>{' '}compiles a sequenced ask (fund, wait for settlement, act) into a job
           owned by the agent&apos;s wallet. <code>broker_next</code> then serves each leg as the runner
           builds it, guarded and one at a time. The agent signs and broadcasts it, and{' '}
           <code>broker_done</code> reports the result and answers with the next leg. Wait legs check
@@ -166,7 +166,7 @@ await driveJob({
             name. Legs are served to that identity only.
           </li>
           <li>
-            Proof of the wallet: <code>wallet_signature</code> is a <code>personal_sign</code> over the
+            Proof of the wallet: <code>wallet_signature</code> is a <code>personal_sign</code>{' '}over the
             desk&apos;s consent text for this intent and wallet. The desk recovers the signer, so nobody can
             compile a job into a wallet they do not hold.
           </li>
