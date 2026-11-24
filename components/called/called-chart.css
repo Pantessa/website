@@ -357,13 +357,13 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcc-door .xcc-chip--you { border-color: var(--accent); color: var(--accent); }
 .xcc-door .xcc-door__you { gap: 8px 12px; }
 @media (min-width: 641px) {
-  /* Wider than a phone: the handle, the market and the press share one row. */
-  .xcc-door .xcc-door__field { flex: 1 1 200px; }
-  .xcc-door .xcc-door__on { flex: 0 0 auto; }
-  .xcc-door .xcc-door__market { width: 72px; }
-  .xcc-door .xcc-btn--go { flex: 0 0 auto; }
-  .xcc-door > .xcc-seg { align-self: flex-start; display: inline-flex; }
-  .xcc-door .xcc-seg__btn { flex: none; }
+  /* Wider than a phone, with room: the handle, the market and the press share one row. A door in a narrow column (`xcc-door--stack`, beside a record or an account) keeps the stacked layout. */
+  .xcc-door:not(.xcc-door--stack) .xcc-door__field { flex: 1 1 200px; }
+  .xcc-door:not(.xcc-door--stack) .xcc-door__on { flex: 0 0 auto; }
+  .xcc-door:not(.xcc-door--stack) .xcc-door__market { width: 72px; }
+  .xcc-door:not(.xcc-door--stack) .xcc-btn--go { flex: 0 0 auto; }
+  .xcc-door:not(.xcc-door--stack) > .xcc-seg { align-self: flex-start; display: inline-flex; }
+  .xcc-door:not(.xcc-door--stack) .xcc-seg__btn { flex: none; }
 }
 @media (hover: none) {
   .xcc-door .xcc-seg__btn { min-height: 44px; }
