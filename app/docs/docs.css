@@ -1,0 +1,134 @@
+/* ── DOCS PAGE KIT (squad docs-clean, 2026-11-24) ─────────────────────────
+   Styles for components/docs/*: DocsSummary, DocsSteps/DocsStep, DocsCallout
+   kinds, DocsFacts, DocsNext, DocsToc. Imported by app/docs/layout.tsx. The
+   base docs rules (.docs, .docs__h1, .docs__lead, .docs__prose, the rail)
+   stay in app/x402-design.css.
+
+   Brand: tokens only. Violet (--accent) for links, tiles and notes; magenta
+   (--hot) for a warning; green and red never appear here (they mean the
+   market). Flat fills, hard edges, no gradient, no glow, no shadow. Every
+   value below reads the theme's tokens, so dark and light both work.
+
+   Class prefix: docs__ (BEM under the docs shell). Checked against every
+   stylesheet in the repo on 2026-11-24. */
+
+/* ── "On this page" column (>=1280px only) ── */
+.docs .docs__toc { display: none; }
+@media (min-width: 1280px) {
+  .docs .docs__main:has(> .docs__toc) {
+    display: grid; grid-template-columns: minmax(0, 1fr) 220px; column-gap: 56px; align-items: start;
+  }
+  .docs .docs__toc {
+    display: block; position: sticky; top: 92px; min-width: 0;
+    max-height: calc(100vh - 120px); overflow-y: auto; scrollbar-width: thin;
+    padding: 6px 0 12px;
+  }
+  :root[data-app-shell] .docs__toc { top: 28px; max-height: calc(100vh - 56px); }
+}
+.docs .docs__toctitle { font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; padding-left: 14px; }
+.docs .docs__toclist { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--line); }
+.docs .docs__toclist > li { margin: 0; }
+.docs .docs__toclink {
+  display: block; margin-left: -1px; padding: 6px 0 6px 13px; border-left: 2px solid transparent;
+  font-size: 13.5px; line-height: 1.4; color: var(--muted); text-wrap: pretty;
+  transition: color var(--dur-1), border-color var(--dur-1);
+}
+.docs .docs__toclink:hover { color: var(--fg); }
+.docs .docs__toclink.is-on { color: var(--fg); font-weight: 600; border-left-color: var(--accent); }
+.docs .docs__toclink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── DocsSummary: the "In short" box under the lead ── */
+.docs .docs__summary {
+  margin: 28px 0; padding: 18px 22px 16px; max-width: var(--docs-measure, 70ch);
+  background: var(--surf-1); border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 10px;
+}
+.docs .docs__summarytitle { margin: 0 0 10px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+.docs .docs__summary .docs__summarylist { list-style: none; margin: 0; padding: 0; }
+.docs .docs__summary .docs__summarylist > li {
+  position: relative; margin: 0; padding: 7px 0 7px 22px;
+  font-size: 15.5px; line-height: 1.55; color: var(--fg);
+}
+.docs .docs__summary .docs__summarylist > li + li { border-top: 1px solid var(--line); }
+/* A small square tile in place of a bullet: the brand's stone, flat. */
+.docs .docs__summary .docs__summarylist > li::before {
+  content: ''; position: absolute; left: 2px; top: calc(7px + 0.55em); width: 7px; height: 7px; background: var(--accent);
+}
+.docs .docs__summary a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.docs .docs__summary strong { font-weight: 600; }
+.docs .docs__summary code { font-family: var(--font-mono); font-size: 0.86em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; overflow-wrap: anywhere; }
+
+/* ── DocsSteps / DocsStep: numbered steps, the number in a violet tile ── */
+.docs .docs__steps { counter-reset: docs-step; list-style: none; margin: 24px 0; padding: 0; max-width: var(--docs-measure, 70ch); }
+.docs .docs__steps > .docs__step {
+  counter-increment: docs-step; position: relative; margin: 0; padding: 0 0 24px 48px;
+}
+.docs .docs__steps > .docs__step::marker { content: none; }
+/* The tile. */
+.docs .docs__steps > .docs__step::before {
+  content: counter(docs-step); position: absolute; left: 0; top: 0;
+  width: 30px; height: 30px; display: grid; place-items: center;
+  font-family: var(--font-mono); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+  background: var(--accent); color: var(--ink); border-radius: 4px;
+}
+/* The rule joining one tile to the next. */
+.docs .docs__steps > .docs__step::after {
+  content: ''; position: absolute; left: 14.5px; top: 38px; bottom: 6px; width: 1px; background: var(--line);
+}
+.docs .docs__steps > .docs__step:last-child { padding-bottom: 0; }
+.docs .docs__steps > .docs__step:last-child::after { content: none; }
+.docs .docs__steptitle { margin: 0; padding-top: 3px; font-size: 17px; font-weight: 600; line-height: 1.4; color: var(--fg); }
+.docs .docs__stepbody { margin-top: 6px; font-size: 16px; line-height: 1.68; color: var(--docs-ink, var(--fg)); }
+.docs .docs__stepbody > :first-child { margin-top: 0; }
+.docs .docs__stepbody > :last-child { margin-bottom: 0; }
+.docs .docs__stepbody p { margin: 8px 0; }
+.docs .docs__stepbody pre { max-width: 100%; }
+
+/* ── DocsCallout kinds (base .docs__callout lives in x402-design.css) ── */
+.docs .docs__callout--note, .docs .docs__callout--tip { border-left-color: var(--accent); }
+.docs .docs__callout--warn { border-left-color: var(--hot); }
+.docs .docs__callouttitle { margin: 0 0 4px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+.docs .docs__callout--warn .docs__callouttitle { color: var(--hot); }
+.docs .docs__calloutbody { font-size: 15px; line-height: 1.65; color: var(--docs-ink, var(--fg)); }
+.docs .docs__calloutbody > p { margin: 0; }
+.docs .docs__calloutbody > p + p, .docs .docs__calloutbody > ul, .docs .docs__calloutbody > ol { margin-top: 8px; }
+.docs .docs__calloutbody > ul, .docs .docs__calloutbody > ol { margin-bottom: 0; padding-left: 1.3em; }
+.docs .docs__calloutbody li { margin: 4px 0; }
+
+/* ── DocsFacts: label | value ── */
+.docs .docs__facts { margin: 24px 0; max-width: var(--docs-measure, 70ch); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.docs .docs__factrow { display: grid; grid-template-columns: minmax(120px, 34%) minmax(0, 1fr); }
+.docs .docs__factrow + .docs__factrow { border-top: 1px solid var(--line); }
+.docs .docs__factlabel { margin: 0; padding: 11px 14px; background: var(--surf-1); font-size: 13.5px; font-weight: 600; line-height: 1.5; color: var(--muted); }
+.docs .docs__factvalue { margin: 0; padding: 11px 14px; font-size: 15px; line-height: 1.55; color: var(--fg); min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.docs .docs__factvalue code { font-family: var(--font-mono); font-size: 0.86em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+.docs .docs__factvalue a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+@media (max-width: 600px) {
+  .docs .docs__factrow { grid-template-columns: 1fr; }
+  .docs .docs__factlabel { padding-bottom: 4px; }
+  .docs .docs__factvalue { padding-top: 4px; }
+  .docs .docs__factlabel { background: none; font-size: 12.5px; letter-spacing: 0.02em; }
+}
+
+/* ── DocsNext: the cards at the bottom ── */
+.docs .docs__next { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); max-width: 96ch; }
+.docs .docs__nexttitle { margin: 0 0 14px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.docs .docs__nextgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.docs .docs__prose .docs__nextcard, .docs .docs__nextcard {
+  display: flex; flex-direction: column; gap: 6px; min-height: 44px; padding: 16px 18px;
+  background: var(--surf-1); border: 1px solid var(--line); border-radius: 10px;
+  color: var(--fg); text-decoration: none; transition: border-color var(--dur-1), background var(--dur-1);
+}
+.docs .docs__nextcard:hover { border-color: var(--accent); background: var(--surf-2); }
+.docs .docs__nextcard:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.docs .docs__nextcardtitle { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 15.5px; font-weight: 600; line-height: 1.35; color: var(--fg); }
+.docs .docs__nextarrow { color: var(--accent); font-family: var(--font-mono); transition: transform var(--dur-1); }
+.docs .docs__nextcard:hover .docs__nextarrow { transform: translateX(3px); }
+.docs .docs__nextcarddesc { font-size: 14px; line-height: 1.5; color: var(--muted); }
+
+@media print {
+  .docs .docs__next, .docs .docs__toc { display: none !important; }
+  .docs .docs__summary, .docs .docs__callout, .docs .docs__facts { break-inside: avoid; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .docs .docs__nextarrow, .docs .docs__toclink, .docs .docs__nextcard { transition: none; }
+}

@@ -1645,35 +1645,63 @@
   }
 
   /* ── DOCS (full-width shell) ─────────────────────── */
+  /* Readability pass (squad docs-clean, 2026-11-24): body text near full
+     foreground on a ~70ch measure, Fraunces (--font-chat-display) for the
+     H1 and section heads, Geist body, Geist Mono for code and figures,
+     links in the brand violet. The page kit (DocsSummary, DocsSteps,
+     DocsCallout kinds, DocsFacts, DocsNext, DocsToc) lives in
+     app/docs/docs.css. */
   .docs {
     width: 100%; padding: 0 32px;
     display: grid; grid-template-columns: 240px minmax(0, 1fr);
     gap: 48px; align-items: start; min-height: calc(100vh - 64px);
+    --docs-ink: color-mix(in oklch, var(--fg) 90%, var(--bg));
+    --docs-measure: 70ch;
   }
   .docs__rail {
     position: sticky; top: 88px; min-width: 0;
     display: flex; flex-direction: column; gap: 18px; padding: 28px 0;
   }
-  .docs__railtitle { font-size: var(--fs-xs); letter-spacing: 0.16em; color: var(--muted-2); padding: 0 12px; }
-  .docs__side { display: flex; flex-direction: column; gap: 2px; }
-  .docs__sidegroup { font-size: 10px; letter-spacing: 0.16em; color: var(--muted-2); padding: 0 12px; margin-top: 16px; margin-bottom: 4px; }
+  .docs__railtitle { font-size: var(--fs-xs); letter-spacing: 0.16em; color: var(--muted); padding: 0 12px; }
+  .docs__side { display: flex; flex-direction: column; gap: 1px; }
+  .docs__sidegroup { font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.14em; color: var(--muted); padding: 0 12px; margin-top: 22px; margin-bottom: 6px; }
   .docs__link {
-    display: flex; align-items: center; gap: 10px;
-    padding: 9px 12px; border-radius: 10px; font-size: var(--fs-md);
-    color: var(--muted); transition: color var(--dur-1), background var(--dur-1); min-height: 40px;
+    position: relative; display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: 8px; font-size: 14px; line-height: 1.35;
+    color: var(--muted); transition: color var(--dur-1), background var(--dur-1); min-height: 38px;
   }
   .docs__link:hover { color: var(--fg); background: var(--surf-1); }
-  .docs__link.is-on { color: var(--fg); background: var(--surf-2); }
+  /* The page you are on: full ink, a filled row and a violet bar at its edge. */
+  .docs__link.is-on { color: var(--fg); font-weight: 600; background: var(--surf-2); }
+  .docs__link.is-on::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; background: var(--accent); }
   .docs__main { padding: 28px 0 80px; min-width: 0; }
-  .docs__crumbs { font-size: var(--fs-sm); color: var(--muted-2); margin-bottom: 18px; display: flex; gap: 8px; align-items: center; }
-  .docs__crumbs a:hover { color: var(--fg); }
-  .docs__h1 { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: clamp(1.8rem, 2.6vw, 2.4rem); letter-spacing: -0.025em; line-height: 1.1; }
-  .docs__lead { margin-top: 14px; font-size: 16px; color: var(--muted); line-height: 1.6; max-width: 70ch; }
-  /* Prose measure stays readable inside the full-width shell; code can run wider. */
-  .docs__prose { margin-top: 28px; font-size: 15px; line-height: 1.7; color: var(--muted); }
-  .docs__prose > * { max-width: 80ch; }
-  .docs__prose h2 { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: -0.02em; color: var(--fg); margin: 36px 0 12px; }
-  .docs__prose h3 { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 16px; color: var(--fg); margin: 26px 0 10px; }
+  .docs__page { min-width: 0; }
+  .docs__crumbs { font-size: var(--fs-sm); color: var(--muted); margin-bottom: 18px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; letter-spacing: 0.06em; }
+  .docs__crumbs a { color: var(--muted); }
+  .docs__crumbs a:hover { color: var(--accent); }
+  .docs__h1 {
+    font-family: var(--font-chat-display); font-weight: 600; font-optical-sizing: auto;
+    font-size: clamp(2rem, 3.2vw, 2.85rem); letter-spacing: -0.018em; line-height: 1.08;
+    max-width: 26ch; text-wrap: balance; color: var(--fg);
+  }
+  /* The lead stands apart: bigger, full ink, a hairline under it before the body. */
+  .docs__lead { margin-top: 16px; font-size: 18.5px; color: var(--fg); line-height: 1.55; max-width: 62ch; text-wrap: pretty; }
+  .docs__lead a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  .docs__lead strong { color: var(--fg); font-weight: 600; }
+  .docs__lead code { font-family: var(--font-mono); font-size: 0.85em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; overflow-wrap: anywhere; }
+  /* Prose measure stays readable inside the full-width shell; code and tables can run wider. */
+  .docs__prose { margin-top: 32px; font-size: 16px; line-height: 1.72; color: var(--docs-ink); }
+  .docs__prose > * { max-width: var(--docs-measure); }
+  .docs__prose > :first-child { margin-top: 0; }
+  .docs__prose h2 {
+    font-family: var(--font-chat-display); font-weight: 600; font-optical-sizing: auto;
+    font-size: 26px; line-height: 1.2; letter-spacing: -0.012em; color: var(--fg);
+    margin: 56px 0 14px; padding-top: 28px; border-top: 1px solid var(--line); text-wrap: balance;
+  }
+  .docs__prose > h2:first-child { padding-top: 0; border-top: 0; }
+  .docs__prose h3 { font-family: var(--font-sans); font-weight: 600; font-size: 18px; line-height: 1.35; letter-spacing: -0.01em; color: var(--fg); margin: 36px 0 8px; }
+  .docs__prose h2 + h3 { margin-top: 20px; }
+  .docs__prose h4 { font-family: var(--font-sans); font-weight: 600; font-size: 16px; color: var(--fg); margin: 24px 0 6px; }
   /* Deep-link affordance injected by DocsHeadingAnchors — scroll-margin keeps a
      #slug jump clear of the sticky nav; the copy button reveals on heading hover. */
   .docs__heading { position: relative; scroll-margin-top: 90px; }
@@ -1693,64 +1721,88 @@
   @media (hover: none) {
     .docs__anchor { opacity: .45; }
   }
-  .docs__prose p { margin: 12px 0; }
-  .docs__prose a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-style: dotted; }
-  .docs__prose strong { color: var(--fg); }
-  .docs__prose ul, .docs__prose ol { margin: 12px 0; padding-left: 24px; }
-  .docs__prose li { margin: 5px 0; }
-  .docs__prose code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.88em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); overflow-wrap: anywhere; }
-  .docs__prose pre { background: var(--surf-1); border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-x: auto; margin: 16px 0; max-width: 96ch; }
-  .docs__prose pre code { background: none; border: none; padding: 0; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+  .docs__prose p { margin: 14px 0; }
+  .docs__prose a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  .docs__prose a:hover { text-decoration-thickness: 2px; }
+  .docs__prose strong { color: var(--fg); font-weight: 600; }
+  .docs__prose em { color: var(--fg); }
+  .docs__prose ul, .docs__prose ol { margin: 16px 0; padding-left: 1.4em; }
+  .docs__prose li { margin: 10px 0; padding-left: 4px; }
+  .docs__prose li > ul, .docs__prose li > ol { margin: 8px 0; }
+  .docs__prose li::marker { color: var(--muted); }
+  .docs__prose ol > li::marker { font-family: var(--font-mono); font-size: 0.88em; }
+  .docs__prose blockquote { margin: 20px 0; padding: 2px 0 2px 18px; border-left: 3px solid var(--line-2); color: var(--muted); }
+  .docs__prose hr { margin: 40px 0; border: 0; border-top: 1px solid var(--line); }
+  .docs__prose code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.86em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); overflow-wrap: anywhere; }
+  .docs__prose pre { background: var(--surf-1); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 20px 0; max-width: 96ch; }
+  .docs__prose pre code { background: none; border: none; padding: 0; font-size: 13px; line-height: 1.65; color: var(--fg); overflow-wrap: normal; }
   /* EmbedInstall (the shared install card) frames its own <pre> — neutralize
      the prose pre chrome so it doesn't double-border inside docs pages. */
-  .docs__prose .eminstall { margin: 16px 0; }
+  .docs__prose .eminstall { margin: 20px 0; }
   .docs__prose .eminstall pre { background: none; border: 0; border-radius: 0; margin: 0; max-width: none; padding: 14px 16px; }
   /* display:block + overflow scrolls wide tables inside their own box
-     (constitution: tables never push the page). */
-  .docs__prose table { display: block; overflow-x: auto; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; max-width: 96ch; }
-  .docs__prose th, .docs__prose td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; }
-  .docs__prose th { color: var(--fg); background: var(--surf-1); }
+     (constitution: tables never push the page). Rules between rows only;
+     the head row sits on a surface; figures are tabular. */
+  .docs__prose table { display: block; overflow-x: auto; border-collapse: collapse; margin: 24px 0; font-size: 14px; line-height: 1.55; max-width: 96ch; border: 1px solid var(--line); border-radius: 10px; }
+  .docs__prose th, .docs__prose td { border: 0; border-bottom: 1px solid var(--line); padding: 10px 14px; text-align: left; vertical-align: top; font-variant-numeric: tabular-nums; }
+  .docs__prose tr:last-child > td { border-bottom: 0; }
+  .docs__prose th { color: var(--fg); background: var(--surf-1); font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }
+  .docs__prose td { color: var(--docs-ink); }
   .docs__callout {
-    margin-top: 24px; padding: 14px 18px; max-width: 80ch;
+    margin: 24px 0; padding: 14px 18px; max-width: var(--docs-measure, 70ch);
     border: 1px solid var(--line); border-left: 3px solid var(--accent, var(--fg));
     border-radius: 10px; background: var(--surf-1);
   }
-  .docs__callout p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--muted); }
+  .docs__callout p { margin: 0; font-size: 15px; line-height: 1.65; color: var(--docs-ink, var(--fg)); }
+  .docs__callout p + p { margin-top: 8px; }
   .docs__callout strong { color: var(--fg); }
-  .docs__callout a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-style: dotted; }
-  .docs__callout code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.88em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); }
+  .docs__callout a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  .docs__callout code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.86em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); overflow-wrap: anywhere; }
   .docs__cards { margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
   .docs__card {
     display: flex; flex-direction: column; gap: 8px; padding: 18px;
-    border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1);
+    border: 1px solid var(--line); border-radius: 12px; background: var(--surf-1);
     transition: border-color var(--dur-1), background var(--dur-1);
   }
-  .docs__card:hover { border-color: var(--line-2); background: var(--surf-2); }
+  .docs__card:hover { border-color: var(--accent); background: var(--surf-2); }
   .docs__cardtitle { font-size: var(--fs-base); font-weight: 600; color: var(--fg); }
-  .docs__carddesc { font-size: var(--fs-md); color: var(--muted-2); line-height: 1.5; }
+  .docs__carddesc { font-size: 14px; color: var(--muted); line-height: 1.5; }
   @media (max-width: 1023px) {
     .docs { grid-template-columns: 1fr; gap: 0; padding: 0 var(--gutter-phone); }
+    /* The page list becomes one scroll-row under the nav: a solid ground (no
+       blur, no fade), the group names kept as small markers between pages. */
     .docs__rail { position: sticky; top: 64px; z-index: 30; flex-direction: row; align-items: center;
-      gap: 12px; padding: 10px 0; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--line); }
+      gap: 12px; padding: 8px 0; margin: 0 calc(-1 * var(--gutter-phone)); padding-left: var(--gutter-phone);
+      background: var(--bg); border-bottom: 1px solid var(--line); }
     .docs__railtitle { display: none; }
-    .docs__sidegroup { display: none; }
-    .docs__side { flex-direction: row; gap: 4px; overflow-x: auto; scrollbar-width: none;
-      -webkit-mask-image: linear-gradient(to right, #000 92%, transparent);
-              mask-image: linear-gradient(to right, #000 92%, transparent); }
+    .docs__side { flex-direction: row; align-items: center; gap: 2px; overflow-x: auto; scrollbar-width: none; padding-right: var(--gutter-phone); }
+    .docs__sidegroup { display: flex; align-items: center; align-self: stretch; flex-shrink: 0; white-space: nowrap;
+      margin: 0 0 0 8px; padding: 0 6px 0 12px; border-left: 1px solid var(--line); font-size: 10px; color: var(--muted); }
     .docs__side::-webkit-scrollbar { display: none; }
-    .docs__link { white-space: nowrap; min-height: 44px; }
+    .docs__link { white-space: nowrap; flex-shrink: 0; min-height: 44px; font-size: 14px; }
+    .docs__link.is-on::before { left: 12px; right: 12px; top: auto; bottom: 4px; width: auto; height: 2px; }
+    .docs__main { padding-top: 22px; }
+    .docs__h1 { font-size: clamp(1.85rem, 7.4vw, 2.3rem); }
+    .docs__lead { font-size: 17px; }
+    .docs__prose { font-size: 16px; line-height: 1.68; }
+    .docs__prose h2 { font-size: 23px; margin-top: 44px; padding-top: 22px; }
+    .docs__prose h3 { font-size: 17px; margin-top: 28px; }
+    .docs__prose th, .docs__prose td { padding: 9px 12px; }
+  }
+  @media (max-width: 600px) {
+    .docs__prose pre { margin-left: calc(-1 * var(--gutter-phone)); margin-right: calc(-1 * var(--gutter-phone)); border-radius: 0; border-left: 0; border-right: 0; padding: 14px var(--gutter-phone); }
+    .docs__prose pre code { font-size: 12.5px; }
   }
 
   /* ── DOCS SPLASH (the grand entry at /docs) ──────── */
   .splash__eyebrow { font-size: var(--fs-sm); letter-spacing: 0.18em; color: var(--accent); margin-bottom: 16px; }
   .splash__h1 {
-    font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto;
+    font-family: var(--font-chat-display); font-weight: 600; font-optical-sizing: auto;
     font-size: clamp(2.4rem, 4.2vw, 3.7rem); letter-spacing: -0.018em; line-height: 1.02;
     max-width: 16ch;
   }
-  .splash__lead { margin-top: 18px; font-size: 16.5px; color: var(--muted); line-height: 1.6; max-width: 64ch; }
-  .splash__lead a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-style: dotted; }
+  .splash__lead { margin-top: 18px; font-size: 18px; color: var(--fg); line-height: 1.6; max-width: 64ch; }
+  .splash__lead a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
   .splash__lead strong { color: var(--fg); }
   .splash__ctas { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 12px; }
 
@@ -1760,8 +1812,8 @@
     background: var(--surf-1); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 26px;
   }
   .splash__kicker { font-size: 11.5px; letter-spacing: 0.14em; color: var(--accent); font-weight: 600; }
-  .splash__pathtitle { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 22px; letter-spacing: -0.02em; margin-top: 12px; }
-  .splash__pathlead { font-size: 14.5px; color: var(--muted); line-height: 1.55; margin-top: 10px; text-wrap: pretty; }
+  .splash__pathtitle { font-family: var(--font-chat-display); font-weight: 600; font-optical-sizing: auto; font-size: 24px; letter-spacing: -0.012em; margin-top: 12px; }
+  .splash__pathlead { font-size: 15px; color: var(--docs-ink, var(--muted)); line-height: 1.55; margin-top: 10px; text-wrap: pretty; }
   .splash__pathlead strong { color: var(--fg); }
   .splash__copycap { font-size: 11.5px; color: var(--muted-2); margin: 20px 0 8px; }
   .splash__copycap:first-of-type { margin-top: 22px; }
@@ -4845,8 +4897,8 @@
   .splash__stepnum {
     font-size: var(--fs-xs); letter-spacing: 0.14em; color: var(--accent); font-weight: 600;
   }
-  .splash__steptitle { font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 18px; letter-spacing: -0.015em; margin-top: 10px; }
-  .splash__steplead { font-size: 13.5px; color: var(--muted); line-height: 1.55; margin-top: 8px; text-wrap: pretty; }
+  .splash__steptitle { font-family: var(--font-chat-display); font-weight: 600; font-optical-sizing: auto; font-size: 20px; letter-spacing: -0.01em; margin-top: 10px; }
+  .splash__steplead { font-size: 14.5px; color: var(--docs-ink, var(--muted)); line-height: 1.55; margin-top: 8px; text-wrap: pretty; }
   .splash__steplead strong { color: var(--fg); }
   .splash__steplead code {
     font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.88em;
@@ -6864,7 +6916,7 @@
    Cards per venue inside the docs prose; a print sheet so a compliance desk
    can PDF the page (rail, footer and chrome drop; cards never split). */
 .venues__card { margin-top: 28px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); max-width: 96ch; }
-.docs__prose .venues__card > h2 { margin-top: 0; }
+.docs__prose .venues__card > h2 { margin-top: 0; padding-top: 0; border-top: 0; }
 .venues__pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
 .venues__pill { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
 .venues__pill--tx { border-color: var(--accent, var(--fg)); color: var(--fg); }
@@ -6877,7 +6929,8 @@
 .venues__foot { margin-top: 36px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.8; color: var(--muted-2); max-width: 96ch; overflow-wrap: anywhere; }
 @media print {
   .docs { display: block; padding: 0; min-height: 0; }
-  .docs__rail, .docs__crumbs, .footer, .venues__toc { display: none !important; }
+  .docs__rail, .docs__crumbs, .footer, .venues__toc, .docs__toc { display: none !important; }
+  .docs__main { display: block; }
   .docs__main { padding: 0; }
   .docs__prose > *, .venues__card, .venues__foot, .docs__prose table { max-width: none; }
   .docs__prose table { display: table; width: 100%; font-size: 11px; }
