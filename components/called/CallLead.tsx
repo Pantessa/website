@@ -14,6 +14,11 @@
 // the record is shown by (gtm bestCallOf), linking to its own address. A
 // record with no hit shows none.
 //
+// SLEEK (squad mobile-sleek, 2026-11-24). The verdict wears the brand's tile
+// (components/sleek/VerdictTile: colour AND glyph), the record's tally is one
+// bar (ScoreBar) under its own headline, and the one button is DOCKED under
+// the thumb on a phone with Share as the quiet press beside it.
+//
 // HONESTY. Every number here is the record's. "called it" is printed only for
 // a call whose verdict is right (the word is spec's VERDICT_WORDS, whatever
 // the verdict). A post is X's text: a React text node inside <bdi>, never
@@ -22,6 +27,8 @@
 import Link from 'next/link'
 import { Fragment, type CSSProperties } from 'react'
 import CallActs from '@/components/called/CallActs'
+import ScoreBar from '@/components/sleek/ScoreBar'
+import VerdictTile from '@/components/sleek/VerdictTile'
 import { ADDED_MARK, VERDICT_WORDS, judgedLine, postUrl, sinceLine, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
 import { callHref, callPlaceOf, chartCallHref } from '@/lib/called-it/gtm'
 import { cleanLine, fmtCallPrice, fmtCount, fmtUtcDate, fmtUtcDateTime, headlineParts, initialOf, linePaths, plotScale, sentenceCase, splitQuote, unreadShare, type ClosePoint } from '@/lib/called-it/card-layout'
@@ -61,7 +68,8 @@ function RecordTally({ record }: { record: CalledRecord }) {
       <span className="xcl-record__who">{parts.who}</span>
       {parts.counts.map((c, i) => (
         <Fragment key={c.kind}>
-          <span className={`xcl-count is-${c.kind}`}>{c.text}</span>
+          {/* The total is printed; the four verdict counts are drawn by the bar under this line and stay here for a reader and a crawler. */}
+          <span className={c.kind === 'total' ? 'xcl-count is-total' : 'xcl-sr'}>{c.text}</span>
           <span className="xcl-sr">{i < parts.counts.length - 1 ? ', ' : parts.end}</span>
         </Fragment>
       ))}
@@ -138,15 +146,10 @@ export default function CallLead({ record, call, avatar, unit = 'usd', closes, s
             {day}
           </time>
         </span>
-        {share && (
-          <a href="#share" className="xcl-kicker__jump" data-journey="called_call_jump_share">
-            Share
-          </a>
-        )}
       </p>
 
       <h1 className="xcl-verdict">
-        <i className={`xcl-verdict__mark${added ? ' is-added' : ''}`} aria-hidden />
+        <VerdictTile verdict={call.verdict} size={44} className={`xcl-verdict__tile${added ? ' is-added' : ''}`} />
         <span className="xcl-verdict__word">{sentenceCase(VERDICT_WORDS[call.verdict])}.</span>
         <span className="xcl-sr">
           {' '}
@@ -242,15 +245,24 @@ export default function CallLead({ record, call, avatar, unit = 'usd', closes, s
         <p className="xcl-record__tally" data-record-headline>
           <RecordTally record={record} />
         </p>
+        {record.scanned && record.tally.total > 0 && <ScoreBar counts={record.tally} words={VERDICT_WORDS} size="lg" />}
         <p className={`xcl-record__standing${record.verified ? ' is-verified' : ''}`} data-standing>
           {record.words.standing}
         </p>
       </section>
 
       <div className="xcl-go">
-        <Link href={chartCallHref(handle, symbol, call.postId)} className="xcl-btn" prefetch={false} data-journey="called_call_open_chart">
-          Open the live {symbol} chart on this call
-        </Link>
+        {/* ONE primary press, docked under the thumb on a phone; Share is the quiet one beside it. */}
+        <div className="xcl-dock" data-dock>
+          <Link href={chartCallHref(handle, symbol, call.postId)} className="xcl-btn" prefetch={false} data-journey="called_call_open_chart">
+            Open the live {symbol} chart<span className="xcl-btn__tail"> on this call</span>
+          </Link>
+          {share && (
+            <a href="#share" className="xcl-dock__alt" data-journey="called_call_jump_share">
+              Share
+            </a>
+          )}
+        </div>
         <CallActs symbol={symbol} stance={call.stance} handle={handle} postId={call.postId} variant="stack" />
         {/* The account itself lands here from a message: say what signing in changes, and where. */}
         {!record.verified && (
@@ -278,9 +290,9 @@ export interface BestCallProps {
 export function BestCall({ record, call, unit = 'usd' }: BestCallProps) {
   const scanned = record.calls.filter((c) => c.origin === 'scan').length
   return (
-    <Link href={callHref(record.handle, record.symbol, call.postId)} className={`xcl-best is-${call.verdict}`} prefetch={false} data-xcl="best" data-call={call.postId} data-journey="called_best_call" aria-label={`${sentenceCase(VERDICT_WORDS[call.verdict])}, ${fmtUtcDate(call.postedAt)}: open this call`}>
+    <Link href={callHref(record.handle, record.symbol, call.postId)} className={`xcl-best sk-card is-${call.verdict}`} prefetch={false} data-xcl="best" data-call={call.postId} data-journey="called_best_call" aria-label={`${sentenceCase(VERDICT_WORDS[call.verdict])}, ${fmtUtcDate(call.postedAt)}: open this call`}>
       <span className="xcl-best__kicker">
-        <i className="xcl-best__mark" aria-hidden />
+        <VerdictTile verdict={call.verdict} size={20} />
         <b>{sentenceCase(VERDICT_WORDS[call.verdict])}</b>
         <time dateTime={new Date(call.postedAt).toISOString()}>{fmtUtcDate(call.postedAt)}</time>
         <span className="xcl-best__of">

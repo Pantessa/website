@@ -5,8 +5,8 @@
 
 .xva-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 44px; padding: 0 16px; border-radius: 999px;
-  border: 1px solid var(--line-2); background: var(--surf-1); color: var(--fg);
+  min-height: 44px; padding: 0 16px; border-radius: 0;
+  border: 1px solid var(--line-2); background: transparent; color: var(--fg);
   font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
 }
 .xva-btn:hover { border-color: var(--fg); }
