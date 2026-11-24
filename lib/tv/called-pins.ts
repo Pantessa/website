@@ -287,7 +287,8 @@ export const PANE_KEEP = {
 } as const
 /** Under this pane width every call is a mark (a phone): a card would cover the candles it points at. */
 export const CARDS_MIN_PANE_W = 520
-const CARDS_MIN_PANE_H = 300
+/** Under this pane height every call is a mark too (a phone on its side): two rails of cards would leave the candles and the tiles no room. */
+const CARDS_MIN_PANE_H = 360
 /** Air between a rail of cards and the candles. */
 const RAIL_AIR_PX = 18
 

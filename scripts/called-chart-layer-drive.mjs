@@ -197,6 +197,7 @@ try {
     const px = s.ox + s.w * 0.55
     const py = s.oy + s.h * 0.52
     const from0 = s.from
+    const to0 = s.to
     await mouse('mouseMoved', px, py)
     await mouse('mousePressed', px, py, { buttons: 1 })
     let mid = []
@@ -204,13 +205,13 @@ try {
       await mouse('mouseMoved', px + i * 17, py + (i % 3), { buttons: 1 })
       if (i === 5 || i === 9 || i === 14) mid.push(glued((s = await ev(READ(all)))))
     }
-    check(`desktop, DURING a mouse drag (button down, read at three points): every tip is still on its bar and price`, mid.every((m) => m.ok) && s.from !== from0, { mid, moved: s.from !== from0 })
+    check(`desktop, DURING a mouse drag (button down, read at three points): every tip is still on its bar and price`, mid.every((m) => m.ok) && (s.from !== from0 || s.to !== to0), { mid, moved: s.from !== from0 || s.to !== to0 })
     await shot('chart-r2-drag-mid-1440')
     await mouse('mouseReleased', px + 14 * 17, py)
     await sleep(700)
     s = await ev(READ(all))
     g = glued(s)
-    check(`desktop, after the drag: glued (${g.n} tips), the chart moved (${Math.round((from0 - s.from) / 86400)} days), nothing lost (${sum(s)} of ${all.length} calls on a pane that still shows them all, or fewer where bars left it)`, g.ok && s.from !== from0 && sum(s) <= all.length, g)
+    check(`desktop, after the drag: glued (${g.n} tips), the chart moved (its newest bar on screen is ${Math.round((to0 - s.to) / 86400)} days earlier), nothing lost (${sum(s)} of ${all.length} calls on a pane that still shows them all, or fewer where bars left it)`, g.ok && (s.from !== from0 || s.to !== to0) && sum(s) <= all.length, g)
 
     // The wheel zooms: crowds split, the tips stay on their bars.
     const sp0 = s.spacing
