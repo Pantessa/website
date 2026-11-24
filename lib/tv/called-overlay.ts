@@ -167,7 +167,12 @@ export function placeMarks(input: PlaceInput): PlacedMark[] {
   // The columns on the pane, each as wide as its widest chip, then spread like the cards' rail: every column as close
   // to its own stretch as it can be, none over its neighbour, none off the pane (a stretch half off the edge slides in).
   const cols = binMarks(input.calls, input.barSec, binBars, focusCall?.postId)
-    .map((bin) => ({ bin, cx: (input.x(bin.t0) + input.x(bin.t1)) / 2, w: Math.max(...bin.chips.map((chip) => chipWidth(tile, chip.ids.length))) }))
+    .map((bin) => {
+      // The middle of the stretch; where the stretch runs past the newest bar (no bars there yet), the middle of its calls.
+      const xs = bin.calls.map((c) => input.x(c.barTime))
+      const mid = (input.x(bin.t0) + input.x(bin.t1)) / 2
+      return { bin, cx: Math.max(Math.min(...xs) - slot / 2, Math.min(mid, Math.max(...xs) + slot / 2)), w: Math.max(...bin.chips.map((chip) => chipWidth(tile, chip.ids.length))) }
+    })
     .filter((c) => c.cx >= -slot / 2 && c.cx <= pane.width + slot / 2)
   const left = cols.map((c) => c.cx - c.w / 2)
   const air = 4
@@ -247,6 +252,64 @@ export function resolutionSeconds(resolution: string): number | null {
   if (!(n > 0)) return null
   if (unit === 'M') return null
   return n * (unit === 'S' ? 1 : unit === 'D' ? 86_400 : unit === 'W' ? 604_800 : 60)
+}
+
+// ── Where a bar is ──────────────────────────────────────────────────────
+
+export interface AxisInput {
+  /** One bar on screen whose centre is known exactly: its time and its centre, px. */
+  ref: { t: number; x: number }
+  /** Px from one bar's centre to the next. */
+  spacing: number
+  barSec: number
+  width: number
+  /** The library's own answer: the time of the bar drawn at pixel `x` (null where there is none). */
+  timeAt(x: number): number | null
+}
+
+/**
+ * The centre of the bar that holds a time, px. On a market that never closes
+ * the bars are whole steps of time from the reference, so it is arithmetic
+ * (and exact through a pan). A market that closes (a stock's nights and
+ * weekends) draws no bar for the gap: there the bars on screen are read one by
+ * one, and a call made while it was shut sits on the last bar before it. A
+ * time off the pane gives an x off the pane.
+ */
+export function axisMapper(input: AxisInput): (t: number) => number {
+  const { ref, spacing, barSec, width } = input
+  const even = (t: number): number => ref.x + Math.floor((t - ref.t) / barSec) * spacing
+  // Does the arithmetic agree with the library at both edges of the pane? Then the bars are even.
+  const agrees = (x: number): boolean => {
+    const got = input.timeAt(x)
+    if (typeof got !== 'number' || !Number.isFinite(got)) return true
+    const want = ref.t + Math.round((x - ref.x) / spacing) * barSec
+    return Math.abs(got - want) <= barSec / 2
+  }
+  // Asked across the whole pane, not only at its edges: an edge can be empty (air after the newest bar, or before the
+  // first one), and an empty edge agrees with anything.
+  let allAgree = true
+  for (let i = 0; i <= 8 && allAgree; i++) allAgree = agrees(2 + ((width - 4) * i) / 8)
+  if (allAgree) return even
+  const seen: { t: number; x: number }[] = []
+  for (let x = ref.x - Math.floor(ref.x / spacing) * spacing; x <= width + spacing / 2; x += spacing) {
+    const t = input.timeAt(x)
+    if (typeof t === 'number' && Number.isFinite(t) && (!seen.length || t > seen[seen.length - 1].t)) seen.push({ t, x })
+  }
+  return (t) => {
+    if (!seen.length) return -9999
+    const first = seen[0]
+    const last = seen[seen.length - 1]
+    // Outside the bars on screen there is nothing to read: even steps from the nearest one (it only has to say
+    // "off the pane, about this far"). A few days past the newest bar is the market's own gap: that bar.
+    if (t < first.t) return first.x - Math.ceil((first.t - t) / barSec) * spacing
+    if (t - last.t >= Math.max(barSec, 86_400) * 5) return last.x + Math.floor((t - last.t) / barSec) * spacing
+    let at = first
+    for (const b of seen) {
+      if (b.t > t) break
+      at = b
+    }
+    return at.x
+  }
 }
 
 // ── The paint ───────────────────────────────────────────────────────────
@@ -713,6 +776,8 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
     canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
     canvas.dataset.marks = '0'
     canvas.dataset.cards = '0'
+    canvas.dataset.tips = '[]'
+    canvas.dataset.hits = '[]'
     marks = []
     boxes = []
     sig = ''
@@ -768,28 +833,7 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
       const next = [width, height, dpr, spacing.toFixed(3), barSec, ref.t, ref.x.toFixed(1), price.priceToCoordinate(p0)?.toFixed(1), price.priceToCoordinate(p0 * 1.25)?.toFixed(1), scene.key, scene.focusId, scene.keepTop, scene.keepBottom, scene.keepCorner?.top, scene.cards?.length, document.fonts?.status, hover, inks.up, inks.bg].join('|')
       if (next === sig) return
       sig = next
-      // Bars are whole steps of time from the reference on a market that never closes. One that does (a stock's
-      // weekend) has no bar for the gap: there the bars on screen are read one by one and a call sits on its own.
-      let xOf = (t: number): number => ref.x + Math.floor((t - ref.t) / barSec) * spacing
-      const scale = chart.getTimeScale()
-      const edge = scale.coordinateToTime(2)
-      const edgeWant = ref.t + Math.floor((2 - (ref.x - spacing / 2)) / spacing) * barSec
-      if (typeof edge === 'number' && Math.abs(edge - edgeWant) > barSec / 2) {
-        const seen: { t: number; x: number }[] = []
-        for (let x = ref.x - Math.floor(ref.x / spacing) * spacing; x <= width; x += spacing) {
-          const t = scale.coordinateToTime(x)
-          if (typeof t === 'number' && Number.isFinite(t)) seen.push({ t, x })
-        }
-        xOf = (t) => {
-          if (!seen.length || t < seen[0].t) return -9999
-          let at = seen[0]
-          for (const b of seen) {
-            if (b.t > t) break
-            at = b
-          }
-          return at === seen[seen.length - 1] && t - at.t >= barSec * 4 ? width + 9999 : at.x
-        }
-      }
+      const xOf = axisMapper({ ref, spacing, barSec, width, timeAt: (x) => chart.getTimeScale().coordinateToTime(x) })
       marks = placeMarks({
         calls: scene.calls,
         focusId: scene.focusId,
@@ -841,6 +885,15 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
       c.drawImage(buf, 0, 0)
       canvas.dataset.marks = String(marks.length)
       canvas.dataset.cards = String(boxes.filter((k) => k.inView).length)
+      // Where each lone mark and each card points (its bar and price, px): what a drive checks against the chart itself.
+      canvas.dataset.tips = JSON.stringify([
+        ...marks.filter((m) => m.tip).map((m) => [m.ids[0], +(m.tip as { x: number }).x.toFixed(2), +(m.tip as { y: number }).y.toFixed(2)]),
+        ...boxes.filter((k) => k.inView).map((k) => {
+          const card = cards.find((q) => q.id === k.id)
+          const y = card ? price.priceToCoordinate(card.priceAt) : null
+          return card && y !== null ? [k.id, +xOf(card.barTime).toFixed(2), +y.toFixed(2)] : null
+        }).filter(Boolean),
+      ])
       canvas.dataset.hits = JSON.stringify(marks.map((m) => [m.ids[0], Math.round(m.x + m.w / 2), Math.round(m.y + m.h / 2), m.count, m.focus ? 1 : 0]))
     } catch {
       /* the chart is between two states: the next frame draws it */
