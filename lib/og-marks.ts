@@ -110,10 +110,13 @@ import { GEM_TONES_DARK, gemAccentRamp, gemSvgBody } from './gem-geometry'
  * @param accent hex to re-ink both pieces on a branded card — omit for the
  *   house emerald.
  */
-export function gemMarkSvg(accent?: string): string {
+export function gemMarkSvg(accent?: string, opts?: { bare?: boolean }): string {
   const body = accent
     ? gemSvgBody('icon', [accent, accent], gemAccentRamp('icon'))
     : gemSvgBody('icon', GEM_TONES_DARK.icon)
+  // `bare` (squad mobile-sleek, 2026-11-24): the two pieces alone, no rounded
+  // plate, for a card whose ground is already the brand's own.
+  if (opts?.bare) return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">${body}</svg>`
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
   <rect x="2" y="2" width="124" height="124" rx="27" fill="#0B0E0D" stroke="rgba(255,255,255,0.16)" stroke-width="3.5"/>
   <g transform="translate(16 16) scale(0.75)">
@@ -124,3 +127,12 @@ export function gemMarkSvg(accent?: string): string {
 
 /** @deprecated The pangolin era's name — same mark, kept for import sites. */
 export const pangolinMarkSvg = gemMarkSvg
+
+/**
+ * The Cut P alone, in its own colours (magenta above the cut, violet below),
+ * with no plate behind it: for a card whose ground is the brand's own
+ * `#07080D` (squad mobile-sleek, 2026-11-24).
+ */
+export function cutPMarkSvg(): string {
+  return gemMarkSvg(undefined, { bare: true })
+}
