@@ -21,6 +21,8 @@
 // works).
 import { Fragment, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { BadgeCheck, ExternalLink, Heart, Maximize, Pin, Share2, X } from 'lucide-react'
+import ScoreBar from '@/components/sleek/ScoreBar'
+import VerdictTile from '@/components/sleek/VerdictTile'
 import { fmtPrice } from '@/components/CandleChart'
 import { SIDES } from '@/components/called/HandleDoor'
 import { appScrollTop, scrollAppTo } from '@/lib/app-scroller'
@@ -29,7 +31,7 @@ import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, FREE_SCANS_PER_DAY, JUDGE_DAYS, LA
 import { calledImageHref, fmtCount, headlineParts } from '@/lib/called-it/card-layout'
 import { plotStatus, safeNextHref, sideCounts, useCalled, useCalledAddress, useXViewer, viewerOwns } from '@/lib/called-it/use-record'
 import { calledPost, myCalledPost, postHref } from '@/lib/share-posts'
-import { VERDICT_GLYPH, cleanPostText, pinDate } from '@/lib/tv/called-pins'
+import { cleanPostText, pinDate } from '@/lib/tv/called-pins'
 import './called-chart.css'
 
 const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
@@ -71,13 +73,13 @@ function SideToggle({ record, side, onSide, busy }: { record: CalledRecord | nul
   const counts = sideCounts(record)
   const count = (s: CalledSide): number | null => (counts ? counts[s] : null)
   return (
-    <div className="xcc-seg" role="group" aria-label="Which calls are plotted" aria-busy={busy || undefined}>
+    <div className="sk-seg xch__sides" role="group" aria-label="Which calls are plotted" aria-busy={busy || undefined}>
       {SIDES.map((s) => {
         const n = count(s.side)
         return (
-          <button key={s.side} type="button" className="xcc-seg__btn mono" aria-pressed={side === s.side} title={s.title} onClick={() => onSide(s.side)} data-side={s.side}>
+          <button key={s.side} type="button" className="xch__side" aria-pressed={side === s.side} title={s.title} onClick={() => onSide(s.side)} data-side={s.side}>
             {s.label}
-            {n !== null ? <span className="xcc-seg__n">{n}</span> : null}
+            {n !== null ? <span className="xch__siden">{n}</span> : null}
           </button>
         )
       })}
@@ -128,9 +130,15 @@ function Row({ call, index, px, focused, tail, onFocus, onPin }: { call: CalledC
     // the row is in view when the reader comes down to it.
     const li = ref.current
     const list = li?.parentElement
-    if (!focused || !li || !list || (by !== 'chart' && by !== 'card') || list.scrollHeight <= list.clientHeight) return
+    if (!focused || !li || !list || (by !== 'chart' && by !== 'card')) return
     const row = li.getBoundingClientRect()
     const box = list.getBoundingClientRect()
+    // A phone's list is a rail that runs sideways (called-chart.css): the focused card comes to its leading edge.
+    if (list.scrollWidth > list.clientWidth + 1) {
+      if (row.left < box.left || row.right > box.right) list.scrollLeft += row.left - box.left - 12
+      return
+    }
+    if (list.scrollHeight <= list.clientHeight) return
     if (row.top < box.top) list.scrollTop -= box.top - row.top
     else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom
   }, [focused, by])
@@ -141,9 +149,7 @@ function Row({ call, index, px, focused, tail, onFocus, onPin }: { call: CalledC
         <span className="xcc-row__n mono">{index + 1}</span>
         <span className="xcc-row__when mono">{pinDate(call.postedAt)}</span>
         <span className={`xcc-v xcc-v--${call.verdict} mono`}>
-          <i className="xcc-v__g" aria-hidden>
-            {VERDICT_GLYPH[call.verdict]}
-          </i>
+          <VerdictTile verdict={call.verdict} size={16} />
           {word}
         </span>
         <span className="xcc-row__text">
@@ -207,26 +213,17 @@ const FOLD_ROWS = 5
 /** Where the strip's top lands when it folds: under the phone's top bar and the stuck tabs. */
 const FOLD_LANDS_AT = 112
 
-/** The tally as one thin bar: the same counts the chips print, as proportions. Decorative. */
-function TallyBar({ record }: { record: CalledRecord }) {
-  const t = record.tally
-  if (!record.scanned || t.total === 0) return <span className="xch__bar" aria-hidden />
-  const segs = (['right', 'wrong', 'flat', 'open'] as const).filter((v) => t[v] > 0)
-  return (
-    <span className="xch__bar" aria-hidden>
-      {segs.map((v) => (
-        <i key={v} className={`xch__seg is-${v}`} style={{ flexGrow: t[v] }} />
-      ))}
-    </span>
-  )
-}
-
 /**
  * THE BAND above the chart while a handle is plotted: the record page's
  * header, on the chart. Who, the tally, what was read, and the plot's
  * controls. Every word about the record is the record's own (the headline's
- * counts become chips; read with the tags off it is the headline to the
- * letter).
+ * counts sit under one proportional bar; read with the tags off it is the
+ * headline to the letter).
+ *
+ * SLEEK (2026-11-24): one row of who, the tally as the kit's ScoreBar with
+ * the counts on one line under it, the side filter as the kit's segmented
+ * control, and the standing and coverage as ONE line a phone clamps behind
+ * "more" (the disclosure opens in place; it is never dropped).
  */
 export function CalledHead({ symbol, parked = false }: { symbol: string; parked?: boolean }) {
   const here = useCalled((s) => s.symbol === symbol)
@@ -239,10 +236,12 @@ export function CalledHead({ symbol, parked = false }: { symbol: string; parked?
   const viewer = useXViewer()
   const [shareOpen, setShareOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [factsOpen, setFactsOpen] = useState(false)
   const shareRef = useRef<HTMLSpanElement | null>(null)
   useEffect(() => {
     setShareOpen(false)
     setCopied(false)
+    setFactsOpen(false)
   }, [plot?.handle, plot?.side])
   useEffect(() => {
     if (!shareOpen) return
@@ -269,85 +268,104 @@ export function CalledHead({ symbol, parked = false }: { symbol: string; parked?
   const named = !!rawName && rawName.toLowerCase() !== plot.handle && rawName.toLowerCase() !== who
   const followers = record?.profile.followers != null ? `${fmtCount(record.profile.followers)} followers` : null
   const parts = record ? headlineParts(record.words.headline) : null
+  const tallied = !!record && record.scanned && record.tally.total > 0
   // Somebody else's record in the third person, the account's own in the first; "own" only when the record is verified
   // AND the viewer's proven X user id is the account's (lane RECORD's posts, lib/share-posts).
   const post = record ? (viewerOwns(record, viewer) ? myCalledPost(record) : calledPost(record)) : null
 
   return (
-    <section className={`xch${parked ? ' is-parked' : ''}`} data-called-head={status.kind} data-called-handle={plot.handle} aria-label={`${who} on ${symbol}: the record`} aria-hidden={parked || undefined}>
+    <section className={`xch${parked ? ' is-parked' : ''}`} data-called-head={status.kind} data-called-handle={plot.handle} data-facts={factsOpen ? 'open' : undefined} aria-label={`${who} on ${symbol}: the record`} aria-hidden={parked || undefined}>
+      {/* The card's ground: the brand's cut corner, drawn behind the row (a clip on the section itself would cut the Share menu). */}
+      <span className="xch__ground" aria-hidden />
       <div className="xch__row">
         <a className="xch__id" href={`/x/${plot.handle}`} title={`${who}: every market plotted`} data-journey="called_head_handle">
           <span className="xch__avatar" aria-hidden>
-            {avatar ? <img src={avatar} alt="" width={56} height={56} referrerPolicy="no-referrer" /> : (rawName || plot.handle).slice(0, 1).toUpperCase()}
+            {avatar ? <img src={avatar} alt="" width={44} height={44} referrerPolicy="no-referrer" /> : (rawName || plot.handle).slice(0, 1).toUpperCase()}
           </span>
           <span className="xch__idtext">
-            <span className="xch__k mono">
+            <span className="xch__k sk-label">
               Called it <span className="xch__ksym">· {symbol}</span>
             </span>
-            <span className="xch__name">
-              {named && record ? <bdi>{cleanPostText(record.profile.name).slice(0, 60)}</bdi> : who}
-              {record?.verified ? (
-                <span className="xch__verified" title={record.words.standing}>
-                  <BadgeCheck className="xch__vicon" aria-hidden />
-                </span>
-              ) : null}
+            <span className="xch__nameline">
+              <span className="xch__name">
+                {named && record ? <bdi>{cleanPostText(record.profile.name).slice(0, 60)}</bdi> : who}
+                {record?.verified ? (
+                  <span className="xch__verified" title={record.words.standing}>
+                    <BadgeCheck className="xch__vicon" aria-hidden />
+                  </span>
+                ) : null}
+              </span>
+              {named || followers ? <span className="xch__sub mono">{[named ? who : null, followers].filter(Boolean).join(' · ')}</span> : null}
             </span>
-            {named || followers ? <span className="xch__sub mono">{[named ? who : null, followers].filter(Boolean).join(' · ')}</span> : null}
           </span>
         </a>
 
         <div className="xch__tally">
           {record ? (
-            parts ? (
-              <h2 className="xch__counts">
-                <span className="xch-sr">{parts.who}</span>
-                {parts.counts.map((c, i) => (
-                  <Fragment key={c.kind}>
-                    <span className={`xch__count is-${c.kind}`}>
-                      <CountText text={c.text} />
-                    </span>
-                    <span className="xch-sr">{i < parts.counts.length - 1 ? ', ' : parts.end}</span>
-                  </Fragment>
-                ))}
-              </h2>
-            ) : (
-              <h2 className="xch__headline">{record.words.headline}</h2>
-            )
+            <>
+              {/* One bar, each verdict as wide as its share: the misses sit beside the hits. The counts under it are the headline's own. */}
+              {tallied ? <ScoreBar counts={record.tally} words={VERDICT_WORDS} size="lg" bare className="xch__score" /> : null}
+              {parts ? (
+                <h2 className="xch__counts">
+                  <span className="xch-sr">{parts.who}</span>
+                  {parts.counts.map((c, i) => (
+                    <Fragment key={c.kind}>
+                      <span className={`xch__count is-${c.kind}`}>
+                        <CountText text={c.text} />
+                      </span>
+                      <span className="xch-sr">{i < parts.counts.length - 1 ? ', ' : parts.end}</span>
+                    </Fragment>
+                  ))}
+                </h2>
+              ) : (
+                <h2 className="xch__headline">{record.words.headline}</h2>
+              )}
+            </>
           ) : (
             <h2 className="xch__headline">
-              {who} on {symbol}
-              <span className="xch__state mono" data-kind={status.kind}>
-                {status.kind === 'scanning' ? <span className="xcc__spin" aria-hidden /> : null}
+              <span className="xch-sr">
+                {who} on {symbol}:{' '}
+              </span>
+              <span className="xch__state sk-label" data-kind={status.kind}>
+                {status.kind === 'scanning' || status.kind === 'loading' ? <span className="xch__pulse" aria-hidden /> : null}
                 {status.pill}
               </span>
             </h2>
           )}
           <p className="xch__facts">
+            <span className="xch__factstext" id="xch-facts">
+              {record ? (
+                <>
+                  <span className="xch__standing" data-called-standing="" data-verified={record.verified ? '' : undefined}>
+                    {record.words.standing}
+                  </span>
+                  {record.words.coverage ? <span data-called-coverage=""> {record.words.coverage}</span> : null}
+                </>
+              ) : (
+                <span role={status.kind === 'scanning' ? 'status' : undefined}>{status.line}</span>
+              )}
+            </span>
+            {/* A state's line is short and is shown whole; the record's standing and coverage are one clamped line on a phone. */}
             {record ? (
-              <>
-                {record.words.coverage ? <span data-called-coverage="">{record.words.coverage} </span> : null}
-                <span className="xch__standing" data-called-standing="" data-verified={record.verified ? '' : undefined}>
-                  {record.words.standing}
-                </span>
-              </>
-            ) : (
-              <span role={status.kind === 'scanning' ? 'status' : undefined}>{status.line}</span>
-            )}
+              <button type="button" className="xch__more" aria-expanded={factsOpen} aria-controls="xch-facts" onClick={() => setFactsOpen((o) => !o)} data-journey="called_head_more">
+                {factsOpen ? 'less' : 'more'}
+              </button>
+            ) : null}
           </p>
         </div>
 
         <div className="xch__tools">
           {!record && status.canScan ? (
-            <button type="button" className="xcc-btn xcc-btn--go" onClick={() => void scan()} disabled={scanning} aria-busy={scanning || undefined} data-journey="called_scan">
+            <button type="button" className="sk-btn xch__scan" onClick={() => void scan()} disabled={scanning} aria-busy={scanning || undefined} data-journey="called_scan">
               {scanning ? 'Scanning…' : `Scan ${who} on ${symbol}`}
             </button>
           ) : null}
           {record ? <SideToggle record={record} side={plot.side} onSide={setSide} busy={phase === 'loading'} /> : null}
           {record && post && record.calls.length > 0 ? (
             <span className="xcc-share" ref={shareRef}>
-              <button type="button" className="xcc-btn xcc-btn--go" aria-haspopup="menu" aria-expanded={shareOpen} onClick={() => setShareOpen((o) => !o)} data-journey="called_share">
-                <Share2 className="xcc-row__icon" aria-hidden />
-                Share
+              <button type="button" className="xch__tool" aria-haspopup="menu" aria-expanded={shareOpen} aria-label={`Share ${who} on ${symbol}`} title="Share this record" onClick={() => setShareOpen((o) => !o)} data-journey="called_share">
+                <Share2 className="xch__toolicon" aria-hidden />
+                <span className="xch__toolword">Share</span>
               </button>
               {shareOpen ? (
                 <span className="xcc-share__menu" role="menu">
@@ -378,12 +396,11 @@ export function CalledHead({ symbol, parked = false }: { symbol: string; parked?
               ) : null}
             </span>
           ) : null}
-          <button type="button" className="xch__clear" onClick={clear} title="Take this plot off the chart" aria-label={`Take ${who} off the chart`} data-journey="called_clear">
-            <X className="xcc-row__icon" aria-hidden />
+          <button type="button" className="xch__tool xch__clear" onClick={clear} title="Take this plot off the chart" aria-label={`Take ${who} off the chart`} data-journey="called_clear">
+            <X className="xch__toolicon" aria-hidden />
           </button>
         </div>
       </div>
-      {record ? <TallyBar record={record} /> : <span className="xch__bar" aria-hidden />}
     </section>
   )
 }
@@ -407,6 +424,8 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   // thousand pixels between the chart and the page under it. The fold is CSS (called-chart.css, a phone only): every row is
   // in the page at every width.
   const [folded, setFolded] = useState(true)
+  // The method is a paragraph: a phone shows its first lines and opens the rest in place.
+  const [methodOpen, setMethodOpen] = useState(false)
   useEffect(() => setFolded(true), [plot?.handle, plot?.side])
   if (!here || !plot) return null
   const { togglePin, focus, fit, scan, retry, rulePins } = useCalled.getState()
@@ -517,19 +536,20 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
               </button>
             ) : null}
           </div>
-          <p className="xcc__method">
+          <p className="xcc__method" id="xcc-method" data-open={methodOpen ? '' : undefined}>
             <span className="xcc__legend mono" aria-label="What each mark means">
               {(['right', 'wrong', 'flat', 'open'] as const).map((v) => (
                 <span key={v} className={`xcc-v xcc-v--${v}`}>
-                  <i className="xcc-v__g" aria-hidden>
-                    {VERDICT_GLYPH[v]}
-                  </i>
+                  <VerdictTile verdict={v} size={14} />
                   {VERDICT_WORDS[v]}
                 </span>
               ))}
             </span>
             {record.words.method} Right from +{Math.round(DEAD_BAND * 100)}%, wrong from -{Math.round(DEAD_BAND * 100)}%. <span data-called-caveat="">{LABEL_CAVEAT}</span> {DELETED_NOTE} {pinned} of {record.calls.length} pinned; the count is every call the scan found, pinned or not. Not investment advice.
           </p>
+          <button type="button" className="xcc-link xcc__methodmore" aria-expanded={methodOpen} aria-controls="xcc-method" onClick={() => setMethodOpen((o) => !o)}>
+            {methodOpen ? 'Show less' : 'How a call is judged: read it all'}
+          </button>
         </footer>
       </>
     )
