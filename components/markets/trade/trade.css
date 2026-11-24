@@ -11,7 +11,7 @@
 .sym__act-chip[data-kind='stake'], .sym__act-chip[data-kind='lend'] { border-style: dashed; }
 .sym__act-chip[data-side='long'], .sym__act-chip[data-side='short'] { letter-spacing: 0.01em; }
 .mkt-exec__chip {
-  min-height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2, var(--line));
+  min-height: 34px; padding: 0 14px; border-radius: var(--r-pill); border: 1px solid var(--line-2, var(--line));
   background: transparent; color: var(--fg); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
   transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
 }
@@ -55,7 +55,7 @@
   inset: 0 calc(-1 * var(--mkt-card-px, 0px));
   background: linear-gradient(90deg, color-mix(in oklab, var(--accent) var(--route-wash, 10%), transparent), transparent 60%);
 }
-.mkt-route__mark { grid-column: 1; grid-row: 1 / span 3; align-self: start; width: 26px; height: 26px; display: inline-grid; place-items: center; border-radius: 8px; background: var(--surf-2, var(--surf-1)); color: var(--fg); overflow: hidden; }
+.mkt-route__mark { grid-column: 1; grid-row: 1 / span 3; align-self: start; width: 26px; height: 26px; display: inline-grid; place-items: center; border-radius: var(--r-sm); background: var(--surf-2, var(--surf-1)); color: var(--fg); overflow: hidden; }
 .mkt-route__lettermark { font-size: 9px; letter-spacing: 0.06em; color: var(--muted); }
 .mkt-route__venue { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mkt-route__name { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -69,17 +69,17 @@
 .mkt-route__fee { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
 .mkt-route__tags { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .mkt-route__tags:empty { display: none; }
-.mkt-route__tag { font-size: 9px; letter-spacing: 0.1em; padding: 2px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted-2); white-space: nowrap; }
+.mkt-route__tag { font-size: 9px; letter-spacing: 0.1em; padding: 2px 6px; border-radius: var(--r-pill); border: 1px solid var(--line); color: var(--muted-2); white-space: nowrap; }
 .mkt-route__tag--best { border-color: var(--accent); color: var(--accent); }
 .mkt-route__chip {
   grid-column: 3; grid-row: 1; justify-self: end;
-  min-height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--up); background: var(--up); color: var(--ink, #0b1210);
+  min-height: 32px; padding: 0 14px; border-radius: var(--r-pill); border: 1px solid var(--up); background: var(--up); color: var(--ink, #0b1210);
   font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .mkt-route__chip:hover { filter: brightness(1.05); }
 .mkt-route__chip--sell { background: transparent; color: var(--sell); border-color: color-mix(in oklab, var(--sell) 55%, transparent); }
 .mkt-route__chip--sell:hover { background: color-mix(in oklab, var(--sell) 12%, transparent); border-color: var(--sell); filter: none; }
-.mkt-route--ghost > span { display: block; height: 14px; border-radius: 6px; background: var(--line); opacity: 0.6; animation: mkt-ghost 1.2s ease-in-out infinite; }
+.mkt-route--ghost > span { display: block; height: 14px; border-radius: var(--r-sm); background: var(--line); opacity: 0.6; animation: mkt-ghost 1.2s ease-in-out infinite; }
 .mkt-route--ghost .mkt-route__mark { width: 26px; height: 26px; }
 .mkt-route--ghost .mkt-route__chip { height: 32px; width: 90px; border: 0; }
 @keyframes mkt-ghost { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.7; } }
@@ -129,7 +129,7 @@
 
 /* ── PositionPanel ──────────────────────────────────────────────────────── */
 .mkt-pos { display: flex; flex-direction: column; gap: 10px; }
-.mkt-pos__pill { font-size: 11px; letter-spacing: 0.02em; color: var(--fg); padding: 5px 10px; border: 1px solid var(--line-2, var(--line)); border-radius: 999px; background: var(--surf-2, var(--surf-1)); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mkt-pos__pill { font-size: 11px; letter-spacing: 0.02em; color: var(--fg); padding: 5px 10px; border: 1px solid var(--line-2, var(--line)); border-radius: var(--r-pill); background: var(--surf-2, var(--surf-1)); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mkt-pos__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 20px; }
 .mkt-pos__block { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .mkt-pos__k { font-size: 10px; letter-spacing: 0.14em; color: var(--muted-2); padding-bottom: 2px; border-bottom: 1px solid var(--line); }
@@ -147,7 +147,7 @@
 .mkt-compound__presets { display: flex; flex-wrap: wrap; gap: 6px; }
 .mkt-compound__legs { display: flex; flex-wrap: wrap; gap: 6px; }
 .mkt-compound__leg {
-  min-height: 32px; padding: 0 12px; border-radius: 10px; border: 1px dashed var(--line-2, var(--line)); background: transparent;
+  min-height: 32px; padding: 0 12px; border-radius: var(--r-md); border: 1px dashed var(--line-2, var(--line)); background: transparent;
   color: var(--muted); font-size: 12.5px; font-weight: 500; cursor: pointer;
 }
 .mkt-compound__leg.is-on { border-style: solid; border-color: var(--accent); color: var(--fg); background: color-mix(in oklab, var(--accent) 10%, transparent); }
@@ -162,7 +162,7 @@
 }
 .mkt-compound__plan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .mkt-compound__step { display: grid; grid-template-columns: 26px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: start; }
-.mkt-compound__n { width: 26px; height: 26px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); display: inline-grid; place-items: center; font-size: 11px; }
+.mkt-compound__n { width: 26px; height: 26px; border-radius: var(--r-pill); border: 1px solid var(--accent); color: var(--accent); display: inline-grid; place-items: center; font-size: 11px; }
 .mkt-compound__step-label { font-size: 13px; font-weight: 600; color: var(--fg); }
 .mkt-compound__step-seg { font-size: 12px; color: var(--muted); }
 .mkt-compound__step-hint { font-size: 11px; color: var(--muted-2); line-height: 1.45; }
@@ -176,7 +176,7 @@
 .mkt-compound__ask { display: flex; flex-direction: column; gap: 8px; }
 .mkt-compound__sentence { font-size: 13px; color: var(--fg); line-height: 1.5; margin: 0; }
 .mkt-compound__send {
-  align-self: flex-start; min-height: 38px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--up);
+  align-self: flex-start; min-height: 38px; padding: 0 18px; border-radius: var(--r-pill); border: 1px solid var(--up);
   background: var(--up); color: var(--ink, #0b1210); font-size: 13px; font-weight: 700; cursor: pointer;
 }
 .mkt-compound__send:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -186,7 +186,7 @@
 .mkt-routes__slider input[type='range'] { width: 110px; accent-color: var(--accent); }
 .mkt-routes__slider span { font-size: 11px; color: var(--muted); min-width: 26px; text-align: right; font-variant-numeric: tabular-nums; }
 .mkt-routes__why { margin-left: auto; background: none; border: 0; padding: 0; font: inherit; font-size: 10px; letter-spacing: 0.08em; text-transform: none; color: var(--accent); cursor: pointer; text-decoration: underline dotted; }
-.mkt-routes__rule { margin: 0 0 10px; font-size: 11.5px; line-height: 1.5; color: var(--muted); padding: 8px 10px; border: 1px dashed var(--line); border-radius: 10px; }
+.mkt-routes__rule { margin: 0 0 10px; font-size: 11.5px; line-height: 1.5; color: var(--muted); padding: 8px 10px; border: 1px dashed var(--line); border-radius: var(--r-md); }
 /* Your-line rows lead their group: they take the list's top rule and the
    venue list under them drops its own (two rules 2px apart read as a seam). */
 .mkt-routes__list--level + .mkt-routes__list { border-top: 0; }
@@ -202,13 +202,13 @@
 
 /* ── QuickAct (index-row chips; MARKETS reveals on row hover/focus) ─────── */
 .mkt-quick { display: inline-flex; gap: 4px; align-items: center; }
-.mkt-quick__chip { min-height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--line-2, var(--line)); background: transparent; color: var(--fg); font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.mkt-quick__chip { min-height: 24px; padding: 0 9px; border-radius: var(--r-pill); border: 1px solid var(--line-2, var(--line)); background: transparent; color: var(--fg); font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .mkt-quick__chip--buy { background: var(--up); color: var(--ink, #0b1210); border-color: var(--up); }
 .mkt-quick__chip--sell { color: var(--sell); border-color: color-mix(in oklab, var(--sell) 55%, transparent); }
 .mkt-quick__chip:hover { border-color: var(--accent); }
 
 /* ── "What you'll sign" row expand ──────────────────────────────────────── */
-.mkt-route__more { grid-column: 1 / -1; grid-row: 4; display: none; margin: 4px 0 0; padding: 10px 14px; border: 1px dashed var(--line); border-radius: 10px; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+.mkt-route__more { grid-column: 1 / -1; grid-row: 4; display: none; margin: 4px 0 0; padding: 10px 14px; border: 1px dashed var(--line); border-radius: var(--r-md); font-size: 11.5px; line-height: 1.5; color: var(--muted); }
 .mkt-route.is-open .mkt-route__more { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 4px 16px; }
 .mkt-route__more dt { font-size: 9.5px; letter-spacing: 0.12em; color: var(--muted-2); }
 .mkt-route__more dd { margin: 0; color: var(--fg); font-variant-numeric: tabular-nums; }
@@ -219,7 +219,7 @@
 /* A row whose venues have all refused keeps its seat and loses its buttons
    (lib/trade-venue-gate, 2026-09-22) — quiet, so the ledger still reads as a
    ledger, and titled so the reason is one hover away. */
-.mkt-quick__none { font-size: 9px; letter-spacing: 0.12em; color: var(--muted-2); border: 1px dashed var(--line); border-radius: 999px; padding: 2px 7px; white-space: nowrap; cursor: default; }
+.mkt-quick__none { font-size: 9px; letter-spacing: 0.12em; color: var(--muted-2); border: 1px dashed var(--line); border-radius: var(--r-pill); padding: 2px 7px; white-space: nowrap; cursor: default; }
 
 /* MOBILE (squad pre-gtm, 2026-10-07): "Chain it"'s Send was the Trade tab's one sub-44 control under a thumb (83×38). */
 @media (hover: none) {
@@ -243,33 +243,33 @@
 .sym__act[data-ticket] .sym__act-chip:not([aria-pressed='true']) { opacity: 0.55; }
 .sym__act[data-ticket] .sym__act-chip:not([aria-pressed='true']):hover { opacity: 1; }
 .sym__act-chip--sell[aria-pressed='true'] { background: var(--sell); color: #fff; border-color: var(--sell); }
-.mkt-ticket { container: mkt-ticket / inline-size; width: 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--line-2, var(--line)); border-radius: 14px; background: var(--surf-1); text-align: left; min-width: 0; }
+.mkt-ticket { container: mkt-ticket / inline-size; width: 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--line-2, var(--line)); border-radius: var(--r-lg); background: var(--surf-1); text-align: left; min-width: 0; }
 .mkt-ticket--strip { margin-top: 2px; }
 .mkt-ticket--card { padding: 0; border: 0; background: transparent; border-radius: 0; }
 .mkt-ticket__top { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; min-width: 0; }
-.mkt-ticket__sides, .mkt-ticket__types { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surf-2, color-mix(in srgb, var(--fg) 6%, transparent)); max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.mkt-ticket__sides, .mkt-ticket__types { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); background: var(--surf-2, color-mix(in srgb, var(--fg) 6%, transparent)); max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .mkt-ticket__sides::-webkit-scrollbar, .mkt-ticket__types::-webkit-scrollbar { display: none; }
-.mkt-ticket__tab { min-height: 30px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
+.mkt-ticket__tab { min-height: 30px; padding: 0 12px; border-radius: var(--r-pill); border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
 .mkt-ticket__tab:hover { color: var(--fg); }
 .mkt-ticket__tab[aria-selected='true'] { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18); }
 .mkt-ticket__tab--sell[aria-selected='true'] { color: var(--sell); }
 .mkt-ticket__k { font-size: 9.5px; letter-spacing: 0.14em; color: var(--muted-2); white-space: nowrap; }
 .mkt-ticket__avail { margin-left: auto; font-size: 10.5px; letter-spacing: 0.02em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 100%; font-variant-numeric: tabular-nums; }
-.mkt-ticket__x { flex: 0 0 auto; width: 28px; height: 28px; display: inline-grid; place-items: center; border: 0; border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; }
+.mkt-ticket__x { flex: 0 0 auto; width: 28px; height: 28px; display: inline-grid; place-items: center; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--muted); cursor: pointer; }
 .mkt-ticket__x:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
 .mkt-ticket__size { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 14px; align-items: center; min-width: 0; }
-.mkt-ticket__amt { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 6px 0 12px; border: 1px solid var(--line-2, var(--line)); border-radius: 12px; background: var(--bg); min-width: 0; }
+.mkt-ticket__amt { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 6px 0 12px; border: 1px solid var(--line-2, var(--line)); border-radius: var(--r-md); background: var(--bg); min-width: 0; }
 .mkt-ticket__amt:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 .mkt-ticket--sell .mkt-ticket__amt:focus-within { border-color: var(--sell); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sell) 18%, transparent); }
 .mkt-ticket__cur { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; flex: 0 0 auto; }
 .mkt-ticket__in { flex: 1 1 60px; min-width: 0; width: 100%; border: 0; background: transparent; color: var(--fg); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; outline: 0; padding: 0; }
 .mkt-ticket__in::placeholder { color: var(--muted-2); }
-.mkt-ticket__unit { flex: 0 0 auto; min-height: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 10.5px; letter-spacing: 0.06em; cursor: pointer; white-space: nowrap; }
+.mkt-ticket__unit { flex: 0 0 auto; min-height: 30px; padding: 0 10px; border-radius: var(--r-pill); border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 10.5px; letter-spacing: 0.06em; cursor: pointer; white-space: nowrap; }
 .mkt-ticket__unit:hover { color: var(--fg); border-color: var(--fg); }
 .mkt-ticket__eq { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mkt-ticket__eq:empty { display: none; }
 .mkt-ticket__presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
-.mkt-ticket__preset { min-height: 30px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mkt-ticket__preset { min-height: 30px; padding: 0 11px; border-radius: var(--r-pill); border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .mkt-ticket__preset:hover { border-color: var(--fg); color: var(--fg); }
 .mkt-ticket__preset:disabled { opacity: 0.45; cursor: not-allowed; }
 .mkt-ticket__preset.is-on { border-color: var(--fg); color: var(--fg); background: color-mix(in srgb, var(--fg) 6%, transparent); }
@@ -277,7 +277,7 @@
 .mkt-ticket--sell .mkt-ticket__range { accent-color: var(--sell); }
 .mkt-ticket__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
 .mkt-ticket__rk { font-size: 9.5px; letter-spacing: 0.14em; color: var(--muted-2); white-space: nowrap; }
-.mkt-ticket__px { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border: 1px solid var(--line-2, var(--line)); border-radius: 10px; background: var(--bg); color: var(--muted); font-size: 12px; }
+.mkt-ticket__px { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border: 1px solid var(--line-2, var(--line)); border-radius: var(--r-md); background: var(--bg); color: var(--muted); font-size: 12px; }
 .mkt-ticket__px:focus-within { border-color: var(--accent); }
 .mkt-ticket__px input { width: 7.5em; border: 0; background: transparent; color: var(--fg); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; outline: 0; padding: 0; }
 .mkt-ticket__dist { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -289,7 +289,7 @@
 .mkt-ticket__problem { margin: 0; font-size: 12px; color: var(--sell); line-height: 1.4; overflow-wrap: anywhere; }
 .mkt-ticket__quote { margin: 0; font-size: 10.5px; color: var(--muted); letter-spacing: 0.02em; line-height: 1.4; overflow-wrap: anywhere; }
 .mkt-ticket__sent { margin: 0; font-size: 11.5px; color: var(--accent); line-height: 1.4; }
-.mkt-ticket__send { flex: 0 0 auto; min-height: 44px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--up); background: var(--up); color: var(--ink, #0b1210); font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; transition: filter 120ms ease, transform 120ms ease; }
+.mkt-ticket__send { flex: 0 0 auto; min-height: 44px; padding: 0 20px; border-radius: var(--r-pill); border: 1px solid var(--up); background: var(--up); color: var(--ink, #0b1210); font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; transition: filter 120ms ease, transform 120ms ease; }
 .mkt-ticket__send:hover:not(:disabled) { filter: brightness(1.05); transform: translateY(-1px); }
 .mkt-ticket__send:disabled { opacity: 0.45; cursor: not-allowed; }
 .mkt-ticket__send--sell { background: var(--sell); border-color: var(--sell); color: #fff; }
@@ -352,7 +352,7 @@
 .mkt-route__more > .mkt-route__ticket + .mkt-route__ticket > div:first-child { grid-column: 1 / -1; padding-top: 8px; margin-top: 4px; border-top: 1px dashed var(--line); }
 .mkt-route__more .mkt-route__ticket div { margin: 0; }
 .mkt-routes__fold {
-  align-self: flex-start; justify-self: start; margin-top: 10px; min-height: 28px; padding: 0 12px; border-radius: 999px;
+  align-self: flex-start; justify-self: start; margin-top: 10px; min-height: 28px; padding: 0 12px; border-radius: var(--r-pill);
   border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 10.5px; letter-spacing: 0.06em; cursor: pointer;
 }
 .mkt-routes__fold:hover { color: var(--fg); border-color: var(--fg); }
@@ -447,4 +447,12 @@
     border: 1px solid var(--line-2, var(--line)); border-radius: 0; background: none; color: var(--fg); cursor: pointer;
     font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase;
   }
+}
+
+/* Under a thumb the text-sized controls of a route ("details", "why best?")
+   are 44px boxes; the extra height is taken back in margin so a row keeps its
+   rhythm. (They carried an invisible hit area before; this is the box itself.) */
+@media (hover: none) {
+  .mkt-route__toggle, .mkt-routes__why { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin-block: -14px; }
+  .mkt-route__toggle::after, .mkt-routes__why::after { content: none; }
 }
