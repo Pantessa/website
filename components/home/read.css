@@ -262,3 +262,11 @@ button.read__lvtag:hover, button.read__lvtag:focus-visible, button.read__lvtag.i
   .read .read__watch { isolation: isolate; top: -2px; right: -2px; width: 44px; height: 44px; border-color: transparent; background: none; }
   .read .read__watch::after { inset: 8px; z-index: -1; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surf-1); }
 }
+
+/* POLISH (mobile-sleek, 2026-11-24): the range picker is the site's segmented control (flush hard cells on one
+   hairline, the picked one filled), and the filled Buy carries the cut corner like every other primary. */
+.read .read__ranges { gap: 0; padding: 0; border-radius: 0; }
+.read .read__range { border-radius: 0; border-left: 1px solid var(--line); }
+.read .read__range:first-child { border-left: 0; }
+.read .read__chip--buy { border-radius: 0; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+.read .read__chip--buy:focus-visible { box-shadow: none; outline: 2px solid var(--fg); outline-offset: -4px; }

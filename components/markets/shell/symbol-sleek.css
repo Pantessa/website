@@ -303,3 +303,9 @@
   .mkt-frame.mkt-frame--sym .sym__tab { min-height: 44px; }
   .mkt-frame.mkt-frame--sym .sym__body .mkt-card { padding: 22px 0 26px; }
 }
+
+/* POLISH (mobile-sleek, 2026-11-24): on a phone the ask's ready-made asks are 44px presses, like every other button here. */
+@media (max-width: 640px) {
+  .mkt-frame.mkt-frame--sym .mk-ai__sugg { gap: 8px; }
+  .mkt-frame.mkt-frame--sym .mk-ai__sugg-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-size: var(--fs-sm); }
+}
