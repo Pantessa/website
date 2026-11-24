@@ -97,6 +97,53 @@ export default function CallFocus({ symbol }: { symbol: string }) {
     setClamped(el.scrollHeight > el.clientHeight + 1)
   }, [focusId, more, sheet, open])
 
+  // THE CUT ENDS ON A WHOLE WORD. A clamped post's last line runs under "… more"; the word that would be cut in half
+  // by it is covered whole (the cover starts where that word starts), so the visible words end on a word and the mark
+  // of the cut follows. Nothing is rewritten or removed: every word is still in the paragraph, and "more" shows it.
+  useLayoutEffect(() => {
+    const el = textRef.current
+    const word = el?.parentElement?.querySelector<HTMLElement>('.xcf__moreword') ?? null
+    if (!el || !word) return
+    const fit = () => {
+      word.style.removeProperty('padding-left')
+      if (!clamped || more) return
+      const btn = word.parentElement
+      const doc = document as Document & { caretRangeFromPoint?: (x: number, y: number) => Range | null }
+      if (!btn || typeof doc.caretRangeFromPoint !== 'function') return
+      const box = el.getBoundingClientRect()
+      const line = parseFloat(getComputedStyle(el).lineHeight) || 20
+      const pad = parseFloat(getComputedStyle(word).paddingLeft) || 0
+      const textLeft = word.getBoundingClientRect().left + pad
+      const y = box.bottom - line / 2
+      btn.style.pointerEvents = 'none'
+      const at = doc.caretRangeFromPoint(textLeft - pad, y)
+      btn.style.pointerEvents = ''
+      const node = at?.startContainer
+      if (!at || !node || node.nodeType !== Node.TEXT_NODE || !el.contains(node)) return
+      const data = (node as Text).data
+      let i = Math.min(at.startOffset, data.length)
+      // Between two words already: nothing is cut.
+      if (i >= data.length || /\s/.test(data[i]) || (i > 0 && /\s/.test(data[i - 1]))) return
+      while (i > 0 && !/\s/.test(data[i - 1])) i--
+      const r = document.createRange()
+      r.setStart(node, i)
+      r.setEnd(node, i + 1)
+      const first = r.getClientRects()[0]
+      // The word began on the line above (one long token): leave it as it is.
+      if (!first || first.top < box.bottom - line - 2 || first.left <= box.left + 1) return
+      word.style.paddingLeft = `${Math.ceil(textLeft - first.left)}px`
+    }
+    fit()
+    window.addEventListener('resize', fit)
+    let live = true
+    void document.fonts?.ready.then(() => { if (live) fit() })
+    return () => {
+      live = false
+      window.removeEventListener('resize', fit)
+      word.style.removeProperty('padding-left')
+    }
+  }, [clamped, more, focusId, sheet, open])
+
   useEffect(() => {
     if (!open) return
     const key = (e: KeyboardEvent) => {
