@@ -12,10 +12,10 @@
  */
 
 .mkt-frame.mkt-frame--sym {
-  /* Where the act bar docks: the top edge of the phone's tab bar. Whoever owns
-     the tab bar may set --sk-dock-bottom; this is the same sum native-shell.css
-     pads the frame by. */
-  --symx-dock-bottom: var(--sk-dock-bottom, calc(var(--spine-bar-h, 49px) + env(safe-area-inset-bottom, 0px)));
+  /* Where the act bar docks: the top edge of the phone's tab bar, which
+     native-shell.css states as --tabbar-h and hands the kit as --sk-dock-bottom
+     (0 where no bar is drawn, and under the soft keyboard). */
+  --symx-dock-bottom: var(--sk-dock-bottom, 0px);
   --symx-dock-h: 61px; /* 44 + 8 + 8 + the hairline */
 }
 
@@ -179,6 +179,13 @@
   .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__strip .sym__chg { font-size: 13px; }
   .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__stats { display: none; }
   .mkt-frame.mkt-frame--sym .sym--cockpit[data-plotted] .sym__chart { margin-top: 10px; }
+
+  /* FOR THE CHART CARD (lane CHART may read it; nothing here uses it): the
+     height left for the whole card on a phone's first screen, between the tabs
+     and the act bar, when no handle is plotted: the screen less the top bar,
+     this strip (110), the tabs (45), the card's top margin (12), the act bar
+     and the tab bar, and 8px of air. 507px at 390x844, 475px at 375x812. */
+  .mkt-frame.mkt-frame--sym .sym--cockpit { --sym-chart-room: calc(100dvh - var(--mkt-top-h, 52px) - 110px - 45px - 12px - var(--symx-dock-h) - var(--symx-dock-bottom) - 8px); }
 
   /* The tabs bleed to the screen's edges (the hairline runs the full width). */
   .mkt-frame.mkt-frame--sym .sym__tabs { margin-inline: calc(-1 * var(--sym-gutter)); padding-inline: var(--sym-gutter); scroll-padding-inline: var(--sym-gutter); overscroll-behavior-x: contain; }

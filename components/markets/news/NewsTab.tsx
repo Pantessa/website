@@ -93,8 +93,8 @@ const PAGE_STORIES = 80
 /** Publishers named on the strip before "more". */
 const STRIP_SOURCES = 12
 /** How many stories a long section lists before its "show all". A phone lists
- *  fewer (news.css hides the rest of a `data-capped` list under 640px by these
- *  same numbers), so a button a phone needs and a desk does not wears `--phone`. */
+ *  fewer (news.css hides the rest of a `data-capped` list while the tab is under
+ *  560px wide, by these same numbers), so a button a phone needs and a desk does not wears `--phone`. */
 const MORE_CAP = 6
 const EARLIER_CAP = 9
 const PHONE_BRIEFS_CAP = 2

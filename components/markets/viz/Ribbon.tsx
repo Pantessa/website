@@ -25,14 +25,15 @@ export default function Ribbon({ segs, usd = false, legend = true, height = 14, 
   return (
     <div className={className}>
       <div className="mk-ribbon" style={{ height }} role="img" aria-label={live.map((s) => `${s.name} ${total ? Math.round((s.value / total) * 100) : 0}%`).join(', ')}>
-        {live.map((s) => (
-          <div key={s.id} className="mk-ribbon__seg" style={{ flex: `${s.value} 1 0%`, background: s.color ?? seriesVar(s.id) }} title={`${s.name} · ${fmtCompact(s.value, { usd })}`} />
+        {/* Keyed by seat as well as id: one venue can hold several segments (Uniswap on four chains). */}
+        {live.map((s, i) => (
+          <div key={`${s.id}:${i}`} className="mk-ribbon__seg" style={{ flex: `${s.value} 1 0%`, background: s.color ?? seriesVar(s.id) }} title={`${s.name} · ${fmtCompact(s.value, { usd })}`} />
         ))}
       </div>
       {legend && live.length ? (
         <div className="mk-ribbon__legend">
-          {live.map((s) => (
-            <span key={s.id}>
+          {live.map((s, i) => (
+            <span key={`${s.id}:${i}`}>
               <i style={{ background: s.color ?? seriesVar(s.id) }} aria-hidden="true" />
               {s.name}
               <span className="mk-num" style={{ color: 'var(--muted-2)' }}>
