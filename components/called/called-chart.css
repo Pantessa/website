@@ -6,7 +6,7 @@
 
 /* ── Shared small parts ── */
 .xcc-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 0 11px; border-radius: var(--r-sm, 8px);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 0 11px; border-radius: var(--r-sm);
   border: 1px solid var(--line-2); background: transparent; color: var(--fg); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; cursor: pointer;
   transition: border-color var(--dur-1, .16s), background var(--dur-1, .16s), color var(--dur-1, .16s);
 }
@@ -40,7 +40,7 @@
 
 /* The verdict: a color AND a word (and a glyph where there is no room for the word). */
 .xcc-v { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.xcc-v__g { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; border: 1px solid currentColor; font-style: normal; font-size: 9.5px; line-height: 1; flex: none; }
+.xcc-v__g { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: var(--r-round); border: 1px solid currentColor; font-style: normal; font-size: 9.5px; line-height: 1; flex: none; }
 .xcc-v--right { color: var(--mk-up, var(--up)); }
 .xcc-v--wrong { color: var(--mk-down, var(--sell)); }
 .xcc-v--flat { color: var(--muted); }
@@ -51,7 +51,7 @@
 /* ── The door's seat on the chart bar ── */
 .xcc-seat { position: relative; display: inline-flex; }
 .xcc-open {
-  display: inline-flex; align-items: center; gap: 6px; height: 26px; max-width: 190px; padding: 0 10px; border-radius: var(--r-sm, 8px);
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; max-width: 190px; padding: 0 10px; border-radius: var(--r-sm);
   border: 1px solid var(--accent); background: transparent; color: var(--accent); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer;
   transition: background var(--dur-1, .16s), color var(--dur-1, .16s);
 }
@@ -67,7 +67,7 @@
 @keyframes xcc-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .xcc-seat[data-called-status='scanning'] .xcc-open__state { animation: none; } }
 .xcc-note {
-  position: absolute; z-index: 39; top: calc(100% + 8px); right: 0; width: min(320px, calc(100vw - 32px)); padding: 10px 12px 10px; border-radius: var(--r-sm, 8px);
+  position: absolute; z-index: 39; top: calc(100% + 8px); right: 0; width: min(320px, calc(100vw - 32px)); padding: 10px 12px 10px; border-radius: var(--r-sm);
   border: 1px solid var(--line-2); background: var(--surf-1); text-align: left;
 }
 .xcc-note__line { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--fg); text-transform: none; letter-spacing: 0; }
@@ -75,7 +75,7 @@
 .xcc-note__acts:empty { display: none; }
 
 .xcc-pop {
-  position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; width: min(340px, calc(100vw - 32px)); padding: 12px 14px 14px; border-radius: var(--r-sm, 8px);
+  position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; width: min(340px, calc(100vw - 32px)); padding: 12px 14px 14px; border-radius: var(--r-sm);
   border: 1px solid var(--line-2); background: var(--surf-1); text-align: left;
 }
 .xcc-pop__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -89,14 +89,14 @@
 .xcc-door > .xcc-seg { align-self: flex-start; }
 .xcc-door__row { display: flex; align-items: stretch; gap: 6px; min-width: 0; }
 .xcc-door__field {
-  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: var(--r-sm, 8px); border: 1px solid var(--line-2); background: var(--bg); cursor: text;
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--line-2); background: var(--bg); cursor: text;
 }
 .xcc-door__field:focus-within { border-color: var(--accent); }
 .xcc-door__at { width: 14px; height: 14px; flex: none; color: var(--muted-2); }
 .xcc-door__input { flex: 1 1 auto; min-width: 0; height: 36px; border: 0; outline: 0; background: transparent; color: var(--fg); font-size: 14px; }
 .xcc-door__input::placeholder { color: var(--muted-2); }
 .xcc-door__on { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
-.xcc-door__market { width: 74px; height: 38px; padding: 0 8px; border-radius: var(--r-sm, 8px); border: 1px solid var(--line-2); background: var(--bg); color: var(--fg); font-size: 12px; text-transform: uppercase; }
+.xcc-door__market { width: 74px; height: 38px; padding: 0 8px; border-radius: var(--r-sm); border: 1px solid var(--line-2); background: var(--bg); color: var(--fg); font-size: 12px; text-transform: uppercase; }
 .xcc-door__market:focus { outline: 0; border-color: var(--accent); }
 .xcc-door__market[aria-invalid='true'] { border-color: var(--sell); }
 .xcc-door .xcc-btn--go { min-height: 38px; padding: 0 16px; font-size: 13px; }
@@ -124,7 +124,7 @@
 .sym .xcc.is-parked { display: none; }
 .xcc__head { display: flex; align-items: flex-start; gap: 10px 12px; min-width: 0; }
 .xcc__avatar {
-  flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; border: 1px solid var(--line-2); background: var(--surf-2);
+  flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-round); overflow: hidden; border: 1px solid var(--line-2); background: var(--surf-2);
   color: var(--muted); font-size: 15px; font-weight: 600;
 }
 .xcc__avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -144,30 +144,36 @@
 .xcc__empty { margin: 0; padding: 10px 0 2px; font-size: 13px; line-height: 1.5; color: var(--muted); max-width: 72ch; }
 .xcc__actions { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
 .xcc__allow { flex: 1 1 260px; min-width: 0; font-size: 12px; line-height: 1.45; color: var(--muted-2); }
-.xcc__spin { display: inline-block; width: 10px; height: 10px; margin-right: 7px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: xcc-spin .8s linear infinite; vertical-align: -1px; }
+.xcc__spin { display: inline-block; width: 10px; height: 10px; margin-right: 7px; border-radius: var(--r-round); border: 2px solid var(--line-2); border-top-color: var(--accent); animation: xcc-spin .8s linear infinite; vertical-align: -1px; }
 @keyframes xcc-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .xcc__spin { animation: none; } }
 
-.xcc__rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-height: 268px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border-top: 1px solid var(--line); }
+.xcc__rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-height: 420px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border-top: 1px solid var(--line); }
 .xcc-row { display: flex; align-items: stretch; gap: 8px; min-width: 0; border-bottom: 1px solid var(--line); border-left: 2px solid transparent; }
 .xcc-row:hover { background: color-mix(in srgb, var(--fg) 3%, transparent); }
 .xcc-row.is-focus { background: color-mix(in srgb, var(--accent) 9%, transparent); border-left-color: var(--accent); }
 .xcc-row__main {
-  flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: 22px 88px 138px minmax(0, 1fr) auto; align-items: baseline; gap: 4px 10px; padding: 8px 0 8px 8px;
+  flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: 148px 92px minmax(0, 1fr) auto; align-items: center; gap: 6px 16px; padding: 12px 0 12px 10px;
   border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
-.xcc-row__n { font-size: 10px; color: var(--muted-2); }
+/* A row: the verdict's tile and word, the day, and the price that day and the move in mono columns; under them one line of the post's own words. */
+.xcc-row__n { display: none; }
+.xcc-row .xcc-v { grid-column: 1; grid-row: 1; font-weight: 600; }
+.xcc-row__when { grid-column: 2; grid-row: 1; }
+.xcc-row__text { grid-column: 1 / -1; grid-row: 2; }
+.xcc-row__nums { grid-column: 4; grid-row: 1; }
 .xcc-row__when { font-size: 11px; color: var(--muted); white-space: nowrap; }
-.xcc-row .xcc-v { font-size: 10.5px; letter-spacing: 0.02em; }
+.xcc-row .xcc-v { font-size: 11.5px; letter-spacing: 0.01em; }
 .xcc-row__text { min-width: 0; font-size: 13px; line-height: 1.4; color: var(--fg); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
-.xcc-row.is-focus .xcc-row__text { display: block; overflow: visible; }
 .xcc-row__stance { margin-right: 7px; padding: 1px 5px; border: 1px solid var(--line-2); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); vertical-align: 1px; }
 .xcc-row__added { margin-right: 7px; padding: 1px 5px; border: 1px dashed var(--line-2); font-size: 9px; letter-spacing: 0.06em; color: var(--muted); vertical-align: 1px; white-space: nowrap; }
 .xcc-quote { background: color-mix(in srgb, var(--accent) 20%, transparent); color: inherit; padding: 0 2px; }
 .xcc-row:not(.is-focus) .xcc-row__added { margin-right: 7px; padding: 1px 5px; border: 1px dashed var(--line-2); font-size: 9px; letter-spacing: 0.06em; color: var(--muted); vertical-align: 1px; white-space: nowrap; }
 .xcc-quote { background: none; padding: 0; }
-.xcc-row__nums { display: inline-flex; align-items: baseline; gap: 10px; font-size: 11px; white-space: nowrap; }
-.xcc-row__price { color: var(--muted); }
+.xcc-row__nums { display: grid; grid-template-columns: 72px 168px 96px; align-items: baseline; gap: 14px; font-size: 11.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.xcc-row__price { color: var(--fg); text-align: right; }
+.xcc-row__move { overflow: hidden; text-overflow: ellipsis; }
+.xcc-row__since { color: var(--muted-2); }
 .xcc-row__side { flex: none; display: inline-flex; align-items: center; gap: 4px; padding-right: 6px; }
 .xcc-row__likes { display: inline-flex; align-items: center; gap: 4px; min-width: 46px; font-size: 10.5px; color: var(--muted-2); }
 .xcc-row__icon { width: 12px; height: 12px; flex: none; }
@@ -181,7 +187,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcc__foot { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .xcc-add { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; min-width: 0; }
 .xcc-add__k { flex: none; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
-.xcc-add__input { flex: 1 1 220px; min-width: 0; height: 30px; padding: 0 9px; border-radius: var(--r-sm, 8px); border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 12.5px; }
+.xcc-add__input { flex: 1 1 220px; min-width: 0; height: 30px; padding: 0 9px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 12.5px; }
 .xcc-add__input:focus { outline: 0; border-color: var(--accent); }
 .xcc-add__input::placeholder { color: var(--muted-2); }
 .xcc-add__said { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--accent); }
@@ -240,7 +246,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
   .sym .mkt-chart__bar:has(> .mkt-view) > .mkt-chart__right:not(:has(.mkt-pool)):has(.xcc-seat) > .mk-vs__open:not(.mkt-sharebtn):not(.tchart__fs),
   .sym .mkt-chart__bar > .mkt-chart__right:not(:has(.mkt-pool)):has(.xcc-seat) > .mk-vs__open:not(.mkt-sharebtn):not(.tchart__fs) { flex: 1 1 0; flex-basis: calc(50% - 4px); min-width: 0; }
   .sym .mkt-chart__bar > .mkt-chart__right:has(.xcc-seat) > .mk-vs__open { order: 5; margin-top: 8px; height: 36px; justify-content: center; }
-  .sym .mkt-chart__bar > .mkt-chart__right > .xcc-seat > .xcc-open { width: 100%; max-width: none; height: 36px; justify-content: center; position: relative; }
+  .sym .mkt-chart__bar > .mkt-chart__right > .xcc-seat > .xcc-open { width: 100%; max-width: none; height: 44px; justify-content: center; position: relative; }
   .sym .mkt-chart__bar > .mkt-chart__right > .xcc-seat > .xcc-open::after { content: ''; position: absolute; inset: -4px 0; }
   .xcc-pop { top: calc(100% + 6px); left: 0; right: 0; width: auto; }
 }
@@ -262,7 +268,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 
 .xch__id { grid-column: 1; grid-row: 1; justify-self: start; display: flex; align-items: center; gap: 12px; min-width: 0; max-width: 100%; color: inherit; text-decoration: none; }
 .xch__id:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.xch__avatar { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; border: 1px solid var(--line-2); background: var(--surf-2); color: var(--muted); font-size: 18px; font-weight: 600; }
+.xch__avatar { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-round); overflow: hidden; border: 1px solid var(--line-2); background: var(--surf-2); color: var(--muted); font-size: 18px; font-weight: 600; }
 .xch__avatar img { width: 100%; height: 100%; object-fit: cover; }
 .xch__idtext { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .xch__k { white-space: nowrap; font-size: 10px; color: var(--accent); }
@@ -319,19 +325,19 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcc-door--flat { gap: var(--sp-3); }
 .xcc-door--flat .xcc-door__row { flex-wrap: nowrap; gap: 0; border-bottom: 1px solid var(--fg); transition: border-color var(--dur-1) ease; }
 .xcc-door--flat .xcc-door__row:focus-within { border-bottom-color: var(--accent); }
-.xcc-door--flat .xcc-door__field { flex: 1 1 auto; gap: var(--sp-2); padding: 0; border: 0; border-radius: 0; background: transparent; }
+.xcc-door--flat .xcc-door__field { flex: 1 1 auto; gap: var(--sp-2); padding: 0; border: 0; border-radius: var(--r-card); background: transparent; }
 .xcc-door--flat .xcc-door__input { height: 56px; font-size: var(--fs-xl); }
 .xcc-door--flat .xcc-door__on { flex: none; gap: var(--sp-2); padding-left: var(--sp-3); border-left: 1px solid var(--line); }
-.xcc-door--flat .xcc-door__market { width: 68px; height: 56px; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: var(--fs-md); }
+.xcc-door--flat .xcc-door__market { width: 68px; height: 56px; padding: 0; border: 0; border-radius: var(--r-card); background: transparent; font-size: var(--fs-md); }
 .xcc-door--flat .xcc-door__market[aria-invalid='true'] { color: var(--sell); }
-.xcc-door--flat .xcc-btn--go { flex: none; align-self: center; min-height: 44px; padding: 0 var(--sp-5); border-radius: 0; font-size: var(--fs-base); }
-.xcc-door--flat .xcc-seg { gap: var(--sp-4); padding: 0; border: 0; border-radius: 0; background: transparent; }
-.xcc-door--flat .xcc-seg__btn { padding: 0; border-radius: 0; border-bottom: 1px solid transparent; }
+.xcc-door--flat .xcc-btn--go { flex: none; align-self: center; min-height: 44px; padding: 0 var(--sp-5); border-radius: var(--r-card); font-size: var(--fs-base); }
+.xcc-door--flat .xcc-seg { gap: var(--sp-4); padding: 0; border: 0; border-radius: var(--r-card); background: transparent; }
+.xcc-door--flat .xcc-seg__btn { padding: 0; border-radius: var(--r-card); border-bottom: 1px solid transparent; }
 .xcc-door--flat .xcc-seg__btn + .xcc-seg__btn { border-left: 0; }
 .xcc-door--flat .xcc-seg__btn[aria-pressed='true'] { background: transparent; color: var(--fg); border-bottom-color: var(--accent); }
 .xcc-door--flat .xcc-door__more { gap: var(--sp-1) var(--sp-4); }
 .xcc-door--flat .xcc-door__chips { gap: var(--sp-1) var(--sp-4); }
-.xcc-door--flat .xcc-chip { padding: 0; border: 0; border-radius: 0; text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 5px; }
+.xcc-door--flat .xcc-chip { padding: 0; border: 0; border-radius: var(--r-card); text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 5px; }
 .xcc-door--flat .xcc-chip:hover { text-decoration-color: var(--accent); }
 @media (max-width: 767px) { .xcc-door--flat .xcc-seg { gap: var(--sp-2); } .xcc-door--flat .xcc-seg__btn { min-width: 44px; justify-content: center; } }
 @media (prefers-reduced-motion: reduce) { .xcc-door--flat .xcc-door__row { transition: none; } }
@@ -373,8 +379,6 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 /* A part that does not fit wraps out of sight whole: a number is never cut mid-way. */
 .xcf__when { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; min-width: 0; height: 13px; overflow: hidden; font-size: 10.5px; line-height: 1.1; color: var(--muted); white-space: nowrap; }
 .xcf__stance { flex: none; padding-left: 6px; border-left: 1px solid var(--line-2); letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px; }
-.xcf__likes { flex: none; display: inline-flex; align-items: center; gap: 3px; padding-left: 6px; border-left: 1px solid var(--line-2); color: var(--muted-2); }
-.xcf__likes svg { width: 11px; height: 11px; }
 .xcf__step { flex: none; display: inline-flex; align-items: center; font-size: 11px; color: var(--muted); white-space: nowrap; }
 .xcf__at { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
 .xcf__icon { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border: 0; background: none; color: var(--muted); cursor: pointer; transition: color var(--dur-1, .16s), background var(--dur-1, .16s); }
@@ -393,7 +397,8 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcf__text mark { background: color-mix(in srgb, var(--xcf-tone) 26%, transparent); color: inherit; padding: 1px 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 .xcf__more { display: block; margin: 4px 0 0 auto; padding: 4px 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 /* Where words are cut, "more" sits on the last line, over the fill: the cut is marked where it happens. */
-.xcf__words[data-clamped] .xcf__more { position: absolute; right: 0; bottom: 0; margin: 0; padding: 0 0 0 10px; background: var(--surf-1); font-size: 15px; line-height: 1.5; }
+.xcf__words[data-clamped] .xcf__more { position: absolute; right: 0; bottom: 0; margin: 0; padding: 0; font-size: 15px; line-height: 1.5; }
+.xcf__words[data-clamped] .xcf__moreword { display: block; padding-left: 10px; background: var(--surf-1); }
 .xcf__level { margin: 0; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); }
 .xcf__level b { margin-left: 6px; font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 600; color: var(--fg); }
 
@@ -424,6 +429,29 @@ a.xcf__x:hover { border-color: var(--fg); }
 .xcf__pin:hover { color: var(--fg); border-color: var(--fg); }
 .xcf__pin[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
 
+/* THE SIDE DOCK (2026-11-24): at 1100px and wider the chart mounts the card in a column of its own, right of the plot (the
+   slot wears `data-call-dock="side"`). There the card leaves the candles alone: a block in normal flow that fills the slot,
+   the whole post with no "more" (the words scroll in their own box if they are long), the table of numbers, the trade's
+   button across the card, and Share, the post on X and the pin as one quiet row at the foot. */
+@media (min-width: 1100px) {
+  [data-call-dock='side'] .xcf, [data-call-dock='side'] .xcf[data-dock] { position: static; width: auto; height: 100%; max-height: 100%; animation: none; }
+  [data-call-dock='side'] .xcf__body { padding: 16px 16px 18px; }
+  [data-call-dock='side'] .xcf__text { display: block; overflow: visible; }
+  /* The numbers as rows: a label and its value on a line each, so a long judged line never wraps into the next cell. */
+  [data-call-dock='side'] .xcf__nums { flex-direction: column; }
+  [data-call-dock='side'] .xcf__num, [data-call-dock='side'] .xcf__num:first-child { flex: none; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 16px; padding: 9px 16px; }
+  [data-call-dock='side'] .xcf__num + .xcf__num { border-left: 0; border-top: 1px solid var(--line); }
+  [data-call-dock='side'] .xcf__num dd { text-align: right; }
+  [data-call-dock='side'] .xcf__acts { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0 18px; padding: 14px 16px 12px; border-top: 1px solid var(--line); }
+  [data-call-dock='side'] .xcf__foot { display: contents; }
+  [data-call-dock='side'] .xcf__x, [data-call-dock='side'] .xcf__pin { grid-row: 3; min-height: 36px; margin: 0; padding: 0; border: 0; color: var(--muted); font-size: 12px; font-weight: 500; }
+  [data-call-dock='side'] .xcf__x { grid-column: 2; justify-self: start; flex: none; }
+  [data-call-dock='side'] .xcf__pin { grid-column: 3; }
+  [data-call-dock='side'] a.xcf__x:hover, [data-call-dock='side'] .xcf__pin:hover { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
+  [data-call-dock='side'] .xcf__pin[aria-pressed='true'] { color: var(--accent); }
+  [data-call-dock='side'] .xcf__x svg, [data-call-dock='side'] .xcf__pin svg { width: 13px; height: 13px; }
+}
+
 @media (hover: none) {
   .xcf__icon { width: 44px; height: 44px; }
   .xcf__x, .xcf__pin { min-height: 44px; }
@@ -443,13 +471,12 @@ a.xcf__x:hover { border-color: var(--fg); }
   .xcf__at { min-width: 0; font-size: 10.5px; letter-spacing: -0.02em; }
   .xcf__when { gap: 6px; }
   .xcf__stance { padding-left: 6px; }
-  .xcf__likes { display: none; }
-  .xcf[data-more] .xcf__likes { flex: none; display: inline-flex; }
   .xcf__body { gap: 8px; padding: 10px 14px 10px; }
   .xcf__text { font-size: 14.5px; line-height: 1.42; -webkit-line-clamp: 3; }
   .xcf__words[data-clamped] .xcf__more { font-size: 14.5px; line-height: 1.42; }
-  .xcf__more { position: relative; }
-  .xcf__more::after { content: ''; position: absolute; inset: -12px -8px -10px -14px; }
+  /* A real 44px box for a thumb: the padding over the word is clear, so the line above still reads through it. */
+  .xcf__more { min-width: 44px; min-height: 44px; padding: 12px 0; text-align: right; }
+  .xcf__words[data-clamped] .xcf__more { padding: 24px 0 0; }
   .xcf__nums { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
   .xcf__num { padding: 8px 8px 9px; gap: 3px; }
   .xcf__num:first-child { padding-left: 14px; }
@@ -470,8 +497,18 @@ a.xcf__x:hover { border-color: var(--fg); }
   .xcf__pin { margin-right: 0; }
 }
 
-/* The fold's button (a phone only: a wider page scrolls the list in its own box). */
-.xcc-more { display: none; }
+/* THE FOLD, at every width (SLEEK round 2): the list shows the pinned calls (the first five when none is pinned) and one
+   button for the rest; a focused call is never hidden. Opened, a desktop scrolls the list in its own box. */
+.xcc__rows[data-fold] > .xcc-row[data-tail]:not(.is-focus) { display: none; }
+.xcc-more { align-self: flex-start; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--line); background: none; color: var(--fg); font-size: 13px; font-weight: 600; cursor: pointer; transition: border-color var(--dur-1, .16s); }
+.xcc-more:hover { border-color: var(--fg); }
+.xcc-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The unscanned state's long explanation, one press away. */
+.xcc__how { min-width: 0; }
+.xcc__howk { display: inline-flex; align-items: center; min-height: 36px; color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; }
+.xcc__how[open] > .xcc__howk { color: var(--fg); }
+.xcc__how > .xcc__allow { display: block; margin: 8px 0 0; max-width: 72ch; }
+.xcc__how > .xcc__standing { max-width: 72ch; }
 
 /* ── THE PHONE, NATIVE (2026-11-24, Nate: "more like a native ios app, it feels
    a bit crowded especially the called it view"). Measured at 390×844 on
@@ -506,18 +543,20 @@ a.xcf__x:hover { border-color: var(--fg); }
   .xch__toolicon { width: 17px; height: 17px; }
   .xch__clear { grid-column: 4; grid-row: 1; }
   .xch__score { grid-column: 1 / -1; grid-row: 2; margin: 4px 10px 0 0; }
-  .xch__counts { grid-column: 1 / -1; grid-row: 3; margin: 7px 10px 0 0; gap: 2px 12px; font-size: 11.5px; }
+  .xch__counts { grid-column: 1 / -1; grid-row: 3; margin: 8px 10px 0 0; gap: 2px 8px; font-size: 11px; white-space: nowrap; }
   .xch__count.is-total { display: none; }
-  .xch__num { margin-right: 0.35em; font-size: 13px; letter-spacing: 0; }
+  .xch__num { margin-right: 0.3em; font-size: 12.5px; letter-spacing: 0; }
   .xch__headline { grid-column: 1 / -1; grid-row: 2; margin: 4px 10px 0 0; font-size: 14px; }
   .xch__sides { grid-column: 1; grid-row: 4; margin-top: 10px; }
-  .xch__side { min-height: 44px; padding: 0 12px; }
+  .xch__side { min-height: 44px; padding: 0 10px; }
   .xch__row .xch__facts { grid-column: 2 / -1; grid-row: 4; justify-self: stretch; display: flex; align-items: center; min-width: 0; max-width: none; margin: 10px 0 0 12px; padding: 0; font-size: 11px; line-height: 1.4; text-align: left; text-wrap: wrap; }
   .xch__row:not(:has(.xch__sides)) .xch__facts { grid-column: 1 / -1; grid-row: 4; margin: 2px 0 0; }
   .xch__factstext { flex: 1 1 auto; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; overflow-wrap: anywhere; }
   .xch__row:not(:has(.xch__sides)) .xch__factstext { display: block; font-size: 12px; line-height: 1.45; }
   .xch__row:not(:has(.xch__sides)) .xch__facts { margin: 6px 10px 2px 0; }
-  .xch__more { flex: none; display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px 0 8px; font-size: 11px; }
+  .xch__rest { display: none; }
+  .xch[data-facts] .xch__rest { display: inline; }
+  .xch__more { flex: none; display: inline-flex; align-items: center; justify-content: flex-end; min-width: 44px; min-height: 44px; padding: 0 10px 0 6px; font-size: 11px; }
   /* Opened: the whole line, in a row of its own under the control. */
   .xch[data-facts] .xch__facts { display: block; grid-column: 1 / -1; grid-row: 5; margin: 0 10px 0 0; }
   .xch[data-facts] .xch__factstext { display: inline; }
@@ -526,11 +565,11 @@ a.xcf__x:hover { border-color: var(--fg); }
   /* A plot with no record yet: the scan's button takes a row. */
   .xch__scan { grid-column: 1 / -1; grid-row: 6; margin: 8px 10px 2px 0; }
   /* The narrowest phones: the counts and the control give the standing its room. */
-  @media (max-width: 380px) { .xch__counts { gap: 2px 8px; font-size: 11px; } .xch__num { font-size: 12.5px; } .xch__side { padding: 0 8px; } .xch__row:has(.xch__sides) .xch__facts { margin-left: 8px; } .xch__more { padding: 0 8px 0 6px; } }
+  @media (max-width: 380px) { .xch__counts { gap: 2px 6px; font-size: 10.5px; } .xch__num { font-size: 12px; } .xch__side { padding: 0 8px; } .xch__row:has(.xch__sides) .xch__facts { margin-left: 8px; } }
 
   /* The chart's bar: the door is an icon button; the band over the chart names the handle and says what the plot is doing. */
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > .xcc-seat { position: static; order: 3; flex: 0 0 auto; margin: 0; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > .xcc-seat > .xcc-open { width: 36px; height: 36px; max-width: none; padding: 0; justify-content: center; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > .xcc-seat > .xcc-open { flex: none; width: 44px; min-width: 44px; height: 44px; max-width: none; padding: 0; justify-content: center; }
   .sym .tvx > .mkt-chart__bar .xcc-open__label, .sym .tvx > .mkt-chart__bar .xcc-open__state { display: none; }
   .sym .tvx > .mkt-chart__bar .xcc-open__icon { width: 15px; height: 15px; }
   .sym .tvx > .mkt-chart__bar .xcc-note { display: none; }
@@ -540,7 +579,6 @@ a.xcf__x:hover { border-color: var(--fg); }
      card at the foot of the screen (the post on X and the pin live there) and marks its bar on the chart. */
   .xcc { gap: 12px; padding: 14px 0 4px; border: 0; background: none; }
   .xcc__rows { flex-direction: row; gap: 10px; max-height: none; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: none; border-top: 0; }
-  .xcc__rows[data-fold] > .xcc-row[data-tail]:not(.is-focus) { display: none; }
   .xcc-row { flex: 0 0 min(78%, 300px); scroll-snap-align: start; padding: 1px; border: 0; background: var(--line); clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
   .xcc-row:hover { background: var(--line); }
   .xcc-row.is-focus { background: var(--accent); }
@@ -548,14 +586,16 @@ a.xcf__x:hover { border-color: var(--fg); }
   .xcc-row__n { display: none; }
   .xcc-row .xcc-v { grid-column: 1; grid-row: 1; font-size: 12.5px; font-weight: 600; }
   .xcc-row__when { grid-column: 2; grid-row: 1; justify-self: end; }
-  .xcc-row__text { grid-column: 1 / -1; align-self: start; -webkit-line-clamp: 3; font-size: 14px; line-height: 1.4; }
+  .xcc-row__text { grid-column: 1 / -1; grid-row: 2; align-self: start; -webkit-line-clamp: 3; font-size: 14px; line-height: 1.4; }
   .xcc-row.is-focus .xcc-row__text { display: -webkit-box; overflow: hidden; }
-  .xcc-row__nums { grid-column: 1 / -1; flex-wrap: wrap; gap: 2px 10px; }
+  .xcc-row__nums { grid-column: 1 / -1; grid-row: 3; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+  .xcc-row__price { color: var(--muted); }
+  .xcc-row__since:empty { display: none; }
   .xcc-row__side { display: none; }
   .xcc-row__main:active { background: var(--surf-2); }
-  .xcc-more { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; border: 1px solid var(--line); background: none; color: var(--fg); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .xcc-more { align-self: stretch; min-height: 44px; font-size: 14px; }
   .xcc-more:active { background: var(--surf-2); }
-  .xcc-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .xcc__howk { min-height: 44px; }
   /* The method: its first lines, the rest behind a press (it opens in place; nothing is dropped). */
   .xcc__method:not([data-open]) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
   .xcc__methodmore { display: inline-flex; }

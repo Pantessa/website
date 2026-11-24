@@ -27,7 +27,7 @@ import { fmtPrice } from '@/components/CandleChart'
 import { SIDES } from '@/components/called/HandleDoor'
 import { appScrollTop, scrollAppTo } from '@/lib/app-scroller'
 import { chartPairFor, chartUnitOf } from '@/lib/charts'
-import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, FREE_SCANS_PER_DAY, JUDGE_DAYS, LABEL_CAVEAT, SCAN_ANSWER_PRICE, SCAN_POST_CAP, SCAN_WINDOW_DAYS, VERDICT_WORDS, moveLine, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
+import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, FREE_SCANS_PER_DAY, JUDGE_DAYS, LABEL_CAVEAT, SCAN_ANSWER_PRICE, SCAN_POST_CAP, SCAN_WINDOW_DAYS, VERDICT_WORDS, judgedLine, moveLine, recordHref, sinceLine, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
 import { calledImageHref, fmtCount, headlineParts } from '@/lib/called-it/card-layout'
 import { plotStatus, safeNextHref, sideCounts, useCalled, useCalledAddress, useXViewer, viewerOwns } from '@/lib/called-it/use-record'
 import { calledPost, myCalledPost, postHref } from '@/lib/share-posts'
@@ -163,12 +163,14 @@ function Row({ call, index, px, focused, tail, onFocus, onPin }: { call: CalledC
           ) : null}
           <PostText call={call} />
         </span>
-        <span className="xcc-row__nums mono">
+        <span className="xcc-row__nums mono" title={moveLine(call)}>
           <span className="xcc-row__price" title="This chart's daily close on the day of the post">
             {px}
             {fmtPrice(call.priceAt)}
           </span>
-          <span className={`xcc-row__move xcc-v--${call.verdict}`}>{moveLine(call)}</span>
+          {/* The spec's move line in its two halves: the judged move wears the verdict's ink, the move since does not (it can run the other way). */}
+          <span className={`xcc-row__move xcc-v--${call.verdict}`}>{judgedLine(call)}</span>
+          <span className="xcc-row__since">{sinceLine(call) ?? ''}</span>
         </span>
       </button>
       <span className="xcc-row__side">
@@ -206,6 +208,12 @@ function CountText({ text }: { text: string }) {
       {m[2]}
     </>
   )
+}
+
+/** A line's first sentence, to the letter (its full stop included); the whole line when it is one sentence. */
+function leadOf(line: string): string {
+  const cut = line.indexOf('. ')
+  return cut < 0 ? line : line.slice(0, cut + 1)
 }
 
 /** How many rows a phone shows before "Show all" when no call is pinned. */
@@ -336,10 +344,17 @@ export function CalledHead({ symbol, parked = false }: { symbol: string; parked?
             <span className="xch__factstext" id="xch-facts">
               {record ? (
                 <>
+                  {/* The standing's own first sentence is what a phone shows; the rest of it and what was read open with "more". No word is changed. */}
                   <span className="xch__standing" data-called-standing="" data-verified={record.verified ? '' : undefined}>
-                    {record.words.standing}
+                    <span className="xch__lead">{leadOf(record.words.standing)}</span>
+                    <span className="xch__rest">{record.words.standing.slice(leadOf(record.words.standing).length)}</span>
                   </span>
-                  {record.words.coverage ? <span data-called-coverage=""> {record.words.coverage}</span> : null}
+                  {record.words.coverage ? (
+                    <span className="xch__rest" data-called-coverage="">
+                      {' '}
+                      {record.words.coverage}
+                    </span>
+                  ) : null}
                 </>
               ) : (
                 <span role={status.kind === 'scanning' ? 'status' : undefined}>{status.line}</span>
@@ -451,9 +466,9 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
     body = (
       <>
         <header className="xcc__head xcc__head--list">
-          <p className="xcc__k mono">
+          <p className="xcc__k sk-label">
             The calls
-            <span className="xcc__name"> · oldest first · tap one to open it on the chart</span>
+            <span className="xcc__name"> · oldest first · press one to open it on the chart</span>
           </p>
           {record.words.added ? <p className="xcc__standing xcc__addednote">{record.words.added}</p> : null}
         </header>
@@ -582,24 +597,22 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   } else if (response?.status === 'unscanned') {
     body = (
       <>
-        {head(
-          `Nobody has plotted ${who} on ${symbol} yet`,
-          <p className="xcc__standing">
-            {response.canScan
-              ? `A scan reads up to ${SCAN_POST_CAP} of ${who}'s newest public posts about ${symbol}, back as far as ${SCAN_WINDOW_DAYS} days. A model labels each one bullish or bearish from its own words, and each is judged on this chart's daily close ${JUDGE_DAYS} days later, or on the level it names.`
-              : (response.reason ?? 'Scans are not available here right now.')}
-          </p>,
-        )}
-        <div className="xcc__actions">
-          {response.canScan ? (
-            <span className="xcc__allow">
+        {head(`Nobody has plotted ${who} on ${symbol} yet`, !response.canScan ? <p className="xcc__standing">{response.reason ?? 'Scans are not available here right now.'}</p> : undefined)}
+        {/* What a scan does and what it costs: every word is still here, one press away (the band above carries the short line and the button). */}
+        {response.canScan ? (
+          <details className="xcc__how">
+            <summary className="xcc__howk">What a scan reads, and what it costs</summary>
+            <p className="xcc__standing">
+              A scan reads up to {SCAN_POST_CAP} of {who}&rsquo;s newest public posts about {symbol}, back as far as {SCAN_WINDOW_DAYS} days. A model labels each one bullish or bearish from its own words, and each is judged on this chart&rsquo;s daily close {JUDGE_DAYS} days later, or on the level it names.
+            </p>
+            <p className="xcc__allow">
               {response.reason ? `${response.reason} ` : ''}
               {FREE_SCANS_PER_DAY} new scan a day is free once you verify with X or sign in; more cost {SCAN_ANSWER_PRICE} answers each. A handle somebody already plotted costs none.
-            </span>
-          ) : (
-            <span className="xcc__allow">One post can still be pinned by its link, with no scan.</span>
-          )}
-        </div>
+            </p>
+          </details>
+        ) : (
+          <p className="xcc__allow">One post can still be pinned by its link, with no scan.</p>
+        )}
         <footer className="xcc__foot">
           <AddPost handle={plot.handle} />
         </footer>
