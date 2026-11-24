@@ -774,3 +774,22 @@ a.sym__twin-opt:hover, a.sym__twin-opt:focus-visible { color: var(--fg); backgro
   .mkt-frame .mkt-link { position: relative; }
   .mkt-frame .mkt-link::after { content: ''; position: absolute; inset: -14px -4px; }
 }
+
+/* ── THE PHONE'S HEADER, NATIVE (2026-11-24). Two rows: who, then the price
+   with the day's high and low at its right. The feed's name after the change
+   repeated the venue pill above it and pushed high / low onto a third row at
+   390 (142px of header); the change wears its tone as a tag, the way a
+   phone's own stocks app prints it. ── */
+@media (max-width: 640px) {
+  .sym--cockpit .sym__strip { gap: 6px 12px; padding: 12px 0 8px; align-items: flex-end; }
+  .sym--cockpit .sym__strip > .sym__id { align-items: center; flex-basis: 100%; }
+  .sym--cockpit .sym__strip > .mk-held { order: 5; }
+  .sym--cockpit .sym__strip > .sym__quote { flex: 0 1 auto; align-items: center; gap: 8px; min-width: 0; }
+  .sym--cockpit .sym__strip .sym__last { font-size: 28px; letter-spacing: -0.02em; }
+  .sym--cockpit .sym__strip .sym__chg { padding: 3px 7px; border-radius: 7px; background: color-mix(in srgb, currentColor 15%, transparent); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .sym--cockpit .sym__strip .sym__chg + .sym__feed { display: none; }
+  .sym--cockpit .sym__stats { margin-left: auto; padding-bottom: 2px; text-align: right; }
+  .sym--cockpit .sym__stats .sym__st { align-items: flex-end; }
+  /* A share with two instruments: the Stock / Perp switch takes its own line instead of cutting the venue short. */
+  .sym--cockpit .sym__strip .sym__meta { flex-wrap: wrap; gap: 6px 8px; }
+}

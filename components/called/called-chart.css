@@ -435,3 +435,78 @@ a.xcf__x:hover { opacity: .88; }
   .xcf__num { padding: 9px 10px 10px; }
   .xcf__num:first-child { padding-left: 14px; }
 }
+
+/* The fold's button (a phone only: a wider page scrolls the list in its own box). */
+.xcc-more { display: none; }
+/* A count's number: a tag of its own for the phone's stats; in a chip it reads as the chip does. */
+/* (A chip is a flex row, which drops the space that leads the words: the number carries it as a margin.) */
+.xch__num { font-weight: inherit; margin-right: 0.28em; }
+
+/* ── THE PHONE, NATIVE (2026-11-24, Nate: "more like a native ios app, it feels
+   a bit crowded especially the called it view"). Measured at 390×844 on
+   40b40ac7 with a 63-call record plotted: the band 262px, the chart's bar
+   three rows (140px), the first candle ~800px down (under the fold), and the
+   calls list 10,413px between the chart and the page under it. Now the band is
+   a header, four stats and one segmented control; the bar is one row of icon
+   buttons; the list shows the pinned calls and one button for the rest. ── */
+@media (max-width: 640px) {
+  /* The band: flat, one column. Who (Share and Clear at its corner), the tally as stats, the control, then the fine print. */
+  .sym .xch { margin-top: 10px; border-radius: 16px 16px 0 0; background: var(--surf-1); }
+  .xch__row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 12px 12px 12px; }
+  .xch__id { gap: 10px; padding-right: 132px; }
+  .xch__avatar { width: 44px; height: 44px; font-size: 17px; box-shadow: 0 0 0 1px var(--line-2); }
+  .xch__idtext { gap: 1px; }
+  .xch__name { display: block; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .xch__verified { display: inline-grid; margin-left: 5px; vertical-align: -2px; }
+  .xch__tally { display: contents; }
+  /* The tally as stats: the number leads in its tone, the words sit under it. The total is the control's "All". */
+  .xch__counts { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0; }
+  .xch__count { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 3px; min-height: 0; padding: 1px 6px 1px 10px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: none; color: var(--muted); font-size: 10.5px; font-weight: 500; line-height: 1.2; white-space: normal; }
+  .xch__count.is-total { display: none; }
+  .xch__count.is-total + .xch-sr + .xch__count { padding-left: 0; border-left: 0; }
+  .xch__num { display: block; margin-right: 0; font-size: 21px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; color: var(--xch-tone); font-variant-numeric: tabular-nums; }
+  .xch__row:has(.xch__counts) .xch__facts { order: 4; font-size: 11px; line-height: 1.4; color: var(--muted-2); }
+  /* The control: a segmented control the width of the card. */
+  .xch__tools { gap: 0; }
+  .xch__tools .xcc-seg { flex: 1 1 auto; padding: 2px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--fg) 8%, transparent); }
+  .xch__tools .xcc-seg__btn { flex: 1 1 0; justify-content: center; min-height: 34px; padding: 0 8px; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; transition: background var(--dur-1, .16s), color var(--dur-1, .16s), transform .12s; }
+  .xch__tools .xcc-seg__btn[aria-pressed='true'] { background: color-mix(in srgb, var(--fg) 14%, var(--surf-1)); box-shadow: 0 1px 2px rgb(0 0 0 / 0.22); }
+  .xch__tools .xcc-seg__btn:active { transform: scale(0.97); }
+  .xch__tools .xcc-seg__n { font-size: 11.5px; font-weight: 500; color: var(--muted); }
+  /* Share and Clear ride the header's corner. */
+  .xch__tools .xcc-share { position: absolute; top: 16px; right: 48px; margin: 0; }
+  .xch__tools .xcc-share > .xcc-btn { min-height: 36px; padding: 0 14px; border-radius: var(--r-pill, 999px); font-size: 13px; }
+  .xch__tools .xcc-share__menu { top: calc(100% + 6px); bottom: auto; right: -40px; left: auto; min-width: 210px; border-radius: 14px; }
+  .xch__clear { position: absolute; top: 12px; right: 2px; }
+  /* A plot with no record yet: the scan's button takes the row. */
+  .xch__tools > .xcc-btn--go { flex: 1 1 auto; border-radius: 12px; }
+
+  /* The chart's bar: the door is an icon button; the band over the chart names the handle and says what the plot is doing. */
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > .xcc-seat { position: static; order: 3; flex: 0 0 auto; margin: 0; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > .xcc-seat > .xcc-open { width: 36px; height: 36px; max-width: none; padding: 0; justify-content: center; border-radius: 10px; }
+  .sym .tvx > .mkt-chart__bar .xcc-open__label, .sym .tvx > .mkt-chart__bar .xcc-open__state { display: none; }
+  .sym .tvx > .mkt-chart__bar .xcc-open__icon { width: 15px; height: 15px; }
+  .sym .tvx > .mkt-chart__bar .xcc-note { display: none; }
+
+  /* The calls: a row is the verdict and the day, two lines of the post, the numbers. A tap opens the call's sheet, which
+     carries the post on X and the pin, so a row wears neither here. */
+  .xcc { padding: 12px; border-radius: 16px; }
+  .xcc__rows[data-fold] > .xcc-row[data-tail]:not(.is-focus) { display: none; }
+  .xcc-row__main { grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; padding: 12px 4px 12px 6px; }
+  .xcc-row__n { display: none; }
+  .xcc-row .xcc-v { grid-column: 1; grid-row: 1; font-size: 12px; font-weight: 600; }
+  .xcc-row__when { grid-column: 2; grid-row: 1; justify-self: end; }
+  .xcc-row__text { grid-column: 1 / -1; -webkit-line-clamp: 2; font-size: 14px; line-height: 1.4; }
+  .xcc-row.is-focus .xcc-row__text { display: -webkit-box; overflow: hidden; }
+  .xcc-row__nums { grid-column: 1 / -1; flex-wrap: wrap; gap: 2px 10px; }
+  .xcc-row__side { display: none; }
+  .xcc-row__main:active { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+  .xcc-more { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 46px; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--fg); font-size: 14px; font-weight: 600; cursor: pointer; transition: transform .12s; }
+  .xcc-more:active { transform: scale(0.985); }
+  .xcc-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .xcc-add__input { border-radius: 10px; }
+}
+@media (max-width: 640px) and (prefers-reduced-motion: reduce) {
+  .xch__tools .xcc-seg__btn, .xcc-more { transition: none; }
+  .xch__tools .xcc-seg__btn:active, .xcc-more:active { transform: none; }
+}

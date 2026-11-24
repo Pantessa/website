@@ -23,6 +23,7 @@ import { Fragment, useEffect, useRef, useState, type FormEvent, type ReactNode }
 import { BadgeCheck, ExternalLink, Heart, Maximize, Pin, Share2, X } from 'lucide-react'
 import { fmtPrice } from '@/components/CandleChart'
 import { SIDES } from '@/components/called/HandleDoor'
+import { appScrollTop, scrollAppTo } from '@/lib/app-scroller'
 import { chartPairFor, chartUnitOf } from '@/lib/charts'
 import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, FREE_SCANS_PER_DAY, JUDGE_DAYS, LABEL_CAVEAT, SCAN_ANSWER_PRICE, SCAN_POST_CAP, SCAN_WINDOW_DAYS, VERDICT_WORDS, moveLine, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
 import { calledImageHref, fmtCount, headlineParts } from '@/lib/called-it/card-layout'
@@ -118,7 +119,7 @@ function AddPost({ handle }: { handle: string }) {
   )
 }
 
-function Row({ call, index, px, focused, onFocus, onPin }: { call: CalledCall; index: number; px: string; focused: boolean; onFocus: () => void; onPin: () => void }) {
+function Row({ call, index, px, focused, tail, onFocus, onPin }: { call: CalledCall; index: number; px: string; focused: boolean; tail: boolean; onFocus: () => void; onPin: () => void }) {
   const ref = useRef<HTMLLIElement | null>(null)
   const by = useCalled((s) => (focused ? s.focusBy : null))
   useEffect(() => {
@@ -135,7 +136,7 @@ function Row({ call, index, px, focused, onFocus, onPin }: { call: CalledCall; i
   }, [focused, by])
   const word = VERDICT_WORDS[call.verdict]
   return (
-    <li ref={ref} className={`xcc-row${focused ? ' is-focus' : ''}${call.picked ? ' is-picked' : ''}`} data-verdict={call.verdict} data-post={call.postId} data-picked={call.picked ? '' : undefined} data-origin={call.origin}>
+    <li ref={ref} className={`xcc-row${focused ? ' is-focus' : ''}${call.picked ? ' is-picked' : ''}`} data-verdict={call.verdict} data-post={call.postId} data-picked={call.picked ? '' : undefined} data-tail={tail ? '' : undefined} data-origin={call.origin}>
       <button type="button" className="xcc-row__main" onClick={onFocus} aria-expanded={focused} title="Show this call on the chart">
         <span className="xcc-row__n mono">{index + 1}</span>
         <span className="xcc-row__when mono">{pinDate(call.postedAt)}</span>
@@ -188,6 +189,23 @@ function Row({ call, index, px, focused, onFocus, onPin }: { call: CalledCall; i
     </li>
   )
 }
+
+/** A count ("34 called it") with its number in a tag of its own, so a phone can set it as a stat. The text reads the same. */
+function CountText({ text }: { text: string }) {
+  const m = /^(\d[\d,.]*)(\s.*)$/.exec(text)
+  if (!m) return <>{text}</>
+  return (
+    <>
+      <b className="xch__num">{m[1]}</b>
+      {m[2]}
+    </>
+  )
+}
+
+/** How many rows a phone shows before "Show all" when no call is pinned. */
+const FOLD_ROWS = 5
+/** Where the strip's top lands when it folds: under the phone's top bar and the stuck tabs. */
+const FOLD_LANDS_AT = 112
 
 /** The tally as one thin bar: the same counts the chips print, as proportions. Decorative. */
 function TallyBar({ record }: { record: CalledRecord }) {
@@ -285,7 +303,9 @@ export function CalledHead({ symbol, parked = false }: { symbol: string; parked?
                 <span className="xch-sr">{parts.who}</span>
                 {parts.counts.map((c, i) => (
                   <Fragment key={c.kind}>
-                    <span className={`xch__count is-${c.kind}`}>{c.text}</span>
+                    <span className={`xch__count is-${c.kind}`}>
+                      <CountText text={c.text} />
+                    </span>
                     <span className="xch-sr">{i < parts.counts.length - 1 ? ', ' : parts.end}</span>
                   </Fragment>
                 ))}
@@ -383,6 +403,11 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   const payOffer = useCalled((s) => s.payOffer)
   const advanced = useCalled((s) => s.advanced)
   const cards = useCalled((s) => s.cards)
+  // A phone shows the pinned calls (the ones the rule says mattered most) and one button for the rest: sixty rows were ten
+  // thousand pixels between the chart and the page under it. The fold is CSS (called-chart.css, a phone only): every row is
+  // in the page at every width.
+  const [folded, setFolded] = useState(true)
+  useEffect(() => setFolded(true), [plot?.handle, plot?.side])
   if (!here || !plot) return null
   const { togglePin, focus, fit, scan, retry, rulePins } = useCalled.getState()
   const pair = chartPairFor(symbol)
@@ -402,6 +427,8 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   let body: ReactNode
   if (record) {
     const pinned = record.calls.filter((c) => c.picked).length
+    const isTail = (c: CalledCall, i: number) => (pinned > 0 ? !c.picked : i >= FOLD_ROWS)
+    const tails = record.calls.filter(isTail).length
     body = (
       <>
         <header className="xcc__head xcc__head--list">
@@ -453,11 +480,23 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
           </p>
         ) : null}
         {record.calls.length > 0 ? (
-          <ol className="xcc__rows" aria-label={`Calls by ${who} on ${record.symbol}, oldest first`}>
-            {record.calls.map((c, i) => (
-              <Row key={c.postId} call={c} index={i} px={px} focused={focusId === c.postId} onFocus={() => focus(focusId === c.postId ? null : c.postId, 'strip')} onPin={() => togglePin(c.postId)} />
-            ))}
-          </ol>
+          <>
+            <ol className="xcc__rows" data-fold={folded && tails > 0 ? '' : undefined} aria-label={`Calls by ${who} on ${record.symbol}, oldest first`}>
+              {record.calls.map((c, i) => (
+                <Row key={c.postId} call={c} index={i} px={px} focused={focusId === c.postId} tail={isTail(c, i)} onFocus={() => focus(focusId === c.postId ? null : c.postId, 'strip')} onPin={() => togglePin(c.postId)} />
+              ))}
+            </ol>
+            {tails > 0 ? (
+              <button type="button" className="xcc-more" aria-expanded={!folded} onClick={(e) => {
+                  // Folding from the foot of sixty rows: the strip's own top comes back, not whatever was under it.
+                  const strip = e.currentTarget.closest('section')
+                  if (!folded) requestAnimationFrame(() => strip && scrollAppTo(appScrollTop() + strip.getBoundingClientRect().top - FOLD_LANDS_AT))
+                  setFolded((f) => !f)
+                }} data-journey="called_show_all">
+                {folded ? `Show all ${record.calls.length} calls` : pinned > 0 ? 'Show the pinned calls only' : 'Show fewer'}
+              </button>
+            ) : null}
+          </>
         ) : (
           <p className="xcc__empty">
             {record.side === 'all' ? `No post the scan read took a side on ${record.symbol}.` : `No ${record.side === 'bull' ? 'bullish' : 'bearish'} call in what the scan read. The other side may have some.`} A post the scan did not find can be added by its link: it is shown and marked, and it is not counted.
