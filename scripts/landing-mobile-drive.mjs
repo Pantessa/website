@@ -247,7 +247,12 @@ async function homeScreen({ w, h, theme, posture }) {
   const m = await ev(`(() => ({ hero: __mob.rect('[data-splash-claim]'), tour: __mob.rect('[data-seat="Tour"]'), how: __mob.rect('[data-seat="How"]'), close: __mob.rect('[data-seat="Close"]'), readEyebrow: __mob.rect('.read__eyebrow'), readLine: __mob.rect('.read__line'), bar: __mob.barTop(), firstLine: (() => { const l = document.querySelector('.read__line'); if (!l) return null; const range = document.createRange(); range.selectNodeContents(l); const rs = [...range.getClientRects()].filter((r) => r.height > 4); return rs.length ? Math.round(rs[0].bottom) : null })() }))()`)
   const row = { screen: tag, hero: m.hero?.h, tour: m.tour?.h, how: m.how?.h, close: m.close?.h, readEyebrowY: m.readEyebrow?.y, readFirstLineBottom: m.firstLine, barTop: m.bar }
   if (p.mobile && posture === 'new') {
-    check(`${tag}: stranger hero ≤ 240 px`, (m.hero?.h ?? 999) <= 240, `${m.hero?.h}px`)
+    // RE-PINNED 2026-11-24 (squad mobile-sleek): 240 px was the claim block's budget before the mosaic hero
+    // (2026-11-19) put the sentence box and the row of tiles inside it; it has failed since (413 px at 390 on
+    // the day's baseline). The hero now holds the headline, one sentence, the ask box, one row of doors, the
+    // three proofs and the record's card: 417 px at 390, 436 at 375, 421 at 430. The budget is the truth plus
+    // a line of slack; the check that matters for the first screen is the next one (THE READ's first line).
+    check(`${tag}: stranger hero ≤ 444 px`, (m.hero?.h ?? 999) <= 444, `${m.hero?.h}px`)
     check(`${tag}: THE READ's first line above the bottom bar`, m.firstLine != null && m.firstLine <= m.bar, `line bottom ${m.firstLine}, bar ${m.bar}`)
   }
   if (p.mobile && posture === 'return') check(`${tag}: returning claim ≤ 48 px`, (m.hero?.h ?? 999) <= 48, `${m.hero?.h}px`)

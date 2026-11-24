@@ -38,7 +38,7 @@
     min-height: 44px;
     min-width: 44px;
     padding: 0 8px 0 6px;
-    border-radius: 10px;
+    border-radius: var(--r-md);
     font-size: 15px;
     font-weight: 500;
     color: var(--accent);
@@ -54,7 +54,7 @@
     justify-content: center;
     min-height: 44px;
     padding: 2px 4px;
-    border-radius: 10px;
+    border-radius: var(--r-md);
     text-align: center;
   }
   .chat-phonebar__head:active { background: var(--surf-1); }
@@ -144,7 +144,7 @@
   .yf-chat [data-bubble='user'] {
     font-size: 15px;
     padding: 10px 14px;
-    border-radius: 18px 18px 4px 18px;
+    border-radius: var(--r-lg) var(--r-lg) var(--r-sm) var(--r-lg);
   }
   .yf-chat [data-avatar='user'] { display: none; }
   .yf-chat .chat-md {
@@ -190,7 +190,7 @@
     content: '';
     position: absolute;
     inset: -4px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
   }
 }
 

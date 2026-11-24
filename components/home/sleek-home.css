@@ -53,3 +53,60 @@
 @media (min-width: 1024px) {
   :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__top .ssx-lens { margin-right: 0; }
 }
+
+/* The fold control of "how it works": drawn only on a stranger's phone. */
+.how__fold { display: none; }
+
+/* ── THE STRANGER'S PHONE: a short page (squad mobile-sleek, round 2) ──────
+   The landing ran 14,289px on a phone. A stranger needs the hero, the record,
+   one live market view (THE READ), how it works, and the doors. So, on a
+   phone and only in the stranger's posture on the home:
+     · the boards are ONE board: the strip's tabs switch it instead of
+       scrolling a stack of five, and it shows six rows until "Show all";
+     · "how it works" is its six stations as one line each, with the costs
+       and the never-list folded behind one press (never removed);
+     · the closing doors are one line each; the suggestions board and the
+       apps row step aside (both stay on desktop and for a returning visitor).
+   A returning visitor (`data-home="return"`) and /markets keep everything. */
+@media (max-width: 640px) {
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim):has(.mkt-frame__tab[data-tab='equities'].is-on) .mkt-frame__data > .mkt-sec:not(#equities),
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim):has(.mkt-frame__tab[data-tab='crypto'].is-on) .mkt-frame__data > .mkt-sec:not(#crypto),
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim):has(.mkt-frame__tab[data-tab='perps'].is-on) .mkt-frame__data > .mkt-sec:not(#perps),
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim):has(.mkt-frame__tab[data-tab='macro'].is-on) .mkt-frame__data > .mkt-sec:not(#macro),
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim):has(.mkt-frame__tab[data-tab='earn'].is-on) .mkt-frame__data > .mkt-sec:not(#earn),
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim):not(:has(.mkt-frame__tab.is-on)) .mkt-frame__data > .mkt-sec:not(#equities) { display: none; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .mkt-sec:has(> .mkt-sec__more[aria-expanded='false']) .mk-table__row:nth-child(n + 7) { display: none; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) :is(.mk-suggest-seat, .mk-guide-seat) { display: none; }
+
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__text { display: none; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__fold { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 48px; padding: 0 var(--sp-4); border: 1px solid var(--line-2); color: var(--fg); font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__foldmark::before { content: '+'; font-size: var(--fs-lg); color: var(--accent); }
+  /* the box itself is the whole 48px row, unseen: the press lands on it */
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__foldbox { display: block; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__fold:has(.how__foldbox:focus-visible) { outline: 2px solid var(--fg); outline-offset: -4px; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__fold:has(.how__foldbox:checked) .how__foldmark::before { content: '\2212'; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how:has(.how__foldbox:not(:checked)) .how__cols { display: none; }
+
+  /* the closing is ONE door (the tour above already holds all eight) and the quiet row */
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) :is(.closing__eyebrow, .closing__lede, .closing__cell:nth-child(n + 2)) { display: none; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .closing__grid { grid-template-columns: minmax(0, 1fr); }
+  /* small things that each cost a line: the sub-lines, the keyboard hints, the count under a door */
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) :is(.how__lede, .how__doorcount, .tour__sub, .mk-keys, .mkt-sec__blurb) { display: none; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how { gap: var(--sp-4); }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .mkt-frame__data { gap: 20px; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .mk-called-seat:not(:empty) { margin-top: var(--sp-5); }
+  /* THE READ keeps its chart and its acts; the paragraph that explains it steps aside */
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .read__how { display: none; }
+}
+
+/* A stranger's phone has no watchlist yet: the empty rail under the page is
+   not drawn (the desktop already hides it for a stranger, mosaic.css). */
+@media (max-width: 1023px) {
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__rail { display: none; }
+}
+/* A stranger's desktop home: the hero's own sentence box and the bar's Ask
+   are the ask. The docked field sat on the board tabs at the foot of the
+   first screen, so it is not drawn here (⌘K still opens the door). */
+@media (min-width: 1024px) {
+  :root:not([data-home='return']) body:has(.mkt-frame__main > .mk-claim) .askdoor-pill { display: none; }
+}
