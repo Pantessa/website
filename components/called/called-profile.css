@@ -30,12 +30,12 @@
 .xpf-id__name { margin: 0; font-family: var(--xrc-display); font-weight: 600; font-size: clamp(1.625rem, 1.3rem + 1.7vw, 2.375rem); line-height: 1.1; letter-spacing: -0.015em; color: var(--fg); overflow-wrap: anywhere; }
 .xpf-id__meta { margin: 0; display: flex; flex-wrap: wrap; gap: 0 var(--sp-3); font-family: var(--xrc-mono); font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); }
 .xpf-id__meta span { white-space: nowrap; }
-.xpf .xpf-id__x { flex: 0 0 auto; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 50%; color: var(--fg); transition: border-color var(--dur-1) ease; }
+.xpf .xpf-id__x { flex: 0 0 auto; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--line); color: var(--fg); transition: border-color var(--dur-1) ease; }
 .xpf-id__x svg { width: 15px; height: 15px; fill: currentColor; }
 .xpf .xpf-id__x:hover, .xpf .xpf-id__x:focus-visible { border-color: var(--fg); outline: none; }
 
 .xpf-standing { margin: 0; display: flex; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-md); line-height: 1.45; color: var(--muted); }
-.xpf-standing::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); transform: translateY(-1px); }
+.xpf-standing::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; background: var(--muted-2); transform: translateY(-1px); }
 .xpf-standing.is-verified { color: var(--fg); }
 .xpf-standing.is-verified::before { background: var(--up); }
 
@@ -51,7 +51,7 @@
 
 /* ── Buttons and links ─────────────────────────────────────────────────── */
 .xpf-acts { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); }
-.xpf .xpf-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 44px; padding: 0 var(--sp-5); border: 1px solid var(--line-2); border-radius: var(--r-pill); background: transparent; color: var(--fg); font-family: var(--xrc-ui); font-size: var(--fs-base); font-weight: 600; line-height: 1.15; text-align: center; text-decoration: none; transition: border-color var(--dur-1) ease, filter var(--dur-1) ease; }
+.xpf .xpf-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 44px; padding: 0 var(--sp-5); border: 1px solid var(--line-2); border-radius: 0; background: transparent; color: var(--fg); font-family: var(--xrc-ui); font-size: var(--fs-base); font-weight: 600; line-height: 1.15; text-align: center; text-decoration: none; transition: border-color var(--dur-1) ease, filter var(--dur-1) ease; }
 .xpf .xpf-btn:hover, .xpf .xpf-btn:focus-visible { border-color: var(--fg); outline: none; }
 .xpf .xpf-btn--lead { background: var(--accent); border-color: var(--accent); color: var(--ink, var(--bg)); }
 .xpf .xpf-btn--lead::after { content: '\2192'; }
@@ -77,7 +77,7 @@
 .xpf-calls > li:last-child .xpf-call { padding-bottom: 0; }
 .xpf-call__top { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-3); font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
 .xpf-call__verdict { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font-weight: 600; }
-.xpf-mark { flex: 0 0 auto; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--xrc-tone); }
+.xpf-mark { flex: 0 0 auto; display: inline-block; width: 8px; height: 8px; background: var(--xrc-tone); }
 .xpf-call__quote { font-family: var(--xrc-display); font-size: clamp(1.125rem, 1.05rem + 0.4vw, 1.3125rem); font-weight: 500; line-height: 1.32; letter-spacing: -0.005em; color: var(--fg); overflow-wrap: anywhere; }
 .xpf-call__quote bdi::before { content: '\201C'; }
 .xpf-call__quote bdi::after { content: '\201D'; }
@@ -90,7 +90,7 @@
 
 /* ── Market by market ──────────────────────────────────────────────────── */
 .xpf-mkts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
-.xpf-mkt { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); align-content: start; padding: var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-md); }
+.xpf-mkt { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); align-content: start; padding: var(--sp-4); border: 1px solid var(--line); }
 .xpf-mkt > * { min-width: 0; }
 .xpf-mkt__head { margin: 0; display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
 .xpf-mkt__sym { font-family: var(--xrc-display); font-weight: 600; font-size: var(--fs-2xl); line-height: 1; letter-spacing: -0.01em; color: var(--fg); overflow-wrap: anywhere; }
@@ -102,12 +102,12 @@
 .xpf-spark { position: relative; height: 112px; margin: var(--sp-1) 5px; }
 .xpf-spark svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
 .xpf-spark path { fill: none; stroke: var(--fg); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; opacity: 0.8; }
-.xpf-spark__dot { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--xrc-tone); outline: 2px solid var(--bg); }
+.xpf-spark__dot { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; background: var(--xrc-tone); outline: 1.5px solid var(--bg); }
 .xpf-spark--none { height: auto; margin: 0; padding: var(--sp-4) 0; border-top: 1px dashed var(--line-2); border-bottom: 1px dashed var(--line-2); font-size: var(--fs-sm); color: var(--muted-2); }
 
 .xpf-marks { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); font-size: var(--fs-md); line-height: 1.5; color: var(--fg); font-variant-numeric: tabular-nums; }
 .xpf-marks li { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.xpf-marks li::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--xrc-tone); }
+.xpf-marks li::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; background: var(--xrc-tone); }
 .xpf-marks li.is-total { font-weight: 600; }
 .xpf-marks li.is-total::before { content: none; }
 
@@ -164,3 +164,7 @@
 @media (prefers-reduced-motion: reduce) {
   .xpf .xpf-btn, .xpf .xpf-id__x, .xpf-call__go, .xpf-starter__say { transition: none; }
 }
+
+/* SLEEK (squad mobile-sleek, 2026-11-24): hard edges on this page (the pill and the round dot are retired; the avatar stays a circle), and the one lead press wears the brand's cut corner. */
+.xpf .xpf-btn--lead { border: 0; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+.xpf .xpf-btn--lead:focus-visible { outline: 2px solid var(--fg); outline-offset: -4px; }

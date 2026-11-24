@@ -67,7 +67,7 @@ export default function CallActs({ symbol, stance, handle, postId, variant = 'ro
         {acts.map((a) => (
           <a
             key={a.ask}
-            className={`xca__chip xca__chip--${a.tone}`}
+            className={`sk-btn sk-btn--${a.tone} xca__chip xca__chip--${a.tone}`}
             href={promptHref(a.ask)}
             onClick={(e) => {
               // A real link (a new tab, no JS gets the prefill); a plain press sends through the door.

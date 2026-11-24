@@ -379,12 +379,13 @@ export async function calledGtmCallPinsServed(check: Check, base: string): Promi
     const plain = await page(`/x/${H}/BTC`)
     const ph = plain.html.replace(/<!--[\s\S]*?-->/g, '')
     const bestLink = `href="${callHref(H, 'BTC', best.postId)}"`
+    // RE-PINNED 2026-11-24 (squad mobile-sleek, lane XPAGES): the highlight now sits UNDER the chart and above the calls (it sat above the chart). A phone's first screen is who, the tally and the chart; the hit leads the list.
     check(
       'called-gtm call (served, the edges): a side on a call\'s address changes nothing (the call still leads and the tally is the WHOLE record\'s, both sides); an id the record does not hold, and a string that is not an id, answer the plain record page with no error; the plain page shows the record\'s hit as one highlight that links to its call address, and its own card stays the record\'s',
       s.status === 200 && s.html.includes(`data-xcl="lead" data-call="${best.postId}"`) && textOf(s.html).includes(rec.words.headline) && s.html.includes('data-side="all"') &&
         unknown.status === 200 && unknown.html.includes('data-lead="record"') && !unknown.html.includes('data-xcl="lead"') && textOf(unknown.html).includes(rec.words.headline) && !(metaOf(unknown.html, 'og:image') ?? '').includes('call=') &&
         junk.status === 200 && junk.html.includes('data-lead="record"') && !junk.html.includes('data-xcl="lead"') && !/<script>alert\(1\)<\/script>/.test(junk.html) &&
-        plain.status === 200 && (ph.match(/data-xcl="best"/g) ?? []).length === 1 && ph.includes(`data-xcl="best" data-call="${best.postId}"`) && ph.includes(bestLink) && ph.indexOf('data-xcl="best"') < ph.indexOf('id="chart"') && !(metaOf(plain.html, 'og:image') ?? '').includes('call=') && ph.includes('data-share-kind="record"'),
+        plain.status === 200 && (ph.match(/data-xcl="best"/g) ?? []).length === 1 && ph.includes(`data-xcl="best" data-call="${best.postId}"`) && ph.includes(bestLink) && ph.indexOf('id="chart"') < ph.indexOf('data-xcl="best"') && ph.indexOf('data-xcl="best"') < ph.indexOf('<li class="xrc-call ') && !(metaOf(plain.html, 'og:image') ?? '').includes('call=') && ph.includes('data-share-kind="record"'),
       `${s.status} ${unknown.status} ${junk.status} ${plain.status} best ${(ph.match(/data-xcl="best"/g) ?? []).length}`,
     )
 
