@@ -1,35 +1,27 @@
-/* The trade buttons beside a call (squad called-gtm, lane TRADE). Prefix `xca`,
-   checked against every stylesheet in the repo. Flat: a hairline and a type
-   size, no shadow, no gradient. The buy wears the accent fill, the sell the
-   sell ink on a hairline; the caption is one quiet line. */
+/* The trade buttons beside a call (squad called-gtm, lane TRADE; SLEEK 2026-11-24).
+   Prefix `xca`, checked against every stylesheet in the repo. A button is the
+   kit's `.sk-btn` (components/sleek/sleek.css: the cut corner, a flat fill in the
+   market's colour: the buy green, the sell red); this sheet only seats it and
+   sets the caption, one quiet line. No shadow, no gradient. */
 .xca { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .xca__chips { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
-.xca__chip {
-  display: inline-flex; align-items: center; justify-content: center; min-height: 38px; padding: 0 14px; max-width: 100%;
-  border: 1px solid var(--line-2); border-radius: 10px; background: none; color: var(--fg);
-  font-size: 13px; font-weight: 600; line-height: 1.2; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  cursor: pointer; transition: border-color var(--dur-1, .16s), opacity var(--dur-1, .16s);
-}
-.xca__chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.xca__chip--buy { background: var(--up); border-color: var(--up); color: var(--ink, var(--bg)); }
-.xca__chip--buy:hover { opacity: .88; }
-.xca__chip--sell { color: var(--mk-down, var(--sell)); border-color: color-mix(in srgb, var(--mk-down, var(--sell)) 55%, transparent); }
-.xca__chip--sell:hover { border-color: var(--mk-down, var(--sell)); }
+.xca__chip { display: block; min-height: 40px; max-width: 100%; padding: 0 16px; font-size: 14px; line-height: 40px; text-align: center; overflow: hidden; text-overflow: ellipsis; }
+.xca__chip:hover { filter: brightness(1.08); }
 .xca__note { margin: 0; font-size: 11px; line-height: 1.4; color: var(--muted-2, var(--muted)); }
 
 /* Full-width buttons: a phone sheet, a hero. */
 .xca[data-variant='stack'] .xca__chips { flex-direction: column; }
-.xca[data-variant='stack'] .xca__chip { width: 100%; min-height: 44px; }
+.xca[data-variant='stack'] .xca__chip { width: 100%; min-height: 44px; line-height: 44px; }
 /* On a page (the one-call lead, not the chart's card) the trade is the SECOND press: the page's own
-   button onto the live chart is the one filled button, so the buy is an outline in the accent ink. */
-.xca[data-variant='stack']:not(.xca--card) .xca__chip--buy { background: none; color: var(--up); border-color: color-mix(in srgb, var(--up) 60%, transparent); }
-.xca[data-variant='stack']:not(.xca--card) .xca__chip--buy:hover { opacity: 1; border-color: var(--up); }
+   button onto the live chart is the one filled button, so the buy is a quiet fill in the market's ink. */
+.xca[data-variant='stack']:not(.xca--card) .xca__chip--buy { background: var(--surf-2); color: var(--up); }
+.xca[data-variant='stack']:not(.xca--card) .xca__chip--sell { background: var(--surf-2); color: var(--mk-down, var(--sell)); }
 
 /* Inside the call card (CallFocus): one band between the numbers and the foot.
    The trade on the left, "Share this call" on the right; on the phone sheet the
    trade stacks full width and the share link sits under it. */
 /* Desktop: the chips and the share link on one line, the caption under both, full width. */
-.xca-band { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.xca-band { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 6px; padding: 10px 14px 8px; border-top: 1px solid var(--line); }
 .xca-band > .xca.xca--card { display: contents; }
 .xca-band > .xca--card .xca__chips { grid-column: 1; grid-row: 1; }
 .xca-band > .xca--card .xca__note { grid-column: 1 / -1; grid-row: 2; }
@@ -43,13 +35,21 @@
 .xca-band[data-sheet] .xca-share { margin-left: 0; align-self: flex-start; }
 .xca-share svg { width: 13px; height: 13px; }
 .xca-share:hover { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
-.xca-share:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.xca-share:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Nothing to trade and nothing to share: the band is not drawn. */
+.xca-band:empty { display: none; }
 
 @media (hover: none) {
-  .xca__chip { min-height: 44px; }
+  .xca__chip { min-height: 44px; line-height: 44px; }
   .xca-share { min-height: 44px; }
 }
 @media (max-width: 640px) {
-  .xca__chip { min-height: 44px; }
+  .xca__chip { min-height: 44px; line-height: 44px; }
   .xca-share { min-height: 44px; }
+  /* The call card, short (called-chart.css: until "more" is pressed): the trade sits in a row with the post on X, its
+     caption is one clamped line under it, and the share link waits behind "more". */
+  .xca-band[data-sheet]:not([data-more] *), .xca-band[data-sheet]:not([data-more] *) > .xca.xca--card { display: contents; }
+  .xca-band[data-sheet]:not([data-more] *) .xca__chips { grid-column: 1; grid-row: 1; }
+  .xca-band[data-sheet]:not([data-more] *) .xca__note { grid-column: 1 / -1; grid-row: 2; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; font-size: 10.5px; }
+  .xca-band[data-sheet]:not([data-more] *) .xca-share { display: none; }
 }
