@@ -692,7 +692,8 @@ export function tallyShape(label: TallyLabel, inks: CalledInks): TvShapeOptions 
     shape: 'anchored_text',
     text: label.text,
     ...PIN_SHAPE_FLAGS,
-    overrides: { color: inks.muted, fontsize: label.fontPx, bold: false, italic: false, fillBackground: true, backgroundColor: inks.bg, backgroundTransparency: 18, drawBorder: false, wordWrap: false },
+    // A phone's two short lines stand where the volume bars are: their plate is solid, so no bar shows through the words.
+    overrides: { color: inks.muted, fontsize: label.fontPx, bold: false, italic: false, fillBackground: true, backgroundColor: inks.bg, backgroundTransparency: label.short ? 0 : 18, drawBorder: false, wordWrap: false },
   }
 }
 
@@ -1263,7 +1264,8 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     return Math.abs(x - (box.x + box.w / 2)) <= Math.max(2, view.spacing / 2 + 1) && Math.abs(y - (box.y + box.h / 2)) <= 2
   }
 
-  const labelPos = (pane: PaneSize, keepBottom: number) => ({ x: PANE_KEEP.logoWidth / pane.width, y: Math.max(0, (pane.height - keepBottom + 8) / pane.height) })
+  // (On a phone's pane the label stands 6px further from the library's logo: the two never touch.)
+  const labelPos = (pane: PaneSize, keepBottom: number) => ({ x: (PANE_KEEP.logoWidth + (pane.width < CARDS_MIN_PANE_W ? 6 : 0)) / pane.width, y: Math.max(0, (pane.height - keepBottom + 8) / pane.height) })
   const placeLabel = async (record: CalledRecord, pane: PaneSize, my: number): Promise<void> => {
     const c = chart
     if (!c) return

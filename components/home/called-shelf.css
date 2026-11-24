@@ -44,3 +44,12 @@
 @media (hover: none) {
   .xrc .xrc-shelf__eyebrow { padding-block: 15px; margin-block: -15px; }
 }
+
+/* POLISH (mobile-sleek, 2026-11-24): on a phone the row bleeds to the screen's edge, so the list's own top and left
+   hairlines ran from x=0 while the tiles start on the gutter. The tiles carry their own edges: the first tile's box
+   starts on the 16px gutter and its top and bottom hairlines are the same length. */
+@container (max-width: 559px) {
+  .xrc--shelf .xrc-tiles { border-top: 0; border-left: 0; }
+  .xrc--shelf .xrc-tiles > li { border-top: 1px solid var(--line); }
+  .xrc--shelf .xrc-tiles > li:first-child { border-left: 1px solid var(--line); }
+}
