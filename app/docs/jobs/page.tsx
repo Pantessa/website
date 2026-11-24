@@ -1,13 +1,19 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
+import { DocsSummary, DocsSteps, DocsStep, DocsCallout, DocsNext } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
 
-// Jobs API — the external-agent door to the transaction layer. Every snippet
-// on this page is runnable as pasted (dryRun costs $0 and creates nothing);
-// the sample output is a REAL run, not a mock — the action-chips honesty
-// rule, applied to docs.
+// Jobs API: the external-agent door to the transaction layer. The request
+// below is runnable as pasted (dryRun creates nothing). The response samples
+// are the SHAPE app/api/jobs/route.ts returns today: titles and steps are what
+// lib/jobs compileJobAsk produces for this exact ask; live values (addresses,
+// calldata, quotes) are elided with "…". Amounts clear the code's floors
+// (HL_MIN_DEPOSIT_USDC = 5, HL_MIN_ORDER_USD = 10 in lib/hyperliquid-exec).
+
+const ASK =
+  'bridge 10 usdc from base to arbitrum, then deposit 9 usdc to hyperliquid, then 2x long $12 of eth on hyperliquid, then protect my eth long with a 5% stop'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'jobs')!
 
@@ -24,78 +30,133 @@ export default function JobsDocsPage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
       <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> JOBS
+        <Link href="/docs">DOCS</Link> <span>/</span> JOBS API
       </p>
-      <h1 className="docs__h1">Jobs: one intent, every step guarded</h1>
+      <h1 className="docs__h1">Jobs API</h1>
       <p className="docs__lead">
-        A job is a compound intent — &ldquo;bridge, <em>then</em> deposit, <em>then</em> long,{' '}
-        <em>then</em>{' '}protect it&rdquo; — compiled into a step plan the runner executes with you:
-        it builds and guard-checks each transaction only when it&rsquo;s offered, your wallet
-        signs, and settlement waits are verified server-side between signatures. External agents
-        get the same rails through one endpoint: <code>POST /api/jobs</code>.
+        Send one compound ask, such as &ldquo;bridge, then deposit, then long, then protect it&rdquo;, to{' '}
+        <code>POST /api/jobs</code> and get back a step plan. Pantessa builds and checks each step when
+        it is offered, and the wallet signs it.
       </p>
 
+      <DocsSummary>
+        <li>
+          One endpoint: <code>POST /api/jobs</code> with <code>{`{ ask, dryRun }`}</code>.
+        </li>
+        <li>
+          <code>dryRun: true</code> builds and checks step 1 against live venues, then creates nothing
+          and signs nothing.
+        </li>
+        <li>
+          Auth is a <code>yf_</code> API key as a Bearer token, or a signed-in (SIWE) session.
+        </li>
+        <li>The wallet signs every sign step. Waits are checked on-chain between signatures.</li>
+        <li>
+          A wallet that cannot fund step 1 gets a 400 and no job. A dry run reports the same shortfall.
+        </li>
+      </DocsSummary>
+
       <div className="docs__prose">
-        <h2>Try it for $0 right now</h2>
-        <p>
-          <code>dryRun</code> compiles your ask and builds + guard-checks step&nbsp;1 against{' '}
-          <strong>live venues</strong>{' '}— real quotes, real balances, real refusals — but creates
-          nothing, signs nothing, and costs nothing. It&rsquo;s the test mode <em>and</em> the
-          docs playground:
-        </p>
-        <pre>{`curl -s https://www.pantessa.com/api/jobs \\
+        <h2>First call</h2>
+        <DocsSteps>
+          <DocsStep title="Mint an API key">
+            <p>
+              Create a <code>yf_</code> key on <SpineLink href="/dashboard/keys">/dashboard/keys</SpineLink>{' '}
+              and export it as <code>YF_API_KEY</code>.
+            </p>
+          </DocsStep>
+          <DocsStep title="Send a dry run">
+            <pre>{`curl -s https://www.pantessa.com/api/jobs \\
   -H "authorization: Bearer $YF_API_KEY" \\
   -H "content-type: application/json" \\
   -d '{
-    "ask": "swap 5 usdc from base to arbitrum, then deposit 5 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop",
+    "ask": "${ASK}",
     "dryRun": true
   }'`}</pre>
+          </DocsStep>
+          <DocsStep title="Read the plan">
+            <p>
+              The answer lists every step and shows step 1 as a real, checked transaction. See{' '}
+              <a href="#what-comes-back">what comes back</a> below.
+            </p>
+          </DocsStep>
+          <DocsStep title="Run it">
+            <p>
+              Send the same body without <code>dryRun</code>. That creates the job (201) and offers
+              step 1 for signature.
+            </p>
+          </DocsStep>
+        </DocsSteps>
         <p>
-          Mint the <code>yf_</code> key at{' '}
-          <SpineLink href="/dashboard/keys">/dashboard/keys</SpineLink>{' '}— or skip the key entirely and run
-          the repo&rsquo;s demo script, which can also authenticate as your wallet via SIWE:
+          The website repo has the same walk-through as a script:{' '}
+          <a
+            href="https://github.com/Pantessa/website/blob/main/scripts/jobs-api-demo.ts"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            scripts/jobs-api-demo.ts
+          </a>
+          . It authenticates with <code>YF_API_KEY</code>, or with SIWE from a local key, and takes{' '}
+          <code>--ask</code>, <code>--base</code> and <code>--live</code>.
         </p>
-        <pre>{`npx tsx scripts/jobs-api-demo.ts            # dryRun against prod
-npx tsx scripts/jobs-api-demo.ts --live     # actually creates the job`}</pre>
 
-        <h2>What comes back</h2>
+        <h2 id="what-comes-back">What comes back</h2>
         <p>
-          Real output (a funded test wallet, live NEAR Intents quote — trimmed for width). Note
-          what&rsquo;s in it: the compiled plan, and step&nbsp;1 as an <em>actual transaction</em>{' '}
-          with its guard report and priced value — not a description of one.
+          A dry run for the ask above, from a wallet that holds the 10 USDC on Base. The titles and steps
+          are exactly what the compiler builds from this ask. Live values are shortened to{' '}
+          <code>…</code>.
         </p>
         <pre>{`{
   "dryRun": true,
-  "title": "Bridge 5 USDC (base) → USDC (arbitrum) → Deposit 4 USDC to
-            Hyperliquid → Long $12 of ETH on Hyperliquid → Arm stop-loss on ETH (5%)",
+  "title": "Bridge 10 USDC (base) → USDC (arbitrum) → Deposit 9 USDC to Hyperliquid → 2x Long $12 of ETH on Hyperliquid → Arm stop-loss on ETH (5%)",
   "steps": [
-    { "seq": 0, "kind": "sign", "builder": "native-cross-chain", "title": "Bridge 5 USDC …" },
-    { "seq": 1, "kind": "wait", "builder": "wait", "waitPredicate": { "kind": "oneclick" } },
-    { "seq": 2, "kind": "sign", "builder": "native-hl-exec", "title": "Deposit 4 USDC …" },
-    { "seq": 3, "kind": "wait", "builder": "wait", "waitPredicate": { "kind": "hl-credit" } },
-    { "seq": 4, "kind": "sign", "builder": "native-hl-exec", "title": "Long $12 of ETH …" },
-    { "seq": 5, "kind": "auto", "builder": "native-hl-guardian", "title": "Arm stop-loss …" }
+    { "seq": 0, "kind": "sign", "builder": "native-cross-chain",
+      "title": "Bridge 10 USDC (base) → USDC (arbitrum)", "waitPredicate": null },
+    { "seq": 1, "kind": "wait", "builder": "wait",
+      "title": "Solver settles the swap", "waitPredicate": { "kind": "oneclick", "fromStep": 0 } },
+    { "seq": 2, "kind": "sign", "builder": "native-hl-exec",
+      "title": "Deposit 9 USDC to Hyperliquid", "waitPredicate": null },
+    { "seq": 3, "kind": "wait", "builder": "wait",
+      "title": "Hyperliquid credits the deposit", "waitPredicate": { "kind": "hl-credit", "minUsd": 8.1 } },
+    { "seq": 4, "kind": "sign", "builder": "native-hl-exec",
+      "title": "2x Long $12 of ETH on Hyperliquid", "waitPredicate": null },
+    { "seq": 5, "kind": "auto", "builder": "native-hl-guardian",
+      "title": "Arm stop-loss on ETH (5%)", "waitPredicate": null }
   ],
   "firstSignPreview": {
     "step": 0,
     "artifact": {
-      "txRequest": { "to": "0x833589…2913", "data": "0xa9059cbb…", "chainId": 8453 },
-      "summary": "Send 5.0 USDC on Base to NEAR Intents deposit address 0xA046…917E —
-                  solvers then deliver ~4.99 USDC on Arbitrum (ETA ~34s)"
+      "txRequest": { "to": "0x8335…2913", "data": "0xa9059cbb…", "value": "0", "chainId": 8453, "action": "deposit" },
+      "depositAddress": "0x…",
+      "summary": "…",
+      "addressExpires": "…"
     },
-    "guardReport": { "ok": true, "warnings": [] },
-    "valueUsd": 5
+    "guardReport": { "ok": true, "warnings": [], "valueUsd": 10 },
+    "valueUsd": 10
   },
   "note": "Nothing was created or signed — re-POST without dryRun to run it."
 }`}</pre>
         <p>
-          If the build can&rsquo;t clear its guards, you get the reason instead of the artifact —
-          same shape, <code>refused</code> instead of <code>artifact</code>. A real one:{' '}
-          <code>
-            &ldquo;Wallet holds only 2.52 USDC on Arbitrum — bridge funds there first (cross-chain
-            swap).&rdquo;
-          </code>{' '}
-          The layer refuses honestly; it never guesses.
+          Step 1 here is a USDC <code>transfer</code> on Base to a one-time NEAR Intents deposit address.
+          The guard decodes it and checks the recipient and amount against the quote before it is shown.
+        </p>
+        <p>Two extra fields can appear on a dry run:</p>
+        <ul>
+          <li>
+            <code>preflight</code>: the wallet cannot fund step 1. It holds <code>short</code> (chain,
+            symbol, needs, held), <code>reply</code> in words, and sometimes <code>clarify</code> with
+            asks that work for this wallet. <code>firstSignPreview</code> then carries{' '}
+            <code>refused</code> instead of <code>artifact</code>.
+          </li>
+          <li>
+            <code>unfillable</code>: the plan ends in a buy that no venue can fill right now, so moving
+            money first would strand it. A real POST is refused.
+          </li>
+        </ul>
+        <p>
+          When step 1 cannot clear its guards, <code>firstSignPreview</code> is{' '}
+          <code>{`{ step, refused }`}</code>, with the reason in words. Pantessa never guesses a step it
+          cannot build.
         </p>
 
         <h2>Step kinds</h2>
@@ -112,10 +173,10 @@ npx tsx scripts/jobs-api-demo.ts --live     # actually creates the job`}</pre>
               <td>
                 <code>sign</code>
               </td>
-              <td>Your wallet</td>
+              <td>The wallet</td>
               <td>
-                Built + guard-checked <em>at offer time</em> (fresh quotes, current balances),
-                then offered for signature. Artifacts expire; stale ones are rebuilt, not reused.
+                Built and checked when it is offered, with fresh quotes and balances. A stale build is
+                rebuilt, never reused.
               </td>
             </tr>
             <tr>
@@ -124,8 +185,8 @@ npx tsx scripts/jobs-api-demo.ts --live     # actually creates the job`}</pre>
               </td>
               <td>The runner</td>
               <td>
-                Settlement verification — solver fill, Hyperliquid credit — polled server-side.
-                Waits <em>verify</em>; they don&rsquo;t trust the previous step&rsquo;s word.
+                Checks settlement on its own (a solver fill, a Hyperliquid credit). It does not take the
+                previous step&apos;s word.
               </td>
             </tr>
             <tr>
@@ -134,14 +195,14 @@ npx tsx scripts/jobs-api-demo.ts --live     # actually creates the job`}</pre>
               </td>
               <td>The runner</td>
               <td>
-                Server-side under an existing consent — e.g. arming a{' '}
+                Runs under a consent you already gave, such as arming a{' '}
                 <Link href="/docs/guardian">Guardian</Link> stop once the position exists.
               </td>
             </tr>
           </tbody>
         </table>
 
-        <h2>dryRun vs live</h2>
+        <h2>Dry run or live</h2>
         <table>
           <thead>
             <tr>
@@ -156,86 +217,172 @@ npx tsx scripts/jobs-api-demo.ts --live     # actually creates the job`}</pre>
           </thead>
           <tbody>
             <tr>
-              <td>Compile + plan preview</td>
-              <td>✓</td>
-              <td>✓</td>
+              <td>Plan compiled</td>
+              <td>yes</td>
+              <td>yes</td>
             </tr>
             <tr>
-              <td>Step 1 built + guarded live</td>
-              <td>✓</td>
-              <td>✓</td>
+              <td>Step 1 built and checked live</td>
+              <td>yes</td>
+              <td>yes</td>
+            </tr>
+            <tr>
+              <td>Wallet can&apos;t fund step 1</td>
+              <td>200 with <code>preflight</code></td>
+              <td>400, no job created</td>
             </tr>
             <tr>
               <td>Rows created</td>
               <td>none</td>
-              <td>the job + its steps</td>
+              <td>the job and its steps (201)</td>
             </tr>
             <tr>
               <td>Can be signed</td>
               <td>no</td>
-              <td>step by step, from the chat JobCard or your own UI</td>
+              <td>step by step, in the chat&apos;s job card or your own UI</td>
             </tr>
             <tr>
               <td>Cost</td>
-              <td>$0</td>
-              <td>whatever you sign — and only that</td>
+              <td>nothing</td>
+              <td>only what the wallet signs</td>
             </tr>
           </tbody>
         </table>
 
-        <h2>Auth, and the rest of the surface</h2>
+        <h2>Routes</h2>
+        <p>
+          Every route accepts the owner&apos;s session or <code>Authorization: Bearer yf_…</code>. The
+          routes under <code>/api/jobs/:id</code> also accept the job&apos;s capability token as{' '}
+          <code>?t=</code>, which is how the <Link href="/docs/embed">embedded chat</Link> and the{' '}
+          <Link href="/docs/desk">agent desk</Link> follow a job without a session.
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Route</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <code>POST /api/jobs</code>
+              </td>
+              <td>
+                Compile <code>ask</code>. Dry run: the plan preview. Live: create the job, 201{' '}
+                <code>{`{ job }`}</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/jobs</code>
+              </td>
+              <td>Your 20 newest jobs with their steps.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/jobs/:id</code>
+              </td>
+              <td>
+                The job and its steps, with the artifacts to sign. A poll on a job that is settling moves
+                it forward one tick.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/jobs/:id/complete</code>
+              </td>
+              <td>
+                Report a signed step: <code>{`{ seq, result }`}</code>, for example a tx hash. This
+                advances the job; it is not proof. The next wait or build checks the chain, so a false
+                report fails the job one step later.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/jobs/:id/retry</code>
+              </td>
+              <td>
+                A job waiting on a signature gets a fresh build of the offered step. A failed job re-arms
+                its failed step. Both rebuild through the same guarded builder.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/jobs/:id/context</code>
+              </td>
+              <td>
+                What the job&apos;s venues show for the wallet now, such as an open Hyperliquid position and
+                its PnL.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>DELETE /api/jobs/:id</code>
+              </td>
+              <td>Cancel a job that has not finished.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>Errors</h2>
         <ul>
           <li>
-            <strong>Two auth paths, full parity:</strong> a SIWE session (the browser) or{' '}
-            <code>Authorization: Bearer yf_…</code> (a headless agent). Same compile, same
-            builds, same list at <code>GET /api/jobs</code>.
+            <strong>401</strong> <code>{`{ "error": "Not signed in." }`}</code>: no session and no valid
+            key.
           </li>
           <li>
-            <strong>Watch a job:</strong> <code>GET /api/jobs/:id</code>{' '}returns the job + steps
-            with artifacts. Replies that compile a job also carry a per-job capability token —
-            it&rsquo;s how the <Link href="/docs/embed">embedded chat&rsquo;s</Link> JobCard
-            follows a job without a session, scoped to exactly that job.
+            <strong>400</strong> <code>ask is required.</code>
           </li>
           <li>
-            <strong>Cancel:</strong> <code>DELETE /api/jobs/:id</code>. Unfilled swaps auto-refund;
-            waits time out closed, never open.
+            <strong>400</strong> <code>Not a compound ask.</code>{' '}A single action belongs in the chat or
+            on a chart; a job chains two or more steps with &ldquo;then&rdquo;.
           </li>
           <li>
-            <strong>Bad asks refuse honestly:</strong> a single-step ask belongs to the{' '}
-            <Link href="/docs/transactions">native layer</Link>{' '}(400 tells you so), and a
-            compound ask with an uncompilable segment names the exact step it couldn&rsquo;t
-            build instead of improvising one.
+            <strong>400</strong> <code>Step N: …</code> names the step the compiler could not read. It
+            never invents one.
+          </li>
+          <li>
+            <strong>400</strong> with <code>clarify</code>: an ambiguous ticker. Re-POST one of the
+            options&apos; <code>resume</code> strings as the ask.
+          </li>
+          <li>
+            <strong>400</strong> with <code>unfillable</code> wording (live only): the final buy has no
+            venue right now.
+          </li>
+          <li>
+            <strong>400</strong> pre-flight (live only): the wallet cannot fund step 1.
           </li>
         </ul>
-
-        <h2>Recurring buys (DCA) — a schedule, not an authorization</h2>
-        <p>
-          Add a cadence and a one-step intent becomes a standing one:
-        </p>
-        <pre>{`buy $10 of AAPL every week
-dca $25 into ETH daily on base`}</pre>
-        <p>
-          That creates a <strong>confirm-mode schedule</strong>. Nothing signs itself: each due
-          period (UTC day, week, or month) compiles a fresh one-step swap job — same builders,
-          same guards, quoted at offer time — and <strong>you sign that buy</strong>. Miss a
-          week and the period lapses; the schedule never buys behind your back and never
-          double-buys a period. Manage it in the same sentence register:{' '}
-          <code>pause my AAPL dca</code>, <code>resume my dca</code>,{' '}
-          <code>cancel my ETH dca</code>, <code>list my recurring buys</code>{' '}— or from the Jobs
-          tab in the chat rail. Sizing is dollar-denominated on purpose: a schedule&apos;s
-          contract is a fixed spend per period, so token-unit asks get an honest correction
-          instead of a guessed price.
-        </p>
+        <pre>{`{
+  "error": "🧭 No job was created: its first step spends 10 USDC on Base, and this wallet holds 2.5 USDC there. …",
+  "short": { "chainId": 8453, "chain": "Base", "symbol": "USDC", "needs": "10", "held": "2.5" },
+  "clarify": { "question": "…", "options": [{ "label": "…", "resume": "…" }] },
+  "created": false,
+  "note": "No job was created: the wallet cannot fund the first step. Fund it, or re-POST one of the clarify options' resume strings as the ask."
+}`}</pre>
+        <DocsCallout kind="note">
+          <p>
+            <code>clarify</code> appears only when there is an ask that works for this wallet. Without it,
+            fund the wallet and send the ask again.
+          </p>
+        </DocsCallout>
 
         <h2>Where jobs show up</h2>
         <p>
-          The same compiler answers everywhere: the <SpineLink href="/chat">first-party chat</SpineLink>,
-          the <Link href="/docs/embed">embed on your site</Link>, and this API. A user typing the
-          ask above gets a JobCard with a sign button per step; your agent POSTing it gets the
-          same steps as JSON. Signed value lands in your{' '}
-          <SpineLink href="/dashboard">dashboard</SpineLink> either way — the receipt is the product.
+          The same compiler answers in the <SpineLink href="/chat">chat</SpineLink>, in the{' '}
+          <Link href="/docs/embed">embed on your site</Link>, and in this API. A person typing the ask
+          gets a job card with a sign button per step. Your agent gets the same steps as JSON.
         </p>
       </div>
+
+      <DocsNext
+        links={[
+          { href: '/docs/desk', title: 'Agent desk (MCP)', desc: 'Let an agent open, negotiate and drive a job over MCP.' },
+          { href: '/docs/embed', title: 'Embed the chat', desc: 'Put the chat, job cards included, on your own site.' },
+          { href: '/docs/trust', title: 'Trust', desc: 'How each step is guarded and priced before anyone signs.' },
+        ]}
+      />
     </>
   )
 }
