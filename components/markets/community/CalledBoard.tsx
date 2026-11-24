@@ -19,7 +19,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import type { BoardEntry } from '@/lib/called-it/gtm'
-import { STANDING_NOT_VERIFIED, fmtDay, type CallVerdict } from '@/lib/called-it/spec'
+import { STANDING_NOT_VERIFIED, VERDICT_WORDS, fmtDay, type CallVerdict } from '@/lib/called-it/spec'
+import ScoreBar from '@/components/sleek/ScoreBar'
+import VerdictTile from '@/components/sleek/VerdictTile'
 import { cleanLine, headlineParts, headlineTally, initialOf } from '@/lib/called-it/card-layout'
 import {
   BOARD_DOOR_HREF,
@@ -166,7 +168,7 @@ function BoardCard({ entry: e, onPlot }: { entry: BoardEntry; onPlot: (href: str
   const plot = plotHref(e)
 
   return (
-    <article className="xbd-card" aria-label={`${name} on ${e.symbol}`}>
+    <article className="xbd-card sk-card" aria-label={`${name} on ${e.symbol}`}>
       <Link href={plot} className="xbd-card__press" data-journey="called_board_plot" onClick={() => onPlot(plot)}>
         <div className="xbd-card__who">
           <span className="xbd-card__avatar" aria-hidden>
@@ -182,14 +184,11 @@ function BoardCard({ entry: e, onPlot }: { entry: BoardEntry; onPlot: (href: str
         </div>
 
         {parts ? (
-          <ul className="xbd-card__tally" aria-label="The record">
-            {parts.counts.map((c) => (
-              <li key={c.text} className={c.kind === 'total' ? 'xbd-chip xbd-chip--total' : `xbd-chip ${INK[c.kind]}`}>
-                {c.kind !== 'total' && <span className="xbd-mark" aria-hidden />}
-                {c.text}
-              </li>
-            ))}
-          </ul>
+          // The tally as one bar (squad mobile-sleek): every verdict the scan counted has a segment, misses beside hits.
+          <div className="xbd-card__tally" aria-label="The record">
+            <p className="xbd-card__total">{parts.counts[0].text}</p>
+            <ScoreBar counts={e.tally} words={VERDICT_WORDS} />
+          </div>
         ) : (
           <p className="xbd-card__tallyline">{headlineTally(e.headline)}</p>
         )}
@@ -209,6 +208,7 @@ function BoardCard({ entry: e, onPlot }: { entry: BoardEntry; onPlot: (href: str
         {best && (
           <div className="xbd-card__best is-right">
             <p className="xbd-card__bestlabel">
+              <VerdictTile verdict="right" size={14} />
               Best call · {fmtDay(best.postedAt)}
             </p>
             <blockquote className="xbd-card__quote">“{cleanLine(best.quote || best.text, 160)}”</blockquote>

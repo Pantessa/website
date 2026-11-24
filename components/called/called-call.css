@@ -163,3 +163,57 @@
 @media (prefers-reduced-motion: reduce) {
   .xcl-kicker__jump, .xcl-btn, .xcl-card { transition: none; }
 }
+
+/* ── SLEEK (squad mobile-sleek, 2026-11-24) ────────────────────────────────
+   The call's first screen in the phone-first language: the verdict wears the
+   brand's tile (colour and glyph), the tally is one bar under the record's
+   own headline, the one press is docked under the thumb with Share beside it,
+   and nothing is a pill. These rules come last on purpose. */
+.xcl-kicker { min-height: 24px; letter-spacing: 0.12em; }
+.xcl-verdict { gap: 0.3em; }
+.xcl-verdict__tile { flex: none; width: 0.86em; height: 0.86em; }
+.xcl-who__face { width: 36px; height: 36px; }
+.xcl .xcl-who { min-height: 44px; }
+.xcl-meta { font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.06em; color: var(--muted-2); }
+.xcl-meta__added { border-radius: 0; }
+.xcl .xcl-meta a { font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; }
+.xcl-spark__dot { border-radius: 0; }
+.xcl-record { gap: var(--sp-3); }
+.xcl-record__tally { font-size: var(--fs-base); font-weight: 600; }
+.xcl-record__who { flex: 0 1 auto; color: var(--fg); font-weight: 600; }
+.xcl-record__standing { font-size: var(--fs-sm); color: var(--muted-2); }
+
+/* The one press, with Share beside it. */
+.xcl-dock { display: flex; align-items: stretch; gap: var(--sp-2); }
+.xcl .xcl-btn { flex: 1 1 auto; border: 0; border-radius: 0; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); text-align: center; }
+.xcl .xcl-btn:focus-visible { outline: 2px solid var(--fg); outline-offset: -4px; }
+.xcl .xcl-dock__alt { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 var(--sp-4); background: var(--surf-2); color: var(--fg); font-family: var(--xrc-ui); font-size: var(--fs-base); font-weight: 600; text-decoration: none; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+.xcl-leadcard__mark { border-radius: 0; }
+.xcl-card.xcl-card { border-radius: 0; background: var(--bg); }
+
+/* The record's highlight: a cut card on the kit's edge, in the verdict's colour. */
+.xcl-best.xcl-best { --sk-edge: var(--xrc-tone); --sk-fill: var(--bg); gap: var(--sp-3); padding: var(--sp-4); border-left: 0; }
+.xcl-best__kicker { gap: var(--sp-1) var(--sp-2); letter-spacing: 0.1em; }
+.xcl-best__of { margin-left: auto; }
+.xcl-best__text { font-family: var(--xrc-ui); font-weight: 400; font-size: var(--fs-base); line-height: 1.5; letter-spacing: 0; }
+.xcl-best__foot { font-family: var(--xrc-mono); font-size: var(--fs-sm); }
+.xcl-best__move { color: var(--xrc-tone); }
+.xcl-best__go { font-family: var(--xrc-ui); font-size: var(--fs-md); }
+
+@media (min-width: 1024px) {
+  .xcl-dock { align-self: flex-start; }
+  /* The tally and the press stay on a laptop's first screen: the spark is a strip. */
+  .xcl-spark { height: 88px; margin-top: var(--sp-4); }
+  .xcl { gap: var(--sp-3); }
+  .xcl .xcl-dock__alt { display: none; }
+}
+@media (max-width: 1023px) {
+  .xcl-dock { position: fixed; left: 0; right: 0; bottom: var(--sk-dock-bottom, 0px); z-index: 40; padding: 10px var(--sp-4) calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--bg); }
+  .xcl .xcl-btn { min-height: 52px; padding-inline: var(--sp-3); }
+}
+@media (max-width: 480px) {
+  /* The page is this call's: the button says where it goes and stays on one line. */
+  .xcl-btn__tail { display: none; }
+  /* The four counts as a tidy two-by-two under the bar (the bar's own list, addressed by element). */
+  .xcl-record ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-1) var(--sp-4); }
+}
