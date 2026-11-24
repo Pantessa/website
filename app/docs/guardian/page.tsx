@@ -1,13 +1,21 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
+import { DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
+import { feePctLabel } from '@/lib/fees'
+import { GUARDIAN_DELEGATION_DAYS, GUARDIAN_SLIPPAGE_BPS } from '@/lib/hl-guardian'
 
-// Guardian — autonomy without custody. The trust story is the whole page:
-// what the delegated key CAN'T do is the product.
+// Guardian: a stop-loss or take-profit on a Hyperliquid position, checked
+// every minute. What the key is and is not was checked against the code on
+// 2026-11-24 (lib/hl-guardian.ts guardGuardianClose, lib/hl-guardian-store.ts
+// runGuardianSweep, app/api/hl/submit/route.ts; lane write-safety notes).
+// The two sample sentences are the ask ladder's (scripts/audit-asks.ts).
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'guardian')!
+
+const PRICE_BOUND_PCT = feePctLabel(GUARDIAN_SLIPPAGE_BPS).replace(/\.00%$/, '%')
 
 export const metadata: Metadata = {
   title: PAGE.seoTitle,
@@ -22,113 +30,132 @@ export default function GuardianDocsPage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
       <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> GUARDIAN
+        <Link href="/docs">DOCS</Link> <span>/</span> SAFETY <span>/</span> GUARDIAN
       </p>
-      <h1 className="docs__h1">Guardian: autonomy without custody</h1>
+      <h1 className="docs__h1">Guardian: a stop that watches your position</h1>
       <p className="docs__lead">
-        A stop-loss that fires at 3am needs <em>someone</em> awake. Guardian is that someone —
-        with a key that can do exactly one thing: reduce the position you told it to protect.
-        One signature delegates it; everything it does lands as a receipt.
+        Guardian puts a stop-loss or a take-profit on an open Hyperliquid position and checks it every minute. You
+        approve it once with your wallet.
       </p>
+
+      <DocsSummary>
+        <li>It works on Hyperliquid perp positions on the main book.</li>
+        <li>When your price is crossed, it sends a close that can only reduce that position.</li>
+        <li>It runs on an agent key Pantessa keeps encrypted. Hyperliquid does not let that key withdraw.</li>
+        <li>The approval lasts up to {GUARDIAN_DELEGATION_DAYS} days. You remove it fully in the Hyperliquid app.</li>
+        <li>A Guardian close carries no Pantessa fee.</li>
+      </DocsSummary>
 
       <div className="docs__prose">
-        <h2>Arm it in a sentence</h2>
-        <p>
-          In <SpineLink href="/chat">chat</SpineLink> (or the <Link href="/docs/embed">embed</Link>), with
-          a Hyperliquid position open:
-        </p>
-        <pre>{`protect my eth long with a 5% stop
+        <h2>Set one up</h2>
+        <DocsSteps>
+          <DocsStep title="Open a position on Hyperliquid">
+            <p>A long or a short on a Hyperliquid market.</p>
+          </DocsStep>
+          <DocsStep title="Ask for the stop">
+            <p>
+              On that market&apos;s chart, press <strong>Protect with a stop</strong> and pick how far away the stop sits. Or
+              type it in <SpineLink href="/chat">chat</SpineLink>:
+            </p>
+            <pre>{`protect my eth long with a 5% stop
 take profit on my eth long at $2100`}</pre>
-        <p>
-          No delegation yet? You&rsquo;ll get the one-time <code>approveAgent</code>{' '}signature
-          first — Hyperliquid&rsquo;s own delegation primitive, signed by your wallet, expiring
-          on its own schedule. Policies can also arm as the final{' '}
-          <code>auto</code> step of a <Link href="/docs/jobs">job</Link>: &ldquo;…then protect it
-          with a 5% stop&rdquo; arms the policy the moment the long fills.
-        </p>
+          </DocsStep>
+          <DocsStep title="Approve once">
+            <p>
+              If you have not approved Pantessa&apos;s agent key yet, your wallet asks for that one signature
+              first. It is Hyperliquid&apos;s own <code>approveAgent</code> request.
+            </p>
+          </DocsStep>
+          <DocsStep title="Check it on the Guardian screen">
+            <p>
+              <SpineLink href="/dashboard/guardian">The Guardian screen</SpineLink> lists your stops and every
+              time one fired or closed.
+            </p>
+          </DocsStep>
+        </DocsSteps>
 
-        <h2>What the delegated key cannot do</h2>
-        <p>The delegation is an agent key on Hyperliquid&rsquo;s L1 — not your private key. It:</p>
+        <h2>What the key can and cannot do</h2>
         <ul>
           <li>
-            <strong>cannot withdraw</strong>{' '}— funds never move off the exchange under it,
+            It is a Hyperliquid agent key. Your wallet approves it once, and Pantessa keeps it encrypted.
+          </li>
+          <li>Hyperliquid does not let an agent key withdraw. Your money stays in your Hyperliquid account.</li>
+          <li>
+            For a Guardian close, Pantessa&apos;s guard allows one order only: a reduce-only close of the coin and
+            side you chose, no larger than your live position, priced within about {PRICE_BOUND_PCT} of the market.
           </li>
           <li>
-            <strong>cannot open or grow positions</strong>{' '}— every guardian order is
-            reduce-only, sized to the live position,
+            The same key also places the Hyperliquid orders you ask for when your wallet cannot sign them itself.
+            Each of those needs a signed message from your wallet first. See{' '}
+            <Link href="/docs/trust#the-one-exception-hyperliquid">the Hyperliquid exception</Link>.
+          </li>
+          <li>The approval lasts up to {GUARDIAN_DELEGATION_DAYS} days at Hyperliquid.</li>
+        </ul>
+
+        <h2>When it fires, and when it does not</h2>
+        <p>
+          Every minute, Guardian reads your position and the market price. When your stop or target is crossed, it
+          builds the close from the live position and checks it again before sending it.
+        </p>
+        <ul>
+          <li>
+            <strong>A check fails:</strong> no order is sent and that stop is switched off. The Guardian screen
+            shows why, and you can resume it there.
           </li>
           <li>
-            <strong>cannot touch other assets</strong>{' '}— the policy pins one coin, one side,
+            <strong>The close does not fill:</strong> the stop stays armed and Guardian tries again the next
+            minute.
           </li>
           <li>
-            <strong>expires</strong>{' '}— and you can revoke it or hit the{' '}
-            <Link href="/docs/spend-policy">kill switch</Link> any time.
+            <strong>Your position closed some other way:</strong> the stop retires.
+          </li>
+          <li>
+            <strong>Your account is frozen:</strong> Guardian does not close. It keeps watching and acts once you
+            resume.
+          </li>
+          <li>
+            <strong>The approval ran out:</strong> Guardian cannot close, and the stop is switched off. Approve
+            again before it ends.
+          </li>
+        </ul>
+        <p>Guardian acts on the price it reads each minute, so a brief move past your stop can fire it.</p>
+
+        <h2>Stop it or remove it</h2>
+        <ul>
+          <li>
+            <strong>Revoke</strong> on the Guardian screen stops Guardian at once and pauses all your stops. Pantessa
+            then stops using that key for your orders too.
+          </li>
+          <li>
+            To remove the key at Hyperliquid as well, remove the Pantessa agent from your API wallets in the
+            Hyperliquid app. Otherwise Hyperliquid keeps the approval until it expires.
+          </li>
+          <li>
+            <strong>Freeze account</strong> on your dashboard also makes Guardian stand down. See{' '}
+            <Link href="/docs/trust#no-caps-and-one-switch">the freeze switch</Link>.
           </li>
         </ul>
 
-        <h2>Fail-closed at fire time</h2>
-        <p>
-          A cron sweep watches armed policies every minute. When a trigger crosses, the close is{' '}
-          <em>rebuilt from scratch</em> and re-guarded before submission — the guard refuses if
-          anything drifted:
-        </p>
-        <ul>
-          <li>the order isn&rsquo;t reduce-only, is oversized, or targets the wrong asset or side,</li>
-          <li>the delegation lapsed or was revoked, or the kill switch is on,</li>
-          <li>the trigger is no longer true at build time (a wick, not a move),</li>
-          <li>a price bound would fill worse than the policy allows.</li>
-        </ul>
-        <p>
-          Any failed check means <strong>no order</strong>. The sweep logs the refusal and tries
-          again next tick if the trigger still holds. Guardian never improvises.
-        </p>
-
-        <h2>Receipts, like everything else</h2>
-        <p>
-          Every armed policy, every trigger evaluation that fires, every close: a receipt on{' '}
-          <SpineLink href="/dashboard/guardian">/dashboard/guardian</SpineLink> with the position, the
-          trigger, the fill, and the guarded value. Autonomy you can audit beats autonomy you
-          have to trust.
-        </p>
-
-        <h2>The shape of the thing</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Piece</th>
-              <th>What it is</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Delegation</td>
-              <td>
-                Hyperliquid <code>approveAgent</code>{' '}— your wallet&rsquo;s one-time EIP-712
-                signature naming a server-held agent key, with an expiry.
-              </td>
-            </tr>
-            <tr>
-              <td>Policy</td>
-              <td>
-                One coin, one side, one trigger (percent stop or absolute take-profit), armed
-                from chat or as a job&rsquo;s <code>auto</code> step.
-              </td>
-            </tr>
-            <tr>
-              <td>Sweep</td>
-              <td>Per-minute cron: evaluate triggers → rebuild → re-guard → submit or refuse.</td>
-            </tr>
-            <tr>
-              <td>Guard</td>
-              <td>
-                The same fail-closed pattern as every <Link href="/docs/transactions">native
-                venue</Link>: the artifact is re-derived and checked against the policy at the
-                last moment, never replayed from storage.
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <h2>Reference</h2>
+        <DocsFacts
+          rows={[
+            ['Works on', 'Hyperliquid perps on the main book. Not builder-dex markets yet.'],
+            ['Trigger', 'A percent move from your entry price, or a price you name'],
+            ['Checked', 'Every minute'],
+            ['The close', `One reduce-only order, at most your live position, within about ${PRICE_BOUND_PCT} of the market`],
+            ['Approval', <span key="v">Hyperliquid <code>approveAgent</code>, signed by your wallet, up to {GUARDIAN_DELEGATION_DAYS} days</span>],
+            ['Pantessa fee', 'None'],
+          ]}
+        />
       </div>
+
+      <DocsNext
+        links={[
+          { href: '/docs/trust', title: 'Why you can sign it', desc: 'How every trade is built, checked and signed.' },
+          { href: '/docs/markets', title: 'Markets', desc: 'Charts you can act on, Protect included.' },
+          { href: '/docs/venues', title: 'Venues', desc: 'Every venue, chain and contract, read from the code.' },
+        ]}
+      />
     </>
   )
 }

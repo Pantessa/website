@@ -1,16 +1,23 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
+import { DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
-import { LINK_FEE_PCT, SWAP_FEE_PCT } from '@/lib/fees'
+import { CROSS_CHAIN_FEE_BPS, HL_BUILDER_FEE_TENTH_BPS, LINK_FEE_PCT, SWAP_FEE_PCT, feePctLabel } from '@/lib/fees'
+import { GUARDIAN_DELEGATION_DAYS } from '@/lib/hl-guardian'
 
-// The user door's lead page: why a signature on a Pantessa artifact is safe
-// to give. Trust-critical — plain statements, no jokes, every claim checked
-// against the code that enforces it (lib/tx-guardrails, lib/spend-grant,
-// lib/approvals, lib/fees).
+// The first page in SAFETY: why a trader can sign what Pantessa builds.
+// Every safety sentence here was checked against the code that enforces it
+// on 2026-11-24 (squad docs-clean, lane write-safety; the file:line list is
+// in that lane's notes). Fees and durations are read from code constants.
+// Absorbs the still-true parts of the retired /docs/spend-policy and
+// /docs/transactions pages.
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'trust')!
+
+const HL_FEE_PCT = feePctLabel(HL_BUILDER_FEE_TENTH_BPS / 10)
+const CROSS_CHAIN_FEE_PCT = feePctLabel(CROSS_CHAIN_FEE_BPS)
 
 export const metadata: Metadata = {
   title: PAGE.seoTitle,
@@ -25,125 +32,120 @@ export default function TrustDocsPage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
       <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> TRUST: THE GUARDRAILS
+        <Link href="/docs">DOCS</Link> <span>/</span> SAFETY
       </p>
       <h1 className="docs__h1">Why you can sign what Pantessa builds</h1>
       <p className="docs__lead">
-        Pantessa is non-custodial: it never holds your keys or your funds. It produces
-        transaction artifacts — built deterministically, re-checked fail-closed, priced, and
-        receipted — and <strong>your wallet is the only thing that can sign them</strong>. This
-        page is the full trust model, claim by claim.
+        Pantessa builds the trade, checks it, and hands it to your wallet. Nothing happens until you sign.
       </p>
 
+      <DocsSummary>
+        <li>Pantessa never holds your money and cannot withdraw it.</li>
+        <li>Code, not the AI, builds each trade from live venue data.</li>
+        <li>A second check runs before your wallet sees it. If it fails, nothing is offered.</li>
+        <li>The fee is shown before you sign.</li>
+        <li>You sign. Your signature is the consent.</li>
+      </DocsSummary>
+
       <div className="docs__prose">
-        <h2>What non-custodial means here</h2>
+        <h2>What happens when you press a price</h2>
+        <DocsSteps>
+          <DocsStep title="You ask">
+            <p>
+              Press a price or a button on a chart, or type what you want in chat. Looking is free and needs no
+              wallet. Acting needs one.
+            </p>
+          </DocsStep>
+          <DocsStep title="Code builds it from live data">
+            <p>
+              Pantessa&apos;s code picks the venue and builds the transaction from live quotes, pools and balances,
+              read at that moment. The AI can help work out what you asked for. It never writes the transaction.
+            </p>
+          </DocsStep>
+          <DocsStep title="A second check runs">
+            <p>
+              A separate guard decodes the finished transaction and checks it: the contract is one Pantessa has
+              pinned, the amount is the one you asked for, and what you swap for comes back to your own wallet. If any
+              check fails, the build stops and you see the reason.
+            </p>
+          </DocsStep>
+          <DocsStep title="You see the card">
+            <p>
+              The card shows the venue, the amount and the Pantessa fee. Quotes go stale, so a build past its
+              deadline is built again with a fresh quote, never offered as it was.
+            </p>
+          </DocsStep>
+          <DocsStep title="Your wallet signs">
+            <p>
+              Your wallet shows you the transaction and asks. If you sign, it goes to the venue. If you do not,
+              nothing moves.
+            </p>
+          </DocsStep>
+        </DocsSteps>
+
+        <h2>The one exception: Hyperliquid</h2>
+        <p>
+          You sign every swap, bridge and transfer yourself. Hyperliquid orders can work a little differently.
+          Many wallets cannot sign Hyperliquid&apos;s order format. For those wallets, and for every{' '}
+          <Link href="/docs/guardian">Guardian</Link> stop, your wallet approves a Pantessa agent key once.
+        </p>
         <ul>
+          <li>Pantessa keeps that key encrypted.</li>
           <li>
-            <strong>No deposits.</strong> There is no Pantessa balance to fund. Your assets stay
-            in your wallet until a transaction you signed moves them.
+            It places the orders you ask for, each one after your wallet signs a message for that order, and the
+            protective closes you arm.
           </li>
+          <li>Hyperliquid does not let an agent key withdraw. Your money stays in your Hyperliquid account.</li>
           <li>
-            <strong>No keys.</strong> Pantessa cannot spend on your behalf. Every transaction,
-            order, and vote is offered to your wallet and moves only with your signature. Even
-            the <Link href="/docs/embedded-wallet">email sign-up</Link> creates a Coinbase
-            non-custodial wallet that you control, not Pantessa.
-          </li>
-          <li>
-            <strong>One narrow exception, by explicit delegation:</strong>{' '}
-            <Link href="/docs/guardian">Guardian</Link> uses a Hyperliquid agent key you
-            authorize with one signature. That key can only reduce the position you told it to
-            protect — it cannot withdraw, cannot open or grow positions, expires on its own, and
-            can be revoked at any time.
+            The approval lasts up to {GUARDIAN_DELEGATION_DAYS} days. You can remove it at any time in the
+            Hyperliquid app.
           </li>
         </ul>
 
-        <h2>The model never writes calldata</h2>
+        <h2>Fees</h2>
         <p>
-          The language model that understands your ask never writes calldata, amounts, or
-          addresses. Money asks are claimed by <strong>deterministic parsers</strong> — the same
-          sentence hits the same code path every time — and handed to per-venue builders that
-          derive the transaction from <strong>live venue state</strong>: real quotes, real pools,
-          real balances, fetched at build time. The full venue-by-venue doctrine is on{' '}
-          <Link href="/docs/transactions">Native venues &amp; guards</Link>.
+          A swap&apos;s fee is named on the card before you sign, and it rides inside the signed transaction itself,
+          never hidden in the price.
+        </p>
+        <DocsFacts
+          rows={[
+            ['A normal swap', <span key="v" className="mono">{SWAP_FEE_PCT}</span>],
+            ['A swap through a creator’s link', <span key="v"><span className="mono">{LINK_FEE_PCT}</span>, half to the link&apos;s creator</span>],
+            ['A swap across chains', <span key="v" className="mono">{CROSS_CHAIN_FEE_PCT}</span>],
+            ['A Hyperliquid perp order', <span key="v">up to <span className="mono">{HL_FEE_PCT}</span> of the fill, a rate you approve once</span>],
+            ['Sends, staking, votes, Guardian closes', 'No Pantessa fee'],
+          ]}
+        />
+        <p>
+          The full fee table is on <Link href="/pricing">pricing</Link>.
         </p>
 
-        <h2>Every build is re-checked, fail-closed</h2>
+        <h2>No caps, and one switch</h2>
         <p>
-          Before your wallet sees an artifact, an independent guard re-derives or decodes it and
-          checks it against policy: pinned contract addresses and function selectors, exact
-          amounts, verified recipients. Any mismatch kills the build. When a check fails you get
-          the reason — &ldquo;wallet holds only 2.52 USDC on Arbitrum&rdquo; — never a guess, and
-          never a transaction that hopes for the best.
+          There are no spend caps, allowlists or approvals to set up. They were retired on 2026-10-30. You sign
+          each trade, and that signature is the consent.
+        </p>
+        <p>
+          To pause, sign in and press <strong>Freeze account</strong> on your{' '}
+          <SpineLink href="/dashboard">dashboard</SpineLink>. While it is on, Pantessa refuses to build swaps within
+          one chain, sends, Aave and Morpho moves and NFT trades for your wallet. It refuses Hyperliquid orders, and
+          Guardian stops stand down. Press <strong>Resume account</strong> to undo it.
         </p>
 
-        <h2>Nothing stale ever reaches your wallet</h2>
+        <h2>Go deeper</h2>
         <p>
-          Quotes and calldata expire. Pantessa treats that as a safety property: artifacts carry
-          their validity window, multi-step chains advance automatically and re-quote steps at
-          offer time, and anything past its deadline is <strong>rebuilt, not re-offered</strong>.
-          You are never handed dead calldata that could settle at a stale price.
-        </p>
-
-        <h2>Priced, receipted, public</h2>
-        <p>
-          Every artifact carries its USD value, and every decision — built, signed, or refused —
-          lands as a receipt on your <SpineLink href="/dashboard">dashboard</SpineLink>, with build
-          decisions traced live on <Link href="/activity">/activity</Link>. When Pantessa charges
-          a fee ({SWAP_FEE_PCT} on swaps you ask for in chat, {LINK_FEE_PCT} on swaps that come
-          through a shared intent link), it is named on the card before you sign and carried in
-          the signed transaction itself — never hidden inside slippage. Transfers, stakes and
-          votes carry no Pantessa fee; a move across chains is a swap and carries the swap fee.
-        </p>
-
-        <h2>Nothing is capped or approval-gated</h2>
-        <p>
-          There is no <Link href="/docs/spend-policy">spend policy</Link> to configure: no allowlist
-          to curate, no per-action or daily cap, no agent to approve first. Anything that moves
-          your money is signed by <strong>you</strong>, and that signature is the consent; every
-          paid call Pantessa makes on your behalf is metered and receipted on your dashboard.
-          Money you <em>receive</em> — sale proceeds, filled listings — is never gated at all.
-        </p>
-
-        <h2>The kill switch outranks everything</h2>
-        <p>
-          Freeze your account from the <SpineLink href="/dashboard">dashboard</SpineLink> and every payment
-          and build is refused — agent-initiated or not, inflow or outflow.
-          Pause a single agent to stop just that key. Both are reversible; nothing is deleted.
-        </p>
-
-        <h2>Standing intents follow the same rules</h2>
-        <p>
-          The things Pantessa does <em>between</em> your visits never escape the model above:
-        </p>
-        <ul>
-          <li>
-            <strong><Link href="/docs/jobs">Jobs</Link></strong>{' '}— a compound intent compiles
-            into steps, but each transaction is built fresh when it&apos;s offered and{' '}
-            <strong>you sign every one</strong>. Settlement between steps is verified
-            server-side, never assumed.
-          </li>
-          <li>
-            <strong>Recurring buys (DCA)</strong>{' '}— &ldquo;buy $10 of AAPL every week&rdquo;
-            creates a schedule, not an authorization. Each due period compiles a one-step job you
-            sign; miss a week and it lapses rather than buying behind your back. See{' '}
-            <Link href="/docs/jobs">Jobs</Link>.
-          </li>
-          <li>
-            <strong><Link href="/docs/guardian">Guardian</Link></strong> — the only autonomous
-            signer, under the delegated reduce-only key described above, re-guarded fail-closed
-            at every trigger.
-          </li>
-        </ul>
-
-        <h2>What you are trusting, exactly</h2>
-        <p>
-          Not prices — they are fetched live and re-checked. Not the model — it cannot write a
-          transaction. Not Pantessa with your funds — it never has them. You are trusting one
-          thing: that the guard doctrine holds — <strong>artifacts verify or die</strong> — and
-          every build argues its case in public on <Link href="/activity">/activity</Link> so you
-          can watch it hold.
+          <Link href="/docs/venues">Venues</Link> lists every venue, chain and contract a Pantessa build can use,
+          with the checks each one runs, generated from the code.
         </p>
       </div>
+
+      <DocsNext
+        links={[
+          { href: '/docs/guardian', title: 'Guardian', desc: 'A stop or take-profit that watches your Hyperliquid position.' },
+          { href: '/docs/venues', title: 'Venues', desc: 'Every venue, chain and contract, read from the code.' },
+          { href: '/docs/first-five-minutes', title: 'Your first five minutes', desc: 'Look, connect a wallet, press and sign.' },
+        ]}
+      />
     </>
   )
 }

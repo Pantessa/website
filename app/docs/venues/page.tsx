@@ -1,16 +1,21 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { DocsNext, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
+import { SWAP_FEE_PCT, feePctLabel } from '@/lib/fees'
 import { SITE_CARD } from '@/lib/og-defaults'
 import { buildVenueManifest, explorerAddressUrl, type ManifestVenue } from '@/lib/venue-manifest'
 
-// /docs/venues — the printable venue manifest. The user door's proof page: a
-// compliance reader at an institution gets, per venue, the pinned contracts
-// per chain (with explorer links), the selectors a build may emit, the signing
-// domain, the operations by shape, the guard that fences it, and the bounds —
-// rendered from the SAME object GET /api/venues/manifest serves, which reads
-// every value from the lib/ constants the builders and guards use. No claim on
-// this page is typed by hand; the integrity hash in the footer pins the JSON.
+// /docs/venues: the last page in SAFETY. A plain summary and a short venue
+// table first (what each venue does, on which chains), then the full
+// reference per venue: the pinned contracts per chain (with explorer links),
+// the selectors a build may emit, the signing domain, the operations, the
+// guard in front of the signature, and the bounds. Everything below the
+// summary is rendered from the SAME object GET /api/venues/manifest serves,
+// which reads every value from the lib/ constants the builders and guards
+// use; the integrity hash in the footer pins the JSON. The only hand-written
+// words are PLAIN (one line per venue slug), and a venue the map does not
+// know falls back to its own operation names, so the table cannot go stale.
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'venues')!
 
@@ -30,12 +35,38 @@ export const metadata: Metadata = {
 }
 
 const SHAPE_WORDS: Record<ManifestVenue['operations'][number]['shape'], string> = {
-  read: 'read — nothing to sign',
+  read: 'read, nothing to sign',
   tx: 'one transaction',
   txChain: 'a chain of transactions (validUntil + refresh)',
   typedData: 'an EIP-712 signature',
   order: 'a signed order (settled by the venue)',
   hlAction: 'a Hyperliquid L1 action',
+}
+
+// One plain line per venue for the summary table. Words only: the chains
+// beside them come from the manifest. A slug missing here falls back to the
+// venue's own operation names.
+const PLAIN: Record<string, { does: string; where?: string }> = {
+  uniswap: { does: 'Swap tokens, including tokenized stocks on Robinhood Chain' },
+  cow: { does: 'Swap with a signed order that solvers fill' },
+  aave: { does: 'Lend, borrow, repay and withdraw', where: 'Read live from Aave’s own market list' },
+  morpho: { does: 'Lend, borrow, repay and withdraw' },
+  lido: { does: 'Stake ETH' },
+  hyperliquid: { does: 'Trade perpetual futures; deposit USDC from Arbitrum', where: 'Hyperliquid, deposits from Arbitrum' },
+  'near-intents': { does: 'Swap from one chain to another' },
+  lifi: { does: 'Finish a stock swap when Uniswap has no pool; move your money between chains to fund a trade' },
+  opensea: { does: 'Buy, list and send NFTs' },
+  snapshot: { does: 'Vote on governance proposals. No money moves', where: 'Off-chain' },
+  'robinhood-chain': { does: 'Bridge ETH to and from Robinhood Chain' },
+  transfers: { does: 'Send tokens to an address you name' },
+  wallet: { does: 'Read balances and history. Nothing to sign', where: 'Every app chain' },
+}
+
+function plainOf(v: ManifestVenue): { does: string; where: string } {
+  const p = PLAIN[v.slug]
+  const does = p?.does ?? v.operations.filter((o) => o.shape !== 'read').map((o) => o.name).join(' · ')
+  const where = p?.where ?? (v.chains.length ? v.chains.map((c) => c.name).join(', ') : 'No chain pinned')
+  return { does, where }
 }
 
 function shortAddr(a: string): string {
@@ -101,7 +132,7 @@ function VenueCard({ v }: { v: ManifestVenue }) {
       )}
       {v.chains.length > 0 && v.chains.every((c) => c.contracts.length === 0) && (
         <p className="venues__note">
-          Chains: {v.chains.map((c) => `${c.name} (${c.chainId})`).join(' · ')}. No contract is pinned in this repo for this venue — see the notes for why.
+          Chains: {v.chains.map((c) => `${c.name} (${c.chainId})`).join(' · ')}. No contract is pinned in this repo for this venue. The notes say why.
         </p>
       )}
 
@@ -240,48 +271,62 @@ export default function VenuesDocsPage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
       <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> THE VENUE MANIFEST
+        <Link href="/docs">DOCS</Link> <span>/</span> SAFETY <span>/</span> VENUES
       </p>
-      <h1 className="docs__h1">What Pantessa can build, exactly</h1>
+      <h1 className="docs__h1">What Pantessa can ask you to sign</h1>
       <p className="docs__lead">
-        The model never writes calldata. Builders in this repo produce the bytes; a separate guard
-        re-decodes them before anything reaches a wallet. Below are <strong>the only contracts and
-        selectors a Pantessa build may emit</strong>, per venue and per chain, with the guard that
-        fences each one and the bounds it enforces — read from the same constants the builders use,
-        not retyped, and served as JSON at <a href={MANIFEST_URL}>{MANIFEST_URL}</a> for your own tooling to pin.
+        Every venue, chain and contract a Pantessa build can use, read straight from the code. The same list is
+        served as JSON at <a href={MANIFEST_URL}>{MANIFEST_URL}</a>.
       </p>
+
+      <DocsSummary>
+        <li>
+          {txShaped.length} venues can hand your wallet something to sign. {readOnly.length}{' '}
+          {readOnly.length === 1 ? 'only reads' : 'only read'}.
+        </li>
+        <li>
+          {contractCount} contract addresses across {manifest.chains.length} chains are pinned in code, each with
+          the file it comes from.
+        </li>
+        <li>A guard checks each build against these pins before your wallet sees it. If a check fails, nothing is offered.</li>
+        <li>Fees come from one file. A normal swap costs {SWAP_FEE_PCT}.</li>
+      </DocsSummary>
 
       <div className="docs__prose venues">
-        <h2>How to read this page</h2>
-        <ul>
-          <li>
-            <strong>{txShaped.length} venues are tx-shaped</strong> (they can hand your wallet something to sign);{' '}
-            <strong>{readOnly.length} {readOnly.length === 1 ? 'is' : 'are'} read-only</strong> and can never produce a signable artifact. The pill on each
-            card says which.
-          </li>
-          <li>
-            <strong>{contractCount} pinned addresses</strong> across {manifest.chains.length} chains. Each row names the constant it was read from; the
-            standing harness asserts the literal is in that file. A pin that lives only in the free MCP repo is named, not copied.
-          </li>
-          <li>
-            <strong>Selectors are derived</strong>{' '}from the builders&apos; own ABIs with viem, or imported from the guard that pins them (Aave, Morpho) —
-            a build for one operation can never smuggle another operation&apos;s calldata past its guard.
-          </li>
-          <li>
-            <strong>Custody</strong> is stated honestly per venue. As of {manifest.generatedAt.slice(0, 10)} no institutional custody lane has been drilled
-            end to end; Hyperliquid perps through custody are the most friction and are marked unmeasured.
-          </li>
-          <li>
-            This page is the human twin of the JSON. The <strong>integrity hash</strong> in the footer is sha256 over the canonical JSON of the chains,
-            fees, invariants, signing and venue sections; two deploys of the same code and env agree.
-          </li>
-        </ul>
-
-        <h2>Venue-neutral invariants</h2>
+        <h2>Venues at a glance</h2>
         <table>
           <thead>
             <tr>
-              <th>invariant</th>
+              <th>venue</th>
+              <th>what you can do</th>
+              <th>where</th>
+            </tr>
+          </thead>
+          <tbody>
+            {manifest.venues.map((v) => {
+              const p = plainOf(v)
+              return (
+                <tr key={v.slug}>
+                  <td>
+                    <a href={`#venue-${v.slug}`}>{v.name}</a>
+                  </td>
+                  <td>{p.does}</td>
+                  <td>{p.where}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        <p>
+          How a build is made and checked, in plain words, is on <Link href="/docs/trust">Why you can sign what
+          Pantessa builds</Link>.
+        </p>
+
+        <h2>Rules every venue follows</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>rule</th>
               <th>what it means</th>
               <th>where</th>
             </tr>
@@ -303,28 +348,32 @@ export default function VenuesDocsPage() {
         <table>
           <tbody>
             <tr>
-              <th>treasury</th>
-              <td className="venues__addr mono">{manifest.fees.treasury}</td>
-            </tr>
-            <tr>
-              <th>swap fee (organic chat)</th>
-              <td className="mono">{manifest.fees.swapFeeBps} bps</td>
-            </tr>
-            <tr>
-              <th>swap fee (intent links)</th>
+              <th>normal swap</th>
               <td className="mono">
-                {manifest.fees.linkSwapFeeBps} bps · {Math.round(manifest.fees.creatorSplit * 100)}% to the creator
+                {manifest.fees.swapFeeBps} bps ({feePctLabel(manifest.fees.swapFeeBps)})
               </td>
             </tr>
             <tr>
-              <th>Hyperliquid builder fee</th>
-              <td className="mono">{manifest.fees.hlBuilderFeeTenthBps} tenths of a bp</td>
+              <th>swap through a creator&apos;s link</th>
+              <td className="mono">
+                {manifest.fees.linkSwapFeeBps} bps ({feePctLabel(manifest.fees.linkSwapFeeBps)}) · {Math.round(manifest.fees.creatorSplit * 100)}% to the link&apos;s creator
+              </td>
             </tr>
             <tr>
-              <th>cross-chain fee</th>
+              <th>swap across chains</th>
               <td className="mono">
                 {manifest.fees.crossChainFeeBps} bps · 1Click keeps {Math.round(manifest.fees.oneClickFeeSplit * 100)}%
               </td>
+            </tr>
+            <tr>
+              <th>Hyperliquid builder fee (perp orders)</th>
+              <td className="mono">
+                {manifest.fees.hlBuilderFeeTenthBps} tenths of a bp ({feePctLabel(manifest.fees.hlBuilderFeeTenthBps / 10)})
+              </td>
+            </tr>
+            <tr>
+              <th>treasury</th>
+              <td className="venues__addr mono">{manifest.fees.treasury}</td>
             </tr>
             <tr>
               <th>source</th>
@@ -335,6 +384,7 @@ export default function VenuesDocsPage() {
 
         <h2>Who signs</h2>
         <p>{manifest.signing.signer}</p>
+        <p>Signing paths in use:</p>
         <ul>
           {manifest.signing.lanesProven.map((l) => (
             <li key={l}>{l}</li>
@@ -344,14 +394,12 @@ export default function VenuesDocsPage() {
           <strong>Custody lanes:</strong> {manifest.signing.custody}
         </p>
 
-        <h2>Venues</h2>
-        <p className="venues__toc">
-          {manifest.venues.map((v, i) => (
-            <span key={v.slug}>
-              {i > 0 && ' · '}
-              <a href={`#venue-${v.slug}`}>{v.name}</a>
-            </span>
-          ))}
+        <h2>Each venue in detail</h2>
+        <p>
+          Each card names the constant every address was read from; the standing harness checks the literal is in
+          that file. A pin that lives only in the free MCP repo is named, not copied. Selectors are derived from
+          the builders&apos; own ABIs, or imported from the guard that pins them (Aave, Morpho), so a build for one
+          operation cannot carry another operation&apos;s calldata past its guard.
         </p>
         {manifest.venues.map((v) => (
           <VenueCard key={v.slug} v={v} />
@@ -368,7 +416,19 @@ export default function VenuesDocsPage() {
           <div>integrity: {manifest.integrity}</div>
           <div>generated: {manifest.generatedAt}</div>
         </div>
+        <p className="venues__note">
+          The integrity hash is sha256 over the canonical JSON of the chains, fees, rules, signing and venue sections,
+          so two deploys of the same code and env agree.
+        </p>
       </div>
+
+      <DocsNext
+        links={[
+          { href: '/docs/trust', title: 'Why you can sign it', desc: 'How every trade is built, checked and signed.' },
+          { href: '/docs/guardian', title: 'Guardian', desc: 'A stop or take-profit that watches your Hyperliquid position.' },
+          { href: '/docs/desk', title: 'Desk', desc: 'For developers: the Pantessa desk over MCP.' },
+        ]}
+      />
     </>
   )
 }
