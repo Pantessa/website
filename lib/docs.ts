@@ -62,34 +62,34 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Your first five minutes',
     seoTitle: 'Your first five minutes with Pantessa',
     description:
-      'Open a chart with no account, connect a wallet when you want to act, then press a price and sign. The path from a first look to a first trade.',
+      'Look at any market for free, no account needed. When you want to act, press a price or a chip, connect a wallet and sign.',
     ready: true,
     group: 'start',
   },
   {
     slug: 'markets',
-    title: 'Markets: the chart you can act on',
-    seoTitle: 'Markets: the chart you can act on',
+    title: 'Markets',
+    seoTitle: 'Markets: every chart is a trade',
     description:
-      'Live charts for tokenized stocks, crypto and Hyperliquid perps, free to look at. Press a price or a chip and Pantessa builds the trade your wallet signs.',
+      'Live charts for tokenized stocks (24/7 on Robinhood Chain), crypto spot and Hyperliquid perps. Press a chip and your wallet signs. Free watchlists and alerts.',
     ready: true,
     group: 'start',
   },
   {
     slug: 'called-it',
-    title: 'Called it: calls on the chart',
-    seoTitle: 'Called it: X calls pinned on the chart',
+    title: 'Called it',
+    seoTitle: 'Called it: an X account’s calls, judged by the chart',
     description:
-      'Type an X handle and Pantessa pins that account’s public market calls on the chart, each judged by what the price did next. Hits and misses both count.',
+      'Type an X handle and see every call it made on a market, pinned to the chart and judged by what the price did next. Hits and misses both count.',
     ready: true,
     group: 'start',
   },
   {
     slug: 'embedded-wallet',
-    title: 'Sign in and wallets',
+    title: 'Sign in',
     seoTitle: 'Sign in to Pantessa: a wallet, Google or email',
     description:
-      'Looking needs no account. To act, connect the wallet you use, or continue with Google or email to get a Coinbase embedded wallet that only you control.',
+      'You need a wallet to sign, not to look. Bring your own, or continue with Google or email and get a wallet only you control.',
     ready: true,
     group: 'start',
   },
@@ -97,7 +97,7 @@ export const DOCS_PAGES: DocsPage[] = [
   // ── EARN ────────────────────────────────────────────────────────────────
   {
     slug: 'links',
-    title: 'Links that carry a trade',
+    title: 'Intent links',
     seoTitle: 'Intent links: share a trade as a link',
     description: 'Make a link that carries a trade as a sentence. The visitor connects their own wallet and signs, and you get half of Pantessa’s fee on swaps.',
     ready: true,
@@ -163,34 +163,34 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Embed the chat',
     seoTitle: 'Embed the Pantessa chat on your own site',
     description:
-      'Mount the Pantessa chat on any site with the pantessa npm package. It builds checked trades and signs with the wallet already connected to your page.',
+      'Put the Pantessa chat on your site with one package. Visitors ask in plain words and their own wallet signs on your page.',
     ready: true,
     group: 'build',
   },
   {
     slug: 'jobs',
     title: 'Jobs API',
-    seoTitle: 'Jobs API: multi-step asks, built and checked step by step',
+    seoTitle: 'Jobs API: compound asks, built and guarded step by step',
     description:
-      'Send a multi-step ask, such as bridge, then deposit, then trade. The runner builds, checks and offers each step for signature. A dry run previews it for free.',
+      'Send one compound ask to POST /api/jobs and get a guarded step plan. A dry run builds step 1 live and creates nothing.',
     ready: true,
     group: 'build',
   },
   {
     slug: 'desk',
     title: 'Agent desk (MCP)',
-    seoTitle: 'Agent desk: connect an agent to Pantessa over MCP',
+    seoTitle: 'Agent desk: connect your agent to Pantessa over MCP',
     description:
-      'Connect an agent over MCP. It asks in plain sentences, Pantessa builds and checks each trade, and a person or the agent’s own key signs. No AI writes calldata.',
+      'Connect an agent over MCP. It asks in plain sentences, guarded builders write every transaction, and a person or the agent’s own key signs.',
     ready: true,
     group: 'build',
   },
   {
     slug: 'snapshot',
     title: 'Snapshot voting',
-    seoTitle: 'Snapshot voting: browse proposals and vote from chat',
+    seoTitle: 'Snapshot voting: browse proposals and vote from the chat',
     description:
-      'Browse live Snapshot DAO proposals in the Pantessa chat and cast a vote your own wallet signs. Free in the chat; only the agent endpoint is paid.',
+      'Browse live Snapshot proposals and vote from the chat. Your wallet signs a gasless vote, and voting in the chat is free.',
     ready: true,
     group: 'build',
   },
