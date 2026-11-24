@@ -55,7 +55,7 @@
 .xbd-card__handle { font-family: var(--xbd-mono); font-size: 11px; color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .xbd-card__tally { display: grid; gap: 8px; min-width: 0; }
-.xbd-card__total { margin: 0; font-family: var(--xbd-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+.xbd-card__total { margin: 0; font-family: var(--xbd-mono); font-size: 12px; font-weight: 500; letter-spacing: 0.02em; color: var(--muted); }
 .xbd-card__tallyline { margin: 0; font-size: 12.5px; color: var(--fg); }
 .xbd-card__rate { margin: -4px 0 0; font-family: var(--xbd-mono); font-size: 11px; color: var(--muted); }
 

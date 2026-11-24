@@ -202,6 +202,9 @@
 
 @media (min-width: 1024px) {
   .xcl-dock { align-self: flex-start; }
+  /* The tally and the press stay on a laptop's first screen: the spark is a strip. */
+  .xcl-spark { height: 88px; margin-top: var(--sp-4); }
+  .xcl { gap: var(--sp-3); }
   .xcl .xcl-dock__alt { display: none; }
 }
 @media (max-width: 1023px) {
