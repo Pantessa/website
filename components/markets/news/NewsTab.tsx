@@ -92,6 +92,9 @@ const SIZES: Record<Seat, string> = {
 const PAGE_STORIES = 80
 /** Publishers named on the strip before "more". */
 const STRIP_SOURCES = 12
+/** How many stories a long section lists before its "show all". */
+const MORE_CAP = 6
+const EARLIER_CAP = 9
 
 const fmtPrice = (n: number, money: boolean) => {
   const body = n >= 1000 ? n.toLocaleString('en-US', { maximumFractionDigits: 2 }) : n >= 1 ? n.toFixed(2) : n.toPrecision(4)
@@ -109,6 +112,10 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
   const markers = useChartMarkers(sym)
   const [only, setOnly] = useState<string | null>(null)
   const [allSources, setAllSources] = useState(false)
+  // The long lists open capped (squad mobile-sleek, 2026-11-24: a phone
+  // scrolled 16,000px of headlines); one press shows the rest.
+  const [allMore, setAllMore] = useState(false)
+  const [allEarlier, setAllEarlier] = useState(false)
   const [readers, setReaders] = useState<FeedPost[]>([])
 
   const load = useCallback(async () => {
@@ -262,7 +269,12 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
           <h3 className="gaz__label">
             <span>More headlines</span>
           </h3>
-          <div className="gaz__grid">{page.features.map((it) => story(it, 'feature'))}</div>
+          <div className="gaz__grid">{(allMore ? page.features : page.features.slice(0, MORE_CAP)).map((it) => story(it, 'feature'))}</div>
+          {!allMore && page.features.length > MORE_CAP && (
+            <button type="button" className="gaz__showall" onClick={() => setAllMore(true)} data-news-more="features">
+              Show all {page.features.length} headlines
+            </button>
+          )}
         </section>
       )}
 
@@ -273,7 +285,12 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
           <h3 className="gaz__label">
             <span>Earlier</span>
           </h3>
-          <div className="gaz__archive">{page.archive.map((it) => story(it, 'archive'))}</div>
+          <div className="gaz__archive">{(allEarlier ? page.archive : page.archive.slice(0, EARLIER_CAP)).map((it) => story(it, 'archive'))}</div>
+          {!allEarlier && page.archive.length > EARLIER_CAP && (
+            <button type="button" className="gaz__showall" onClick={() => setAllEarlier(true)} data-news-more="earlier">
+              Show all {page.archive.length} earlier headlines
+            </button>
+          )}
         </section>
       )}
 

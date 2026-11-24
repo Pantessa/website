@@ -54,7 +54,7 @@ function SignalCell({ signal }: { signal: Row['signal'] }) {
 
 function IndicatorTable({ title, rows, omitted }: { title: string; rows: Row[]; omitted: string[] }) {
   return (
-    <div className="min-w-0 rounded-xl border border-[var(--line)] bg-[var(--surf-1)]">
+    <div className="min-w-0 border border-[var(--line)]">
       <div className="mono border-b border-[var(--line)] px-3 py-2 text-[9.5px] uppercase tracking-[0.16em] text-[color:var(--muted-2)]">{title}</div>
       <table className="w-full text-[12px]">
         <thead>
@@ -98,7 +98,7 @@ const LEVELS: (keyof Pivots)[] = ['s3', 's2', 's1', 'p', 'r1', 'r2', 'r3']
 
 function PivotTable({ pivots, period, last }: { pivots: NonNullable<TechnicalsApi['pivots']>; period: string; last: number | null }) {
   return (
-    <div className="min-w-0 overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--surf-1)]">
+    <div className="min-w-0 overflow-x-auto border border-[var(--line)]">
       <div className="mono flex items-baseline justify-between border-b border-[var(--line)] px-3 py-2 text-[9.5px] uppercase tracking-[0.16em] text-[color:var(--muted-2)]">
         <span>Pivots</span>
         <span>from the last completed {period}</span>
@@ -144,7 +144,7 @@ export function VerdictChips({ chips: all, onAsk, compact = false }: { chips: Ch
   const chips = all.filter((c) => canSellAsk(c.ask, held) && canTradeAsk(c.ask, tradable))
   if (chips.length === 0) return null
   const cls = (kind: ChartAction['kind']) =>
-    `rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors [@media(hover:none)]:min-h-10 ${
+    `border px-3 py-1.5 text-[12px] font-medium transition-colors [@media(hover:none)]:min-h-10 ${
       kind === 'buy'
         ? 'border-[var(--accent)] text-[color:var(--accent)] hover:bg-[var(--accent)] hover:text-[color:var(--ink,#000)]'
         : kind === 'sell'
@@ -257,7 +257,7 @@ export default function TechnicalsTab({
             : 'our own tape'
 
   return (
-    <section className="mx-auto w-full max-w-5xl px-4 pb-10 pt-4" data-technicals={sym} data-tf={tf}>
+    <section className="mx-auto w-full max-w-5xl px-0 pb-10 pt-4 lg:px-4" data-technicals={sym} data-tf={tf}>
       {/* timeframe strip — exactly the frames the candle proxy serves */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1" role="tablist" aria-label="Timeframe">
@@ -268,7 +268,7 @@ export default function TechnicalsTab({
               role="tab"
               aria-selected={tf === t.key}
               onClick={() => setTf(t.key)}
-              className={`mono rounded-md px-2.5 py-1 text-[11px] uppercase tracking-wider transition-colors max-lg:min-h-11 max-lg:min-w-11 ${
+              className={`mono px-2.5 py-1 text-[11px] uppercase tracking-wider transition-colors max-lg:min-h-11 max-lg:min-w-11 ${
                 tf === t.key ? 'bg-[var(--surf-2)] text-[color:var(--fg)]' : 'text-[color:var(--muted)] hover:text-[color:var(--fg)]'
               }`}
             >
@@ -282,10 +282,10 @@ export default function TechnicalsTab({
       </div>
 
       {refusal && (
-        <div className="mt-6 rounded-xl border border-[var(--line)] px-4 py-6 text-center" data-technicals-refusal={refusal.error}>
+        <div className="mt-6 border border-[var(--line)] px-4 py-6 text-center" data-technicals-refusal={refusal.error}>
           <p className="text-[13px] text-[color:var(--fg)]">{refusal.reason}</p>
           {refusal.error !== 'no chart source' && (
-            <button type="button" onClick={() => setTick((t) => t + 1)} className="mt-3 rounded-lg border border-solid border-[var(--line-2)] px-3 py-1.5 text-[12px] text-[color:var(--fg)]">
+            <button type="button" onClick={() => setTick((t) => t + 1)} className="mt-3 border border-solid border-[var(--line-2)] px-3 py-1.5 text-[12px] text-[color:var(--fg)]">
               Try again
             </button>
           )}

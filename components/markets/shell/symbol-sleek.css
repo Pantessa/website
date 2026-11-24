@@ -77,8 +77,27 @@
 .mkt-frame.mkt-frame--sym .sym__body .mkt-route.is-best::before, .mkt-frame.mkt-frame--sym .sym__body .mkt-route--level::before { background: color-mix(in oklab, var(--accent) 7%, transparent); }
 .mkt-frame.mkt-frame--sym .sym__body .mkt-compound__n { border-radius: 0; }
 
+/* The brief and "Where the money lives" are sections like the rest: no box, no
+   wash, the heading a label (the page's display line is the name, up top). */
+.mkt-frame.mkt-frame--sym .sym__body .mk-ai, .mkt-frame.mkt-frame--sym .sym__body .mk-panel { padding: 18px 0 20px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; box-shadow: none; }
+.mkt-frame.mkt-frame--sym .mk-askdock .mk-ai { padding: 4px 0 0; border: 0; border-radius: 0; background: none; }
+.mkt-frame.mkt-frame--sym .sym .mk-ai::before { content: none; }
+.mkt-frame.mkt-frame--sym .sym .mk-ai__title, .mkt-frame.mkt-frame--sym .sym__body .mk-panel__title { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg); }
+.mkt-frame.mkt-frame--sym .sym .mk-ai__eyebrow { font-size: 10px; letter-spacing: 0.12em; }
+.mkt-frame.mkt-frame--sym .sym .mk-ai__chip, .mkt-frame.mkt-frame--sym .sym .mk-ai__ghost, .mkt-frame.mkt-frame--sym .sym .mk-ai__caret { border-radius: 0; }
+.mkt-frame.mkt-frame--sym .sym .mk-ai__chip:hover { transform: none; }
+/* Performance: a ruled row of numbers, not six little boxes. */
+.mkt-frame.mkt-frame--sym .sym__body .mkt-perf:not(.mkt-perf--compact) { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px 0; }
+.mkt-frame.mkt-frame--sym .sym__body .mkt-perf:not(.mkt-perf--compact) .mkt-perf__tile { gap: 4px; min-width: 0; padding: 2px 0 2px 12px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: none; }
+.mkt-frame.mkt-frame--sym .sym__body .mkt-perf:not(.mkt-perf--compact) .mkt-perf__key { font-size: 10px; }
+.mkt-frame.mkt-frame--sym .sym__body .mkt-perf:not(.mkt-perf--compact) .mkt-perf__val { font-family: var(--font-mono); font-size: 15px; }
+.mkt-frame.mkt-frame--sym .sym__body .mkt-perf:not(.mkt-perf--compact) .mkt-perf__note { grid-column: 1 / -1; }
+.mkt-frame.mkt-frame--sym .sym__body .mkt-kv--grid dd { font-family: var(--font-mono); font-size: 17px; letter-spacing: -0.01em; }
+
 /* Ask the chart: a hairline section too, folded to one row. */
-.mkt-frame.mkt-frame--sym .mk-askdock { margin-top: 14px; border: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; background: none; }
+/* (No rule under it: the section that follows draws the next hairline.) */
+.mkt-frame.mkt-frame--sym .mk-askdock { margin-top: 14px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; }
+.mkt-frame.mkt-frame--sym .sym .mk-ai :is(button, input, textarea, form, a) { border-radius: 0; }
 .mkt-frame.mkt-frame--sym .mk-askdock__bar { padding: 12px 0; }
 .mkt-frame.mkt-frame--sym .mk-askdock__bar:hover { background: none; }
 .mkt-frame.mkt-frame--sym .mk-askdock__k { font-size: 11px; font-weight: 500; letter-spacing: 0.12em; color: var(--fg); }
@@ -110,14 +129,21 @@
      The identity box dissolves (display: contents) so the name row, the venue
      label and the quote are the strip's own rows; no markup moved. The strip
      keeps its height while the day's range loads, so the chart never jumps. */
-  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip { flex-wrap: wrap; align-items: center; gap: 2px 10px; min-height: 104px; padding: 12px 0 10px; align-content: flex-start; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip { flex-wrap: wrap; align-items: center; gap: 2px 10px; min-height: 110px; padding: 12px 0 10px; align-content: flex-start; }
   .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip > .sym__id, .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__idtext { display: contents; }
   .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip > .sym__id > :first-child { order: 1; width: 24px !important; height: 24px !important; }
-  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__titlerow { order: 1; flex: 1 1 0; min-width: 0; align-items: baseline; gap: 7px; }
+  /* The name row keeps the venue label at its right while both fit; a long name
+     or a long venue sends the label to its own line under the name (never an ellipsis). */
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__titlerow { order: 1; flex: 1 1 auto; min-width: 0; max-width: calc(100% - 34px); align-items: baseline; gap: 7px; }
   .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__name { font-size: 19px; line-height: 1.2; }
   .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .ssx-pill { display: none; } /* the top bar's lens is the phone's search */
-  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__meta { order: 2; flex: 0 1 auto; margin: 0; gap: 6px 10px; flex-wrap: nowrap; justify-content: flex-end; }
-  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip:has(.sym__twin) .sym__meta { flex: 1 0 100%; order: 3; justify-content: space-between; min-height: 30px; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__meta { order: 2; flex: 0 0 auto; max-width: 100%; margin: 0; gap: 6px 10px; flex-wrap: wrap; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__venue { font-size: 10px; letter-spacing: 0.1em; }
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__venue-tail { letter-spacing: 0.1em; }
+  /* A share with two instruments: the label and the Stock / Perp switch share one line under the name. */
+  .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip:has(.sym__twin) .sym__meta { flex: 1 0 100%; justify-content: space-between; align-items: center; }
+  .mkt-frame.mkt-frame--sym .sym__twin-opt { position: relative; padding: 7px 12px; }
+  .mkt-frame.mkt-frame--sym .sym__twin-opt::after { content: ''; position: absolute; inset: -8px 0; }
   .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip > .sym__quote { order: 4; flex: 1 0 100%; align-items: baseline; gap: 10px; min-width: 0; margin-top: 2px; }
   .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__last { font-size: 34px; line-height: 1.1; }
   .mkt-frame.mkt-frame--sym .sym--cockpit .sym__strip .sym__chg { font-size: 14px; }
@@ -137,7 +163,8 @@
   .mkt-frame.mkt-frame--sym .sym--cockpit .sym__chart { margin-top: 12px; }
 
   /* Sections: a phone's rhythm. */
-  .mkt-frame.mkt-frame--sym .sym__body .mkt-card { padding: 16px 0 18px; }
+  .mkt-frame.mkt-frame--sym .sym__body .mkt-card, .mkt-frame.mkt-frame--sym .sym__body .mk-ai, .mkt-frame.mkt-frame--sym .sym__body .mk-panel { padding: 16px 0 18px; }
+  .mkt-frame.mkt-frame--sym .sym__body .mkt-perf:not(.mkt-perf--compact) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .mkt-frame.mkt-frame--sym .mk-askdock__hint { font-size: 12px; }
 }
 
