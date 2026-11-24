@@ -573,8 +573,9 @@
 .xrc--splash .xrc-spark--tile { height: 44px; }
 /* The cap: a checkbox ahead of the list, its label after it. */
 .xrc-tiles__toggle { position: absolute; width: 1px; height: 1px; margin: -1px; opacity: 0; pointer-events: none; }
-.xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 4) { display: none; }
-.xrc-tiles__more { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 48px; border: 1px solid var(--line-2); font-family: var(--xrc-mono); font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* The fold is drawn only when it hides at least three: a sixth tile on a phone (three shown), a seventh at two columns (four), a ninth on a desk (six). */
+.xrc-tiles__toggle:not(:checked) + .xrc-tiles:has(> li:nth-child(6)) > li:nth-child(n + 4) { display: none; }
+.xrc-tiles__more { display: none; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 48px; border: 1px solid var(--line-2); font-family: var(--xrc-mono); font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg); cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .xrc-tiles__more::after { content: '\2193'; color: var(--accent); }
 .xrc-tiles__more-shut { display: none; }
 .xrc-tiles__toggle:checked ~ .xrc-tiles__more .xrc-tiles__more-open { display: none; }
@@ -591,10 +592,11 @@
   .xrc-steps li { display: flex; padding: var(--sp-4) 0 var(--sp-5); }
   .xrc-steps li::before { padding-top: 0; }
   /* Two columns show two rows before the press. */
-  .xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 4) { display: block; }
-  .xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 5) { display: none; }
-  .xrc-gallery:not(:has(.xrc-tiles > li:nth-child(5))) .xrc-tiles__more { display: none; }
+  .xrc-tiles__toggle:not(:checked) + .xrc-tiles:has(> li:nth-child(6)) > li:nth-child(n + 4) { display: block; }
+  .xrc-tiles__toggle:not(:checked) + .xrc-tiles:has(> li:nth-child(7)) > li:nth-child(n + 5) { display: none; }
 }
+@media (max-width: 639px) { .xrc-gallery:has(.xrc-tiles > li:nth-child(6)) .xrc-tiles__more { display: flex; } }
+@media (min-width: 640px) and (max-width: 1023px) { .xrc-gallery:has(.xrc-tiles > li:nth-child(7)) .xrc-tiles__more { display: flex; } }
 @media (max-width: 640px) {
   /* A phone's door stays short: the featured record keeps its line, its tally and its press; its two sample posts wait on the chart. */
   .xrc-feat__quotes { display: none; }
@@ -603,8 +605,8 @@
 }
 @media (min-width: 1024px) {
   /* A desk shows two rows of three before the press. */
-  .xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 5) { display: block; }
-  .xrc-tiles__toggle:not(:checked) + .xrc-tiles > li:nth-child(n + 7) { display: none; }
-  .xrc-gallery:not(:has(.xrc-tiles > li:nth-child(7))) .xrc-tiles__more { display: none; }
+  .xrc-tiles__toggle:not(:checked) + .xrc-tiles:has(> li:nth-child(7)) > li:nth-child(n + 5) { display: block; }
+  .xrc-tiles__toggle:not(:checked) + .xrc-tiles:has(> li:nth-child(9)) > li:nth-child(n + 7) { display: none; }
+  .xrc-gallery:has(.xrc-tiles > li:nth-child(9)) .xrc-tiles__more { display: flex; }
   .xrc--splash .xrc-tile { padding: var(--sp-4) var(--sp-5); }
 }

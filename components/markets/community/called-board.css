@@ -88,7 +88,9 @@
 
 /* ── A phone, or any touch screen: 44px targets ────────────────────────── */
 @media (hover: none), (max-width: 640px) {
-  .xbd--none a, .xbd__how { display: inline-flex; align-items: center; min-height: 44px; }
+  .xbd--none a { display: inline-flex; align-items: center; min-height: 44px; }
+  /* The link stands on a line of its own: a 44px target inside the sentence broke the sentence's last line. */
+  .xbd__how { display: flex; align-items: center; width: fit-content; min-height: 44px; }
   .xbd-card__record, .xbd__more, .xbd__door { min-height: 44px; }
   .xbd-card__press { padding: 14px 14px 12px; }
   /* The four counts as a tidy two-by-two under the bar (the bar's own list, addressed by element). */

@@ -57,14 +57,14 @@ export function Eyebrow({ children, jump, share }: { children?: React.ReactNode;
  * second half is worded: "Is this you?" on somebody's record that is not
  * verified, "Plot yourself" everywhere else.
  */
-export function DoorBlock({ symbol, side, initialHandle, heading = 'Plot anyone', lede, owner = 'yourself', level = 2 }: { symbol?: string; side?: CalledSide; initialHandle?: string; heading?: string; lede?: string; owner?: 'this' | 'yourself'; level?: 1 | 2 }) {
+export function DoorBlock({ symbol, side, initialHandle, heading = 'Plot anyone', lede, owner = 'yourself', level = 2, quiet }: { symbol?: string; side?: CalledSide; initialHandle?: string; heading?: string; lede?: string; owner?: 'this' | 'yourself'; level?: 1 | 2; quiet?: boolean }) {
   const H = level === 1 ? 'h1' : 'h2'
   return (
     <section className="xrc-door" id="plot" aria-label="Plot a handle">
       <H className={level === 1 ? 'xrc-door__title xrc-door__title--page' : 'xrc-door__title'}>{heading}</H>
       <p className="xrc-door__lede">{lede ?? `Type any X handle. Every post where the account took a side${symbol ? ` on ${symbol}` : ''} is pinned to the day it was posted and judged the same way.`}</p>
       <div className="xrc-door__form">
-        <HandleDoor variant="page" symbol={symbol} side={side} initialHandle={initialHandle} className="xcc-door--stack" />
+        <HandleDoor variant="page" symbol={symbol} side={side} initialHandle={initialHandle} className="xcc-door--stack" quiet={quiet} />
       </div>
       <div className="xrc-door__you">
         <h3 className="xrc-door__sub">{owner === 'this' ? 'Is this you?' : 'Plot yourself'}</h3>

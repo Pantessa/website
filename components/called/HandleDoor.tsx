@@ -32,6 +32,8 @@ export interface HandleDoorProps {
   /** Chart variant: called with a valid handle and side instead of navigating. */
   onPlot?: (handle: string, side: CalledSide) => void
   className?: string
+  /** The page's one primary press is elsewhere (a record nobody has plotted offers Scan): Plot stays quiet while the handle is still the one the page prefilled. */
+  quiet?: boolean
 }
 
 export const SIDES: readonly { side: CalledSide; label: string; title: string }[] = [
@@ -48,7 +50,7 @@ interface Suggestion {
   name: string | null
 }
 
-export default function HandleDoor({ symbol, initialMarket, initialHandle = '', side: sideProp = 'all', variant, onPlot, className }: HandleDoorProps) {
+export default function HandleDoor({ symbol, initialMarket, initialHandle = '', side: sideProp = 'all', variant, onPlot, className, quiet = false }: HandleDoorProps) {
   const [value, setValue] = useState(initialHandle ? `@${initialHandle}` : '')
   const [side, setSide] = useState<CalledSide>(sideProp)
   const [market, setMarket] = useState(symbol ?? initialMarket ?? 'BTC')
@@ -62,6 +64,8 @@ export default function HandleDoor({ symbol, initialMarket, initialHandle = '', 
   const sym = (symbol ?? market).trim().toUpperCase()
   const marketOk = MARKET_RE.test(sym)
   const typed = value.trim().length > 0
+  // The accent fill is for a handle the visitor can plot, unless the page keeps its primary elsewhere for this very handle.
+  const filled = !!handle && marketOk && !(quiet && handle === normalizeHandle(initialHandle))
 
   useEffect(() => setSide(sideProp), [sideProp])
   useEffect(() => {
@@ -129,7 +133,7 @@ export default function HandleDoor({ symbol, initialMarket, initialHandle = '', 
           </label>
         )}
         {/* The kit's button: the accent fill once there is a handle to plot, quiet (and still live) before. */}
-        <button type="submit" className={`xcc-btn xcc-btn--go sk-btn${handle && marketOk ? '' : ' sk-btn--quiet'}`} data-ready={handle && marketOk ? 'yes' : 'no'} data-journey="called_plot">
+        <button type="submit" className={`xcc-btn xcc-btn--go sk-btn${filled ? '' : ' sk-btn--quiet'}`} data-ready={filled ? 'yes' : 'no'} data-journey="called_plot">
           Plot
         </button>
       </div>
@@ -168,7 +172,7 @@ export default function HandleDoor({ symbol, initialMarket, initialHandle = '', 
                 @{me} on {sym}
               </button>
             ) : null}
-            <VerifyWithX variant="line" symbol={marketOk ? sym : undefined} className="xcc-door__verify" />
+            <VerifyWithX variant="line" symbol={marketOk ? sym : undefined} className="xcc-door__verify xva-boxed" />
           </span>
         </div>
       ) : null}
