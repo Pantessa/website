@@ -64,7 +64,7 @@
 
 .sk-label {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -94,7 +94,7 @@
   background: var(--accent);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: var(--fs-base);
   font-weight: 600;
   line-height: 1;
   text-decoration: none;
@@ -130,7 +130,7 @@
   background: none;
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -160,14 +160,14 @@
   padding: 0;
   list-style: none;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--muted);
 }
 .sk-score__nums > li { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
 .sk-score__nums b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--sk-tone); }
 .sk-score--lg .sk-score__bar { height: 8px; }
-.sk-score--lg .sk-score__nums { font-size: 13px; }
-.sk-score--lg .sk-score__nums b { font-size: 18px; }
+.sk-score--lg .sk-score__nums { font-size: var(--fs-md); }
+.sk-score--lg .sk-score__nums b { font-size: var(--fs-lg); }
 .sk-score--bare .sk-score__nums { display: none; }
 
 /* ── The verdict tile (components/sleek/VerdictTile) ─────────────────── */
@@ -176,8 +176,8 @@
 .sk-tile__lit { fill: var(--sk-tone); }
 .sk-tile__shade { fill: color-mix(in oklab, var(--sk-tone) 68%, #000); }
 /* The ink follows the theme: dark on the dark theme's bright tones, light on the light theme's deep ones. */
-.sk-tile__glyph { fill: none; stroke: var(--ink, var(--neon-ink, #07080d)); stroke-width: 2.6; stroke-linecap: square; stroke-linejoin: miter; }
-.sk-tile__dot { fill: var(--ink, var(--neon-ink, #07080d)); }
+.sk-tile__glyph { fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linecap: square; stroke-linejoin: miter; }
+.sk-tile__dot { fill: var(--ink); }
 
 /* ── Phone furniture ─────────────────────────────────────────────────── */
 
