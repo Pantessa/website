@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { DocsCallout, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
+import { DocsCallout, DocsCrumbs, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
 
@@ -22,9 +22,7 @@ export default function EmbeddedWalletPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> SIGN IN
-      </p>
+      <DocsCrumbs slug="embedded-wallet" />
       <h1 className="docs__h1">Sign in: a wallet, Google or email</h1>
       <p className="docs__lead">
         You need a wallet to sign a trade, not to look. Bring your own, or continue with Google or email and get a wallet
@@ -93,9 +91,9 @@ export default function EmbeddedWalletPage() {
 
       <DocsNext
         links={[
-          { href: '/docs/first-five-minutes', title: 'Your first five minutes', desc: 'Look, press, sign.' },
-          { href: '/docs/markets', title: 'Markets', desc: 'What a chart can do.' },
-          { href: '/docs/trust', title: 'Trust', desc: 'Why you can sign what Pantessa builds.' },
+          { href: '/docs/first-five-minutes', desc: 'Look, press, sign.' },
+          { href: '/docs/markets', desc: 'What a chart can do.' },
+          { href: '/docs/trust', desc: 'Why you can sign what Pantessa builds.' },
         ]}
       />
     </>

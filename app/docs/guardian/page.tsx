@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
-import { DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
+import { DocsCrumbs, DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
 import { feePctLabel } from '@/lib/fees'
@@ -29,10 +29,8 @@ export default function GuardianDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> SAFETY <span>/</span> GUARDIAN
-      </p>
-      <h1 className="docs__h1">Guardian: a stop that watches your position</h1>
+      <DocsCrumbs slug="guardian" />
+      <h1 className="docs__h1">Guardian stops: a stop that watches your position</h1>
       <p className="docs__lead">
         Guardian puts a stop-loss or a take-profit on an open Hyperliquid position and checks it every minute. You
         approve it once with your wallet.
@@ -151,9 +149,9 @@ take profit on my eth long at $2100`}</pre>
 
       <DocsNext
         links={[
-          { href: '/docs/trust', title: 'Why you can sign it', desc: 'How every trade is built, checked and signed.' },
-          { href: '/docs/markets', title: 'Markets', desc: 'Charts you can act on, Protect included.' },
-          { href: '/docs/venues', title: 'Venues', desc: 'Every venue, chain and contract, read from the code.' },
+          { href: '/docs/trust', desc: 'How every trade is built, checked and signed.' },
+          { href: '/docs/markets', desc: 'Charts you can act on, Protect included.' },
+          { href: '/docs/venues', desc: 'Every venue, chain and contract, read from the code.' },
         ]}
       />
     </>

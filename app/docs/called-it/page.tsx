@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { DocsCallout, DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
+import { DocsCallout, DocsCrumbs, DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl, type DocsPage } from '@/lib/docs'
 import { CREATOR_FEE_SPLIT, LINK_FEE_PCT } from '@/lib/fees'
 import { SITE_CARD } from '@/lib/og-defaults'
@@ -10,7 +10,10 @@ import {
   DELETED_NOTE,
   JUDGE_DAYS,
   LABEL_CAVEAT,
+  FREE_SCANS_PER_DAY,
   PICK_MAX,
+  SCAN_ANSWER_PRICE,
+  SCAN_POST_CAP,
   SCAN_WINDOW_DAYS,
   STANDING_NOT_VERIFIED,
   TARGET_DAYS,
@@ -26,8 +29,8 @@ import { TAKEDOWN_EMAIL } from '@/app/x/_lib/profile-rules'
 // Called it, for a trader (squad docs-clean, 2026-11-24). Facts from the
 // squad's ledger-called-it.md, every number read from lib/called-it (never
 // typed). No real account is named: the examples use a placeholder handle.
-// Scan limits are not printed: they are code defaults the live site may set
-// by env.
+// Scan limits are the code defaults (lib/called-it/spec); the live site may
+// set them by env, so the page says they can change.
 
 /** Until the registry has its entry (lane `front`), the page carries its own. */
 const FALLBACK: DocsPage = {
@@ -45,6 +48,7 @@ const pct = (x: number) => `${Math.round(x * 100)}%`
 const BAND = pct(DEAD_BAND)
 const CREATOR_SHARE = CREATOR_FEE_SPLIT === 0.5 ? 'half' : pct(CREATOR_FEE_SPLIT)
 const EXAMPLE_HANDLE = 'handle'
+const FREE_SCANS = FREE_SCANS_PER_DAY === 1 ? 'one free scan' : `${FREE_SCANS_PER_DAY} free scans`
 const EXAMPLE_HEADLINE = recordHeadline(EXAMPLE_HANDLE, 'ETH', 'all', { total: 7, right: 3, wrong: 2, flat: 1, open: 1 })
 
 export const metadata: Metadata = {
@@ -59,9 +63,7 @@ export default function CalledItDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> CALLED IT
-      </p>
+      <DocsCrumbs slug="called-it" />
       <h1 className="docs__h1">Called it: an X account&rsquo;s calls, on the chart</h1>
       <p className="docs__lead">
         Type an X handle. See every call it made on a market, pinned to the day it was posted and judged by what the
@@ -86,8 +88,7 @@ export default function CalledItDocsPage() {
           </DocsStep>
           <DocsStep title="Type a handle and pick a market">
             <p>
-              The record lives at <span className="mono">/x/&lt;handle&gt;/&lt;SYMBOL&gt;</span>, for example{' '}
-              <span className="mono">/x/{EXAMPLE_HANDLE}/ETH</span>.
+              The record lives at <span className="mono">/x/&lt;handle&gt;/&lt;SYMBOL&gt;</span>.
             </p>
           </DocsStep>
           <DocsStep title="Read it, or scan it">
@@ -148,13 +149,13 @@ export default function CalledItDocsPage() {
 
         <h2>Scanning and its limits</h2>
         <ul>
-          <li>A scan reads the account&rsquo;s matching posts up to {SCAN_WINDOW_DAYS} days back, up to a cap on posts. The record says how far back it read.</li>
+          <li>A scan reads the account&rsquo;s matching posts up to {SCAN_WINDOW_DAYS} days back and up to {SCAN_POST_CAP} posts. The record says how far back it read.</li>
           <li>A finished scan is fresh for a day. After that a new scan reads only newer posts.</li>
           <li>Any market with a chart here can be scanned.</li>
           <li>
-            A new scan needs a sign-in: Verify with X, or a wallet. Signed in, you get free scans each day while the
-            day&rsquo;s free pool lasts. Past that, with a wallet signed in, a scan costs answers from your plan, and nothing
-            is spent until you say yes. The exact limits can change.
+            A new scan needs you to be known: sign in with a wallet, or use Verify with X. Either way you get {FREE_SCANS} a
+            day while the day&rsquo;s free pool lasts. After that, with a wallet signed in, a scan costs {SCAN_ANSWER_PRICE}{' '}
+            answers from your plan, and nothing is spent until you say yes. These numbers can change.
           </li>
           <li>{DELETED_NOTE} Posts from protected accounts are never shown.</li>
         </ul>
@@ -173,7 +174,10 @@ export default function CalledItDocsPage() {
           of &ldquo;{STANDING_NOT_VERIFIED}&rdquo;
         </p>
         <ul>
-          <li>It proves you own the handle, and nothing else. It does not sign you in to Pantessa, connect a wallet or post.</li>
+          <li>
+            It proves you own the handle, and it counts as being known for a scan. It does not sign you in to Pantessa, connect
+            a wallet or post.
+          </li>
           <li>Pantessa keeps only the public profile: user id, handle, name and avatar. The X token is used once and dropped.</li>
           <li>Verified does not mean the calls are right. X&rsquo;s blue check is not our verification.</li>
         </ul>
@@ -203,9 +207,9 @@ export default function CalledItDocsPage() {
 
       <DocsNext
         links={[
-          { href: '/docs/markets', title: 'Markets', desc: 'What a chart can do.' },
-          { href: '/docs/links', title: 'Links', desc: 'Make a link to a trade.' },
-          { href: '/docs/creator-earnings', title: 'Creator earnings', desc: 'How the link fee is split.' },
+          { href: '/docs/markets', desc: 'What a chart can do.' },
+          { href: '/docs/links', desc: 'Make a link to a trade.' },
+          { href: '/docs/creator-earnings', desc: 'How the link fee is split.' },
         ]}
       />
     </>

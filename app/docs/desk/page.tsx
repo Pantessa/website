@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { DocsSummary, DocsSteps, DocsStep, DocsCallout, DocsNext } from '@/components/docs'
+import { DocsCallout, DocsCrumbs, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import DeskTranscript from '@/components/DeskTranscript'
 import { SITE_CARD } from '@/lib/og-defaults'
@@ -24,9 +24,7 @@ export default function DeskDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> AGENT DESK (MCP)
-      </p>
+      <DocsCrumbs slug="desk" />
       <h1 className="docs__h1">Agent desk (MCP)</h1>
       <p className="docs__lead">
         Connect your agent to Pantessa over MCP. It asks in plain sentences, Pantessa&apos;s guarded
@@ -300,9 +298,9 @@ await driveJob({
 
       <DocsNext
         links={[
-          { href: '/docs/jobs', title: 'Jobs API', desc: 'The same jobs over plain REST.' },
-          { href: '/docs/trust', title: 'Trust', desc: 'How a build is guarded and priced before anyone signs.' },
-          { href: '/docs/embed', title: 'Embed the chat', desc: 'Put the Pantessa chat on your own site.' },
+          { href: '/docs/jobs', desc: 'The same jobs over plain REST.' },
+          { href: '/docs/trust', desc: 'How a build is guarded and priced before anyone signs.' },
+          { href: '/docs/embed', desc: 'Put the Pantessa chat on your own site.' },
         ]}
       />
     </>

@@ -32,7 +32,7 @@ export function embedClaudePrompt(key: string | null, mcps: string[] = DEFAULT_E
   const list = mcpsLiteral(mcps)
   return `Install the Pantessa embeddable chat (an agent that composes MCPs — swaps, DAO votes, live data — and signs with the user's own wallet) into this app.
 
-1. Install the SDK: \`npm i pantessa\` (needs pantessa >= 1.0).
+1. Install the SDK and its wallet peer: \`npm install pantessa viem\` (needs pantessa >= 1.0).
 2. Mount it once wherever the app initializes client-side:
 
    import { mountPantessaChat } from 'pantessa/embed'

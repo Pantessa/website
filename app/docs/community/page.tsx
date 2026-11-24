@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
-import { DocsNext, DocsSummary } from '@/components/docs'
+import { DocsCrumbs, DocsNext, DocsSummary } from '@/components/docs'
 import { BOT_COMMANDS } from '@/lib/community/spec'
 import { DISCORD_ROOMS } from '@/lib/community/features'
 import { COMPOSER_KINDS, VIDEO_HOSTS_LINE, composeHref } from '@/components/community/feed-rules'
@@ -27,9 +27,7 @@ export default function CommunityDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> COMMUNITY
-      </p>
+      <DocsCrumbs slug="community" />
       <h1 className="docs__h1">Community and rooms</h1>
       <p className="docs__lead">
         The <Link href="/community">community feed</Link> is where traders post chart ideas, links, videos and trades, and vote on what holds up. A room is a
@@ -39,7 +37,7 @@ export default function CommunityDocsPage() {
       <DocsSummary>
         <li>Reading the feed and the rooms is free. No account.</li>
         <li>Joining a room is one tap. No wallet app needed.</li>
-        <li>A trade post carries one line read from the chain. The market and side are the author&apos;s tag.</li>
+        <li>A trade post carries one line read from the chain. The market and side are the author&rsquo;s tag.</li>
       </DocsSummary>
 
       <div className="docs__prose">
@@ -73,16 +71,16 @@ export default function CommunityDocsPage() {
         <h2 id="verified">What &ldquo;verified on-chain&rdquo; means</h2>
         <p>
           A trade post carries one line under the verified mark, for example: &ldquo;Verified on-chain: this wallet moved $25.00 on Base&rdquo;. When you post,
-          Pantessa reads that transaction from the chain. The line says three things and no more: the author&apos;s wallet sent the transaction; in it the wallet&apos;s
+          Pantessa reads that transaction from the chain. The line says three things and no more: the author&rsquo;s wallet sent the transaction; in it the wallet&rsquo;s
           balance of one asset went down and its balance of another went up; and the dollar figure is the net change in a dollar stablecoin or in ETH.
         </p>
         <p>What it does not mean:</p>
         <ul>
           <li>
-            The market and the side (&ldquo;bought ETH&rdquo;) are the author&apos;s own tag. They are printed as &ldquo;Tagged by the author&rdquo;, never under
+            The market and the side (&ldquo;bought ETH&rdquo;) are the author&rsquo;s own tag. They are printed as &ldquo;Tagged by the author&rdquo;, never under
             the verified mark.
           </li>
-          <li>The title is the author&apos;s words, shown in quotes.</li>
+          <li>The title is the author&rsquo;s words, shown in quotes.</li>
           <li>It says nothing about profit, or whether the position is still open.</li>
           <li>It does not say what the other asset is worth, or who was on the other side. A swap against a pool the author controls reads the same.</li>
           <li>
@@ -135,7 +133,7 @@ export default function CommunityDocsPage() {
 
         <h2>Removing a post or a member</h2>
         <p>
-          A post can be removed by its author, or by the room&apos;s owner or a mod. A member can be removed by the owner or a mod; the owner&apos;s seat cannot be.
+          A post can be removed by its author, or by the room&rsquo;s owner or a mod. A member can be removed by the owner or a mod; the owner&rsquo;s seat cannot be.
           The room page has no button for either yet; both are API requests made while signed in (<code>DELETE /api/posts/&lt;id&gt;</code>,{' '}
           <code>POST /api/communities/&lt;room&gt;/members/remove</code>).
         </p>
@@ -143,9 +141,9 @@ export default function CommunityDocsPage() {
 
       <DocsNext
         links={[
-          { href: '/docs/called-it', title: 'Called it', desc: 'Calls pinned on the chart, judged by the price.' },
-          { href: '/docs/links', title: 'Intent links', desc: 'Make a link to a trade and share it.' },
-          { href: '/docs/creator-earnings', title: 'Creator earnings', desc: 'How and when the money reaches you.' },
+          { href: '/docs/called-it', desc: 'Calls pinned on the chart, judged by the price.' },
+          { href: '/docs/links', desc: 'Make a link to a trade and share it.' },
+          { href: '/docs/creator-earnings', desc: 'How and when the money reaches you.' },
         ]}
       />
     </>

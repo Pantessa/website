@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
-import { DocsCallout, DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
+import { DocsCallout, DocsCrumbs, DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import {
   ALERT_MODES,
@@ -41,9 +41,7 @@ export default function MarketsDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> MARKETS
-      </p>
+      <DocsCrumbs slug="markets" />
       <h1 className="docs__h1">Markets: every chart is a trade</h1>
       <p className="docs__lead">
         Watch stocks, crypto and perps live, for free. Press a price or a chip and your own wallet signs the trade.
@@ -193,9 +191,9 @@ export default function MarketsDocsPage() {
 
       <DocsNext
         links={[
-          { href: '/docs/called-it', title: 'Called it', desc: 'An X account’s calls on the chart, judged by the price.' },
-          { href: '/docs/embedded-wallet', title: 'Sign in', desc: 'A wallet, Google or email. Looking needs none.' },
-          { href: '/docs/guardian', title: 'Guardian', desc: 'Stops that watch a position for you.' },
+          { href: '/docs/called-it', desc: 'An X account’s calls on the chart, judged by the price.' },
+          { href: '/docs/embedded-wallet', desc: 'A wallet, Google or email. Looking needs none.' },
+          { href: '/docs/guardian', desc: 'Stops that watch a position for you.' },
         ]}
       />
     </>

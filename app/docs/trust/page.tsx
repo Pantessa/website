@@ -1,11 +1,12 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
-import { DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
+import { DocsCrumbs, DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
 import { CROSS_CHAIN_FEE_BPS, HL_BUILDER_FEE_TENTH_BPS, LINK_FEE_PCT, SWAP_FEE_PCT, feePctLabel } from '@/lib/fees'
 import { GUARDIAN_DELEGATION_DAYS } from '@/lib/hl-guardian'
+import { autoSellLive } from '@/lib/autopilot-live'
 
 // The first page in SAFETY: why a trader can sign what Pantessa builds.
 // Every safety sentence here was checked against the code that enforces it
@@ -13,6 +14,15 @@ import { GUARDIAN_DELEGATION_DAYS } from '@/lib/hl-guardian'
 // in that lane's notes). Fees and durations are read from code constants.
 // Absorbs the still-true parts of the retired /docs/spend-policy and
 // /docs/transactions pages.
+//
+// Spot stops (fix-1, 2026-11-24): when automatic selling is switched on in
+// this build (lib/autopilot-live autoSellLive, stamped at build time), the
+// exceptions section says how a spot stop moves the token: a one-time spend
+// permission the owner signs, capped at the amount they protect, pulled to
+// Pantessa's spender only when the stop fires, sold, and the USDC sent to the
+// owner (lib/spot-guard-exec: pull → [wrap] → approve → sell → owner). When
+// it is off the page says nothing about it. `data-spot-autosell` on the
+// section tells the harness which state it is reading.
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'trust')!
 
@@ -28,13 +38,12 @@ export const metadata: Metadata = {
 }
 
 export default function TrustDocsPage() {
+  const spotStops = autoSellLive()
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> SAFETY
-      </p>
-      <h1 className="docs__h1">Why you can sign what Pantessa builds</h1>
+      <DocsCrumbs slug="trust" />
+      <h1 className="docs__h1">Why you can sign it</h1>
       <p className="docs__lead">
         Pantessa builds the trade, checks it, and hands it to your wallet. Nothing happens until you sign.
       </p>
@@ -83,10 +92,10 @@ export default function TrustDocsPage() {
           </DocsStep>
         </DocsSteps>
 
-        <h2>The one exception: Hyperliquid</h2>
-        <p>
-          You sign every swap, bridge and transfer yourself. Hyperliquid orders can work a little differently.
-          Many wallets cannot sign Hyperliquid&apos;s order format. For those wallets, and for every{' '}
+        <h2>{spotStops ? 'The exceptions: Hyperliquid and spot stops' : 'The one exception: Hyperliquid'}</h2>
+        <p data-spot-autosell={spotStops ? '1' : '0'}>
+          You sign every swap, bridge and transfer yourself. Hyperliquid orders may be signed by a Pantessa agent
+          key instead. Many wallets cannot sign Hyperliquid&apos;s order format. For those wallets, and for every{' '}
           <Link href="/docs/guardian">Guardian</Link> stop, your wallet approves a Pantessa agent key once.
         </p>
         <ul>
@@ -101,11 +110,19 @@ export default function TrustDocsPage() {
             Hyperliquid app.
           </li>
         </ul>
+        {spotStops && (
+          <p>
+            A spot stop on a token in your wallet works through a one-time spend permission you sign, capped at the
+            amount you choose to protect. When the stop fires, that amount moves to Pantessa&rsquo;s spender for the
+            moment of the sale, is sold, and the USDC lands back in your wallet. Until it fires, nothing moves.
+          </p>
+        )}
 
         <h2>Fees</h2>
         <p>
-          A swap&apos;s fee is named on the card before you sign, and it rides inside the signed transaction itself,
-          never hidden in the price.
+          A swap&rsquo;s fee is named on the card before you sign. On a swap within one chain it is part of the
+          transaction you sign. On a swap across chains it comes out of the quoted amount, so what the card says you
+          receive is already after the fee.
         </p>
         <DocsFacts
           rows={[
@@ -122,7 +139,7 @@ export default function TrustDocsPage() {
 
         <h2>No caps, and one switch</h2>
         <p>
-          There are no spend caps, allowlists or approvals to set up. They were retired on 2026-10-30. You sign
+          There are no spend caps or allowlists to set up. They were retired on 2026-10-30. You sign
           each trade, and that signature is the consent.
         </p>
         <p>
@@ -132,18 +149,13 @@ export default function TrustDocsPage() {
           Guardian stops stand down. Press <strong>Resume account</strong> to undo it.
         </p>
 
-        <h2>Go deeper</h2>
-        <p>
-          <Link href="/docs/venues">Venues</Link> lists every venue, chain and contract a Pantessa build can use,
-          with the checks each one runs, generated from the code.
-        </p>
       </div>
 
       <DocsNext
         links={[
-          { href: '/docs/guardian', title: 'Guardian', desc: 'A stop or take-profit that watches your Hyperliquid position.' },
-          { href: '/docs/venues', title: 'Venues', desc: 'Every venue, chain and contract, read from the code.' },
-          { href: '/docs/first-five-minutes', title: 'Your first five minutes', desc: 'Look, connect a wallet, press and sign.' },
+          { href: '/docs/guardian', desc: 'A stop or take-profit that watches your Hyperliquid position.' },
+          { href: '/docs/venues', desc: 'Every venue, chain and contract, read from the code.' },
+          { href: '/docs/first-five-minutes', desc: 'Look, connect a wallet, press and sign.' },
         ]}
       />
     </>

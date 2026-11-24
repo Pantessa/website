@@ -97,8 +97,8 @@ export const DOCS_PAGES: DocsPage[] = [
   // ── EARN ────────────────────────────────────────────────────────────────
   {
     slug: 'links',
-    title: 'Intent links',
-    seoTitle: 'Intent links: share a trade as a link',
+    title: 'Links that carry a trade',
+    seoTitle: 'Links that carry a trade: share it, earn on the swap',
     description: 'Make a link that carries a trade as a sentence. The visitor connects their own wallet and signs, and you get half of Pantessa’s fee on swaps.',
     ready: true,
     group: 'earn',
@@ -116,7 +116,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Community and rooms',
     seoTitle: 'Community: rooms, posts and trades with proof',
     description:
-      'Start a room, join with Telegram or a sign-in, post an idea, a link, a video or a trade. What "verified on-chain" means on a trade post, and what it does not.',
+      'Start a room, join with Telegram or a sign-in, post an idea, a link, a video or a trade. What “verified on-chain” means on a trade post, and what it does not.',
     ready: true,
     group: 'earn',
   },
@@ -132,7 +132,7 @@ export const DOCS_PAGES: DocsPage[] = [
   },
   {
     slug: 'guardian',
-    title: 'Guardian: stops and take-profits',
+    title: 'Guardian stops',
     seoTitle: 'Guardian: stops on Hyperliquid positions',
     description: 'A stop-loss or take-profit on a Hyperliquid position, checked every minute. It runs on an agent key you approve once, which cannot withdraw.',
     ready: true,

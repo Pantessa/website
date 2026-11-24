@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
-import { DocsSummary, DocsSteps, DocsStep, DocsCallout, DocsNext } from '@/components/docs'
+import { DocsCallout, DocsCrumbs, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
 
@@ -29,9 +29,7 @@ export default function JobsDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> JOBS API
-      </p>
+      <DocsCrumbs slug="jobs" />
       <h1 className="docs__h1">Jobs API</h1>
       <p className="docs__lead">
         Send one compound ask, such as &ldquo;bridge, then deposit, then long, then protect it&rdquo;, to{' '}
@@ -378,9 +376,9 @@ export default function JobsDocsPage() {
 
       <DocsNext
         links={[
-          { href: '/docs/desk', title: 'Agent desk (MCP)', desc: 'Let an agent open, negotiate and drive a job over MCP.' },
-          { href: '/docs/embed', title: 'Embed the chat', desc: 'Put the chat, job cards included, on your own site.' },
-          { href: '/docs/trust', title: 'Trust', desc: 'How each step is guarded and priced before anyone signs.' },
+          { href: '/docs/desk', desc: 'Let an agent open, negotiate and drive a job over MCP.' },
+          { href: '/docs/embed', desc: 'Put the chat, job cards included, on your own site.' },
+          { href: '/docs/trust', desc: 'How each step is guarded and priced before anyone signs.' },
         ]}
       />
     </>

@@ -77,7 +77,8 @@ export const INVENTORY: InventoryEntry[] = [
   // ── docs ──
   // RE-PINNED 2026-11-24 (docs-clean qa): the docs landing's 4-step text ask is gone (the landing was rewritten);
   // /docs/jobs carries the 4-step shape now, with a deposit that fits what the bridge delivers.
-  { id: 'docs-index-curl', kind: 'offered', file: 'app/docs/page.tsx', where: 'app/docs/page.tsx:95 docs index curl dryRun example', names: 'Base', ask: 'swap 5 usdc from base to arbitrum, then deposit 5 usdc to hyperliquid' },
+  // REMOVED 2026-11-24 (docs-clean fix-1): 'docs-index-curl'. The landing's curl panel is gone (BUILD is its cards
+  // and one line of links); the dry-run curl lives on /docs/jobs, pinned by 'docs-jobs-4step' below.
   { id: 'docs-jobs-4step', kind: 'offered', file: 'app/docs/jobs/page.tsx', where: 'app/docs/jobs/page.tsx:16 /docs/jobs ASK (the curl and the sample)', names: 'Base', ask: 'bridge 10 usdc from base to arbitrum, then deposit 9 usdc to hyperliquid, then 2x long $12 of eth on hyperliquid, then protect my eth long with a 5% stop' },
   // ── composers (lib/order-ticket, lib/symbol-venues composeCompound) ──
   { id: 'ticket-long-stop', kind: 'composer', where: 'lib/order-ticket.ts:270 perp + stop shape (UNI, 2x, $25, 10%)', ask: '2x Long $25 of UNI on Hyperliquid, then protect my UNI long with a 10% stop' },

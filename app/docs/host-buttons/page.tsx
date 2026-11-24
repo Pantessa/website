@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
-import { DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
+import { DocsCrumbs, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
@@ -25,9 +25,7 @@ export default function HostButtonsDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> SITE BUTTONS
-      </p>
+      <DocsCrumbs slug="host-buttons" />
       <h1 className="docs__h1">Site buttons</h1>
       <p className="docs__lead">
         Put a button on your website that carries a trade. Your visitor signs with their own wallet on
@@ -102,9 +100,9 @@ export default function HostButtonsDocsPage() {
 
       <DocsNext
         links={[
-          { href: '/docs/links', title: 'Intent links', desc: 'What a link carries and what the visitor sees.' },
-          { href: '/docs/creator-earnings', title: 'Creator earnings', desc: 'How and when the money reaches you.' },
-          { href: '/docs/embed', title: 'Embed', desc: 'Pantessa inside your own page.' },
+          { href: '/docs/links', desc: 'What a link carries and what the visitor sees.' },
+          { href: '/docs/creator-earnings', desc: 'How and when the money reaches you.' },
+          { href: '/docs/embed', desc: 'Pantessa inside your own page.' },
         ]}
       />
     </>

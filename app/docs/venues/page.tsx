@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { DocsNext, DocsSummary } from '@/components/docs'
+import { DocsCrumbs, DocsNext, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SWAP_FEE_PCT, feePctLabel } from '@/lib/fees'
 import { SITE_CARD } from '@/lib/og-defaults'
@@ -270,10 +270,8 @@ export default function VenuesDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> SAFETY <span>/</span> VENUES
-      </p>
-      <h1 className="docs__h1">What Pantessa can ask you to sign</h1>
+      <DocsCrumbs slug="venues" />
+      <h1 className="docs__h1">Venues and checks: what you can be asked to sign</h1>
       <p className="docs__lead">
         Every venue, chain and contract a Pantessa build can use, read straight from the code. The same list is
         served as JSON at <a href={MANIFEST_URL}>{MANIFEST_URL}</a>.
@@ -424,9 +422,9 @@ export default function VenuesDocsPage() {
 
       <DocsNext
         links={[
-          { href: '/docs/trust', title: 'Why you can sign it', desc: 'How every trade is built, checked and signed.' },
-          { href: '/docs/guardian', title: 'Guardian', desc: 'A stop or take-profit that watches your Hyperliquid position.' },
-          { href: '/docs/desk', title: 'Desk', desc: 'For developers: the Pantessa desk over MCP.' },
+          { href: '/docs/trust', desc: 'How every trade is built, checked and signed.' },
+          { href: '/docs/guardian', desc: 'A stop or take-profit that watches your Hyperliquid position.' },
+          { href: '/docs/desk', desc: 'For developers: the Pantessa desk over MCP.' },
         ]}
       />
     </>

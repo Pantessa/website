@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
 import { JobOfferLine } from '@/components/JobOfferDoor'
-import { DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
+import { DocsCrumbs, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SWAP_FEE_PCT } from '@/lib/fees'
 import { MARKETS_HREF } from '@/lib/markets'
@@ -31,9 +31,7 @@ export default function FirstFiveMinutesPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> YOUR FIRST FIVE MINUTES
-      </p>
+      <DocsCrumbs slug="first-five-minutes" />
       <h1 className="docs__h1">Your first five minutes</h1>
       <p className="docs__lead">
         Look at any market for free. When you want to act, press the price and sign with your own wallet.
@@ -124,9 +122,9 @@ export default function FirstFiveMinutesPage() {
 
       <DocsNext
         links={[
-          { href: '/docs/markets', title: 'Markets', desc: 'What a chart can do: trade, protect, watch, alert.' },
-          { href: '/docs/called-it', title: 'Called it', desc: 'An X account’s calls on the chart, judged by the price.' },
-          { href: '/docs/embedded-wallet', title: 'Sign in', desc: 'A wallet, Google or email.' },
+          { href: '/docs/markets', desc: 'What a chart can do: trade, protect, watch, alert.' },
+          { href: '/docs/called-it', desc: 'An X account’s calls on the chart, judged by the price.' },
+          { href: '/docs/embedded-wallet', desc: 'A wallet, Google or email.' },
         ]}
       />
     </>

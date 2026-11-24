@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
 import EmbedInstall from '@/components/EmbedInstall'
-import { DocsSummary, DocsSteps, DocsStep, DocsCallout, DocsNext } from '@/components/docs'
+import { DocsCallout, DocsCrumbs, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { ROBINHOOD_DESK } from '@/lib/live-examples'
 import { SITE_CARD } from '@/lib/og-defaults'
@@ -21,9 +21,7 @@ export default function EmbedDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> EMBED THE CHAT
-      </p>
+      <DocsCrumbs slug="embed" />
       <h1 className="docs__h1">Embed the chat</h1>
       <p className="docs__lead">
         Put the Pantessa chat on your own site with one package and a few lines. Your visitors ask
@@ -38,8 +36,8 @@ export default function EmbedDocsPage() {
           The <code>yfe_</code> embed key is publishable. It is safe in page source and it is optional.
         </li>
         <li>
-          With <code>wallet: &apos;auto&apos;</code>, the wallet already connected to your page signs.
-          No keys ever enter the frame.
+          With <code>wallet: &apos;auto&apos;</code>, the browser wallet (<code>window.ethereum</code>)
+          signs. Pass your own EIP-1193 provider for anything else. No keys ever enter the frame.
         </li>
         <li>
           Any site may frame it. You choose what the chat can do with <code>mcps</code> (up to 4).
@@ -96,7 +94,7 @@ mountPantessaChat({
           check it. Signed in, the <SpineLink href="/dashboard/keys">API Keys page</SpineLink> gives you
           the same prompt with your embed key filled in.
         </p>
-        <EmbedInstall />
+        <EmbedInstall variant="prompt" />
 
         <h2>A complete host app</h2>
         <p>
@@ -163,26 +161,29 @@ mountPantessaChat({
           prefilled, never sent: the visitor presses send.
         </p>
         <pre>
-          <code>{`https://www.pantessa.com/chat
-  ?mcps=robinhood-free              # same slugs as the embed
-  &prompt=Buy%20%242%20of%20AAPL    # prefilled`}</code>
+          <code>{`https://www.pantessa.com/chat?mcps=robinhood-free&prompt=Buy%20%242%20of%20AAPL`}</code>
         </pre>
+        <ul>
+          <li>
+            <code>mcps</code>: the same slugs as the embed, comma-separated.
+          </li>
+          <li>
+            <code>prompt</code>: the ask, URL-encoded. It is typed in for the visitor, not sent.
+          </li>
+        </ul>
 
         <h2>Reference: the iframe URL</h2>
         <p>The SDK builds this URL for you. You can also write the iframe by hand:</p>
         <pre>
-          <code>{`https://www.pantessa.com/embed
-  ?mcps=cow-free,snapshot-free         # directory slugs, max 4
-  &key=yfe_…                           # public embed key
-  &address=0xYourUsersWallet           # optional address context
-  &theme=dark                          # dark (default) | light
-  &host=https%3A%2F%2Fyour.app         # your origin, URL-encoded
-  &page=https%3A%2F%2Fyour.app%2Fswap  # page URL, for analytics`}</code>
+          <code>{`https://www.pantessa.com/embed?mcps=cow-free,snapshot-free&key=yfe_YOURKEY&address=0xYourUsersWallet&theme=dark&host=https%3A%2F%2Fyour.app&page=https%3A%2F%2Fyour.app%2Fswap`}</code>
         </pre>
+        <p>
+          All of them are optional. Without <code>host</code>, the embed cannot talk to your page.
+        </p>
         <ul>
           <li>
-            <code>key</code>: a publishable <code>yfe_</code>{' '}key. It can read and spend nothing that
-            is not already yours. Each visitor gets a few free house-model answers a day. Past those,
+            <code>key</code>: your publishable <code>yfe_</code>{' '}key. It is safe to publish: it only
+            attributes usage to your account. Each visitor gets a few free house-model answers a day. Past those,
             answers draw on your account&apos;s pool, which refills from the trades your visitors sign.
             To run them on your own AI key instead, opt in under{' '}
             <SpineLink href="/dashboard/plan#ai-key">Your AI key</SpineLink>.
@@ -190,6 +191,9 @@ mountPantessaChat({
           <li>
             <code>mcps</code>: slugs from <Link href="/servers">the catalog</Link>. Unknown slugs are
             dropped and the list is capped at 4. If none resolve, the chat uses its default set.
+          </li>
+          <li>
+            <code>theme</code>: <code>dark</code> (the default) or <code>light</code>.
           </li>
           <li>
             <code>address</code>: context only. It fills <code>$USER_ADDRESS</code>{' '}(&quot;show my open
@@ -201,8 +205,8 @@ mountPantessaChat({
             <code>resize</code>.
           </li>
           <li>
-            <code>page</code>: the page URL. The SDK sends it, so <em>Your embeds</em> shows which
-            pages run the chat.
+            <code>page</code>: the page URL, URL-encoded. The SDK sends it, so <em>Your embeds</em>{' '}
+            shows which pages run the chat.
           </li>
         </ul>
 
@@ -290,18 +294,17 @@ mountPantessaChat({
             embed it. Limit what the chat can do with <code>mcps</code>, not the frame.
           </li>
           <li>
-            Guests chat at once, with no sign-in: Pantessa&apos;s house wallet pays free-tier calls.
-            Paid MCPs, swaps and votes are signed by the bridged host wallet or a wallet the visitor
-            connects inside the frame.
+            Guests can chat at once, with no sign-in. Swaps and votes are signed by the host
+            page&rsquo;s wallet or a wallet the visitor connects inside the frame.
           </li>
         </ul>
       </div>
 
       <DocsNext
         links={[
-          { href: '/docs/host-buttons', title: 'Site buttons', desc: 'A money button any page can wear, no chat needed.' },
-          { href: '/docs/jobs', title: 'Jobs API', desc: 'Send one compound ask, get a guarded step plan back.' },
-          { href: '/docs/trust', title: 'Trust', desc: 'How a build is guarded and priced before anyone signs.' },
+          { href: '/docs/host-buttons', desc: 'A money button any page can wear, no chat needed.' },
+          { href: '/docs/jobs', desc: 'Send one compound ask, get a guarded step plan back.' },
+          { href: '/docs/trust', desc: 'How a build is guarded and priced before anyone signs.' },
         ]}
       />
     </>

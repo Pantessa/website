@@ -1,9 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
-import { ArrowUpRight } from 'lucide-react'
-import EmbedDemo from '@/components/EmbedDemo'
-import EmbedInstall from '@/components/EmbedInstall'
 import { DocsStep, DocsSteps } from '@/components/docs'
 import { DOCS_GROUPS, DOCS_PAGES, docsJsonLd, docsUrl, groupPages, type DocsGroupId } from '@/lib/docs'
 import { SWAP_FEE_PCT } from '@/lib/fees'
@@ -13,9 +10,9 @@ import { SITE_CARD } from '@/lib/og-defaults'
 // The /docs landing (squad docs-clean, 2026-11-24). It says what Pantessa is
 // today in the brand's own lines, walks the START HERE path as three steps,
 // then gives one section per group (lib/docs DOCS_GROUPS, reading order) with
-// that group's cards from the registry. BUILD carries the one developer
-// block (the $0 jobs dry run and the embed install). Server-rendered so the
-// copy is crawlable: EmbedDemo and EmbedInstall are the only client islands.
+// that group's cards from the registry. BUILD is its cards and one line of
+// links (npm, GitHub): the curl lives on /docs/jobs, the install on
+// /docs/embed. Server-rendered so the copy is crawlable.
 // The markets door reads MARKETS_HREF through a SpineLink (the harness pins
 // both: no hand-typed /markets, no bare Link into the app from /docs).
 
@@ -60,7 +57,7 @@ function StartSteps() {
         <p>
           Press any action and the sign-in door opens. Connect the wallet you already use, or continue
           with Google or email to get a wallet that only you control. More in{' '}
-          <Link href="/docs/embedded-wallet">Sign in and wallets</Link>.
+          <Link href="/docs/embedded-wallet">Sign in</Link>.
         </p>
       </DocsStep>
       <DocsStep title="Press and sign">
@@ -75,62 +72,23 @@ function StartSteps() {
   )
 }
 
-/** BUILD's one developer block: the $0 jobs dry run and the embed install. */
-function BuildBlock() {
+/** BUILD's one line under its cards: where the code is. The curl lives on
+ *  /docs/jobs and the install on /docs/embed. */
+function BuildLinks() {
   return (
-    <>
-      <div className="splash__npm">
-        <div>
-          <p className="splash__kicker mono">TRY THE JOBS API · $0</p>
-          <p className="splash__npmlead">
-            A <code>dryRun</code> compiles a multi-step ask and builds step one against live venues,
-            without creating or costing anything. Make a <code>yf_</code> key at{' '}
-            <SpineLink href="/dashboard/keys">/dashboard/keys</SpineLink> and paste it in. The{' '}
-            <Link href="/docs/jobs">Jobs API</Link> page explains the response.
-          </p>
-        </div>
-        <pre className="splash__code mono">{`curl -s https://www.pantessa.com/api/jobs \\
-  -H "authorization: Bearer $YF_API_KEY" \\
-  -H "content-type: application/json" \\
-  -d '{"ask": "swap 5 usdc from base to arbitrum, then deposit 5 usdc to hyperliquid", "dryRun": true}'`}</pre>
-      </div>
-
-      <div className="splash__embedgrid" id="embed">
-        <div className="splash__embedcopy">
-          <p className="splash__kicker mono">EMBED THE CHAT</p>
-          <h3 className="splash__pathtitle">The Pantessa chat, on your site</h3>
-          <p className="splash__pathlead">
-            Mount the chat on any page with the <code>pantessa</code> npm package. It builds checked
-            trades and signs with the wallet already connected to your site. Copy the Claude Code
-            prompt and Claude does the install, or take the snippet and mount it yourself.
-          </p>
-          <EmbedInstall />
-          <div className="splash__more">
-            <Link href="/docs/embed">
-              The embed docs <ArrowUpRight width={13} height={13} />
-            </Link>
-            <SpineLink href="/dashboard/keys">
-              Make an embed key <ArrowUpRight width={13} height={13} />
-            </SpineLink>
-          </div>
-        </div>
-        <EmbedDemo />
-      </div>
-
-      <div className="docs__prose">
-        <p>
-          The code is open:{' '}
-          <a href="https://www.npmjs.com/package/pantessa" target="_blank" rel="noopener noreferrer">
-            pantessa on npm
-          </a>{' '}
-          (<code>npm install pantessa</code>) and{' '}
-          <a href="https://github.com/Pantessa" target="_blank" rel="noopener noreferrer">
-            Pantessa on GitHub
-          </a>
-          .
-        </p>
-      </div>
-    </>
+    <div className="docs__prose">
+      <p>
+        The code is open:{' '}
+        <a href="https://www.npmjs.com/package/pantessa" target="_blank" rel="noopener noreferrer">
+          pantessa on npm
+        </a>{' '}
+        and{' '}
+        <a href="https://github.com/Pantessa" target="_blank" rel="noopener noreferrer">
+          Pantessa on GitHub
+        </a>
+        .
+      </p>
+    </div>
   )
 }
 
@@ -149,7 +107,7 @@ export default function DocsIndexPage() {
       </p>
       <div className="splash__ctas">
         <Link href="/docs/first-five-minutes" className="btn btn--solid">
-          Start here
+          Your first five minutes
         </Link>
         <SpineLink href={MARKETS_HREF} className="btn btn--ghost">
           Open the markets
@@ -167,7 +125,7 @@ export default function DocsIndexPage() {
             {g.id === 'start' && <StartSteps />}
           </div>
           <GroupCards group={g.id} />
-          {g.id === 'build' && <BuildBlock />}
+          {g.id === 'build' && <BuildLinks />}
         </section>
       ))}
     </>

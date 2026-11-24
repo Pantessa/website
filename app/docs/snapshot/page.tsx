@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
-import { DocsSummary, DocsSteps, DocsStep, DocsNext } from '@/components/docs'
+import { DocsCrumbs, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
 
@@ -19,9 +19,7 @@ export default function SnapshotDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> SNAPSHOT VOTING
-      </p>
+      <DocsCrumbs slug="snapshot" />
       <h1 className="docs__h1">Snapshot voting</h1>
       <p className="docs__lead">
         Browse live Snapshot proposals and vote on them from the chat. Your wallet signs the vote as a
@@ -118,8 +116,8 @@ export default function SnapshotDocsPage() {
 
       <DocsNext
         links={[
-          { href: '/docs/trust', title: 'Trust', desc: 'What Pantessa builds, and why you can sign it.' },
-          { href: '/docs/desk', title: 'Agent desk (MCP)', desc: 'Connect an agent to Pantessa over MCP.' },
+          { href: '/docs/trust', desc: 'What Pantessa builds, and why you can sign it.' },
+          { href: '/docs/desk', desc: 'Connect an agent to Pantessa over MCP.' },
         ]}
       />
     </>

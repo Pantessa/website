@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
-import { DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
+import { DocsCrumbs, DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { SITE_CARD } from '@/lib/og-defaults'
@@ -41,18 +41,16 @@ export default function CreatorEarningsDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> CREATOR EARNINGS
-      </p>
+      <DocsCrumbs slug="creator-earnings" />
       <h1 className="docs__h1">Creator earnings</h1>
       <p className="docs__lead">
         When someone swaps through a <Link href="/docs/links">link you made</Link>, you get half of
-        Pantessa&apos;s fee. A link swap carries a {LINK_FEE_PCT} fee, so you get{' '}
+        Pantessa&rsquo;s fee. A link swap carries a {LINK_FEE_PCT} fee, so you get{' '}
         {per100(LINK_SWAP_FEE_BPS)} for every $100 swapped.
       </p>
 
       <DocsSummary>
-        <li>You get half of Pantessa&apos;s fee: {LINK_CREATOR_PCT} of a link swap.</li>
+        <li>You get half of Pantessa&rsquo;s fee: {LINK_CREATOR_PCT} of a link swap.</li>
         <li>On a Uniswap swap with a stablecoin side, your half is paid to you inside the same transaction.</li>
         <li>Everything else goes to your balance. You can claim it from {MIN_CLAIM}, paid as USDC on Base.</li>
         <li>A wallet your link brings in pays you on its later swaps too, for life.</li>
@@ -65,14 +63,14 @@ export default function CreatorEarningsDocsPage() {
           <DocsStep title="Someone signs a swap through your link">
             <p>
               They sign with their own wallet. The fee is in the transaction before they sign, and your half
-              comes out of Pantessa&apos;s fee, not on top of it.
+              comes out of Pantessa&rsquo;s fee, not on top of it.
             </p>
           </DocsStep>
           <DocsStep title="On Uniswap with a stablecoin side, you are paid in the swap">
             <p>
               The same transaction sends your half to your wallet, in that stablecoin, on that chain. A buy
               that spends USDC pays you from what it spends. A sale into a stablecoin pays you from what it
-              gets back. On Robinhood Chain&apos;s Uniswap v4 pools, only the sale pays you this way.
+              gets back. On Robinhood Chain&rsquo;s Uniswap v4 pools, only the sale pays you this way.
             </p>
           </DocsStep>
           <DocsStep title="Any other swap adds to your balance">
@@ -125,13 +123,13 @@ export default function CreatorEarningsDocsPage() {
         <h2>Wallets you bring in</h2>
         <p>
           The first link a wallet signs a trade through makes that wallet yours, for life. After that, its swaps
-          pay you half of Pantessa&apos;s fee even when they do not come through a link. A second link never
+          pay you half of Pantessa&rsquo;s fee even when they do not come through a link. A second link never
           takes the wallet over, and your own wallet never counts as one you brought in.
         </p>
 
         <h2>What the visitor is told</h2>
         <p>
-          Your link&apos;s page tells the visitor that its creator earns half of Pantessa&apos;s fee on the
+          Your link&rsquo;s page tells the visitor that its creator earns half of Pantessa&rsquo;s fee on the
           trades it produces and on later trades from the wallets it brings. The fee itself is in the
           transaction they sign. <Link href="/docs/terms">The terms</Link> hold the full fee disclosure.
         </p>
@@ -151,9 +149,9 @@ export default function CreatorEarningsDocsPage() {
 
       <DocsNext
         links={[
-          { href: '/docs/links', title: 'Intent links', desc: 'Make a link to a trade and share it.' },
-          { href: '/docs/called-it', title: 'Called it', desc: 'Calls pinned on the chart, judged by the price.' },
-          { href: '/docs/community', title: 'Community and rooms', desc: 'Post ideas and trades with proof.' },
+          { href: '/docs/links', desc: 'Make a link to a trade and share it.' },
+          { href: '/docs/called-it', desc: 'Calls pinned on the chart, judged by the price.' },
+          { href: '/docs/community', desc: 'Post ideas and trades with proof.' },
         ]}
       />
     </>

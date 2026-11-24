@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
-import { DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
+import { DocsCrumbs, DocsFacts, DocsNext, DocsStep, DocsSteps, DocsSummary } from '@/components/docs'
 import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
@@ -32,14 +32,12 @@ export default function LinksDocsPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: docsJsonLd(PAGE) }} />
-      <p className="docs__crumbs mono">
-        <Link href="/docs">DOCS</Link> <span>/</span> INTENT LINKS
-      </p>
-      <h1 className="docs__h1">Intent links</h1>
+      <DocsCrumbs slug="links" />
+      <h1 className="docs__h1">Links that carry a trade</h1>
       <p className="docs__lead">
-        An intent link is a short web address that carries a trade as a plain sentence, such as
-        &ldquo;Buy $10 of AAPL&rdquo;. Whoever opens it connects their own wallet and signs, and you get
-        half of Pantessa&apos;s fee on the swap.
+        A link here is a short web address that carries a trade as a plain sentence, such as
+        &ldquo;Buy $10 of AAPL&rdquo;. We call it an intent link. Whoever opens it connects their own wallet and signs, and you get
+        half of Pantessa&rsquo;s fee on the swap.
       </p>
 
       <DocsSummary>
@@ -62,7 +60,7 @@ export default function LinksDocsPage() {
             <p>A link is minted in your name, so Pantessa needs to know who you are.</p>
           </DocsStep>
           <DocsStep title={<>Open {studio}</>}>
-            <p>It opens on <strong>Your intent links</strong>. Keep the address: it is the way in.</p>
+            <p>It opens on <strong>Your intent links</strong>. Bookmark it: your links, their numbers and your earnings all live there.</p>
           </DocsStep>
           <DocsStep title="Type the trade as a sentence">
             <p>
@@ -82,15 +80,15 @@ export default function LinksDocsPage() {
         <h2>What the visitor sees</h2>
         <ul>
           <li>
-            Your sentence and one button, <strong>Connect &amp; build my path</strong>. Connecting runs the
-            scan and the build for their wallet. Signing stays theirs.
+            Your sentence and one button, <strong>Connect &amp; build my path</strong>. Connecting builds
+            the trade for their wallet. Signing stays theirs.
           </li>
           <li>
             Pantessa builds the trade fresh from the sentence. The link holds no transaction, so nothing in it
             can run by itself.
           </li>
           <li>An ask that sends money to someone never runs by itself. It waits until the visitor presses send.</li>
-          <li>The page tells the visitor that the link&apos;s creator earns half of Pantessa&apos;s fee.</li>
+          <li>The page tells the visitor that the link&rsquo;s creator earns half of Pantessa&rsquo;s fee.</li>
         </ul>
 
         <h2>Options</h2>
@@ -146,16 +144,16 @@ export default function LinksDocsPage() {
         <h2>Called it pages</h2>
         <p>
           A Called it page, <code>pantessa.com/x/&lt;handle&gt;/&lt;SYMBOL&gt;</code>, shows an X
-          account&apos;s calls on a market&apos;s chart. You can share it too, but it does not pay you: only a
+          account&rsquo;s calls on a market&rsquo;s chart. You can share it too, but it does not pay you: only a
           link you mint does. See <Link href="/docs/called-it">Called it</Link>.
         </p>
       </div>
 
       <DocsNext
         links={[
-          { href: '/docs/creator-earnings', title: 'Creator earnings', desc: 'How and when the money reaches you.' },
-          { href: '/docs/called-it', title: 'Called it', desc: 'Calls pinned on the chart, judged by the price.' },
-          { href: '/docs/host-buttons', title: 'Site buttons', desc: 'Put a link on your website as a button.' },
+          { href: '/docs/creator-earnings', desc: 'How and when the money reaches you.' },
+          { href: '/docs/called-it', desc: 'Calls pinned on the chart, judged by the price.' },
+          { href: '/docs/host-buttons', desc: 'Put a link on your website as a button.' },
         ]}
       />
     </>
