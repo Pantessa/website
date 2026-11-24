@@ -2268,6 +2268,14 @@ async function main() {
     embedDocsHtml.includes(`href="${ROBINHOOD_DESK.url}"`) && embedDocsHtml.includes(`href="${ROBINHOOD_DESK.source}"`),
   )
   check('mosaic: reachable from the footer on every page', footerHomeHtml.includes('href="/mosaic"'))
+  // The public brand kit (2026-11-24): the footer offers it and the zip is really served.
+  check('brand kit: offered in the footer on every page', footerHomeHtml.includes('href="/brand/kit/pantessa-brand-kit.zip"'))
+  const brandKitRes = await fetch(`${BASE}/brand/kit/pantessa-brand-kit.zip`)
+  const brandKitBytes = new Uint8Array(await brandKitRes.arrayBuffer())
+  check(
+    'brand kit: the zip is served whole (200, a real zip, over 500 KB)',
+    brandKitRes.status === 200 && brandKitBytes[0] === 0x50 && brandKitBytes[1] === 0x4b && brandKitBytes.length > 500_000,
+  )
   const linksPageHtml = await (await fetch(`${BASE}/links`)).text()
   check('mosaic: the /links board cross-links the wall', linksPageHtml.includes('href="/mosaic"'))
 
