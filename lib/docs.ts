@@ -1,72 +1,115 @@
 // Docs registry + SEO helpers. One source of truth for the sidebar, the
-// landing cards, the sitemap, and per-page breadcrumbs — add a page here and
+// landing cards, the sitemap, and per-page breadcrumbs: add a page here and
 // every surface picks it up. `ready: false` entries are hidden everywhere
 // until their iteration ships them (no dead links mid-run).
+//
+// ORDER IS THE READING ORDER (squad docs-clean, 2026-11-24). The four
+// "doors" (creators, hosts, users, agent devs) became five groups, led by
+// the trader: START HERE, EARN, SAFETY, BUILD, LEGAL. Within a group the
+// array order is the sidebar order and the landing's card order. Retired
+// pages (dca, spend-policy, transactions) and the 14 unrouted `_` pages left
+// the registry; next.config redirects the three retired addresses.
 
 import { SITE_URL } from './site-url'
-import { LINK_FEE_PCT } from './fees'
 
 /** Re-exported: docs pages have imported `SITE` from here since before
  *  lib/site-url existed. */
 export const SITE = SITE_URL
 
+export type DocsGroupId = 'start' | 'earn' | 'safety' | 'build' | 'legal'
+
 export interface DocsPage {
   slug: string // '' = the /docs landing
   title: string // sidebar + breadcrumb label
-  /** ≤60 chars — the <title> (suffix added by the template). */
+  /** ≤60 chars: the <title>. */
   seoTitle: string
-  /** ≤160 chars — meta description. */
+  /** ≤160 chars: meta description, and the card text on the landing. */
   description: string
   ready: boolean
-  /** 'legal' pages render in their own sidebar group, out of the dev-doc cards. */
-  group?: 'guide' | 'legal'
-  /**
-   * The reader this page serves — the docs are structured around three doors:
-   * embed it (hosts), trust it (users), earn with it (creators). The old
-   * fourth reader (x402 agent devs) was demoted in the links-first purge
-   * (2026-07-22) — those pages stay in the registry ready:false, their dirs
-   * unrouted (_-prefixed), everything reversible. Legal pages have none.
-   */
-  door?: 'host' | 'user' | 'agent' | 'creator'
+  /** The group the page sits in (sidebar label, landing section). The
+   *  landing itself has none. */
+  group?: DocsGroupId
+  /** @deprecated The four doors are gone (2026-11-24); no entry sets this.
+   *  Kept on the type only so an old pin that reads it still compiles until
+   *  lane qa re-pins it to `group`. */
+  door?: string
 }
 
-/** Door display metadata — one place for the labels the sidebar + landing share. */
-export const DOORS: Array<{ id: 'host' | 'user' | 'creator' | 'agent'; label: string; reader: string }> = [
-  { id: 'creator', label: 'Earn with it', reader: 'for creators' },
-  { id: 'host', label: 'Embed it', reader: 'for hosts' },
-  { id: 'user', label: 'Trust it', reader: 'for users' },
-  { id: 'agent', label: 'Give it hands', reader: 'for agent devs' },
+/** Group display metadata: the sidebar labels and the landing's sections,
+ *  in reading order. `label` is the short sidebar marker; `title` and
+ *  `reader` head the landing section. */
+export const DOCS_GROUPS: Array<{ id: DocsGroupId; label: string; title: string; reader: string }> = [
+  { id: 'start', label: 'START HERE', title: 'Start here', reader: 'Look at a market, connect a wallet, press and sign.' },
+  { id: 'earn', label: 'EARN', title: 'Earn', reader: 'For creators: share a trade and earn on the swaps it brings.' },
+  { id: 'safety', label: 'SAFETY', title: 'Safety', reader: 'Why you can sign what Pantessa builds.' },
+  { id: 'build', label: 'BUILD', title: 'Build', reader: 'For developers: buttons, the embed, the APIs.' },
+  { id: 'legal', label: 'LEGAL', title: 'Legal', reader: 'The terms and the privacy policy.' },
 ]
 
 export const DOCS_PAGES: DocsPage[] = [
   {
     slug: '',
     title: 'Overview',
-    seoTitle: 'Pantessa docs — the non-custodial back office for autonomous money',
+    seoTitle: 'Pantessa docs: the live market you can act on',
     description:
-      'Say what should happen, once. Pantessa compiles it into deterministic guarded transactions only your own wallet can sign — priced, capped, receipted, killable. Three doors: embed it, trust it, pay it.',
+      'Look at live charts for free. Press a price and Pantessa builds the trade, checks it, and hands it to your own wallet to sign. Pantessa never holds your money.',
     ready: true,
   },
 
-  // ── EARN WITH IT · for creators ─────────────────────────────────────────
+  // ── START HERE ──────────────────────────────────────────────────────────
+  {
+    slug: 'first-five-minutes',
+    title: 'Your first five minutes',
+    seoTitle: 'Your first five minutes with Pantessa',
+    description:
+      'Open a chart with no account, connect a wallet when you want to act, then press a price and sign. The path from a first look to a first trade.',
+    ready: true,
+    group: 'start',
+  },
+  {
+    slug: 'markets',
+    title: 'Markets: the chart you can act on',
+    seoTitle: 'Markets: the chart you can act on',
+    description:
+      'Live charts for tokenized stocks, crypto and Hyperliquid perps, free to look at. Press a price or a chip and Pantessa builds the trade your wallet signs.',
+    ready: true,
+    group: 'start',
+  },
+  {
+    slug: 'called-it',
+    title: 'Called it: calls on the chart',
+    seoTitle: 'Called it: X calls pinned on the chart',
+    description:
+      'Type an X handle and Pantessa pins that account’s public market calls on the chart, each judged by what the price did next. Hits and misses both count.',
+    ready: true,
+    group: 'start',
+  },
+  {
+    slug: 'embedded-wallet',
+    title: 'Sign in and wallets',
+    seoTitle: 'Sign in to Pantessa: a wallet, Google or email',
+    description:
+      'Looking needs no account. To act, connect the wallet you use, or continue with Google or email to get a Coinbase embedded wallet that only you control.',
+    ready: true,
+    group: 'start',
+  },
+
+  // ── EARN ────────────────────────────────────────────────────────────────
   {
     slug: 'links',
-    title: 'Intent links',
-    seoTitle: 'Intent links — a link that carries an ask',
-    description:
-      'Mint a short link that carries a plain-English ask. Whoever opens it connects their own wallet, Pantessa builds the guarded path, they sign. Funnels, A/B phrasings, storefronts, and partner limits.',
+    title: 'Links that carry a trade',
+    seoTitle: 'Intent links: share a trade as a link',
+    description: 'Make a link that carries a trade as a sentence. The visitor connects their own wallet and signs, and you get half of Pantessa’s fee on swaps.',
     ready: true,
-    door: 'creator',
+    group: 'earn',
   },
   {
     slug: 'creator-earnings',
     title: 'Creator earnings',
-    seoTitle: 'Creator earnings — half the fee on your conversions',
-    description:
-      // RE-WORDED 2026-10-07 (pre-gtm): said "half of Pantessa’s 0.20% fee" — the chat rate; link conversions price at LINK_FEE_PCT.
-      `Creators earn half of the ${LINK_FEE_PCT} fee on the swaps their links produce — server-truth accounting, sales and transfers never charged; earnings not paid inside the swap are claimable as USDC on Base from $10.`,
+    seoTitle: 'Creator earnings: half the fee on link swaps',
+    description: 'How creators are paid: half of Pantessa’s fee on swaps through their links, paid in the swap or claimed as USDC on Base. Perp trades do not pay yet.',
     ready: true,
-    door: 'creator',
+    group: 'earn',
   },
   {
     slug: 'community',
@@ -75,284 +118,97 @@ export const DOCS_PAGES: DocsPage[] = [
     description:
       'Start a room, join with Telegram or a sign-in, post an idea, a link, a video or a trade. What "verified on-chain" means on a trade post, and what it does not.',
     ready: true,
-    door: 'creator',
+    group: 'earn',
   },
 
-  // ── EMBED IT · for hosts ────────────────────────────────────────────────
+  // ── SAFETY ──────────────────────────────────────────────────────────────
+  {
+    slug: 'trust',
+    title: 'Why you can sign it',
+    seoTitle: 'Why you can sign what Pantessa builds',
+    description: 'Pantessa never holds your money. Code builds each trade from live venue data, a second check runs, the fee is shown, and you sign.',
+    ready: true,
+    group: 'safety',
+  },
+  {
+    slug: 'guardian',
+    title: 'Guardian: stops and take-profits',
+    seoTitle: 'Guardian: stops on Hyperliquid positions',
+    description: 'A stop-loss or take-profit on a Hyperliquid position, checked every minute. It runs on an agent key you approve once, which cannot withdraw.',
+    ready: true,
+    group: 'safety',
+  },
+  // Field order inside this entry is read by scripts/venue-manifest-pins.ts
+  // (slug, title, seoTitle, single-quoted description, ready, group): keep it.
+  {
+    slug: 'venues',
+    title: 'Venues and checks',
+    seoTitle: 'Venues: what Pantessa can ask you to sign',
+    description: 'Every venue, chain and contract a Pantessa build can use, with the check in front of each signature. Read from the code, served as JSON.',
+    ready: true,
+    group: 'safety',
+  },
+
+  // ── BUILD ───────────────────────────────────────────────────────────────
   {
     slug: 'host-buttons',
     title: 'Site buttons',
-    seoTitle: 'Site buttons — a money button any site can wear',
-    description:
-      'Generate a copy-paste HTML button that carries an ask. Visitors tap it, sign with their own wallet on Pantessa, and return to your site — no script, no iframe, no keys.',
+    seoTitle: 'Site buttons: a trade button for your website',
+    description: 'Put a plain HTML button on your site that opens a trade on Pantessa. Visitors sign with their own wallet and come back to your return URL.',
     ready: true,
-    door: 'host',
+    group: 'build',
   },
   {
     slug: 'embed',
     title: 'Embed the chat',
-    seoTitle: 'Embed the Pantessa chat — five lines on your own site',
+    seoTitle: 'Embed the Pantessa chat on your own site',
     description:
-      'Mount the full Pantessa chat on any site in five lines — guarded transactions, receipts, and signing with the wallet already connected to your page. Embed keys, postMessage API, telemetry.',
+      'Mount the Pantessa chat on any site with the pantessa npm package. It builds checked trades and signs with the wallet already connected to your page.',
     ready: true,
-    door: 'host',
-  },
-
-  // ── TRUST IT · for users ────────────────────────────────────────────────
-  {
-    slug: 'first-five-minutes',
-    title: 'Your first five minutes',
-    seoTitle: 'Your first five minutes with Pantessa',
-    description:
-      'Land, ask, sign, then tell it once — the path from a free first ask to a standing intent, with a guarded transaction and a receipt at every step. No wallet needed to start.',
-    ready: true,
-    door: 'user',
-  },
-  {
-    slug: 'trust',
-    title: 'Trust: the guardrails',
-    seoTitle: 'Why you can sign what Pantessa builds',
-    description:
-      'What non-custodial means here: the model never writes calldata, every build is re-checked fail-closed, priced, and receipted, your wallet is the only thing that can sign, and one switch stops everything.',
-    ready: true,
-    door: 'user',
-  },
-  {
-    slug: 'venues',
-    title: 'The venue manifest',
-    seoTitle: 'The venue manifest — pinned contracts, selectors, guards',
-    description:
-      'Every contract and selector a Pantessa build may emit, per venue and chain, with the guard that fences it and its bounds — from the builder constants, as JSON.',
-    ready: true,
-    door: 'user',
-  },
-  {
-    slug: 'transactions',
-    title: 'Native venues & guards',
-    seoTitle: 'The transaction layer — venues, builders, and guards',
-    description:
-      'Every venue Pantessa builds natively — CoW, Uniswap v3/v4, NEAR Intents bridges, Aave, Hyperliquid, Snapshot — and the guard that re-derives each artifact before your wallet ever sees it.',
-    ready: true,
-    door: 'user',
+    group: 'build',
   },
   {
     slug: 'jobs',
-    title: 'Jobs: standing intents',
-    seoTitle: 'Jobs API — compound intents, built and guarded step by step',
+    title: 'Jobs API',
+    seoTitle: 'Jobs API: multi-step asks, built and checked step by step',
     description:
-      'Say it once — "bridge, then deposit, then long, then protect it" — and the runner builds, guards, and offers each step for signature. dryRun previews everything for $0.',
+      'Send a multi-step ask, such as bridge, then deposit, then trade. The runner builds, checks and offers each step for signature. A dry run previews it for free.',
     ready: true,
-    door: 'user',
+    group: 'build',
   },
   {
-    slug: 'guardian',
-    title: 'Guardian: autonomy, no custody',
-    seoTitle: 'Guardian — stops and take-profits without giving up keys',
+    slug: 'desk',
+    title: 'Agent desk (MCP)',
+    seoTitle: 'Agent desk: connect an agent to Pantessa over MCP',
     description:
-      'Arm a stop-loss or take-profit on a Hyperliquid position with one signature: a delegated agent key can ONLY reduce that position, every close re-guarded fail-closed, receipts on your dashboard.',
+      'Connect an agent over MCP. It asks in plain sentences, Pantessa builds and checks each trade, and a person or the agent’s own key signs. No AI writes calldata.',
     ready: true,
-    door: 'user',
-  },
-  {
-    slug: 'dca',
-    title: 'Recurring buys: confirm & autopilot',
-    seoTitle: 'Recurring buys (DCA) — one tap per buy, or arm autopilot',
-    description:
-      'Two tiers, one schedule: every wallet gets confirm-mode (each buy built fresh, you sign it), and smart wallets can arm autopilot — one signature caps the spend on-chain and each period buys itself.',
-    // Unlisted 2026-09-16 (Nate: DCA mostly reminds you to sign, so it isn't
-    // featured). The page still routes for anyone who types a recurring buy.
-    ready: false,
-    door: 'user',
-  },
-  {
-    slug: 'markets',
-    title: 'Markets: the chart that executes',
-    seoTitle: 'Markets — the chart that executes',
-    description:
-      'Live charts for tokenized stocks (24/7 on Robinhood Chain), crypto spot and Hyperliquid perps. Every chip is an ask that builds a guarded transaction your wallet signs; unlimited watchlists and alerts, alerts that act, import from TradingView.',
-    ready: true,
-    door: 'user',
-  },
-  {
-    slug: 'spend-policy',
-    title: 'Spend policy (retired) & the kill switch',
-    seoTitle: 'Spend policy — retired; your signature is the consent',
-    description:
-      'No allowlist, no caps, no agent approvals: nothing you ask for is policy-gated any more. Anything that moves your money is signed by you, every paid call is receipted, and the kill switch still refuses everything.',
-    ready: true,
-    door: 'user',
+    group: 'build',
   },
   {
     slug: 'snapshot',
-    title: 'Snapshot DAO voting',
-    seoTitle: 'Snapshot voting — browse proposals and vote from chat',
+    title: 'Snapshot voting',
+    seoTitle: 'Snapshot voting: browse proposals and vote from chat',
     description:
-      'Browse live Snapshot DAO proposals in the Pantessa chat and cast a vote your own wallet signs (EIP-712) — pay-per-call over x402 on Base, no API key.',
+      'Browse live Snapshot DAO proposals in the Pantessa chat and cast a vote your own wallet signs. Free in the chat; only the agent endpoint is paid.',
     ready: true,
-    door: 'user',
-  },
-  {
-    slug: 'embedded-wallet',
-    title: 'Create an account (email)',
-    seoTitle: 'Create an account — email wallet, no extension',
-    description:
-      'Sign up with just an email: Pantessa creates a Coinbase non-custodial wallet you control, no extension needed. Once connected it works exactly like MetaMask.',
-    ready: true,
-    door: 'user',
+    group: 'build',
   },
 
-  // ── GIVE IT HANDS · for agent devs ──────────────────────────────────────
-  {
-    slug: 'desk',
-    title: 'Give your agent hands',
-    seoTitle: 'Give your agent hands — the Pantessa desk over MCP',
-    description:
-      'Connect any agent to Pantessa over MCP and it can move money safely: it plans in plain sentences, a human (or its own key) signs, and no AI ever writes calldata. The hands MCP for one-shot handoffs, the desk for a negotiation loop that talks back — and the agent-signed path, where your own key drives a guarded multi-leg job with one call to the pantessa SDK.',
-    ready: true,
-    door: 'agent',
-  },
-  {
-    slug: 'paid-doors',
-    title: 'Paid MCP doors (x402)',
-    seoTitle: 'Paid doors — pay-per-call MCPs, no API key',
-    description:
-      'Every Pantessa MCP has a free door; some add a paid one. Same tools, no API key, no account: your agent pays per call in USDC on Base over x402. Try fund_and_build for $0.02.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'quickstart',
-    title: 'Agent quickstart',
-    seoTitle: 'Agent quickstart — pay per call with the yeetful SDK',
-    description:
-      'Install the yeetful SDK, define a spend grant, and make your first pay-per-call x402 request in USDC on Base — about twenty lines of TypeScript.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'expense-account',
-    title: 'The expense account',
-    seoTitle: 'Spend grants — allowlists, budgets, and receipts',
-    description:
-      'How yeetful spend grants work: host allowlists, per-call/per-day/lifetime USD caps, typed GrantError denials, and a receipt for every decision.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'agents',
-    title: 'Agents & budgets',
-    seoTitle: 'Agents & budgets — a daily cap for every connected app',
-    description:
-      'On Pantessa an agent IS an API key: give each connected app a per-day USD budget the SDK pre-flights via /api/agent/policy and enforces before paying.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'teams',
-    title: 'Teams & organizations',
-    seoTitle: 'Teams — a shared expense account for your whole org',
-    description:
-      'Pantessa organizations: invite teammates by wallet address, share agent keys, set a two-level budget (org daily cap over per-key budgets), export the report.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'api',
-    title: 'Grants & policy API',
-    seoTitle: 'Grants & policy API — the REST reference',
-    description:
-      'The REST reference: every /api/grants route (CRUD, EIP-712 signing, receipt sync), the GET /api/agent/policy pre-flight, and the receipt body fields — Bearer or session auth.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'ledger-sync',
-    title: 'Dashboard ledger sync',
-    seoTitle: 'Ledger sync — agent receipts on your Pantessa dashboard',
-    description:
-      'Mint a yf_ API key, set YEETFUL_GRANT_ID, and every settlement and denial your agent makes lands in your pantessa.com dashboard audit feed.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'x402',
-    title: 'x402 v1 + v2',
-    seoTitle: 'x402 protocol — what the SDK handles for you',
-    description:
-      'The x402 402-challenge flow, and the v1/v2 wire differences (amount fields, CAIP-2 networks, payment headers) the yeetful client absorbs automatically.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'funding',
-    title: 'Funding (USDC on Base)',
-    seoTitle: 'Funding — get USDC on Base for x402 calls',
-    description:
-      'How to fund a Pantessa account with USDC on Base: where to get it, how much to keep (EIP-3009 is gasless), mainnet vs Base Sepolia, and what happens if you run dry.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'router',
-    title: 'Router: the paid catalog',
-    seoTitle: 'Router — route MCP calls by plain-English ask',
-    description:
-      'Router is Pantessa’s MCP routing engine: ask in plain English, it weighs every route, picks the cheapest proven one under your cap, and your agent pays per call.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'claude-code',
-    title: 'Add with Claude Code',
-    seoTitle: 'Add Pantessa to your agent with one Claude prompt',
-    description:
-      'Paste one prompt into Claude Code and it wires the yeetful SDK into your agent, then walks you through minting an API key and copying your grant id.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'payer-demo',
-    title: 'The payer loop (demo)',
-    seoTitle: 'x402 payer demo — pay for data, leave with a guarded plan',
-    description:
-      'One script, the whole thesis: an external agent pays a ≤$0.05 x402 endpoint through the routing engine (receipted on-chain), then submits a compound intent as a $0 dryRun job.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'earn',
-    title: 'Track MCP earnings',
-    seoTitle: 'Track MCP earnings — report paid calls to your dashboard',
-    description:
-      'Add one async, non-blocking call to your MCP and every paid request shows up on your Pantessa dashboard: total earned, last 30 days, calls served, and paying agents.',
-    ready: false, // links-first purge 2026-07-22 — functionality live, docs demoted
-    door: 'agent',
-  },
-  {
-    slug: 'launchpad',
-    title: 'Launchpad: claim & launch',
-    seoTitle: 'Pantessa launchpad — claim your MCP and launch its token',
-    description:
-      'Own a piece of an MCP. Claim it by signing in with the wallet it is paid to, launch a token, and earn a share of every paid call in USDC as agents use it.',
-    // Token launching shelved 2026-07-15 — UI removed everywhere, code kept
-    // for a possible pivot back. The page dir is unrouted (app/docs/_launchpad)
-    // and this entry hidden so no surface links to it.
-    ready: false,
-    door: 'agent',
-  },
+  // ── LEGAL (page text is not the docs squad's; titles only) ──────────────
   {
     slug: 'terms',
     title: 'Terms of Service',
-    seoTitle: 'Terms of Service — Pantessa',
+    seoTitle: 'Pantessa Terms of Service',
     description:
-      'The terms for using Pantessa: a non-custodial control plane for agent payments. Acceptable use, crypto risk, third-party services, disclaimers, and liability.',
+      'The terms for using Pantessa: acceptable use, crypto risk, third-party services, disclaimers, and liability.',
     ready: true,
     group: 'legal',
   },
   {
     slug: 'privacy',
     title: 'Privacy Policy',
-    seoTitle: 'Privacy Policy — Pantessa',
+    seoTitle: 'Pantessa Privacy Policy',
     description:
       'What Pantessa collects and why: wallet addresses, email/social sign-in via Coinbase CDP, usage receipts, and on-chain data. How it is used, shared, and kept.',
     ready: true,
@@ -361,13 +217,12 @@ export const DOCS_PAGES: DocsPage[] = [
 ]
 
 export const readyPages = () => DOCS_PAGES.filter((p) => p.ready)
-/** Dev/guide docs — the cards on the landing + the main sidebar list. */
-export const guidePages = () => readyPages().filter((p) => (p.group ?? 'guide') === 'guide')
-/** Legal pages — their own sidebar group; excluded from the dev-doc cards. */
+/** Guide docs: every ready page outside LEGAL (the landing included). */
+export const guidePages = () => readyPages().filter((p) => p.group !== 'legal')
+/** Legal pages: their own sidebar group, last. */
 export const legalPages = () => readyPages().filter((p) => p.group === 'legal')
-/** Ready guide pages behind one door — sidebar groups + landing door sections. */
-export const doorPages = (door: 'host' | 'user' | 'agent' | 'creator') =>
-  guidePages().filter((p) => p.door === door)
+/** Ready pages in one group, in reading order: sidebar groups + landing sections. */
+export const groupPages = (group: DocsGroupId) => readyPages().filter((p) => p.group === group)
 
 export function docsUrl(slug: string): string {
   return slug ? `${SITE}/docs/${slug}` : `${SITE}/docs`

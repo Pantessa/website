@@ -67,6 +67,13 @@ const nextConfig: NextConfig = {
       // the world opens the view it names (Next carries the query through).
       // Temporary on purpose: `/` may speak `?view=` again one day.
       { source: '/', has: [{ type: 'query', key: 'view', value: '(?:tape|front|siege|map|flyover)' }], destination: '/live', permanent: false },
+      // Retired docs pages (squad docs-clean, 2026-11-24). Recurring buys are
+      // not offered, spend caps were retired (2026-10-30) and the venue table
+      // lives on /docs/venues: each old address lands on the page that now
+      // holds what was still true.
+      { source: '/docs/dca', destination: '/docs/markets', permanent: true },
+      { source: '/docs/spend-policy', destination: '/docs/trust', permanent: true },
+      { source: '/docs/transactions', destination: '/docs/venues', permanent: true },
     ]
   },
   // Design system lives as static files in public/design-system/. Next doesn't
