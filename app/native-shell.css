@@ -311,6 +311,8 @@ a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, text
    a hard close button. */
 :root .sheet__panel { box-shadow: none; }
 :root .sheet__close { border: 1px solid var(--line); border-radius: 0; }
+/* The boxed close sits on the page's 16px gutter, in line with what the sheet holds. */
+:root .sheet__head { padding-right: 16px; }
 
 /* The brochure bar on a phone (the /x pages, docs, pricing): the same two
    controls as the markets bar. Sign in is a 44px hard button; the menu is a

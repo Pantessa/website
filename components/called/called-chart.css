@@ -198,7 +198,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcc-share__item { display: flex; align-items: center; min-height: 34px; padding: 0 10px; border: 0; background: none; color: var(--fg); font-size: 12.5px; text-align: left; text-decoration: none; cursor: pointer; }
 .xcc-share__item:hover { background: var(--surf-2); }
 .xcc__method { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--muted-2); max-width: 110ch; }
-.xcc__legend { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; margin-right: 12px; font-size: 10px; vertical-align: -2px; }
+.xcc__legend { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; margin-right: 12px; font-size: var(--fs-xs); vertical-align: -2px; }
 
 /* A touch screen: every control a thumb can hit. */
 @media (hover: none) {
@@ -502,15 +502,15 @@ a.xcf__x:hover { border-color: var(--fg); }
   }
   /* Flush with the screen's sides and the tab bar: the one cut is the top-left corner, and nothing shows through around it. */
   .xcf::before { inset: 1px 0 0; clip-path: polygon(calc(var(--xcf-cut) + 0.4px) 0, 100% 0, 100% 100%, 0 100%, 0 calc(var(--xcf-cut) + 0.4px)); }
-  .xcf__band { min-height: 44px; padding: 0 0 0 12px; gap: 8px; }
+  .xcf__band { min-height: 44px; padding: 0 0 0 16px; gap: 8px; }
   .xcf__tile { width: 28px; height: 28px; }
   .xcf__lead { gap: 2px; }
   .xcf__verdict { font-size: var(--fs-base); }
   .xcf__icon { width: 44px; height: 44px; }
-  .xcf__at { min-width: 0; font-size: 10.5px; letter-spacing: -0.02em; }
+  .xcf__at { min-width: 0; font-size: var(--fs-xs); letter-spacing: -0.02em; }
   .xcf__when { gap: 6px; }
   .xcf__stance { padding-left: 6px; }
-  .xcf__body { position: relative; min-height: 0; gap: 8px; padding: 8px 14px 8px; }
+  .xcf__body { position: relative; min-height: 0; gap: 8px; padding: 8px 16px 8px; }
   .xcf__text { font-size: 14.5px; line-height: 20px; -webkit-line-clamp: 3; }
   .xcf__words[data-clamped] .xcf__more { font-size: 14.5px; line-height: 20px; }
   /* A real 44px box for a thumb: the padding over the word is clear, so the line above still reads through it. */
@@ -519,20 +519,20 @@ a.xcf__x:hover { border-color: var(--fg); }
   /* A post that fits (one, two or three whole lines) is not cut, so "more" (the numbers, the share link, the pin) sits at
      the end of the move's line under it: no row of its own, no hole. */
   .xcf:not([data-more]) .xcf__words:not([data-clamped]) { position: static; }
-  .xcf:not([data-more]) .xcf__words:not([data-clamped]) .xcf__more { position: absolute; right: 14px; bottom: 0; margin: 0; padding: 21px 0 8px; font-size: var(--fs-sm); line-height: 15px; }
+  .xcf:not([data-more]) .xcf__words:not([data-clamped]) .xcf__more { position: absolute; right: 16px; bottom: 0; margin: 0; padding: 21px 0 8px; font-size: var(--fs-sm); line-height: 15px; }
   .xcf:not([data-more]) .xcf__move { padding-right: 56px; }
   /* Opened: "less" directly under the words. */
   .xcf[data-more] .xcf__more { margin: -6px 0 -10px auto; }
   .xcf__nums { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
   .xcf__num { padding: 8px 8px 9px; gap: 3px; }
-  .xcf__num:first-child { padding-left: 14px; }
+  .xcf__num:first-child { padding-left: 16px; }
   .xcf__num dt { letter-spacing: 0.03em; }
   .xcf__x, .xcf__pin { min-height: 44px; }
   /* Short: the move on one line, then the trade and the post on X in one row with the trade's caption under both. The
      table of numbers, the share link and the pin wait behind "more". */
   .xcf:not([data-more]) .xcf__move { display: block; }
   .xcf:not([data-more]) .xcf__nums { display: none; }
-  .xcf:not([data-more]) .xcf__acts { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px 8px; padding: 8px 12px 10px; border-top: 1px solid var(--line); }
+  .xcf:not([data-more]) .xcf__acts { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px 8px; padding: 8px 16px 10px; border-top: 1px solid var(--line); }
   .xcf:not([data-more]) .xcf__foot { grid-column: 2; grid-row: 1; padding: 0; }
   .xcf:not([data-more]) .xcf__acts:not(:has([data-called-acts])) .xcf__foot { grid-column: 1 / -1; }
   .xcf:not([data-more]) .xcf__pin { display: none; }
@@ -646,4 +646,6 @@ a.xcf__x:hover { border-color: var(--fg); }
   /* The method: its first lines, the rest behind a press (it opens in place; nothing is dropped). */
   .xcc__method:not([data-open]) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
   .xcc__methodmore { display: inline-flex; }
+  /* The key to the marks is its own row, with air before the method's words. */
+  .xcc__legend { display: flex; margin: 0 0 8px; }
 }

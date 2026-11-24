@@ -210,6 +210,8 @@
 @media (max-width: 1023px) {
   .xcl-dock { position: fixed; left: 0; right: 0; bottom: var(--sk-dock-bottom, 0px); z-index: 40; padding: 10px var(--sp-4) calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--bg); }
   .xcl .xcl-btn { min-height: 52px; padding-inline: var(--sp-3); }
+  /* The press is docked, so the lead ends on the one "Is this you?" line: the record below starts a normal step under it, not a hole. */
+  .xcl-rest { margin-top: var(--sp-1); }
 }
 @media (max-width: 480px) {
   /* The page is this call's: the button says where it goes and stays on one line. */
