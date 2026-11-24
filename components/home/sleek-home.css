@@ -55,7 +55,7 @@
 }
 
 /* The fold control of "how it works": drawn only on a stranger's phone. */
-.how__foldbox, .how__fold { display: none; }
+.how__fold { display: none; }
 
 /* ── THE STRANGER'S PHONE: a short page (squad mobile-sleek, round 2) ──────
    The landing ran 14,289px on a phone. A stranger needs the hero, the record,
@@ -79,12 +79,13 @@
   :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) :is(.mk-suggest-seat, .mk-guide-seat) { display: none; }
 
   :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__text { display: none; }
-  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__fold { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 48px; padding: 0 var(--sp-4); border: 1px solid var(--line-2); color: var(--fg); font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__fold { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 48px; padding: 0 var(--sp-4); border: 1px solid var(--line-2); color: var(--fg); font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
   :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__foldmark::before { content: '+'; font-size: var(--fs-lg); color: var(--accent); }
-  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__foldbox { display: block; position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__foldbox:focus-visible + .how__fold { outline: 2px solid var(--fg); outline-offset: -4px; }
-  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__foldbox:checked + .how__fold .how__foldmark::before { content: '\2212'; }
-  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__foldbox:not(:checked) ~ .how__cols { display: none; }
+  /* the box itself is the whole 48px row, unseen: the press lands on it */
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__foldbox { display: block; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__fold:has(.how__foldbox:focus-visible) { outline: 2px solid var(--fg); outline-offset: -4px; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__fold:has(.how__foldbox:checked) .how__foldmark::before { content: '\2212'; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how:has(.how__foldbox:not(:checked)) .how__cols { display: none; }
 
   /* the closing is ONE door (the tour above already holds all eight) and the quiet row */
   :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) :is(.closing__eyebrow, .closing__lede, .closing__cell:nth-child(n + 2)) { display: none; }

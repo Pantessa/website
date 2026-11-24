@@ -297,7 +297,7 @@ a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, text
    scrim. The bloom behind the mark, the lit top edge, the lift under the
    panel and the glow under "Connect a wallet" are gone; the one filled
    button wears the cut. Behaviour is untouched. */
-:root:root .ca__backdrop { background: var(--scrim); -webkit-backdrop-filter: none; backdrop-filter: none; }
+:root:root .ca__backdrop { background: rgb(0 0 0 / 0.66); -webkit-backdrop-filter: none; backdrop-filter: none; } /* flat, and darker than a sheet's --scrim: with no blur the page behind must step back */
 :root .ca__glow { display: none; }
 :root .ca__crest::before, :root .ca__panel::before { content: none; }
 :root:root .ca__gem { filter: none; }
