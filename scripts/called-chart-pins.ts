@@ -41,6 +41,7 @@ import {
   pinText,
   postIdOfMark,
   railMargins,
+  fitHolds,
   shortTally,
   MARKS_HEAD_PX,
   railOf,
@@ -61,7 +62,7 @@ import {
   type PinAnchor,
   type PlacedBox,
 } from '../lib/tv/called-pins'
-import { CARD_PX, MARK_PX, axisMapper, binBarsFor, binMarks, cardSize, hitMark, markInk, pickFrom, placeMarks, slotFor, tileFor, type MarkCall, type PlacedMark } from '../lib/tv/called-overlay'
+import { CARD_PX, MARK_PX, REST_ALPHA, axisMapper, binBarsFor, binMarks, cardSize, hitMark, markInk, pickFrom, placeMarks, slotFor, tileFor, type MarkCall, type PlacedMark } from '../lib/tv/called-overlay'
 import { planFor } from '../lib/tv/plan'
 import { linesFromShapes, type ShapeSnapshot } from '../lib/tv/shapes'
 import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvShapeOptions, TvSymbolInfo, TvWidget } from '../lib/tv/types'
@@ -406,6 +407,7 @@ export function calledChartPins(check: Check): void {
       'called chart marks layer: a stretch is cut in time, so a pan never reshuffles a crowd (the same calls share a chip wherever the pane is), and under a chip the call that moved furthest comes first',
       JSON.stringify(binMarks(crowd, DAY, 8).map((b) => b.chips.map((c) => c.ids))) === JSON.stringify(binMarks([...crowd].reverse(), DAY, 8).map((b) => b.chips.map((c) => c.ids))) && bins[0].chips.find((c) => c.verdict === 'right' && !c.added)?.ids.join() === '1002,1001' && binBarsFor(2, slotFor(18)) > binBarsFor(40, slotFor(18)) && binBarsFor(400, slotFor(18)) === 1,
     )
+    const overlaySrcEarly = readFileSync(new URL('../lib/tv/called-overlay.ts', import.meta.url), 'utf8')
     const place = (focusId: string | null, shift = 0) => placeMarks({ calls: crowd, focusId, pane: { width: 400, height: 380 }, keepTop: 34, keepBottom: 60, barSec: DAY, spacing: 4, x: (t) => (t / DAY - 380) * 4 + shift, y: (p) => 600 - p })
     const placed = place(null)
     const touch = (a: PlacedMark, b: PlacedMark) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
@@ -420,6 +422,25 @@ export function calledChartPins(check: Check): void {
       'called chart marks layer: the opened call is lifted out of its crowd and drawn alone, larger, on its own bar (its crowd counts one fewer; nothing is counted twice)',
       !!focus && focus.ids.join() === '1003' && focus.w === MARK_PX.focus && focus.w > tileFor(400) && !!focus.tip && focus.tip.x === (401 - 380) * 4 && open.reduce((n, m) => n + m.count, 0) === crowd.length && open.filter((m) => !m.focus).every((m) => !m.ids.includes('1003')),
     )
+    {
+      // The opened call reads alone: at every one of its calls, on a crowded pane, no chip touches the opened tile.
+      const busy: MarkCall[] = Array.from({ length: 40 }, (_, i) => mk(100 + i, 400 + Math.floor(i * 1.7), (['right', 'wrong', 'open', 'flat'] as const)[i % 4], { priceAt: 100 + ((i * 37) % 90) }))
+      const at = (focusId: string) => placeMarks({ calls: busy, focusId, pane: { width: 300, height: 340 }, keepTop: 34, keepBottom: 60, barSec: DAY, spacing: 3.6, x: (t) => (t / DAY - 398) * 3.6, y: (p) => 330 - p * 1.6 })
+      const clear = busy.every((c) => {
+        const all = at(c.postId)
+        const f = all.find((m) => m.focus)
+        return !f || all.every((m) => m.focus || !touch(m, f))
+      })
+      const counted = busy.every((c) => at(c.postId).reduce((n, m) => n + m.count, 0) <= busy.length && at(c.postId).filter((m) => !m.focus).every((m) => m.x >= 0 && m.x + m.w <= 300))
+      check(
+        'called chart marks layer (2026-11-24, the opened call reads alone): whichever call is open on a crowded phone pane, no chip sits under or against its tile (the column steps aside, or stands over or under it), no chip is pushed off the pane for it, and every other mark is painted at reduced strength',
+        clear && counted && REST_ALPHA > 0.2 && REST_ALPHA < 0.5 && /ctx\.globalAlpha = quiet && m\.key !== hoverKey \? REST_ALPHA : 1/.test(overlaySrcEarly),
+      )
+      check(
+        'called chart fit (2026-11-24): the fit is read back and put again while the chart is not on it: a view that starts years before the asked one does not hold, one snapped to the first bar it has does',
+        fitHolds({ from: 1000, to: 2000 }, { from: 1000, to: 2000 }) && fitHolds({ from: 1100, to: 2000 }, { from: 1000, to: 2000 }) && !fitHolds({ from: -4000, to: 2000 }, { from: 1000, to: 2000 }) && !fitHolds({ from: 1700, to: 2000 }, { from: 1000, to: 2000 }) && /if \(fitHolds\(c\.getVisibleRange\(\), range\)\) continue/.test(read('lib/tv/called-pins.ts')),
+      )
+    }
     const lone = placed.find((m) => m.ids.includes('1007'))! // the top chip of the last column: nothing stands above it
     const cx = lone.x + lone.w / 2
     const cy = lone.y + lone.h / 2

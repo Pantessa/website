@@ -56,6 +56,7 @@ import CallFocus from '@/components/called/CallFocus'
 import { useCalledPins } from '@/lib/called-it/use-record'
 import { withCalledMarks, withoutCalled } from '@/lib/tv/called-pins'
 import { stampMarks } from '@/lib/tv/called-overlay'
+import { PICTURE_ATTRIBUTION, composeChartPicture, needsComposedPicture } from '@/lib/tv/picture'
 import { readTokens, type Tokens } from './chart-tokens'
 import ChartShare from './ChartShare'
 import { useHeatYear } from './PositionHeat'
@@ -709,9 +710,17 @@ export default function AdvancedChart({
     const kids = new MutationObserver(rewatch)
     kids.observe(seat, { childList: true })
     rewatch()
-    // The card is fixed to the screen and the plot is not: where the page comes to rest decides what it covers.
+    // The card is fixed to the screen and the plot is not: as the page scrolls under it, what it covers changes. Read
+    // once a frame while a card is up (two rects; the pins ignore a change under 4px), and once more when it rests.
     let settle: ReturnType<typeof setTimeout> | null = null
+    let frame = 0
     const onScroll = () => {
+      if (seat.children.length > 1 && !frame) {
+        frame = requestAnimationFrame(() => {
+          frame = 0
+          measure()
+        })
+      }
       if (settle) clearTimeout(settle)
       settle = setTimeout(measure, 260)
     }
@@ -719,6 +728,7 @@ export default function AdvancedChart({
     return () => {
       kids.disconnect()
       sizes?.disconnect()
+      if (frame) cancelAnimationFrame(frame)
       if (settle) clearTimeout(settle)
       window.removeEventListener('scroll', onScroll, { capture: true })
       called.setCover(0)
@@ -1140,27 +1150,51 @@ export default function AdvancedChart({
           onClose={() => setShareOpen(false)}
           capture={async () => {
             try {
-              const shot = (await widgetRef.current?.takeClientScreenshot()) ?? null
-              // A plotted handle's tiles and cards are paint over the pane (lib/tv/called-overlay): put them in the picture.
-              stampMarks(shot, hostRef.current)
-              // The picture is the chart's own (its drawings and TradingView's
-              // mark included); the page it came from is written beside it.
+              // A dense screen (every phone): the library's own screenshot draws its scales at twice the plot's size
+              // there, so the picture is composed from the chart's canvases instead (lib/tv/picture), the marks layer
+              // of a plotted handle among them. One device pixel per CSS pixel: the library's, with the layer stamped in.
+              const t = tokensRef.current
+              const dense = needsComposedPicture(hostRef.current?.querySelector('iframe')?.contentWindow?.devicePixelRatio ?? 1)
+              const composed = dense && t ? composeChartPicture(hostRef.current, { bg: t.bg, fg: t.fg, muted: t.muted, line: t.line }, "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif") : null
+              const shot = composed ?? (await widgetRef.current?.takeClientScreenshot()) ?? null
+              if (!composed) stampMarks(shot, hostRef.current)
               const ctx = shot?.getContext('2d')
               if (shot && ctx) {
-                const size = Math.max(12, Math.round(shot.height * 0.024))
-                ctx.font = `${size}px ui-monospace, SFMono-Regular, Menlo, monospace`
-                ctx.textAlign = 'right'
+                const mono = 'ui-monospace, SFMono-Regular, Menlo, monospace'
+                // The page the picture came from, at the right of the last line; on a composed picture the attribution
+                // at its left (the library's own screenshot carries its logo).
+                const size = composed ? Math.round(shot.height * 0.026) : Math.max(12, Math.round(shot.height * 0.024))
+                const base = shot.height - Math.round(size * 0.9)
+                ctx.font = `${size}px ${mono}`
                 ctx.textBaseline = 'alphabetic'
-                ctx.fillStyle = tokensRef.current?.muted ?? '#8a8f98'
-                ctx.fillText(watermarkUrl(pair.symbol), shot.width - size, shot.height - Math.round(size * 0.9))
+                ctx.fillStyle = t?.muted ?? '#8a8f98'
+                ctx.textAlign = 'right'
+                ctx.fillText(watermarkUrl(pair.symbol), shot.width - size, base)
+                if (composed) {
+                  ctx.textAlign = 'left'
+                  ctx.fillText(PICTURE_ATTRIBUTION, size, base)
+                }
                 // A phone's pane carries the short tally: the picture still says the record's standing, in its own words.
                 const note = called.shareNote()
                 if (note) {
-                  const small = Math.max(10, Math.round(size * 0.8))
-                  ctx.font = `${small}px ui-monospace, SFMono-Regular, Menlo, monospace`
-                  let line = note
-                  while (line.length > 12 && ctx.measureText(line).width > shot.width - 2 * size) line = `${line.slice(0, -2).trimEnd()}\u2026`
-                  ctx.fillText(line, shot.width - size, shot.height - Math.round(size * 2.2))
+                  const small = Math.max(10, Math.round(size * 0.86))
+                  ctx.font = `${small}px ${mono}`
+                  ctx.textAlign = 'left'
+                  // Whole, on up to two lines (a composed picture's foot has the room); the library's own screenshot has one.
+                  const room = shot.width - 2 * size
+                  const lines: string[] = []
+                  for (const word of note.split(' ')) {
+                    const last = lines[lines.length - 1]
+                    if (last !== undefined && ctx.measureText(`${last} ${word}`).width <= room) lines[lines.length - 1] = `${last} ${word}`
+                    else lines.push(word)
+                  }
+                  const keep = lines.slice(0, composed ? 2 : 1)
+                  if (lines.length > keep.length) {
+                    let cut = keep[keep.length - 1]
+                    while (cut.length > 12 && ctx.measureText(`${cut}\u2026`).width > room) cut = cut.slice(0, -2).trimEnd()
+                    keep[keep.length - 1] = `${cut}\u2026`
+                  }
+                  keep.forEach((line, i) => ctx.fillText(line, size, base - Math.round(size * 1.4) - Math.round((keep.length - 1 - i) * small * 1.25)))
                 }
               }
               return shot
