@@ -26,5 +26,8 @@
 .xva-note { flex-basis: 100%; color: var(--muted); font-size: 13px; }
 .xva-root[data-variant='line'] .xva-note { display: block; }
 .xva-away { color: var(--muted); }
+/* Boxed (squad mobile-sleek, round 4): `className="xva-boxed"` gives the line variant's link the page button's hairline box, so the chart's popover and the page door offer the same press. */
+.xva-boxed .xva-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--line-2); color: var(--fg); font-weight: 600; text-decoration: none; }
+.xva-boxed .xva-link:hover { border-color: var(--fg); }
 /* Flat (the /x splash, 2026-11-16): `className="xva-flat"`. A square outline, no fill. */
 .xva-flat .xva-btn { border-radius: 0; background: transparent; }

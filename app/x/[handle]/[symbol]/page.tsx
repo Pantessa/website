@@ -111,6 +111,8 @@ async function viewOf(props: Props): Promise<{ view: RecordView; rawHandle: stri
 
 /** A record with more calls than this shows its pinned calls and folds the rest behind "Show all". */
 const LIST_CAP = 8
+/** A fold is drawn only when it hides at least this many. */
+const SHOW_ALL_MIN = 3
 
 const withPins = (href: string, pins: readonly string[]) => (pins.length ? `${href}${href.includes('?') ? '&' : '?'}pins=${pins.join(',')}` : href)
 
@@ -321,7 +323,8 @@ export default async function RecordPage(props: Props) {
               <RecordChart symbol={symbol} closes={view.closes} calls={[]} unit={view.unit} emptyNote={scanning ? 'Pins land here when the scan is done' : 'No pins yet'} />
             </div>
             <aside className="xrc__side">
-              <DoorBlock symbol={symbol} side={side} initialHandle={scanning ? undefined : handle} heading={scanning ? 'Plot another handle' : 'Plot a handle'} owner="this" />
+              {/* One primary on this page: Scan. The door's press stays quiet for the handle it is prefilled with. */}
+              <DoorBlock symbol={symbol} side={side} initialHandle={scanning ? undefined : handle} heading={scanning ? 'Plot another handle' : 'Plot a handle'} owner="this" quiet />
               <MethodBlock />
             </aside>
           </div>
@@ -351,9 +354,11 @@ export default async function RecordPage(props: Props) {
   const addedCalls = numbered.filter((c) => c.call.origin === 'added')
   const pasteOnly = !record.scanned
   // THE CAP: a long record shows the calls pinned on the chart (and the call the page leads with); the rest wait behind one press.
-  const capped = scannedCalls.length > LIST_CAP
   const pinnedFirst = scannedCalls.filter((c) => c.call.picked || c.call.postId === call?.postId).slice(0, LIST_CAP)
-  const shownCalls = !capped ? scannedCalls : pinnedFirst.length > 0 ? pinnedFirst : scannedCalls.slice(-LIST_CAP)
+  const shownIfCapped = pinnedFirst.length > 0 ? pinnedFirst : scannedCalls.slice(-LIST_CAP)
+  // A "Show all" that would reveal fewer than SHOW_ALL_MIN calls is not drawn: they are all shown instead.
+  const capped = scannedCalls.length > LIST_CAP && scannedCalls.length - shownIfCapped.length >= SHOW_ALL_MIN
+  const shownCalls = capped ? shownIfCapped : scannedCalls
   const restCalls = capped ? scannedCalls.filter((c) => !shownCalls.includes(c)) : []
   const scored = record.scanned && record.tally.total > 0
   // The plain page's highlight: the hit the record is shown by. Only a call the scan found, only a hit; otherwise nothing.
