@@ -173,6 +173,7 @@ import { walletLineup, walletLaneHint, walletLaneChips, wcConfigured, WC_APP_MET
 import { phantomProvider, phantomTarget } from '../lib/phantom-lane'
 import { announcedNameFor, laneIsGeneric, walletDisplayName } from '../lib/wallet-identity'
 import { walletAppFor, handoffCopy, handoffShownOn, WALLET_APP_SETTLE_MS, requestWalletAppOpen, walletAppOpenSnapshot, clearWalletAppOpen } from '../lib/wallet-handoff'
+import { signOutHoldStep, forgetWalletKeys, hasSignOutHold, setSignOutHold, clearSignOutHold, SIGN_OUT_HOLD_KEY } from '../lib/sign-out-hold'
 import { hasStoredWalletConnection, shouldRerunConnectAsk, connectAskReleased, bootHoldingFor, initialHoldElapsed, CONNECT_ASK_RELEASE_GRACE_MS, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
@@ -6445,6 +6446,53 @@ async function main() {
         // behind it would be the same dead end with an extra step
         /zIndex: 2147483647/.test(card)
       )
+    })(),
+  )
+
+  // ── Sign out means gone, across reloads (lib/sign-out-hold, 2026-11-24) ──
+  console.log('— sign-out hold: a wallet that comes back on its own is dropped until the visitor connects')
+  check(
+    'sign-out hold: held, any wallet that lands connected on its own is dropped (a page-load reconnect passes through connecting too); the host and CDP wallets never are; no hold changes nothing',
+    (() => {
+      const ex = ['yeetfulHost', 'cdp-embedded-wallet']
+      const step = (held: boolean, next: string, id: string | null) =>
+        signOutHoldStep({ held, next: next as never, connectorId: id, exemptConnectorIds: ex })
+      return (
+        step(true, 'connected', 'io.metamask') === 'drop' &&
+        step(true, 'connected', 'test.fakewallet') === 'drop' &&
+        step(true, 'connecting', null) === 'none' &&
+        step(true, 'reconnecting', null) === 'none' &&
+        step(true, 'disconnected', null) === 'none' &&
+        step(true, 'connected', 'yeetfulHost') === 'none' &&
+        step(true, 'connected', 'cdp-embedded-wallet') === 'none' &&
+        step(false, 'connected', 'io.metamask') === 'none'
+      )
+    })(),
+  )
+  check(
+    'sign-out hold: storage round-trip; forgetting the wallet clears the recent connector and shims every id; blocked storage never throws',
+    (() => {
+      const rows: Record<string, string> = { 'wagmi.recentConnectorId': '"io.metamask"', 'wagmi.injected.connected': 'true' }
+      const mem = {
+        getItem: (k: string) => (k in rows ? rows[k] : null),
+        setItem: (k: string, v: string) => { rows[k] = v },
+        removeItem: (k: string) => { delete rows[k] },
+      }
+      const blocked = {
+        getItem: () => { throw new Error('blocked') },
+        setItem: () => { throw new Error('blocked') },
+        removeItem: () => { throw new Error('blocked') },
+      }
+      const before = hasSignOutHold(mem)
+      setSignOutHold(mem, 1)
+      const during = hasSignOutHold(mem) && rows[SIGN_OUT_HOLD_KEY] === '1'
+      forgetWalletKeys(mem, ['io.metamask', 'coinbaseWalletSDK'])
+      const forgot =
+        !('wagmi.recentConnectorId' in rows) && !('wagmi.injected.connected' in rows) &&
+        rows['wagmi.io.metamask.disconnected'] === 'true' && rows['wagmi.coinbaseWalletSDK.disconnected'] === 'true'
+      clearSignOutHold(mem)
+      setSignOutHold(blocked, 1); clearSignOutHold(blocked); forgetWalletKeys(blocked, ['x'])
+      return before === false && during && forgot && hasSignOutHold(mem) === false && hasSignOutHold(blocked) === false && hasSignOutHold(null) === false
     })(),
   )
 
@@ -24571,7 +24619,7 @@ async function main() {
         "signed out → home keeps the way back: the spine and the dashboard's layout remember the page a signed-out arrival opened and replace to a plain '/'; a deliberate sign-out (signedOutJustNow) remembers nothing, forgets any way back, and a landed sign-in forgets it too",
         /if \(!signedOut \|\| publicPage\) return\s*if \(!signedOutJustNow\(\)\) rememberSignInReturn\(pathname \+ window\.location\.search\)\s*router\.replace\('\/'\)/.test(spineSrc) &&
           /if \(!signedOut\) return\s*if \(!signedOutJustNow\(\)\) rememberSignInReturn\(pathname \+ window\.location\.search\)\s*router\.replace\('\/'\)/.test(dashLayoutS) &&
-          /const signOut = useCallback\(async \(\) => \{\s*signedOutAt = Date\.now\(\)\s*forgetSignInReturn\(\)\s*await endSession\(\)\s*signedOutAt = Date\.now\(\)\s*\}, \[endSession\]\)/.test(sessS) &&
+          /const signOut = useCallback\(async \(\) => \{\s*signedOutAt = Date\.now\(\)\s*forgetSignInReturn\(\)\s*try \{\s*setSignOutHold\(window\.localStorage, Date\.now\(\)\)\s*\} catch \{[^}]*\}\s*await endSession\(\)\s*signedOutAt = Date\.now\(\)\s*\}, \[endSession\]\)/.test(sessS) &&
           /if \(status === 'authed' && walletStatus === 'disconnected'\) \{\s*void endSession\(\)\s*\}/.test(sessS) &&
           /\(redirectTo\?: string\) => \{\s*forgetSignInReturn\(\)\s*if \(!redirectTo\) return/.test(sessS) &&
           !/homeFor|\?next=/.test(spineSrc + dashLayoutS),

@@ -40,6 +40,15 @@ import {
   walletRemembered,
 } from '@/lib/app-entry'
 import { connectAskReleased, hasStoredWalletConnection } from '@/lib/wallet-reconnect'
+import {
+  clearSignOutHold,
+  forgetWalletKeys,
+  hasSignOutHold,
+  setSignOutHold,
+  signOutHoldStep,
+} from '@/lib/sign-out-hold'
+import { HOST_WALLET_CONNECTOR_ID } from '@/lib/host-wallet'
+import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
 import { SIWE_STATEMENT } from '@/lib/siwe-message'
 import { reportWalletRefusal, walletErrorWords } from '@/lib/wallet-refusal'
 
@@ -425,13 +434,33 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // reconnecting MetaMask appeared to do nothing until a full page reload
       // rebuilt wagmi from scratch. Await a full teardown of EVERY connection so
       // the next connect always starts from a clean, truly-disconnected state.
-      try {
-        for (const connection of getConnections(config)) {
-          await wagmiDisconnect(config, { connector: connection.connector })
+      //
+      // wagmi's disconnect only forgets the wallet on OUR side, and gives the
+      // wallet 100ms to revoke the site's permission before the page moves
+      // on (lib/sign-out-hold says why that brought the wallet back). Ask
+      // each wallet to revoke first, with time to answer, then disconnect
+      // each connection on its own so one connector's refusal cannot leave
+      // the next one connected.
+      for (const connection of getConnections(config)) {
+        // Extension wallets only: over WalletConnect the request would land on
+        // the visitor's phone as a prompt. The host wallet is the host's.
+        if (connection.connector.type === 'injected' && connection.connector.id !== HOST_WALLET_CONNECTOR_ID) {
+          await revokeSitePermission(connection.connector)
         }
+        try {
+          await wagmiDisconnect(config, { connector: connection.connector })
+        } catch {
+          // A connector (e.g. injected MetaMask) can reject on disconnect; the
+          // app session is cleared regardless, and we tore down what we could.
+        }
+      }
+      try {
+        forgetWalletKeys(
+          window.localStorage,
+          config.connectors.map((c) => c.id).filter((id) => id !== HOST_WALLET_CONNECTOR_ID),
+        )
       } catch {
-        // A connector (e.g. injected MetaMask) can reject on disconnect; the app
-        // session is cleared regardless, and we tore down what we could.
+        // storage blocked: nothing was remembered there either
       }
       setAddress(null)
       setStatus('guest')
@@ -443,6 +472,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     signedOutAt = Date.now()
     forgetSignInReturn()
+    try {
+      setSignOutHold(window.localStorage, Date.now())
+    } catch {
+      // storage blocked: the revoke and the disconnect still run
+    }
     await endSession()
     signedOutAt = Date.now()
   }, [endSession])
@@ -458,6 +492,58 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       void endSession()
     }
   }, [status, walletStatus, endSession])
+
+  // The sign-out hold (lib/sign-out-hold): after a sign-out, a wallet that
+  // reconnects on its own (a page-load reconnect, or the provider emitting
+  // connect / accountsChanged) is disconnected again until the visitor opens
+  // the connect list. Read on every change, never at render.
+  useEffect(() => {
+    const unsubscribe = config.subscribe(
+      (state) => state.status,
+      (next) => {
+        let held = false
+        try {
+          held = hasSignOutHold(window.localStorage)
+        } catch {
+          return
+        }
+        const current = config.state.current
+        const connector = current ? config.state.connections.get(current)?.connector : undefined
+        const step = signOutHoldStep({
+          held,
+          next,
+          connectorId: connector?.id ?? null,
+          exemptConnectorIds: [HOST_WALLET_CONNECTOR_ID, CDP_CONNECTOR_ID],
+        })
+        if (step === 'drop' && connector) {
+          // The injected connector's accountsChanged path removes its own
+          // `<id>.disconnected` shim AFTER it connects, i.e. after this drop
+          // wrote it: write it again once that has run.
+          void wagmiDisconnect(config, { connector })
+            .catch(() => {})
+            .finally(() => {
+              setTimeout(() => {
+                try {
+                  forgetWalletKeys(window.localStorage, [connector.id])
+                } catch {
+                  // storage blocked: nothing to write back
+                }
+              }, 250)
+            })
+        }
+      },
+    )
+    return unsubscribe
+  }, [config])
+  // Opening the connect list is the visitor asking for a wallet: the hold ends.
+  useEffect(() => {
+    if (!connectModalOpen) return
+    try {
+      clearSignOutHold(window.localStorage)
+    } catch {
+      // storage blocked: nothing was held
+    }
+  }, [connectModalOpen])
 
   const needsSignIn = status === 'guest' && isConnected && !!walletAddress
   const sessionMatchesWallet =
@@ -523,6 +609,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
+}
+
+/**
+ * Ask the wallet to forget this site (MetaMask's MIP-2, copied by Rabby and
+ * others). wagmi does the same with a 100ms timeout and the page navigates
+ * right after, so the request rarely finished. A wallet that does not know
+ * the method rejects or never answers; either way the timeout lets sign-out go on.
+ */
+async function revokeSitePermission(connector: { getProvider: () => Promise<unknown> }): Promise<void> {
+  try {
+    const provider = (await connector.getProvider()) as
+      | { request?: (args: { method: string; params?: unknown[] }) => Promise<unknown> }
+      | undefined
+    if (!provider?.request) return
+    await Promise.race([
+      provider.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] }),
+      new Promise((resolve) => setTimeout(resolve, 1500)),
+    ])
+  } catch {
+    // not supported, or refused: the disconnect and the hold still run
+  }
 }
 
 export function useSession(): SessionValue {
