@@ -1656,7 +1656,9 @@
     display: grid; grid-template-columns: 240px minmax(0, 1fr);
     gap: 48px; align-items: start; min-height: calc(100vh - 64px);
     --docs-ink: color-mix(in oklch, var(--fg) 90%, var(--bg));
-    --docs-measure: 70ch;
+    /* ~70ch of 16px Geist, in rem so a 26px h2 or a 13px <pre> measures the same line. */
+    --docs-measure: 42rem;
+    --docs-wide: 52rem;
   }
   .docs__rail {
     position: sticky; top: 88px; min-width: 0;
@@ -1727,6 +1729,9 @@
   .docs__prose strong { color: var(--fg); font-weight: 600; }
   .docs__prose em { color: var(--fg); }
   .docs__prose ul, .docs__prose ol { margin: 16px 0; padding-left: 1.4em; }
+  .docs__prose ul { list-style: disc; }
+  .docs__prose ol { list-style: decimal; }
+  .docs__prose li > ul { list-style: circle; }
   .docs__prose li { margin: 10px 0; padding-left: 4px; }
   .docs__prose li > ul, .docs__prose li > ol { margin: 8px 0; }
   .docs__prose li::marker { color: var(--muted); }
@@ -1734,7 +1739,7 @@
   .docs__prose blockquote { margin: 20px 0; padding: 2px 0 2px 18px; border-left: 3px solid var(--line-2); color: var(--muted); }
   .docs__prose hr { margin: 40px 0; border: 0; border-top: 1px solid var(--line); }
   .docs__prose code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.86em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); overflow-wrap: anywhere; }
-  .docs__prose pre { background: var(--surf-1); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 20px 0; max-width: 96ch; }
+  .docs__prose pre { background: var(--surf-1); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 20px 0; max-width: min(100%, var(--docs-wide)); }
   .docs__prose pre code { background: none; border: none; padding: 0; font-size: 13px; line-height: 1.65; color: var(--fg); overflow-wrap: normal; }
   /* EmbedInstall (the shared install card) frames its own <pre> — neutralize
      the prose pre chrome so it doesn't double-border inside docs pages. */
@@ -1743,7 +1748,7 @@
   /* display:block + overflow scrolls wide tables inside their own box
      (constitution: tables never push the page). Rules between rows only;
      the head row sits on a surface; figures are tabular. */
-  .docs__prose table { display: block; overflow-x: auto; border-collapse: collapse; margin: 24px 0; font-size: 14px; line-height: 1.55; max-width: 96ch; border: 1px solid var(--line); border-radius: 10px; }
+  .docs__prose table { display: block; overflow-x: auto; border-collapse: collapse; margin: 24px 0; font-size: 14px; line-height: 1.55; width: fit-content; max-width: min(100%, var(--docs-wide)); border: 1px solid var(--line); border-radius: 10px; }
   .docs__prose th, .docs__prose td { border: 0; border-bottom: 1px solid var(--line); padding: 10px 14px; text-align: left; vertical-align: top; font-variant-numeric: tabular-nums; }
   .docs__prose tr:last-child > td { border-bottom: 0; }
   .docs__prose th { color: var(--fg); background: var(--surf-1); font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }

@@ -39,7 +39,7 @@
 
 /* ── DocsSummary: the "In short" box under the lead ── */
 .docs .docs__summary {
-  margin: 28px 0; padding: 18px 22px 16px; max-width: var(--docs-measure, 70ch);
+  margin: 28px 0; padding: 18px 22px 16px; max-width: var(--docs-measure, 42rem);
   background: var(--surf-1); border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 10px;
 }
 .docs .docs__summarytitle { margin: 0 0 10px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
@@ -58,7 +58,7 @@
 .docs .docs__summary code { font-family: var(--font-mono); font-size: 0.86em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; overflow-wrap: anywhere; }
 
 /* ── DocsSteps / DocsStep: numbered steps, the number in a violet tile ── */
-.docs .docs__steps { counter-reset: docs-step; list-style: none; margin: 24px 0; padding: 0; max-width: var(--docs-measure, 70ch); }
+.docs .docs__steps { counter-reset: docs-step; list-style: none; margin: 24px 0; padding: 0; max-width: var(--docs-measure, 42rem); }
 .docs .docs__steps > .docs__step {
   counter-increment: docs-step; position: relative; margin: 0; padding: 0 0 24px 48px;
 }
@@ -95,7 +95,7 @@
 .docs .docs__calloutbody li { margin: 4px 0; }
 
 /* ── DocsFacts: label | value ── */
-.docs .docs__facts { margin: 24px 0; max-width: var(--docs-measure, 70ch); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.docs .docs__facts { margin: 24px 0; max-width: var(--docs-measure, 42rem); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .docs .docs__factrow { display: grid; grid-template-columns: minmax(120px, 34%) minmax(0, 1fr); }
 .docs .docs__factrow + .docs__factrow { border-top: 1px solid var(--line); }
 .docs .docs__factlabel { margin: 0; padding: 11px 14px; background: var(--surf-1); font-size: 13.5px; font-weight: 600; line-height: 1.5; color: var(--muted); }
@@ -110,7 +110,7 @@
 }
 
 /* ── DocsNext: the cards at the bottom ── */
-.docs .docs__next { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); max-width: 96ch; }
+.docs .docs__next { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); max-width: var(--docs-wide, 52rem); }
 .docs .docs__nexttitle { margin: 0 0 14px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 .docs .docs__nextgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
 .docs .docs__prose .docs__nextcard, .docs .docs__nextcard {
