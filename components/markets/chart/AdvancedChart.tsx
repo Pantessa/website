@@ -50,7 +50,7 @@ import { planFor, type PlanItem } from '@/lib/tv/plan'
 import { pageTfOfResolution, resolutionsForSource, tvResolution, TF_SECONDS } from '@/lib/tv/resolution'
 import { linesFromShapes, sameLines, shapeFromLine, type ShapeSnapshot } from '@/lib/tv/shapes'
 import { externalApplied, layoutForChart, legacyMoved, markExternalApplied, markLegacyMoved, readStoredLayout, writeStoredLayout } from '@/lib/tv/store'
-import { tvCssProperties, tvOverrides, tvStudyOverrides } from '@/lib/tv/theme'
+import { tvCssProperties, tvOverrides, tvPhoneOverrides, tvStudyOverrides } from '@/lib/tv/theme'
 import type { TvChartApi, TvWidget } from '@/lib/tv/types'
 import CallFocus from '@/components/called/CallFocus'
 import { useCalledPins } from '@/lib/called-it/use-record'
@@ -141,6 +141,11 @@ type ScenarioState =
   | { status: 'error'; mode: ScenarioMode; error: string }
   | { status: 'ready'; view: ScenarioView; tf: ChartTf; bars: number }
 
+/** The library's own chrome a phone does without (see the widget's options). */
+const PHONE_OFF_FEATURES = ['header_widget', 'timeframes_toolbar', 'left_toolbar', 'control_bar', 'legend_context_menu', 'edit_buttons_in_legend']
+/** The bar sizes a phone is offered, in its own row under the plot. */
+const PHONE_TFS: ChartTf[] = ['1m', '15m', '1h', '4h', '1d']
+
 const QUICK_TOOLS: { tool: string; label: string; title: string; Icon: typeof Minus }[] = [
   { tool: 'horizontal_line', label: 'Level', title: 'A level: click a price. It can carry a buy, a sell or a stop.', Icon: Minus },
   { tool: 'rectangle', label: 'Zone', title: 'A zone: drag a box. Buy at its floor, sell at its ceiling.', Icon: RectangleHorizontal },
@@ -188,6 +193,10 @@ export default function AdvancedChart({
   const [focusId, setFocusId] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [planOpen, setPlanOpen] = useState(true)
+  // On a phone the drawings' plan starts folded to its one-line title: the first screen is the chart's.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches) setPlanOpen(false)
+  }, [])
   const [scn, setScn] = useState<ScenarioState>({ status: 'idle' })
 
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -389,9 +398,12 @@ export default function AdvancedChart({
           // chart does not navigate. Layouts are kept by us, not a dialog.
           // The market-status badge is off because every market is described
           // as round-the-clock (lib/tv/symbol): it would read "open" on a Sunday.
-          disabled_features: ['header_symbol_search', 'symbol_search_hot_key', 'header_saveload', 'display_market_status', 'popup_hints', 'header_quick_search', 'study_templates'],
+          // A phone's chart is the candles and the calls: the library's top bar, its range row underneath, its drawing rail
+          // and its floating zoom buttons are off there (the bar sizes sit in a row of our own under the plot, in reach of a
+          // thumb; pinch and drag do the rest). That gives the plot about 90px back.
+          disabled_features: ['header_symbol_search', 'symbol_search_hot_key', 'header_saveload', 'display_market_status', 'popup_hints', 'header_quick_search', 'study_templates', ...(phone ? PHONE_OFF_FEATURES : [])],
           enabled_features: ['seconds_resolution', ...TV_IFRAME_FEATURES, ...(phone ? ['hide_left_toolbar_by_default'] : [])],
-          overrides: tvOverrides(tokens),
+          overrides: { ...tvOverrides(tokens), ...(phone ? tvPhoneOverrides() : {}) },
           studies_overrides: tvStudyOverrides(tokens),
           loading_screen: { backgroundColor: tokens.bg, foregroundColor: tokens.accent },
           favorites: { intervals: resolutionsForSource(pair.source) },
@@ -420,7 +432,7 @@ export default function AdvancedChart({
 
         const applyTheme = (t: Tokens) => {
           try {
-            w.applyOverrides({ ...tvOverrides(t), ...tvStudyOverrides(t) })
+            w.applyOverrides({ ...tvOverrides(t), ...tvStudyOverrides(t), ...(phone ? tvPhoneOverrides() : {}) })
             for (const [k, v] of Object.entries(tvCssProperties(t))) w.setCSSCustomProperty(k, v)
           } catch {
             /* the widget is going away */
@@ -671,6 +683,13 @@ export default function AdvancedChart({
   }, [shapes, pair, last, lookOnly, actionUsd, held, tradable])
   const missing = pair ? missingActionNote(pair.symbol, pair.source) : null
 
+  const pickTf = useCallback((next: ChartTf) => {
+    try {
+      void chartRef.current?.setResolution(tvResolution(next))
+    } catch {
+      /* the chart keeps the frame it has */
+    }
+  }, [])
   const pickTool = useCallback((tool: string) => {
     try {
       void widgetRef.current?.selectLineTool(tool)
@@ -856,6 +875,15 @@ export default function AdvancedChart({
         <div ref={hostRef} className="tvx__host" />
         {/* One call, opened on the chart: a dot or a bubble pressed never scrolls the page. */}
         <CallFocus symbol={sym} />
+      </div>
+
+      {/* A phone's bar sizes: the library's own top bar is off there, so they sit here, under the plot. */}
+      <div className="tvx-tf sk-seg" role="group" aria-label="Bar size">
+        {PHONE_TFS.filter((k) => sourceHasTf(pair.source, k)).map((k) => (
+          <button key={k} type="button" className="mono" aria-pressed={tf === k} disabled={!ready} onClick={() => pickTf(k)}>
+            {TF_WORDS[k]}
+          </button>
+        ))}
       </div>
 
       {/* THE PLAN: what you drew, as things you can do. */}

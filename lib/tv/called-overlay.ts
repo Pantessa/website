@@ -56,7 +56,7 @@ export function tileFor(paneWidth: number): number {
 }
 /** The room one stack takes across the pane: a tile, a two-digit count, air. */
 export function slotFor(tile: number): number {
-  return tile * 2 + 6
+  return tile * 2 + 10
 }
 /** A chip's width: the tile alone for one call, the tile and its count for more. */
 export function chipWidth(tile: number, count: number): number {

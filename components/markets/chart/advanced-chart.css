@@ -174,3 +174,50 @@
 @media (max-width: 379px) {
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :first-child { font-size: 0; }
 }
+
+/* ── THE BAR, SLEEK (squad mobile-sleek, 2026-11-24): hard cells on hairlines,
+   no pills. The view switch is the kit's segmented control (one hairline box,
+   the picked cell filled in the page's ink); Share, the handle's door, Compare
+   and full screen are square hairline cells of one height. Scoped to this
+   engine's bar; `:not(#_)` outranks the older rules it restyles. ── */
+.sym:not(#_) .tvx > .mkt-chart__bar { gap: 8px 10px; }
+.sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view { display: inline-flex; gap: 0; padding: 0; border: 1px solid var(--line); border-radius: 0; background: var(--bg); }
+.sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn {
+  height: 30px; padding: 0 12px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: none; color: var(--muted); font-size: 11px; letter-spacing: 0.08em;
+}
+.sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn:first-child { border-left: 0; }
+.sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn:hover { color: var(--fg); }
+.sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn.is-active { background: var(--fg); color: var(--bg); }
+.sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .mk-vs__open, .tchart__fs) { height: 30px; border: 1px solid var(--line); border-radius: 0; }
+.sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > .tchart__fs { width: 30px; }
+.sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .mk-vs__open, .tchart__fs):hover { color: var(--fg); border-color: var(--line-2); background: none; }
+/* A control seated in the bar by the page (the plotted handle's door) is a cell like the rest. */
+.sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span > button { height: 30px; border-radius: 0; }
+.sym:not(#_) .tvx .tvx-tool, .sym:not(#_) .tvx .tvx-scn__clear, .sym:not(#_) .tvx .tvx-chip { border-radius: 0; }
+.sym:not(#_) .tvx .tvx-card, .sym:not(#_) .tvx .tvx-scn { border-radius: 0; }
+.tvx-pending { border-radius: 0; }
+
+/* The phone's bar sizes: a row of the kit's cells under the plot. Off above a phone (the library's own bar has them). */
+.tvx-tf { display: none; }
+
+@media (max-width: 640px) {
+  /* One row over the plot: the view switch, the live dot, then four square cells. Every one a 44px press. */
+  .sym:not(#_) .tvx > .mkt-chart__bar { gap: 6px; flex-wrap: nowrap; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view { border-radius: 0; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn > span { display: none; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-view > .mkt-view__btn::after { inset: -2px 0; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :first-child { font-size: 0; gap: 0; flex: 1 1 0; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open) { position: relative; width: 40px; height: 40px; border-radius: 0; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open)::after { content: ''; position: absolute; inset: -2px; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open) { align-content: center; line-height: 0; }
+  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span > button:not(#_) { width: 40px; height: 40px; border-radius: 0; }
+  /* The plot owns the first screen. */
+  .sym:not(#_) .tchart:not(.tchart--expanded) .mkt-chart__canvas.tvx__canvas { height: clamp(380px, 60dvh, 560px); min-height: 380px; }
+  .tvx-tf { display: flex; width: 100%; }
+  .tvx-tf > button { flex: 1 1 0; min-height: var(--sk-tap, 44px); padding: 0; }
+  .tvx-tf > button:disabled { opacity: 0.5; }
+  /* Your drawings, folded: its title alone. Opened, the scenario picks and the tools come with it. */
+  .tvx-plan.is-folded .tvx-scn__pick, .tvx-plan.is-folded .tvx-plan__tools { display: none; }
+  .tvx-plan__title { min-height: 36px; }
+}

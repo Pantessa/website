@@ -291,7 +291,7 @@ const CARDS_MIN_PANE_H = 300
 const RAIL_AIR_PX = 18
 
 /** Px over the highest candle that a marks-only pane keeps for the marks themselves (two tiles and their lift). */
-export const MARKS_HEAD_PX = 58
+export const MARKS_HEAD_PX = 46
 
 export interface PaneSize {
   width: number

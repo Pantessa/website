@@ -87,3 +87,17 @@ export function tvCssProperties(t: TvThemeTokens): Record<string, string> {
     '--tv-color-popup-element-divider-background': t.line,
   }
 }
+
+/**
+ * A phone's pane: the legend is one line (the symbol and the bar's close). The
+ * Volume row and the fold button under it are left out: they sat on the
+ * candles' head, where a plotted handle's marks go.
+ */
+export function tvPhoneOverrides(): Record<string, unknown> {
+  return {
+    'paneProperties.legendProperties.showStudyTitles': false,
+    'paneProperties.legendProperties.showStudyValues': false,
+    'paneProperties.legendProperties.showStudyArguments': false,
+    'paneProperties.legendProperties.showVolume': false,
+  }
+}
