@@ -138,32 +138,36 @@ export function MethodBlock() {
       <h2 className="xrc-method__title">How this is judged</h2>
       <p>{METHOD_LINE}</p>
       <p className="xrc-method__caveat">{LABEL_CAVEAT}</p>
-      <dl className="xrc-method__rules">
-        <div className="is-right">
-          <dt>{VERDICT_WORDS.right}</dt>
-          <dd>
-            The close {JUDGE_DAYS} days later moved {pctWords} or more the way the post said.
-          </dd>
-        </div>
-        <div className="is-wrong">
-          <dt>{VERDICT_WORDS.wrong}</dt>
-          <dd>It moved {pctWords} or more the other way.</dd>
-        </div>
-        <div className="is-flat">
-          <dt>{VERDICT_WORDS.flat}</dt>
-          <dd>It moved less than {pctWords} either way.</dd>
-        </div>
-        <div className="is-open">
-          <dt>{VERDICT_WORDS.open}</dt>
-          <dd>The post is under {JUDGE_DAYS} days old. The move so far is shown and nothing is judged yet.</dd>
-        </div>
-      </dl>
-      <p>
-        A post that names a level (&quot;$5B is a clear magnet&quot;, &quot;150k by March&quot;, &quot;up 50%&quot;) is judged on that level instead: {VERDICT_WORDS.right} when the price reaches it within {TARGET_DAYS} days before it goes the same distance the other way (at most {Math.round(TARGET_STOP_MAX * 100)}%), {`${VERDICT_WORDS.wrong} otherwise.`} The model only points at the words; code reads the number. A market cap becomes a price with today&apos;s circulating supply. Every judged call also shows how the price has gone since.
-      </p>
-      <p>
-        A scan looks back up to {SCAN_WINDOW_DAYS} days and can stop sooner; each record says how far it read. Every call the scan found is counted, whichever ones are pinned. A post marked "{ADDED_MARK}" is shown and never counted. {DELETED_NOTE}
-      </p>
+      {/* The rules in full fold behind one press (squad mobile-sleek): the method's line and its caveat stay in view. */}
+      <details className="xrc-method__more">
+        <summary data-journey="called_method_more">The rules in full</summary>
+        <dl className="xrc-method__rules">
+          <div className="is-right">
+            <dt>{VERDICT_WORDS.right}</dt>
+            <dd>
+              The close {JUDGE_DAYS} days later moved {pctWords} or more the way the post said.
+            </dd>
+          </div>
+          <div className="is-wrong">
+            <dt>{VERDICT_WORDS.wrong}</dt>
+            <dd>It moved {pctWords} or more the other way.</dd>
+          </div>
+          <div className="is-flat">
+            <dt>{VERDICT_WORDS.flat}</dt>
+            <dd>It moved less than {pctWords} either way.</dd>
+          </div>
+          <div className="is-open">
+            <dt>{VERDICT_WORDS.open}</dt>
+            <dd>The post is under {JUDGE_DAYS} days old. The move so far is shown and nothing is judged yet.</dd>
+          </div>
+        </dl>
+        <p>
+          A post that names a level (&quot;$5B is a clear magnet&quot;, &quot;150k by March&quot;, &quot;up 50%&quot;) is judged on that level instead: {VERDICT_WORDS.right} when the price reaches it within {TARGET_DAYS} days before it goes the same distance the other way (at most {Math.round(TARGET_STOP_MAX * 100)}%), {`${VERDICT_WORDS.wrong} otherwise.`} The model only points at the words; code reads the number. A market cap becomes a price with today&apos;s circulating supply. Every judged call also shows how the price has gone since.
+        </p>
+        <p>
+          A scan looks back up to {SCAN_WINDOW_DAYS} days and can stop sooner; each record says how far it read. Every call the scan found is counted, whichever ones are pinned. A post marked "{ADDED_MARK}" is shown and never counted. {DELETED_NOTE}
+        </p>
+      </details>
       <p className="xrc-method__fine">Not investment advice. Posts belong to their authors.</p>
     </section>
   )

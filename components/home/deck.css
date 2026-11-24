@@ -7,7 +7,7 @@
    min-heights equal lib/deck DECK_STAGE_MIN_H (pinned). Nothing sticky and no
    layer at z-index 20 or above (the board tabs sit at 20). */
 
-.deck { position: relative; display: flex; flex-direction: column; margin: 12px 0 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); overflow: hidden; container-type: inline-size; container-name: deck; }
+.deck { position: relative; display: flex; flex-direction: column; margin: 12px 0 0; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surf-1); overflow: hidden; container-type: inline-size; container-name: deck; }
 .mk-lead-seat .deck { margin-top: 0; }
 
 /* ── The bar ───────────────────────────────────────────────────────────── */
@@ -37,7 +37,7 @@
 .deck__flicklab b { font-size: 12.5px; line-height: 15px; font-weight: 600; color: var(--fg); white-space: nowrap; }
 .deck__flicklab small { font-size: 9.5px; line-height: 12px; letter-spacing: 0.04em; color: var(--muted-2); white-space: nowrap; }
 .deck__flick-short { display: none; }
-.deck__sw { position: relative; flex: 0 0 auto; width: 44px; height: 24px; border-radius: 999px; background: var(--surf-2, var(--surf-1)); border: 1px solid var(--line); transition: background .18s ease, border-color .18s ease; }
+.deck__sw { position: relative; flex: 0 0 auto; width: 44px; height: 24px; border-radius: var(--r-round); background: var(--surf-2, var(--surf-1)); border: 1px solid var(--line); transition: background .18s ease, border-color .18s ease; }
 .deck__sw::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: transform .18s ease, background .18s ease; }
 .deck__flick.is-on .deck__sw { background: color-mix(in srgb, var(--accent) 25%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
 .deck__flick.is-on .deck__sw::after { transform: translateX(20px); background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
@@ -126,7 +126,7 @@
 .deck__tapeempty { padding: 28px 0; text-align: center; font-size: 11px; color: var(--muted-2); }
 
 /* The chips: the /live idiom (live.css only loads on /live). */
-.deck__chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border: 1px solid transparent; border-radius: 999px; font-family: var(--mk-font-ui); font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; cursor: pointer; transition: transform .12s ease, filter .12s ease; }
+.deck__chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--r-pill); font-family: var(--mk-font-ui); font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; cursor: pointer; transition: transform .12s ease, filter .12s ease; }
 .deck__chip:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .deck__chip:active { transform: translateY(0); }
 .deck__chip--buy { background: color-mix(in srgb, var(--mk-up, var(--up)) 18%, var(--surf-1)); border-color: color-mix(in srgb, var(--mk-up, var(--up)) 55%, transparent); color: var(--mk-up, var(--up)); }
@@ -210,7 +210,7 @@
   .deck__bar { gap: 6px; min-height: 0; padding: 4px 10px; overflow-x: auto; scrollbar-width: none; }
   .deck__bar::-webkit-scrollbar { display: none; }
   .deck__tabs { flex: 0 0 auto; gap: 6px; overflow: visible; }
-  .deck__ch { flex-direction: row; align-items: center; min-width: 0; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; }
+  .deck__ch { flex-direction: row; align-items: center; min-width: 0; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-pill); }
   .deck__ch--door { display: flex; }
   .deck__ch--door .deck__chname { color: var(--fg); font-family: var(--mk-font-ui); font-size: 12.5px; }
   .deck__ch.is-on { background: var(--fg); border-color: var(--fg); }
@@ -220,7 +220,7 @@
   .deck__chblurb { display: none; }
   /* The switch leads the row on a phone (the row scrolls; a chip past the edge
      is a cue, the switch must never be the thing past it). */
-  .deck__flick { order: -1; margin-left: 0; flex: 0 0 auto; height: 36px; padding: 0 10px; gap: 8px; border: 1px solid var(--line); border-radius: 999px; }
+  .deck__flick { order: -1; margin-left: 0; flex: 0 0 auto; height: 36px; padding: 0 10px; gap: 8px; border: 1px solid var(--line); border-radius: var(--r-pill); }
   .deck__flicklab b { font-size: 12px; }
   .deck__flicklab small { display: none; }
   .deck__flick-long { display: none; }
@@ -314,7 +314,7 @@
     .deck__tape td { padding-top: 0; padding-bottom: 0; height: 44px; }
     .deck__tape .deck__mlink { min-height: 44px; min-width: 44px; }
     .deck__tape .deck__chip { min-height: 44px; height: 44px; min-width: 44px; border-color: transparent; background: transparent; position: relative; isolation: isolate; }
-    .deck__tape .deck__chip::before { content: ''; position: absolute; inset: 10px 0; z-index: -1; border-radius: 999px; border: 1px solid transparent; }
+    .deck__tape .deck__chip::before { content: ''; position: absolute; inset: 10px 0; z-index: -1; border-radius: var(--r-pill); border: 1px solid transparent; }
     .deck__tape .deck__chip--buy::before { background: color-mix(in srgb, var(--mk-up, var(--up)) 18%, var(--surf-1)); border-color: color-mix(in srgb, var(--mk-up, var(--up)) 55%, transparent); }
     .deck__tape .deck__chip--sell::before { background: color-mix(in srgb, var(--mk-down, var(--sell)) 16%, var(--surf-1)); border-color: color-mix(in srgb, var(--mk-down, var(--sell)) 55%, transparent); }
   }
@@ -333,7 +333,7 @@
    (the channel idiom), so a seat there is a 36px bordered pill with a 44px hit area — never a 44px item that grows the bar
    (45px → 52px would move the first board row toward the 740px budget). */
 @media (max-width: 640px) {
-  .deck__bar .armalert--deck { align-self: center; min-height: 0; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; position: relative; }
+  .deck__bar .armalert--deck { align-self: center; min-height: 0; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-pill); position: relative; }
   @media (hover: none) {
     .deck__bar .armalert--deck::after { content: ''; position: absolute; inset: -4px 0; }
   }

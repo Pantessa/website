@@ -35,14 +35,15 @@
 .xbd__how:hover, .xbd__how:focus-visible { color: var(--fg); }
 
 /* ── The cards ─────────────────────────────────────────────────────────── */
-.xbd__placeholder { height: 400px; margin-top: 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surf-1); }
+.xbd__placeholder { height: 400px; margin-top: 12px; border: 1px solid var(--line); background: var(--bg); }
 .xbd__grid { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 12px; }
 .xbd__grid > li { min-width: 0; display: flex; }
 
-.xbd-card { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surf-1); transition: border-color .15s; }
-.xbd-card:hover, .xbd-card:focus-within { border-color: var(--line-2); }
+/* The card wears the kit's cut card (squad mobile-sleek, 2026-11-24): its edge and fill are the kit's. */
+.xbd-card { --sk-fill: var(--bg); flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.xbd-card:hover, .xbd-card:focus-within { --sk-edge: var(--line-2); }
 .xbd-card__press { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 12px; color: inherit; text-decoration: none; min-width: 0; }
-.xbd-card__press:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-md); }
+.xbd-card__press:focus-visible { outline: 2px solid var(--accent); outline-offset: -6px; }
 
 .xbd-card__who { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .xbd-card__avatar { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; background: var(--surf-2); border: 1px solid var(--line); font-weight: 600; font-size: 15px; color: var(--muted); }
@@ -50,21 +51,19 @@
 .xbd-card__id { display: flex; flex-direction: column; min-width: 0; }
 .xbd-card__name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 600; line-height: 1.3; }
 .xbd-card__name bdi { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.xbd-card__verified { flex: 0 0 auto; font-family: var(--xbd-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--up); border: 1px solid var(--up); border-radius: var(--r-pill); padding: 1px 7px; }
+.xbd-card__verified { flex: 0 0 auto; font-family: var(--xbd-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--up); border: 1px solid var(--up); padding: 1px 7px; }
 .xbd-card__handle { font-family: var(--xbd-mono); font-size: 11px; color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.xbd-card__tally { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.xbd-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border: 1px solid var(--line); border-radius: var(--r-pill); font-size: 12px; line-height: 1.6; color: var(--fg); white-space: nowrap; }
-.xbd-chip--total { color: var(--muted); }
+.xbd-card__tally { display: grid; gap: 8px; min-width: 0; }
+.xbd-card__total { margin: 0; font-family: var(--xbd-mono); font-size: 12px; font-weight: 500; letter-spacing: 0.02em; color: var(--muted); }
 .xbd-card__tallyline { margin: 0; font-size: 12.5px; color: var(--fg); }
 .xbd-card__rate { margin: -4px 0 0; font-family: var(--xbd-mono); font-size: 11px; color: var(--muted); }
-.xbd-mark { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--xbd-tone); }
 
 /* The small price line: a stretched path, dots placed by percent (never stretched). */
 .xbd-card__spark { position: relative; height: 56px; margin: 2px 0; }
 .xbd-card__spark svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.xbd-card__spark path { fill: none; stroke: var(--muted-2); stroke-width: 1.25; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
-.xbd-dot { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--xbd-tone); border: 1px solid var(--surf-1); }
+.xbd-card__spark path { fill: none; stroke: var(--fg); stroke-width: 1.25; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.xbd-dot { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; background: var(--xbd-tone); outline: 1.5px solid var(--bg); }
 
 .xbd-card__best { display: flex; flex-direction: column; gap: 4px; padding-left: 10px; border-left: 2px solid var(--xbd-tone); }
 .xbd-card__bestlabel { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-family: var(--xbd-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
@@ -83,7 +82,7 @@
 
 /* ── The foot ──────────────────────────────────────────────────────────── */
 .xbd__foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin-top: 10px; }
-.xbd__more { display: inline-flex; align-items: center; min-height: 32px; padding: 0 13px; border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; font-size: 12px; color: var(--fg); cursor: pointer; transition: border-color .15s; }
+.xbd__more { display: inline-flex; align-items: center; min-height: 32px; padding: 0 13px; border: 1px solid var(--line-2); background: transparent; font-family: var(--xbd-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg); cursor: pointer; transition: border-color .15s; }
 .xbd__more:hover, .xbd__more:focus-visible { border-color: var(--line-2); }
 .xbd__door { display: inline-flex; align-items: center; min-height: 32px; font-size: 12.5px; color: var(--accent); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
 
@@ -92,5 +91,7 @@
   .xbd--none a, .xbd__how { display: inline-flex; align-items: center; min-height: 44px; }
   .xbd-card__record, .xbd__more, .xbd__door { min-height: 44px; }
   .xbd-card__press { padding: 14px 14px 12px; }
+  /* The four counts as a tidy two-by-two under the bar (the bar's own list, addressed by element). */
+  .xbd-card__tally ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; }
   .xbd-card__foot { padding: 6px 14px 8px; }
 }

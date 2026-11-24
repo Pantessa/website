@@ -30,6 +30,7 @@ import { setTourPref } from '@/components/home/HomeModeSync'
 import { TOUR_ANCHOR } from '@/lib/home-tour'
 import { SPLASH } from '@/lib/markets-copy'
 import './hero.css'
+import './sleek-home.css' // after hero.css and the mosaic's sheet: the sleek re-dress (squad mobile-sleek)
 
 const TOUR_HREF = `#${TOUR_ANCHOR}`
 

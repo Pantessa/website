@@ -216,6 +216,8 @@ export interface TvWidgetOptions {
   saved_data?: object
   auto_save_delay?: number
   custom_css_url?: string
+  /** The family the chart's canvas sets its text in (the scales, the price labels). */
+  custom_font_family?: string
   time_frames?: { text: string; resolution: string; description?: string; title?: string }[]
   debug?: boolean
 }
