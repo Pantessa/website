@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import './x402-design.css'
 import './native-shell.css' // the phone frame + touch rules (squad mobile-native, 2026-09-24); after the design sheet on purpose
+import '@/components/sleek/sleek.css' // the squad mobile-sleek kit: the cut corner, the verdict tile, the score bar
 import { Suspense } from 'react'
 import Navigation from '@/components/Navigation'
 import AskDoor from '@/components/AskDoor'
