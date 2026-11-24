@@ -321,26 +321,53 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 /* The strip under the chart: words only now (the band carries who and the tally). */
 .xcc__head--list { flex-direction: column; gap: 3px; }
 
-/* The door on the /x splash, FLAT (2026-11-16): `className="xcc-door--flat"` from app/x/page.tsx. No box: the handle, the market and the button share one rule. */
-.xcc-door--flat { gap: var(--sp-3); }
-.xcc-door--flat .xcc-door__row { flex-wrap: nowrap; gap: 0; border-bottom: 1px solid var(--fg); transition: border-color var(--dur-1) ease; }
-.xcc-door--flat .xcc-door__row:focus-within { border-bottom-color: var(--accent); }
-.xcc-door--flat .xcc-door__field { flex: 1 1 auto; gap: var(--sp-2); padding: 0; border: 0; border-radius: var(--r-card); background: transparent; }
-.xcc-door--flat .xcc-door__input { height: 56px; font-size: var(--fs-xl); }
-.xcc-door--flat .xcc-door__on { flex: none; gap: var(--sp-2); padding-left: var(--sp-3); border-left: 1px solid var(--line); }
-.xcc-door--flat .xcc-door__market { width: 68px; height: 56px; padding: 0; border: 0; border-radius: var(--r-card); background: transparent; font-size: var(--fs-md); }
-.xcc-door--flat .xcc-door__market[aria-invalid='true'] { color: var(--sell); }
-.xcc-door--flat .xcc-btn--go { flex: none; align-self: center; min-height: 44px; padding: 0 var(--sp-5); border-radius: var(--r-card); font-size: var(--fs-base); }
-.xcc-door--flat .xcc-seg { gap: var(--sp-4); padding: 0; border: 0; border-radius: var(--r-card); background: transparent; }
-.xcc-door--flat .xcc-seg__btn { padding: 0; border-radius: var(--r-card); border-bottom: 1px solid transparent; }
-.xcc-door--flat .xcc-seg__btn + .xcc-seg__btn { border-left: 0; }
-.xcc-door--flat .xcc-seg__btn[aria-pressed='true'] { background: transparent; color: var(--fg); border-bottom-color: var(--accent); }
-.xcc-door--flat .xcc-door__more { gap: var(--sp-1) var(--sp-4); }
-.xcc-door--flat .xcc-door__chips { gap: var(--sp-1) var(--sp-4); }
-.xcc-door--flat .xcc-chip { padding: 0; border: 0; border-radius: var(--r-card); text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 5px; }
-.xcc-door--flat .xcc-chip:hover { text-decoration-color: var(--accent); }
-@media (max-width: 767px) { .xcc-door--flat .xcc-seg { gap: var(--sp-2); } .xcc-door--flat .xcc-seg__btn { min-width: 44px; justify-content: center; } }
-@media (prefers-reduced-motion: reduce) { .xcc-door--flat .xcc-door__row { transition: none; } }
+/* ── THE DOOR, ONE LOOK (squad mobile-sleek, lane XPAGES, 2026-11-24) ───────
+   The plot-a-handle form wherever it stands: on /x, beside a record, on an
+   account's page and in the chart's popover. On a phone it stacks: the handle
+   on a line of its own, then the market and the press side by side. The press
+   is the kit's button (the accent fill once there is a handle to plot; quiet
+   and still live before, never a washed-out fill). All / Bull / Bear is the
+   kit's segmented control. The handles somebody already plotted are hard
+   chips on one row that scrolls sideways. Hard edges, flat fills, both themes. */
+.xcc-door { gap: 12px; }
+.xcc-door .xcc-door__row { flex-wrap: wrap; align-items: stretch; gap: 8px; }
+.xcc-door .xcc-door__field { flex: 1 1 100%; gap: 8px; min-height: 48px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 0; background: var(--bg); }
+.xcc-door .xcc-door__field:focus-within { border-color: var(--fg); }
+.xcc-door .xcc-door__at { width: 16px; height: 16px; color: var(--muted); }
+.xcc-door .xcc-door__input { height: 46px; font-size: 16px; font-family: var(--font-mono); }
+.xcc-door .xcc-door__on { flex: 1 1 0; min-width: 0; gap: 8px; min-height: 48px; padding: 0 14px; border: 1px solid var(--line-2); background: var(--bg); font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); cursor: text; }
+.xcc-door .xcc-door__on:focus-within { border-color: var(--fg); }
+.xcc-door .xcc-door__market { flex: 1 1 auto; min-width: 0; width: auto; height: 46px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--fg); font-size: 16px; font-weight: 600; outline: 0; }
+.xcc-door .xcc-door__market[aria-invalid='true'] { color: var(--sell); }
+/* The press: the kit's button, sized to the row. Its own colours are the kit's; the old filled-and-faded look is gone. */
+.xcc-door .xcc-btn--go { flex: 1 1 0; min-height: 48px; padding: 0 22px; border: 0; border-radius: 0; background: var(--accent); color: var(--ink, var(--bg)); font-size: 15px; font-weight: 600; filter: none; opacity: 1; }
+.xcc-door .xcc-btn--go[data-ready='no'] { background: var(--surf-2); color: var(--fg); }
+.xcc-door .xcc-btn--go:hover { filter: brightness(1.08); }
+.xcc-door .xcc-btn--go:focus-visible { outline: 2px solid var(--fg); outline-offset: -4px; }
+/* All / Bull / Bear: the kit's segmented control. */
+.xcc-door > .xcc-seg { align-self: stretch; display: flex; border: 1px solid var(--line); background: var(--bg); }
+.xcc-door .xcc-seg__btn { flex: 1 1 0; justify-content: center; min-height: 40px; padding: 0 14px; border-radius: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.08em; }
+.xcc-door .xcc-seg__btn[aria-pressed='true'] { background: var(--fg); color: var(--bg); }
+/* Already plotted: a label, then one row of hard chips that scrolls sideways. */
+.xcc-door .xcc-door__more { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 6px; }
+.xcc-door .xcc-door__k { font-size: 11px; }
+.xcc-door .xcc-door__chips { display: flex; flex-wrap: nowrap; gap: 8px; padding-inline: 0; scroll-padding-inline: 0; }
+.xcc-door .xcc-chip { flex: none; min-height: 44px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 0; background: var(--bg); color: var(--fg); font-family: var(--font-mono); font-size: 13px; text-decoration: none; }
+.xcc-door .xcc-chip:hover { border-color: var(--fg); color: var(--fg); }
+.xcc-door .xcc-chip--you { border-color: var(--accent); color: var(--accent); }
+.xcc-door .xcc-door__you { gap: 8px 12px; }
+@media (min-width: 641px) {
+  /* Wider than a phone, with room: the handle, the market and the press share one row. A door in a narrow column (`xcc-door--stack`, beside a record or an account) keeps the stacked layout. */
+  .xcc-door:not(.xcc-door--stack) .xcc-door__field { flex: 1 1 200px; }
+  .xcc-door:not(.xcc-door--stack) .xcc-door__on { flex: 0 0 auto; }
+  .xcc-door:not(.xcc-door--stack) .xcc-door__market { width: 72px; }
+  .xcc-door:not(.xcc-door--stack) .xcc-btn--go { flex: 0 0 auto; }
+  .xcc-door:not(.xcc-door--stack) > .xcc-seg { align-self: flex-start; display: inline-flex; }
+  .xcc-door:not(.xcc-door--stack) .xcc-seg__btn { flex: none; }
+}
+@media (hover: none) {
+  .xcc-door .xcc-seg__btn { min-height: 44px; }
+}
 
 /* ── THE CALL CARD (2026-11-16; SLEEK 2026-11-24): one call, opened on the
    chart. Prefix `xcf`, checked against every stylesheet in the repo. A hairline
