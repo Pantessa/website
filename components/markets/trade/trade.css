@@ -366,3 +366,85 @@
   .mkt-routes__groups .mkt-route__acts > .mkt-route__chip { min-width: 108px; }
 }
 @media (hover: none) { .mkt-routes__fold { min-height: 44px; } }
+
+/* ── SLEEK (squad mobile-sleek, lane SYMBOL, 2026-11-24) ──────────────────
+   The ticket in the squad's look: hard edges, hairlines, mono numbers, and
+   ONE button with the tile's cut in the market's colour. Hierarchy, top to
+   bottom: the side, the size, the sentence, the button. These rules restate
+   the ones above (same selectors, later in the sheet) so the form's layout
+   and its container queries stand as they were. */
+.mkt-ticket { gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 0; background: var(--bg); }
+.mkt-ticket--card { padding: 0; border: 0; background: transparent; }
+/* Side and order type: segmented cells on one hairline, the picked one filled. */
+.mkt-ticket__sides, .mkt-ticket__types { gap: 0; padding: 0; border: 1px solid var(--line-2, var(--line)); border-radius: 0; background: none; }
+.mkt-ticket__sides { flex: 1 1 100%; }
+.mkt-ticket__sides > .mkt-ticket__tab { flex: 1 0 auto; }
+.mkt-ticket__tab { min-height: 36px; padding: 0 12px; border-radius: 0; border-left: 1px solid var(--line-2, var(--line)); font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
+.mkt-ticket__tab:first-child { border-left: 0; }
+.mkt-ticket__tab[aria-selected='true'] { background: var(--fg); color: var(--bg); box-shadow: none; }
+.mkt-ticket__sides > .mkt-ticket__tab[aria-selected='true'] { background: var(--up); color: var(--ink, #07080d); }
+.mkt-ticket__sides > .mkt-ticket__tab--sell[aria-selected='true'] { background: var(--sell); color: #fff; }
+.mkt-ticket__sides > .mkt-ticket__tab:is([data-side='stake'], [data-side='supply'], [data-side='protect'])[aria-selected='true'] { background: var(--fg); color: var(--bg); }
+.mkt-ticket__k, .mkt-ticket__rk { font-size: 10.5px; font-weight: 500; letter-spacing: 0.12em; }
+.mkt-ticket__x { border-radius: 0; }
+/* The size: the loudest thing on the form. */
+.mkt-ticket__amt { min-height: 56px; padding: 0 8px 0 14px; border-radius: 0; }
+.mkt-ticket__amt:focus-within, .mkt-ticket--sell .mkt-ticket__amt:focus-within { border-color: var(--fg); box-shadow: none; }
+.mkt-ticket__cur { font-size: 16px; color: var(--muted-2); }
+.mkt-ticket__in { font-family: var(--font-mono); font-size: 26px; letter-spacing: -0.02em; }
+.mkt-ticket__unit { min-height: 32px; border-radius: 0; font-size: 10.5px; letter-spacing: 0.08em; }
+.mkt-ticket__eq { font-size: 12px; }
+/* Presets: equal hard cells sharing their hairlines. */
+.mkt-ticket__presets { gap: 0; }
+.mkt-ticket__preset { min-height: 34px; margin-left: -1px; padding: 0 12px; border-radius: 0; border-color: var(--line-2, var(--line)); font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
+.mkt-ticket__preset:first-child { margin-left: 0; }
+.mkt-ticket__preset:hover { position: relative; }
+.mkt-ticket__preset.is-on { position: relative; border-color: var(--fg); background: var(--fg); color: var(--bg); }
+.mkt-ticket__size > .mkt-ticket__presets > .mkt-ticket__preset { flex: 1 1 0; }
+.mkt-ticket__px { border-radius: 0; }
+.mkt-ticket__px:focus-within { border-color: var(--fg); }
+.mkt-ticket__px input { font-family: var(--font-mono); }
+/* The sentence it will send, then the one button. */
+.mkt-ticket__go { gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.mkt-ticket__say { flex: 1 1 100%; gap: 4px; }
+.mkt-ticket__sentence { font-size: 13.5px; color: var(--fg); }
+.mkt-ticket__quote { font-size: 11px; }
+.mkt-ticket__send {
+  --sk-cut: 8px;
+  flex: 1 1 100%; min-height: 48px; padding: 0 18px; border: 0; border-radius: 0; font-size: 15px; font-weight: 600;
+  clip-path: polygon(var(--sk-cut) 0, 100% 0, 100% calc(100% - var(--sk-cut)), calc(100% - var(--sk-cut)) 100%, 0 100%, 0 var(--sk-cut));
+}
+.mkt-ticket__send:hover:not(:disabled) { transform: none; filter: brightness(1.06); }
+.mkt-ticket__send:focus-visible { outline: 2px solid var(--fg); outline-offset: -4px; }
+.mkt-ticket__note { font-size: 11.5px; line-height: 1.5; }
+/* The wide strip (a landing's inline ticket): the button keeps its own width beside the sentence. */
+@container mkt-ticket (min-width: 640px) {
+  .mkt-ticket__say { flex: 1 1 240px; }
+  .mkt-ticket__send { flex: 0 0 auto; min-width: 220px; }
+  .mkt-ticket__size > .mkt-ticket__presets > .mkt-ticket__preset { flex: 0 0 auto; }
+  .mkt-ticket__sides { flex: 0 1 auto; }
+}
+@media (hover: none) {
+  .mkt-ticket__tab, .mkt-ticket__preset, .mkt-ticket__unit, .mkt-ticket__px { min-height: 44px; }
+  .mkt-ticket__send { min-height: 52px; }
+}
+/* Inside the phone's sheet the sheet is the frame: no second box, the screen's gutters. */
+.sheet__panel.mkt-ticketsheet .mkt-ticket--strip { gap: 14px; padding: 2px 16px calc(14px + env(safe-area-inset-bottom, 0px)); }
+/* The side row of a column ticket (the right column's): every side in one row,
+   an equal cell each, named by its verb (the symbol is in the head over it and
+   in the button under it). The full label stays the button's text for readers. */
+.mkt-ticket__sides { overflow: hidden; }
+.mkt-ticket__sides > .mkt-ticket__tab { flex: 1 1 0; min-width: 0; padding: 0 2px; font-size: 0; letter-spacing: 0; }
+.mkt-ticket__sides > .mkt-ticket__tab::before { content: attr(data-side); font-size: 11px; letter-spacing: 0.05em; }
+
+/* The Overview's routes on a phone: the first three kinds, then one "show all"
+   (the Trade tab, and every wider screen, lists them all). */
+.mkt-routes__showall { display: none; }
+@media (max-width: 640px) {
+  .mk-overview__routes .mkt-routes__groups[data-capped] > .mkt-routes__group:nth-of-type(n + 4) { display: none; }
+  .mk-overview__routes .mkt-routes__showall {
+    display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; padding: 0 14px;
+    border: 1px solid var(--line-2, var(--line)); border-radius: 0; background: none; color: var(--fg); cursor: pointer;
+    font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase;
+  }
+}

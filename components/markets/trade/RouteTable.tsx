@@ -89,6 +89,9 @@ function VenueMark({ venue }: { venue: string }) {
   return <Mark size={18} />
 }
 
+/** How many kinds (spot, limit, perp…) a phone's Overview lists before "show all". */
+const KIND_CAP = 3
+
 export default function RouteTable({
   symbol,
   pair,
@@ -138,6 +141,9 @@ export default function RouteTable({
   const [unfolded, setUnfolded] = useState<ReadonlySet<VenueKind>>(() => new Set())
   const [drawn, setDrawn] = useState<number | null>(null)
   const [why, setWhy] = useState(false)
+  // On a phone's Overview the table opens on its first kinds (squad mobile-sleek, 2026-11-24);
+  // one press lists every way. CSS decides where the cap shows (trade.css); the Trade tab lists all.
+  const [allKinds, setAllKinds] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
   const usd = custom.trim() ? Math.max(1, Math.floor(Number(custom) || 0)) : amount
   const seq = useRef(0)
@@ -332,7 +338,7 @@ export default function RouteTable({
       )}
 
       {data && (
-        <div className="mkt-routes__groups">
+        <div className="mkt-routes__groups" data-capped={!allKinds && rows.size > KIND_CAP ? '' : undefined}>
           {[...rows.entries()].map(([kind, list]) => {
             const fold = foldGroup(kind, list, bestChainId)
             const isOpen = unfolded.has(kind)
@@ -491,6 +497,11 @@ export default function RouteTable({
             </div>
             )
           })}
+          {!allKinds && rows.size > KIND_CAP && (
+            <button type="button" className="mkt-routes__showall mono" onClick={() => setAllKinds(true)} data-routes-more="">
+              Show all {rows.size} ways to act
+            </button>
+          )}
           {notes.length > 0 && (
             <ul className="mkt-routes__notes" data-shut={shutSides.join('+') || undefined}>
               {notes.map((n) => (

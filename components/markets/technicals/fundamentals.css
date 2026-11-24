@@ -186,3 +186,10 @@
   .mk-fund__head a, .mk-fund__foot a { position: relative; }
   .mk-fund__head a::after, .mk-fund__foot a::after { content: ''; position: absolute; inset: -15px -6px; }
 }
+
+/* ── SLEEK (squad mobile-sleek, lane SYMBOL, 2026-11-24): the panel is a
+   hairline section like the rest of the page; its chips and ranges are hard cells. ── */
+.mk-fund { margin-top: 28px; padding: 18px 0 14px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; }
+.mk-fund--note button, .mk-fund__ext, .mk-fund__chip, .mk-fund__ranges button, .mk-fund__chart { border-radius: 0; }
+.mk-fund__chip i { border-radius: 0; }
+@media (max-width: 640px) { .mk-fund { margin-top: 24px; padding: 16px 0 12px; border-radius: 0; } }
