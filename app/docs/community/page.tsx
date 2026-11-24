@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
+import { DocsNext, DocsSummary } from '@/components/docs'
 import { BOT_COMMANDS } from '@/lib/community/spec'
 import { DISCORD_ROOMS } from '@/lib/community/features'
 import { COMPOSER_KINDS, VIDEO_HOSTS_LINE, composeHref } from '@/components/community/feed-rules'
@@ -35,6 +36,13 @@ export default function CommunityDocsPage() {
         feed with members. Reading needs no wallet and no account.
       </p>
 
+      <DocsSummary>
+        <li>Reading the feed and the rooms is free. No account.</li>
+        <li>Joining a room is one tap with a Pantessa sign-in or a Telegram account. No wallet app needed.</li>
+        <li>A trade post carries one line read from the chain. The market and side are the author&apos;s tag.</li>
+        <li>Invites are counted, never paid.</li>
+      </DocsSummary>
+
       <div className="docs__prose">
         <h2>Rooms</h2>
         <p>
@@ -44,7 +52,7 @@ export default function CommunityDocsPage() {
 
         <h2>Joining</h2>
         <p>
-          Joining is one tap and never needs a wallet. A member is a proven identity: a sign-in (wallet, Google or email), or a Telegram account, proven by Telegram. Nothing is signed and nothing is paid. Voting needs an identity, not a seat. Posting in a room needs a seat.
+          Joining is one tap and needs no wallet app. A member is a proven identity: a Pantessa sign-in (with a wallet, Google or email), or a Telegram account, proven by Telegram. Nothing is signed and nothing is paid. Voting needs an identity, not a seat. Posting in a room needs a seat.
         </p>
 
         <h2>The four kinds of post</h2>
@@ -79,7 +87,7 @@ export default function CommunityDocsPage() {
           <li>It says nothing about profit, or whether the position is still open.</li>
           <li>It does not say what the other asset is worth, or who was on the other side. A swap against a pool the author controls reads the same.</li>
           <li>
-            Hyperliquid fills cannot be posted as proof yet. Neither can cross-chain swaps and bridges (one-way on each chain), or a swap between two tokens with no stablecoin or ETH on either side (we cannot price it).
+            Hyperliquid fills cannot be posted as proof yet. Neither can cross-chain swaps and bridges (one-way on each chain), or a swap between two tokens with no stablecoin or ETH on either side (we cannot price it). Nor can a CoW order: a solver sends that transaction, not your wallet.
           </li>
         </ul>
         <p>
@@ -90,7 +98,7 @@ export default function CommunityDocsPage() {
         <h2>Invites</h2>
         <p>
           Every member has one invite link to the room. A join that came through it is counted next to your name on the members board. Invites are counted, never
-          paid. An <Link href="/docs/links">intent link</Link> you mint in a post still earns the usual <Link href="/docs/creator-earnings">creator share</Link>.
+          paid. An <Link href="/docs/links">intent link</Link> you mint in a post is yours like any other, and its swaps earn the usual <Link href="/docs/creator-earnings">creator share</Link>.
         </p>
 
         <h2>Connect a Telegram group</h2>
@@ -109,7 +117,6 @@ export default function CommunityDocsPage() {
             </li>
           ))}
         </ul>
-        <p>Until the owner of this deployment has created the bot, the room page says Telegram is &ldquo;not set up on this deployment&rdquo;.</p>
 
         {DISCORD_ROOMS && (
           <>
@@ -130,10 +137,18 @@ export default function CommunityDocsPage() {
         <h2>Removing a post or a member</h2>
         <p>
           A post can be removed by its author, or by the room&apos;s owner or a mod. A member can be removed by the owner or a mod; the owner&apos;s seat cannot be.
-          The room page has no button for either yet; both are API requests (<code>DELETE /api/posts/&lt;id&gt;</code>,{' '}
+          The room page has no button for either yet; both are API requests made while signed in (<code>DELETE /api/posts/&lt;id&gt;</code>,{' '}
           <code>POST /api/communities/&lt;room&gt;/members/remove</code>).
         </p>
       </div>
+
+      <DocsNext
+        links={[
+          { href: '/docs/called-it', title: 'Called it', desc: 'Calls pinned on the chart, judged by the price.' },
+          { href: '/docs/links', title: 'Intent links', desc: 'Make a link to a trade and share it.' },
+          { href: '/docs/creator-earnings', title: 'Creator earnings', desc: 'How and when the money reaches you.' },
+        ]}
+      />
     </>
   )
 }
