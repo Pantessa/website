@@ -83,7 +83,7 @@ export default function TrustDocsPage() {
           </DocsStep>
         </DocsSteps>
 
-        <h2 id="hyperliquid">The one exception: Hyperliquid</h2>
+        <h2>The one exception: Hyperliquid</h2>
         <p>
           You sign every swap, bridge and transfer yourself. Hyperliquid orders can work a little differently.
           Many wallets cannot sign Hyperliquid&apos;s order format. For those wallets, and for every{' '}
@@ -120,7 +120,7 @@ export default function TrustDocsPage() {
           The full fee table is on <Link href="/pricing">pricing</Link>.
         </p>
 
-        <h2 id="stop">No caps, and one switch</h2>
+        <h2>No caps, and one switch</h2>
         <p>
           There are no spend caps, allowlists or approvals to set up. They were retired on 2026-10-30. You sign
           each trade, and that signature is the consent.

@@ -87,7 +87,7 @@ take profit on my eth long at $2100`}</pre>
           <li>
             The same key also places the Hyperliquid orders you ask for when your wallet cannot sign them itself.
             Each of those needs a signed message from your wallet first. See{' '}
-            <Link href="/docs/trust#hyperliquid">the Hyperliquid exception</Link>.
+            <Link href="/docs/trust#the-one-exception-hyperliquid">the Hyperliquid exception</Link>.
           </li>
           <li>The approval lasts up to {GUARDIAN_DELEGATION_DAYS} days at Hyperliquid.</li>
         </ul>
@@ -132,7 +132,7 @@ take profit on my eth long at $2100`}</pre>
           </li>
           <li>
             <strong>Freeze account</strong> on your dashboard also makes Guardian stand down. See{' '}
-            <Link href="/docs/trust#stop">the freeze switch</Link>.
+            <Link href="/docs/trust#no-caps-and-one-switch">the freeze switch</Link>.
           </li>
         </ul>
 
