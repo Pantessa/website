@@ -175,8 +175,9 @@
 .sk-tile { display: inline-block; flex: none; vertical-align: middle; }
 .sk-tile__lit { fill: var(--sk-tone); }
 .sk-tile__shade { fill: color-mix(in oklab, var(--sk-tone) 68%, #000); }
-.sk-tile__glyph { fill: none; stroke: var(--neon-ink, #07080d); stroke-width: 2.6; stroke-linecap: square; stroke-linejoin: miter; }
-.sk-tile__dot { fill: var(--neon-ink, #07080d); }
+/* The ink follows the theme: dark on the dark theme's bright tones, light on the light theme's deep ones. */
+.sk-tile__glyph { fill: none; stroke: var(--ink, var(--neon-ink, #07080d)); stroke-width: 2.6; stroke-linecap: square; stroke-linejoin: miter; }
+.sk-tile__dot { fill: var(--ink, var(--neon-ink, #07080d)); }
 
 /* ── Phone furniture ─────────────────────────────────────────────────── */
 
