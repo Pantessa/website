@@ -17,6 +17,13 @@
 //                            a crowd; only a zoom does.
 //   the OPENED call          lifted out of its crowd and drawn alone, larger,
 //                            ringed in the page's ink, on its own bar.
+//   a CARD per picked call   where the pane has the room (lib/tv/called-pins
+//                            decides which calls and where): a cut-corner
+//                            card on a rail above or below the candles. The
+//                            verdict line in the verdict's tone, the post's
+//                            own words, the move in mono, a hairline to the
+//                            bar. Placed again on every frame, so a card
+//                            rides its bar through a pan with no lag.
 //
 // Rules this file holds (with lib/tv/called-pins, whose header has the rest):
 //   · Right and wrong differ by colour AND by glyph. The two verdicts that are
@@ -391,6 +398,161 @@ export function paintMarks(ctx: Ctx, marks: readonly PlacedMark[], inks: MarkInk
   for (const m of marks) if (m.focus) paintMark(ctx, m, inks, mono, false)
 }
 
+// ── The cards ───────────────────────────────────────────────────────────
+
+/** A card's metrics, px. One place: the size the layout plans with is the size the paint draws. */
+export const CARD_PX = { pad: 11, cut: 10, tile: 14, head: 16, headGap: 7, wordsFont: 13, wordsLine: 17, resultGap: 7, resultFont: 11, resultLine: 15, addedLine: 15, dateFont: 10 } as const
+
+export interface CardSpec {
+  id: string
+  barTime: number
+  priceAt: number
+  verdict: CallVerdict
+  /** A post a viewer pasted: it says so on a line of its own. */
+  added: string | null
+  /** The verdict's word and the day, the post's own words (already cut and wrapped), the move. */
+  word: string
+  date: string
+  words: readonly string[]
+  result: readonly string[]
+  w: number
+  h: number
+}
+
+export interface CardBox {
+  id: string
+  side: 'above' | 'below'
+  inView: boolean
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export interface CardFonts {
+  sans: string
+  mono: string
+}
+export const cardFont = {
+  word: (f: CardFonts) => `600 12px ${f.sans}`,
+  date: (f: CardFonts) => `500 ${CARD_PX.dateFont}px ${f.mono}`,
+  words: (f: CardFonts) => `400 ${CARD_PX.wordsFont}px ${f.sans}`,
+  added: (f: CardFonts) => `italic 400 11px ${f.sans}`,
+  result: (f: CardFonts) => `500 ${CARD_PX.resultFont}px ${f.mono}`,
+} as const
+
+/** The box a card takes for these lines. `measure(font, text)` is the canvas's own. */
+export function cardSize(card: Pick<CardSpec, 'word' | 'date' | 'words' | 'result' | 'added'>, fonts: CardFonts, measure: (font: string, text: string) => number): { w: number; h: number } {
+  const head = CARD_PX.tile + 7 + measure(cardFont.word(fonts), card.word) + 14 + measure(cardFont.date(fonts), card.date.toUpperCase())
+  const widest = Math.max(head, ...card.words.map((l) => measure(cardFont.words(fonts), l)), ...card.result.map((l) => measure(cardFont.result(fonts), l)), card.added ? measure(cardFont.added(fonts), card.added) : 0)
+  return {
+    w: Math.ceil(widest) + 2 * CARD_PX.pad,
+    h: 2 * CARD_PX.pad + CARD_PX.head + (card.added ? CARD_PX.addedLine : 0) + CARD_PX.headGap + card.words.length * CARD_PX.wordsLine + CARD_PX.resultGap + card.result.length * CARD_PX.resultLine - 3,
+  }
+}
+
+/** The page's own type families (Geist, Geist Mono), read from its tokens; the system's where there is no page. */
+export function pageFonts(): CardFonts {
+  const fallback: CardFonts = { sans: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", mono: "ui-monospace, 'SF Mono', Menlo, monospace" }
+  try {
+    if (typeof document === 'undefined') return fallback
+    const cs = getComputedStyle(document.documentElement)
+    return { sans: cs.getPropertyValue('--font-sans').trim() || fallback.sans, mono: cs.getPropertyValue('--font-mono').trim() || fallback.mono }
+  } catch {
+    return fallback
+  }
+}
+
+/** A text measure on a canvas of the page's document; null where there is none. */
+export function pageMeasure(): ((font: string, text: string) => number) | null {
+  try {
+    if (typeof document === 'undefined') return null
+    const ctx = document.createElement('canvas').getContext('2d')
+    if (!ctx) return null
+    return (font, text) => {
+      ctx.font = font
+      return ctx.measureText(text).width + 0.5
+    }
+  } catch {
+    return null
+  }
+}
+
+export interface CardInks extends MarkInks {
+  surf: string
+  muted: string
+}
+
+function paintCard(ctx: Ctx, card: CardSpec, box: CardBox, tip: { x: number; y: number } | null, inks: CardInks, fonts: CardFonts, state: { focus: boolean; hover: boolean }): void {
+  const ink = markInk(card.verdict, inks)
+  const { x, y, w, h } = box
+  const P = CARD_PX
+  const lit = state.focus || state.hover
+  // The hairline to the bar: from the card's near edge, straight to a square on the price.
+  if (tip) {
+    const fromX = Math.max(x + P.cut + 8, Math.min(tip.x, x + w - P.cut - 8))
+    const fromY = box.side === 'above' ? y + h : y
+    ctx.beginPath()
+    ctx.moveTo(fromX, fromY)
+    ctx.lineTo(tip.x, tip.y)
+    ctx.strokeStyle = inks.bg
+    ctx.lineWidth = 3
+    ctx.stroke()
+    ctx.strokeStyle = mix(ink, inks.bg, lit ? 1 : 0.62)
+    ctx.lineWidth = 1
+    ctx.stroke()
+    ctx.fillStyle = inks.bg
+    ctx.fillRect(Math.round(tip.x) - 4, Math.round(tip.y) - 4, 8, 8)
+    ctx.fillStyle = ink
+    ctx.fillRect(Math.round(tip.x) - 3, Math.round(tip.y) - 3, 6, 6)
+  }
+  // The card: a calm ground with a breath of the verdict's tone, one hairline edge, the brand's two cut corners.
+  cutPath(ctx, x, y, w, h, P.cut)
+  ctx.fillStyle = mix(ink, inks.bg, state.focus ? 0.13 : 0.07)
+  ctx.fill()
+  cutPath(ctx, x + 0.5, y + 0.5, w - 1, h - 1, P.cut)
+  ctx.strokeStyle = mix(ink, inks.bg, lit ? 1 : 0.5)
+  ctx.lineWidth = state.focus ? 1.5 : 1
+  ctx.stroke()
+  // The verdict line: the tile, the word in the verdict's tone, the day.
+  const tx = x + P.pad
+  let ty = y + P.pad
+  paintMark(ctx, { key: '', ids: [], verdict: card.verdict, added: !!card.added, count: 1, x: tx, y: ty + 1, w: P.tile, h: P.tile, tile: P.tile, focus: false, tip: null }, { ...inks, bg: mix(ink, inks.bg, 0.07) }, fonts.mono, false)
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = 'left'
+  ctx.font = cardFont.word(fonts)
+  ctx.fillStyle = ink
+  ctx.fillText(card.word, tx + P.tile + 7, ty + P.head / 2 + 1)
+  ctx.font = cardFont.date(fonts)
+  ctx.textAlign = 'right'
+  ctx.fillStyle = inks.muted
+  ctx.fillText(card.date.toUpperCase(), x + w - P.pad, ty + P.head / 2 + 1)
+  ctx.textAlign = 'left'
+  ty += P.head
+  if (card.added) {
+    ctx.font = cardFont.added(fonts)
+    ctx.fillStyle = inks.muted
+    ctx.fillText(card.added, tx, ty + P.addedLine / 2 + 2)
+    ty += P.addedLine
+  }
+  ty += P.headGap
+  // The post's own words.
+  ctx.font = card.added ? `italic ${cardFont.words(fonts)}` : cardFont.words(fonts)
+  ctx.fillStyle = inks.fg
+  for (const line of card.words) {
+    ctx.fillText(line, tx, ty + P.wordsLine / 2 - 1)
+    ty += P.wordsLine
+  }
+  ty += P.resultGap - 3
+  // The move, in mono.
+  ctx.font = cardFont.result(fonts)
+  ctx.fillStyle = mix(inks.fg, inks.bg, 0.66)
+  for (const line of card.result) {
+    ctx.fillText(line, tx, ty + P.resultLine / 2)
+    ty += P.resultLine
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  THE LAYER: the only part that touches a document.
 // ─────────────────────────────────────────────────────────────────────────
@@ -403,6 +565,9 @@ export interface MarksScene {
   keepTop: number
   keepBottom: number
   keepCorner?: { width: number; top: number }
+  /** The picked calls' cards and the rule that places them (lib/tv/called-pins `layoutCallouts`). */
+  cards?: readonly CardSpec[]
+  layout?: (pane: { width: number; height: number }, anchors: { id: string; x: number | null; y: number | null }[]) => CardBox[]
 }
 
 export interface MarksLayerHooks {
@@ -411,7 +576,7 @@ export interface MarksLayerHooks {
   chart(): TvChartApi | null
   /** What to draw, or null for nothing. */
   scene(): MarksScene | null
-  inks(): MarkInks
+  inks(): CardInks
   onPick(postId: string): void
   /** The layer is drawing (true) or cannot (false): the caller falls back to the library's own marks. */
   onMount(on: boolean): void
@@ -439,8 +604,10 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
   let sig = ''
   let marks: PlacedMark[] = []
   let hover: string | null = null
+  let boxes: CardBox[] = []
+  let fonts: CardFonts = pageFonts()
   let down: { x: number; y: number; at: number } | null = null
-  let mono = "ui-monospace, 'SF Mono', Menlo, monospace"
+  const cardAt = (p: { x: number; y: number }): CardBox | null => boxes.find((b) => b.inView && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) ?? null
 
   const local = (e: { clientX: number; clientY: number }): { x: number; y: number } | null => {
     if (!canvas) return null
@@ -460,14 +627,18 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
     if (!d || Date.now() - d.at > TAP_MS || Math.hypot(e.clientX - d.x, e.clientY - d.y) > TAP_MOVE_PX) return
     const p = local(e)
     const scene = hooks.scene()
-    const hit = p && scene ? hitMark(marks, p.x, p.y, e.pointerType === 'mouse' ? 28 : MARK_PX.tap) : null
-    if (hit && scene) hooks.onPick(hit.focus ? hit.ids[0] : pickFrom(hit, scene.focusId))
+    if (!p || !scene) return
+    const hit = hitMark(marks, p.x, p.y, e.pointerType === 'mouse' ? 28 : MARK_PX.tap)
+    const card = hit ? null : cardAt(p)
+    if (hit) hooks.onPick(hit.focus ? hit.ids[0] : pickFrom(hit, scene.focusId))
+    else if (card) hooks.onPick(card.id)
   }
   const onMove = (e: PointerEvent) => {
     if (e.pointerType !== 'mouse') return
     const p = onPane(e) ? local(e) : null
     const hit = p ? hitMark(marks, p.x, p.y, 24) : null
-    const next = hit ? hit.key : null
+    const card = p && !hit ? cardAt(p) : null
+    const next = hit ? hit.key : card ? `card:${card.id}` : null
     if (next === hover) return
     hover = next
     if (wrap) wrap.style.cursor = next ? 'pointer' : ''
@@ -490,6 +661,7 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
     wrap = null
     frameDoc = null
     marks = []
+    boxes = []
     sig = ''
   }
   const mount = (): boolean => {
@@ -508,8 +680,7 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
       canvas.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:3'
       w.appendChild(canvas)
       buf = document.createElement('canvas')
-      const family = getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim()
-      if (family) mono = family
+      fonts = pageFonts()
       doc.addEventListener('pointerdown', onDown, true)
       doc.addEventListener('pointerup', onUp, true)
       doc.addEventListener('pointermove', onMove, true)
@@ -528,7 +699,9 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
     if (!canvas || !sig) return
     canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
     canvas.dataset.marks = '0'
+    canvas.dataset.cards = '0'
     marks = []
+    boxes = []
     sig = ''
   }
 
@@ -560,7 +733,7 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
     }
     setOn(true)
     const scene = hooks.scene()
-    if (!scene || !scene.calls.length) {
+    if (!scene || (!scene.calls.length && !scene.cards?.length)) {
       clear()
       return
     }
@@ -577,9 +750,9 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
         clear()
         return
       }
-      const p0 = scene.calls[0].priceAt
+      const p0 = (scene.calls[0] ?? scene.cards?.[0])?.priceAt ?? 1
       const inks = hooks.inks()
-      const next = [width, height, dpr, spacing.toFixed(3), barSec, ref.t, ref.x.toFixed(1), price.priceToCoordinate(p0)?.toFixed(1), price.priceToCoordinate(p0 * 1.25)?.toFixed(1), scene.key, scene.focusId, scene.keepTop, scene.keepBottom, scene.keepCorner?.top, hover, inks.up, inks.bg].join('|')
+      const next = [width, height, dpr, spacing.toFixed(3), barSec, ref.t, ref.x.toFixed(1), price.priceToCoordinate(p0)?.toFixed(1), price.priceToCoordinate(p0 * 1.25)?.toFixed(1), scene.key, scene.focusId, scene.keepTop, scene.keepBottom, scene.keepCorner?.top, scene.cards?.length, document.fonts?.status, hover, inks.up, inks.bg].join('|')
       if (next === sig) return
       sig = next
       // Bars are whole steps of time from the reference on a market that never closes. One that does (a stock's
@@ -631,10 +804,22 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
       if (!b || !c) return
       b.setTransform(dpr, 0, 0, dpr, 0, 0)
       b.clearRect(0, 0, width, height)
-      paintMarks(b, marks, inks, mono, hover)
+      const cards = scene.cards ?? []
+      boxes = cards.length && scene.layout ? scene.layout({ width, height }, cards.map((card) => ({ id: card.id, x: xOf(card.barTime), y: price.priceToCoordinate(card.priceAt) }))) : []
+      for (const pass of [false, true]) {
+        for (const box of boxes) {
+          const card = cards.find((k) => k.id === box.id)
+          const focus = box.id === scene.focusId
+          if (!card || !box.inView || focus !== pass) continue
+          const ty = price.priceToCoordinate(card.priceAt)
+          paintCard(b, card, box, ty === null ? null : { x: xOf(card.barTime), y: ty }, inks, fonts, { focus, hover: hover === `card:${box.id}` })
+        }
+      }
+      paintMarks(b, marks, inks, fonts.mono, hover)
       c.clearRect(0, 0, pw, ph)
       c.drawImage(buf, 0, 0)
       canvas.dataset.marks = String(marks.length)
+      canvas.dataset.cards = String(boxes.filter((k) => k.inView).length)
       canvas.dataset.hits = JSON.stringify(marks.map((m) => [m.ids[0], Math.round(m.x + m.w / 2), Math.round(m.y + m.h / 2), m.count, m.focus ? 1 : 0]))
     } catch {
       /* the chart is between two states: the next frame draws it */
@@ -658,5 +843,27 @@ export function createMarksLayer(hooks: MarksLayerHooks): MarksLayer {
     invalidate() {
       sig = ''
     },
+  }
+}
+
+/** The margin the library's own screenshot leaves around the chart, in CSS px (measured on v33.1.0: it grows with the device's pixel ratio; the pane itself is drawn one canvas px to the CSS px). */
+const SHOT_MARGIN_PX = 10
+
+/**
+ * The marks and cards, stamped onto the chart's own picture (Share). The layer
+ * is paint over the pane, so the library's screenshot does not hold it: this
+ * puts it back where the pane is. The tally line is the library's own shape
+ * and is already in the picture. Does nothing where the layer is not drawing.
+ */
+export function stampMarks(shot: HTMLCanvasElement | null | undefined, host: HTMLElement | null | undefined): void {
+  try {
+    const frame = host?.querySelector('iframe')
+    const layer = frame?.contentDocument?.querySelector('canvas[data-called-marks]') as HTMLCanvasElement | null | undefined
+    const ctx = shot?.getContext('2d')
+    if (!shot || !ctx || !layer || !(layer.width > 0) || !(layer.clientWidth > 0) || layer.dataset.marks === undefined) return
+    const dpr = frame?.contentWindow?.devicePixelRatio || 1
+    ctx.drawImage(layer, SHOT_MARGIN_PX * dpr, SHOT_MARGIN_PX * dpr, layer.clientWidth, layer.clientHeight)
+  } catch {
+    /* the picture keeps the candles and the tally */
   }
 }

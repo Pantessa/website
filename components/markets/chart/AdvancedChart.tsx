@@ -55,6 +55,7 @@ import type { TvChartApi, TvWidget } from '@/lib/tv/types'
 import CallFocus from '@/components/called/CallFocus'
 import { useCalledPins } from '@/lib/called-it/use-record'
 import { withCalledMarks, withoutCalled } from '@/lib/tv/called-pins'
+import { stampMarks } from '@/lib/tv/called-overlay'
 import { readTokens, type Tokens } from './chart-tokens'
 import ChartShare from './ChartShare'
 import { useHeatYear } from './PositionHeat'
@@ -967,6 +968,8 @@ export default function AdvancedChart({
           capture={async () => {
             try {
               const shot = (await widgetRef.current?.takeClientScreenshot()) ?? null
+              // A plotted handle's tiles and cards are paint over the pane (lib/tv/called-overlay): put them in the picture.
+              stampMarks(shot, hostRef.current)
               // The picture is the chart's own (its drawings and TradingView's
               // mark included); the page it came from is written beside it.
               const ctx = shot?.getContext('2d')

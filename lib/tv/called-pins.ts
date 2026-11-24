@@ -3,15 +3,21 @@
 //
 // What is drawn, and why each choice:
 //
-//   a CARD per picked call    the library's `callout`: its tip on the bar the
-//                             post landed on (that day's close), its box on a
-//                             RAIL above or below the candles. Native, so it
-//                             pans and zooms with the bars and is in the
-//                             chart's own screenshot.
-//   a MARK per other call     the datafeed's bar marks (a small disc over the
-//                             bar): a glyph and a color for the verdict, the
-//                             words in its tooltip. On a phone every call is
-//                             a mark: a card would hide the candles.
+//   a CARD per picked call    its tip on the bar the post landed on (that
+//                             day's close), its box on a RAIL above or below
+//                             the candles. Since 2026-11-24 the card is paint
+//                             on the marks layer (lib/tv/called-overlay): a
+//                             cut-corner card set in the page's own type,
+//                             placed again on every frame and stamped into
+//                             the chart's screenshot. Where the layer cannot
+//                             mount, it is the library's `callout` as before.
+//   a MARK per other call     a cut-corner tile on the same layer, counted
+//                             where calls crowd (never piled): a glyph and a
+//                             color for the verdict. On a phone every call is
+//                             a mark: a card would hide the candles. Where
+//                             the layer cannot mount: the datafeed's bar
+//                             marks (a disc over the bar, the words in its
+//                             tooltip).
 //   the TALLY on the pane     one fixed line in the pane's corner: the full
 //                             count and who plotted it. A viewer chooses the
 //                             pins, nobody chooses the count, and the count is
@@ -34,7 +40,7 @@
 // lib/tv/types (the library itself is licensed and never in this repository).
 
 import { ADDED_MARK, PIN_URL_MAX, VERDICT_WORDS, cmpPostId, fmtDay, judgedLine, moveLine, recordHref, sinceLine, type CallVerdict, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
-import { createMarksLayer, type MarkInks } from './called-overlay'
+import { cardFont, cardSize, createMarksLayer, pageFonts, pageMeasure, type CardBox, type CardInks, type CardSpec } from './called-overlay'
 import type { ShapeSnapshot } from './shapes'
 import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvPriceScaleApi, TvShapeOptions, TvWidget } from './types'
 
@@ -853,7 +859,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   /** The marks layer is drawing (lib/tv/called-overlay): the library's own bar marks stand down. */
   let layerOn = false
   /** What the layer draws: every call with no card. Set by `render`. */
-  let scene: { key: string; calls: CalledCall[]; keepTop: number; keepBottom: number } | null = null
+  let scene: { key: string; calls: CalledCall[]; keepTop: number; keepBottom: number; cards?: CardSpec[]; layout?: (pane: PaneSize, anchors: PinAnchor[]) => CardBox[] } | null = null
   let plan: CalloutPlan = calloutPlan({ width: 0, height: 0 })
   let startAbove = true
   let margins: { original: PaneMargins; applied: PaneMargins } | null = null
@@ -941,11 +947,11 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   }
   const recordKey = (r: CalledRecord, p: CalloutPlan) => {
     const ink = hooks.inks()
-    return [r.handle, r.symbol, r.side, r.verified ? 'v' : 'n', r.words.headline, r.words.coverage ?? '', r.words.added ?? '', p.perRail, p.textWidth, p.wordLines, ink.bg, ink.fg, ink.up, r.calls.map((c) => `${c.postId}${c.picked ? '*' : ''}${c.origin === 'added' ? '+' : ''}${c.verdict[0]}${Math.round(c.judgedPct * 1000)}`).join(',')].join('|')
+    return [layerOn ? 'layer' : 'native', r.handle, r.symbol, r.side, r.verified ? 'v' : 'n', r.words.headline, r.words.coverage ?? '', r.words.added ?? '', p.perRail, p.textWidth, p.wordLines, ink.bg, ink.fg, ink.up, r.calls.map((c) => `${c.postId}${c.picked ? '*' : ''}${c.origin === 'added' ? '+' : ''}${c.verdict[0]}${Math.round(c.judgedPct * 1000)}`).join(',')].join('|')
   }
 
   /** The verdict inks of the marks layer: the market's green and red, gold for "too early to say", grey for no real move. */
-  const markInks = (): MarkInks => {
+  const markInks = (): CardInks => {
     const ink = hooks.inks()
     let gold = ''
     try {
@@ -953,7 +959,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     } catch {
       /* the muted ink stands in */
     }
-    return { up: ink.up, down: ink.down, open: /^#[0-9a-f]{6}$/i.test(gold) ? gold : ink.muted, flat: ink.muted, fg: ink.fg, bg: ink.bg }
+    return { up: ink.up, down: ink.down, open: /^#[0-9a-f]{6}$/i.test(gold) ? gold : ink.muted, flat: ink.muted, fg: ink.fg, bg: ink.bg, surf: ink.surf, muted: ink.muted }
   }
   // The legend's corner is read from the frame's document: once a second is plenty (it moves when a study is added).
   let cornerAt = 0
@@ -976,6 +982,11 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       if (layerOn === on) return
       layerOn = on
       refreshMarks()
+      // The cards change hands with the marks: the layer's own when it draws, the library's callouts when it cannot.
+      if (drawnKey) {
+        drawnKey = ''
+        schedule()
+      }
     },
   })
 
@@ -1236,9 +1247,22 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     const byId = new Map(record.calls.map((call) => [call.postId, call]))
     const texts = new Map<string, PinText>()
     const sizes: Record<string, BoxSize> = {}
+    // The layer draws the cards itself when it is up (set in the page's own type); else they are the library's callouts.
+    const pageText = layerOn ? pageMeasure() : null
+    const fonts = pageFonts()
+    const specs: CardSpec[] = []
     for (const id of ids) {
       const call = byId.get(id)
       if (!call) continue
+      if (pageText) {
+        const wide: Measure = (t) => Math.max(pageText(cardFont.words(fonts), t), pageText(cardFont.result(fonts), t))
+        const text = pinText(call, record.handle, { textWidth: plan.textWidth, measure: wide, wordLines: plan.wordLines })
+        const spec = { id, barTime: call.barTime, priceAt: call.priceAt, verdict: call.verdict, added: text.added ? ADDED_MARK : null, word: VERDICT_WORDS[call.verdict], date: pinDate(call.postedAt), words: text.words, result: text.lines.slice(text.lines.lastIndexOf(text.words[text.words.length - 1]) + 1) }
+        const size = cardSize(spec, fonts, pageText)
+        specs.push({ ...spec, ...size })
+        sizes[id] = size
+        continue
+      }
       const text = pinText(call, record.handle, { textWidth: plan.textWidth, measure, wordLines: plan.wordLines })
       texts.set(id, text)
       sizes[id] = boxSize(text.lines, measure)
@@ -1259,6 +1283,20 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     marks = calledMarks(record, ids, inks)
     const boxed = new Set(ids)
     scene = { key, calls: record.calls.filter((call) => !boxed.has(call.postId)), keepTop: view.keepTop, keepBottom: label.keepBottom }
+    if (pageText) {
+      const side = startAbove
+      const keepTopNow = view.keepTop
+      scene.cards = specs
+      scene.layout = (paneNow, anchors) => layoutCallouts({ pane: paneNow, anchors, sizes, keepBottom: label.keepBottom, keepTop: keepTopNow, startAbove: side })
+      cards = new Map()
+      await placeLabel(record, view.pane, my)
+      if (my !== gen) return
+      drawnKey = key
+      refreshMarks()
+      hooks.onCards?.(specs.length)
+      void syncFocus()
+      return
+    }
     const next = new Map<string, Drawn>()
     for (const box of placed) {
       const call = byId.get(box.id)
