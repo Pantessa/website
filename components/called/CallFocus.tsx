@@ -35,6 +35,8 @@ import './called-chart.css'
 // The card is a bottom card on a phone (called-chart.css, max-width 640px): its trade buttons stack there.
 // A sideways swipe this long, and at least twice as wide as it is tall, walks to the next call.
 const SWIPE_PX = 56
+// A post longer than this is set as text in the desktop's side column, not in the display face (called-chart.css).
+const LONG_POST = 220
 // Where the band's top lands when a phone's page moves for an opened call: under the top bar and the stuck tabs.
 const PHONE_LANDS_AT = 108
 // The chart a phone must show over the card before the page is left where it is.
@@ -178,7 +180,7 @@ export default function CallFocus({ symbol }: { symbol: string }) {
         {call.origin === 'added' ? <p className="xcf__added mono">{ADDED_MARK}. Shown, and not in the count.</p> : null}
         {/* The post's own words. Short by default: the cut is marked, and "more" opens every word in place. */}
         <div className="xcf__words" data-clamped={clamped && !more ? '' : undefined}>
-          <p ref={textRef} className="xcf__text" id="xcf-text">
+          <p ref={textRef} className="xcf__text" id="xcf-text" data-long={call.text.length > LONG_POST ? '' : undefined}>
             <PostText call={call} />
           </p>
           {canMore ? (

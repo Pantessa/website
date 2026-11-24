@@ -464,9 +464,15 @@ a.xcf__x:hover { border-color: var(--fg); }
   /* Top-down, nothing stretched: the header, the post, the numbers, the button, its caption, the quiet row. What is left of
      the slot falls under the card; a long post scrolls in its own box. */
   [data-call-dock='side'] .xcf, [data-call-dock='side'] .xcf[data-dock] { position: static; flex: 0 1 auto; width: auto; height: auto; min-height: 0; max-height: 100%; animation: none; }
-  [data-call-dock='side'] .xcf__body { flex: 0 1 auto; padding: 18px 16px 20px; }
+  [data-call-dock='side'] .xcf__body { flex: none; overflow: visible; padding: 18px 16px 20px; }
   /* There is room here: the post's own words in the display face, the quoted span marked. */
-  [data-call-dock='side'] .xcf__text { display: block; overflow: visible; font-family: var(--sk-display, Georgia, serif); font-size: 19px; font-weight: 600; line-height: 1.38; letter-spacing: -0.01em; }
+  [data-call-dock='side'] .xcf__text { display: block; max-height: calc(1.38em * 8); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; font-family: var(--sk-display, Georgia, serif); font-size: 19px; font-weight: 600; line-height: 1.38; letter-spacing: -0.01em; }
+  /* A LONG post is text, not a headline: the body face at the base size. Its box is a whole number of lines tall, so the
+     scroll never shows a line cut through its middle at rest. */
+  [data-call-dock='side'] .xcf__text[data-long] { max-height: calc(1.5em * 8); padding-right: 8px; font-family: inherit; font-size: var(--fs-base); font-weight: 400; line-height: 1.5; letter-spacing: 0; }
+  @media (min-height: 1000px) { [data-call-dock='side'] .xcf__text[data-long] { max-height: calc(1.5em * 12); } }
+  /* The words scroll in their own box here, so nothing is behind a "more". */
+  [data-call-dock='side'] .xcf__more { display: none; }
   /* The numbers as rows: a label and its value on a line each, so a long judged line never wraps into the next cell. */
   [data-call-dock='side'] .xcf__nums { flex-direction: column; }
   [data-call-dock='side'] .xcf__num, [data-call-dock='side'] .xcf__num:first-child { flex: none; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 16px; padding: 9px 16px; }
@@ -618,7 +624,7 @@ a.xcf__x:hover { border-color: var(--fg); }
      card at the foot of the screen (the post on X and the pin live there) and marks its bar on the chart. */
   .xcc { gap: 12px; padding: 14px 0 4px; border: 0; background: none; }
   .xcc__rows { flex-direction: row; gap: 10px; max-height: none; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: none; border-top: 0; }
-  .xcc-row { flex: 0 0 min(78%, 300px); scroll-snap-align: start; padding: 1px; border: 0; background: var(--line); clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
+  .xcc-row { flex: 0 0 min(86%, 320px); scroll-snap-align: start; padding: 1px; border: 0; background: var(--line); clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
   .xcc-row:hover { background: var(--line); }
   .xcc-row.is-focus { background: var(--accent); }
   .xcc-row__main { height: 100%; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto 1fr auto; align-items: center; gap: 8px 10px; padding: 12px 14px 12px; background: var(--surf-1); clip-path: polygon(9.4px 0, 100% 0, 100% calc(100% - 9.4px), calc(100% - 9.4px) 100%, 0 100%, 0 9.4px); }
@@ -627,7 +633,9 @@ a.xcf__x:hover { border-color: var(--fg); }
   .xcc-row__when { grid-column: 2; grid-row: 1; justify-self: end; }
   .xcc-row__text { grid-column: 1 / -1; grid-row: 2; align-self: start; -webkit-line-clamp: 3; font-size: 14px; line-height: 1.4; }
   .xcc-row.is-focus .xcc-row__text { display: -webkit-box; overflow: hidden; }
-  .xcc-row__nums { grid-column: 1 / -1; grid-row: 3; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+  /* One line: the price, the judged move and, when it fits beside them, the move since (it wraps out of sight whole, never
+     onto a line of its own; the call's card carries both). */
+  .xcc-row__nums { grid-column: 1 / -1; grid-row: 3; display: flex; flex-wrap: wrap; gap: 0 10px; height: 16px; overflow: hidden; font-size: var(--fs-xs); line-height: 16px; }
   .xcc-row__price { color: var(--muted); }
   .xcc-row__since:empty { display: none; }
   .xcc-row__side { display: none; }
