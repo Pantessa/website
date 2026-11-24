@@ -904,6 +904,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   /** The range the last fit left the chart on: while the viewer has not moved it, a new pane width fits again. */
   let fitView: { from: number; to: number; width: number } | null = null
   let revealAt = 0
+  let fitting = false
   let startAbove = true
   let margins: { original: PaneMargins; applied: PaneMargins } | null = null
   let resizeTimer: ReturnType<typeof setTimeout> | null = null
@@ -1124,18 +1125,21 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     const c = chart
     const record = plotted()
     const call = record && input.focusId ? record.calls.find((x) => x.postId === input.focusId) : null
-    if (!c || !call || Date.now() - revealAt < 350) return
+    // Never while the fit is still on its way: it would read the view the chart opened on and pan that.
+    if (!c || !call || fitting || Date.now() - revealAt < 350) return
     try {
       const pane = paneSize()
       if (!pane) return
       const x = xForTime(sampleAxis(pane.width), call.barTime)
-      const pad = Math.min(72, pane.width * 0.2)
+      // Under a card that covers the pane's foot (a phone) the opened bar goes to the middle of what is left in sight.
+      const centre = cover > 0 && pane.width < CARDS_MIN_PANE_W
+      const pad = centre ? pane.width * 0.3 : Math.min(72, pane.width * 0.2)
       if (x !== null && x >= pad && x <= pane.width - pad) return
       const r = c.getVisibleRange()
       const span = r.to - r.from
       if (!(span > 0)) return
       const left = x === null ? call.barTime < r.from : x < pad
-      const from = call.barTime - span * (left ? 0.3 : 0.7)
+      const from = call.barTime - span * (centre ? 0.5 : left ? 0.3 : 0.7)
       revealAt = Date.now()
       fitView = null
       void c.setVisibleRange({ from, to: from + span }).catch(() => undefined)
@@ -1170,6 +1174,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     const width = paneSize()?.width ?? 0
     const range = fitRange(record.calls, Math.floor(Date.now() / 1000), width)
     if (!c || !range) return
+    fitting = true
     try {
       const res = c.resolution().toUpperCase()
       if (res !== '1D' && res !== 'D') await Promise.race([Promise.resolve(c.setResolution('1D')), sleep(4000)])
@@ -1179,7 +1184,11 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       fitView = { from: now.from, to: now.to, width: paneSize()?.width ?? width }
     } catch {
       /* the chart keeps the view it has; "Fit all calls" asks again */
+    } finally {
+      fitting = false
     }
+    // A call that was opened before the fit landed (a link to one call) is brought into view on the fitted chart.
+    setTimeout(revealFocus, 420)
   }
 
   /** Where everything is, right now. Null while the chart cannot say (no bars yet). */

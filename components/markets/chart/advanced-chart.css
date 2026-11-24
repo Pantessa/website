@@ -13,9 +13,7 @@
   /* In normal flow, the plot's full height, one hairline between them. Empty (no call open) it takes no room. */
   .tvx__dock { display: flex; flex-direction: column; flex: 0 0 380px; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border: 1px solid var(--line); border-left: 0; background: var(--bg); }
   .tvx__dock:empty { display: none; }
-  /* Whatever is seated in the column is static and fills it (the band lane styles its card for this slot;
-     this is the floor under it, so the card never keeps the plot's absolute dock here). */
-  .sym:not(#_) .tvx__dock > * { position: static; inset: auto; width: 100%; max-width: none; max-height: none; flex: 1 1 auto; animation: none; }
+  /* (The card seated here is styled for the slot by its own sheet, through `[data-call-dock="side"]`.) */
 }
 .tvx__host { position: absolute; inset: 0; }
 .tvx__host iframe { display: block; width: 100%; height: 100%; border: 0; }
@@ -204,8 +202,6 @@
 .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .mk-vs__open, .tchart__fs) { height: 30px; border: 1px solid var(--line); border-radius: 0; }
 .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > .tchart__fs { width: 30px; }
 .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .mk-vs__open, .tchart__fs):hover { color: var(--fg); border-color: var(--line-2); background: none; }
-/* A control seated in the bar by the page (the plotted handle's door) is a cell like the rest. */
-.sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span > button { height: 30px; border-radius: 0; }
 .sym:not(#_) .tvx .tvx-tool, .sym:not(#_) .tvx .tvx-scn__clear, .sym:not(#_) .tvx .tvx-chip { border-radius: 0; }
 .sym:not(#_) .tvx .tvx-card, .sym:not(#_) .tvx .tvx-scn { border-radius: 0; }
 .tvx-pending { border-radius: 0; }
@@ -226,7 +222,6 @@
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open)::after { content: none; }
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span:not(:first-child) { flex: 0 1 44px; min-width: 38px; }
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > :is(.mkt-sharebtn, .tchart__fs, .mk-vs__open) { align-content: center; line-height: 0; }
-  .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > span > button:not(#_) { width: 100%; height: 44px; border-radius: 0; }
   /* The plot owns the first screen. */
   /* The plot and the bar-size row end above the page's docked act bar. The height is measured (AdvancedChart sets
      `--tvx-plot-h`); before that, the page's own sum for the whole card (`--sym-chart-room`) less this card's two rows. */
