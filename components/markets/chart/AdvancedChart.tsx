@@ -650,8 +650,11 @@ export default function AdvancedChart({
       }
       const dock = document.querySelector<HTMLElement>('.sym__exec:has(.sym__act-chips), .sk-dock')
       // Where the plot's top is on the first screen, before any scroll.
-      const scroller = root.closest<HTMLElement>('[data-scrollport]')
-      const plotTop = seat.getBoundingClientRect().top + (scroller ? scroller.scrollTop : window.scrollY)
+      // (Whatever scrolls the page, the frame's own column or the window: add back every ancestor's scroll, so a
+      // re-measure after a scroll gives the same answer.)
+      let scrolled = window.scrollY
+      for (let p = seat.parentElement; p; p = p.parentElement) scrolled += p.scrollTop
+      const plotTop = seat.getBoundingClientRect().top + scrolled
       const dockTop = dock && getComputedStyle(dock).position === 'fixed' ? dock.getBoundingClientRect().top : window.innerHeight - 110
       const tfRow = root.querySelector<HTMLElement>('.tvx-tf')?.offsetHeight ?? 44
       const h = Math.max(260, Math.min(560, Math.floor(dockTop - plotTop - tfRow - 20)))
