@@ -19,29 +19,33 @@ import HandleDoor from '@/components/called/HandleDoor'
 import ShareRow from '@/components/called/ShareRow'
 import VerifyWithX from '@/components/called/VerifyWithX'
 import LandingLink from '@/components/home/LandingLink'
+import ScoreBar from '@/components/sleek/ScoreBar'
+import VerdictTile from '@/components/sleek/VerdictTile'
 import { CREATOR_FEE_SPLIT, LINK_FEE_PCT } from '@/lib/fees'
 import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { callHref, type BoardEntry } from '@/lib/called-it/gtm'
-import { DELETED_NOTE, chartHref, fmtDay, recordHref } from '@/lib/called-it/spec'
+import { DELETED_NOTE, VERDICT_WORDS, chartHref, fmtDay, recordHref } from '@/lib/called-it/spec'
 import { cleanLine, headlineParts } from '@/lib/called-it/card-layout'
 import type { SharePost } from '@/lib/share-posts'
 import { agoWords } from './plotted'
 import { TAKEDOWN_EMAIL, creatorShareWords, rateSentence, sumTally, type ProfileCall } from './profile-rules'
 
-const NUM_WORDS = /^(\d+) (.+)$/
+/** More markets than this fold behind one press (squad mobile-sleek): a phone's page stays short. */
+export const PROFILE_MARKETS_SHOWN = 3
 
 // ── The one line across markets ─────────────────────────────────────────
 
 /**
- * The summed tally as a row of figures: who, then every count the line
- * states. Read with the tags off it is the line to the letter (the colon,
- * the commas and the full stop are in the text, out of sight where the
- * columns already separate the counts). A count wears its verdict's colour
- * on a thin rule; the figures themselves are all one colour and one size.
+ * The summed tally: who, then ONE bar (components/sleek/ScoreBar), every
+ * verdict a segment as wide as its share, misses beside hits. Read with the
+ * tags off, the first line is the board's line to the letter (the colon, the
+ * commas and the full stop are in the text for a reader and a crawler, and
+ * out of sight where the bar already draws the counts).
  */
 export function ProfileSum({ line, entries }: { line: string; entries: readonly BoardEntry[] }) {
   const parts = headlineParts(line)
-  const rate = rateSentence(sumTally(entries))
+  const tally = sumTally(entries)
+  const rate = rateSentence(tally)
   if (!parts) {
     return (
       <section className="xpf-sum" aria-label="The tally" data-xpf="sum">
@@ -53,25 +57,15 @@ export function ProfileSum({ line, entries }: { line: string; entries: readonly 
     <section className="xpf-sum" aria-label="The tally across every market scanned" data-xpf="sum">
       <p className="xpf-sum__who">
         {parts.who.replace(/: $/, '')}
-        <span className="xrc-sr">: </span>
+        <span className="xrc-sr">
+          : {parts.counts.map((c) => c.text).join(', ')}
+          {parts.end}
+        </span>
       </p>
-      <ul className="xpf-cells">
-        {parts.counts.map((c, i) => {
-          const m = NUM_WORDS.exec(c.text)
-          return (
-            <li key={c.kind} className={`xpf-cell is-${c.kind}`}>
-              {m ? (
-                <>
-                  <b>{m[1]}</b> <span className="xpf-cell__w">{m[2]}</span>
-                </>
-              ) : (
-                <span className="xpf-cell__w">{c.text}</span>
-              )}
-              <span className="xrc-sr">{i < parts.counts.length - 1 ? ', ' : parts.end}</span>
-            </li>
-          )
-        })}
-      </ul>
+      <p className="xpf-sum__total" aria-hidden>
+        {parts.counts[0].text}
+      </p>
+      <ScoreBar counts={tally} words={VERDICT_WORDS} size="lg" />
       {rate && (
         <p className="xpf-sum__rate" data-xpf="rate">
           {rate}
@@ -88,11 +82,11 @@ function CallRow({ handle, item }: { handle: string; item: ProfileCall }) {
   // The words that carry the call; the whole post when the label kept no span.
   const words = cleanLine(call.quote || call.text, 180)
   return (
-    <li className={`is-${call.verdict}`}>
+    <li className={`sk-card is-${call.verdict}`}>
       <Link href={callHref(handle, symbol, call.postId)} className="xpf-call" prefetch={false} data-journey={`called_profile_call_${call.verdict}`}>
         <span className="xpf-call__top">
           <span className="xpf-call__verdict">
-            <i className="xpf-mark" aria-hidden />
+            <VerdictTile verdict={call.verdict} size={18} />
             {call.verdictWords}
           </span>
           <span>{symbol}</span>
@@ -179,20 +173,24 @@ function MarketTile({ entry, now }: { entry: BoardEntry; now: number }) {
   const rate = rateSentence(entry.tally)
   return (
     <li className="xpf-mkt" data-symbol={entry.symbol}>
+     <div className="xpf-mkt__card sk-card">
       <p className="xpf-mkt__head">
         <span className="xpf-mkt__sym">{entry.symbol}</span>
         <span className="xpf-mkt__when">scanned {agoWords(entry.scannedAt, now)}</span>
       </p>
       <Spark entry={entry} />
       {parts ? (
-        <ul className="xpf-marks" aria-label={`The tally on ${entry.symbol}`}>
-          {parts.counts.map((c, i) => (
-            <li key={c.kind} className={`is-${c.kind}`}>
-              {c.text}
-              <span className="xrc-sr">{i < parts.counts.length - 1 ? ', ' : parts.end}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="xpf-mkt__tally">
+          {/* The record's own counts to the letter: the total in sight, the rest read aloud and drawn by the bar. */}
+          <p className="xpf-mkt__total">
+            {parts.counts[0].text}
+            <span className="xrc-sr">
+              {parts.counts.slice(1).map((c) => `, ${c.text}`)}
+              {parts.end}
+            </span>
+          </p>
+          <ScoreBar counts={entry.tally} words={VERDICT_WORDS} />
+        </div>
       ) : (
         <p className="xpf-mkt__note">{entry.headline}</p>
       )}
@@ -210,22 +208,38 @@ function MarketTile({ entry, now }: { entry: BoardEntry; now: number }) {
           Full record
         </Link>
       </p>
+     </div>
     </li>
   )
 }
 
 export function ProfileMarkets({ entries, now }: { entries: readonly BoardEntry[]; now: number }) {
+  // The top markets are shown; the rest are in the page behind one press (a <details>, no script).
+  const shown = entries.slice(0, PROFILE_MARKETS_SHOWN)
+  const more = entries.slice(PROFILE_MARKETS_SHOWN)
   return (
     <section className="xpf-sec" aria-labelledby="xpf-markets" data-xpf="markets" data-count={entries.length}>
       <h2 className="xpf-sec__title" id="xpf-markets">
         {entries.length === 1 ? 'The market' : 'Market by market'}
       </h2>
-      <p className="xpf-sec__lede">Each call is a dot on the day it was posted. The chart opens with every one of them pinned.</p>
       <ul className="xpf-mkts" data-many={entries.length > 1 ? '' : undefined}>
-        {entries.map((e) => (
+        {shown.map((e) => (
           <MarketTile key={e.symbol} entry={e} now={now} />
         ))}
       </ul>
+      {more.length > 0 && (
+        <details className="xpf-all" data-all={more.length}>
+          <summary data-journey="called_profile_all_markets">
+            <span className="xpf-all__open">Show all {entries.length} markets</span>
+            <span className="xpf-all__shut">Hide the other {more.length}</span>
+          </summary>
+          <ul className="xpf-mkts" data-many="">
+            {more.map((e) => (
+              <MarketTile key={e.symbol} entry={e} now={now} />
+            ))}
+          </ul>
+        </details>
+      )}
     </section>
   )
 }
@@ -243,9 +257,14 @@ export function OwnerBlock({ handle, symbol, verified, listed = true }: { handle
   const share = creatorShareWords(CREATOR_FEE_SPLIT)
   return (
     <section className="xpf-sec xpf-owner" aria-labelledby="xpf-owner" data-xpf="owner">
-      <h2 className="xpf-sec__title" id="xpf-owner">
-        Is this you?
-      </h2>
+     {/* Quiet, behind one press on a listed page (squad mobile-sleek); open when nothing is listed, where verifying is the next move. */}
+     <details className="xpf-fold" open={!listed}>
+      <summary data-journey="called_profile_owner">
+        <h2 className="xpf-sec__title" id="xpf-owner">
+          Is this you?
+        </h2>
+        <span className="xpf-fold__say">Verify it, earn from it, or have it taken down</span>
+      </summary>
       <p className="xpf-sec__lede">
         {listed
           ? `This page is drawn from @${handle}\u2019s public posts. If the account is yours, three things are yours to do.`
@@ -285,6 +304,7 @@ export function OwnerBlock({ handle, symbol, verified, listed = true }: { handle
           </p>
         </div>
       </div>
+     </details>
     </section>
   )
 }
@@ -311,7 +331,7 @@ export function PlotDoor({ heading = 'Plot anyone', initialHandle, initialMarket
       <h2 className="xpf-aside__title">{heading}</h2>
       <p className="xpf-aside__lede">Type any X handle. Every post where the account took a side is pinned to the day it was posted and judged the same way.</p>
       <div className="xpf-aside__form">
-        <HandleDoor variant="page" initialHandle={initialHandle} initialMarket={initialMarket} />
+        <HandleDoor variant="page" initialHandle={initialHandle} initialMarket={initialMarket} className="xcc-door--flat" />
       </div>
     </section>
   )

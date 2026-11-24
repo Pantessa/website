@@ -45,6 +45,8 @@ export const metadata: Metadata = {
 }
 
 const LIST_ROWS = 12
+/** A phone shows this many scanned accounts before "Show all" (a desk shows six: the sheet's rule). */
+const TILES_SHOWN = 4
 
 export default async function CalledDoorPage() {
   const list = await readPlotted({ limit: LIST_ROWS })
@@ -60,20 +62,13 @@ export default async function CalledDoorPage() {
           <div className="xrc-hero__in">
             <div className="xrc-hero__say">
               <Eyebrow />
-              <h1 className="xrc-hero__title">
-                Who actually <em>called it?</em>
-              </h1>
+              <h1 className="xrc-hero__title sk-display">See who actually called it.</h1>
               <p className="xrc-hero__lede">
                 Type any X handle. Pantessa reads a year of their posts, pins every market call to the day it was posted, and checks it against the price {JUDGE_DAYS} days later.
               </p>
               <div className="xrc-hero__door" id="plot">
                 <HandleDoor variant="page" className="xcc-door--flat" />
               </div>
-              <ul className="xrc-hero__facts">
-                <li>Their own words, read from X</li>
-                <li>Judged by the chart, not by us</li>
-                <li>One link to share</li>
-              </ul>
               <div className="xrc-hero__you">
                 <span>Is it your account? Your own record says Verified.</span>
                 <VerifyWithX className="xva-flat" />
@@ -90,13 +85,23 @@ export default async function CalledDoorPage() {
             {summaries.length > 0 && <span className="xrc-gallery__n">{String(summaries.length).padStart(2, '0')}</span>}
           </div>
           {summaries.length > 0 ? (
-            <ul className="xrc-tiles">
-              {summaries.map((s, i) => (
-                <li key={`${s.handle}:${s.symbol}`}>
-                  <Tile summary={s} avatar={avatars[i]} now={now} />
-                </li>
-              ))}
-            </ul>
+            <>
+              {/* The list is capped: the first few are shown, the rest are in the page behind one press (a checkbox and its label, no script). */}
+              {summaries.length > TILES_SHOWN && <input type="checkbox" id="xrc-all-tiles" className="xrc-tiles__toggle" aria-label={`Show all ${summaries.length} scanned accounts`} data-journey="called_door_show_all" />}
+              <ul className="xrc-tiles">
+                {summaries.map((s, i) => (
+                  <li key={`${s.handle}:${s.symbol}`}>
+                    <Tile summary={s} avatar={avatars[i]} now={now} />
+                  </li>
+                ))}
+              </ul>
+              {summaries.length > TILES_SHOWN && (
+                <label htmlFor="xrc-all-tiles" className="xrc-tiles__more" aria-hidden>
+                  <span className="xrc-tiles__more-open">Show all {summaries.length}</span>
+                  <span className="xrc-tiles__more-shut">Show fewer</span>
+                </label>
+              )}
+            </>
           ) : (
             <p className="xrc-recent__none">{list.failed ? 'The list did not load just now. The door still works: type a handle.' : 'Nobody has scanned an account here yet. Plot one and it is the first on this list.'}</p>
           )}
