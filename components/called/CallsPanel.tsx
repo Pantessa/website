@@ -31,7 +31,7 @@ import { ADDED_MARK, DEAD_BAND, DELETED_NOTE, FREE_SCANS_PER_DAY, JUDGE_DAYS, LA
 import { calledImageHref, fmtCount, headlineParts } from '@/lib/called-it/card-layout'
 import { plotStatus, safeNextHref, sideCounts, useCalled, useCalledAddress, useXViewer, viewerOwns } from '@/lib/called-it/use-record'
 import { calledPost, myCalledPost, postHref } from '@/lib/share-posts'
-import { VERDICT_GLYPH, cleanPostText, pinDate } from '@/lib/tv/called-pins'
+import { cleanPostText, pinDate } from '@/lib/tv/called-pins'
 import './called-chart.css'
 
 const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
@@ -130,9 +130,15 @@ function Row({ call, index, px, focused, tail, onFocus, onPin }: { call: CalledC
     // the row is in view when the reader comes down to it.
     const li = ref.current
     const list = li?.parentElement
-    if (!focused || !li || !list || (by !== 'chart' && by !== 'card') || list.scrollHeight <= list.clientHeight) return
+    if (!focused || !li || !list || (by !== 'chart' && by !== 'card')) return
     const row = li.getBoundingClientRect()
     const box = list.getBoundingClientRect()
+    // A phone's list is a rail that runs sideways (called-chart.css): the focused card comes to its leading edge.
+    if (list.scrollWidth > list.clientWidth + 1) {
+      if (row.left < box.left || row.right > box.right) list.scrollLeft += row.left - box.left - 12
+      return
+    }
+    if (list.scrollHeight <= list.clientHeight) return
     if (row.top < box.top) list.scrollTop -= box.top - row.top
     else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom
   }, [focused, by])
@@ -143,9 +149,7 @@ function Row({ call, index, px, focused, tail, onFocus, onPin }: { call: CalledC
         <span className="xcc-row__n mono">{index + 1}</span>
         <span className="xcc-row__when mono">{pinDate(call.postedAt)}</span>
         <span className={`xcc-v xcc-v--${call.verdict} mono`}>
-          <i className="xcc-v__g" aria-hidden>
-            {VERDICT_GLYPH[call.verdict]}
-          </i>
+          <VerdictTile verdict={call.verdict} size={16} />
           {word}
         </span>
         <span className="xcc-row__text">
@@ -341,7 +345,8 @@ export function CalledHead({ symbol, parked = false }: { symbol: string; parked?
                 <span role={status.kind === 'scanning' ? 'status' : undefined}>{status.line}</span>
               )}
             </span>
-            {record || status.line ? (
+            {/* A state's line is short and is shown whole; the record's standing and coverage are one clamped line on a phone. */}
+            {record ? (
               <button type="button" className="xch__more" aria-expanded={factsOpen} aria-controls="xch-facts" onClick={() => setFactsOpen((o) => !o)} data-journey="called_head_more">
                 {factsOpen ? 'less' : 'more'}
               </button>
@@ -419,6 +424,8 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
   // thousand pixels between the chart and the page under it. The fold is CSS (called-chart.css, a phone only): every row is
   // in the page at every width.
   const [folded, setFolded] = useState(true)
+  // The method is a paragraph: a phone shows its first lines and opens the rest in place.
+  const [methodOpen, setMethodOpen] = useState(false)
   useEffect(() => setFolded(true), [plot?.handle, plot?.side])
   if (!here || !plot) return null
   const { togglePin, focus, fit, scan, retry, rulePins } = useCalled.getState()
@@ -529,19 +536,20 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
               </button>
             ) : null}
           </div>
-          <p className="xcc__method">
+          <p className="xcc__method" id="xcc-method" data-open={methodOpen ? '' : undefined}>
             <span className="xcc__legend mono" aria-label="What each mark means">
               {(['right', 'wrong', 'flat', 'open'] as const).map((v) => (
                 <span key={v} className={`xcc-v xcc-v--${v}`}>
-                  <i className="xcc-v__g" aria-hidden>
-                    {VERDICT_GLYPH[v]}
-                  </i>
+                  <VerdictTile verdict={v} size={14} />
                   {VERDICT_WORDS[v]}
                 </span>
               ))}
             </span>
             {record.words.method} Right from +{Math.round(DEAD_BAND * 100)}%, wrong from -{Math.round(DEAD_BAND * 100)}%. <span data-called-caveat="">{LABEL_CAVEAT}</span> {DELETED_NOTE} {pinned} of {record.calls.length} pinned; the count is every call the scan found, pinned or not. Not investment advice.
           </p>
+          <button type="button" className="xcc-link xcc__methodmore" aria-expanded={methodOpen} aria-controls="xcc-method" onClick={() => setMethodOpen((o) => !o)}>
+            {methodOpen ? 'Show less' : 'How a call is judged: read it all'}
+          </button>
         </footer>
       </>
     )
