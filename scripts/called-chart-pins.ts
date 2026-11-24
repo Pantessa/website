@@ -41,6 +41,7 @@ import {
   pinText,
   postIdOfMark,
   railMargins,
+  shortTally,
   MARKS_HEAD_PX,
   railOf,
   readMargins,
@@ -60,7 +61,7 @@ import {
   type PinAnchor,
   type PlacedBox,
 } from '../lib/tv/called-pins'
-import { CARD_PX, MARK_PX, binBarsFor, binMarks, cardSize, hitMark, markInk, pickFrom, placeMarks, slotFor, tileFor, type MarkCall, type PlacedMark } from '../lib/tv/called-overlay'
+import { CARD_PX, MARK_PX, axisMapper, binBarsFor, binMarks, cardSize, hitMark, markInk, pickFrom, placeMarks, slotFor, tileFor, type MarkCall, type PlacedMark } from '../lib/tv/called-overlay'
 import { planFor } from '../lib/tv/plan'
 import { linesFromShapes, type ShapeSnapshot } from '../lib/tv/shapes'
 import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvShapeOptions, TvSymbolInfo, TvWidget } from '../lib/tv/types'
@@ -234,10 +235,10 @@ export function calledChartPins(check: Check): void {
     hitShape.options.shape === 'callout' && hitShape.points[0].time === hit.barTime && hitShape.points[0].price === hit.priceAt && hitShape.points.length === 2 && flagged(hitShape.options) && flagged(tShape) && PIN_SHAPE_FLAGS.disableSave === true && PIN_SHAPE_FLAGS.lock === true && hitShape.options.overrides?.transparency === 0 && hitShape.options.overrides?.wordWrap === false && String(hitShape.options.text).split('\n').length >= 3,
   )
   check(
-    'called chart tally: the pane itself carries the record\'s own headline and standing line, word for word, and where the record lives, so every picture of the pins holds the full count and "Not verified"',
-    tShape.shape === 'anchored_text' && label.text.replace(/\n/g, ' ').includes(rec.words.headline) && label.text.replace(/\n/g, ' ').includes(STANDING_NOT_VERIFIED) && label.text.replace(/\n/g, ' ').includes(`pantessa.com${recordHref(rec.handle, 'BTC')}`) && tallyLabel(record('bear'), LAPTOP).text.includes('side=bear') && label.keepBottom > 20 && label.lines <= 3 && tallyLabel(rec, PHONE).lines > label.lines && tallyLabel(rec, PHONE).lines <= 8 && tallyLabel(rec, PHONE).fontPx < label.fontPx && tShape.overrides?.wordWrap === false &&
+    'called chart tally (RE-PINNED 2026-11-24, the phone tally): at desktop widths the pane itself carries the record\'s own headline and standing line, word for word, and where the record lives; on a phone\'s pane it is two short lines (the full count as numbers beside the marks\' own glyphs, and the address), the standing is in the band above and is handed to the Share picture (`shareNote`); a record with no tally keeps its own sentence',
+    tShape.shape === 'anchored_text' && label.text.replace(/\n/g, ' ').includes(rec.words.headline) && label.text.replace(/\n/g, ' ').includes(STANDING_NOT_VERIFIED) && label.text.replace(/\n/g, ' ').includes(`pantessa.com${recordHref(rec.handle, 'BTC')}`) && tallyLabel(record('bear'), LAPTOP).text.includes('side=bear') && label.keepBottom > 20 && label.lines <= 3 && tallyLabel(rec, PHONE).short && tallyLabel(rec, PHONE).lines <= 2 && !label.short && tallyLabel(rec, PHONE).text.includes(`${rec.tally.total} calls`) && (['right', 'wrong', 'flat', 'open'] as const).every((v) => rec.tally[v] === 0 || tallyLabel(rec, PHONE).text.includes(`${VERDICT_GLYPH[v]}${rec.tally[v]}`)) && shortTally({ tally: rec.tally, scanned: false }) === null && !tallyLabel({ ...rec, scanned: false }, PHONE).short && tallyLabel({ ...rec, scanned: false }, PHONE).text.replace(/\n/g, ' ').includes(rec.words.headline) && /shareNote\(\)/.test(read('components/markets/chart/AdvancedChart.tsx')) && tallyLabel(rec, PHONE).fontPx < label.fontPx && tShape.overrides?.wordWrap === false &&
       // An address is whole or absent: on a pane too narrow for it on one line it is left out, never broken.
-      [PHONE, { width: 200, height: 372 }, { width: 330, height: 372 }, LAPTOP].every((pane) => { const lines = tallyLabel(rec, pane).text.split('\n'); const where = `pantessa.com${recordHref(rec.handle, 'BTC')}`; return lines.some((l) => l.includes(where)) || !lines.some((l) => l.includes('pantessa.com')) }) && tallyLabel(rec, { width: 200, height: 372 }).text.includes(STANDING_NOT_VERIFIED.split(' ')[0]),
+      [PHONE, { width: 200, height: 372 }, { width: 330, height: 372 }, LAPTOP].every((pane) => { const lines = tallyLabel(rec, pane).text.split('\n'); const where = `pantessa.com${recordHref(rec.handle, 'BTC')}`; return lines.some((l) => l.includes(where)) || !lines.some((l) => l.includes('pantessa.com')) }) && tallyLabel(rec, { width: 200, height: 372 }).short && tallyLabel({ ...rec, scanned: false }, { width: 200, height: 372 }).text.includes(STANDING_NOT_VERIFIED.split(' ')[0]),
     label.text,
   )
 
@@ -432,6 +433,25 @@ export function calledChartPins(check: Check): void {
       'called chart marks layer: the four verdicts are four inks (the market\'s green and red for a hit and a miss, never violet or magenta) AND four glyphs; only a hit and a miss are filled; the layer is paint (it creates no chart shape, so nothing of it can be saved, selected or listed) and takes no pointer events',
       new Set((['right', 'wrong', 'open', 'flat'] as const).map((v) => markInk(v, MI))).size === 4 && markInk('right', MI) === MI.up && markInk('wrong', MI) === MI.down && /const filled = !m\.added && \(m\.verdict === 'right' \|\| m\.verdict === 'wrong'\)/.test(overlaySrc) && /right: \[\[/.test(overlaySrc) && /wrong: \[\s*\[/.test(overlaySrc) && /flat: \[\[/.test(overlaySrc) && /open: \[\[/.test(overlaySrc) && !/createShape|createMultipointShape|createAnchoredShape/.test(overlaySrc.replace(/\/\/[^\n]*/g, '')) && overlaySrc.includes('pointer-events:none') && !/\bwindow\./.test(overlaySrc.replace(/\/\/[^\n]*/g, '')) && !/from 'react'/.test(overlaySrc),
     )
+    {
+      // A market that closes: five bars a week, 10px apart, Mondays to Fridays (1 Jan 2024 is a Monday).
+      const MON = 1_704_067_200
+      const bars: number[] = []
+      for (let d = 0; d < 70; d++) if (d % 7 < 5) bars.push(MON + d * DAY)
+      const centre = (i: number) => 5 + i * 10
+      const timeAt = (x: number) => { const i = Math.round((x - 5) / 10); return i >= 0 && i < bars.length ? bars[i] : null }
+      const gapX = axisMapper({ ref: { t: bars[20], x: centre(20) }, spacing: 10, barSec: DAY, width: 400, timeAt })
+      const evenX = axisMapper({ ref: { t: MON + 20 * DAY, x: centre(20) }, spacing: 10, barSec: DAY, width: 400, timeAt: (x) => MON + Math.round((x - 5) / 10) * DAY })
+      // Air at both edges of the pane (no bar at x = 2 or x = 398) must not hide the gaps in between.
+      const airX = axisMapper({ ref: { t: bars[20], x: centre(20) + 60 }, spacing: 10, barSec: DAY, width: 400, timeAt: (x) => { const i = Math.round((x - 65) / 10); return i >= 0 && i < 30 ? bars[i] : null } })
+      check(
+        'called chart marks layer: on a market that closes (no bar for a weekend) a call sits on its own bar, a call made while it was shut sits on the last bar before, and air at the pane\'s edges does not hide the gaps; on a market that never closes the bars are whole steps of time',
+        bars.slice(0, 39).every((t, i) => gapX(t) === centre(i)) && gapX(bars[4] + DAY) === centre(4) && gapX(bars[4] + 2 * DAY) === centre(4) && gapX(bars[5]) === centre(5) && gapX(bars[0] - 30 * DAY) < 0 && gapX(bars[bars.length - 1] + 400 * DAY) > 400 &&
+          evenX(MON + 3 * DAY) === centre(3) && evenX(MON + 33 * DAY) === centre(33) &&
+          airX(bars[12]) === 65 + 120 && airX(bars[9] + 2 * DAY) === 65 + 90,
+        JSON.stringify([gapX(bars[7]), centre(7), airX(bars[12])]),
+      )
+    }
     check(
       'called chart marks layer: a card\'s box is sized from the lines it will draw (the verdict line, the post\'s own words as given, the move), and a pasted post\'s card says so on a line of its own',
       (() => {
@@ -736,8 +756,9 @@ function fakeChart(rec: CalledRecord, pane: PaneSize) {
     },
     setSymbol: () => undefined,
     getVisibleRange: () => range,
-    setVisibleRange: () => {
-      events.push('fit')
+    // The fit names the air it leaves after the newest bar; a pan that only brings the opened call's bar into view (2026-11-24) does not.
+    setVisibleRange: (_range: unknown, options?: { percentRightMargin?: number }) => {
+      events.push(options && typeof options.percentRightMargin === 'number' ? 'fit' : 'reveal')
       return Promise.resolve()
     },
     onIntervalChanged: () => sub,

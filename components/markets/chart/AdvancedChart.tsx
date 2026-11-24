@@ -1144,6 +1144,15 @@ export default function AdvancedChart({
                 ctx.textBaseline = 'alphabetic'
                 ctx.fillStyle = tokensRef.current?.muted ?? '#8a8f98'
                 ctx.fillText(watermarkUrl(pair.symbol), shot.width - size, shot.height - Math.round(size * 0.9))
+                // A phone's pane carries the short tally: the picture still says the record's standing, in its own words.
+                const note = called.shareNote()
+                if (note) {
+                  const small = Math.max(10, Math.round(size * 0.8))
+                  ctx.font = `${small}px ui-monospace, SFMono-Regular, Menlo, monospace`
+                  let line = note
+                  while (line.length > 12 && ctx.measureText(line).width > shot.width - 2 * size) line = `${line.slice(0, -2).trimEnd()}\u2026`
+                  ctx.fillText(line, shot.width - size, shot.height - Math.round(size * 2.2))
+                }
               }
               return shot
             } catch {

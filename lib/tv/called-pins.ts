@@ -642,6 +642,8 @@ export interface TallyLabel {
   fontPx: number
   /** Px the label takes at the pane's foot, its own air included. */
   keepBottom: number
+  /** A phone's two lines (the count beside the glyphs, the address) in place of the record's full sentences. */
+  short: boolean
 }
 
 /**
@@ -651,11 +653,20 @@ export interface TallyLabel {
  * cards; a phone's strip carries it), that pasted posts are shown and not
  * counted (when any are), who plotted it, and where the record lives.
  */
-export function tallyLabel(record: Pick<CalledRecord, 'handle' | 'symbol' | 'side' | 'words'>, pane: PaneSize, measure?: Measure): TallyLabel {
+export function tallyLabel(record: Pick<CalledRecord, 'handle' | 'symbol' | 'side' | 'words'> & Partial<Pick<CalledRecord, 'tally' | 'scanned'>>, pane: PaneSize, measure?: Measure): TallyLabel {
   const fontPx = tallyFontPx(pane)
   const width = measure ?? ((s: string) => estimateTextWidth(s, fontPx))
   const wrapWidth = Math.max(140, Math.floor(pane.width - PANE_KEEP.logoWidth - PANE_KEEP.edge - 12))
   const where = `pantessa.com${recordHref(record.handle, record.symbol, record.side)}`
+  // A PHONE (2026-11-24): two short lines. The count as numbers beside the marks' own glyphs (so the line is the
+  // tiles' legend too), and where the record lives. The record's full sentences (the headline, what the scan read,
+  // the standing) are in the band right above the plot there, and `shareNote` puts the standing in the Share picture.
+  const short = shortTally(record)
+  if (pane.width < CARDS_MIN_PANE_W && short) {
+    const count = [`@${record.handle} \u00b7 ${short}`, short].find((l) => width(l) <= wrapWidth) ?? short
+    const lines = [count, ...(width(where) <= wrapWidth ? [where] : [])]
+    return { text: lines.join('\n'), lines: lines.length, fontPx, keepBottom: lines.length * fontPx + 22, short: true }
+  }
   const coverage = pane.width >= CARDS_MIN_PANE_W ? record.words.coverage : null
   // Each sentence starts its own line (a count is never split from its own words by another sentence). The address joins
   // the standing line when both fit, takes a line of its own when it fits alone, and is left out when it would have to
@@ -663,7 +674,15 @@ export function tallyLabel(record: Pick<CalledRecord, 'handle' | 'symbol' | 'sid
   const last = width(`${record.words.standing} ${where}`) <= wrapWidth ? [`${record.words.standing} ${where}`] : width(where) <= wrapWidth ? [record.words.standing, where] : [record.words.standing]
   const parts = [record.words.headline, ...(coverage ? [coverage] : []), ...(record.words.added ? [record.words.added] : []), ...last]
   const lines = parts.flatMap((p) => wrapWords(p, wrapWidth, width, 4))
-  return { text: lines.join('\n'), lines: lines.length, fontPx, keepBottom: lines.length * fontPx + 22 }
+  return { text: lines.join('\n'), lines: lines.length, fontPx, keepBottom: lines.length * fontPx + 22, short: false }
+}
+
+/** `63 calls \u00b7 \u271334 \u271524 \u20131 ?4`: a scanned record's count beside the verdicts' glyphs (none shown for a verdict with no call). Null for a record with no tally. */
+export function shortTally(record: Partial<Pick<CalledRecord, 'tally' | 'scanned'>>): string | null {
+  const t = record.tally
+  if (!t || record.scanned === false || !(t.total > 0)) return null
+  const parts = (['right', 'wrong', 'flat', 'open'] as const).filter((v) => t[v] > 0).map((v) => `${VERDICT_GLYPH[v]}${t[v]}`)
+  return `${t.total} ${t.total === 1 ? 'call' : 'calls'} \u00b7 ${parts.join(' ')}`
 }
 
 /** The tally's shape: fixed to the pane (it does not pan), same flags as a pin. The lines are wrapped here; the library's wrap is off. */
@@ -804,6 +823,8 @@ export interface CalledPinsController {
   retheme(): void
   /** Px of the pane's foot that the opened call's card covers (a phone's bottom dock); 0 when nothing does. */
   setCover(px: number): void
+  /** The record's own standing line and what the scan read, for a picture of a pane whose tally is the short one (a phone); null when the pane already says them. */
+  shareNote(): string | null
 }
 
 const RELAYOUT_MS = 170
@@ -1562,6 +1583,12 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     // While the marks layer draws them, the library is given none (it would draw its discs under the tiles).
     marks: (ticker) => (!layerOn && plotted() && sameSym(ticker, hooks.symbol) ? marks : []),
     cleanLayout: (layout) => cleanLayout(layout, (id) => owned.has(id), margins),
+    shareNote() {
+      const record = plotted()
+      const pane = paneSize()
+      if (!record || !pane || !tallyLabel(record, pane, measureTally(pane)).short) return null
+      return [record.words.standing, record.words.coverage].filter(Boolean).join(' ')
+    },
     setCover(px) {
       const next = Number.isFinite(px) && px > 8 ? Math.round(px) : 0
       if (Math.abs(next - cover) < 4) return
