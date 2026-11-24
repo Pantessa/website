@@ -2335,12 +2335,14 @@ async function main() {
       DOCS_PAGES.filter((p) => RECURRING_OFFER.test(`${p.title} ${p.seoTitle} ${p.description}`)).map((p) => p.slug).join(', '),
     )
     const recurringHits: string[] = []
-    for (const p of readyPages()) {
+    // LEGAL is out of this fence: /docs/terms names recurring buys in its
+    // automated-execution clause, and the legal text is Nate's, not the docs'.
+    for (const p of readyPages().filter((d) => d.group !== 'legal')) {
       const t = docsText(await (await fetch(`${BASE}/docs${p.slug ? `/${p.slug}` : ''}`)).text())
       const m = t.match(RECURRING_OFFER)
       if (m) recurringHits.push(`/docs/${p.slug}: …${t.slice(Math.max(0, (m.index ?? 0) - 40), (m.index ?? 0) + 40)}…`)
     }
-    check('docs-clean (served): no docs page offers a recurring buy ("recurring buy", "every week", "DCA", "becomes a schedule")', recurringHits.length === 0, recurringHits.slice(0, 3).join(' | '))
+    check('docs-clean (served): no guide docs page offers a recurring buy ("recurring buy", "every week", "DCA", "becomes a schedule")', recurringHits.length === 0, recurringHits.slice(0, 3).join(' | '))
 
     // The three retired pages redirect permanently to their new homes.
     const RETIRED: Array<[string, string]> = [['/docs/dca', '/docs/markets'], ['/docs/spend-policy', '/docs/trust'], ['/docs/transactions', '/docs/venues']]
