@@ -67,6 +67,7 @@ import { SNAPSHOT_VOTE_DOMAIN } from '@/lib/snapshot-vote'
 import { ARB_SYS, ARB_SYS_ABI, INBOX_ABI, RH_L1_INBOX, ROBINHOOD_CHAIN_ID } from '@/lib/robinhood-bridge'
 import { AAVE_MCP } from '@/lib/aave-exec'
 import { MORPHO_MCP } from '@/lib/morpho-exec'
+import { GUARDIAN_DELEGATION_DAYS } from '@/lib/hl-guardian'
 
 // ── Shapes ───────────────────────────────────────────────────────────────────
 
@@ -235,7 +236,15 @@ const RECIPIENT_AND_VALIDITY: ManifestGuard = {
 const KILL_SWITCH: ManifestGuard = {
   module: 'lib/tx-guardrails.ts',
   function: 'policyCheck (the kill switch)',
-  refuses: ['every outflow while the account is frozen or revoked (ACCOUNT_FROZEN / REVOKED)', 'the build when the gate itself cannot run (POLICY_ERROR, fail-closed)'],
+  refuses: ['the build while the account is frozen from the dashboard (ACCOUNT_FROZEN)', 'the build when the gate itself cannot run (POLICY_ERROR, fail-closed)'],
+}
+
+// Hyperliquid's freeze check runs at the submit relay, before any order is
+// signed for the venue (app/api/hl/submit/route.ts, step 3).
+const KILL_SWITCH_AT_HL_SUBMIT: ManifestGuard = {
+  module: 'app/api/hl/submit/route.ts',
+  function: 'policyCheck (the kill switch, at submit)',
+  refuses: ['an order while the account is frozen from the dashboard (ACCOUNT_FROZEN)'],
 }
 
 const PLANNER_GUARD: ManifestGuard = {
@@ -445,7 +454,6 @@ function lidoVenue(): ManifestVenue {
       { module: 'lib/lido-stake.ts', function: 'guardLidoStakeBuild', refuses: ['anything but a single send_transaction step', 'a target other than the pinned stETH contract on Ethereum', 'a value other than the asked ETH', 'calldata that is not submit(referral)'] },
       PLANNER_GUARD,
       RECIPIENT_AND_VALIDITY,
-      KILL_SWITCH,
     ],
     bounds: { gasBufferEth: LIDO_GAS_BUFFER_ETH, maxValidSec: MAX_VALID_SEC },
     policy: { defaultAllowed: true, notes: [] },
@@ -490,7 +498,7 @@ function hyperliquidVenue(): ManifestVenue {
       { module: 'lib/hyperliquid-exec.ts', function: 'guardHlDexTransfer', refuses: ['a destination that is not the signing wallet', 'a source other than the main perp balance', 'a destination dex outside the registry', 'any token but USDC', 'a sub-account source', 'an amount that is not a whole-cent figure or exceeds the free main balance'] },
       { module: 'lib/hl-batch.ts', function: 'guardHlBatch', refuses: [`more than ${HL_BATCH_MAX_MEMBERS} members`, 'a member whose nonce or shape is not the composed one'] },
       { module: 'app/api/hl/submit/route.ts', function: 'POST (relay)', refuses: ['a signature that does not recover to the account the action names', 'an action that fails the live re-guard'] },
-      KILL_SWITCH,
+      KILL_SWITCH_AT_HL_SUBMIT,
     ],
     bounds: {
       signingDomainChainId: HL_DOMAIN_CHAIN_ID, execSlippageBps: HL_EXEC_SLIPPAGE_BPS, minOrderUsd: HL_MIN_ORDER_USD, minDepositUsdc: HL_MIN_DEPOSIT_USDC, batchMaxMembers: HL_BATCH_MAX_MEMBERS, builderFeeTenthBps: HL_BUILDER_FEE_TENTH_BPS, builderMinAccountUsd: HL_BUILDER_MIN_ACCOUNT_USD,
@@ -499,7 +507,7 @@ function hyperliquidVenue(): ManifestVenue {
       builderDexDeployers: HL_BUILDER_DEX_NAMES.map((d) => `${d}:${HL_BUILDER_DEXES[d].mainnetDeployer}`).join(','),
       builderAssetBase: HL_BUILDER_ASSET_BASE, builderAssetSpan: HL_BUILDER_ASSET_SPAN, dexTransferToken: HL_USDC_TOKEN.mainnet,
     },
-    policy: { defaultAllowed: true, notes: ['The builder fee (tenths of a bp) pays the treasury and is approved exactly once at exactly that rate.', 'Guardians (standing stop-loss / take-profit) run under a delegated agent key that the venue bars from withdrawing; they watch main-book positions only — no stop is armed on a builder-dex position.'] },
+    policy: { defaultAllowed: true, notes: ['The builder fee (tenths of a bp) pays the treasury and is approved exactly once at exactly that rate.', 'Guardians (standing stop-loss / take-profit) run under the agent key the user approved (approveAgent), which Pantessa holds encrypted and the venue bars from withdrawing. Pantessa’s guard (lib/hl-guardian.ts#guardGuardianClose) limits each Guardian close to a reduce-only order on the guarded coin and side, no larger than the live position. They watch main-book positions only; no stop is armed on a builder-dex position.'] },
     custody: 'UNMEASURED through custody. The fixed 1337 signing domain, the approveAgent delegation for standing intents and the builder-fee approval are the most custody friction of any venue here; measure a custody signer before promising perps.',
   }
 }
@@ -525,7 +533,6 @@ function nearIntentsVenue(): ManifestVenue {
     guards: [
       { module: 'lib/cross-chain-swap.ts', function: 'guardCrossChainBuild · checkCrossChainFee · checkRecipient', refuses: ['a transfer that does not move exactly the quoted amount to the quote’s deposit address (born from a live fabricated-address near-miss, PR #374)', 'a built tx whose chainId is not the named origin chain', `a venue share above ${VENUE_SHARE_MAX_BPS} bps`, 'an app fee we did not request, to an address we did not pin, or above the bps we asked', 'a delivery address that fails the EIP-55 checksum'] },
       RECIPIENT_AND_VALIDITY,
-      KILL_SWITCH,
     ],
     bounds: { venueShareMaxBps: VENUE_SHARE_MAX_BPS, crossChainFeeBps: CROSS_CHAIN_FEE_BPS, oneClickFeeSplit: ONECLICK_FEE_SPLIT, confidentialLevel: CONFIDENTIAL_LEVEL, originChainIds: originIds },
     policy: { defaultAllowed: true, notes: ['No contract is pinned here by design: the deposit address is per quote and belongs to the venue; the guard pins the AMOUNT and the ADDRESS to the quote it just received, byte for byte.', 'Robinhood Chain and Arc inbound redirect to the LiFi funding plan (lib/jobs); outbound builds here.'] },
@@ -653,7 +660,6 @@ function robinhoodChainVenue(): ManifestVenue {
     guards: [
       { module: 'lib/robinhood-bridge.ts', function: 'guardRobinhoodBridge', refuses: ['a deposit not addressed to the pinned inbox on Ethereum', 'a withdrawal not addressed to ArbSys on Robinhood Chain', 'a destination other than the signer', 'a value other than the asked amount'] },
       RECIPIENT_AND_VALIDITY,
-      KILL_SWITCH,
     ],
     bounds: { chainId: ROBINHOOD_CHAIN_ID },
     policy: { defaultAllowed: true, notes: ['Tokenized stocks (xyz tickers) are swapped through the Uniswap v4 fallback on this chain, settled through LiFi when v4 has no executable pool — see those venues.'] },
@@ -679,7 +685,7 @@ function transfersVenue(): ManifestVenue {
       KILL_SWITCH,
     ],
     bounds: {},
-    policy: { defaultAllowed: true, notes: ['The ONLY layer that may name a third-party recipient; it takes the full (non-exempt) policy gate. Every other venue returns proceeds to the signer.'] },
+    policy: { defaultAllowed: true, notes: ['The ONLY layer that may name a third-party recipient. Every other venue returns proceeds to the signer.'] },
     custody: 'The simplest shape for a custody signer; not yet drilled.',
   }
 }
@@ -735,17 +741,17 @@ export function buildVenueManifest(opts: { now?: Date; commit?: string | null } 
       source: 'lib/fees.ts (the one fee source; the treasury address appears nowhere else — grep-enforced by the audit)',
     },
     invariants: [
-      { name: 'The model never writes calldata', detail: 'The planner classifies intent; per-venue builders in this repo produce every to / data / value / typed-data field from on-chain reads and the pinned constants above.', source: 'GUARDRAILS.md §1' },
+      { name: 'The model never writes calldata', detail: 'The planner classifies intent; Pantessa’s own builders (this repo, or a first-party free MCP where a venue card says so) produce every to / data / value / typed-data field from on-chain reads and pinned constants.', source: 'GUARDRAILS.md §1' },
       { name: 'Fail closed, everywhere', detail: 'A guard error refuses the build; a blocked report withholds the artifact; a fallback never fires on a guard failure.', source: 'GUARDRAILS.md §2 · lib/tx-guardrails.ts#buildReport' },
       { name: 'Nothing stale reaches a wallet', detail: 'Deadline-bearing calldata ships as a txChain with validUntil and a server refresh recipe; the refresh route accepts intent params only.', source: 'GUARDRAILS.md §3 · app/api/tx/refresh/route.ts' },
-      { name: 'Only the kill switch refuses', detail: 'The retail spend policy was retired 2026-10-30; a frozen or revoked account refuses every outflow on every path and every relay.', source: 'GUARDRAILS.md §4 · lib/tx-guardrails.ts#policyCheck' },
+      { name: 'No spend caps', detail: 'The retail spend policy (caps, allowlist, approvals) was retired 2026-10-30; the user’s signature is the consent. The one refusal left is the account freeze, checked by the builds and relays whose guard list names the kill switch.', source: 'lib/spend-grant.ts#checkGrant · lib/tx-guardrails.ts#policyCheck' },
       { name: 'Relays re-gate on the server', detail: 'Signing is client-side; acceptance is not. CoW, OpenSea and Hyperliquid submits re-derive, recover the signer and re-guard before anything reaches a venue.', source: 'GUARDRAILS.md §5' },
       { name: 'Recipient and validity are venue-neutral', detail: `Proceeds return to the requesting wallet; nothing stays signable past ${MAX_VALID_SEC / 86400} days.`, source: 'lib/tx-guardrails.ts#recipientCheck · validityCheck · MAX_VALID_SEC' },
       { name: 'External tools are fenced', detail: 'A directory MCP that returns a signable payload passes guardPlannerArtifact; the drain shapes are refused outright.', source: 'lib/planner-artifact-guard.ts#guardPlannerArtifact' },
     ],
     signing: {
-      signer: 'The user’s own wallet (or, for standing intents, a delegated key under venue-side limits). Pantessa never holds a key and never takes custody.',
-      lanesProven: ['browser wallet over EIP-1193 / WalletConnect v2 (the chat, /i links, the embed)', 'the agent-signed desk path: any viem Account drives one guarded leg at a time (pantessa SDK driveJob)', 'delegated keys for standing intents (Guardians, autopilots) that the venue bars from withdrawing'],
+      signer: `The user’s own wallet signs every transaction, order and vote it is handed. On Hyperliquid the user can approve a Pantessa agent key once (approveAgent, up to ${GUARDIAN_DELEGATION_DAYS} days): Pantessa holds it encrypted, it places the orders the user consents to with a signed message and the Guardian closes the user arms, and the venue bars it from withdrawing. Pantessa never takes custody of funds.`,
+      lanesProven: ['browser wallet over EIP-1193 / WalletConnect v2 (the chat, /i links, the embed)', 'the agent-signed desk path: any viem Account drives one guarded leg at a time (pantessa SDK driveJob)', 'the Hyperliquid agent key the user approves (delegated orders and Guardian closes), which the venue bars from withdrawing'],
       custody: 'No institutional custody lane (Fireblocks, Copper, Fordefi, Safe) has been drilled end to end as of 2026-11-02. The desk wire is custody-shaped (poll → one unsigned leg → their signer → on-chain verification); the measurement is the open item.',
     },
     venues,
