@@ -7,12 +7,12 @@
 /* ── Shared small parts ── */
 .xcc-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 0 11px; border-radius: var(--r-sm);
-  border: 1px solid var(--line-2); background: transparent; color: var(--fg); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; cursor: pointer;
+  border: 1px solid var(--line-2); background: transparent; color: var(--fg); font-size: var(--fs-sm); font-weight: 600; text-decoration: none; white-space: nowrap; cursor: pointer;
   transition: border-color var(--dur-1, .16s), background var(--dur-1, .16s), color var(--dur-1, .16s);
 }
 .xcc-btn:hover:not(:disabled) { border-color: var(--fg); }
 .xcc-btn:disabled { opacity: .45; cursor: default; }
-.xcc-btn--go { border-color: var(--accent); background: var(--accent); color: var(--ink, #04130c); }
+.xcc-btn--go { border-color: var(--accent); background: var(--accent); color: var(--ink); }
 .xcc-btn--go:hover:not(:disabled) { border-color: var(--accent); filter: brightness(1.08); }
 .xcc-btn:focus-visible, .xcc-chip:focus-visible, .xcc-seg__btn:focus-visible, .xcc-open:focus-visible, .xcc-pin:focus-visible, .xcc-row__main:focus-visible, .xcc-link:focus-visible, .xcc__clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .xcc-link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
@@ -33,7 +33,7 @@
 
 .xcc-chip {
   display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px; border: 1px solid var(--line-2); background: transparent; color: var(--fg);
-  font-size: 12px; white-space: nowrap; cursor: pointer; transition: border-color var(--dur-1, .16s), color var(--dur-1, .16s);
+  font-size: var(--fs-sm); white-space: nowrap; cursor: pointer; transition: border-color var(--dur-1, .16s), color var(--dur-1, .16s);
 }
 .xcc-chip:hover { border-color: var(--accent); color: var(--accent); }
 .xcc-chip--you { border-color: var(--accent); color: var(--accent); font-weight: 600; }
@@ -44,7 +44,7 @@
 .xcc-v--right { color: var(--mk-up, var(--up)); }
 .xcc-v--wrong { color: var(--mk-down, var(--sell)); }
 .xcc-v--flat { color: var(--muted); }
-.xcc-v--open { color: var(--gold, #d9a441); }
+.xcc-v--open { color: var(--gold); }
 .xcc-v--right .xcc-v__g { background: var(--mk-up, var(--up)); color: var(--bg); border-color: var(--mk-up, var(--up)); }
 .xcc-v--wrong .xcc-v__g { background: var(--mk-down, var(--sell)); color: var(--bg); border-color: var(--mk-down, var(--sell)); }
 
@@ -55,8 +55,8 @@
   border: 1px solid var(--accent); background: transparent; color: var(--accent); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer;
   transition: background var(--dur-1, .16s), color var(--dur-1, .16s);
 }
-.xcc-open:hover, .xcc-open[aria-expanded='true'] { background: var(--accent); color: var(--ink, #04130c); }
-.xcc-open.is-on { background: color-mix(in srgb, var(--accent) 14%, transparent); letter-spacing: 0.04em; text-transform: none; font-size: 11px; }
+.xcc-open:hover, .xcc-open[aria-expanded='true'] { background: var(--accent); color: var(--ink); }
+.xcc-open.is-on { background: color-mix(in srgb, var(--accent) 14%, transparent); letter-spacing: 0.04em; text-transform: none; font-size: var(--fs-xs); }
 .xcc-open.is-on:hover, .xcc-open.is-on[aria-expanded='true'] { background: var(--accent); }
 .xcc-open__icon { width: 12px; height: 12px; flex: none; }
 .xcc-open__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -96,11 +96,11 @@
 .xcc-door__input { flex: 1 1 auto; min-width: 0; height: 36px; border: 0; outline: 0; background: transparent; color: var(--fg); font-size: 14px; }
 .xcc-door__input::placeholder { color: var(--muted-2); }
 .xcc-door__on { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
-.xcc-door__market { width: 74px; height: 38px; padding: 0 8px; border-radius: var(--r-sm); border: 1px solid var(--line-2); background: var(--bg); color: var(--fg); font-size: 12px; text-transform: uppercase; }
+.xcc-door__market { width: 74px; height: 38px; padding: 0 8px; border-radius: var(--r-sm); border: 1px solid var(--line-2); background: var(--bg); color: var(--fg); font-size: var(--fs-sm); text-transform: uppercase; }
 .xcc-door__market:focus { outline: 0; border-color: var(--accent); }
 .xcc-door__market[aria-invalid='true'] { border-color: var(--sell); }
-.xcc-door .xcc-btn--go { min-height: 38px; padding: 0 16px; font-size: 13px; }
-.xcc-door__err { margin: 0; font-size: 12px; line-height: 1.4; color: var(--sell); }
+.xcc-door .xcc-btn--go { min-height: 38px; padding: 0 16px; font-size: var(--fs-md); }
+.xcc-door__err { margin: 0; font-size: var(--fs-sm); line-height: 1.4; color: var(--sell); }
 .xcc-door__more { display: flex; align-items: baseline; gap: 6px 10px; flex-wrap: wrap; min-width: 0; }
 .xcc-door__k { flex: none; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
 .xcc-door__chips, .xcc-door__you { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; font-size: 12.5px; }
@@ -120,18 +120,18 @@
 
 /* ── The Calls strip ── */
 .xcc { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px 16px 14px; border: 1px solid var(--line); background: var(--surf-1); }
-.xcc__methodmore { display: none; align-self: flex-start; font-size: 12px; }
+.xcc__methodmore { display: none; align-self: flex-start; font-size: var(--fs-sm); }
 .sym .xcc.is-parked { display: none; }
 .xcc__head { display: flex; align-items: flex-start; gap: 10px 12px; min-width: 0; }
 .xcc__avatar {
   flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-round); overflow: hidden; border: 1px solid var(--line-2); background: var(--surf-2);
-  color: var(--muted); font-size: 15px; font-weight: 600;
+  color: var(--muted); font-size: var(--fs-base); font-weight: 600;
 }
 .xcc__avatar img { width: 100%; height: 100%; object-fit: cover; }
 .xcc__who { flex: 1 1 auto; min-width: 0; }
 .xcc__k { margin: 0; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
 .xcc__name { letter-spacing: 0.02em; text-transform: none; color: var(--muted-2); }
-.xcc__headline { margin: 2px 0 0; font-size: 15px; line-height: 1.3; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+.xcc__headline { margin: 2px 0 0; font-size: var(--fs-base); line-height: 1.3; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
 .xcc__standing { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 .xcc__standing[data-verified] { color: var(--up); }
 .xcc__coverage { color: var(--fg); }
@@ -141,9 +141,9 @@
 .xcc__line { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 .xcc__line--note { color: var(--fg); }
 .xcc__progress { color: var(--muted-2); }
-.xcc__empty { margin: 0; padding: 10px 0 2px; font-size: 13px; line-height: 1.5; color: var(--muted); max-width: 72ch; }
+.xcc__empty { margin: 0; padding: 10px 0 2px; font-size: var(--fs-md); line-height: 1.5; color: var(--muted); max-width: 72ch; }
 .xcc__actions { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
-.xcc__allow { flex: 1 1 260px; min-width: 0; font-size: 12px; line-height: 1.45; color: var(--muted-2); }
+.xcc__allow { flex: 1 1 260px; min-width: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--muted-2); }
 .xcc__spin { display: inline-block; width: 10px; height: 10px; margin-right: 7px; border-radius: var(--r-round); border: 2px solid var(--line-2); border-top-color: var(--accent); animation: xcc-spin .8s linear infinite; vertical-align: -1px; }
 @keyframes xcc-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .xcc__spin { animation: none; } }
@@ -162,9 +162,9 @@
 .xcc-row__when { grid-column: 2; grid-row: 1; }
 .xcc-row__text { grid-column: 1 / -1; grid-row: 2; }
 .xcc-row__nums { grid-column: 4; grid-row: 1; }
-.xcc-row__when { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.xcc-row__when { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
 .xcc-row .xcc-v { font-size: 11.5px; letter-spacing: 0.01em; }
-.xcc-row__text { min-width: 0; font-size: 13px; line-height: 1.4; color: var(--fg); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
+.xcc-row__text { min-width: 0; font-size: var(--fs-md); line-height: 1.4; color: var(--fg); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
 .xcc-row__stance { margin-right: 7px; padding: 1px 5px; border: 1px solid var(--line-2); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); vertical-align: 1px; }
 .xcc-row__added { margin-right: 7px; padding: 1px 5px; border: 1px dashed var(--line-2); font-size: 9px; letter-spacing: 0.06em; color: var(--muted); vertical-align: 1px; white-space: nowrap; }
 .xcc-quote { background: color-mix(in srgb, var(--accent) 20%, transparent); color: inherit; padding: 0 2px; }
@@ -180,7 +180,7 @@
 .xcc-pin { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid transparent; background: none; color: var(--muted-2); cursor: pointer; }
 .xcc-pin:hover { color: var(--fg); border-color: var(--line-2); }
 .xcc-pin[aria-pressed='true'] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.xcc-row__x { display: inline-flex; align-items: center; gap: 4px; min-width: 74px; justify-content: flex-end; font-size: 11px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+.xcc-row__x { display: inline-flex; align-items: center; gap: 4px; min-width: 74px; justify-content: flex-end; font-size: var(--fs-xs); color: var(--muted); text-decoration: none; white-space: nowrap; }
 a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcc-row__x.is-none { color: var(--muted-2); font-size: 10px; letter-spacing: 0.06em; }
 
@@ -190,14 +190,14 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcc-add__input { flex: 1 1 220px; min-width: 0; height: 30px; padding: 0 9px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 12.5px; }
 .xcc-add__input:focus { outline: 0; border-color: var(--accent); }
 .xcc-add__input::placeholder { color: var(--muted-2); }
-.xcc-add__said { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--accent); }
+.xcc-add__said { flex-basis: 100%; margin: 0; font-size: var(--fs-sm); color: var(--accent); }
 .xcc-add__said.is-no { color: var(--sell); }
 .xcc__tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .xcc-share { position: relative; display: inline-flex; margin-left: auto; }
 .xcc-share__menu { position: absolute; z-index: 30; right: 0; bottom: calc(100% + 6px); display: flex; flex-direction: column; min-width: 190px; padding: 4px; border: 1px solid var(--line-2); background: var(--surf-1); }
 .xcc-share__item { display: flex; align-items: center; min-height: 34px; padding: 0 10px; border: 0; background: none; color: var(--fg); font-size: 12.5px; text-align: left; text-decoration: none; cursor: pointer; }
 .xcc-share__item:hover { background: var(--surf-2); }
-.xcc__method { margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted-2); max-width: 110ch; }
+.xcc__method { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--muted-2); max-width: 110ch; }
 .xcc__legend { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; margin-right: 12px; font-size: 10px; vertical-align: -2px; }
 
 /* A touch screen: every control a thumb can hit. */
@@ -278,26 +278,26 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xch__id:hover .xch__name { text-decoration: underline; text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
 .xch__verified { display: inline-grid; color: var(--up); }
 .xch__vicon { width: 16px; height: 16px; }
-.xch__sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xch__sub { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* The tally: one bar, the counts on one line under it, then what was read and the standing. */
 .xch__tally { grid-column: 1 / -1; grid-row: 2; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 10px 36px; margin-top: 16px; }
 .xch__score { grid-column: 1 / -1; }
-.xch__counts { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 22px; font-size: 13px; font-weight: 400; line-height: 1.2; color: var(--muted); }
+.xch__counts { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 22px; font-size: var(--fs-md); font-weight: 400; line-height: 1.2; color: var(--muted); }
 .xch__count { --xch-tone: var(--fg); display: inline-flex; align-items: baseline; white-space: nowrap; }
 .xch__count.is-right { --xch-tone: var(--mk-up, var(--up)); }
 .xch__count.is-wrong { --xch-tone: var(--mk-down, var(--sell)); }
 .xch__count.is-flat { --xch-tone: var(--muted-2); }
-.xch__count.is-open { --xch-tone: var(--gold, #d9a441); }
+.xch__count.is-open { --xch-tone: var(--gold); }
 /* A count's number wears a tag of its own (a flex row drops the space that leads the words: the number carries it as a margin). */
 .xch__num { margin-right: 0.4em; font-family: var(--font-mono, ui-monospace, monospace); font-size: 19px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--xch-tone); }
-.xch__headline { grid-column: 1 / -1; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 15px; line-height: 1.3; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+.xch__headline { grid-column: 1 / -1; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: var(--fs-base); line-height: 1.3; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
 .xch__state { display: inline-flex; align-items: center; gap: 8px; color: var(--fg); white-space: nowrap; }
 .xch__state:empty { display: none; }
 .xch__pulse { width: 6px; height: 6px; background: var(--accent); animation: xch-pulse 1s steps(2, jump-none) infinite; }
 @keyframes xch-pulse { from { opacity: 1; } to { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .xch__pulse { animation: none; } }
-.xch__facts { justify-self: end; margin: 0; padding-top: 5px; font-size: 12px; line-height: 1.45; color: var(--muted-2); max-width: 64ch; text-align: right; text-wrap: balance; }
+.xch__facts { justify-self: end; margin: 0; padding-top: 5px; font-size: var(--fs-sm); line-height: 1.45; color: var(--muted-2); max-width: 64ch; text-align: right; text-wrap: balance; }
 .xch__headline + .xch__facts { grid-column: 1 / -1; justify-self: start; padding-top: 0; text-align: left; max-width: 86ch; }
 .xch__standing { color: var(--muted); }
 .xch__standing[data-verified] { color: var(--up); font-weight: 600; }
@@ -307,11 +307,11 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xch__tools { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 8px; }
 .xch__sides[aria-busy='true'] { opacity: .7; }
 .xch__side:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
-.xch__siden { font-size: 11px; letter-spacing: 0; opacity: .62; font-variant-numeric: tabular-nums; }
+.xch__siden { font-size: var(--fs-xs); letter-spacing: 0; opacity: .62; font-variant-numeric: tabular-nums; }
 .xch__tools .xcc-share { margin-left: 0; }
 .xch__tools .xcc-share__menu { top: calc(100% + 6px); bottom: auto; z-index: 41; }
 /* A square tool on the band: Share (an icon and its word) and Clear (an icon). */
-.xch__tool { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 38px; height: 38px; padding: 0 12px; border: 1px solid var(--line); background: none; color: var(--fg); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: border-color var(--dur-1, .16s), color var(--dur-1, .16s); }
+.xch__tool { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 38px; height: 38px; padding: 0 12px; border: 1px solid var(--line); background: none; color: var(--fg); font-size: var(--fs-md); font-weight: 600; white-space: nowrap; cursor: pointer; transition: border-color var(--dur-1, .16s), color var(--dur-1, .16s); }
 .xch__tool:hover, .xch__tool[aria-expanded='true'] { border-color: var(--fg); }
 .xch__tool:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .xch__toolicon { width: 15px; height: 15px; flex: none; }
@@ -335,24 +335,24 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcc-door .xcc-door__field:focus-within { border-color: var(--fg); }
 .xcc-door .xcc-door__at { width: 16px; height: 16px; color: var(--muted); }
 .xcc-door .xcc-door__input { height: 46px; font-size: 16px; font-family: var(--font-mono); }
-.xcc-door .xcc-door__on { flex: 1 1 0; min-width: 0; gap: 8px; min-height: 48px; padding: 0 14px; border: 1px solid var(--line-2); background: var(--bg); font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); cursor: text; }
+.xcc-door .xcc-door__on { flex: 1 1 0; min-width: 0; gap: 8px; min-height: 48px; padding: 0 14px; border: 1px solid var(--line-2); background: var(--bg); font-family: var(--font-mono); font-size: var(--fs-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); cursor: text; }
 .xcc-door .xcc-door__on:focus-within { border-color: var(--fg); }
 .xcc-door .xcc-door__market { flex: 1 1 auto; min-width: 0; width: auto; height: 46px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--fg); font-size: 16px; font-weight: 600; outline: 0; }
 .xcc-door .xcc-door__market[aria-invalid='true'] { color: var(--sell); }
 /* The press: the kit's button, sized to the row. Its own colours are the kit's; the old filled-and-faded look is gone. */
-.xcc-door .xcc-btn--go { flex: 1 1 0; min-height: 48px; padding: 0 22px; border: 0; border-radius: 0; background: var(--accent); color: var(--ink, var(--bg)); font-size: 15px; font-weight: 600; filter: none; opacity: 1; }
+.xcc-door .xcc-btn--go { flex: 1 1 0; min-height: 48px; padding: 0 22px; border: 0; border-radius: 0; background: var(--accent); color: var(--ink, var(--bg)); font-size: var(--fs-base); font-weight: 600; filter: none; opacity: 1; }
 .xcc-door .xcc-btn--go[data-ready='no'] { background: var(--surf-2); color: var(--fg); }
 .xcc-door .xcc-btn--go:hover { filter: brightness(1.08); }
 .xcc-door .xcc-btn--go:focus-visible { outline: 2px solid var(--fg); outline-offset: -4px; }
 /* All / Bull / Bear: the kit's segmented control. */
 .xcc-door > .xcc-seg { align-self: stretch; display: flex; border: 1px solid var(--line); background: var(--bg); }
-.xcc-door .xcc-seg__btn { flex: 1 1 0; justify-content: center; min-height: 40px; padding: 0 14px; border-radius: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.08em; }
+.xcc-door .xcc-seg__btn { flex: 1 1 0; justify-content: center; min-height: 40px; padding: 0 14px; border-radius: 0; font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0.08em; }
 .xcc-door .xcc-seg__btn[aria-pressed='true'] { background: var(--fg); color: var(--bg); }
 /* Already plotted: a label, then one row of hard chips that scrolls sideways. */
 .xcc-door .xcc-door__more { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 6px; }
-.xcc-door .xcc-door__k { font-size: 11px; }
+.xcc-door .xcc-door__k { font-size: var(--fs-xs); }
 .xcc-door .xcc-door__chips { display: flex; flex-wrap: nowrap; gap: 8px; padding-inline: 0; scroll-padding-inline: 0; }
-.xcc-door .xcc-chip { flex: none; min-height: 44px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 0; background: var(--bg); color: var(--fg); font-family: var(--font-mono); font-size: 13px; text-decoration: none; }
+.xcc-door .xcc-chip { flex: none; min-height: 44px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 0; background: var(--bg); color: var(--fg); font-family: var(--font-mono); font-size: var(--fs-md); text-decoration: none; }
 .xcc-door .xcc-chip:hover { border-color: var(--fg); color: var(--fg); }
 .xcc-door .xcc-chip--you { border-color: var(--accent); color: var(--accent); }
 .xcc-door .xcc-door__you { gap: 8px 12px; }
@@ -392,7 +392,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcf[data-dock='left'] { left: 66px; }
 .xcf[data-verdict='right'] { --xcf-tone: var(--mk-up, var(--up)); }
 .xcf[data-verdict='wrong'] { --xcf-tone: var(--mk-down, var(--sell)); }
-.xcf[data-verdict='open'] { --xcf-tone: var(--gold, #d9a441); }
+.xcf[data-verdict='open'] { --xcf-tone: var(--gold); }
 /* Movement only: a frame that stalls mid-way (a background tab) must never leave the card see-through over the chart. */
 @keyframes xcf-in { from { transform: translateY(8px); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .xcf { animation: none; } }
@@ -406,7 +406,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 /* A part that does not fit wraps out of sight whole: a number is never cut mid-way. */
 .xcf__when { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; min-width: 0; height: 13px; overflow: hidden; font-size: 10.5px; line-height: 1.1; color: var(--muted); white-space: nowrap; }
 .xcf__stance { flex: none; padding-left: 6px; border-left: 1px solid var(--line-2); letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px; }
-.xcf__step { flex: none; display: inline-flex; align-items: center; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.xcf__step { flex: none; display: inline-flex; align-items: center; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
 .xcf__at { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
 .xcf__icon { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border: 0; background: none; color: var(--muted); cursor: pointer; transition: color var(--dur-1, .16s), background var(--dur-1, .16s); }
 .xcf__icon svg { width: 16px; height: 16px; }
@@ -418,16 +418,16 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcf__body { flex: 1 1 auto; min-height: 96px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 14px; }
 .xcf__added { margin: 0; align-self: flex-start; padding: 2px 7px; border: 1px dashed var(--line-2); font-size: 10px; color: var(--muted); }
 .xcf__words { position: relative; min-width: 0; }
-.xcf__text { margin: 0; font-size: 15px; line-height: 1.5; color: var(--fg); overflow-wrap: anywhere; white-space: pre-line; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.xcf__text { margin: 0; font-size: var(--fs-base); line-height: 1.5; color: var(--fg); overflow-wrap: anywhere; white-space: pre-line; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 @media (min-width: 641px) and (min-height: 1000px) { .xcf__text { -webkit-line-clamp: 6; } }
 .xcf[data-more] .xcf__text { display: block; overflow: visible; }
 .xcf__text mark { background: color-mix(in srgb, var(--xcf-tone) 26%, transparent); color: inherit; padding: 1px 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-.xcf__more { display: block; margin: 4px 0 0 auto; padding: 4px 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.xcf__more { display: block; margin: 4px 0 0 auto; padding: 4px 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
 /* Where words are cut, "more" sits on the last line, over the fill: the cut is marked where it happens. */
-.xcf__words[data-clamped] .xcf__more { position: absolute; right: 0; bottom: 0; margin: 0; padding: 0; font-size: 15px; line-height: 1.5; }
+.xcf__words[data-clamped] .xcf__more { position: absolute; right: 0; bottom: 0; margin: 0; padding: 0; font-size: var(--fs-base); line-height: 1.5; }
 .xcf__words[data-clamped] .xcf__moreword { display: block; padding-left: 10px; background: var(--surf-1); }
 .xcf__level { margin: 0; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); }
-.xcf__level b { margin-left: 6px; font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 600; color: var(--fg); }
+.xcf__level b { margin-left: 6px; font-size: var(--fs-sm); letter-spacing: 0; text-transform: none; font-weight: 600; color: var(--fg); }
 
 /* One line for both moves, so it wears no verdict colour (the move since can run the other way). */
 .xcf__move { display: none; margin: 0; font-size: 11.5px; line-height: 1.3; font-variant-numeric: tabular-nums; color: var(--muted); }
@@ -438,7 +438,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 .xcf__num + .xcf__num { border-left: 1px solid var(--line); }
 .xcf__num:first-child { flex: 0 0 auto; padding-left: 16px; }
 .xcf__num dt { font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
-.xcf__num dd { margin: 0; font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--fg); }
+.xcf__num dd { margin: 0; font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--fs-sm); font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--fg); }
 .xcf__num.is-judged dd { color: var(--xcf-tone); }
 .xcf[data-verdict='flat'] .xcf__num.is-judged dd { color: var(--fg); }
 .xcf__num[data-sign='up'] dd { color: var(--mk-up, var(--up)); }
@@ -447,10 +447,10 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
 /* What a reader can do: the trade (CallActs, call-acts.css), then the post on X and the pin. */
 .xcf__acts { flex: none; display: flex; flex-direction: column; min-width: 0; }
 .xcf__foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px 14px; }
-.xcf__x { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 0 14px; border: 1px solid var(--line-2); background: none; color: var(--fg); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; transition: border-color var(--dur-1, .16s); }
+.xcf__x { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 0 14px; border: 1px solid var(--line-2); background: none; color: var(--fg); font-size: var(--fs-md); font-weight: 600; text-decoration: none; white-space: nowrap; transition: border-color var(--dur-1, .16s); }
 a.xcf__x:hover { border-color: var(--fg); }
 .xcf__x svg { width: 14px; height: 14px; }
-.xcf__x.is-none { border-style: dashed; color: var(--muted-2); font-weight: 500; font-size: 12px; }
+.xcf__x.is-none { border-style: dashed; color: var(--muted-2); font-weight: 500; font-size: var(--fs-sm); }
 .xcf__pin { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 12px; margin-right: 6px; border: 1px solid var(--line-2); background: none; color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: color var(--dur-1, .16s), border-color var(--dur-1, .16s); }
 .xcf__pin svg { width: 13px; height: 13px; }
 .xcf__pin:hover { color: var(--fg); border-color: var(--fg); }
@@ -461,9 +461,12 @@ a.xcf__x:hover { border-color: var(--fg); }
    the whole post with no "more" (the words scroll in their own box if they are long), the table of numbers, the trade's
    button across the card, and Share, the post on X and the pin as one quiet row at the foot. */
 @media (min-width: 1100px) {
-  [data-call-dock='side'] .xcf, [data-call-dock='side'] .xcf[data-dock] { position: static; width: auto; height: 100%; max-height: 100%; animation: none; }
-  [data-call-dock='side'] .xcf__body { padding: 16px 16px 18px; }
-  [data-call-dock='side'] .xcf__text { display: block; overflow: visible; }
+  /* Top-down, nothing stretched: the header, the post, the numbers, the button, its caption, the quiet row. What is left of
+     the slot falls under the card; a long post scrolls in its own box. */
+  [data-call-dock='side'] .xcf, [data-call-dock='side'] .xcf[data-dock] { position: static; flex: 0 1 auto; width: auto; height: auto; min-height: 0; max-height: 100%; animation: none; }
+  [data-call-dock='side'] .xcf__body { flex: 0 1 auto; padding: 18px 16px 20px; }
+  /* There is room here: the post's own words in the display face, the quoted span marked. */
+  [data-call-dock='side'] .xcf__text { display: block; overflow: visible; font-family: var(--sk-display, Georgia, serif); font-size: 19px; font-weight: 600; line-height: 1.38; letter-spacing: -0.01em; }
   /* The numbers as rows: a label and its value on a line each, so a long judged line never wraps into the next cell. */
   [data-call-dock='side'] .xcf__nums { flex-direction: column; }
   [data-call-dock='side'] .xcf__num, [data-call-dock='side'] .xcf__num:first-child { flex: none; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 16px; padding: 9px 16px; }
@@ -471,7 +474,7 @@ a.xcf__x:hover { border-color: var(--fg); }
   [data-call-dock='side'] .xcf__num dd { text-align: right; }
   [data-call-dock='side'] .xcf__acts { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0 18px; padding: 14px 16px 12px; border-top: 1px solid var(--line); }
   [data-call-dock='side'] .xcf__foot { display: contents; }
-  [data-call-dock='side'] .xcf__x, [data-call-dock='side'] .xcf__pin { grid-row: 3; min-height: 36px; margin: 0; padding: 0; border: 0; color: var(--muted); font-size: 12px; font-weight: 500; }
+  [data-call-dock='side'] .xcf__x, [data-call-dock='side'] .xcf__pin { grid-row: 3; min-height: 36px; margin: 0; padding: 0; border: 0; color: var(--muted); font-size: var(--fs-sm); font-weight: 500; }
   [data-call-dock='side'] .xcf__x { grid-column: 2; justify-self: start; flex: none; }
   [data-call-dock='side'] .xcf__pin { grid-column: 3; }
   [data-call-dock='side'] a.xcf__x:hover, [data-call-dock='side'] .xcf__pin:hover { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
@@ -493,17 +496,27 @@ a.xcf__x:hover { border-color: var(--fg); }
   }
   /* Flush with the screen's sides and the tab bar: the one cut is the top-left corner, and nothing shows through around it. */
   .xcf::before { inset: 1px 0 0; clip-path: polygon(calc(var(--xcf-cut) + 0.4px) 0, 100% 0, 100% 100%, 0 100%, 0 calc(var(--xcf-cut) + 0.4px)); }
-  .xcf__band { min-height: 52px; padding: 0 0 0 12px; gap: 8px; }
+  .xcf__band { min-height: 44px; padding: 0 0 0 12px; gap: 8px; }
+  .xcf__tile { width: 28px; height: 28px; }
+  .xcf__lead { gap: 2px; }
+  .xcf__verdict { font-size: var(--fs-base); }
   .xcf__icon { width: 44px; height: 44px; }
   .xcf__at { min-width: 0; font-size: 10.5px; letter-spacing: -0.02em; }
   .xcf__when { gap: 6px; }
   .xcf__stance { padding-left: 6px; }
-  .xcf__body { gap: 8px; padding: 10px 14px 10px; }
-  .xcf__text { font-size: 14.5px; line-height: 1.42; -webkit-line-clamp: 3; }
-  .xcf__words[data-clamped] .xcf__more { font-size: 14.5px; line-height: 1.42; }
+  .xcf__body { position: relative; min-height: 0; gap: 8px; padding: 8px 14px 8px; }
+  .xcf__text { font-size: 14.5px; line-height: 20px; -webkit-line-clamp: 3; }
+  .xcf__words[data-clamped] .xcf__more { font-size: 14.5px; line-height: 20px; }
   /* A real 44px box for a thumb: the padding over the word is clear, so the line above still reads through it. */
   .xcf__more { min-width: 44px; min-height: 44px; padding: 12px 0; text-align: right; }
   .xcf__words[data-clamped] .xcf__more { padding: 24px 0 0; }
+  /* A post that fits (one, two or three whole lines) is not cut, so "more" (the numbers, the share link, the pin) sits at
+     the end of the move's line under it: no row of its own, no hole. */
+  .xcf:not([data-more]) .xcf__words:not([data-clamped]) { position: static; }
+  .xcf:not([data-more]) .xcf__words:not([data-clamped]) .xcf__more { position: absolute; right: 14px; bottom: 0; margin: 0; padding: 21px 0 8px; font-size: var(--fs-sm); line-height: 15px; }
+  .xcf:not([data-more]) .xcf__move { padding-right: 56px; }
+  /* Opened: "less" directly under the words. */
+  .xcf[data-more] .xcf__more { margin: -6px 0 -10px auto; }
   .xcf__nums { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
   .xcf__num { padding: 8px 8px 9px; gap: 3px; }
   .xcf__num:first-child { padding-left: 14px; }
@@ -513,8 +526,7 @@ a.xcf__x:hover { border-color: var(--fg); }
      table of numbers, the share link and the pin wait behind "more". */
   .xcf:not([data-more]) .xcf__move { display: block; }
   .xcf:not([data-more]) .xcf__nums { display: none; }
-  .xcf:not([data-more]) .xcf__body { padding-bottom: 12px; }
-  .xcf:not([data-more]) .xcf__acts { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px 8px; padding: 10px 12px 12px; border-top: 1px solid var(--line); }
+  .xcf:not([data-more]) .xcf__acts { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px 8px; padding: 8px 12px 10px; border-top: 1px solid var(--line); }
   .xcf:not([data-more]) .xcf__foot { grid-column: 2; grid-row: 1; padding: 0; }
   .xcf:not([data-more]) .xcf__acts:not(:has([data-called-acts])) .xcf__foot { grid-column: 1 / -1; }
   .xcf:not([data-more]) .xcf__pin { display: none; }
@@ -527,12 +539,12 @@ a.xcf__x:hover { border-color: var(--fg); }
 /* THE FOLD, at every width (SLEEK round 2): the list shows the pinned calls (the first five when none is pinned) and one
    button for the rest; a focused call is never hidden. Opened, a desktop scrolls the list in its own box. */
 .xcc__rows[data-fold] > .xcc-row[data-tail]:not(.is-focus) { display: none; }
-.xcc-more { align-self: flex-start; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--line); background: none; color: var(--fg); font-size: 13px; font-weight: 600; cursor: pointer; transition: border-color var(--dur-1, .16s); }
+.xcc-more { align-self: flex-start; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--line); background: none; color: var(--fg); font-size: var(--fs-md); font-weight: 600; cursor: pointer; transition: border-color var(--dur-1, .16s); }
 .xcc-more:hover { border-color: var(--fg); }
 .xcc-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* The unscanned state's long explanation, one press away. */
 .xcc__how { min-width: 0; }
-.xcc__howk { display: inline-flex; align-items: center; min-height: 36px; color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; }
+.xcc__howk { display: inline-flex; align-items: center; min-height: 36px; color: var(--accent); font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
 .xcc__how[open] > .xcc__howk { color: var(--fg); }
 .xcc__how > .xcc__allow { display: block; margin: 8px 0 0; max-width: 72ch; }
 .xcc__how > .xcc__standing { max-width: 72ch; }
@@ -555,7 +567,7 @@ a.xcf__x:hover { border-color: var(--fg); }
   .xch__tally { display: contents; }
   .xch__tools { display: contents; }
   .xch__id { grid-column: 1 / 3; grid-row: 1; justify-self: stretch; gap: 10px; min-height: 44px; }
-  .xch__avatar { width: 36px; height: 36px; font-size: 15px; }
+  .xch__avatar { width: 36px; height: 36px; font-size: var(--fs-base); }
   .xch__idtext { gap: 3px; }
   .xch__k { font-size: 9.5px; line-height: 1; }
   .xch__nameline { flex-direction: row; align-items: baseline; gap: 8px; }
@@ -570,29 +582,29 @@ a.xcf__x:hover { border-color: var(--fg); }
   .xch__toolicon { width: 17px; height: 17px; }
   .xch__clear { grid-column: 4; grid-row: 1; }
   .xch__score { grid-column: 1 / -1; grid-row: 2; margin: 4px 12px 0 0; }
-  .xch__counts { grid-column: 1 / -1; grid-row: 3; margin: 8px 12px 0 0; gap: 2px 8px; font-size: 11px; white-space: nowrap; }
+  .xch__counts { grid-column: 1 / -1; grid-row: 3; margin: 8px 12px 0 0; gap: 2px 8px; font-size: var(--fs-xs); white-space: nowrap; }
   .xch__count.is-total { display: none; }
   .xch__num { margin-right: 0.3em; font-size: 12.5px; letter-spacing: 0; }
   .xch__headline { grid-column: 1 / -1; grid-row: 2; margin: 4px 12px 0 0; font-size: 14px; }
   .xch__sides { grid-column: 1; grid-row: 4; margin-top: 8px; }
   .xch__side { min-height: 44px; padding: 0 10px; }
-  .xch__row .xch__facts { grid-column: 2 / -1; grid-row: 4; justify-self: stretch; display: flex; align-items: center; min-width: 0; max-width: none; margin: 8px 0 0 12px; padding: 0; font-size: 11px; line-height: 1.4; text-align: left; text-wrap: wrap; }
+  .xch__row .xch__facts { grid-column: 2 / -1; grid-row: 4; justify-self: stretch; display: flex; align-items: center; min-width: 0; max-width: none; margin: 8px 0 0 12px; padding: 0; font-size: var(--fs-xs); line-height: 1.4; text-align: left; text-wrap: wrap; }
   .xch__row:not(:has(.xch__sides)) .xch__facts { grid-column: 1 / -1; grid-row: 4; margin: 2px 0 0; }
   .xch__factstext { flex: 1 1 auto; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; overflow-wrap: anywhere; }
-  .xch__row:not(:has(.xch__sides)) .xch__factstext { display: block; font-size: 12px; line-height: 1.45; }
+  .xch__row:not(:has(.xch__sides)) .xch__factstext { display: block; font-size: var(--fs-sm); line-height: 1.45; }
   .xch__row:not(:has(.xch__sides)) .xch__facts { margin: 8px 12px 0 0; }
   .xch__rest { display: none; }
   .xch[data-facts] .xch__rest { display: inline; }
-  .xch__more { flex: none; display: inline-flex; align-items: center; justify-content: flex-end; min-width: 44px; min-height: 44px; padding: 0 10px 0 6px; font-size: 11px; }
+  .xch__more { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: flex-end; box-sizing: border-box; width: 48px; min-width: 44px; min-height: 44px; padding: 0 10px 0 0; font-size: var(--fs-xs); }
   /* Opened: the whole line, in a row of its own under the control. */
   .xch[data-facts] .xch__facts { display: block; grid-column: 1 / -1; grid-row: 5; margin: 8px 12px 0 0; }
   .xch[data-facts] .xch__factstext { display: inline; }
-  .xch[data-facts] .xch__more { display: inline; min-height: 0; padding: 8px 6px; }
+  .xch[data-facts] .xch__more { display: inline-flex; justify-content: center; width: auto; margin: -14px 0; padding: 0 6px; vertical-align: middle; }
   .xch[data-facts] .xch__facts { padding-bottom: 4px; }
   /* A plot with no record yet: the scan's button takes a row. */
   .xch__scan { grid-column: 1 / -1; grid-row: 6; margin: 8px 12px 0 0; }
   /* The narrowest phones: the counts and the control give the standing its room. */
-  @media (max-width: 380px) { .xch__counts { gap: 2px 6px; font-size: 10.5px; } .xch__num { font-size: 12px; } .xch__side { padding: 0 8px; } .xch__row:has(.xch__sides) .xch__facts { margin-left: 8px; } }
+  @media (max-width: 380px) { .xch__counts { gap: 2px 6px; font-size: 10.5px; } .xch__num { font-size: var(--fs-sm); } .xch__side { padding: 0 8px; } .xch:not([data-facts]) .xch__row:has(.xch__sides) .xch__facts { margin-left: 8px; } }
 
   /* The chart's bar: the door is an icon button; the band over the chart names the handle and says what the plot is doing. */
   .sym:not(#_) .tvx > .mkt-chart__bar > .mkt-chart__right > .xcc-seat { position: static; order: 3; flex: 0 0 auto; margin: 0; }

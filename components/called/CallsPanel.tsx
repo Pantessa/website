@@ -506,10 +506,11 @@ export default function CallsPanel({ symbol, parked = false }: { symbol: string;
           </p>
         ) : null}
         {/* What the chart is showing, when it is not a card for every pin (a narrow pane holds fewer; a phone's holds none). */}
-        {advanced && pinned > cards && record.calls.length > 0 ? (
+        {/* Not while a call is open: its card speaks for it, and a desktop's chart is narrow then only because the card sits beside it. */}
+        {advanced && pinned > cards && record.calls.length > 0 && !focusId ? (
           <p className="xcc__line" data-called-cards={cards}>
             {cards === 0
-              ? 'On a chart this narrow every call is a mark on its bar. Tap a mark to open its post.'
+              ? 'On a chart this narrow every call is a mark on its bar. Press a mark to open its post.'
               : `The chart has room for ${cards} cards at this width. The other pinned calls are marks on their bars, like the rest.`}
           </p>
         ) : null}
