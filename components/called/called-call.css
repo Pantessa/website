@@ -203,7 +203,7 @@
 @media (min-width: 1024px) {
   .xcl-dock { align-self: flex-start; }
   /* The two presses are one column: the chart's button and the quiet trade under it share a width. */
-  .xcl-go > .xcl-dock, .xcl-go > .xca { width: min(100%, 500px); }
+  .xcl-go > :not(.xcl-you) { width: min(100%, 500px); }
   /* The tally and the press stay on a laptop's first screen: the spark is a strip. */
   .xcl-spark { height: 88px; margin-top: var(--sp-4); }
   .xcl { gap: var(--sp-3); }

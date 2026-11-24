@@ -211,7 +211,7 @@ a.xcc-row__x:hover { color: var(--fg); text-decoration: underline; }
   .xcc-door__input { height: 44px; font-size: 16px; }
   .xcc-door .xcc-btn--go { min-height: 46px; }
   .xcc-share__item { min-height: 44px; }
-  .xcc-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; }
+  .xcc-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0; }
   .xcc-row__x:not(.is-none) { min-height: 44px; min-width: 44px; }
 }
 
