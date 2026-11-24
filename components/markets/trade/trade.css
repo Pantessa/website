@@ -436,3 +436,15 @@
 .mkt-ticket__sides { overflow: hidden; }
 .mkt-ticket__sides > .mkt-ticket__tab { flex: 1 1 0; min-width: 0; padding: 0 2px; font-size: 0; letter-spacing: 0; }
 .mkt-ticket__sides > .mkt-ticket__tab::before { content: attr(data-side); font-size: 11px; letter-spacing: 0.05em; }
+
+/* The Overview's routes on a phone: the first three kinds, then one "show all"
+   (the Trade tab, and every wider screen, lists them all). */
+.mkt-routes__showall { display: none; }
+@media (max-width: 640px) {
+  .mk-overview__routes .mkt-routes__groups[data-capped] > .mkt-routes__group:nth-of-type(n + 4) { display: none; }
+  .mk-overview__routes .mkt-routes__showall {
+    display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; padding: 0 14px;
+    border: 1px solid var(--line-2, var(--line)); border-radius: 0; background: none; color: var(--fg); cursor: pointer;
+    font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase;
+  }
+}
