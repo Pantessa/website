@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
 import EmbedInstall from '@/components/EmbedInstall'
+import { DocsSummary, DocsSteps, DocsStep, DocsCallout, DocsNext } from '@/components/docs'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { ROBINHOOD_DESK } from '@/lib/live-examples'
 import { SITE_CARD } from '@/lib/og-defaults'
@@ -25,238 +26,284 @@ export default function EmbedDocsPage() {
       </p>
       <h1 className="docs__h1">Embed the chat</h1>
       <p className="docs__lead">
-        Drop the full Pantessa chat into your own site as an iframe — scoped to the MCPs you
-        pick, with transaction building, guardrails, receipts, and wallet signing intact.
-        Visitors chat immediately as guests (no sign-in). With the SDK&apos;s wallet bridge the
-        wallet already connected to <em>your</em> page signs, prompting on your page; without
-        it, a wallet connects inside the frame.
+        Put the Pantessa chat on your own site with one package and a few lines. Your visitors ask
+        in plain words, Pantessa builds the trade, and their own wallet signs it on your page.
       </p>
 
+      <DocsSummary>
+        <li>
+          Install with <code>npm install pantessa viem</code> and call <code>mountPantessaChat</code>.
+        </li>
+        <li>
+          The <code>yfe_</code> embed key is publishable. It is safe in page source and it is optional.
+        </li>
+        <li>
+          With <code>wallet: &apos;auto&apos;</code>, the wallet already connected to your page signs.
+          No keys ever enter the frame.
+        </li>
+        <li>
+          Any site may frame it. You choose what the chat can do with <code>mcps</code> (up to 4).
+        </li>
+        <li>
+          Your dashboard shows money moved, the funnel, and the asks that hit a dead end.
+        </li>
+      </DocsSummary>
+
       <div className="docs__prose">
-        <h2>The iframe URL</h2>
-        <pre>
-          <code>{`https://www.pantessa.com/embed
-  ?mcps=cow-free,snapshot-free     # comma-separated directory slugs (max 4)
-  &key=yfe_…                       # your PUBLIC embed key (dashboard → Keys)
-  &address=0xYourUsersWallet       # optional wallet-address context
-  &theme=dark                      # dark (default) | light
-  &host=https%3A%2F%2Fyour.app     # URL-encoded parent origin (enables messaging)
-  &page=https%3A%2F%2Fyour.app%2Fswap  # URL-encoded page URL (embed analytics)`}</code>
-        </pre>
-        <ul>
-          <li>
-            <strong><code>key</code></strong> — a <em>publishable</em> embed key (<code>yfe_…</code>),
-            minted on the <SpineLink href="/dashboard">dashboard</SpineLink>. It&apos;s safe in page source
-            (it can read nothing and spend nothing that isn&apos;t already yours): it attributes
-            the embed to your account and lists the site under <em>Your embeds</em>. Each visitor
-            gets a few free house-model answers a day; past those, answers draw on{' '}
-            <strong>your account&apos;s pool</strong>, which refills from the trades your visitors
-            sign. Opt in under{' '}
-            <SpineLink href="/dashboard/plan#ai-key">Your AI key</SpineLink>{' '}to run them on your own API key
-            instead. Keyless embeds still work — tracked anonymously by origin, metered per visitor.
-          </li>
-          <li>
-            <strong><code>mcps</code></strong> — directory slugs resolved against{' '}
-            <Link href="/servers">the catalog</Link>; unknown slugs are dropped, capped at 4.
-            If none resolve, the chat falls back to its normal default set.
-          </li>
-          <li>
-            <strong><code>address</code></strong> — context only: it feeds{' '}
-            <code>$USER_ADDRESS</code> in the router (&quot;show <em>my</em>{' '}open orders&quot;)
-            and shows as a small <code>context: 0x12…ab</code> indicator. It can{' '}
-            <strong>never sign</strong>{' '}— signatures come from a connected wallet: the host
-            page&apos;s wallet over the bridge below, or one connected inside the iframe.
-          </li>
-          <li>
-            <strong><code>host</code></strong>{' '}— your page&apos;s origin. postMessage is
-            exchanged <em>only</em>{' '}with this origin; without it the embed doesn&apos;t listen
-            at all and only posts <code>ready</code>/<code>resize</code> (nothing sensitive)
-            with a <code>*</code> target.
-          </li>
-        </ul>
-
-        <h2>postMessage API (contract v1)</h2>
-        <p>
-          Every payload is an object tagged{' '}
-          <code>{`{ source: 'yeetful-embed', v: 1, type: … }`}</code>.
-        </p>
-        <p>Embed → your page:</p>
-        <pre>
-          <code>{`{ source: 'yeetful-embed', v: 1, type: 'ready' }                          // mounted
-{ source: 'yeetful-embed', v: 1, type: 'resize', height: 620 }            // content height changed
-{ source: 'yeetful-embed', v: 1, type: 'event', name: 'turn',             // every chat turn
-  data: { outcome: 'tx-built', artifact: 'tx-chain', valueUsd: 10 } }
-{ source: 'yeetful-embed', v: 1, type: 'event', name: 'order-signed',     // a CoW / Hyperliquid order signed
-  data: { artifact: 'cow-order', valueUsd: 50, txUrl: 'https://explorer.cow.fi/…' } }`}</code>
-        </pre>
-        <p>
-          <code>turn</code> fires once per chat turn with{' '}
-          <code>{`{ outcome, artifact?, valueUsd?, txUrl?, chainId?, jobId? }`}</code>. Outcomes:{' '}
-          <code>answered</code> · <code>tx-built</code> (a guarded artifact is on screen —{' '}
-          <code>artifact</code> is <code>tx</code>, <code>tx-chain</code>, <code>job</code>,{' '}
-          <code>cow-order</code>, <code>hl-order</code>, or <code>vote</code>) · <code>signed</code>{' '}
-          (with <code>txUrl</code> + <code>chainId</code> when there is a receipt) ·{' '}
-          <code>settled</code> (a multi-step job finished) · <code>clarify</code> ·{' '}
-          <code>refused</code> (a guardrail held it) · <code>credit-gate</code> ·{' '}
-          <code>error</code>. <code>valueUsd</code>{' '}is the guardrail-priced notional. Enough to
-          drive a host-side activity log or funnel without touching the chat&apos;s internals.
-        </p>
-        <p>Your page → embed (send to the iframe&apos;s contentWindow, targeting the Pantessa origin):</p>
-        <pre>
-          <code>{`{ source: 'yeetful-embed', v: 1, type: 'address', address: '0x…' | null } // update wallet context
-{ source: 'yeetful-embed', v: 1, type: 'theme', theme: 'dark' | 'light' }
-{ source: 'yeetful-embed', v: 1, type: 'prompt', text: 'quote 100 USDC…',  // host CTA → chat:
-  send: true }                                                             // submit (or prefill w/ send:false)`}</code>
-        </pre>
-
-        <h2>Wallet bridge (contract v1.1)</h2>
-        <p>
-          With <code>pantessa/embed</code>{' '}the SDK can relay your page&apos;s EIP-1193
-          provider into the iframe, so the embedded chat is <em>really</em>{' '}wallet-connected —
-          swap orders, transactions, and paid-call payments all sign through the user&apos;s own
-          wallet, <strong>prompting on your page</strong>, never inside the frame. JSON-RPC rides
-          the same origin-pinned postMessage channel:
-        </p>
-        <pre>
-          <code>{`// embed → your page (the SDK answers these)
-{ source: 'yeetful-embed', v: 1, type: 'rpc', id: '…', method: 'eth_requestAccounts', params?: […] }
-
-// your page → embed
-{ source: 'yeetful-embed', v: 1, type: 'rpc:result', id: '…', result: … }
-{ source: 'yeetful-embed', v: 1, type: 'rpc:error',  id: '…', error: { code: 4200, message: '…' } }
-
-// your page → embed: announce the provider (after 'ready', and on
-// accountsChanged / chainChanged / disconnect). Empty accounts = bridge
-// available but not connected — the embed shows a "Connect host wallet"
-// button instead of prompting uninvited.
-{ source: 'yeetful-embed', v: 1, type: 'wallet', accounts: ['0x…'], chainId: '0x2105' | null }`}</code>
-        </pre>
-        <p>
-          The SDK side enforces a <strong>method allowlist</strong> — connection + signing (
-          <code>eth_requestAccounts</code>, <code>personal_sign</code>,{' '}
-          <code>eth_signTypedData_v4</code>, <code>eth_sendTransaction</code>,{' '}
-          <code>wallet_switchEthereumChain</code>/<code>addEthereumChain</code>) plus read-only
-          RPC (<code>eth_call</code>, gas/fee/balance/receipt lookups and the like); anything
-          else is refused with error code <code>4200</code>. Security model: the bridge grants
-          the iframe the <em>same dapp-level access your page already has</em>{' '}— nothing more.
-          There are no keys in the frame and no blanket signing authority: every signature and
-          transaction pops the user&apos;s own wallet for explicit approval, exactly as if your
-          page had requested it.
-        </p>
-
-        <h2>Or use the SDK</h2>
-        <p>
-          The <code>pantessa</code> npm package ships an embed helper that builds the iframe,
-          wires the origin checks, and keeps the address context in sync:
-        </p>
-        <pre>
-          <code>{`import { mountPantessaChat } from 'pantessa/embed'
+        <h2>Install</h2>
+        <DocsSteps>
+          <DocsStep title="Get an embed key (optional)">
+            <p>
+              Mint a <code>yfe_</code> key on the{' '}
+              <SpineLink href="/dashboard/keys">API Keys page</SpineLink>. It attributes the embed to
+              your account and lists the site under <em>Your embeds</em>. Without one, the embed still
+              works and is tracked by origin.
+            </p>
+          </DocsStep>
+          <DocsStep title="Install the package">
+            <pre>
+              <code>npm install pantessa viem</code>
+            </pre>
+          </DocsStep>
+          <DocsStep title="Mount the chat">
+            <pre>
+              <code>{`import { mountPantessaChat } from 'pantessa/embed'
 
 mountPantessaChat({
-  container: document.getElementById('chat')!,
-  key: 'yfe_…',              // your public embed key (>= 0.10; optional)
-  mcps: ['cow-free', 'snapshot-free'],
-  wallet: 'auto',            // bridge the page's EIP-1193 provider (v1.1);
-                             // or pass a provider (e.g. from wagmi), or false
-                             // for an address-only context via setAddress()
-  mode: 'bubble',            // 'bubble' (floating launcher) | 'inline'
-  onEvent: (name, data) => { /* 'turn' | 'order-signed' — see above */ },
+  key: 'yfe_…',             // optional: your public embed key
+  mcps: ['uniswap-free', 'snapshot-free'],
+  wallet: 'auto',           // the host page's wallet signs
+  mode: 'bubble',           // floating launcher; 'inline' fills a container
 })`}</code>
-        </pre>
+            </pre>
+            <p>
+              For <code>mode: &apos;inline&apos;</code>, also pass{' '}
+              <code>container: document.getElementById(&apos;chat&apos;)</code>.
+            </p>
+          </DocsStep>
+          <DocsStep title="Check your dashboard">
+            <p>
+              Open <SpineLink href="/dashboard/embeds">/dashboard/embeds</SpineLink> after your first
+              visitor turn. It lists your sites and pages and what moved through them.
+            </p>
+          </DocsStep>
+        </DocsSteps>
+
+        <h2>Or install with Claude</h2>
         <p>
-          SDK ≥ 0.10 also reports the page URL (<code>page=</code>) so your dashboard&apos;s{' '}
-          <em>Your embeds</em> list shows exactly which pages run the chat. The handle it
-          returns carries <code>sendPrompt(text)</code> — any button on your page becomes an
-          ask — plus <code>setAddress</code>, <code>setTheme</code>, <code>open</code>/
-          <code>close</code> (bubble) and <code>destroy</code>.
+          Copy this prompt and paste it into Claude Code inside your app&apos;s repo. It installs the
+          SDK, mounts the chat, patches your Content-Security-Policy if needed, and tells you how to
+          check it. Signed in, the <SpineLink href="/dashboard/keys">API Keys page</SpineLink> gives you
+          the same prompt with your embed key filled in.
         </p>
-        <p>
-          Users pick a wallet <em>after</em> the chat is on screen, and <code>wallet</code> is
-          captured at mount. Hand the SDK a provider that survives that — a small EIP-1193
-          facade that forwards to whichever wallet is selected and emits{' '}
-          <code>accountsChanged</code> / <code>chainChanged</code> itself — rather than
-          remounting the iframe (a remount drops the conversation). The example below does
-          exactly this.
-        </p>
+        <EmbedInstall />
 
         <h2>A complete host app</h2>
         <p>
           <a href={ROBINHOOD_DESK.url} target="_blank" rel="noopener noreferrer">
             {ROBINHOOD_DESK.url.replace('https://', '')}
           </a>{' '}
-          is live, and its source,{' '}
+          is a live portfolio desk for tokenized stocks on Robinhood Chain. Its source is{' '}
           <a href={ROBINHOOD_DESK.source} target="_blank" rel="noopener noreferrer">
             agent-examples/agents/robinhood-desk
           </a>
-          , is a standalone portfolio desk for tokenized stocks on Robinhood Chain: it reads
-          holdings and prices from the chain itself, every button is a <code>sendPrompt</code>{' '}
-          into the embed, the visitor&apos;s wallet signs on the host page through the bridge,
-          and the activity log is built from the <code>turn</code>{' '}events above. It ships with a
-          Content-Security-Policy and a jsdom test of the wire, so it doubles as the SDK&apos;s
-          integration check.
+          . It reads holdings and prices from the chain. Every button is a <code>sendPrompt</code>{' '}
+          into the embed. The visitor&apos;s wallet signs on the host page through the bridge, and the
+          activity log is built from <code>turn</code> events. It ships with a CSP and a jsdom test of
+          the wire.
         </p>
 
-        <h2>What your dashboard sees</h2>
+        <h2>Use the handle</h2>
         <p>
-          Every embed session reports turn telemetry, and{' '}
-          <SpineLink href="/dashboard/embeds">/dashboard/embeds</SpineLink> turns it into the numbers a
-          host actually wants:
+          <code>mountPantessaChat</code> returns a handle:
         </p>
         <ul>
           <li>
-            <strong>Money moved</strong> — signed, guardrail-priced USD notional through your
-            embed. The headline.
+            <code>sendPrompt(text, {'{ submit?: boolean }'})</code>: any button on your page becomes an
+            ask. It submits by default; <code>submit: false</code> only prefills.
           </li>
           <li>
-            <strong>The funnel</strong>{' '}— sessions → transactions built → transactions signed,
-            per site and (with SDK ≥ 0.10&apos;s <code>page=</code> reporting) per page.
+            <code>setAddress(address)</code> and <code>setTheme(&apos;dark&apos; | &apos;light&apos;)</code>.
           </li>
           <li>
-            <strong>Dead-end sessions</strong> — visitors who hit friction and never got a build,
-            with their verbatim asks, plus a copyable prompt that hands the whole list to Claude
-            to diagnose which asks need a missing tool, schema, or MCP.
+            <code>open()</code> and <code>close()</code> in bubble mode, and <code>destroy()</code>.
+          </li>
+        </ul>
+        <DocsCallout kind="tip" title="Wallets picked after mount">
+          <p>
+            <code>wallet</code> is read once, at mount. Visitors often pick a wallet after the chat is
+            on screen. Pass a small EIP-1193 facade that forwards to whichever wallet is selected and
+            emits <code>accountsChanged</code> and <code>chainChanged</code> itself. Do not remount the
+            iframe: a remount drops the conversation. The host app above does this.
+          </p>
+        </DocsCallout>
+
+        <h2>What your dashboard shows</h2>
+        <p>
+          Every embed session reports its turns.{' '}
+          <SpineLink href="/dashboard/embeds">/dashboard/embeds</SpineLink> turns them into three things:
+        </p>
+        <ul>
+          <li>
+            <strong>Money moved</strong>: signed, guardrail-priced USD through your embed.
+          </li>
+          <li>
+            <strong>The funnel</strong>: sessions, then transactions built, then transactions signed,
+            per site and per page.
+          </li>
+          <li>
+            <strong>Dead-end sessions</strong>: visitors who never got a build, with their exact asks,
+            and a prompt that hands the list to Claude to find the missing tool.
           </li>
         </ul>
 
-        <h2>Deep links, before you embed</h2>
+        <h2>Deep links, no iframe</h2>
         <p>
-          Not ready for an iframe? Any link can land a visitor in the first-party chat with your
-          MCP set active and an ask <strong>prefilled but never auto-sent</strong>:
+          Any link can open the Pantessa chat with your MCP set active and an ask typed in. The ask is
+          prefilled, never sent: the visitor presses send.
         </p>
         <pre>
           <code>{`https://www.pantessa.com/chat
-  ?mcps=robinhood-free                       # your MCP set, same slugs as the embed
-  &prompt=Buy%20%242%20of%20AAPL             # prefilled — the visitor presses send`}</code>
+  ?mcps=robinhood-free              # same slugs as the embed
+  &prompt=Buy%20%242%20of%20AAPL    # prefilled`}</code>
+        </pre>
+
+        <h2>Reference: the iframe URL</h2>
+        <p>The SDK builds this URL for you. You can also write the iframe by hand:</p>
+        <pre>
+          <code>{`https://www.pantessa.com/embed
+  ?mcps=cow-free,snapshot-free         # directory slugs, max 4
+  &key=yfe_…                           # public embed key
+  &address=0xYourUsersWallet           # optional address context
+  &theme=dark                          # dark (default) | light
+  &host=https%3A%2F%2Fyour.app         # your origin, URL-encoded
+  &page=https%3A%2F%2Fyour.app%2Fswap  # page URL, for analytics`}</code>
+        </pre>
+        <ul>
+          <li>
+            <code>key</code>: a publishable <code>yfe_</code> key. It can read and spend nothing that
+            is not already yours. Each visitor gets a few free house-model answers a day. Past those,
+            answers draw on your account&apos;s pool, which refills from the trades your visitors sign.
+            To run them on your own AI key instead, opt in under{' '}
+            <SpineLink href="/dashboard/plan#ai-key">Your AI key</SpineLink>.
+          </li>
+          <li>
+            <code>mcps</code>: slugs from <Link href="/servers">the catalog</Link>. Unknown slugs are
+            dropped and the list is capped at 4. If none resolve, the chat uses its default set.
+          </li>
+          <li>
+            <code>address</code>: context only. It fills <code>$USER_ADDRESS</code> (&quot;show my open
+            orders&quot;) and shows as a small indicator. It can never sign.
+          </li>
+          <li>
+            <code>host</code>: your page&apos;s origin. The embed exchanges messages only with this
+            origin. Without it, the embed listens to nothing and only posts <code>ready</code> and{' '}
+            <code>resize</code>.
+          </li>
+          <li>
+            <code>page</code>: the page URL. The SDK sends it, so <em>Your embeds</em> shows which
+            pages run the chat.
+          </li>
+        </ul>
+
+        <h2>Reference: postMessage (v1)</h2>
+        <p>
+          Every message is an object tagged <code>{`{ source: 'yeetful-embed', v: 1, type }`}</code>.
+          The <code>yeetful-embed</code> tag is a frozen wire name.
+        </p>
+        <p>From the embed to your page:</p>
+        <pre>
+          <code>{`{ source: 'yeetful-embed', v: 1, type: 'ready' }
+{ source: 'yeetful-embed', v: 1, type: 'resize', height: 620 }
+{ source: 'yeetful-embed', v: 1, type: 'event', name: 'turn',
+  data: { outcome: 'tx-built', artifact: 'tx-chain', valueUsd: 10 } }
+{ source: 'yeetful-embed', v: 1, type: 'event', name: 'order-signed',
+  data: { artifact: 'cow-order', valueUsd: 50, txUrl: 'https://explorer.cow.fi/…' } }`}</code>
         </pre>
         <p>
-          The embed&apos;s <code>prompt</code> postMessage (above) is the same contract with{' '}
-          <code>send: false</code> — CTAs on your page can drop a ready-to-run ask into either
-          surface.
+          <code>turn</code> fires once per chat turn with{' '}
+          <code>{`{ outcome, artifact?, valueUsd?, txUrl?, chainId?, jobId? }`}</code>.
         </p>
+        <ul>
+          <li>
+            <code>outcome</code>: <code>answered</code>, <code>tx-built</code>, <code>signed</code>,{' '}
+            <code>settled</code>, <code>clarify</code>, <code>refused</code>,{' '}
+            <code>credit-gate</code> or <code>error</code>.
+          </li>
+          <li>
+            <code>artifact</code> on <code>tx-built</code>: <code>tx</code>, <code>tx-chain</code>,{' '}
+            <code>job</code>, <code>cow-order</code>, <code>hl-order</code> or <code>vote</code>.
+          </li>
+          <li>
+            <code>signed</code> carries <code>txUrl</code> and <code>chainId</code> when there is a
+            receipt. <code>valueUsd</code> is the guardrail-priced amount.
+          </li>
+        </ul>
+        <p>From your page to the embed (post to the iframe, targeting the Pantessa origin):</p>
+        <pre>
+          <code>{`{ source: 'yeetful-embed', v: 1, type: 'address', address: '0x…' | null }
+{ source: 'yeetful-embed', v: 1, type: 'theme', theme: 'dark' | 'light' }
+{ source: 'yeetful-embed', v: 1, type: 'prompt', text: 'quote 100 USDC…',
+  send: true }   // send: false only prefills`}</code>
+        </pre>
 
-        <h2>Install with Claude</h2>
+        <h2>Reference: wallet bridge (v1.1)</h2>
         <p>
-          The fastest path: copy the Claude Code prompt below and paste it inside your app&apos;s
-          repo. It installs the SDK, mounts the chat, patches your CSP if needed, and tells you
-          how to verify. One paste, live chat. Sign in and the{' '}
-          <SpineLink href="/dashboard/keys">API Keys page</SpineLink>{' '}generates the same prompt with your
-          embed key baked in, so usage attributes to your account.
+          With <code>wallet: &apos;auto&apos;</code> or a provider you pass, the SDK relays your page&apos;s
+          EIP-1193 provider into the iframe over the same origin-pinned channel. Every signature and
+          transaction opens the visitor&apos;s own wallet on your page.
         </p>
-        <EmbedInstall />
+        <pre>
+          <code>{`// embed → your page (the SDK answers)
+{ source: 'yeetful-embed', v: 1, type: 'rpc', id: '…', method: 'eth_requestAccounts', params?: […] }
+
+// your page → embed
+{ source: 'yeetful-embed', v: 1, type: 'rpc:result', id: '…', result: … }
+{ source: 'yeetful-embed', v: 1, type: 'rpc:error', id: '…',
+  error: { code: 4200, message: '…' } }
+
+// your page → embed: announce the provider after 'ready' and on
+// accountsChanged / chainChanged / disconnect. Empty accounts means
+// "bridge available, not connected": the embed shows a connect button.
+{ source: 'yeetful-embed', v: 1, type: 'wallet', accounts: ['0x…'], chainId: '0x2105' | null }`}</code>
+        </pre>
+        <ul>
+          <li>
+            Allowed: <code>eth_requestAccounts</code>, <code>personal_sign</code>,{' '}
+            <code>eth_signTypedData_v4</code>, <code>eth_sendTransaction</code>,{' '}
+            <code>wallet_switchEthereumChain</code>, <code>wallet_addEthereumChain</code>, and
+            read-only calls such as <code>eth_call</code>, balances, gas and receipts.
+          </li>
+          <li>
+            Anything else is refused with error code <code>4200</code>.
+          </li>
+          <li>
+            The bridge gives the iframe the same access your page already has, nothing more. There are
+            no keys in the frame.
+          </li>
+        </ul>
 
         <h2>Notes</h2>
         <ul>
           <li>
-            The route serves <code>Content-Security-Policy: frame-ancestors *</code> — any site
-            may embed it. Scope what the chat can do with <code>mcps</code>, not the frame.
+            The route serves <code>Content-Security-Policy: frame-ancestors *</code>, so any site may
+            embed it. Limit what the chat can do with <code>mcps</code>, not the frame.
           </li>
           <li>
-            Guests run in burner mode: Pantessa&apos;s house wallet pays free-tier calls, so the
-            chat answers with zero setup. Paid MCPs and swap/vote signatures use the bridged
-            host wallet (v1.1) or a wallet your visitor connects inside the frame.
+            Guests chat at once, with no sign-in: Pantessa&apos;s house wallet pays free-tier calls.
+            Paid MCPs, swaps and votes are signed by the bridged host wallet or a wallet the visitor
+            connects inside the frame.
           </li>
         </ul>
       </div>
+
+      <DocsNext
+        links={[
+          { href: '/docs/host-buttons', title: 'Site buttons', desc: 'A money button any page can wear, no chat needed.' },
+          { href: '/docs/jobs', title: 'Jobs API', desc: 'Send one compound ask, get a guarded step plan back.' },
+          { href: '/docs/trust', title: 'Trust', desc: 'How a build is guarded and priced before anyone signs.' },
+        ]}
+      />
     </>
   )
 }
