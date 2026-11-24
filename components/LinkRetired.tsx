@@ -19,7 +19,7 @@ import { LINK_RETIRED_COPY, type LinkLifecycle } from '@/lib/intent-links'
 export default function LinkRetired({ state }: { state: Exclude<LinkLifecycle, 'live'> }) {
   const copy = LINK_RETIRED_COPY[state]
   const chip =
-    'inline-flex items-center gap-2 px-4 min-h-[44px] rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[length:var(--fs-md)] font-medium text-[color:var(--fg)] hover:border-[var(--accent)] transition-colors'
+    'inline-flex items-center gap-2 px-4 min-h-[44px] rounded-[var(--r-pill)] border border-[var(--line)] bg-[var(--surf-1)] text-[length:var(--fs-md)] font-medium text-[color:var(--fg)] hover:border-[var(--accent)] transition-colors'
   return (
     <main className="relative min-h-dvh max-w-xl mx-auto px-4 py-16 flex flex-col justify-center" data-link-state={state}>
       <div className="flex items-center gap-2 mb-8">

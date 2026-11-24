@@ -5283,12 +5283,9 @@
     border-radius: var(--r-lg); padding: 22px 24px 18px;
     background: #050708;
     border: 1px solid rgba(255, 255, 255, 0.11);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
   }
-  .mintstage__glow {
-    position: absolute; inset: 0; z-index: 0; pointer-events: none;
-    background: radial-gradient(80% 60% at 50% 20%, rgba(52, 227, 160, 0.1), transparent 70%);
-  }
+  /* Flat since 2026-11-24 (squad mobile-sleek): no drop shadow under the card, no glow inside it. */
+  .mintstage__glow { display: none; }
   .mintstage > *:not(.mintstage__glow) { position: relative; z-index: 1; }
   .mintstage__head {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
