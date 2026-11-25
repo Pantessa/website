@@ -33,7 +33,7 @@
 // nearest thing listed here and offers THAT sentence. Every link out of the
 // card is a SpineLink (the app's own door).
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import SpineLink from '@/components/SpineLink'
 import ShareActions from '@/components/ShareActions'
 import TokenIcon from '@/components/TokenIcon'
@@ -305,17 +305,6 @@ export default function TheRead({ initial }: { initial: ReadSnapshot }) {
     const left = el.offsetLeft - row.offsetLeft
     if (left < row.scrollLeft || left + el.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollTo({ left: Math.max(0, left - 16), behavior: 'smooth' })
   }, [sel])
-  const onTilesKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
-    const keys = plan.tiles.map((t) => t.item.key)
-    if (keys.length === 0) return
-    const i = Math.max(0, keys.indexOf(sel))
-    const next = keys[(i + (e.key === 'ArrowRight' ? 1 : keys.length - 1)) % keys.length]
-    e.preventDefault()
-    pick(next)
-    tilesRef.current?.querySelector<HTMLElement>(`[data-read-tile="${next}"]`)?.focus()
-  }
-
   const onPlotMove = (e: PointerEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     if (!rect.width) return
@@ -428,7 +417,7 @@ export default function TheRead({ initial }: { initial: ReadSnapshot }) {
       )}
 
       {/* The wall: one tile a token, each a live day's chart; one is picked. */}
-      <div className="read__tiles" role="tablist" aria-label={plan.mode === 'yours' ? 'Your watchlist on the read' : 'The crypto desk'} ref={tilesRef} onKeyDown={onTilesKey} data-cells={cells} style={{ '--read-cols': wallCols(cells, all) } as CSSProperties}>
+      <div className="read__tiles" role="group" aria-label={plan.mode === 'yours' ? 'Your watchlist on the read' : 'The crypto desk'} ref={tilesRef} data-cells={cells} style={{ '--read-cols': wallCols(cells, all) } as CSSProperties}>
         {plan.tiles.map(({ item: i, own }) => {
           const tq = quoteOf(i)
           const t = readTone(tq?.chg, i.unit)
@@ -437,7 +426,12 @@ export default function TheRead({ initial }: { initial: ReadSnapshot }) {
           const on = i.key === sel
           return (
             <div key={i.key} className={`read__cell${own || plan.mode === 'desk' ? '' : ' is-suggested'}`}>
-              <button type="button" role="tab" aria-selected={on} tabIndex={on ? 0 : -1} className={`read__tile is-${t}${on ? ' is-on' : ''}`} onClick={() => pick(i.key)} data-read-tile={i.key} data-kind={i.kind} data-journey={`Read: ${i.key}`}>
+              {(() => {
+                // A tile is the way onto its market's own page (Nate, 2026-11-25); one with no page still picks the chart below.
+                const href = deskPageHref(i)
+                const cls = `read__tile is-${t}${on ? ' is-on' : ''}`
+                return href ? (
+                  <SpineLink href={href} prefetch={false} className={cls} data-read-tile={i.key} data-kind={i.kind} data-journey={`Read tile ${i.key}`}>
                 <span className="read__tilehead">
                   {i.icon && (
                     <span className="read__tileicon" aria-hidden>
@@ -458,7 +452,32 @@ export default function TheRead({ initial }: { initial: ReadSnapshot }) {
                     </>
                   )}
                 </svg>
-              </button>
+                  </SpineLink>
+                ) : (
+                  <button type="button" aria-pressed={on} className={cls} onClick={() => pick(i.key)} data-read-tile={i.key} data-kind={i.kind} data-journey={`Read: ${i.key}`}>
+                <span className="read__tilehead">
+                  {i.icon && (
+                    <span className="read__tileicon" aria-hidden>
+                      <TokenIcon symbol={i.icon} size={18} />
+                    </span>
+                  )}
+                  <span className="read__tilelabel">{i.label}</span>
+                  {tag && <i className={`read__tag read__tag--${tag === '24/7' ? 'always' : 'closed'}`} title={tag === '24/7' ? 'Trades around the clock' : 'Closed: the last session’s close'} aria-hidden />}
+                  {tag === 'closed' && <span className="sr-only"> (closed)</span>}
+                </span>
+                <span className="read__tilelast mono">{fmtDeskValue(i, tq?.last)}</span>
+                <span className="read__tilechg mono">{fmtReadChange(i, tq?.chg)}</span>
+                <svg className="read__spark" viewBox="0 0 120 36" preserveAspectRatio="none" aria-hidden>
+                  {spark && (
+                    <>
+                      <path className="read__sparkarea" d={spark.area} />
+                      <path className="read__sparkline" d={spark.line} vectorEffect="non-scaling-stroke" />
+                    </>
+                  )}
+                </svg>
+                  </button>
+                )
+              })()}
               {/* A token the desk suggests is one press from the visitor's list (the first press makes the list). */}
               {!inList.has(i.key) && listReady && (
                 <button type="button" className="read__watch" onClick={() => watch(i.key)} aria-label={`Add ${i.key} to your watchlist`} title={`Add ${i.key} to your watchlist`} data-read-watch={i.key} data-journey={`Read watch ${i.key}`}>
