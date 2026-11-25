@@ -171,8 +171,12 @@ export function brandBloomTint(brand: LinkBrand | null | undefined, accentPct = 
 /**
  * Flat colors for the OG/X share cards (satori renders no color-mix): the
  * brand bg drives ink/muted by luminance, the accent keeps the same
- * 0.18-luminance guard as the pages. Without a brand bg the house dark
- * palette comes back byte-identical, so unbranded cards don't shift.
+ * 0.18-luminance guard as the pages. Without a brand bg the HOUSE palette
+ * comes back: the Split palette of a made image since 2026-11-25 (brand
+ * guidelines section 3: ground #07080D, white text, quiet #7C8499, the brand
+ * violet #9F7AFF as the accent). It was the green house palette (#050708 /
+ * #34e3a0) until then; green is the market's now and never the accent. The
+ * same inks are lib/og-brand `OG` (pinned equal in scripts/test-api.ts).
  */
 export function brandOgPalette(brand: LinkBrand | null | undefined): {
   bg: string
@@ -185,7 +189,7 @@ export function brandOgPalette(brand: LinkBrand | null | undefined): {
 } {
   const bg = normalizeHex(brand?.bg)
   if (!bg) {
-    return { bg: '#050708', ink: '#FAFAF7', inkRgb: '250,250,247', muted: '#8a9186', accent: '#34e3a0', branded: false }
+    return { bg: '#07080D', ink: '#FFFFFF', inkRgb: '255,255,255', muted: '#7C8499', accent: '#9F7AFF', branded: false }
   }
   const lum = hexLuminance(bg) ?? 0
   const dark = lum < 0.5

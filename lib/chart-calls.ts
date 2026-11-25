@@ -232,7 +232,7 @@ export function callCardSvg(candles: Candle[], state: ChartState | null, callT: 
     const bh = Math.max(1.5, y(Math.min(c.o, c.c)) - top)
     parts.push(
       `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${y(c.h).toFixed(1)}" y2="${y(c.l).toFixed(1)}" stroke="${col}" stroke-width="1.5"/>`,
-      `<rect x="${(cx - bodyW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${bh.toFixed(1)}" rx="1.5" fill="${col}"/>`,
+      `<rect x="${(cx - bodyW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${col}"/>`,
     )
   })
   for (const l of lines) {
@@ -240,7 +240,7 @@ export function callCardSvg(candles: Candle[], state: ChartState | null, callT: 
       const yy = y(l.price).toFixed(1)
       parts.push(`<line x1="0" x2="${w}" y1="${yy}" y2="${yy}" stroke="${sellish(l) ? o.sell : l.action ? o.accent : o.ink}" stroke-width="2"${l.action ? '' : ' stroke-dasharray="8 6"'} opacity="0.95"/>`)
     } else if (l.kind === 'trend') {
-      parts.push(`<line x1="${x(l.t1).toFixed(1)}" y1="${y(l.p1).toFixed(1)}" x2="${x(l.t2).toFixed(1)}" y2="${y(l.p2).toFixed(1)}" stroke="${o.ink}" stroke-width="2.5" stroke-linecap="round"/>`)
+      parts.push(`<line x1="${x(l.t1).toFixed(1)}" y1="${y(l.p1).toFixed(1)}" x2="${x(l.t2).toFixed(1)}" y2="${y(l.p2).toFixed(1)}" stroke="${o.ink}" stroke-width="2.5" stroke-linecap="butt"/>`)
     } else if (l.kind === 'fib') {
       const left = Math.max(0, Math.min(x(l.t1), x(l.t2)))
       for (const lv of fibLevels(l.p1, l.p2)) {
@@ -252,7 +252,7 @@ export function callCardSvg(candles: Candle[], state: ChartState | null, callT: 
       const xx = x(l.t).toFixed(1)
       parts.push(`<line x1="${xx}" x2="${xx}" y1="0" y2="${h}" stroke="${o.ink}" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.6"/>`)
     } else if (l.kind === 'note' && onScale(l.price)) {
-      parts.push(`<circle cx="${x(l.t).toFixed(1)}" cy="${y(l.price).toFixed(1)}" r="6" fill="${o.accent}"/>`)
+      parts.push(`<rect x="${(x(l.t) - 6).toFixed(1)}" y="${(y(l.price) - 6).toFixed(1)}" width="12" height="12" fill="${o.accent}"/>`)
     }
   }
   // the stamp: where on this tape the call was made

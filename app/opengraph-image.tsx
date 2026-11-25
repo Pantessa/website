@@ -1,8 +1,8 @@
 import { ImageResponse } from 'next/og'
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { headers } from 'next/headers'
 import { gemMarkSvg } from '@/lib/og-marks'
+import { OG, OgChips, OgFrame, OgLockup, OgMove, OgPanel, OgPanelHead, OgWords, ogDisplay, ogLabel, ogNum } from '@/lib/og-brand'
+import { brandOgFonts } from '@/lib/og-brand-fonts'
 import { fmtCountdown, sessionStripFor } from '@/lib/markets'
 import { HERO_LINE } from '@/lib/markets-copy'
 import { fmtOgPrice, marketsOgBoard, marketsOgSymbols, symbolName } from '@/lib/markets-seo'
@@ -11,7 +11,7 @@ import type { Quote } from '@/lib/watchlists'
 // Social card for the site (og:image + twitter:image via app/twitter-image.tsx).
 // THE FRONT DOOR (squad front-door, 2026-10-06): `/` is the markets splash —
 // the index in the app shell with the live pulse on top — so the site card is
-// the page in miniature: the claim in the hero's serif on the left, and on
+// the page in miniature: the claim as the display line on the left, and on
 // the right THE BOARD, the card /markets wore since #817 (2026-09-17), now
 // re-homed here with the page (the /markets URL redirects to `/`, and so do
 // its card URLs). The brochure's rehearsal card — a live tape with the HUD —
@@ -23,8 +23,12 @@ import type { Quote } from '@/lib/watchlists'
 // and the family's honest size. The NYSE session and its next bell come from
 // the same clock the page's session strip reads. A quotes miss draws the
 // board with dashes and says the feed is warming up; it never fakes a number
-// and never 500s. Fonts from assets/og-fonts (the families every other
-// Pantessa card uses).
+// and never 500s.
+//
+// THE LOOK (2026-11-25; brand guidelines section 7, lib/og-brand): the ground
+// is #07080D and flat, the Cut P wears its own magenta and violet, the claim
+// is the one display line, upright, and the board is a square hairline panel.
+// Green and red are a row's move and nothing else.
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,21 +36,12 @@ export const alt = `Pantessa — ${HERO_LINE} Stocks 24/7, crypto spot and perps
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
-const BG = '#050708'
-const INK = '#FAFAF7'
-const MUTED = '#8a9186'
-const ACCENT = '#34e3a0'
-const DOWN = '#ff5d5d'
-const LINE = 'rgba(255,255,255,0.10)'
-
 // The eyebrow, word for word the splash's family line: "one wallet" is the
 // one word the 520px column can't hold beside the board.
 const EYEBROW = ['STOCKS 24/7', 'PERPS', 'SPOT', 'YIELD']
 
-const toDataUri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
-
 // The house mark comes from lib/og-marks — ONE source across every OG card.
-const MARK = gemMarkSvg(ACCENT)
+const MARK = gemMarkSvg(undefined, { bare: true })
 
 interface Quotes {
   quotes: Record<string, Quote>
@@ -92,110 +87,60 @@ function fmtUtc(ms: number): string {
 
 export default async function Image() {
   const board = marketsOgBoard()
-  const fonts = join(process.cwd(), 'assets', 'og-fonts')
-  const [serif, serifItalic, sans, sansSemi, live] = await Promise.all([
-    readFile(join(fonts, 'newsreader-500.ttf')),
-    readFile(join(fonts, 'newsreader-500-italic.ttf')),
-    readFile(join(fonts, 'geist-500.ttf')),
-    readFile(join(fonts, 'geist-600.ttf')),
-    loadQuotes(marketsOgSymbols()),
-  ])
+  const [fonts, live] = await Promise.all([brandOgFonts(), loadQuotes(marketsOgSymbols())])
   const quoted = Object.keys(live.quotes).length
   const strip = sessionStripFor()
   const bell = `${strip.nyse.label} · ${strip.nyse.bell} in ${fmtCountdown(strip.nyse.minsToBell)}`
 
   return new ImageResponse(
     (
-      <div style={{ width: '100%', height: '100%', display: 'flex', position: 'relative', background: BG, fontFamily: 'Geist' }}>
-        {/* ambient glow behind the board */}
-        <div style={{ position: 'absolute', right: -140, top: 40, width: 760, height: 560, borderRadius: 380, background: 'radial-gradient(circle, rgba(52,227,160,0.15) 0%, rgba(52,227,160,0) 70%)', display: 'flex' }} />
-
+      <OgFrame>
         {/* left: lockup + the claim */}
-        <div style={{ position: 'absolute', left: 64, top: 56, display: 'flex', flexDirection: 'column', width: 520 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={toDataUri(MARK)} width={58} height={58} alt="" />
-            <span style={{ color: INK, fontSize: 44, fontWeight: 600, letterSpacing: -1.8 }}>pantessa</span>
+        <div style={{ position: 'absolute', left: 64, top: 56, display: 'flex', flexDirection: 'column', width: 530 }}>
+          <OgLockup mark={MARK} size={50} />
+          <div style={{ display: 'flex', marginTop: 28 }}>
+            <OgWords words={EYEBROW} size={15} />
           </div>
-          <div style={{ display: 'flex', marginTop: 24, fontSize: 17, letterSpacing: 4.5, color: MUTED, whiteSpace: 'nowrap' }}>
-            {EYEBROW.map((w, i) => (
-              <span key={w} style={{ display: 'flex' }}>
-                {i > 0 && <span style={{ color: ACCENT, margin: '0 12px' }}>·</span>}
-                <span>{w}</span>
-              </span>
-            ))}
+          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 46, whiteSpace: 'nowrap', ...ogDisplay(74) }}>
+            <span>The chart</span>
+            <span>that executes.</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 44, fontFamily: 'Newsreader', fontWeight: 500, fontSize: 92, lineHeight: 0.98, letterSpacing: -3 }}>
-            <span style={{ color: INK }}>The chart</span>
-            <span
-              style={{
-                fontStyle: 'italic',
-                letterSpacing: -1.6,
-                backgroundImage: `linear-gradient(92deg, #7df0bd 6%, ${ACCENT} 46%, #ffd25e 104%)`,
-                backgroundClip: 'text',
-                color: 'transparent',
-                paddingBottom: 12,
-                paddingRight: 10,
-              }}
-            >
-              that executes.
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 30, gap: 12, fontSize: 17, letterSpacing: 4, color: MUTED }}>
-            <span>UNLIMITED WATCHLISTS · ALERTS · FREE</span>
-            <span style={{ color: '#b8bfb5' }}>YOUR WALLET SIGNS</span>
+          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 32, gap: 12 }}>
+            <span style={ogLabel(15)}>UNLIMITED WATCHLISTS · ALERTS · FREE</span>
+            <span style={ogLabel(15, OG.soft)}>YOUR WALLET SIGNS</span>
           </div>
         </div>
 
         {/* left-bottom: the session strip the page shows */}
-        <div style={{ position: 'absolute', left: 64, bottom: 44, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 999, border: `1.5px solid ${LINE}`, color: MUTED, fontSize: 14, letterSpacing: 2, whiteSpace: 'nowrap' }}>
-            <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 4, background: strip.nyse.open ? ACCENT : '#ffd25e' }} />
-            <span>{bell.toUpperCase()}</span>
-          </div>
-          <div style={{ display: 'flex', padding: '8px 16px', borderRadius: 999, border: `1.5px solid ${LINE}`, color: MUTED, fontSize: 14, letterSpacing: 2, whiteSpace: 'nowrap' }}>
-            <span>{strip.tokens.toUpperCase()}</span>
-          </div>
+        <div style={{ position: 'absolute', left: 64, bottom: 44, display: 'flex' }}>
+          <OgChips size={12.5} ink={OG.muted} accent={strip.nyse.open ? OG.violet : OG.muted} chips={[bell, { label: strip.tokens, plain: true }]} />
         </div>
 
         {/* right: THE BOARD — the three families the index lists */}
-        <div style={{ position: 'absolute', left: 618, top: 56, width: 518, height: 518, display: 'flex', flexDirection: 'column', borderRadius: 22, border: '1.5px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 22px', borderBottom: `1.5px solid ${LINE}` }}>
-            <span style={{ color: INK, fontSize: 14, fontWeight: 600, letterSpacing: 3 }}>THE BOARD</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, letterSpacing: 2.5, color: quoted ? ACCENT : MUTED }}>
-              <div style={{ display: 'flex', width: 7, height: 7, borderRadius: 4, background: quoted ? ACCENT : MUTED }} />
-              <span>{quoted && live.asOf != null ? `LIVE · ${fmtUtc(live.asOf)}` : 'LIVE · FEED WARMING UP'}</span>
-            </div>
-          </div>
+        <OgPanel left={618} top={56} width={518} height={518}>
+          <OgPanelHead title="THE BOARD" note={quoted && live.asOf != null ? `LIVE · ${fmtUtc(live.asOf)}` : 'LIVE · FEED WARMING UP'} live={!!quoted} />
           <div style={{ display: 'flex', flexDirection: 'column', padding: '10px 22px 0' }}>
             {board.map((g, gi) => (
               <div key={g.id} style={{ display: 'flex', flexDirection: 'column', marginTop: gi === 0 ? 0 : 9 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', paddingBottom: 4, borderBottom: `1px solid ${LINE}` }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, whiteSpace: 'nowrap' }}>
-                    <span style={{ color: INK, fontSize: 12, fontWeight: 600, letterSpacing: 2.5 }}>{g.label.toUpperCase()}</span>
-                    <span style={{ color: MUTED, fontSize: 11, letterSpacing: 1.5 }}>{g.venue.toUpperCase()}</span>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', paddingBottom: 5, borderBottom: `1px solid ${OG.rule}` }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
+                    <span style={{ ...ogLabel(11.5, OG.ink), fontWeight: 600 }}>{g.label.toUpperCase()}</span>
+                    <span style={ogLabel(10.5)}>{g.venue.toUpperCase()}</span>
                   </div>
-                  <span style={{ color: MUTED, fontSize: 11, letterSpacing: 2, whiteSpace: 'nowrap' }}>{g.total} LISTED</span>
+                  <span style={ogLabel(10.5)}>{g.total} LISTED</span>
                 </div>
                 {g.symbols.map((s) => {
                   const q = live.quotes[s]
                   const name = shortName(s)
-                  const up = q ? q.chgPct >= 0 : null
                   return (
                     <div key={s} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 31 }}>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, whiteSpace: 'nowrap' }}>
-                        <span style={{ color: INK, fontSize: 19, fontWeight: 600, letterSpacing: -0.3 }}>{s}</span>
-                        {name && <span style={{ color: MUTED, fontSize: 13 }}>{name}</span>}
+                        <span style={{ color: OG.ink, fontSize: 19, fontWeight: 600, letterSpacing: -0.3 }}>{s}</span>
+                        {name && <span style={{ color: OG.muted, fontSize: 13 }}>{name}</span>}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, whiteSpace: 'nowrap' }}>
-                        {q ? (
-                          <span style={{ color: up ? ACCENT : DOWN, fontSize: 13, fontWeight: 600, width: 84, justifyContent: 'flex-end', display: 'flex' }}>
-                            {up ? '▲' : '▼'} {Math.abs(q.chgPct).toFixed(2)}%
-                          </span>
-                        ) : (
-                          <span style={{ color: MUTED, fontSize: 13, width: 84, justifyContent: 'flex-end', display: 'flex' }}>—</span>
-                        )}
-                        <span style={{ color: q ? INK : MUTED, fontSize: 18, fontWeight: 600, width: 104, justifyContent: 'flex-end', display: 'flex' }}>{q ? `$${fmtOgPrice(q.last)}` : '—'}</span>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                        <OgMove pct={q ? q.chgPct : null} size={13} width={88} />
+                        <span style={{ display: 'flex', justifyContent: 'flex-end', width: 108, ...ogNum(17, q ? OG.ink : OG.muted) }}>{q ? `$${fmtOgPrice(q.last)}` : '—'}</span>
                       </div>
                     </div>
                   )
@@ -203,21 +148,13 @@ export default async function Image() {
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', padding: '0 22px 14px', fontSize: 11, letterSpacing: 2, whiteSpace: 'nowrap' }}>
-            <span style={{ color: MUTED }}>EVERY ROW IS AN ORDER FORM</span>
-            <span style={{ color: ACCENT }}>pantessa.com</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', padding: '0 22px 14px' }}>
+            <span style={ogLabel(11)}>EVERY ROW IS AN ORDER FORM</span>
+            <span style={ogNum(13, OG.violet)}>pantessa.com</span>
           </div>
-        </div>
-      </div>
+        </OgPanel>
+      </OgFrame>
     ),
-    {
-      ...size,
-      fonts: [
-        { name: 'Newsreader', data: serif, weight: 500, style: 'normal' },
-        { name: 'Newsreader', data: serifItalic, weight: 500, style: 'italic' },
-        { name: 'Geist', data: sans, weight: 500, style: 'normal' },
-        { name: 'Geist', data: sansSemi, weight: 600, style: 'normal' },
-      ],
-    },
+    { ...size, fonts },
   )
 }
