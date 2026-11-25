@@ -79,7 +79,6 @@ export const COIN_NAMES: Readonly<Record<string, string>> = {
   LIT: 'Lighter',
   MON: 'Monad',
   PUMP: 'Pump.fun',
-  BNB: 'BNB',
   XPL: 'Plasma',
   TRUMP: 'Official Trump',
   PAXG: 'PAX Gold',
@@ -109,7 +108,7 @@ const PERP_ORDER = [
   // venue's most traded listings with no spot book here, by its 24h volume
   // that day. Each is in lib/charts HYPERLIQUID_BOARD_PERPS, so it clears
   // the resolver cold.
-  'XMR', 'VVV', 'LIT', 'MON', 'PUMP', 'BNB', 'XPL', 'TRUMP', 'PAXG', 'TAO',
+  'XMR', 'VVV', 'LIT', 'MON', 'PUMP', 'XPL', 'TRUMP', 'PAXG', 'TAO',
   'TRX', 'ETHFI', 'PURR', 'LTC', 'WLFI', 'XLM', 'ASTER',
 ]
 

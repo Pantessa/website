@@ -24310,7 +24310,8 @@ async function main() {
         eq.rows.length >= 190 && !eq.rows.some((r) => r.symbol === 'SATS' || r.symbol === 'CASHCAT') &&
         eq.rows[0].symbol === 'AAPL' && eq.rows[0].name === 'Apple' &&
         cr.rows.length >= 30 && cr.rows[0].symbol === 'BTC' && cr.rows[0].name === 'Bitcoin' &&
-        pp.rows.length === 3,
+        // RE-PINNED 2026-11-25: the Perps board lists 19 (3 + the 16 in lib/charts HYPERLIQUID_BOARD_PERPS), was 3.
+        pp.rows.length === 19 && pp.rows[0].symbol === 'HYPE',
       `eq=${eq.rows.length} cr=${cr.rows.length} pp=${pp.rows.length}`,
     )
     // Search + the chat/voice door.
