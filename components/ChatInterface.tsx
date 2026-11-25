@@ -64,7 +64,7 @@ import { useHydrated } from '@/lib/use-hydrated'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '@/lib/turn-status'
 import { SplashDashboard } from '@/components/SplashDashboard'
 import ChatLoader from '@/components/ChatLoader'
-import { earnsChatCard } from '@/lib/splash/types'
+import { earnsChatCard, midChatCardServers } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
 import PostProofDoor from '@/components/community/PostProofDoor'
@@ -647,6 +647,15 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // its set is context, not news, so it never earns retroactive cards.
   const splashSeedRef = useRef<Set<string>>(new Set())
   const splashSeqRef = useRef(0)
+  // The hand picks that were already on when the conversation began. Past the
+  // first message only a pick made by hand SINCE earns a card (lib/splash/types
+  // midChatCardServers): the boot's own late arrivals are not news.
+  const manualAtStartRef = useRef<Set<string>>(new Set())
+  // An ask pressed on another page that runs here (the arrival effects below
+  // own it). Declared up here because the splash reads it: a conversation
+  // that opens on an ask is the ask's, not a dashboard's.
+  const [arrival, setArrival] = useState<ArrivalIntent | null>(null)
+  const [arrivalPhase, setArrivalPhase] = useState<ArrivalPhase>('holding')
 
   // Simple mode has no splash surface at all — batches never mint, so the
   // link runtime stays a single focused thread (cards were "too much info").
@@ -674,8 +683,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           ? [...(currentChat?.activeServerIds ?? []), ...splashableServers.map((s) => s.id)]
           : [],
       )
+      manualAtStartRef.current = new Set(manualSlugs)
     }
     const emptyChat = (currentChat?.messages.length ?? 0) === 0
+    // Until the first message every hand pick is part of the opening set; a
+    // pick switched off later is forgotten, so switching it on again is news.
+    if (emptyChat) manualAtStartRef.current = new Set(manualSlugs)
+    else for (const slug of [...manualAtStartRef.current]) if (!manualSlugs.includes(slug)) manualAtStartRef.current.delete(slug)
     if (autoRouter) {
       // Engine mode has no splash surface. An untouched (empty) chat drops its
       // cards like before; mid-conversation cards stay — they're history.
@@ -684,6 +698,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     }
     if (!effectiveAddress) return
     setSplashBatches((prev) => {
+      // An ask pressed on another page is about to run here (or was called
+      // off and parked, which clears `arrival` and brings the dashboard back).
+      // No dashboard under it: the wallet card used to paint for a beat above
+      // the ask, or, when the wallet's saved apps landed after the send, as a
+      // "new app" card UNDER the job (Nate, 2026-11-25).
+      if (emptyChat && arrival) return prev.length ? [] : prev
       if (emptyChat) {
         // Pre-send the splash is ONE unified dashboard mirroring the working
         // set — NOT an accumulation of per-MCP batches. The boot sequence adds
@@ -710,10 +730,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         return [{ id, serverIds: ids, manualSlugs: mSlugs, anchor: 0 }]
       }
       // Mid-conversation the cards are append-only history: an MCP toggled on
-      // after the chat has messages earns its OWN batch at the current point;
-      // existing cards never re-fetch and a mid-convo removal keeps its card.
+      // BY HAND after the chat has messages earns its OWN batch at the current
+      // point; existing cards never re-fetch and a mid-convo removal keeps its
+      // card. Apps the boot brings in late (the default fleet, the wallet's
+      // saved set landing after a first send) earn nothing.
       const covered = new Set([...splashSeedRef.current, ...prev.flatMap((b) => b.serverIds)])
-      const fresh = splashableServers.filter((s) => !covered.has(s.id))
+      const fresh = midChatCardServers(splashableServers, covered, manualSlugs, manualAtStartRef.current)
       if (fresh.length === 0) return prev
       return [
         ...prev,
@@ -726,7 +748,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       ]
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [splashableKey, effectiveAddress, currentChatId, currentChat?.messagesLoaded, autoRouter, sessionStatus])
+  }, [splashableKey, effectiveAddress, currentChatId, currentChat?.messagesLoaded, autoRouter, sessionStatus, !!arrival])
 
   // All batches settled with zero tiles → the caller's normal empty state.
   const splashSettledEmpty =
@@ -915,8 +937,6 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // surface receives: /i (simple) and the embed run their own asks and must
   // never inherit one from another page in the tab.
   const pathname = usePathname()
-  const [arrival, setArrival] = useState<ArrivalIntent | null>(null)
-  const [arrivalPhase, setArrivalPhase] = useState<ArrivalPhase>('holding')
   const arrivalTakenRef = useRef(false)
   useEffect(() => {
     if (arrivalTakenRef.current) return
