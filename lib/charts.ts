@@ -148,12 +148,13 @@ const HYPERLIQUID_PERPS = new Set(['HYPE', 'SYRUP', 'FARTCOIN', 'BRETT', 'AIXBT'
 /** Main-book perps the Perps board lists by name (lib/markets PERP_ORDER,
  *  2026-11-25): the venue's most traded listings with no Coinbase product
  *  here, read off its 24h volume that day. They resolve on a COLD table, so
- *  the board draws the same rows on a fresh server, in a browser and in the
- *  sitemap. They are NOT in HYPERLIQUID_PERPS on purpose: the free-text
+ *  the board draws the same rows on a fresh server and in a browser. They are NOT in HYPERLIQUID_PERPS on purpose: the free-text
  *  scanners still read them only when typed as a ticker (isLiveOnlyHlPair
- *  stays true), because "pump", "trump", "lit" and "mon" are prose. */
+ *  stays true), because "pump", "trump", "lit" and "mon" are prose, and
+ *  chartableSymbols (the sitemap index) stays the static set. BNB is left
+ *  out: the rail composes a spot "Buy $10 of BNB" no venue here builds. */
 const HYPERLIQUID_BOARD_PERPS = new Set([
-  'XMR', 'VVV', 'LIT', 'MON', 'PUMP', 'BNB', 'XPL', 'TRUMP', 'PAXG', 'TAO',
+  'XMR', 'VVV', 'LIT', 'MON', 'PUMP', 'XPL', 'TRUMP', 'PAXG', 'TAO',
   'TRX', 'ETHFI', 'PURR', 'LTC', 'WLFI', 'XLM', 'ASTER',
 ])
 
@@ -774,7 +775,6 @@ export function chartableSymbols(): string[] {
   }
   for (const s of COINBASE_USD) push(s)
   for (const s of HYPERLIQUID_PERPS) push(s)
-  for (const s of HYPERLIQUID_BOARD_PERPS) push(s)
   for (const s of [...ROBINHOOD_TICKER_SET].sort()) push(s)
   for (const ix of CHART_INDEXES) push(ix.symbol)
   return out
