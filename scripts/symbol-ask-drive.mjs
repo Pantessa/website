@@ -205,6 +205,13 @@ try {
   check('…and ONE turn fires there with the ticket\'s sentence, unprompted', fired1.length === 1 && fired1[0].message === ask1, JSON.stringify(fired1.map((p) => p.message)))
   check('…with Robinhood (the venue that trades AAPL) and NEAR Intents (the funding companion) ON in the set', has(fired1[0]?.slugs ?? [], /robinhood/) && (has(fired1[0]?.slugs ?? [], /near-intents/) || has(fired1[0]?.names ?? [], /near\s?intents/i)), JSON.stringify(fired1[0]?.slugs))
 
+  // A conversation that opens on an ask is the ask's: no wallet or app card
+  // above it, and none under the reply when the wallet's saved apps land
+  // after the send (Nate, 2026-11-25: the Pantessa Wallet card under a job).
+  await sleep(6000)
+  const cards1 = await a.ev(`[...document.querySelectorAll('[data-splash-card]')].map((c) => c.getAttribute('data-splash-card')).join(',')`)
+  check('…and no dashboard card paints in that conversation, above the ask or under the reply', cards1 === '', String(cards1))
+
   // ── 2. the say row's question ─────────────────────────────────────────
   const b = await tab()
   await b.go('/t/AAPL')

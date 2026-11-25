@@ -10,7 +10,7 @@ import { arrivalAllowed, ARRIVAL_MAX_MCPS } from '../lib/arrival-fence'
 import { useAskDoor } from '../lib/ask-door'
 import { FIRST_PARTY_APP_SLUGS } from '../lib/ask-apps'
 import { chartPairFor } from '../lib/charts'
-import { earnsChatCard } from '../lib/splash/types'
+import { earnsChatCard, midChatCardServers } from '../lib/splash/types'
 import { namesSymbol, pairVenueApp, symbolAskApps, symbolAskNeedsWallet, symbolAskText } from '../lib/symbol-ask'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -134,6 +134,20 @@ export function symbolAskPins(check: Check) {
     (ci.match(/noteAskApps\(missing\)/g) ?? []).length === 1 && (ci.match(/noteAskApps\(fresh\.map\(\(r\) => r\.id\)\)/g) ?? []).length === 1 &&
       (ci.match(/earnsChatCard\(s, manualSlugs, askAppsRef\.current\)/g) ?? []).length === 2 && !/splashCapable/.test(ci) &&
       ci.includes('if (!activeServerIds.includes(id)) askAppsRef.current.delete(id)'))
+
+  // ── no card under an ask that ran on arrival (Nate, 2026-11-25) ─────────
+  // "2x Long $25 of XMR" pressed on the home ran in /chat; the wallet's saved
+  // apps landed after the send and the Pantessa Wallet card painted under the job.
+  const wallet = { id: 'w', slug: 'yeetful-tool-wallet', name: 'Pantessa Wallet' }
+  check('symbol ask (no late card): past the first message only an app switched on by hand SINCE earns a card; one the boot brought in late, one hand-picked before the conversation began and one that already has a card earn none',
+    midChatCardServers([wallet, rh], new Set(), [], new Set()).length === 0 &&
+      midChatCardServers([wallet, rh], new Set(), ['robinhood-free'], new Set(['robinhood-free'])).length === 0 &&
+      midChatCardServers([wallet, rh], new Set(), ['robinhood-free'], new Set()).map((s) => s.id).join() === 'rh' &&
+      midChatCardServers([wallet, rh], new Set(['rh']), ['robinhood-free'], new Set()).length === 0)
+  check('symbol ask (no late card, wired): the chat mints a mid-conversation card through the one rule, and mints no dashboard at all while an ask from another page is arriving',
+    ci.includes('midChatCardServers(splashableServers, covered, manualSlugs, manualAtStartRef.current)') &&
+      ci.includes('if (emptyChat && arrival) return prev.length ? [] : prev') &&
+      ci.includes('if (emptyChat) manualAtStartRef.current = new Set(manualSlugs)'))
 }
 
 // Runnable alone (the harness imports this file, so the run is argv-gated).

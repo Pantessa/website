@@ -292,3 +292,19 @@ export function earnsChatCard(
   if (askAdded.has(s.id)) return false
   return splashCapable(s) || manualSlugs.includes(s.slug)
 }
+
+/** Which apps earn a card once the conversation has messages: only the ones
+ *  the person switched on BY HAND since it began. `covered` = ids that already
+ *  have a card or were on when the conversation opened; `manualAtStart` = the
+ *  hand picks that were on before the first message. An app the boot brings in
+ *  late (the default fleet, the wallet's saved set landing after an ask that
+ *  ran on arrival) is not news: its card used to land under the reply, a
+ *  wallet dashboard below a job waiting on a signature (Nate, 2026-11-25). */
+export function midChatCardServers<T extends { id: string; slug: string }>(
+  splashable: readonly T[],
+  covered: ReadonlySet<string>,
+  manualSlugs: readonly string[],
+  manualAtStart: ReadonlySet<string>,
+): T[] {
+  return splashable.filter((s) => !covered.has(s.id) && manualSlugs.includes(s.slug) && !manualAtStart.has(s.slug))
+}
