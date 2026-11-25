@@ -44,7 +44,7 @@ export default function LinksBoardView({
           Intent links · in the open
         </span>
       </div>
-      <h1 className="text-3xl font-semibold text-[color:var(--fg)] mb-3">
+      <h1 className="sk-display text-[2.1rem] sm:text-[2.6rem] text-[color:var(--fg)] mb-4">
         A link that moves money.
       </h1>
       <p className="text-[15px] leading-relaxed text-[color:var(--muted)] max-w-xl mb-8">
@@ -91,7 +91,7 @@ export default function LinksBoardView({
             Mint yours
           </h2>
           <MintLinkForm onMinted={onMinted} className="mb-6" />
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap max-sm:flex-col max-sm:items-stretch max-sm:gap-2">
             <Link href="/links/embed" className="btn btn--ghost text-[13px]">
               Put a button on your site
             </Link>
@@ -118,7 +118,7 @@ export default function LinksBoardView({
               <Link
                 key={p.handle}
                 href={`/l/${p.handle}`}
-                className="group rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-4 py-2 hover:border-[var(--accent)] transition-colors"
+                className="group rounded-[var(--r-pill)] border border-[var(--line)] bg-[var(--surf-1)] px-4 py-2 hover:border-[var(--accent)] transition-colors"
               >
                 <span className="text-[13px] text-[color:var(--fg)] group-hover:text-[color:var(--accent)] transition-colors">
                   @{p.handle}

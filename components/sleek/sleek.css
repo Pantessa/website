@@ -1,0 +1,227 @@
+/* SLEEK: the shared kit of the mobile-sleek squad (2026-11-24).
+ *
+ * One small set of shapes every surface of the squad draws with, so the phone
+ * reads as one product: the brand's CUT CORNER (the tile's top-left and
+ * bottom-right corners, components of the Cut P), hairlines, flat fills, mono
+ * capitals for labels and Fraunces for the one display line.
+ *
+ * Rules (brand guidelines, 2026-11-24):
+ *   · Flat fills and hard edges. No gradient, glow, shadow or blur here.
+ *   · Green and red are the market's. A verdict is the market's word on a
+ *     call, so `right` is --up and `wrong` is --sell; violet and magenta never
+ *     mean a price moved.
+ *   · Prefix `sk-`. Nothing else in the repo uses it.
+ *
+ * A lane composes these classes; it does not edit this file (ask the
+ * coordinator), so every lane's surfaces stay in step.
+ */
+
+:root {
+  --sk-cut: 10px;
+  --sk-gutter: 16px;
+  --sk-tap: 44px;
+  --sk-display: 'Fraunces', 'Newsreader', Georgia, 'Times New Roman', serif;
+  --sk-right: var(--up);
+  --sk-wrong: var(--sell);
+  --sk-flat: var(--muted-2);
+  --sk-open: var(--gold);
+}
+
+/* A verdict's tone, for anything inside. */
+.sk-right { --sk-tone: var(--sk-right); }
+.sk-wrong { --sk-tone: var(--sk-wrong); }
+.sk-flat { --sk-tone: var(--sk-flat); }
+.sk-open { --sk-tone: var(--sk-open); }
+
+/* ── The cut ─────────────────────────────────────────────────────────── */
+
+/* The tile's silhouette on any box: top-left and bottom-right corners cut. */
+.sk-cut {
+  clip-path: polygon(var(--sk-cut) 0, 100% 0, 100% calc(100% - var(--sk-cut)), calc(100% - var(--sk-cut)) 100%, 0 100%, 0 var(--sk-cut));
+}
+
+/* A hairline card with the cut. `--sk-edge` is the hairline, `--sk-fill` the
+   ground. (A clip-path would cut a real border at the corners, so the edge is
+   the box and the fill is a layer one pixel inside it.) */
+.sk-card {
+  position: relative;
+  isolation: isolate;
+  background: var(--sk-edge, var(--line));
+  clip-path: polygon(var(--sk-cut) 0, 100% 0, 100% calc(100% - var(--sk-cut)), calc(100% - var(--sk-cut)) 100%, 0 100%, 0 var(--sk-cut));
+}
+.sk-card::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  background: var(--sk-fill, var(--bg));
+  clip-path: polygon(calc(var(--sk-cut) - 0.6px) 0, 100% 0, 100% calc(100% - var(--sk-cut) + 0.6px), calc(100% - var(--sk-cut) + 0.6px) 100%, 0 100%, 0 calc(var(--sk-cut) - 0.6px));
+}
+.sk-card--tone { --sk-edge: var(--sk-tone); }
+.sk-card--raised { --sk-fill: var(--surf-1); }
+
+/* ── Type ────────────────────────────────────────────────────────────── */
+
+.sk-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.sk-display {
+  font-family: var(--sk-display);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.05;
+}
+.sk-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Buttons and chips ───────────────────────────────────────────────── */
+
+.sk-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--sk-tap);
+  padding: 0 18px;
+  border: 0;
+  background: var(--accent);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  --sk-cut: 8px;
+  clip-path: polygon(var(--sk-cut) 0, 100% 0, 100% calc(100% - var(--sk-cut)), calc(100% - var(--sk-cut)) 100%, 0 100%, 0 var(--sk-cut));
+  -webkit-tap-highlight-color: transparent;
+}
+.sk-btn:active { filter: brightness(0.9); }
+.sk-btn:focus-visible { outline: 2px solid var(--fg); outline-offset: -4px; }
+.sk-btn--buy { background: var(--up); }
+.sk-btn--sell { background: var(--sell); color: #fff; }
+.sk-btn--hot { background: var(--hot); }
+.sk-btn--quiet { background: var(--surf-2); color: var(--fg); }
+.sk-btn--block { display: flex; width: 100%; }
+
+/* A segmented control: hard cells on one hairline, the picked one filled. */
+.sk-seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+.sk-seg > * {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.sk-seg > *:first-child { border-left: 0; }
+.sk-seg > [aria-pressed='true'], .sk-seg > [aria-selected='true'], .sk-seg > [aria-current], .sk-seg > .is-on {
+  background: var(--fg);
+  color: var(--bg);
+}
+@media (pointer: coarse) {
+  .sk-seg > * { min-height: var(--sk-tap); }
+}
+
+/* ── The score: a record's tally as one bar ──────────────────────────── */
+
+.sk-score { display: grid; gap: 8px; min-width: 0; }
+.sk-score__bar { display: flex; gap: 2px; height: 6px; }
+.sk-score__bar > i { display: block; min-width: 3px; background: var(--sk-tone); }
+.sk-score__nums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.sk-score__nums > li { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.sk-score__nums b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--sk-tone); }
+.sk-score--lg .sk-score__bar { height: 8px; }
+.sk-score--lg .sk-score__nums { font-size: var(--fs-md); }
+.sk-score--lg .sk-score__nums b { font-size: var(--fs-lg); }
+.sk-score--bare .sk-score__nums { display: none; }
+
+/* ── The verdict tile (components/sleek/VerdictTile) ─────────────────── */
+
+.sk-tile { display: inline-block; flex: none; vertical-align: middle; }
+.sk-tile__lit { fill: var(--sk-tone); }
+.sk-tile__shade { fill: color-mix(in oklab, var(--sk-tone) 68%, var(--neon-ink)); }
+/* The ink follows the theme: dark on the dark theme's bright tones, light on the light theme's deep ones. */
+.sk-tile__glyph { fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linecap: square; stroke-linejoin: miter; }
+.sk-tile__dot { fill: var(--ink); }
+
+/* ── Phone furniture ─────────────────────────────────────────────────── */
+
+/* A row that scrolls sideways and snaps card by card, edge to edge on a phone. */
+.sk-rail {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: var(--sk-gutter);
+  padding-inline: var(--sk-gutter);
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.sk-rail::-webkit-scrollbar { display: none; }
+.sk-rail > * { flex: none; scroll-snap-align: start; }
+
+/* A bar pinned to the bottom of a phone's screen, above the tab bar when one
+   is there (`--sk-dock-bottom` is set by whoever owns the page's tab bar). */
+.sk-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--sk-dock-bottom, 0px);
+  z-index: 40;
+  display: flex;
+  gap: 8px;
+  padding: 10px var(--sk-gutter) calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+/* Text clamped to a few lines; the owner adds its own "more" control. */
+.sk-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--sk-lines, 4);
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sk-btn, .sk-seg > * { transition: filter 0.12s ease, background-color 0.12s ease, color 0.12s ease; }
+}
+
+/* The counts in two columns: four verdicts read as a tidy 2x2 on a phone. */
+.sk-score--grid .sk-score__nums { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }

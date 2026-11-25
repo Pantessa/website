@@ -203,3 +203,160 @@ a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, text
 .ca__close { z-index: 2; }
 /* r2 contrast: /story's market-band ticker marks ("AAPL", 9.5px accent on a 12% accent tint) read 4.44:1 on paper. */
 :root[data-theme='light'] .mkt__mark { color: color-mix(in oklch, var(--accent) 80%, #000); }
+
+/* ── SLEEK CHROME (squad mobile-sleek, 2026-11-24; lane SHELL) ─────────────
+   The top bar and the phone's tab bar in the brand's language: flat ground,
+   hairlines, hard edges. Markup is unchanged (the harness reads it); these
+   rules ride `:root` so they win over the strip's older rules in
+   x402-design.css, markets.css and search.css without editing those.
+
+   THE TAB BAR'S HEIGHT IS `--tabbar-h` (on :root): 0 where no bar is drawn
+   (desktop, a page without the spine, the soft keyboard up), otherwise the
+   bar's seat + hairline + the home-indicator inset. A lane that docks a bar
+   over the tab bar uses `bottom: var(--tabbar-h)`; the kit's `.sk-dock`
+   already does, through `--sk-dock-bottom`. */
+:root { --tabbar-h: 0px; --sk-dock-bottom: var(--tabbar-h); }
+@media (max-width: 1023px) {
+  :root:has([data-spine-bar]) { --tabbar-h: calc(var(--bar-h, 49px) + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 1023px) and (orientation: landscape) and (max-height: 480px) {
+  :root:has([data-spine-bar]) { --tabbar-h: calc(41px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 1023px) {
+  html[data-keyboard]:has([data-spine-bar]) { --tabbar-h: 0px; }
+}
+
+/* The bell is an account's (alerts need a session): a signed-out stranger's
+   bar does not draw it. The account seat holds `.navacct` once there is a
+   session or a wallet; until then the lens keeps the strip's spacing the
+   bell used to keep. */
+:root .mkt-frame__top:not(:has(.mkt-frame__acct .navacct)) .mkt-frame__alerts { display: none; }
+:root .mkt-frame__top:not(:has(.mkt-frame__acct .navacct)) .ssx-lens { margin-right: auto; }
+
+/* The phone's top bar: ONE field (the mark, "Ask anything", the search lens
+   as its last cell) and the account seat. The page's long placeholder used to
+   be cut mid-word beside three round buttons; the field now says two words
+   that always fit, and the door it opens still carries the page's own hint. */
+@media (max-width: 1023px) {
+  :root .mkt-frame__top { gap: 0; padding: 0 var(--gutter-phone, 16px); }
+  :root .mkt-frame__top .mkt-frame__ask { flex: 1 1 0; min-width: 0; height: 44px; gap: 10px; padding: 0 12px; border: 1px solid var(--line-2); border-right: 0; border-radius: 0; background: var(--surf-1); box-shadow: none; }
+  :root .mkt-frame__top .nav__ask-mark, :root .mkt-frame__top .nav__ask-mark svg { width: 20px; height: 20px; }
+  :root .mkt-frame__top .mkt-frame__askhint { display: none; }
+  :root .mkt-frame__top .mkt-frame__askword { display: block; min-width: 0; overflow: hidden; white-space: nowrap; font-size: var(--fs-base); font-weight: 400; color: var(--muted); }
+  :root .mkt-frame__top .mkt-frame__askword::after { content: ' anything'; }
+  :root .mkt-frame__top .ssx-lens { width: 44px; height: 44px; margin-right: 0; border: 1px solid var(--line-2); border-radius: 0; background: var(--surf-1); color: var(--fg); box-shadow: none; }
+  :root .mkt-frame__top .mkt-frame__alerts { margin: 0 0 0 8px; }
+  :root .mkt-frame__top .mkt-frame__bell { border-radius: 0; background: none; }
+  :root .mkt-frame__top .mkt-frame__acct { margin-left: 8px; }
+  :root .mkt-frame__top .mkt-frame__acct .hit-44 { height: 44px; padding-inline: 14px; font-size: var(--fs-md); white-space: nowrap; }
+  :root .mkt-frame__top .mkt-frame__acct .hit-44::before { inset: 0; }
+}
+/* The phone bar is five plain seats: the "new here" dots (components/guide)
+   stay on the desktop column and step out of the bar, where they read as
+   noise beside the accent rule that says "you are here". */
+[data-spine-bar] .guide-dot { display: none; }
+/* The brochure bar (docs, pricing, blog): flat ground on a hairline, no blur;
+   the page you are on is one flat accent rule under its word, no glow. The
+   hairline is an inset shadow so the bar keeps its 64px. */
+:root .nav { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: inset 0 -1px 0 var(--line); }
+:root .nav__tabs .nav__tab::before { content: none; }
+:root .nav__tabs .nav__tab::after { border-radius: 0; background: var(--accent); }
+/* The ask door: a flat scrim, and the docked field is a hairline box, no lift. */
+:root .askdoor__backdrop { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--scrim); }
+:root .askdoor-pill, :root .askdoor-pill:hover { box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--bg); }
+/* The footer: flat ground under the five-step spectrum edge. The aurora, the
+   drifting grid and the fading wordmark band were three blends on one
+   surface; the columns and the hairline carry it now. Five columns on a wide
+   screen, so the last group no longer wraps under an empty row. */
+:root .footer { background: var(--bg); }
+:root .footer__texture, :root .footer__wordmark { display: none; }
+:root .footer__bottom { padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 1024px) {
+  :root .footer__cols { grid-template-columns: 1.5fr repeat(4, minmax(0, 1fr)); }
+}
+
+/* ── SLEEK, ROUND 2: the stragglers beside the square shell ────────────────
+   Tailwind's `rounded-full` drew every pill on the surfaces no lane owns
+   (the chat, the wallet, the share and sign-in doors). One rule instead of
+   two hundred class edits, and the harness's class-string pins stay true: a
+   CONTROL or a PADDED chip that says rounded-full is hard-edged; a dot, an
+   avatar and a switch (role="switch") have no padding and stay round. */
+:where(button, a, [role='button'], input, textarea, select, summary, label):not([role='switch']).rounded-full,
+.rounded-full:where([class*='px-'], [class*='pl-'], [class*='py-']):not([role='switch']) { border-radius: var(--r-pill); }
+/* The few literal radii spelled in a class name. */
+:root :where([class*='rounded-[10px]'], [class*='rounded-[14px]'], [class*='rounded-[26px]']) { border-radius: var(--r-md); }
+/* No frosted glass: a translucent bar is a flat bar. */
+:root [class*='backdrop-blur'] { -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* The chat composer and its send: a hard field on a hairline, no lift, no glow. */
+:root [data-composer-pill], :root [data-composer-pill]:focus-within { border-radius: var(--r-md); background: var(--surf-1); box-shadow: none; }
+:root [data-composer-pill]:focus-within { border-color: var(--accent); }
+:root [data-composer-pill] button { box-shadow: none; }
+
+/* The sign-in door (components/CreateAccountButton): a hard panel on a flat
+   scrim. The bloom behind the mark, the lit top edge, the lift under the
+   panel and the glow under "Connect a wallet" are gone; the one filled
+   button wears the cut. Behaviour is untouched. */
+:root:root .ca__backdrop { background: rgb(0 0 0 / 0.66); -webkit-backdrop-filter: none; backdrop-filter: none; } /* flat, and darker than a sheet's --scrim: with no blur the page behind must step back */
+:root .ca__glow { display: none; }
+:root .ca__crest::before, :root .ca__panel::before { content: none; }
+:root:root .ca__gem { filter: none; }
+:root .ca__panel { background: var(--bg); border-color: var(--line-2); box-shadow: none; }
+:root .ca__wallet, :root .ca__wallet:hover { box-shadow: none; transform: none; }
+:root .ca__wallet--lead { clip-path: polygon(var(--sk-cut, 10px) 0, 100% 0, 100% calc(100% - var(--sk-cut, 10px)), calc(100% - var(--sk-cut, 10px)) 100%, 0 100%, 0 var(--sk-cut, 10px)); }
+:root .ca__or span { background: var(--line); }
+:root .ca__input:focus { box-shadow: none; }
+
+/* The phone Sheet (components/mobile): a square top on a hairline, no lift,
+   a hard close button. */
+:root .sheet__panel { box-shadow: none; }
+:root .sheet__close { border: 1px solid var(--line); border-radius: 0; }
+/* The boxed close sits on the page's 16px gutter, in line with what the sheet holds. */
+:root .sheet__head { padding-right: 16px; }
+
+/* The brochure bar on a phone (the /x pages, docs, pricing): the same two
+   controls as the markets bar. Sign in is a 44px hard button; the menu is a
+   44px hard square on a hairline. The bar keeps its 64px (the docs rail
+   sticks under it). */
+@media (max-width: 900px) {
+  :root .nav__acct .hit-44 { height: 44px; padding-inline: 14px; font-size: var(--fs-md); white-space: nowrap; }
+  :root .nav__acct .hit-44::before { inset: 0; }
+  :root .nav__burger { margin-right: 0; border: 1px solid var(--line-2); border-radius: 0; background: var(--surf-1); }
+  :root .nav__burger:hover { background: var(--surf-2); }
+}
+/* THE FOOTER ON A PHONE (round 3): it was about 1,200px, a third of every
+   short page. Now: the wordmark with the four social squares on its line, the
+   four link groups as closed rows on hairlines (44px each; a press opens one;
+   every link is in the HTML), then the legal lines beside the theme switch.
+   About 330px closed. It holds for the whole phone frame (below 1024px: a
+   tablet's two-column footer ran 1,100px); from 1024px up nothing here
+   applies and the fold's box and mark are not drawn. */
+.footer__foldbox, .footer__foldmark { display: none; }
+@media (max-width: 1023px) {
+  :root .footer { margin-top: var(--sp-5); }
+  :root .footer__cols { display: block; padding: var(--sp-4) var(--gutter-phone, 16px) 0; }
+  :root .footer__brand { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); max-width: none; padding-bottom: var(--sp-4); }
+  :root .footer__tag { display: none; }
+  :root .footer__socials { margin-top: 0; gap: var(--sp-2); }
+  :root .footer__group { border-top: 1px solid var(--line); }
+  :root .footer__grouptitle { margin: 0; }
+  :root .footer__foldlabel { position: relative; display: flex; align-items: center; justify-content: space-between; min-height: 44px; cursor: pointer; }
+  :root .footer__foldbox { display: block; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  :root .footer__foldmark { display: inline; font-family: var(--font-mono); font-size: var(--fs-lg); font-weight: 400; letter-spacing: 0; color: var(--accent); }
+  :root .footer__foldmark::before { content: '+'; }
+  :root .footer__foldlabel:has(.footer__foldbox:checked) .footer__foldmark::before { content: '\2212'; }
+  :root .footer__foldlabel:has(.footer__foldbox:checked) { color: var(--fg); }
+  :root .footer__foldlabel:has(.footer__foldbox:focus-visible) { outline: 2px solid var(--fg); outline-offset: -2px; }
+  :root .footer__group:has(.footer__foldbox:not(:checked)) .footer__grouplinks { display: none; }
+  :root .footer__grouplinks { padding-bottom: var(--sp-2); }
+  :root .footer__bottom { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px var(--sp-3); padding: var(--sp-3) var(--gutter-phone, 16px) calc(var(--sp-3) + env(safe-area-inset-bottom, 0px)); }
+  :root .footer__bottomright { display: contents; }
+  :root .footer__bottom > span, :root .footer__bottomright > span { grid-column: 1; }
+  :root .footer__bottomright > :last-child { grid-column: 2; grid-row: 1 / span 2; }
+}
+/* A wide footer's group title stays on its line (the last one measured a pixel wider than its column). */
+@media (min-width: 1024px) { :root .footer__grouptitle { white-space: nowrap; } }
+/* The brochure bar's account seat on a phone, signed in: the same 44px as the menu beside it. */
+@media (max-width: 900px) {
+  :root .nav__acct .navacct__pill { height: 44px; }
+}

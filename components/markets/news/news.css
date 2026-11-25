@@ -52,7 +52,7 @@
 .gaz__via { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gaz__refresh {
   display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
-  border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px;
+  border: 1px solid var(--line); border-radius: var(--r-pill); padding: 5px 11px;
   font-size: 11.5px; color: var(--muted); background: transparent; white-space: nowrap;
   transition: color .15s, border-color .15s;
 }
@@ -120,7 +120,7 @@
 /* The whole story is the link: the headline's anchor is stretched over it. */
 .gaz__link::after { content: ''; position: absolute; inset: 0; z-index: 1; }
 .gaz__link:focus-visible { outline: none; }
-.gaz__story:has(.gaz__link:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+.gaz__story:has(.gaz__link:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-sm); }
 .gaz__out { display: inline; width: 0.62em; height: 0.62em; margin-left: 0.22em; color: var(--muted); opacity: 0; transition: opacity .15s; }
 .gaz__deck {
   margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); text-wrap: pretty;
@@ -143,7 +143,7 @@
 .gaz__pin {
   position: relative; z-index: 2; margin-left: auto; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-  border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px;
+  border: 1px solid var(--line); border-radius: var(--r-pill); padding: 4px 9px;
   font-family: var(--gaz-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--muted-2); background: var(--bg); white-space: nowrap;
   transition: color .15s, border-color .15s;
@@ -153,7 +153,7 @@
 .gaz__pin.is-on { color: var(--accent); border-color: var(--accent); }
 
 /* ── Pictures ── */
-.gaz__fig { position: relative; overflow: hidden; border-radius: 3px; aspect-ratio: 16 / 9; background: var(--surf-1); flex-shrink: 0; }
+.gaz__fig { position: relative; overflow: hidden; border-radius: var(--r-sm); aspect-ratio: 16 / 9; background: var(--surf-1); flex-shrink: 0; }
 .gaz__img { object-fit: cover; transition: transform .6s cubic-bezier(.2, .7, .2, 1); }
 
 /* The plate: the symbol's tape around the story, for a lead with no picture. */
@@ -320,7 +320,7 @@
 .gaz__srcchip:hover { color: var(--fg); }
 .gaz__srcchip.is-on { color: var(--fg); border-bottom-color: var(--fg); }
 .gaz__srcchip.is-on b { color: var(--fg); opacity: 1; }
-.gaz__srcchip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 3px; }
+.gaz__srcchip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-sm); }
 .gaz__srcmore { text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
 @container gaz (min-width: 900px) { .gaz__srcs { flex-wrap: wrap; overflow-x: visible; } }
 
@@ -346,7 +346,7 @@
 .gaz__reader .gaz__hed { font-family: var(--gaz-serif); font-weight: 600; font-size: 19px; line-height: 1.22; letter-spacing: -0.012em; margin: 0; color: var(--fg); text-wrap: pretty; }
 .gaz__link--inline::after { content: none; }
 .gaz__link--inline:hover { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
-.gaz__link--inline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.gaz__link--inline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
 
 /* ── On X: the posts in newspaper columns, each one link ── */
 .gaz__x { display: flex; flex-direction: column; gap: 14px; }
@@ -357,7 +357,7 @@
   position: relative; break-inside: avoid; display: flex; flex-direction: column; gap: 7px;
   padding: 4px 0 16px; margin-bottom: 14px; border-bottom: 1px solid var(--line); min-width: 0;
 }
-.gaz__xpost:has(.gaz__link:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.gaz__xpost:has(.gaz__link:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
 .gaz__xhandle { color: var(--muted-2); text-transform: none; letter-spacing: 0.02em; }
 .gaz__xtext {
   margin: 0; font-size: 14.5px; line-height: 1.5; color: var(--fg); overflow-wrap: anywhere; white-space: pre-line;
@@ -373,7 +373,7 @@
 .gaz__xout svg { width: 12px; height: 12px; }
 
 /* ── Loading: the page's own shape, empty ── */
-.gaz__bone { border-radius: 3px; background: var(--surf-1); animation: gaz-pulse 1.4s ease-in-out infinite; }
+.gaz__bone { border-radius: var(--r-sm); background: var(--surf-1); animation: gaz-pulse 1.4s ease-in-out infinite; }
 .gaz__bone--fig { aspect-ratio: 16 / 9; }
 .gaz__bone--hed { height: 30px; margin-top: 16px; }
 .gaz__bone--line { height: 13px; margin-top: 12px; }
@@ -407,4 +407,35 @@
   .gaz__img, .gaz__out, .gaz__pin, .gaz__refresh { transition: none; }
   .gaz__spin, .gaz__bone { animation: none; }
   .gaz__story:hover .gaz__img { transform: none; }
+}
+
+/* ── SLEEK (squad mobile-sleek, lane SYMBOL, 2026-11-24): hard edges, and the
+   long lists capped behind one "show all". ── */
+.gaz__refresh, .gaz__pin { border-radius: 0; }
+.gaz__fig { border-radius: 0; }
+.gaz__showall {
+  display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin-top: 14px; padding: 0 14px;
+  border: 1px solid var(--line-2); border-radius: 0; background: none; color: var(--fg); cursor: pointer;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase;
+}
+.gaz__showall:hover { border-color: var(--fg); }
+
+/* A phone's caps (the same numbers as NewsTab's PHONE_*_CAP): each section
+   previews, one press lists it. A `--phone` button is one only a narrow tab
+   needs. Keyed off the tab's own width like the rest of this sheet (560px is
+   where its grid takes a second column). */
+@container gaz (min-width: 560px) { .gaz__showall--phone { display: none; } }
+@container gaz (max-width: 559.98px) {
+  .gaz__brieflist[data-capped] > :nth-child(n + 3),
+  .gaz__grid[data-capped] > :nth-child(n + 3),
+  .gaz__xgrid[data-capped] > :nth-child(n + 3),
+  .gaz__archive[data-capped] > :nth-child(n + 4) { display: none; }
+}
+/* Under a thumb: the pin and the short chips are 44px targets (the pin keeps
+   its place in the row: the extra height is taken back in margin). */
+@media (hover: none) {
+  .gaz__pin { min-width: 44px; min-height: 44px; margin-block: -9px; }
+  .gaz__srcchip { min-width: 44px; }
+  .gaz__xby button { min-width: 44px; min-height: 44px; }
+  .gaz__xout a { display: inline-flex; align-items: center; min-width: 44px; min-height: 44px; }
 }

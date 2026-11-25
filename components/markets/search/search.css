@@ -4,21 +4,21 @@
    the row under the cursor and what the query matched. */
 
 /* ── The triggers ── */
-.ssx-lens { flex: 0 0 auto; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line-2); border-radius: 999px; background: color-mix(in srgb, var(--surf-1) 80%, transparent); color: var(--muted); cursor: pointer; transition: color .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.ssx-lens { flex: 0 0 auto; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line-2); border-radius: var(--r-pill); background: color-mix(in srgb, var(--surf-1) 80%, transparent); color: var(--muted); cursor: pointer; transition: color .15s ease, border-color .15s ease, box-shadow .15s ease; }
 .ssx-lens svg { width: 15px; height: 15px; }
 .ssx-lens:hover, .ssx-lens:focus-visible { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); outline: none; }
 
-.ssx-pill { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 7px 0 9px; border: 1px solid var(--line-2); border-radius: 999px; background: transparent; color: var(--muted); font-family: var(--mk-font-ui, inherit); font-size: 12px; font-weight: 500; cursor: pointer; transition: color .15s ease, border-color .15s ease, background .15s ease, padding .18s ease; }
+.ssx-pill { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 7px 0 9px; border: 1px solid var(--line-2); border-radius: var(--r-pill); background: transparent; color: var(--muted); font-family: var(--mk-font-ui, inherit); font-size: 12px; font-weight: 500; cursor: pointer; transition: color .15s ease, border-color .15s ease, background .15s ease, padding .18s ease; }
 .ssx-pill svg { width: 13px; height: 13px; flex: 0 0 auto; }
-.ssx-pill__kbd { display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border: 1px solid var(--line-2); border-radius: 5px; font-size: 10px; line-height: 1; color: var(--muted-2); }
+.ssx-pill__kbd { display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border: 1px solid var(--line-2); border-radius: var(--r-sm); font-size: 10px; line-height: 1; color: var(--muted-2); }
 .ssx-pill:hover, .ssx-pill:focus-visible { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); background: color-mix(in srgb, var(--accent) 6%, transparent); padding-right: 12px; outline: none; }
 
 /* The field in the markets tool strip: a box to look at, a button to press.
    It opens the panel; nothing is typed here. */
-.ssx-field { display: flex; align-items: center; gap: 10px; width: 100%; height: 40px; padding: 0 10px 0 14px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surf-1); color: var(--muted-2); font-family: var(--mk-font-ui, inherit); font-size: 14px; text-align: left; cursor: text; transition: color .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.ssx-field { display: flex; align-items: center; gap: 10px; width: 100%; height: 40px; padding: 0 10px 0 14px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--surf-1); color: var(--muted-2); font-family: var(--mk-font-ui, inherit); font-size: 14px; text-align: left; cursor: text; transition: color .15s ease, border-color .15s ease, box-shadow .15s ease; }
 .ssx-field svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .ssx-field__word { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ssx-field__kbd, .ssx-lens__kbd { display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 6px; font-size: 10px; line-height: 1; color: var(--muted-2); }
+.ssx-field__kbd, .ssx-lens__kbd { display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border: 1px solid var(--line-2); border-radius: var(--r-sm); font-size: 10px; line-height: 1; color: var(--muted-2); }
 .ssx-field:hover, .ssx-field:focus-visible { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); outline: none; }
 /* The lens's word and key show only where the lens opens out (below). */
 .ssx-lens__word, .ssx-lens__kbd { display: none; }
@@ -26,7 +26,7 @@
 /* ── The panel ── */
 .ssx { position: fixed; inset: 0; z-index: 400; display: flex; justify-content: center; align-items: flex-start; padding: min(9vh, 84px) 24px 24px; font-family: var(--mk-font-ui, 'Hanken Grotesk', system-ui, sans-serif); }
 .ssx__scrim { position: absolute; inset: 0; border: 0; padding: 0; background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); cursor: default; animation: ssx-fade .16s ease both; }
-.ssx__panel { position: relative; display: flex; flex-direction: column; width: min(940px, 100%); max-height: min(660px, calc(100dvh - min(9vh, 84px) - 24px)); border: 1px solid var(--line-2); border-radius: 16px; background: var(--bg); box-shadow: 0 30px 80px rgba(0, 0, 0, .45); overflow: hidden; animation: ssx-rise .2s cubic-bezier(.2, .8, .2, 1) both; transform-origin: 50% 0; }
+.ssx__panel { position: relative; display: flex; flex-direction: column; width: min(940px, 100%); max-height: min(660px, calc(100dvh - min(9vh, 84px) - 24px)); border: 1px solid var(--line-2); border-radius: var(--r-lg); background: var(--bg); box-shadow: 0 30px 80px rgba(0, 0, 0, .45); overflow: hidden; animation: ssx-rise .2s cubic-bezier(.2, .8, .2, 1) both; transform-origin: 50% 0; }
 @keyframes ssx-fade { from { opacity: 0; } }
 @keyframes ssx-rise { from { opacity: 0; transform: translateY(-10px) scale(.985); } }
 
@@ -36,15 +36,15 @@
 .ssx__input { flex: 1 1 auto; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; font-size: 19px; font-weight: 500; letter-spacing: -0.005em; }
 .ssx__input::placeholder { color: var(--muted-2); font-weight: 400; }
 .ssx__input::-webkit-search-cancel-button { display: none; }
-.ssx__clear { flex: 0 0 auto; display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 999px; background: var(--surf-1); color: var(--muted); cursor: pointer; }
+.ssx__clear { flex: 0 0 auto; display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: var(--r-pill); background: var(--surf-1); color: var(--muted); cursor: pointer; }
 .ssx__clear svg { width: 13px; height: 13px; }
 .ssx__clear:hover { color: var(--fg); }
-.ssx__esc { flex: 0 0 auto; padding: 3px 7px; border: 1px solid var(--line-2); border-radius: 6px; font-size: 10px; letter-spacing: .06em; color: var(--muted-2); }
+.ssx__esc { flex: 0 0 auto; padding: 3px 7px; border: 1px solid var(--line-2); border-radius: var(--r-sm); font-size: 10px; letter-spacing: .06em; color: var(--muted-2); }
 .ssx__cancel { display: none; flex: 0 0 auto; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 15px; font-weight: 500; padding: 0 8px; height: 44px; cursor: pointer; }
 
 .ssx__filters { display: flex; align-items: center; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .ssx__filters::-webkit-scrollbar { display: none; }
-.ssx__filter { flex: 0 0 auto; height: 28px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; transition: color .12s ease, background .12s ease, border-color .12s ease; }
+.ssx__filter { flex: 0 0 auto; height: 28px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: var(--r-pill); background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; transition: color .12s ease, background .12s ease, border-color .12s ease; }
 .ssx__filter:hover { color: var(--fg); }
 .ssx__filter[aria-selected="true"] { background: var(--fg); border-color: var(--fg); color: var(--bg); }
 
@@ -54,15 +54,15 @@
 .ssx__label { display: flex; align-items: center; gap: 7px; margin: 0; padding: 10px 10px 6px; font-size: 10px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); }
 .ssx__label svg { width: 12px; height: 12px; }
 
-.ssx__row { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) 64px minmax(84px, auto); align-items: center; gap: 12px; padding: 8px 12px 8px 10px; border-radius: 10px; color: var(--fg); text-decoration: none; cursor: pointer; }
+.ssx__row { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) 64px minmax(84px, auto); align-items: center; gap: 12px; padding: 8px 12px 8px 10px; border-radius: var(--r-md); color: var(--fg); text-decoration: none; cursor: pointer; }
 .ssx__row[aria-selected="true"] { background: var(--surf-1); box-shadow: inset 0 0 0 1px var(--line-2); }
 .ssx__row[aria-selected="true"]::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 2px; background: var(--accent); }
 .ssx__id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ssx__sym { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; letter-spacing: .01em; }
 .ssx__name { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ssx__row mark { background: transparent; color: var(--accent); }
-.ssx__kind { padding: 2px 6px; border: 1px solid var(--line-2); border-radius: 4px; font-size: 9px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-.ssx__venue { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line-2); border-radius: 6px; color: var(--muted); }
+.ssx__kind { padding: 2px 6px; border: 1px solid var(--line-2); border-radius: var(--r-sm); font-size: 9px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.ssx__venue { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line-2); border-radius: var(--r-sm); color: var(--muted); }
 .ssx__row[aria-selected="true"] .ssx__venue { color: var(--fg); }
 .ssx__here { font-size: 9px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
 .ssx__quote { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0; }
@@ -83,7 +83,7 @@
 .ssx-spark--down .ssx-spark__area { fill: var(--mk-down, var(--sell)); }
 
 .ssx__none { margin: 0; padding: 26px 14px 18px; font-size: 14px; line-height: 1.5; color: var(--muted); }
-.ssx__ask { display: flex; align-items: center; gap: 10px; width: calc(100% - 4px); margin: 8px 2px 0; padding: 11px 12px; border: 1px dashed var(--line-2); border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; text-align: left; cursor: pointer; transition: color .12s ease, border-color .12s ease; }
+.ssx__ask { display: flex; align-items: center; gap: 10px; width: calc(100% - 4px); margin: 8px 2px 0; padding: 11px 12px; border: 1px dashed var(--line-2); border-radius: var(--r-md); background: transparent; color: var(--muted); font: inherit; font-size: 13px; text-align: left; cursor: pointer; transition: color .12s ease, border-color .12s ease; }
 .ssx__ask svg { flex: 0 0 auto; width: 15px; height: 15px; color: var(--accent); }
 .ssx__ask strong { color: var(--fg); font-weight: 600; }
 .ssx__askText { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -94,7 +94,7 @@
 .ssx__preview { display: none; }
 .ssx__foot { display: flex; align-items: center; gap: 16px; padding: 9px 16px; border-top: 1px solid var(--line); font-size: 10.5px; letter-spacing: .04em; color: var(--muted-2); }
 .ssx__foot span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.ssx__foot kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border: 1px solid var(--line-2); border-radius: 5px; font: inherit; font-size: 10px; color: var(--muted); }
+.ssx__foot kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border: 1px solid var(--line-2); border-radius: var(--r-sm); font: inherit; font-size: 10px; color: var(--muted); }
 .ssx__footEnd { margin-left: auto; letter-spacing: 0; }
 
 @media (min-width: 900px) {
@@ -111,7 +111,7 @@
   .ssx__pvChart .ssx-spark { height: 132px; }
   .ssx__pvSpan { min-height: 13px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); }
   .ssx__pvActs { display: flex; gap: 8px; margin-top: auto; }
-  .ssx__go, .ssx__alt { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 10px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .ssx__go, .ssx__alt { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: var(--r-md); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
   .ssx__go svg, .ssx__alt svg { width: 14px; height: 14px; }
   .ssx__go { flex: 1 1 auto; min-width: 0; border: 1px solid var(--accent); background: var(--accent); color: var(--ink, #06140d); }
   .ssx__alt { flex: 0 0 auto; border: 1px solid var(--line-2); background: transparent; color: var(--muted); font-weight: 500; }
@@ -125,7 +125,7 @@
   .ssx__panel { width: 100%; height: 100dvh; max-height: none; border: 0; border-radius: 0; box-shadow: none; animation-name: ssx-sheet; padding-top: env(safe-area-inset-top, 0px); }
   @keyframes ssx-sheet { from { opacity: 0; transform: translateY(14px); } }
   .ssx__top { padding: 8px 6px 8px 12px; gap: 4px; }
-  .ssx__box { height: 44px; padding: 0 10px 0 12px; gap: 10px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--surf-1); }
+  .ssx__box { height: 44px; padding: 0 10px 0 12px; gap: 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--surf-1); }
   .ssx__input { font-size: 16px; } /* 16px: iOS does not zoom the page on focus */
   .ssx__esc { display: none; }
   .ssx__cancel { display: block; }

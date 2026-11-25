@@ -26,7 +26,7 @@
 // Fullscreen API the old full-bleed page had; Compare rides beside it in the
 // chart's own toolbar now (it is a chart control).
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react'
@@ -58,6 +58,7 @@ import { useDayStats } from '@/components/markets/shell/useDayStats'
 import HeldPill from '@/components/markets/shell/HeldPill'
 import CompareControl from '@/components/markets/shell/CompareControl'
 import CallsPanel, { CalledHead } from '@/components/called/CallsPanel'
+import { useCalled } from '@/lib/called-it/use-record'
 import { PlotHandleButton } from '@/components/called/HandleDoor'
 import ExecStrip from '@/components/markets/slots/ExecStrip'
 import AskChart from '@/components/markets/slots/AskChart'
@@ -87,6 +88,7 @@ import { seedTradable } from '@/lib/tradable-read'
 import type { TradabilityMap } from '@/lib/tradability'
 import { useTradable } from '@/lib/use-tradable'
 import type { TicketSide } from '@/lib/order-ticket'
+import './symbol-sleek.css'
 
 /** Where an unknown /t/<symbol> points: one of each family. */
 const UNKNOWN_SYMBOL_PICKS = ['AAPL', 'ETH', 'HYPE'] as const
@@ -98,6 +100,16 @@ export const chartShowsOn = (tab: MarketTab): boolean => CHART_TABS.includes(tab
 const RAIL_DOCK_MIN_PX = 1024
 const compactNumber = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
 
+/** The width under which an opened call's card docks at the foot of the screen, over the act bar (called-chart.css). */
+const CALL_CARD_DOCKS_QUERY = '(max-width: 640px)'
+const subscribeCallDock = (cb: () => void) => {
+  if (typeof window === 'undefined' || !window.matchMedia) return () => {}
+  const mq = window.matchMedia(CALL_CARD_DOCKS_QUERY)
+  mq.addEventListener('change', cb)
+  return () => mq.removeEventListener('change', cb)
+}
+const readCallDock = () => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia(CALL_CARD_DOCKS_QUERY).matches
+
 type FsDoc = Document & { webkitExitFullscreen?: () => Promise<void>; webkitFullscreenElement?: Element | null }
 type FsEl = HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> }
 
@@ -106,12 +118,16 @@ export default function SymbolPage({
   initialTab,
   initialTf,
   initialVs = null,
+  initialPlotted = false,
   tradable: seeded,
 }: {
   symbol: string
   initialTab?: MarketTab
   initialTf?: ChartTf
   initialVs?: string | null
+  /** The address plots an X handle (`?x=`): the server's read, so the first
+   *  paint already wears the compact header a plotted page gets on a phone. */
+  initialPlotted?: boolean
   /** The measured venue verdicts from the server render (lib/tradability-store),
    *  so the act strip is right on the first paint. */
   tradable?: TradabilityMap
@@ -186,6 +202,20 @@ export default function SymbolPage({
   useEffect(() => () => {
     if (isLiveTabTitle(document.title) && baseTitleRef.current) document.title = baseTitleRef.current
   }, [])
+  // A PLOTTED HANDLE (Called it, `?x=`): the handle's band and the chart are
+  // what that visitor came for, so a phone's strip folds to one compact row
+  // (symbol-sleek.css reads `data-plotted`). The store knows once the page has
+  // read its address (it also follows a handle plotted or closed on the page);
+  // until then the server's read of the same address stands, so the first
+  // paint and the hydrated one agree.
+  const plottedNow = useCalled((s) => (s.symbol === sym && s.opened ? s.plot !== null : null))
+  const plotted = plottedNow ?? initialPlotted
+  // An OPENED CALL's card docks over the act bar on a phone (its own button is
+  // that call's trade). The bar under it steps out of the tab order and out of
+  // a screen reader's way until the card closes; the store says a call is open,
+  // the width says the card is docked. (Never true on the server render.)
+  const callOpen = useCalled((s) => s.symbol === sym && s.focusId !== null)
+  const callCardDocks = useSyncExternalStore(subscribeCallDock, readCallDock, () => false)
   const [expanded, setExpanded] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
 
@@ -474,7 +504,7 @@ export default function SymbolPage({
   // from the nav down.
   return (
     <>
-      <main className="sym sym--cockpit" data-symbol={sym} data-vs={vs ?? undefined} data-tab={tab} data-chart={showChart ? 'shown' : 'parked'}>
+      <main className="sym sym--cockpit" data-symbol={sym} data-vs={vs ?? undefined} data-tab={tab} data-chart={showChart ? 'shown' : 'parked'} data-plotted={plotted && showChart ? '' : undefined}>
         {/* ── The strip ── (its seat is the size container the folds read,
             markets.css: an element can't query itself, and .sym must stay a
             plain block for the full-screen chart) */}
@@ -487,6 +517,13 @@ export default function SymbolPage({
                   <h1 className="sym__name truncate">{name}</h1>
                   <span className="sym__sym mono">{ticker}</span>
                   <SymbolSearchTrigger variant="head" />
+                  {/* The folded row of a plotted page has no venue label: a shut market still says so (symbol-sleek.css shows this there only; the label's own words stay for readers). */}
+                  {tapeState === 'closed' && (
+                    <span className="sym__closed sk-label" aria-hidden>
+                      <span className="mk-dot mk-dot--closed" />
+                      Closed
+                    </span>
+                  )}
                 </div>
                 <div className="sym__meta">
                   {lookOnly ? (
@@ -551,7 +588,8 @@ export default function SymbolPage({
                 <>
                   {unit === 'level' ? <span className="sym__last mono" data-unit="level">{fmtLivePrice(stats.last)}</span> : <span className="sym__last mono">${fmtLivePrice(stats.last)}</span>}
                   <span className={`sym__chg mono mkt-chg ${chgClass}`}>{chgLabel}</span>
-                  <span className="sym__feed mono">{feedLabel}</span>
+                  {/* The venue label under the name already names the feed; this stays for a stand-in feed (the CSS hides the repeat). */}
+                  <span className="sym__feed mono" data-feed-same={feed === pair.source ? '' : undefined}>{feedLabel}</span>
                 </>
               ) : pair ? (
                 <span className="sym__feed mono">{statsLate ? `${feedLabel} didn’t answer · retrying` : `loading ${feedLabel} candles…`}</span>
@@ -683,7 +721,7 @@ export default function SymbolPage({
             + ticket: hidden by markets.css from the rail-docking width, where
             the right column's ticket takes over. */}
         {pair && (
-          <div className="sym__exec" data-seat="ExecStrip">
+          <div className="sym__exec" data-seat="ExecStrip" inert={callOpen && callCardDocks && showChart ? true : undefined}>
             <ExecStrip symbol={sym} pair={pair} onAsk={act} onBuild={orderToApp} last={stats?.last ?? null} autoOpen={false} />
           </div>
         )}

@@ -87,3 +87,37 @@ export function tvCssProperties(t: TvThemeTokens): Record<string, string> {
     '--tv-color-popup-element-divider-background': t.line,
   }
 }
+
+/**
+ * A phone's pane: the legend is one line (the symbol, the bar size, the venue). The
+ * Volume row and the fold button under it are left out: they sat on the
+ * candles' head, where a plotted handle's marks go.
+ */
+export function tvPhoneOverrides(): Record<string, unknown> {
+  return {
+    'paneProperties.legendProperties.showStudyTitles': false,
+    'paneProperties.legendProperties.showStudyValues': false,
+    'paneProperties.legendProperties.showStudyArguments': false,
+    'paneProperties.legendProperties.showVolume': false,
+    // The page's own header carries the price and the day's change, a thumb above.
+    'paneProperties.legendProperties.showSeriesOHLC': false,
+    'paneProperties.legendProperties.showBarChange': false,
+  }
+}
+
+/** The scales are numbers: they are set in the page's mono (Geist Mono), the system's mono until it loads. */
+export const TV_FONT_FAMILY = "'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+/** The same face the page itself loads, for the chart's frame (a frame does not share its parent's fonts). */
+export const TV_FONT_CSS_URL = 'https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap'
+
+/**
+ * A price as the scale prints it: grouped thousands, the instrument's own
+ * decimals, and NOTHING below zero. A price is never negative, but the scale
+ * runs under zero when the pane keeps a deep foot (the rail of cards, the
+ * tally): those ticks read "-400.00" under the candles of an asset at 1,600.
+ */
+export function tvPriceFormat(price: number, pricescale: number): string {
+  if (!Number.isFinite(price) || price < 0) return ''
+  const decimals = Math.max(0, Math.min(10, Math.round(Math.log10(Math.max(1, pricescale)))))
+  return price.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+}

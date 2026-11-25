@@ -3,15 +3,21 @@
 //
 // What is drawn, and why each choice:
 //
-//   a CARD per picked call    the library's `callout`: its tip on the bar the
-//                             post landed on (that day's close), its box on a
-//                             RAIL above or below the candles. Native, so it
-//                             pans and zooms with the bars and is in the
-//                             chart's own screenshot.
-//   a MARK per other call     the datafeed's bar marks (a small disc over the
-//                             bar): a glyph and a color for the verdict, the
-//                             words in its tooltip. On a phone every call is
-//                             a mark: a card would hide the candles.
+//   a CARD per picked call    its tip on the bar the post landed on (that
+//                             day's close), its box on a RAIL above or below
+//                             the candles. Since 2026-11-24 the card is paint
+//                             on the marks layer (lib/tv/called-overlay): a
+//                             cut-corner card set in the page's own type,
+//                             placed again on every frame and stamped into
+//                             the chart's screenshot. Where the layer cannot
+//                             mount, it is the library's `callout` as before.
+//   a MARK per other call     a cut-corner tile on the same layer, counted
+//                             where calls crowd (never piled): a glyph and a
+//                             color for the verdict. On a phone every call is
+//                             a mark: a card would hide the candles. Where
+//                             the layer cannot mount: the datafeed's bar
+//                             marks (a disc over the bar, the words in its
+//                             tooltip).
 //   the TALLY on the pane     one fixed line in the pane's corner: the full
 //                             count and who plotted it. A viewer chooses the
 //                             pins, nobody chooses the count, and the count is
@@ -34,7 +40,9 @@
 // lib/tv/types (the library itself is licensed and never in this repository).
 
 import { ADDED_MARK, PIN_URL_MAX, VERDICT_WORDS, cmpPostId, fmtDay, judgedLine, moveLine, recordHref, sinceLine, type CallVerdict, type CalledCall, type CalledRecord } from '@/lib/called-it/spec'
+import { cardFont, cardSize, createMarksLayer, pageFonts, pageMeasure, type CardBox, type CardFonts, type CardInks, type CardSpec } from './called-overlay'
 import type { ShapeSnapshot } from './shapes'
+import { TV_FONT_FAMILY } from './theme'
 import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvPriceScaleApi, TvShapeOptions, TvWidget } from './types'
 
 // ── The words on a pin ──────────────────────────────────────────────────
@@ -279,9 +287,15 @@ export const PANE_KEEP = {
 } as const
 /** Under this pane width every call is a mark (a phone): a card would cover the candles it points at. */
 export const CARDS_MIN_PANE_W = 520
-const CARDS_MIN_PANE_H = 300
+/** Under this pane height every call is a mark too (a phone on its side): two rails of cards would leave the candles and the tiles no room. */
+const CARDS_MIN_PANE_H = 360
 /** Air between a rail of cards and the candles. */
 const RAIL_AIR_PX = 18
+
+/** Px over the highest candle that a marks-only pane keeps for the marks themselves (two tiles and their lift). */
+export const MARKS_HEAD_PX = 46
+/** The deepest foot (percent of the pane) the candles are lifted by to clear an opened call's card. */
+export const COVER_MARGIN_MAX = 58
 
 export interface PaneSize {
   width: number
@@ -463,7 +477,8 @@ export function boxesOverlap(a: Pick<PlacedBox, 'x' | 'y' | 'w' | 'h'>, b: Pick<
 export function railMargins(pane: PaneSize, plan: CalloutPlan, maxBoxH: number, keepBottom: number, base: { top: number; bottom: number }, keepTop: number = PANE_KEEP.top): { top: number; bottom: number } {
   if (!(pane.height > 0)) return base
   const pct = (px: number) => Math.min(38, Math.ceil((px / pane.height) * 100))
-  if (plan.total === 0) return { top: base.top, bottom: Math.max(base.bottom, pct(keepBottom + 6)) }
+  // Marks only (a phone): room at the head for a stack of two marks over the highest bar, and for the tally at the foot.
+  if (plan.total === 0) return { top: Math.max(base.top, pct(keepTop + MARKS_HEAD_PX)), bottom: Math.max(base.bottom, pct(keepBottom + 6)) }
   return { top: Math.max(base.top, pct(keepTop + maxBoxH + RAIL_AIR_PX)), bottom: Math.max(base.bottom, pct(keepBottom + maxBoxH + RAIL_AIR_PX)) }
 }
 
@@ -628,6 +643,8 @@ export interface TallyLabel {
   fontPx: number
   /** Px the label takes at the pane's foot, its own air included. */
   keepBottom: number
+  /** A phone's two lines (the count beside the glyphs, the address) in place of the record's full sentences. */
+  short: boolean
 }
 
 /**
@@ -637,11 +654,20 @@ export interface TallyLabel {
  * cards; a phone's strip carries it), that pasted posts are shown and not
  * counted (when any are), who plotted it, and where the record lives.
  */
-export function tallyLabel(record: Pick<CalledRecord, 'handle' | 'symbol' | 'side' | 'words'>, pane: PaneSize, measure?: Measure): TallyLabel {
+export function tallyLabel(record: Pick<CalledRecord, 'handle' | 'symbol' | 'side' | 'words'> & Partial<Pick<CalledRecord, 'tally' | 'scanned'>>, pane: PaneSize, measure?: Measure): TallyLabel {
   const fontPx = tallyFontPx(pane)
   const width = measure ?? ((s: string) => estimateTextWidth(s, fontPx))
   const wrapWidth = Math.max(140, Math.floor(pane.width - PANE_KEEP.logoWidth - PANE_KEEP.edge - 12))
   const where = `pantessa.com${recordHref(record.handle, record.symbol, record.side)}`
+  // A PHONE (2026-11-24): two short lines. The count as numbers beside the marks' own glyphs (so the line is the
+  // tiles' legend too), and where the record lives. The record's full sentences (the headline, what the scan read,
+  // the standing) are in the band right above the plot there, and `shareNote` puts the standing in the Share picture.
+  const short = shortTally(record)
+  if (pane.width < CARDS_MIN_PANE_W && short) {
+    const count = [`@${record.handle} \u00b7 ${short}`, short].find((l) => width(l) <= wrapWidth) ?? short
+    const lines = [count, ...(width(where) <= wrapWidth ? [where] : [])]
+    return { text: lines.join('\n'), lines: lines.length, fontPx, keepBottom: lines.length * fontPx + 22, short: true }
+  }
   const coverage = pane.width >= CARDS_MIN_PANE_W ? record.words.coverage : null
   // Each sentence starts its own line (a count is never split from its own words by another sentence). The address joins
   // the standing line when both fit, takes a line of its own when it fits alone, and is left out when it would have to
@@ -649,7 +675,15 @@ export function tallyLabel(record: Pick<CalledRecord, 'handle' | 'symbol' | 'sid
   const last = width(`${record.words.standing} ${where}`) <= wrapWidth ? [`${record.words.standing} ${where}`] : width(where) <= wrapWidth ? [record.words.standing, where] : [record.words.standing]
   const parts = [record.words.headline, ...(coverage ? [coverage] : []), ...(record.words.added ? [record.words.added] : []), ...last]
   const lines = parts.flatMap((p) => wrapWords(p, wrapWidth, width, 4))
-  return { text: lines.join('\n'), lines: lines.length, fontPx, keepBottom: lines.length * fontPx + 22 }
+  return { text: lines.join('\n'), lines: lines.length, fontPx, keepBottom: lines.length * fontPx + 22, short: false }
+}
+
+/** `63 calls \u00b7 \u271334 \u271524 \u20131 ?4`: a scanned record's count beside the verdicts' glyphs (none shown for a verdict with no call). Null for a record with no tally. */
+export function shortTally(record: Partial<Pick<CalledRecord, 'tally' | 'scanned'>>): string | null {
+  const t = record.tally
+  if (!t || record.scanned === false || !(t.total > 0)) return null
+  const parts = (['right', 'wrong', 'flat', 'open'] as const).filter((v) => t[v] > 0).map((v) => `${VERDICT_GLYPH[v]}${t[v]}`)
+  return `${t.total} ${t.total === 1 ? 'call' : 'calls'} \u00b7 ${parts.join(' ')}`
 }
 
 /** The tally's shape: fixed to the pane (it does not pan), same flags as a pin. The lines are wrapped here; the library's wrap is off. */
@@ -658,7 +692,8 @@ export function tallyShape(label: TallyLabel, inks: CalledInks): TvShapeOptions 
     shape: 'anchored_text',
     text: label.text,
     ...PIN_SHAPE_FLAGS,
-    overrides: { color: inks.muted, fontsize: label.fontPx, bold: false, italic: false, fillBackground: true, backgroundColor: inks.bg, backgroundTransparency: 18, drawBorder: false, wordWrap: false },
+    // A phone's two short lines stand where the volume bars are: their plate is solid, so no bar shows through the words.
+    overrides: { color: inks.muted, fontsize: label.fontPx, bold: false, italic: false, fillBackground: true, backgroundColor: inks.bg, backgroundTransparency: label.short ? 0 : 18, drawBorder: false, wordWrap: false },
   }
 }
 
@@ -669,12 +704,31 @@ const DAY_SEC = 86_400
 const FIT_MIN_DAYS = 120
 
 /** Daily bars from a little before the first call to now: every pin on screen. Seconds. */
-export function fitRange(calls: readonly Pick<CalledCall, 'barTime'>[], nowSec: number): { from: number; to: number } | null {
+export function fitRange(calls: readonly Pick<CalledCall, 'barTime'>[], nowSec: number, paneWidth?: number): { from: number; to: number } | null {
   if (!calls.length) return null
   const first = calls.reduce((m, c) => Math.min(m, c.barTime), Infinity)
   const start = Math.min(first, nowSec - FIT_MIN_DAYS * DAY_SEC)
-  const pad = Math.max(10 * DAY_SEC, Math.round((nowSec - start) * 0.07))
+  // Air before the first call: 7% of the span, and on a narrow pane (a phone) at least the width of a mark's column,
+  // so the first stack is never cut by the pane's edge.
+  const share = paneWidth && paneWidth > 0 ? Math.max(0.07, Math.min(0.2, FIT_AIR_PX / paneWidth)) : 0.07
+  const pad = Math.max(10 * DAY_SEC, Math.round((nowSec - start) * share))
   return { from: start - pad, to: nowSec }
+}
+/**
+ * Is the chart on the view the fit asked for? The library snaps a range to its bars and may start at the first bar
+ * it has, so "the same" is: it starts no more than a fifth of the span before the asked start and no more than a
+ * third after it. (The failure this catches starts YEARS before.)
+ */
+export function fitHolds(now: { from: number; to: number }, asked: { from: number; to: number }): boolean {
+  const span = asked.to - asked.from
+  if (!(span > 0) || !Number.isFinite(now.from)) return true
+  return now.from >= asked.from - span * 0.2 && now.from <= asked.from + span * 0.34
+}
+/** Px of air the fit leaves beside the first call (half a mark's column and a little). */
+export const FIT_AIR_PX = 36
+/** Percent of the pane left empty after the newest bar by the fit: more on a phone, where a column is a larger share. */
+export function fitRightMargin(paneWidth: number): number {
+  return paneWidth > 0 && paneWidth < CARDS_MIN_PANE_W ? 9 : 5
 }
 
 // ── Nothing of a plot is ever kept ──────────────────────────────────────
@@ -779,6 +833,10 @@ export interface CalledPinsController {
   cleanLayout(layout: object): object
   /** The site's theme flipped: re-ink. */
   retheme(): void
+  /** Px of the pane's foot that the opened call's card covers (a phone's bottom dock); 0 when nothing does. */
+  setCover(px: number): void
+  /** The record's own standing line and what the scan read, for a picture of a pane whose tally is the short one (a phone); null when the pane already says them. */
+  shareNote(): string | null
 }
 
 const RELAYOUT_MS = 170
@@ -792,7 +850,8 @@ function canvasMeasure(fontPx: number): Measure {
   try {
     const ctx = document.createElement('canvas').getContext('2d')
     if (!ctx) throw new Error('no canvas')
-    ctx.font = `${fontPx}px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif`
+    // The family the chart's canvas is set in (lib/tv/theme): the page has the same face loaded.
+    ctx.font = `${fontPx}px ${TV_FONT_FAMILY}`
     // A hair over the measure: a line planned to fit is never wrapped again by the library.
     return (s) => ctx.measureText(s).width * 1.02 + 1
   } catch {
@@ -845,9 +904,23 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   let focusLine: { id: string; key: string } | null = null
   let focusSeq = 0
   let marks: TvMark[] = []
+  /** The marks layer is drawing (lib/tv/called-overlay): the library's own bar marks stand down. */
+  let layerOn = false
+  /** What the layer draws: every call with no card. Set by `render`. */
+  let scene: { key: string; calls: CalledCall[]; keepTop: number; keepBottom: number; cards?: CardSpec[]; layout?: (pane: PaneSize, anchors: PinAnchor[]) => CardBox[] } | null = null
   let plan: CalloutPlan = calloutPlan({ width: 0, height: 0 })
+  /** Px of the pane's foot under the opened call's card (a phone's bottom dock). 0 = nothing covers the pane. */
+  let cover = 0
+  /** The margins the last render asked for, before the cover is added. */
+  let marginWant: ((base: PaneMargins) => PaneMargins) | null = null
+  /** The range the last fit left the chart on: while the viewer has not moved it, a new pane width fits again. */
+  let fitView: { from: number; to: number; width: number } | null = null
+  let revealAt = 0
+  let fitting = false
+  let fitSeq = 0
   let startAbove = true
   let margins: { original: PaneMargins; applied: PaneMargins } | null = null
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null
   let relayoutTimer: ReturnType<typeof setTimeout> | null = null
   let relayoutTries = 0
   let renderTimer: ReturnType<typeof setTimeout> | null = null
@@ -899,6 +972,22 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       return null
     }
   }
+  /** Where the whole legend ends (its Volume row and fold button included), px down the pane, and how wide that corner is. */
+  const legendCorner = (): { width: number; top: number } | undefined => {
+    try {
+      const root = hostEl?.querySelector('iframe')?.contentDocument?.querySelector('[data-qa-id="legend"]')
+      if (!root) return undefined
+      const box = root.getBoundingClientRect()
+      const rows = [...root.querySelectorAll('[data-qa-id="legend-source-item"], [data-qa-id="legend-toggler"], button')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0)
+      if (!rows.length) return undefined
+      const pane = root.parentElement?.getBoundingClientRect()
+      const left = pane?.left ?? box.left
+      const top = pane?.top ?? box.top
+      return { width: Math.min(220, Math.max(...rows.map((r) => r.right - left)) + 8), top: Math.max(...rows.map((r) => r.bottom - top)) + 6 }
+    } catch {
+      return undefined
+    }
+  }
   const sampleAxis = (width: number): AxisSample[] => {
     const scale = chart?.getTimeScale()
     if (!scale) return []
@@ -916,8 +1005,66 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
   }
   const recordKey = (r: CalledRecord, p: CalloutPlan) => {
     const ink = hooks.inks()
-    return [r.handle, r.symbol, r.side, r.verified ? 'v' : 'n', r.words.headline, r.words.coverage ?? '', r.words.added ?? '', p.perRail, p.textWidth, p.wordLines, ink.bg, ink.fg, ink.up, r.calls.map((c) => `${c.postId}${c.picked ? '*' : ''}${c.origin === 'added' ? '+' : ''}${c.verdict[0]}${Math.round(c.judgedPct * 1000)}`).join(',')].join('|')
+    return [layerOn ? 'layer' : 'native', r.handle, r.symbol, r.side, r.verified ? 'v' : 'n', r.words.headline, r.words.coverage ?? '', r.words.added ?? '', p.perRail, p.textWidth, p.wordLines, ink.bg, ink.fg, ink.up, r.calls.map((c) => `${c.postId}${c.picked ? '*' : ''}${c.origin === 'added' ? '+' : ''}${c.verdict[0]}${Math.round(c.judgedPct * 1000)}`).join(',')].join('|')
   }
+
+  /** The verdict inks of the marks layer: the market's green and red, gold for "too early to say", grey for no real move. */
+  const markInks = (): CardInks => {
+    const ink = hooks.inks()
+    let gold = ''
+    try {
+      gold = typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue('--gold').trim()
+    } catch {
+      /* the muted ink stands in */
+    }
+    return { up: ink.up, down: ink.down, open: /^#[0-9a-f]{6}$/i.test(gold) ? gold : ink.muted, flat: ink.muted, fg: ink.fg, bg: ink.bg, surf: ink.surf, muted: ink.muted }
+  }
+  // The legend's corner is read from the frame's document: once a second is plenty (it moves when a study is added).
+  let cornerAt = 0
+  let cornerNow: { width: number; top: number } | undefined
+  const corner = () => {
+    const now = Date.now()
+    if (now - cornerAt > 1000) {
+      cornerAt = now
+      cornerNow = legendCorner()
+    }
+    return cornerNow
+  }
+  /** One call as a card of the layer: the verdict's word and the day, the post's own words (cut and wrapped by `pinText`, never reworded), the move. */
+  const cardSpecOf = (call: CalledCall, handle: string, textWidth: number, wordLines: number, pageText: (font: string, text: string) => number, fonts: CardFonts, dateNote?: string): CardSpec => {
+    const wide: Measure = (t) => Math.max(pageText(cardFont.words(fonts), t), pageText(cardFont.result(fonts), t))
+    const text = pinText(call, handle, { textWidth, measure: wide, wordLines })
+    const spec = { id: call.postId, barTime: call.barTime, priceAt: call.priceAt, verdict: call.verdict, added: text.added ? ADDED_MARK : null, word: VERDICT_WORDS[call.verdict], date: dateNote ? `${pinDate(call.postedAt)} \u00b7 ${dateNote}` : pinDate(call.postedAt), words: text.words, result: text.lines.slice(text.lines.lastIndexOf(text.words[text.words.length - 1]) + 1) }
+    return { ...spec, ...cardSize(spec, fonts, pageText) }
+  }
+  let previewText: ((font: string, text: string) => number) | null = null
+  const layer = createMarksLayer({
+    // A mark under the mouse shows its call as a card (what the library's tooltip used to say, set as the cards are).
+    // Over a crowd it is the call a press would open, and says which of how many (`1 of 7`): each press steps on.
+    preview: (postId, at) => {
+      const record = plotted()
+      const call = record?.calls.find((c) => c.postId === postId)
+      previewText = previewText ?? pageMeasure()
+      return record && call && previewText ? cardSpecOf(call, record.handle, 236, 3, previewText, pageFonts(), at && at.of > 1 ? `${at.index} of ${at.of}` : undefined) : null
+    },
+    host: () => hostEl,
+    chart: () => chart,
+    // Under the opened call's card nothing is drawn: the marks (and the opened call's own tile) stay above it.
+    scene: () => (scene && plotted() ? { ...scene, keepBottom: Math.max(scene.keepBottom, cover ? cover + 6 : 0), focusId: input.focusId, keepCorner: corner() } : null),
+    inks: markInks,
+    onPick: (postId) => hooks.onPick(postId),
+    onMount: (on) => {
+      if (layerOn === on) return
+      layerOn = on
+      refreshMarks()
+      // The cards change hands with the marks: the layer's own when it draws, the library's callouts when it cannot.
+      // (A render already under way is dropped by the next one: it would have drawn for the other hand.)
+      if (chart && plotted()) {
+        drawnKey = ''
+        schedule()
+      }
+    },
+  })
 
   const removeShape = (id: string) => {
     removing.add(id)
@@ -969,17 +1116,117 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     }
   }
 
+  /** The render's margins, and under an opened call's card (a phone) a foot deep enough that the candles end above it. */
+  const applyMargins = () => {
+    const want = marginWant
+    if (!want) return
+    const height = paneSize()?.height ?? 0
+    setMargins((base) => {
+      const m = want(base)
+      if (!(cover > 0) || !(height > 0)) return m
+      const foot = Math.min(COVER_MARGIN_MAX, Math.ceil(((cover + 10) / height) * 100))
+      // The head gives back what it can: with half the pane under the card, the candles need the rest.
+      return { top: Math.min(m.top, Math.max(base.top, 14)), bottom: Math.max(m.bottom, foot) }
+    })
+  }
+  /**
+   * The opened call's bar is on the pane, clear of its edges. A step to a call
+   * that is off screen, or a pane that just got narrower (the side column
+   * opening, a phone turned), pans the chart by as little as shows it. A call
+   * that is already in view never moves the chart.
+   */
+  const revealFocus = () => {
+    const c = chart
+    const record = plotted()
+    const call = record && input.focusId ? record.calls.find((x) => x.postId === input.focusId) : null
+    // Never while the fit is still on its way: it would read the view the chart opened on and pan that.
+    if (!c || !call || fitting || Date.now() - revealAt < 350) return
+    try {
+      const pane = paneSize()
+      if (!pane) return
+      const x = xForTime(sampleAxis(pane.width), call.barTime)
+      // Under a card that covers the pane's foot (a phone) the opened bar goes to the middle of what is left in sight.
+      const centre = cover > 0 && pane.width < CARDS_MIN_PANE_W
+      const pad = centre ? pane.width * 0.3 : Math.min(72, pane.width * 0.2)
+      if (x !== null && x >= pad && x <= pane.width - pad) return
+      const r = c.getVisibleRange()
+      const span = r.to - r.from
+      if (!(span > 0)) return
+      const left = x === null ? call.barTime < r.from : x < pad
+      const from = call.barTime - span * (centre ? 0.5 : left ? 0.3 : 0.7)
+      revealAt = Date.now()
+      fitSeq++
+      fitView = null
+      void c.setVisibleRange({ from, to: from + span }).catch(() => undefined)
+    } catch {
+      /* the call card still names the call */
+    }
+  }
+  /** The pane changed width while the chart was still on the fit's own view: fit again (every call back on the pane). */
+  const refitIfUntouched = () => {
+    const c = chart
+    const record = plotted()
+    const was = fitView
+    if (!c || !record || !was) return false
+    try {
+      const pane = paneSize()
+      const now = c.getVisibleRange()
+      if (!pane || Math.abs(pane.width - was.width) < 24) return false
+      // Bars keep their width when the pane does not: the newest stays put and the oldest slide off (or air opens).
+      if (Math.abs(now.to - was.to) > 2 * DAY_SEC) {
+        fitView = null
+        return false
+      }
+      void fit(record)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   const fit = async (record: CalledRecord): Promise<void> => {
     const c = chart
-    const range = fitRange(record.calls, Math.floor(Date.now() / 1000))
+    const width = paneSize()?.width ?? 0
+    const range = fitRange(record.calls, Math.floor(Date.now() / 1000), width)
     if (!c || !range) return
+    fitting = true
     try {
       const res = c.resolution().toUpperCase()
       if (res !== '1D' && res !== 'D') await Promise.race([Promise.resolve(c.setResolution('1D')), sleep(4000)])
-      await Promise.race([c.setVisibleRange(range, { percentRightMargin: 5 }), sleep(5000)])
+      await Promise.race([c.setVisibleRange(range, { percentRightMargin: fitRightMargin(width) }), sleep(5000)])
+      await sleep(60)
+      const now = c.getVisibleRange()
+      fitView = { from: now.from, to: now.to, width: paneSize()?.width ?? width }
     } catch {
       /* the chart keeps the view it has; "Fit all calls" asks again */
     }
+    // THE FIT MUST HOLD. The library sets a range of its own when a symbol's first bars arrive, and on a market whose
+    // history is slow to load (a stock) that can land AFTER the fit: the chart then opened on five years with the
+    // calls in its last sliver. So the view is read back three times over the next seconds and the fit is put again
+    // while it is not the one asked for. Not awaited: the pins draw meanwhile.
+    const seq = ++fitSeq
+    void (async () => {
+      const span = range.to - range.from
+      for (const wait of [450, 900, 1500]) {
+        await sleep(wait)
+        if (seq !== fitSeq || chart !== c) return
+        try {
+          if (fitHolds(c.getVisibleRange(), range)) continue
+          await Promise.race([c.setVisibleRange(range, { percentRightMargin: fitRightMargin(paneSize()?.width ?? width) }), sleep(4000)])
+          await sleep(60)
+          const now = c.getVisibleRange()
+          fitView = { from: now.from, to: now.to, width: paneSize()?.width ?? width }
+        } catch {
+          /* read again on the next pass */
+        }
+      }
+      void span
+      if (seq === fitSeq) {
+        fitting = false
+        // A call that was opened before the fit landed (a link to one call) is brought into view on the fitted chart.
+        setTimeout(revealFocus, 120)
+      }
+    })()
   }
 
   /** Where everything is, right now. Null while the chart cannot say (no bars yet). */
@@ -1017,7 +1264,8 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     return Math.abs(x - (box.x + box.w / 2)) <= Math.max(2, view.spacing / 2 + 1) && Math.abs(y - (box.y + box.h / 2)) <= 2
   }
 
-  const labelPos = (pane: PaneSize, keepBottom: number) => ({ x: PANE_KEEP.logoWidth / pane.width, y: Math.max(0, (pane.height - keepBottom + 8) / pane.height) })
+  // (On a phone's pane the label stands 6px further from the library's logo: the two never touch.)
+  const labelPos = (pane: PaneSize, keepBottom: number) => ({ x: (PANE_KEEP.logoWidth + (pane.width < CARDS_MIN_PANE_W ? 6 : 0)) / pane.width, y: Math.max(0, (pane.height - keepBottom + 8) / pane.height) })
   const placeLabel = async (record: CalledRecord, pane: PaneSize, my: number): Promise<void> => {
     const c = chart
     if (!c) return
@@ -1078,6 +1326,7 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     const c = chart
     if (!c) return
     void syncFocus()
+    revealFocus()
     for (const d of cards.values()) {
       try {
         const shape = c.getShapeById(d.shapeId)
@@ -1147,7 +1396,10 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       const had = cards.size > 0 || labelId !== null || marks.length > 0
       clearShapes()
       marks = []
+      scene = null
       drawnKey = ''
+      marginWant = null
+      fitView = null
       setMargins(null)
       void syncFocus()
       if (had) refreshMarks()
@@ -1175,9 +1427,19 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     const byId = new Map(record.calls.map((call) => [call.postId, call]))
     const texts = new Map<string, PinText>()
     const sizes: Record<string, BoxSize> = {}
+    // The layer draws the cards itself when it is up (set in the page's own type); else they are the library's callouts.
+    const pageText = layerOn ? pageMeasure() : null
+    const fonts = pageFonts()
+    const specs: CardSpec[] = []
     for (const id of ids) {
       const call = byId.get(id)
       if (!call) continue
+      if (pageText) {
+        const spec = cardSpecOf(call, record.handle, plan.textWidth, plan.wordLines, pageText, fonts)
+        specs.push(spec)
+        sizes[id] = { w: spec.w, h: spec.h }
+        continue
+      }
       const text = pinText(call, record.handle, { textWidth: plan.textWidth, measure, wordLines: plan.wordLines })
       texts.set(id, text)
       sizes[id] = boxSize(text.lines, measure)
@@ -1185,7 +1447,8 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
     const maxH = Math.max(0, ...Object.values(sizes).map((s) => s.h))
     const label = tallyLabel(record, pane, measureTally(pane))
     const keepTop = keepTopFor(legendBottom())
-    setMargins((base) => railMargins(pane, plan, maxH, label.keepBottom, base, keepTop))
+    marginWant = (base) => railMargins(pane, plan, maxH, label.keepBottom, base, keepTop)
+    applyMargins()
     // The margins move the candles: read the view after the chart has drawn them.
     await sleep(80)
     if (my !== gen) return
@@ -1196,6 +1459,22 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
 
     clearShapes()
     marks = calledMarks(record, ids, inks)
+    const boxed = new Set(ids)
+    scene = { key, calls: record.calls.filter((call) => !boxed.has(call.postId)), keepTop: view.keepTop, keepBottom: label.keepBottom }
+    if (pageText) {
+      const side = startAbove
+      const keepTopNow = view.keepTop
+      scene.cards = specs
+      scene.layout = (paneNow, anchors) => layoutCallouts({ pane: paneNow, anchors, sizes, keepBottom: label.keepBottom, keepTop: keepTopNow, startAbove: side })
+      cards = new Map()
+      await placeLabel(record, view.pane, my)
+      if (my !== gen) return
+      drawnKey = key
+      refreshMarks()
+      hooks.onCards?.(specs.length)
+      void syncFocus()
+      return
+    }
     const next = new Map<string, Drawn>()
     for (const box of placed) {
       const call = byId.get(box.id)
@@ -1269,19 +1548,35 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
         /* the pins still draw; they are placed again on the next render */
       }
       if (host && typeof ResizeObserver !== 'undefined') {
-        resizeWatch = new ResizeObserver(() => scheduleRelayout())
+        resizeWatch = new ResizeObserver(() => {
+          scheduleRelayout()
+          if (resizeTimer) clearTimeout(resizeTimer)
+          resizeTimer = setTimeout(() => {
+            resizeTimer = null
+            applyMargins()
+            if (!refitIfUntouched()) revealFocus()
+          }, 320)
+        })
         resizeWatch.observe(host)
       }
       driftTimer = setInterval(() => {
         if (cards.size && !relayoutTimer && !renderTimer && typeof document !== 'undefined' && !document.hidden) relayout()
       }, DRIFT_CHECK_MS)
       hooks.onAttach?.(true)
+      layer.start()
       schedule()
     },
     detach() {
       gen++
       if (relayoutTimer) clearTimeout(relayoutTimer)
       if (renderTimer) clearTimeout(renderTimer)
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = null
+      marginWant = null
+      fitView = null
+      fitSeq++
+      fitting = false
+      cover = 0
       if (driftTimer) clearInterval(driftTimer)
       relayoutTimer = renderTimer = null
       driftTimer = null
@@ -1303,7 +1598,9 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       } catch {
         /* the widget is going away */
       }
+      layer.stop()
       marks = []
+      scene = null
       drawnKey = ''
       fitDone = 0
       if (widget) hooks.onAttach?.(false)
@@ -1333,9 +1630,27 @@ export function createCalledPins(hooks: CalledPinsHooks): CalledPinsController {
       }
       return true
     },
-    marks: (ticker) => (plotted() && sameSym(ticker, hooks.symbol) ? marks : []),
+    // While the marks layer draws them, the library is given none (it would draw its discs under the tiles).
+    marks: (ticker) => (!layerOn && plotted() && sameSym(ticker, hooks.symbol) ? marks : []),
     cleanLayout: (layout) => cleanLayout(layout, (id) => owned.has(id), margins),
+    shareNote() {
+      const record = plotted()
+      const pane = paneSize()
+      if (!record || !pane || !tallyLabel(record, pane, measureTally(pane)).short) return null
+      return [record.words.standing, record.words.coverage].filter(Boolean).join(' ')
+    },
+    setCover(px) {
+      const next = Number.isFinite(px) && px > 8 ? Math.round(px) : 0
+      if (Math.abs(next - cover) < 4) return
+      // The card arriving or leaving is a new view for the opened bar; a few px of the page scrolling under it is not.
+      const arrived = (next > 0) !== (cover > 0) || Math.abs(next - cover) > 40
+      cover = next
+      applyMargins()
+      layer.invalidate()
+      if (arrived) setTimeout(revealFocus, 380)
+    },
     retheme() {
+      layer.invalidate()
       drawnKey = ''
       if (chart) schedule()
     },

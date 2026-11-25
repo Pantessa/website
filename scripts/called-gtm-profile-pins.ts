@@ -156,7 +156,8 @@ export function calledGtmProfilePins(check: Check): void {
       // The record sheet's own pin lets no other sheet name one of its classes, in a rule or in a comment.
       !/\.xrc[\w-]*/.test(read('components/called/called-profile.css')) &&
       selectors.length > 40 && selectors.every((sel) => sel.split(',').every((one) => /\.xpf/.test(one))) &&
-      toned.length >= 4 && toned.every((m) => /\.xpf-cell|\.xpf-mark|\.xpf-spark__dot|\.xpf-marks li::before/.test(m[1]) && /(border-top|background): [^;]*var\(--xrc-tone\)/.test(m[2])) &&
+      // RE-PINNED 2026-11-24 (squad mobile-sleek, lane XPAGES): the tally is the kit's score bar and a call's mark is the kit's tile, so this sheet tones one thing only, the square on a market's line. The rule itself stands: a verdict's colour here reaches a mark, a dot or a thin rule, never a headline, a figure or a post.
+      toned.length >= 1 && toned.every((m) => /\.xpf-cell|\.xpf-mark|\.xpf-spark__dot|\.xpf-marks li::before/.test(m[1]) && /(border-top|background): [^;]*var\(--xrc-tone\)/.test(m[2])) &&
       !/\.xpf-(id__name|sec__title|aside__title|cell b|call__quote|mkt__sym)[^{]*\{[^}]*color: var\(--(accent|sell|gold|xrc-tone)\)/.test(css) && /@media \(hover: none\) \{[^@]*min-height: 44px/.test(css) && /\.xpf \.xpf-id__x \{[^}]*width: 44px; height: 44px/.test(css),
   )
   // ── A taken-down or protected account (review F3) ──
@@ -317,7 +318,8 @@ export async function calledGtmProfilePinsServed(check: Check, base: string): Pr
     }
     const cssHref = /<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/g
     const sheets = await Promise.all([...p.html.matchAll(cssHref)].map((m) => fetch(new URL(m[1].replace(/&amp;/g, '&'), base), { headers: HEAD }).then((r) => (r.ok ? r.text() : '')).catch(() => '')))
-    check('called-gtm profile (served, the sheet): the account page ships the lane\'s own rules', sheets.some((s) => s.includes('.xpf-cell') && s.includes('.xpf-mkt')), `${sheets.length} sheets`)
+    // RE-PINNED 2026-11-24 (squad mobile-sleek, lane XPAGES): the sum's cells are the kit's score bar now, so the sheet is known by `.xpf-sum`.
+    check('called-gtm profile (served, the sheet): the account page ships the lane\'s own rules', sheets.some((s) => s.includes('.xpf-sum') && s.includes('.xpf-mkt')), `${sheets.length} sheets`)
   } catch (e) {
     check('called-gtm profile (served): the server answered', false, e instanceof Error ? e.message : String(e))
   }

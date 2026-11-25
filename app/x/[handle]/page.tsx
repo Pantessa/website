@@ -188,7 +188,7 @@ export default async function HandlePage({ params }: Props) {
         <div className="xrc__wrap">
           <div className="xrc__main xpf-main">
             <header className="xpf-head">
-              <Eyebrow jump share={entries.length > 0} />
+              <Eyebrow jump />
               <div className="xpf-id">
                 <span className="xpf-id__face">
                   <Avatar uri={avatar} name={top?.name} handle={handle} size="lg" />
@@ -230,8 +230,14 @@ export default async function HandlePage({ params }: Props) {
               {lead && (
                 <p className="xpf-acts">
                   <Link href={chartHref(handle, lead.symbol)} className="xpf-btn xpf-btn--lead xpf-btn--wide" prefetch={false} data-journey="called_profile_chart_top">
-                    Open the {lead.symbol} chart with these calls
+                    <span>
+                      Open the {lead.symbol} chart<span className="xpf-btn__tail"> with these calls</span>
+                    </span>
                   </Link>
+                  {/* The quiet press beside the one primary: the share row further down. */}
+                  <a href="#share" className="xpf-acts__alt" data-journey="called_jump_share">
+                    Share
+                  </a>
                 </p>
               )}
             </header>
@@ -282,6 +288,8 @@ export default async function HandlePage({ params }: Props) {
         </div>
       </main>
       <Footer />
+      {/* Room for the docked press under the page's last line on a phone. */}
+      {lead && <div className="xpf-dockpad" aria-hidden />}
     </>
   )
 }

@@ -83,9 +83,9 @@
 .apgt-mkt__text .apgt-small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .apgt-pnl { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
-.apgt-pnlbar { position: relative; flex: 1 1 auto; max-width: 64px; height: 6px; border-radius: 999px; background: var(--surf-2); overflow: hidden; }
+.apgt-pnlbar { position: relative; flex: 1 1 auto; max-width: 64px; height: 6px; border-radius: var(--r-pill); background: var(--surf-2); overflow: hidden; }
 .apgt-pnlbar__mid { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--line-2); }
-.apgt-pnlbar__fill { position: absolute; top: 0; bottom: 0; border-radius: 999px; }
+.apgt-pnlbar__fill { position: absolute; top: 0; bottom: 0; border-radius: var(--r-pill); }
 .apgt-pnlbar__fill--pos { background: var(--up); }
 .apgt-pnlbar__fill--neg { background: var(--sell, #f0776b); }
 

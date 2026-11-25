@@ -90,7 +90,7 @@ export default function NavAccount() {
               onClick={openChainModal}
               type="button"
               className={cn(
-                'flex items-center gap-2 px-3 py-1.5 rounded-full',
+                'flex items-center gap-2 px-3 py-1.5 rounded-[var(--r-pill)]',
                 'bg-red-500/10 text-red-400 border border-red-500/30',
                 'text-xs font-medium hover:bg-red-500/20 transition-colors',
               )}

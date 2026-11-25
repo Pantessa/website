@@ -1,0 +1,50 @@
+/* THE MARKETS INDEX, SLEEK (squad mobile-sleek, 2026-11-24; lane SHELL).
+   The tool strip and the boards in the brand's language: hairline tabs, a
+   hard segmented Map · List, hard fields. markets.css and x402-design.css
+   keep the layout; this sheet re-dresses and rides `:root` so it wins
+   without editing them. Tokens only. */
+
+/* ── The board tabs: words on a hairline, the picked one underlined ────── */
+:root .mkt-frame__tabs { gap: var(--sp-5); }
+:root .mkt-frame__tab { padding: 7px 0; border-radius: 0; background: none; box-shadow: none; }
+:root .mkt-frame__tab.is-on { background: none; box-shadow: inset 0 -2px 0 var(--accent); color: var(--fg); }
+
+/* ── Map · List: one hard segmented control, the picked cell filled ────── */
+:root .mk-view { gap: 0; padding: 0; border: 1px solid var(--line-2); border-radius: 0; background: var(--bg); }
+:root .mk-view__btn { height: 32px; border-radius: 0; }
+:root .mk-view__btn + .mk-view__btn { border-left: 1px solid var(--line-2); }
+:root .mk-view__btn.is-on { background: var(--fg); color: var(--bg); }
+
+@media (max-width: 640px), (max-width: 1023px) and (max-height: 500px) {
+  :root .mkt-frame__bar > .mkt-frame__tabs { padding-block: 0; gap: var(--sp-5); }
+  /* the hairline is an inset shadow here, so each cell is a full 44px target */
+  :root .mkt-frame__bar > .mk-view { padding: 0; border: 0; box-shadow: inset 0 0 0 1px var(--line-2); }
+  :root .mkt-frame__bar > .mk-view > .mk-view__btn { height: 44px; }
+  :root .mkt-frame__bar > .mk-view > .mk-view__btn::after { content: none; }
+  :root .mkt-frame__tab { flex: 0 0 auto; min-width: 44px; justify-content: center; }
+  :root .mkt-frame__bar .ssx-field { height: 44px; border-radius: 0; }
+}
+
+/* The earn rows' act buttons take a thumb. */
+@media (hover: none) {
+  :root .mk-earn__go { min-height: 44px; }
+}
+
+/* Round 3. The stuck tabs step out once every drawn board has scrolled above
+   them (MarketsIndex useBoardsPast sets data-past), so they no longer ride
+   over "how it works" and the footer with no board under them. */
+@media (max-width: 640px), (max-width: 1023px) and (max-height: 500px) {
+  :root .mkt-frame__bar > .mkt-frame__tabs[data-past] { visibility: hidden; }
+}
+/* Map falls back to the list at this width (MarketsIndex usePhone, 640px), so
+   the control that picks between them is not drawn here and the search takes
+   the row. It stays in the HTML and returns the moment the screen is wider. */
+@media (max-width: 640px) {
+  :root .mkt-frame__bar > .mk-view { display: none; }
+  :root .mkt-frame__bar > .mkt-search { display: block; width: 100%; }
+}
+/* QA's small targets (round 3): the earn board's short chips are at least 44px wide, and the line's one link is a 44px press that leaves the line where it was. */
+@media (hover: none) {
+  :root .mk-earn__chip { min-width: 44px; justify-content: center; text-align: center; }
+  :root .mkt-frame .mkt-sec__foot .mkt-link, :root .mkt-frame p > .mkt-link { display: inline-block; padding-block: 14px; margin-block: -14px; }
+}

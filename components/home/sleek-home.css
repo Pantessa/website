@@ -1,0 +1,120 @@
+/* THE LANDING, SLEEK (squad mobile-sleek, 2026-11-24; lane SHELL).
+   The hero in the brand's language: flat ground, hairlines, hard edges, and
+   the cut corner on the things a stranger can press that matter. hero.css
+   and mosaic.css keep the layout and the two postures; this sheet only
+   re-dresses, and every rule rides `:root` so it wins without editing them.
+
+   ONE filled button on the first screen: "Build it" (magenta, the cut). The
+   two doors under it are quiet. The two wide tiles (the stock buy, the
+   record) wear the tile's own silhouette. Tokens only. */
+
+/* ── The ask box: a hard field on a hairline, the one primary action ───── */
+:root .hm-say { min-height: 56px; padding: 5px 5px 5px var(--sp-4); border: 1px solid var(--line-2); border-radius: 0; background: var(--surf-1); transition: border-color var(--dur-1) ease; }
+:root .hm-say:hover, :root .hm-say:focus-within { border-color: var(--hot); }
+:root .hm-say__go.sk-btn { min-height: 44px; padding: 0 var(--sp-5); border-radius: 0; background: var(--hot); color: var(--ink, var(--bg)); font-family: var(--mk-font-ui); font-size: var(--fs-base); }
+:root .hm-say__go.sk-btn:focus-visible { box-shadow: none; }
+
+/* ── The doors: quiet, hard-edged, equal ───────────────────────────────── */
+:root .mk-claim__go, :root .mk-claim__try { min-height: 44px; padding: 0 var(--sp-4); border: 1px solid var(--line-2); border-radius: 0; background: none; color: var(--fg); font-size: var(--fs-md); font-weight: 600; transform: none; filter: none; }
+:root .mk-claim__go:hover, :root .mk-claim__go:focus-visible, :root .mk-claim__try:hover, :root .mk-claim__try:focus-visible { border-color: var(--accent); box-shadow: none; transform: none; filter: none; }
+:root .mk-claim__go > span, :root .mk-claim__try > span:last-child { color: var(--accent); }
+:root .mk-claim__sym { border-radius: 0; }
+:root .mk-claim .mk-claim__tour { border-radius: 0; }
+
+/* ── The three proofs: on the Cut P's own two tones, magenta over violet ── */
+:root .mk-claim__proofs::before { background: linear-gradient(180deg, var(--hot) 0 50%, var(--accent) 50% 100%); }
+
+/* ── The two wide tiles wear the tile's silhouette ─────────────────────── */
+:root .hm__tile--buy.sk-cut { border: 0; padding: calc(var(--sp-3) + 1px); }
+:root .hm__tile--buy.sk-cut.is-lit { box-shadow: none; filter: brightness(1.06); }
+:root .hm__tile--called.sk-card { --sk-edge: var(--line-2); --sk-fill: var(--surf-1); border: 0; padding: calc(var(--sp-3) + 1px); background: var(--sk-edge); }
+:root .hm__tile--called.sk-card:hover, :root .hm__tile--called.sk-card:focus-visible { --sk-edge: var(--hm-h); }
+:root .hm__tile.sk-cut:focus-visible, :root .hm__tile.sk-card:focus-visible { box-shadow: none; outline: 2px solid var(--fg); outline-offset: -5px; }
+/* Every tile is a hard square; the avatar on the record stays a circle. */
+:root .hm__tile { border-radius: 0; }
+
+/* ── A phone's column ──────────────────────────────────────────────────── */
+@container hero (max-width: 559px) {
+  :root .hm-say { min-height: 54px; margin-top: var(--sp-3); padding-left: var(--sp-3); }
+  /* the doors are two plain links on one row: nothing here competes with "Build it" */
+  :root .mk-claim__doors { gap: var(--sp-5); margin-top: var(--sp-1); }
+  :root .mk-claim__go, :root .mk-claim__try { padding: 0; border: 0; font-weight: 500; color: var(--muted); }
+  :root .mk-claim__in { row-gap: var(--sp-1); }
+  :root .mk-claim__proofs { gap: 3px; }
+  /* the record leads the row: it is the first thing under the fold line */
+  :root .hm__tile--called { order: -2; }
+  :root .hm__tiles { margin-inline: calc(var(--gutter-phone, 16px) * -1); padding-inline: var(--gutter-phone, 16px); scroll-padding-inline: var(--gutter-phone, 16px); gap: 10px; }
+  :root .hm__tile--buy, :root .hm__tile--called { flex-basis: min(82cqi, 304px); min-height: 112px; }
+}
+
+/* The stranger's desktop bar (mosaic.css, "no rail"): the search sits beside
+   Sign in. The bell is not drawn signed out (app/native-shell.css), and the
+   lens does not take the spacing the bell used to keep on a rail. */
+@media (min-width: 1024px) {
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__top .ssx-lens { margin-right: 0; }
+}
+
+/* The fold control of "how it works": drawn only on a stranger's phone. */
+.how__fold { display: none; }
+
+/* ── THE STRANGER'S PHONE: a short page (squad mobile-sleek, round 2) ──────
+   The landing ran 14,289px on a phone. A stranger needs the hero, the record,
+   one live market view (THE READ), how it works, and the doors. So, on a
+   phone and only in the stranger's posture on the home:
+     · the boards are ONE board: the strip's tabs switch it instead of
+       scrolling a stack of five, and it shows six rows until "Show all";
+     · "how it works" is its six stations as one line each, with the costs
+       and the never-list folded behind one press (never removed);
+     · the closing doors are one line each; the suggestions board and the
+       apps row step aside (both stay on desktop and for a returning visitor).
+   A returning visitor (`data-home="return"`) and /markets keep everything. */
+@media (max-width: 640px) {
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim):has(.mkt-frame__tab[data-tab='equities'].is-on) .mkt-frame__data > .mkt-sec:not(#equities),
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim):has(.mkt-frame__tab[data-tab='crypto'].is-on) .mkt-frame__data > .mkt-sec:not(#crypto),
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim):has(.mkt-frame__tab[data-tab='perps'].is-on) .mkt-frame__data > .mkt-sec:not(#perps),
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim):has(.mkt-frame__tab[data-tab='macro'].is-on) .mkt-frame__data > .mkt-sec:not(#macro),
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim):has(.mkt-frame__tab[data-tab='earn'].is-on) .mkt-frame__data > .mkt-sec:not(#earn),
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim):not(:has(.mkt-frame__tab.is-on)) .mkt-frame__data > .mkt-sec:not(#equities) { display: none; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .mkt-sec:has(> .mkt-sec__more[aria-expanded='false']) .mk-table__row:nth-child(n + 7) { display: none; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) :is(.mk-suggest-seat, .mk-guide-seat) { display: none; }
+
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__text { display: none; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__fold { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 48px; padding: 0 var(--sp-4); border: 1px solid var(--line-2); color: var(--fg); font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__foldmark::before { content: '+'; font-size: var(--fs-lg); color: var(--accent); }
+  /* the box itself is the whole 48px row, unseen: the press lands on it */
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__foldbox { display: block; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__fold:has(.how__foldbox:focus-visible) { outline: 2px solid var(--fg); outline-offset: -4px; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how__fold:has(.how__foldbox:checked) .how__foldmark::before { content: '\2212'; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how:has(.how__foldbox:not(:checked)) .how__cols { display: none; }
+
+  /* the closing is ONE door (the tour above already holds all eight) and the quiet row */
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) :is(.closing__eyebrow, .closing__lede, .closing__cell:nth-child(n + 2)) { display: none; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .closing__grid { grid-template-columns: minmax(0, 1fr); }
+  /* small things that each cost a line: the sub-lines, the keyboard hints, the count under a door */
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) :is(.how__lede, .how__doorcount, .tour__sub, .mk-keys, .mkt-sec__blurb) { display: none; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .how { gap: var(--sp-4); }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .mkt-frame__data { gap: 20px; }
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .mk-called-seat:not(:empty) { margin-top: var(--sp-5); }
+  /* THE READ keeps its chart and its acts; the paragraph that explains it steps aside */
+  :root:not([data-home='return']) .mkt-frame__main:has(> .mk-claim) .read__how { display: none; }
+}
+
+/* A stranger's phone has no watchlist yet: the empty rail under the page is
+   not drawn (the desktop already hides it for a stranger, mosaic.css). */
+@media (max-width: 1023px) {
+  :root:not([data-home='return']) .mkt-frame:has(> .mkt-frame__main > .mk-claim) .mkt-frame__rail { display: none; }
+}
+/* A stranger's desktop home: the hero's own sentence box and the bar's Ask
+   are the ask. The docked field sat on the board tabs at the foot of the
+   first screen, so it is not drawn here (⌘K still opens the door). */
+@media (min-width: 1024px) {
+  :root:not([data-home='return']) body:has(.mkt-frame__main > .mk-claim) .askdoor-pill { display: none; }
+}
+
+/* The tour's sideways rows end on a hard edge: the fade that hinted at more
+   was a blend (a mask gradient). The row still scrolls and still snaps. */
+:root .tour__striprow[data-more], :root .tour__list[data-more] { -webkit-mask-image: none; mask-image: none; }
+/* The tour's chart: a flat tint under the line, not a fade. */
+:root .tc__stop { stop-opacity: 0.12; }
+/* A thumb: a short door under "how it works" (Pricing) is still 44px wide. */
+@media (hover: none) { :root .how__door { min-width: 44px; } }

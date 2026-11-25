@@ -54,6 +54,19 @@ import { usePhoneSheet, PHONE_SHEET_QUERY } from '@/components/markets/shell/use
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
+// THE DOCK (squad mobile-sleek, 2026-11-24). On a phone the strip is a docked
+// bar of hard-edged buttons: the market's own sides (buy, sell, long, short)
+// are buttons, never cut off; every other way to act (stake, supply, protect)
+// sits behind ONE "More". The chips stay in the HTML as they were (the wire
+// the pins read); `data-rank` is what the bar's CSS lays out by.
+const MARKET_SIDES: ReadonlySet<ExecSide> = new Set<ExecSide>(['buy', 'sell', 'long', 'short'])
+/** What a "More" row says under its label: what the press starts. */
+const MORE_LINE: Partial<Record<ExecSide, string>> = {
+  stake: 'Stake ETH with Lido. You set the size next.',
+  supply: 'Lend it on Aave at the supply rate. You set the size next.',
+  protect: 'A stop that closes it if your line breaks.',
+}
+
 /** The legacy class the side wears (long/short = the perp's buy/sell). */
 const LEGACY: Record<ExecSide, string> = {
   buy: 'buy',
@@ -157,6 +170,23 @@ export default function ExecStrip({
     requestAnimationFrame(() => rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }, [aim, pair.symbol, sideList])
   const rootRef = useRef<HTMLDivElement>(null)
+  // The bar's "More": a short menu over the bar (a press outside or Esc folds it).
+  const [moreOpen, setMoreOpen] = useState(false)
+  useEffect(() => {
+    if (!moreOpen) return
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target instanceof Element) || !e.target.closest('[data-act-more]')) setMoreOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMoreOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [moreOpen])
   const pick = (side: TicketSide) => {
     setTicket((t) => {
       const next = t === side ? null : side
@@ -209,8 +239,15 @@ export default function ExecStrip({
     e.preventDefault()
     pick(side)
   }
+  // The bar's ranks: the first market side leads (the one filled button), the
+  // other market sides sit beside it, the rest go behind "More".
+  const market = asks.filter((a) => MARKET_SIDES.has(a.side))
+  const rest = asks.filter((a) => !MARKET_SIDES.has(a.side))
+  // A symbol with no market side at all (nothing but a stop, say) keeps its chips on the bar.
+  const folded = market.length > 0 ? rest : []
+  const rankOf = (side: ExecSide) => (folded.some((a) => a.side === side) ? 'more' : market[0]?.side === side || market.length === 0 ? 'lead' : 'side')
   return (
-    <div ref={rootRef} className="sym__act" aria-label={`Act on ${symbol}`} data-acts={asks.length} data-ticket={shown ?? undefined}>
+    <div ref={rootRef} className="sym__act" aria-label={`Act on ${symbol}`} data-acts={asks.length} data-ticket={shown ?? undefined} data-market={market.length} data-folded={folded.length}>
       <span className="sym__act-eyebrow mono">ACT ON {pair.symbol} · SENDS THE ASK · YOUR WALLET SIGNS</span>
       <div className="sym__act-chips">
         {asks.map((a) => (
@@ -223,6 +260,8 @@ export default function ExecStrip({
             data-side={a.side}
             data-kind={a.kind}
             data-tone={a.tone}
+            data-rank={rankOf(a.side)}
+            data-verb={a.label.split(' ')[0]}
             aria-pressed={shown === a.side}
             data-journey={`Pick ${a.label}`}
             {...(phone ? { 'data-sheet-open': 'order-ticket' } : {})}
@@ -231,6 +270,43 @@ export default function ExecStrip({
             {a.label}
           </Link>
         ))}
+        {folded.length > 0 && (
+          <span className="sym__act-moreseat" data-act-more="">
+            <button
+              type="button"
+              className="sym__act-more"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-pressed={folded.some((a) => a.side === shown)}
+              title={`More ways to act on ${pair.symbol}`}
+              data-journey="Open More acts"
+              onClick={() => setMoreOpen((o) => !o)}
+            >
+              More
+            </button>
+            {moreOpen && (
+              <span className="sym__act-menu" role="menu" aria-label={`More ways to act on ${pair.symbol}`}>
+                {folded.map((a) => (
+                  <button
+                    key={a.side}
+                    type="button"
+                    role="menuitem"
+                    className="sym__act-menuitem"
+                    data-side={a.side}
+                    data-journey={`Pick ${a.label}`}
+                    onClick={() => {
+                      setMoreOpen(false)
+                      pick(a.side)
+                    }}
+                  >
+                    <span className="sym__act-menulabel">{a.label}</span>
+                    {MORE_LINE[a.side] && <span className="sym__act-menuline">{MORE_LINE[a.side]}</span>}
+                  </button>
+                ))}
+              </span>
+            )}
+          </span>
+        )}
       </div>
       {shown && !phone && ticketEl}
       {phone && (

@@ -8,7 +8,7 @@
   margin-top: 32px;
   border: 1px solid var(--line);
   background: var(--surf-1);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   padding: 16px 18px 14px;
   min-width: 0;
 }
@@ -23,7 +23,7 @@
 }
 .mk-fund--note button {
   border: 1px solid var(--line-2);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   padding: 5px 10px;
   font-size: 12px;
   color: var(--fg);
@@ -67,7 +67,7 @@
   text-decoration: none;
   white-space: nowrap;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   padding: 4px 10px;
 }
 .mk-fund__ext:hover { color: var(--fg); border-color: var(--fg); }
@@ -108,7 +108,7 @@
   gap: 6px;
   flex: none;
   border: 1px solid var(--line-2);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   padding: 5px 10px 5px 8px;
   font-size: 12px;
   color: var(--muted);
@@ -126,7 +126,7 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 0;
   background: transparent;
   color: var(--muted);
@@ -152,7 +152,7 @@
   width: 100%;
   height: 320px;
   margin-top: 8px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   overflow: hidden;
   min-width: 0;
 }
@@ -171,7 +171,7 @@
 .mk-fund__foot a { color: inherit; border-bottom: 1px solid var(--mk-rule); text-decoration: none; }
 
 @media (max-width: 640px) {
-  .mk-fund { padding: 14px 12px 12px; border-radius: 12px; margin-top: 24px; }
+  .mk-fund { padding: 14px 12px 12px; border-radius: var(--r-md); margin-top: 24px; }
   .mk-fund__title h3 { font-size: 16px; }
   .mk-fund__ext { display: none; }
   .mk-fund__stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
@@ -186,3 +186,10 @@
   .mk-fund__head a, .mk-fund__foot a { position: relative; }
   .mk-fund__head a::after, .mk-fund__foot a::after { content: ''; position: absolute; inset: -15px -6px; }
 }
+
+/* ── SLEEK (squad mobile-sleek, lane SYMBOL, 2026-11-24): the panel is a
+   hairline section like the rest of the page; its chips and ranges are hard cells. ── */
+.mk-fund { margin-top: 28px; padding: 18px 0 14px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; }
+.mk-fund--note button, .mk-fund__ext, .mk-fund__chip, .mk-fund__ranges button, .mk-fund__chart { border-radius: 0; }
+.mk-fund__chip i { border-radius: 0; }
+@media (max-width: 640px) { .mk-fund { margin-top: 24px; padding: 16px 0 12px; border-radius: 0; } }

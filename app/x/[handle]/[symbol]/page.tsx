@@ -8,9 +8,10 @@ import CallLead, { BestCall } from '@/components/called/CallLead'
 import RecordChart from '@/components/called/RecordChart'
 import ScanNow from '@/components/called/ScanNow'
 import ShareRow from '@/components/called/ShareRow'
+import ScoreBar from '@/components/sleek/ScoreBar'
 import { FIXTURE_HANDLE } from '@/lib/called-it/fixture'
 import { getXIdentity } from '@/lib/called-it/x-auth'
-import { ADDED_MARK, SCAN_WINDOW_DAYS, chartHref, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
+import { ADDED_MARK, SCAN_WINDOW_DAYS, VERDICT_WORDS, chartHref, recordHref, type CalledCall, type CalledRecord, type CalledSide } from '@/lib/called-it/spec'
 import { CALL_PARAM, bestCallOf, callHref, leadCallOf, parseCallParam } from '@/lib/called-it/gtm'
 import { callDescription, callHeadline, calledImageHref, cleanLine, fmtCount, headlineParts } from '@/lib/called-it/card-layout'
 import { calledCallPost, calledPost, myCalledCallPost, myCalledPost } from '@/lib/share-posts'
@@ -39,6 +40,15 @@ import '@/components/called/called-call.css'
 // process, lib/candles-server), the avatar (an hour, _lib/avatar), and the
 // share image (the CDN, by its own cache headers). One request reads the
 // record once (React cache), however many of metadata and page ask.
+//
+// THE FIRST SCREEN ON A PHONE (squad mobile-sleek, 2026-11-24): who, ONE
+// display line, the tally as one bar (components/sleek/ScoreBar) and ONE
+// primary press, the live chart, docked under the thumb. Share is the quiet
+// press beside it; "Plot a handle" is a quiet link. The list of calls is
+// CAPPED: the calls pinned on the chart are shown (misses beside hits, by the
+// same rule that pins them), and every other call is in the page behind one
+// "Show all N calls" (a <details>, no script). A long post is clamped behind a
+// "More" (CallCard). Nothing is dropped and no word of a post is rewritten.
 //
 // Every answer is a real page: a ready record, a scanned account with no
 // calls, posts a viewer pasted with no scan behind them, a handle nobody has
@@ -99,6 +109,11 @@ async function viewOf(props: Props): Promise<{ view: RecordView; rawHandle: stri
   return { view: await loadRecordView(rawHandle, rawSymbol, first(q.side), first(q.pins)), rawHandle, rawSymbol, call: null }
 }
 
+/** A record with more calls than this shows its pinned calls and folds the rest behind "Show all". */
+const LIST_CAP = 8
+/** A fold is drawn only when it hides at least this many. */
+const SHOW_ALL_MIN = 3
+
 const withPins = (href: string, pins: readonly string[]) => (pins.length ? `${href}${href.includes('?') ? '&' : '?'}pins=${pins.join(',')}` : href)
 
 export async function generateMetadata(props: Props): Promise<Metadata> {
@@ -144,10 +159,23 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
 
 // ── The pieces of a record ──────────────────────────────────────────────
 
-/** The headline, every count a chip in its verdict's colour. */
+/** The headline: who and the market as the display line. The counts stay in the h1 to the letter (read aloud, read by a crawler) and are drawn by the score bar under it. */
 function Headline({ record }: { record: CalledRecord }) {
   const parts = headlineParts(record.words.headline)
-  if (!parts) return <h1 className="xrc-headline">{record.words.headline}</h1>
+  if (!parts) {
+    // No tally to draw (no calls found, or posts a viewer pasted with no scan): who and the market are the display line, the rest of the record's own sentence reads under it, to the letter.
+    const cut = record.words.headline.indexOf(': ')
+    if (cut < 0) return <h1 className="xrc-headline">{record.words.headline}</h1>
+    return (
+      <h1 className="xrc-headline">
+        <span className="xrc-headline__who">
+          {record.words.headline.slice(0, cut)}
+          <span className="xrc-sr">: </span>
+        </span>
+        <span className="xrc-headline__rest">{record.words.headline.slice(cut + 2)}</span>
+      </h1>
+    )
+  }
   // Read with the tags off, this is the headline to the letter: the colon, the commas and the full stop are in the
   // text for a reader and a crawler, and out of sight where the chips already separate the counts.
   return (
@@ -156,11 +184,11 @@ function Headline({ record }: { record: CalledRecord }) {
         {parts.who.replace(/: $/, '')}
         <span className="xrc-sr">: </span>
       </span>
-      <span className="xrc-headline__counts">
+      <span className="xrc-sr">
         {parts.counts.map((c, i) => (
           <Fragment key={c.kind}>
-            <span className={`xrc-count is-${c.kind}`}>{c.text}</span>
-            <span className="xrc-sr">{i < parts.counts.length - 1 ? ', ' : parts.end}</span>
+            {c.text}
+            {i < parts.counts.length - 1 ? ', ' : parts.end}
           </Fragment>
         ))}
       </span>
@@ -177,11 +205,13 @@ function Sides({ record }: { record: CalledRecord }) {
   ]
   return (
     <nav className="xrc-sides" aria-label="Which calls">
-      {tabs.map((t) => (
-        <Link key={t.side} href={recordHref(record.handle, record.symbol, t.side)} className={`xrc-sides__tab${t.side === record.side ? ' is-on' : ''}`} aria-current={t.side === record.side ? 'page' : undefined} prefetch={false} data-journey={`called_side_${t.side}`}>
-          {t.label} <span className="xrc-sides__n">{t.n}</span>
-        </Link>
-      ))}
+      <div className="sk-seg">
+        {tabs.map((t) => (
+          <Link key={t.side} href={recordHref(record.handle, record.symbol, t.side)} className={`xrc-sides__tab${t.side === record.side ? ' is-on' : ''}`} aria-current={t.side === record.side ? 'page' : undefined} prefetch={false} data-journey={`called_side_${t.side}`}>
+            {t.label} <span className="xrc-sides__n">{t.n}</span>
+          </Link>
+        ))}
+      </div>
     </nav>
   )
 }
@@ -293,7 +323,8 @@ export default async function RecordPage(props: Props) {
               <RecordChart symbol={symbol} closes={view.closes} calls={[]} unit={view.unit} emptyNote={scanning ? 'Pins land here when the scan is done' : 'No pins yet'} />
             </div>
             <aside className="xrc__side">
-              <DoorBlock symbol={symbol} side={side} initialHandle={scanning ? undefined : handle} heading={scanning ? 'Plot another handle' : 'Plot a handle'} owner="this" />
+              {/* One primary on this page: Scan. The door's press stays quiet for the handle it is prefilled with. */}
+              <DoorBlock symbol={symbol} side={side} initialHandle={scanning ? undefined : handle} heading={scanning ? 'Plot another handle' : 'Plot a handle'} owner="this" quiet />
               <MethodBlock />
             </aside>
           </div>
@@ -322,6 +353,14 @@ export default async function RecordPage(props: Props) {
   const scannedCalls = numbered.filter((c) => c.call.origin === 'scan')
   const addedCalls = numbered.filter((c) => c.call.origin === 'added')
   const pasteOnly = !record.scanned
+  // THE CAP: a long record shows the calls pinned on the chart (and the call the page leads with); the rest wait behind one press.
+  const pinnedFirst = scannedCalls.filter((c) => c.call.picked || c.call.postId === call?.postId).slice(0, LIST_CAP)
+  const shownIfCapped = pinnedFirst.length > 0 ? pinnedFirst : scannedCalls.slice(-LIST_CAP)
+  // A "Show all" that would reveal fewer than SHOW_ALL_MIN calls is not drawn: they are all shown instead.
+  const capped = scannedCalls.length > LIST_CAP && scannedCalls.length - shownIfCapped.length >= SHOW_ALL_MIN
+  const shownCalls = capped ? shownIfCapped : scannedCalls
+  const restCalls = capped ? scannedCalls.filter((c) => !shownCalls.includes(c)) : []
+  const scored = record.scanned && record.tally.total > 0
   // The plain page's highlight: the hit the record is shown by. Only a call the scan found, only a hit; otherwise nothing.
   const best = call ? null : bestCallOf(record.calls)
   const facts = (record.words.coverage || record.words.added || unlabeled > 0) && (
@@ -363,25 +402,47 @@ export default async function RecordPage(props: Props) {
                 </header>
               </>
             ) : (
-              <header className="xrc-head">
-                <Eyebrow jump share={record.calls.length > 0}>
+              <header className="xrc-head xrc-top">
+                <Eyebrow jump>
                   <span className="xrc-eyebrow__ctx">{record.symbol}</span>
                 </Eyebrow>
                 <Who view={view} record={record} />
-                <p className={`xrc-standing${record.verified ? ' is-verified' : ''}`} data-standing>
-                  {record.words.standing}
-                </p>
                 <Headline record={record} />
-                {/* What was read, and what was only added: the record's own words, right under the tally. */}
-                {facts}
+                {/* The tally as one bar: every verdict the scan counted has a segment, misses beside hits. */}
+                {scored && (
+                  <div className="xrc-tally" data-score>
+                    <p className="xrc-tally__total" aria-hidden>
+                      <b>{record.tally.total}</b> {record.tally.total === 1 ? 'call' : 'calls'}
+                      {record.side !== 'all' && <span> {record.side === 'bull' ? 'bullish' : 'bearish'}</span>}
+                    </p>
+                    <ScoreBar counts={record.tally} words={VERDICT_WORDS} size="lg" />
+                  </div>
+                )}
+                <div className="xrc-fine">
+                  <p className={`xrc-standing${record.verified ? ' is-verified' : ''}`} data-standing>
+                    {record.words.standing}
+                  </p>
+                  {/* What was read, and what was only added: the record's own words, right under the tally. */}
+                  {facts}
+                </div>
                 {pasteOnly && (
                   <p className="xrc-next">
                     <ScanNow handle={record.handle} symbol={record.symbol} label={`Scan @${record.handle} on ${record.symbol}`} auto />
                   </p>
                 )}
+                {/* ONE primary press, under the thumb on a phone: the live chart. Share is the quiet one beside it. */}
+                <div className="xrc-dock" data-dock>
+                  {/* With no scan behind the posts, the scan above is the primary press and this one steps back. */}
+                  <Link href={live} className={`xrc-dock__go sk-btn${pasteOnly ? ' sk-btn--quiet is-quiet' : ''}`} prefetch={false} data-journey="called_open_chart_dock">
+                    Open the live {record.symbol} chart <span aria-hidden>&rarr;</span>
+                  </Link>
+                  {record.calls.length > 0 && (
+                    <a href="#share" className="xrc-dock__alt sk-btn sk-btn--quiet" data-journey="called_jump_share">
+                      Share
+                    </a>
+                  )}
+                </div>
                 {found > 0 && <Sides record={record} />}
-                {/* The hit this record is shown by, with its own address. No hit: nothing is dressed up. */}
-                {best && <BestCall record={record} call={best} unit={view.unit} />}
               </header>
             )}
 
@@ -407,12 +468,41 @@ export default async function RecordPage(props: Props) {
               </p>
             )}
 
+            {/* The hit this record is shown by, with its own address. No hit: nothing is dressed up. */}
+            {best && <BestCall record={record} call={best} unit={view.unit} />}
+
             {scannedCalls.length > 0 && (
-              <ol className="xrc-calls" aria-label={`Every call the scan found, oldest first: ${scannedCalls.length}`}>
-                {scannedCalls.map(({ call: c, n }) => (
-                  <CallCard key={c.postId} call={c} n={n} handle={record.handle} unit={view.unit} lead={c.postId === call?.postId} />
-                ))}
-              </ol>
+              <section className="xrc-list" aria-label={`Every call the scan found: ${scannedCalls.length}`} data-list={scannedCalls.length} data-shown={shownCalls.length}>
+                <h2 className="xrc-list__title">
+                  {capped ? (
+                    <>
+                      Pinned on the chart <span>{shownCalls.length} of {scannedCalls.length} calls</span>
+                    </>
+                  ) : (
+                    <>
+                      Every call <span>{scannedCalls.length}, oldest first</span>
+                    </>
+                  )}
+                </h2>
+                <ol className="xrc-calls">
+                  {shownCalls.map(({ call: c, n }) => (
+                    <CallCard key={c.postId} call={c} n={n} handle={record.handle} unit={view.unit} lead={c.postId === call?.postId} />
+                  ))}
+                </ol>
+                {restCalls.length > 0 && (
+                  <details className="xrc-all" data-all={restCalls.length}>
+                    <summary data-journey="called_show_all">
+                      <span className="xrc-all__open">Show all {scannedCalls.length} calls</span>
+                      <span className="xrc-all__shut">Hide the other {restCalls.length}</span>
+                    </summary>
+                    <ol className="xrc-calls">
+                      {restCalls.map(({ call: c, n }) => (
+                        <CallCard key={c.postId} call={c} n={n} handle={record.handle} unit={view.unit} lead={c.postId === call?.postId} />
+                      ))}
+                    </ol>
+                  </details>
+                )}
+              </section>
             )}
             {record.scanned && scannedCalls.length === 0 && (
               <div className="xrc-none" data-empty={found === 0 ? 'record' : 'side'}>
@@ -481,6 +571,8 @@ export default async function RecordPage(props: Props) {
         </div>
       </main>
       <Footer />
+      {/* Room for the docked button under the page's last line on a phone. */}
+      <div className="xrc-dockpad" aria-hidden />
     </>
   )
 }

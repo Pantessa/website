@@ -107,7 +107,7 @@ html[data-keyboard] .sheet[data-side='bottom'][data-size='full'] .sheet__panel {
   width: 36px;
   height: 5px;
   margin-left: -18px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--line-2);
 }
 .sheet__head {

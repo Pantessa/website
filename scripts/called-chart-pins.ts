@@ -41,6 +41,9 @@ import {
   pinText,
   postIdOfMark,
   railMargins,
+  fitHolds,
+  shortTally,
+  MARKS_HEAD_PX,
   railOf,
   readMargins,
   spreadRail,
@@ -59,6 +62,7 @@ import {
   type PinAnchor,
   type PlacedBox,
 } from '../lib/tv/called-pins'
+import { CARD_PX, MARK_PX, REST_ALPHA, axisMapper, binBarsFor, binMarks, cardSize, hitMark, markInk, pickFrom, placeMarks, slotFor, tileFor, type MarkCall, type PlacedMark } from '../lib/tv/called-overlay'
 import { planFor } from '../lib/tv/plan'
 import { linesFromShapes, type ShapeSnapshot } from '../lib/tv/shapes'
 import type { TvChartApi, TvDatafeed, TvMark, TvPoint, TvShapeOptions, TvSymbolInfo, TvWidget } from '../lib/tv/types'
@@ -232,10 +236,10 @@ export function calledChartPins(check: Check): void {
     hitShape.options.shape === 'callout' && hitShape.points[0].time === hit.barTime && hitShape.points[0].price === hit.priceAt && hitShape.points.length === 2 && flagged(hitShape.options) && flagged(tShape) && PIN_SHAPE_FLAGS.disableSave === true && PIN_SHAPE_FLAGS.lock === true && hitShape.options.overrides?.transparency === 0 && hitShape.options.overrides?.wordWrap === false && String(hitShape.options.text).split('\n').length >= 3,
   )
   check(
-    'called chart tally: the pane itself carries the record\'s own headline and standing line, word for word, and where the record lives, so every picture of the pins holds the full count and "Not verified"',
-    tShape.shape === 'anchored_text' && label.text.replace(/\n/g, ' ').includes(rec.words.headline) && label.text.replace(/\n/g, ' ').includes(STANDING_NOT_VERIFIED) && label.text.replace(/\n/g, ' ').includes(`pantessa.com${recordHref(rec.handle, 'BTC')}`) && tallyLabel(record('bear'), LAPTOP).text.includes('side=bear') && label.keepBottom > 20 && label.lines <= 3 && tallyLabel(rec, PHONE).lines > label.lines && tallyLabel(rec, PHONE).lines <= 8 && tallyLabel(rec, PHONE).fontPx < label.fontPx && tShape.overrides?.wordWrap === false &&
+    'called chart tally (RE-PINNED 2026-11-24, the phone tally): at desktop widths the pane itself carries the record\'s own headline and standing line, word for word, and where the record lives; on a phone\'s pane it is two short lines (the full count as numbers beside the marks\' own glyphs, and the address), the standing is in the band above and is handed to the Share picture (`shareNote`); a record with no tally keeps its own sentence',
+    tShape.shape === 'anchored_text' && label.text.replace(/\n/g, ' ').includes(rec.words.headline) && label.text.replace(/\n/g, ' ').includes(STANDING_NOT_VERIFIED) && label.text.replace(/\n/g, ' ').includes(`pantessa.com${recordHref(rec.handle, 'BTC')}`) && tallyLabel(record('bear'), LAPTOP).text.includes('side=bear') && label.keepBottom > 20 && label.lines <= 3 && tallyLabel(rec, PHONE).short && tallyLabel(rec, PHONE).lines <= 2 && !label.short && tallyLabel(rec, PHONE).text.includes(`${rec.tally.total} calls`) && (['right', 'wrong', 'flat', 'open'] as const).every((v) => rec.tally[v] === 0 || tallyLabel(rec, PHONE).text.includes(`${VERDICT_GLYPH[v]}${rec.tally[v]}`)) && shortTally({ tally: rec.tally, scanned: false }) === null && !tallyLabel({ ...rec, scanned: false }, PHONE).short && tallyLabel({ ...rec, scanned: false }, PHONE).text.replace(/\n/g, ' ').includes(rec.words.headline) && /shareNote\(\)/.test(read('components/markets/chart/AdvancedChart.tsx')) && tallyLabel(rec, PHONE).fontPx < label.fontPx && tShape.overrides?.wordWrap === false &&
       // An address is whole or absent: on a pane too narrow for it on one line it is left out, never broken.
-      [PHONE, { width: 200, height: 372 }, { width: 330, height: 372 }, LAPTOP].every((pane) => { const lines = tallyLabel(rec, pane).text.split('\n'); const where = `pantessa.com${recordHref(rec.handle, 'BTC')}`; return lines.some((l) => l.includes(where)) || !lines.some((l) => l.includes('pantessa.com')) }) && tallyLabel(rec, { width: 200, height: 372 }).text.includes(STANDING_NOT_VERIFIED.split(' ')[0]),
+      [PHONE, { width: 200, height: 372 }, { width: 330, height: 372 }, LAPTOP].every((pane) => { const lines = tallyLabel(rec, pane).text.split('\n'); const where = `pantessa.com${recordHref(rec.handle, 'BTC')}`; return lines.some((l) => l.includes(where)) || !lines.some((l) => l.includes('pantessa.com')) }) && tallyLabel(rec, { width: 200, height: 372 }).short && tallyLabel({ ...rec, scanned: false }, { width: 200, height: 372 }).text.includes(STANDING_NOT_VERIFIED.split(' ')[0]),
     label.text,
   )
 
@@ -371,8 +375,8 @@ export function calledChartPins(check: Check): void {
   const m = railMargins(LAPTOP, plan, 68, label.keepBottom, { top: 10, bottom: 8 })
   const mPhone = railMargins(PHONE, calloutPlan(PHONE), 0, tallyLabel(rec, PHONE).keepBottom, { top: 10, bottom: 8 })
   check(
-    'called chart layout: while a plot is up the pane\'s margins make room for the two rails (the candles stay between them); marks only, they make room for the tally line and nothing else; never tighter than the viewer\'s own, never more than 38%',
-    m.top >= Math.ceil(((PANE_KEEP.top + 68) / LAPTOP.height) * 100) && m.bottom >= Math.ceil(((label.keepBottom + 68) / LAPTOP.height) * 100) && m.top <= 38 && m.bottom <= 38 && mPhone.top === 10 && mPhone.bottom >= 8 && railMargins(LAPTOP, plan, 68, label.keepBottom, { top: 37, bottom: 37 }).top === 37 && railMargins({ width: 825, height: 0 }, plan, 68, 30, { top: 10, bottom: 8 }).top === 10,
+    'called chart layout: while a plot is up the pane\'s margins make room for the two rails (the candles stay between them); marks only (RE-PINNED 2026-11-24, the marks layer), they make room for a stack of two marks over the highest bar and for the tally line; never tighter than the viewer\'s own, never more than 38%',
+    m.top >= Math.ceil(((PANE_KEEP.top + 68) / LAPTOP.height) * 100) && m.bottom >= Math.ceil(((label.keepBottom + 68) / LAPTOP.height) * 100) && m.top <= 38 && m.bottom <= 38 && mPhone.top === Math.ceil(((PANE_KEEP.top + MARKS_HEAD_PX) / PHONE.height) * 100) && mPhone.top <= 38 && mPhone.bottom >= 8 && railMargins(LAPTOP, plan, 68, label.keepBottom, { top: 37, bottom: 37 }).top === 37 && railMargins({ width: 825, height: 0 }, plan, 68, 30, { top: 10, bottom: 8 }).top === 10,
     JSON.stringify([m, mPhone]),
   )
 
@@ -387,6 +391,101 @@ export function calledChartPins(check: Check): void {
     'called chart marks: a mark\'s tooltip says who, when, the move and the verdict\'s word, then the post\'s own words; a clicked mark names its post and nobody else\'s mark does',
     markTooltip(miss, rec.handle).startsWith(`@${rec.handle} ${DOT} ${pinDate(miss.postedAt)} ${DOT} `) && markTooltip(miss, rec.handle).includes(VERDICT_WORDS.wrong) && markTooltip(miss, rec.handle).endsWith(clampPost(miss.text, miss.quote)) && postIdOfMark(`${CALLED_MARK_PREFIX}123`) === '123' && postIdOfMark('fill:123') === null && postIdOfMark(7) === null,
   )
+  // ── the marks layer (lib/tv/called-overlay, 2026-11-24): tiles, counted where they crowd ──
+  {
+    const DAY = 86_400
+    const mk = (i: number, day: number, verdict: CallVerdict, over: Partial<MarkCall> = {}): MarkCall => ({ postId: String(1000 + i), barTime: day * DAY, priceAt: 100 + day, verdict, impact: i, ...over })
+    const crowd: MarkCall[] = [mk(1, 400, 'right'), mk(2, 400, 'right'), mk(3, 401, 'wrong'), mk(4, 402, 'right', { origin: 'added' }), mk(5, 403, 'open'), mk(6, 460, 'flat'), mk(7, 461, 'wrong')]
+    const bins = binMarks(crowd, DAY, 8)
+    const inChips = bins.flatMap((b) => b.chips.flatMap((c) => c.ids))
+    check(
+      'called chart marks layer: calls that would touch are counted, never dropped: every call is under exactly one chip of exactly one stretch, a chip holds one verdict, and a post a viewer pasted is never counted in with the scanned ones',
+      inChips.length === crowd.length && new Set(inChips).size === crowd.length && bins.every((b) => b.chips.every((c) => c.ids.every((id) => { const call = crowd.find((x) => x.postId === id); return !!call && call.verdict === c.verdict && (call.origin === 'added') === c.added }))) && bins[0].chips.some((c) => c.added && c.ids.length === 1 && c.ids[0] === '1004') && bins[0].chips.find((c) => c.verdict === 'right' && !c.added)?.ids.length === 2,
+      JSON.stringify(bins.map((b) => b.chips.map((c) => `${c.added ? '+' : ''}${c.verdict}${c.ids.length}`))),
+    )
+    check(
+      'called chart marks layer: a stretch is cut in time, so a pan never reshuffles a crowd (the same calls share a chip wherever the pane is), and under a chip the call that moved furthest comes first',
+      JSON.stringify(binMarks(crowd, DAY, 8).map((b) => b.chips.map((c) => c.ids))) === JSON.stringify(binMarks([...crowd].reverse(), DAY, 8).map((b) => b.chips.map((c) => c.ids))) && bins[0].chips.find((c) => c.verdict === 'right' && !c.added)?.ids.join() === '1002,1001' && binBarsFor(2, slotFor(18)) > binBarsFor(40, slotFor(18)) && binBarsFor(400, slotFor(18)) === 1,
+    )
+    const overlaySrcEarly = readFileSync(new URL('../lib/tv/called-overlay.ts', import.meta.url), 'utf8')
+    const place = (focusId: string | null, shift = 0) => placeMarks({ calls: crowd, focusId, pane: { width: 400, height: 380 }, keepTop: 34, keepBottom: 60, barSec: DAY, spacing: 4, x: (t) => (t / DAY - 380) * 4 + shift, y: (p) => 600 - p })
+    const placed = place(null)
+    const touch = (a: PlacedMark, b: PlacedMark) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    check(
+      'called chart marks layer: no two marks touch, none leaves the pane or sits on the legend or the tally, the counts on the pane add up to the calls, and a lone call points at its own bar and price',
+      placed.every((a, i) => placed.every((b, j) => i === j || !touch(a, b))) && placed.every((m) => m.x >= 0 && m.x + m.w <= 400 && m.y >= 34 && m.y + m.h <= 380 - 60) && placed.reduce((n, m) => n + m.count, 0) === crowd.length && placed.filter((m) => m.tip).every((m) => m.count === 1),
+      JSON.stringify(placed.map((m) => [m.key, m.count, m.x, m.y])),
+    )
+    const open = place('1003')
+    const focus = open.find((m) => m.focus)
+    check(
+      'called chart marks layer: the opened call is lifted out of its crowd and drawn alone, larger, on its own bar (its crowd counts one fewer; nothing is counted twice)',
+      !!focus && focus.ids.join() === '1003' && focus.w === MARK_PX.focus && focus.w > tileFor(400) && !!focus.tip && focus.tip.x === (401 - 380) * 4 && open.reduce((n, m) => n + m.count, 0) === crowd.length && open.filter((m) => !m.focus).every((m) => !m.ids.includes('1003')),
+    )
+    {
+      // The opened call reads alone: at every one of its calls, on a crowded pane, no chip touches the opened tile.
+      const busy: MarkCall[] = Array.from({ length: 40 }, (_, i) => mk(100 + i, 400 + Math.floor(i * 1.7), (['right', 'wrong', 'open', 'flat'] as const)[i % 4], { priceAt: 100 + ((i * 37) % 90) }))
+      const at = (focusId: string) => placeMarks({ calls: busy, focusId, pane: { width: 300, height: 340 }, keepTop: 34, keepBottom: 60, barSec: DAY, spacing: 3.6, x: (t) => (t / DAY - 398) * 3.6, y: (p) => 330 - p * 1.6 })
+      const clear = busy.every((c) => {
+        const all = at(c.postId)
+        const f = all.find((m) => m.focus)
+        return !f || all.every((m) => m.focus || !touch(m, f))
+      })
+      const counted = busy.every((c) => at(c.postId).reduce((n, m) => n + m.count, 0) <= busy.length && at(c.postId).filter((m) => !m.focus).every((m) => m.x >= 0 && m.x + m.w <= 300))
+      check(
+        'called chart marks layer (2026-11-24, the opened call reads alone): whichever call is open on a crowded phone pane, no chip sits under or against its tile (the column steps aside, or stands over or under it), no chip is pushed off the pane for it, and every other mark is painted at reduced strength',
+        clear && counted && REST_ALPHA > 0.2 && REST_ALPHA < 0.5 && /ctx\.globalAlpha = quiet && m\.key !== hoverKey \? REST_ALPHA : 1/.test(overlaySrcEarly),
+      )
+      check(
+        'called chart fit (2026-11-24): the fit is read back and put again while the chart is not on it: a view that starts years before the asked one does not hold, one snapped to the first bar it has does',
+        fitHolds({ from: 1000, to: 2000 }, { from: 1000, to: 2000 }) && fitHolds({ from: 1100, to: 2000 }, { from: 1000, to: 2000 }) && !fitHolds({ from: -4000, to: 2000 }, { from: 1000, to: 2000 }) && !fitHolds({ from: 1700, to: 2000 }, { from: 1000, to: 2000 }) && /if \(fitHolds\(c\.getVisibleRange\(\), range\)\) continue/.test(read('lib/tv/called-pins.ts')),
+      )
+    }
+    const lone = placed.find((m) => m.ids.includes('1007'))! // the top chip of the last column: nothing stands above it
+    const cx = lone.x + lone.w / 2
+    const cy = lone.y + lone.h / 2
+    check(
+      'called chart marks layer: a press opens the nearest mark inside a 44px target and nothing outside it; a second press on a crowd walks to its next call; the opened call wins a tie',
+      MARK_PX.tap === 44 && hitMark(placed, cx + 21, cy - 21)?.key === lone.key && hitMark(placed, cx + 60, cy - 60) === null && pickFrom({ ids: ['a', 'b', 'c'] }, null) === 'a' && pickFrom({ ids: ['a', 'b', 'c'] }, 'a') === 'b' && pickFrom({ ids: ['a', 'b', 'c'] }, 'c') === 'a' && hitMark(open, focus!.x + focus!.w / 2, focus!.y + focus!.h / 2)?.focus === true,
+    )
+    const MI = { up: '#22c55e', down: '#ef4444', open: '#f0b454', flat: '#9a9a9a', fg: '#ffffff', bg: '#000000' }
+    const overlaySrc = readFileSync(new URL('../lib/tv/called-overlay.ts', import.meta.url), 'utf8')
+    check(
+      'called chart marks layer: the four verdicts are four inks (the market\'s green and red for a hit and a miss, never violet or magenta) AND four glyphs; only a hit and a miss are filled; the layer is paint (it creates no chart shape, so nothing of it can be saved, selected or listed) and takes no pointer events',
+      new Set((['right', 'wrong', 'open', 'flat'] as const).map((v) => markInk(v, MI))).size === 4 && markInk('right', MI) === MI.up && markInk('wrong', MI) === MI.down && /const filled = !m\.added && \(m\.verdict === 'right' \|\| m\.verdict === 'wrong'\)/.test(overlaySrc) && /right: \[\[/.test(overlaySrc) && /wrong: \[\s*\[/.test(overlaySrc) && /flat: \[\[/.test(overlaySrc) && /open: \[\[/.test(overlaySrc) && !/createShape|createMultipointShape|createAnchoredShape/.test(overlaySrc.replace(/\/\/[^\n]*/g, '')) && overlaySrc.includes('pointer-events:none') && !/\bwindow\./.test(overlaySrc.replace(/\/\/[^\n]*/g, '')) && !/from 'react'/.test(overlaySrc),
+    )
+    {
+      // A market that closes: five bars a week, 10px apart, Mondays to Fridays (1 Jan 2024 is a Monday).
+      const MON = 1_704_067_200
+      const bars: number[] = []
+      for (let d = 0; d < 70; d++) if (d % 7 < 5) bars.push(MON + d * DAY)
+      const centre = (i: number) => 5 + i * 10
+      const timeAt = (x: number) => { const i = Math.round((x - 5) / 10); return i >= 0 && i < bars.length ? bars[i] : null }
+      const gapX = axisMapper({ ref: { t: bars[20], x: centre(20) }, spacing: 10, barSec: DAY, width: 400, timeAt })
+      const evenX = axisMapper({ ref: { t: MON + 20 * DAY, x: centre(20) }, spacing: 10, barSec: DAY, width: 400, timeAt: (x) => MON + Math.round((x - 5) / 10) * DAY })
+      // Air at both edges of the pane (no bar at x = 2 or x = 398) must not hide the gaps in between.
+      const airX = axisMapper({ ref: { t: bars[20], x: centre(20) + 60 }, spacing: 10, barSec: DAY, width: 400, timeAt: (x) => { const i = Math.round((x - 65) / 10); return i >= 0 && i < 30 ? bars[i] : null } })
+      check(
+        'called chart marks layer: on a market that closes (no bar for a weekend) a call sits on its own bar, a call made while it was shut sits on the last bar before, and air at the pane\'s edges does not hide the gaps; on a market that never closes the bars are whole steps of time',
+        bars.slice(0, 39).every((t, i) => gapX(t) === centre(i)) && gapX(bars[4] + DAY) === centre(4) && gapX(bars[4] + 2 * DAY) === centre(4) && gapX(bars[5]) === centre(5) && gapX(bars[0] - 30 * DAY) < 0 && gapX(bars[bars.length - 1] + 400 * DAY) > 400 &&
+          evenX(MON + 3 * DAY) === centre(3) && evenX(MON + 33 * DAY) === centre(33) &&
+          airX(bars[12]) === 65 + 120 && airX(bars[9] + 2 * DAY) === 65 + 90,
+        JSON.stringify([gapX(bars[7]), centre(7), airX(bars[12])]),
+      )
+    }
+    check(
+      'called chart marks layer: a card\'s box is sized from the lines it will draw (the verdict line, the post\'s own words as given, the move), and a pasted post\'s card says so on a line of its own',
+      (() => {
+        const measure = (_f: string, t: string) => t.length * 7
+        const base = { word: 'missed', date: '13 Jan 2026', words: ['one line of the post', 'and a second'], result: ['-41.4% in 30 days'], added: null as string | null }
+        const a = cardSize(base, { sans: 's', mono: 'm' }, measure)
+        const b = cardSize({ ...base, words: [...base.words, 'a third line'] }, { sans: 's', mono: 'm' }, measure)
+        const c = cardSize({ ...base, added: ADDED_MARK }, { sans: 's', mono: 'm' }, measure)
+        return b.h - a.h === CARD_PX.wordsLine && c.h - a.h === CARD_PX.addedLine && a.w >= 'one line of the post'.length * 7 + 2 * CARD_PX.pad
+      })(),
+    )
+  }
+
   const feedMark: TvMark = { id: 'fill:1', time: 100, color: { border: '#fff', background: '#fff' }, text: 'Bought', label: 'B', labelFontColor: '#000', minSize: 18 }
   const ours: TvMark[] = [
     { ...feedMark, id: 'called:1', time: 150 },
@@ -610,14 +709,14 @@ export function calledChartPins(check: Check): void {
     const mkCss = read('components/markets/markets.css')
     const phone = css.slice(css.indexOf('THE PHONE, NATIVE'))
     check(
-      'called chart phone (2026-11-24): on a phone the calls list is folded to the pinned calls (the first five when none is pinned) behind one button, in CSS only, so every row is in the page at every width and a focused row is never hidden; a count\'s number wears its own tag and the text reads the same',
+      'called chart fold (2026-11-24, RE-PINNED by squad mobile-sleek lane BAND round 2: the fold is at EVERY width now, a desktop caps its list too): the calls list is folded to the pinned calls (the first five when none is pinned) behind one button, in CSS only, so every row is in the page at every width and a focused row is never hidden; a count\'s number wears its own tag and the text reads the same',
       /data-fold=\{folded && tails > 0 \? '' : undefined\}/.test(panel) && /data-tail=\{tail \? '' : undefined\}/.test(panel) && /pinned > 0 \? !c\.picked : i >= FOLD_ROWS/.test(panel) && /className="xcc-more" aria-expanded=\{!folded\}/.test(panel) &&
-        /\.xcc__rows\[data-fold\] > \.xcc-row\[data-tail\]:not\(\.is-focus\) \{ display: none; \}/.test(phone) && /^\.xcc-more \{ display: none; \}/m.test(css) && !/\.xcc__rows\[data-fold\]/.test(css.slice(0, css.indexOf('THE PHONE, NATIVE'))) &&
+        /^\.xcc__rows\[data-fold\] > \.xcc-row\[data-tail\]:not\(\.is-focus\) \{ display: none; \}/m.test(css) && (css.match(/\.xcc__rows\[data-fold\]/g) ?? []).length === 1 && /^\.xcc-more \{[^}]*display: inline-flex;/m.test(css) && !/\.xcc-more \{ display: none; \}/.test(css) &&
         /<b className="xch__num">\{m\[1\]\}<\/b>\s+\{m\[2\]\}/.test(panel),
     )
     check(
-      'called chart phone (2026-11-24): the band on a phone is who (Share and Clear at its corner), the tally as stats (the total is the control\'s All), one segmented control, then the fine print; the door on the chart\'s bar is an icon and its note is the band\'s to say',
-      /@media \(max-width: 640px\)/.test(phone) && /\.xch__count\.is-total \{ display: none; \}/.test(phone) && /\.xch__tally \{ display: contents; \}/.test(phone) && /\.xch__tools \.xcc-share \{ position: absolute;/.test(phone) && /\.xcc-open__label,[^{]*\.xcc-open__state \{ display: none; \}/.test(phone) && /\.xcc-note \{ display: none; \}/.test(phone),
+      'called chart phone (2026-11-24, RE-PINNED by squad mobile-sleek lane BAND the same day): the band on a phone is one row of who (Share and Clear as icons at its corner, in the row\'s own grid), the tally as the kit\'s ScoreBar with the headline\'s counts on one line under it (the total is the control\'s All), the kit\'s segmented control, and the standing and what was read as ONE clamped line that "more" opens in place (never dropped); the door on the chart\'s bar is an icon and its note is the band\'s to say',
+      /@media \(max-width: 640px\)/.test(phone) && /\.xch__count\.is-total \{ display: none; \}/.test(phone) && /\.xch__tally \{ display: contents; \}/.test(phone) && /\.xch__tools \.xcc-share \{ grid-column: 3; grid-row: 1; \}/.test(phone) && /\.xch__factstext \{[^}]*-webkit-line-clamp: 1;/.test(phone) && /<ScoreBar counts=\{record\.tally\} words=\{VERDICT_WORDS\}/.test(panel) && /className="sk-seg xch__sides"/.test(panel) && /className="xch__more" aria-expanded=\{factsOpen\}/.test(panel) && /data-called-standing=""/.test(panel) && /\.xcc-open__label,[^{]*\.xcc-open__state \{ display: none; \}/.test(phone) && /\.xcc-note \{ display: none; \}/.test(phone),
     )
     check(
       'symbol page phone (2026-11-24): the Advanced chart\'s bar is ONE row on a phone (the view switch, the live dot, four 36px icon buttons whose labels stay in the page), a pool pill or an open Compare takes its own row, and the header drops the feed\'s name after the change so high / low ride the price\'s row',
@@ -633,8 +732,8 @@ export function calledChartPins(check: Check): void {
     const adv = readFileSync(new URL('../components/markets/chart/AdvancedChart.tsx', import.meta.url), 'utf8')
     const hook = readFileSync(new URL('../lib/called-it/use-record.ts', import.meta.url), 'utf8')
     check(
-      'called chart call card (2026-11-16): a dot or a bubble pressed on the chart opens that call IN a card on the chart (the whole post, the verdict, the numbers, the post on X in a new tab, older / newer, pin, close) and the page never scrolls for it: no `scrollIntoView` anywhere in the Calls strip (only the list\'s own box moves), the card is mounted inside the chart\'s canvas seat, and a dot pressed twice closes it',
-      !/scrollIntoView/.test(panel) && /list\.scrollTop/.test(panel) && /<CallFocus symbol=\{sym\} \/>/.test(adv) && adv.indexOf('<CallFocus') > adv.indexOf('className="tvx__host"') && /href=\{call\.url\} target="_blank" rel="noopener noreferrer nofollow"/.test(card) && /<PostText call=\{call\} \/>/.test(card) && !/dangerouslySetInnerHTML/.test(card) && /judgedLine\(call\)/.test(card) && /focusId === postId \? null : postId/.test(hook) && /e\.key === 'Escape'/.test(card),
+      'called chart call card (2026-11-16): a dot or a bubble pressed on the chart opens that call IN a card on the chart (the whole post, the verdict, the numbers, the post on X in a new tab, older / newer, pin, close) and a desktop\'s page never scrolls for it (squad mobile-sleek lane BAND, round 2: a PHONE moves its page once per open, to seat the band under the tabs when the card would leave the chart mostly covered): no `scrollIntoView` anywhere in the Calls strip (only the list\'s own box moves), the card is mounted inside the chart\'s canvas seat, and a dot pressed twice closes it',
+      !/scrollIntoView/.test(panel) && /list\.scrollTop/.test(panel) && /<CallFocus symbol=\{sym\} \/>/.test(adv) && adv.indexOf('<CallFocus') > adv.indexOf('className="tvx__host"') && /<aside ref=\{dockRef\} className="tvx__dock" data-call-dock="side"[^>]*>\s*\{wide && <CallFocus symbol=\{sym\} \/>\}/.test(adv) && /\{!wide && <CallFocus symbol=\{sym\} \/>\}/.test(adv) && /href=\{call\.url\} target="_blank" rel="noopener noreferrer nofollow"/.test(card) && /<PostText call=\{call\} \/>/.test(card) && !/dangerouslySetInnerHTML/.test(card) && /judgedLine\(call\)/.test(card) && /focusId === postId \? null : postId/.test(hook) && /e\.key === 'Escape'/.test(card),
     )
   }
 }
@@ -678,8 +777,9 @@ function fakeChart(rec: CalledRecord, pane: PaneSize) {
     },
     setSymbol: () => undefined,
     getVisibleRange: () => range,
-    setVisibleRange: () => {
-      events.push('fit')
+    // The fit names the air it leaves after the newest bar; a pan that only brings the opened call's bar into view (2026-11-24) does not.
+    setVisibleRange: (_range: unknown, options?: { percentRightMargin?: number }) => {
+      events.push(options && typeof options.percentRightMargin === 'number' ? 'fit' : 'reveal')
       return Promise.resolve()
     },
     onIntervalChanged: () => sub,

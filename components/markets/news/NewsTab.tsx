@@ -92,6 +92,15 @@ const SIZES: Record<Seat, string> = {
 const PAGE_STORIES = 80
 /** Publishers named on the strip before "more". */
 const STRIP_SOURCES = 12
+/** How many stories a long section lists before its "show all". A phone lists
+ *  fewer (news.css hides the rest of a `data-capped` list while the tab is under
+ *  560px wide, by these same numbers), so a button a phone needs and a desk does not wears `--phone`. */
+const MORE_CAP = 6
+const EARLIER_CAP = 9
+const PHONE_BRIEFS_CAP = 2
+const PHONE_MORE_CAP = 2
+const PHONE_EARLIER_CAP = 3
+const PHONE_X_CAP = 2
 
 const fmtPrice = (n: number, money: boolean) => {
   const body = n >= 1000 ? n.toLocaleString('en-US', { maximumFractionDigits: 2 }) : n >= 1 ? n.toFixed(2) : n.toPrecision(4)
@@ -109,6 +118,11 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
   const markers = useChartMarkers(sym)
   const [only, setOnly] = useState<string | null>(null)
   const [allSources, setAllSources] = useState(false)
+  // The long lists open capped (squad mobile-sleek, 2026-11-24: a phone
+  // scrolled 16,000px of headlines); one press shows the rest.
+  const [allMore, setAllMore] = useState(false)
+  const [allEarlier, setAllEarlier] = useState(false)
+  const [allBriefs, setAllBriefs] = useState(false)
   const [readers, setReaders] = useState<FeedPost[]>([])
 
   const load = useCallback(async () => {
@@ -249,7 +263,12 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
               <h3 className="gaz__label">
                 <span>In brief</span>
               </h3>
-              <div className="gaz__brieflist">{page.briefs.map((it) => story(it, 'brief'))}</div>
+              <div className="gaz__brieflist" data-capped={allBriefs ? undefined : ''}>{page.briefs.map((it) => story(it, 'brief'))}</div>
+              {!allBriefs && page.briefs.length > PHONE_BRIEFS_CAP && (
+                <button type="button" className="gaz__showall gaz__showall--phone" onClick={() => setAllBriefs(true)} data-news-more="briefs">
+                  Show all {page.briefs.length} in brief
+                </button>
+              )}
             </div>
           )}
         </section>
@@ -262,7 +281,12 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
           <h3 className="gaz__label">
             <span>More headlines</span>
           </h3>
-          <div className="gaz__grid">{page.features.map((it) => story(it, 'feature'))}</div>
+          <div className="gaz__grid" data-capped={allMore ? undefined : ''}>{(allMore ? page.features : page.features.slice(0, MORE_CAP)).map((it) => story(it, 'feature'))}</div>
+          {!allMore && page.features.length > PHONE_MORE_CAP && (
+            <button type="button" className={page.features.length > MORE_CAP ? 'gaz__showall' : 'gaz__showall gaz__showall--phone'} onClick={() => setAllMore(true)} data-news-more="features">
+              Show all {page.features.length} headlines
+            </button>
+          )}
         </section>
       )}
 
@@ -273,7 +297,12 @@ export default function NewsTab({ symbol, pair, onShowChart }: { symbol: string;
           <h3 className="gaz__label">
             <span>Earlier</span>
           </h3>
-          <div className="gaz__archive">{page.archive.map((it) => story(it, 'archive'))}</div>
+          <div className="gaz__archive" data-capped={allEarlier ? undefined : ''}>{(allEarlier ? page.archive : page.archive.slice(0, EARLIER_CAP)).map((it) => story(it, 'archive'))}</div>
+          {!allEarlier && page.archive.length > PHONE_EARLIER_CAP && (
+            <button type="button" className={page.archive.length > EARLIER_CAP ? 'gaz__showall' : 'gaz__showall gaz__showall--phone'} onClick={() => setAllEarlier(true)} data-news-more="earlier">
+              Show all {page.archive.length} earlier headlines
+            </button>
+          )}
         </section>
       )}
 
@@ -544,6 +573,7 @@ const fmtCount = (n: number) => (n >= 10_000 ? `${Math.round(n / 1000)}K` : n >=
 function OnX({ symbol }: { symbol: string }) {
   const [x, setX] = useState<XResponse | null>(null)
   const [by, setBy] = useState<'best' | 'latest'>('best')
+  const [allX, setAllX] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -582,7 +612,7 @@ function OnX({ symbol }: { symbol: string }) {
         )}
       </h3>
       {posts.length > 0 && (
-        <div className="gaz__xgrid">
+        <div className="gaz__xgrid" data-capped={allX ? undefined : ''}>
           {posts.map((p) => (
             <article key={p.id} className="gaz__xpost">
               <p className="gaz__kicker">
@@ -607,6 +637,11 @@ function OnX({ symbol }: { symbol: string }) {
             </article>
           ))}
         </div>
+      )}
+      {!allX && posts.length > PHONE_X_CAP && (
+        <button type="button" className="gaz__showall gaz__showall--phone" onClick={() => setAllX(true)} data-news-more="x">
+          Show all {posts.length} posts
+        </button>
       )}
       <p className="gaz__xout">
         {posts.length > 0 ? `The most-liked ${x.cashtag} posts we hold${x.asOf ? `, read ${ageLabel(x.asOf)}` : ''}. The rest is on X:` : `What people are posting about ${x.cashtag}, on X itself:`}

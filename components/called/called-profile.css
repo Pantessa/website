@@ -30,28 +30,23 @@
 .xpf-id__name { margin: 0; font-family: var(--xrc-display); font-weight: 600; font-size: clamp(1.625rem, 1.3rem + 1.7vw, 2.375rem); line-height: 1.1; letter-spacing: -0.015em; color: var(--fg); overflow-wrap: anywhere; }
 .xpf-id__meta { margin: 0; display: flex; flex-wrap: wrap; gap: 0 var(--sp-3); font-family: var(--xrc-mono); font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); }
 .xpf-id__meta span { white-space: nowrap; }
-.xpf .xpf-id__x { flex: 0 0 auto; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 50%; color: var(--fg); transition: border-color var(--dur-1) ease; }
+.xpf .xpf-id__x { flex: 0 0 auto; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--line); color: var(--fg); transition: border-color var(--dur-1) ease; }
 .xpf-id__x svg { width: 15px; height: 15px; fill: currentColor; }
 .xpf .xpf-id__x:hover, .xpf .xpf-id__x:focus-visible { border-color: var(--fg); outline: none; }
 
 .xpf-standing { margin: 0; display: flex; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-md); line-height: 1.45; color: var(--muted); }
-.xpf-standing::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); transform: translateY(-1px); }
+.xpf-standing::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; background: var(--muted-2); transform: translateY(-1px); }
 .xpf-standing.is-verified { color: var(--fg); }
 .xpf-standing.is-verified::before { background: var(--up); }
 
 /* ── The one line across markets: figures on a row, a thin rule per verdict ── */
 .xpf-sum { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-4); border-top: 1px solid var(--line); }
 .xpf-sum__who { margin: 0; font-size: var(--fs-md); line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
-.xpf-cells { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: var(--sp-3) var(--sp-3); }
-.xpf-cell { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); padding-top: var(--sp-2); border-top: 2px solid var(--xrc-tone); }
-.xpf-cell.is-total { border-top-color: var(--fg); }
-.xpf-cell b { font-family: var(--xrc-display); font-weight: 600; font-size: clamp(1.75rem, 1.45rem + 1.5vw, 2.375rem); line-height: 1; letter-spacing: -0.02em; color: var(--fg); font-variant-numeric: tabular-nums; }
-.xpf-cell__w { font-size: var(--fs-sm); line-height: 1.25; color: var(--muted); }
 .xpf-sum__rate { margin: 0; font-size: var(--fs-md); line-height: 1.45; color: var(--fg); }
 
 /* ── Buttons and links ─────────────────────────────────────────────────── */
 .xpf-acts { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); }
-.xpf .xpf-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 44px; padding: 0 var(--sp-5); border: 1px solid var(--line-2); border-radius: var(--r-pill); background: transparent; color: var(--fg); font-family: var(--xrc-ui); font-size: var(--fs-base); font-weight: 600; line-height: 1.15; text-align: center; text-decoration: none; transition: border-color var(--dur-1) ease, filter var(--dur-1) ease; }
+.xpf .xpf-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 44px; padding: 0 var(--sp-5); border: 1px solid var(--line-2); border-radius: 0; background: transparent; color: var(--fg); font-family: var(--xrc-ui); font-size: var(--fs-base); font-weight: 600; line-height: 1.15; text-align: center; text-decoration: none; transition: border-color var(--dur-1) ease, filter var(--dur-1) ease; }
 .xpf .xpf-btn:hover, .xpf .xpf-btn:focus-visible { border-color: var(--fg); outline: none; }
 .xpf .xpf-btn--lead { background: var(--accent); border-color: var(--accent); color: var(--ink, var(--bg)); }
 .xpf .xpf-btn--lead::after { content: '\2192'; }
@@ -77,7 +72,6 @@
 .xpf-calls > li:last-child .xpf-call { padding-bottom: 0; }
 .xpf-call__top { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-3); font-family: var(--xrc-mono); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
 .xpf-call__verdict { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font-weight: 600; }
-.xpf-mark { flex: 0 0 auto; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--xrc-tone); }
 .xpf-call__quote { font-family: var(--xrc-display); font-size: clamp(1.125rem, 1.05rem + 0.4vw, 1.3125rem); font-weight: 500; line-height: 1.32; letter-spacing: -0.005em; color: var(--fg); overflow-wrap: anywhere; }
 .xpf-call__quote bdi::before { content: '\201C'; }
 .xpf-call__quote bdi::after { content: '\201D'; }
@@ -90,7 +84,7 @@
 
 /* ── Market by market ──────────────────────────────────────────────────── */
 .xpf-mkts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
-.xpf-mkt { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); align-content: start; padding: var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-md); }
+.xpf-mkt { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); align-content: start; padding: var(--sp-4); border: 1px solid var(--line); }
 .xpf-mkt > * { min-width: 0; }
 .xpf-mkt__head { margin: 0; display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
 .xpf-mkt__sym { font-family: var(--xrc-display); font-weight: 600; font-size: var(--fs-2xl); line-height: 1; letter-spacing: -0.01em; color: var(--fg); overflow-wrap: anywhere; }
@@ -102,14 +96,9 @@
 .xpf-spark { position: relative; height: 112px; margin: var(--sp-1) 5px; }
 .xpf-spark svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
 .xpf-spark path { fill: none; stroke: var(--fg); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; opacity: 0.8; }
-.xpf-spark__dot { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--xrc-tone); outline: 2px solid var(--bg); }
+.xpf-spark__dot { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; background: var(--xrc-tone); outline: 1.5px solid var(--bg); }
 .xpf-spark--none { height: auto; margin: 0; padding: var(--sp-4) 0; border-top: 1px dashed var(--line-2); border-bottom: 1px dashed var(--line-2); font-size: var(--fs-sm); color: var(--muted-2); }
 
-.xpf-marks { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); font-size: var(--fs-md); line-height: 1.5; color: var(--fg); font-variant-numeric: tabular-nums; }
-.xpf-marks li { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.xpf-marks li::before { content: ''; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--xrc-tone); }
-.xpf-marks li.is-total { font-weight: 600; }
-.xpf-marks li.is-total::before { content: none; }
 
 /* ── For the account's owner: quiet, at the foot ───────────────────────── */
 .xpf-owner__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); margin-top: var(--sp-1); }
@@ -139,9 +128,6 @@
   .xpf-callgroups[data-groups='2'] { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--sp-6); }
   .xpf-mkts[data-many] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* One market: its line stands beside its facts. */
-  .xpf-mkts:not([data-many]) .xpf-mkt { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); column-gap: var(--sp-5); padding: var(--sp-5); }
-  .xpf-mkts:not([data-many]) .xpf-mkt > * { grid-column: 2; }
-  .xpf-mkts:not([data-many]) .xpf-spark { grid-column: 1; grid-row: 1 / span 5; height: auto; min-height: 168px; align-self: stretch; }
   .xpf-owner__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-5); }
   .xpf .xpf-btn--wide { min-width: 320px; }
 }
@@ -163,4 +149,108 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .xpf .xpf-btn, .xpf .xpf-id__x, .xpf-call__go, .xpf-starter__say { transition: none; }
+}
+
+/* ── SLEEK, round 2 (squad mobile-sleek, 2026-11-24) ───────────────────────
+   The account page as a short phone page: who and ONE display line, the
+   summed tally as one bar, ONE primary press docked under the thumb, the
+   calls and the markets as the kit's cut cards (composed in the markup: the
+   card's edge and fill are the kit's), and the owner's block behind one
+   press. Hard edges; the avatar stays a circle. A verdict's colour reaches a
+   tile, a bar and a square on a line, never a headline or a post. */
+.xpf { --xpf-gap: var(--sp-5); }
+.xpf-head { gap: var(--sp-3); }
+.xpf .xpf-id__face > span { width: 52px; height: 52px; font-size: var(--fs-xl); }
+.xpf-id { gap: var(--sp-3); }
+.xpf-id__name { font-size: clamp(1.875rem, 1.35rem + 2.4vw, 2.75rem); line-height: 1.05; }
+.xpf-standing { font-size: var(--fs-sm); color: var(--muted-2); }
+.xpf-standing::before { content: none; }
+.xpf-standing.is-verified { color: var(--up); }
+
+.xpf-sum { gap: var(--sp-2); padding-top: var(--sp-3); }
+.xpf-sum__who { font-size: var(--fs-md); color: var(--muted); }
+.xpf-sum__total { margin: 0; font-family: var(--xrc-mono); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg); }
+.xpf-sum__rate { font-size: var(--fs-sm); color: var(--muted); }
+
+/* The one primary press, with Share beside it. */
+.xpf-acts { flex-wrap: nowrap; align-items: stretch; gap: var(--sp-2); }
+.xpf .xpf-btn--lead { flex: 1 1 auto; border: 0; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+.xpf .xpf-btn--lead:focus-visible { outline: 2px solid var(--fg); outline-offset: -4px; }
+.xpf .xpf-acts__alt { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 var(--sp-4); background: var(--surf-2); color: var(--fg); font-family: var(--xrc-ui); font-size: var(--fs-base); font-weight: 600; text-decoration: none; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+.xpf-dockpad { display: none; }
+
+/* Sections: a mono label, no essay under it. */
+.xpf-sec { gap: var(--sp-3); padding-top: var(--sp-4); }
+.xpf-sec__title, .xpf-aside__title { font-size: var(--fs-xl); }
+.xpf-sec__lede { font-size: var(--fs-sm); color: var(--muted-2); }
+
+/* A call: a cut card, the verdict's tile and word, the words, the move in mono. */
+.xpf-calls { gap: var(--sp-3); }
+.xpf-calls > li { --sk-fill: var(--bg); }
+.xpf-calls > li + li { border-top: 0; }
+.xpf .xpf-call, .xpf-calls > li:first-child .xpf-call, .xpf-calls > li:last-child .xpf-call { padding: var(--sp-4); gap: var(--sp-3); }
+.xpf-call__verdict { gap: var(--sp-2); }
+.xpf-call__quote { font-family: var(--xrc-ui); font-size: var(--fs-base); font-weight: 400; line-height: 1.5; letter-spacing: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+.xpf-call__foot { flex-direction: row; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--sp-1) var(--sp-3); }
+.xpf-call__move { font-size: var(--fs-sm); color: var(--muted); }
+
+/* A market: a cut card with its line, its total and its bar. */
+.xpf-mkt { display: block; padding: 0; border: 0; }
+.xpf-mkt__card { --sk-fill: var(--bg); min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); align-content: start; padding: var(--sp-4); }
+.xpf-mkt__card > * { min-width: 0; }
+.xpf-mkt__sym { font-size: var(--fs-xl); }
+.xpf-spark { height: 88px; }
+.xpf-spark path { opacity: 1; }
+.xpf-mkt__tally { display: grid; gap: var(--sp-2); }
+.xpf-mkt__total { margin: 0; font-family: var(--xrc-mono); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg); }
+.xpf-mkt__note { font-size: var(--fs-sm); color: var(--muted-2); }
+.xpf-mkt__acts { margin: 0; flex-wrap: nowrap; }
+.xpf .xpf-btn--main { flex: 1 1 auto; border-color: var(--line-2); }
+
+/* Show all markets: the rest of the list, behind one press. */
+.xpf-all > summary { list-style: none; display: flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 48px; border: 1px solid var(--line-2); font-family: var(--xrc-mono); font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.xpf-all > summary::-webkit-details-marker { display: none; }
+.xpf-all > summary::after { content: '\2193'; color: var(--accent); }
+.xpf-all[open] > summary::after { content: '\2191'; }
+.xpf-all__shut { display: none; }
+.xpf-all[open] .xpf-all__open { display: none; }
+.xpf-all[open] .xpf-all__shut { display: inline; }
+.xpf-all[open] > summary { margin-bottom: var(--sp-4); }
+
+/* For the owner: one quiet line that opens. */
+.xpf-fold { display: flex; flex-direction: column; }
+.xpf-fold > summary { list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-1) var(--sp-3); min-height: 44px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.xpf-fold > summary::-webkit-details-marker { display: none; }
+.xpf-fold > summary::after { content: '+'; margin-left: auto; font-family: var(--xrc-mono); font-size: var(--fs-lg); color: var(--accent); }
+.xpf-fold[open] > summary::after { content: '\2212'; }
+.xpf-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.xpf-fold__say { font-size: var(--fs-sm); color: var(--muted-2); }
+.xpf-fold[open] > summary { margin-bottom: var(--sp-3); }
+.xpf-fold > .xpf-sec__lede { margin-bottom: var(--sp-3); }
+
+.xpf-aside { padding-top: var(--sp-4); }
+
+@media (max-width: 480px) {
+  /* The page is this account's: the docked press says where it goes and stays on one line. */
+  .xpf-btn__tail { display: none; }
+}
+@media (max-width: 640px) {
+  /* The four counts as a tidy two-by-two under the bar (the bar's own list, addressed by element). */
+  .xpf-sum ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-1) var(--sp-4); }
+}
+@media (max-width: 1023px) {
+  /* The docked press: always under the thumb, over a flat ground and one hairline. */
+  .xpf-acts { position: fixed; left: 0; right: 0; bottom: var(--sk-dock-bottom, 0px); z-index: 40; padding: 10px var(--sp-4) calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--bg); }
+  .xpf-dockpad { display: block; height: calc(69px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (min-width: 720px) {
+  .xpf-mkts:not([data-many]) .xpf-mkt { display: block; padding: 0; }
+  .xpf-mkts:not([data-many]) .xpf-mkt__card { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); column-gap: var(--sp-5); padding: var(--sp-5); }
+  .xpf-mkts:not([data-many]) .xpf-mkt__card > * { grid-column: 2; }
+  .xpf-mkts:not([data-many]) .xpf-mkt__card > .xpf-spark { grid-column: 1; grid-row: 1 / span 5; height: auto; min-height: 150px; align-self: stretch; }
+}
+@media (min-width: 1024px) {
+  .xpf-acts { align-self: flex-start; }
+  .xpf .xpf-acts__alt { display: none; }
+  .xpf .xpf-btn--lead { padding: 0 var(--sp-5); }
 }

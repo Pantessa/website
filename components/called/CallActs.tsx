@@ -43,6 +43,24 @@ export interface CallActsProps {
 
 const promptHref = (ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`
 
+/**
+ * The caption, sentence by sentence, each in a tag of its own: a phone's short call card shows the first and the last
+ * ("Your wallet signs." and that this is not advice) and keeps the ones between one press away, behind the card's "more"
+ * (call-acts.css). Every word is in the page at every width, in the caption's own order.
+ */
+function CaptionWords({ text }: { text: string }) {
+  const parts = text.split('. ')
+  return (
+    <>
+      {parts.map((s, i) => (
+        <span key={i} className={i > 0 && i < parts.length - 1 ? 'xca__mid' : undefined}>
+          {i < parts.length - 1 ? `${s}. ` : s}
+        </span>
+      ))}
+    </>
+  )
+}
+
 export default function CallActs({ symbol, stance, handle, postId, variant = 'row', className }: CallActsProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -67,7 +85,7 @@ export default function CallActs({ symbol, stance, handle, postId, variant = 'ro
         {acts.map((a) => (
           <a
             key={a.ask}
-            className={`xca__chip xca__chip--${a.tone}`}
+            className={`sk-btn sk-btn--${a.tone} xca__chip xca__chip--${a.tone}`}
             href={promptHref(a.ask)}
             onClick={(e) => {
               // A real link (a new tab, no JS gets the prefill); a plain press sends through the door.
@@ -82,7 +100,9 @@ export default function CallActs({ symbol, stance, handle, postId, variant = 'ro
           </a>
         ))}
       </div>
-      <p className="xca__note">{callActCaption(handle)}</p>
+      <p className="xca__note">
+        <CaptionWords text={callActCaption(handle)} />
+      </p>
       {door}
     </div>
   )

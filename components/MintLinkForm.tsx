@@ -440,7 +440,7 @@ export function MintLinkForm({
                 setManualMcps(null)
                 askRef.current?.focus()
               }}
-              className="px-2.5 py-1 max-lg:min-h-11 max-lg:px-3.5 rounded-full max-sm:rounded-2xl max-sm:py-2 text-left border border-solid border-[var(--line)] text-[12px] text-[color:var(--muted)] hover:border-[var(--accent)] hover:text-[color:var(--fg)] transition-colors"
+              className="px-2.5 py-1 max-lg:min-h-11 max-lg:px-3.5 rounded-[var(--r-pill)] max-sm:rounded-[var(--r-card)] max-sm:py-2 text-left border border-solid border-[var(--line)] text-[12px] text-[color:var(--muted)] hover:border-[var(--accent)] hover:text-[color:var(--fg)] transition-colors"
             >
               {s}
             </button>
@@ -454,13 +454,13 @@ export function MintLinkForm({
             <CreateAccountButton
               label="Sign in & mint it"
               redirectTo={handoffHref}
-              className="btn btn--solid inline-flex items-center gap-1.5 text-[13px]"
+              className="sk-btn text-[14px] max-sm:flex max-sm:w-full"
             />
           ) : (
             <button
               type="button"
               onClick={() => connectAndSignIn(handoffHref)}
-              className="btn btn--solid inline-flex items-center gap-1.5 text-[13px]"
+              className="sk-btn text-[14px] max-sm:flex max-sm:w-full"
             >
               Sign in &amp; mint it
             </button>
@@ -470,7 +470,7 @@ export function MintLinkForm({
             type="button"
             onClick={() => void mint()}
             disabled={minting || !askReady}
-            className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] disabled:opacity-50"
+            className="sk-btn text-[14px] max-sm:flex max-sm:w-full disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" /> {minting ? 'Minting…' : 'Mint this link'}
           </button>
@@ -507,7 +507,7 @@ export function MintLinkForm({
           onChange={(e) => setSendTo(e.target.value)}
           placeholder="0x… or @handle"
           spellCheck={false}
-          className="mt-1.5 w-full max-w-md max-lg:min-h-11 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+          className="mt-1.5 w-full max-w-md max-lg:min-h-11 rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
         />
       </div>
 
@@ -523,7 +523,7 @@ export function MintLinkForm({
         Fine print — return URL · expiry · sign cap · allowlist
       </button>
       {finePrintOpen && (
-        <div className="mt-3 rounded-xl border border-[var(--line)] bg-[var(--surf-1)] p-4">
+        <div className="mt-3 rounded-[var(--r-card)] border border-[var(--line)] bg-[var(--surf-1)] p-4">
           <label className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] block">
             Return URL after signing (optional, https — e.g. your site)
           </label>
@@ -531,7 +531,7 @@ export function MintLinkForm({
             value={redirectUrl}
             onChange={(e) => setRedirectUrl(e.target.value)}
             placeholder="https://yoursite.com/thanks"
-            className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+            className="mt-1.5 w-full rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
           />
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -542,7 +542,7 @@ export function MintLinkForm({
                 type="datetime-local"
                 value={expiresAt}
                 onChange={(e) => setExpiresAt(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                className="mt-1.5 w-full rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
             <div>
@@ -555,7 +555,7 @@ export function MintLinkForm({
                 value={maxSigns}
                 onChange={(e) => setMaxSigns(e.target.value)}
                 placeholder="e.g. 1000"
-                className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                className="mt-1.5 w-full rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
           </div>
@@ -567,7 +567,7 @@ export function MintLinkForm({
             onChange={(e) => setAllowText(e.target.value)}
             placeholder="0x…"
             rows={2}
-            className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] mono text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+            className="mt-1.5 w-full rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] mono text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
           />
         </div>
       )}

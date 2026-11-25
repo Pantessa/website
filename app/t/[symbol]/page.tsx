@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { CHART_TFS, HL_PERPS_HANDOFF_GLOBAL, chartSymbolByName, isLiveOnlyHlPair, liveHlPerpNames, normalizeChartSymbol, perpTwinOf, resolveChartPair, warmHlPerps, type ChartTf } from '@/lib/charts'
 import { parseMarketTab, parseVsParam } from '@/lib/markets'
+import { normalizeHandle } from '@/lib/called-it/spec'
 import { symbolPageSeo } from '@/lib/markets-seo'
 import { depthPlanFor, parseDepthSettings } from '@/lib/depth'
 import { depthCardMeta, depthOgPath } from '@/lib/depth-share'
@@ -102,6 +103,10 @@ export default async function TokenPage({ params, searchParams }: Params) {
   // HTML matches the URL; the client mirrors changes back (replaceState).
   const vsRaw = typeof sp.vs === 'string' ? sp.vs : ''
   const initialVs = vsRaw ? parseVsParam(`?vs=${encodeURIComponent(vsRaw)}`, norm) : null
+  // ?x=<handle> — a plotted X handle (Called it). The server says so, so a
+  // phone's header is the compact one on the first paint (the handle's band
+  // and the chart are what that visitor came for); the client store takes over.
+  const initialPlotted = normalizeHandle(typeof sp.x === 'string' ? sp.x : null) !== null
   // Which sides a venue can fill, read server-side so the header's act strip
   // is right on the FIRST paint: a Buy chip that renders and then vanishes is
   // worse than one that was never offered (lib/tradability-store; fail-soft
@@ -133,7 +138,7 @@ export default async function TokenPage({ params, searchParams }: Params) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: seo.jsonLd }} />
       <HlPerpsPrime hlPerps={hlPerps}>
         <MarketsShell sym>
-          <SymbolPage symbol={norm} initialTab={initialTab} initialTf={initialTf} initialVs={initialVs} tradable={tradable} />
+          <SymbolPage symbol={norm} initialTab={initialTab} initialTf={initialTf} initialVs={initialVs} initialPlotted={initialPlotted} tradable={tradable} />
           <div className="mkt-frame__foot">
             <Footer />
           </div>
