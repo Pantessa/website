@@ -1,30 +1,27 @@
 import { ImageResponse } from 'next/og'
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { gemMarkSvg } from '@/lib/og-marks'
+import { OG, OgFrame, OgLockup, OgPanel, OgSquare, OgWords, ogDisplay, ogLabel, ogNum } from '@/lib/og-brand'
+import { brandOgFonts } from '@/lib/og-brand-fonts'
 
-// The claim card: one sentence in the house serif on the left, a short table
+// The claim card: one sentence as the display line on the left, a short table
 // of facts on the right. For pages whose share is an argument rather than a
-// live object (/pricing, /compare). Same palette, fonts and lockup as the
-// site and markets cards; every figure is passed in by the route from the
-// module the page itself reads, so a card can never quote a stale number.
+// live object (/pricing, /compare, /community). Same palette, faces and lockup
+// as the site and markets cards (lib/og-brand: the flat #07080D ground, the
+// Cut P in its own colours, a square hairline panel); every figure is passed
+// in by the route from the module the page itself reads, so a card can never
+// quote a stale number. A `strong` row is the brand violet: nothing on this
+// card is a price that moved, so nothing on it is green or red.
 
 export const CLAIM_CARD_SIZE = { width: 1200, height: 630 }
 
-const BG = '#050708'
-const INK = '#FAFAF7'
-const MUTED = '#8a9186'
-const ACCENT = '#34e3a0'
-const LINE = 'rgba(255,255,255,0.10)'
-
-const toDataUri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
+const MARK = gemMarkSvg(undefined, { bare: true })
 
 export interface ClaimCard {
   /** The word beside the lockup (PRICING, COMPARE). */
   tag: string
   /** Up to four short words over the claim. */
   eyebrow: string[]
-  /** The claim: a plain first line, an italic second. */
+  /** The claim, on two lines. */
   line1: string
   line2: string
   /** Two lines under the claim. */
@@ -39,86 +36,52 @@ export interface ClaimCard {
 }
 
 export async function claimCardImage(card: ClaimCard): Promise<ImageResponse> {
-  const fonts = join(process.cwd(), 'assets', 'og-fonts')
-  const [serif, serifItalic, sans, sansSemi] = await Promise.all([
-    readFile(join(fonts, 'newsreader-500.ttf')),
-    readFile(join(fonts, 'newsreader-500-italic.ttf')),
-    readFile(join(fonts, 'geist-500.ttf')),
-    readFile(join(fonts, 'geist-600.ttf')),
-  ])
+  const fonts = await brandOgFonts()
   const longest = Math.max(card.line1.length, card.line2.length)
-  const claimSize = longest <= 14 ? 92 : longest <= 16 ? 76 : longest <= 18 ? 66 : 58
+  const claimSize = longest <= 12 ? 84 : longest <= 14 ? 74 : longest <= 16 ? 64 : longest <= 18 ? 56 : 50
   const rows = card.rows.slice(0, 6)
   return new ImageResponse(
     (
-      <div style={{ width: '100%', height: '100%', display: 'flex', position: 'relative', background: BG, fontFamily: 'Geist' }}>
-        <div style={{ position: 'absolute', right: -140, top: 40, width: 760, height: 560, borderRadius: 380, background: 'radial-gradient(circle, rgba(52,227,160,0.15) 0%, rgba(52,227,160,0) 70%)', display: 'flex' }} />
-
+      <OgFrame>
         <div style={{ position: 'absolute', left: 64, top: 56, display: 'flex', flexDirection: 'column', width: 530 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={toDataUri(gemMarkSvg(ACCENT))} width={58} height={58} alt="" />
-            <span style={{ color: INK, fontSize: 44, fontWeight: 600, letterSpacing: -1.8 }}>pantessa</span>
-            <span style={{ color: MUTED, fontSize: 19, letterSpacing: 5, marginLeft: 8, marginTop: 6 }}>{card.tag}</span>
+          <OgLockup mark={MARK} size={50} tag={card.tag} />
+          <div style={{ display: 'flex', marginTop: 28 }}>
+            <OgWords words={card.eyebrow} size={15} />
           </div>
-          <div style={{ display: 'flex', marginTop: 24, fontSize: 17, letterSpacing: 4.5, color: MUTED, whiteSpace: 'nowrap' }}>
-            {card.eyebrow.map((w, i) => (
-              <span key={w} style={{ display: 'flex' }}>
-                {i > 0 && <span style={{ color: ACCENT, margin: '0 12px' }}>·</span>}
-                <span>{w}</span>
-              </span>
-            ))}
+          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 46, whiteSpace: 'nowrap', ...ogDisplay(claimSize) }}>
+            <span>{card.line1}</span>
+            <span>{card.line2}</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 44, fontFamily: 'Newsreader', fontWeight: 500, fontSize: claimSize, lineHeight: 1.0, letterSpacing: -2.4 }}>
-            <span style={{ color: INK }}>{card.line1}</span>
-            <span
-              style={{
-                fontStyle: 'italic',
-                letterSpacing: -1.4,
-                backgroundImage: `linear-gradient(92deg, #7df0bd 6%, ${ACCENT} 46%, #ffd25e 104%)`,
-                backgroundClip: 'text',
-                color: 'transparent',
-                paddingBottom: 12,
-                paddingRight: 10,
-              }}
-            >
-              {card.line2}
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 30, gap: 12, fontSize: 17, letterSpacing: 4, color: MUTED }}>
-            <span>{card.under[0]}</span>
-            <span style={{ color: '#b8bfb5' }}>{card.under[1]}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 32, gap: 12 }}>
+            <span style={ogLabel(15)}>{card.under[0]}</span>
+            <span style={ogLabel(15, OG.soft)}>{card.under[1]}</span>
           </div>
         </div>
 
-        <div style={{ position: 'absolute', left: 628, top: 86, width: 508, height: 458, display: 'flex', flexDirection: 'column', borderRadius: 22, border: '1.5px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 24px', borderBottom: `1.5px solid ${LINE}` }}>
-            <span style={{ color: INK, fontSize: 14, fontWeight: 600, letterSpacing: 3 }}>{card.tableTitle}</span>
-            <span style={{ color: ACCENT, fontSize: 12, letterSpacing: 2.5 }}>{card.tableNote}</span>
+        <OgPanel left={628} top={86} width={508} height={458}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: `1px solid ${OG.line}` }}>
+            <span style={{ ...ogLabel(13.5, OG.ink), fontWeight: 600 }}>{card.tableTitle}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...ogLabel(12, OG.soft) }}>
+              <OgSquare size={7} />
+              <span>{card.tableNote}</span>
+            </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', padding: '6px 24px 0' }}>
             {rows.map((r, i) => (
-              <div key={r.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 58, borderTop: i === 0 ? 'none' : `1px solid ${LINE}`, whiteSpace: 'nowrap' }}>
-                <span style={{ color: '#c9cec6', fontSize: 22 }}>{r.label}</span>
-                <span style={{ color: r.strong ? ACCENT : INK, fontSize: 24, fontWeight: 600 }}>{r.value}</span>
+              <div key={r.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 58, borderTop: i === 0 ? 'none' : `1px solid ${OG.rule}`, whiteSpace: 'nowrap' }}>
+                <span style={{ color: OG.soft, fontSize: 22 }}>{r.label}</span>
+                {/* A value is as often a word as a figure ("Unlimited", "one tap"), so the column is set in the text face. */}
+                <span style={{ color: r.strong ? OG.violet : OG.ink, fontSize: 23, fontWeight: 600 }}>{r.value}</span>
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', padding: '0 24px 16px', fontSize: 12, letterSpacing: 2, whiteSpace: 'nowrap' }}>
-            <span style={{ color: MUTED }}>{card.foot}</span>
-            <span style={{ color: ACCENT }}>pantessa.com{card.path}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', padding: '0 24px 16px' }}>
+            <span style={ogLabel(11.5)}>{card.foot}</span>
+            <span style={ogNum(13, OG.violet)}>{`pantessa.com${card.path}`}</span>
           </div>
-        </div>
-      </div>
+        </OgPanel>
+      </OgFrame>
     ),
-    {
-      ...CLAIM_CARD_SIZE,
-      fonts: [
-        { name: 'Newsreader', data: serif, weight: 500, style: 'normal' },
-        { name: 'Newsreader', data: serifItalic, weight: 500, style: 'italic' },
-        { name: 'Geist', data: sans, weight: 500, style: 'normal' },
-        { name: 'Geist', data: sansSemi, weight: 600, style: 'normal' },
-      ],
-    },
+    { ...CLAIM_CARD_SIZE, fonts },
   )
 }

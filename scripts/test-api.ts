@@ -138,7 +138,8 @@ import {
  *  never print the latter where the former belongs. */
 const isRawBuildPath = (venue: string) => venue.startsWith('native-') || venue.startsWith('app-mode-')
 import { hexLuminance, normalizeAccent, normalizeBg, parseBrandHtml, validateBrandUrl } from '../lib/brand-scan'
-import { brandBloomTint, brandCtaStyle, brandThemeStyle } from '../lib/brand-theme'
+import { brandBloomTint, brandCtaStyle, brandOgPalette, brandThemeStyle } from '../lib/brand-theme'
+import { OG as OG_BRAND } from '../lib/og-brand'
 import {
   assertAgentIdentity,
   assertUnderDeskCap,
@@ -16572,6 +16573,38 @@ async function main() {
     ogCards.every((c) => c.src.includes('gemMarkSvg')) &&
       ogCards.every((c) => !c.src.includes('mask id="hub"')),
   )
+  // PINNED 2026-11-25 (the link cards in the Split look): the house palette of a
+  // made image is the brand's own (ground #07080D, white, quiet #7C8499, the
+  // brand violet as the accent). It was the green house palette (#050708 /
+  // #34e3a0) until this date; green is the market's now. lib/og-brand `OG` is
+  // the same inks, and a creator's own colours still come back untouched.
+  {
+    const house = brandOgPalette(null)
+    const navy = brandOgPalette({ domain: 'a.example', name: 'A', logo: null, accent: '#ff6b35', bg: '#0b1f3a' })
+    check(
+      'og palette: the house card is the Split palette (#07080D ground, #FFFFFF ink, #7C8499 quiet, #9F7AFF accent), equal to lib/og-brand OG; a creator\'s background and accent stay theirs',
+      house.bg === '#07080D' && house.ink === '#FFFFFF' && house.inkRgb === '255,255,255' && house.muted === '#7C8499' && house.accent === '#9F7AFF' && house.branded === false &&
+        OG_BRAND.bg === house.bg && OG_BRAND.ink === house.ink && OG_BRAND.muted === house.muted && OG_BRAND.violet === house.accent && OG_BRAND.up === '#2AF598' && OG_BRAND.down === '#FF3B47' &&
+        navy.branded === true && navy.bg === '#0b1f3a' && navy.accent === '#ff6b35',
+      JSON.stringify(house),
+    )
+    // Every link card, by file: the two route families plus the shared pieces.
+    const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    const walkCards = (dir: string): string[] =>
+      ogFs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walkCards(`${dir}/${e.name}`) : /^opengraph-image\.tsx$/.test(e.name) || (dir.startsWith('app/api/og') && /\.tsx$/.test(e.name)) ? [`${dir}/${e.name}`] : []))
+    const cardFiles = [...walkCards('app'), 'lib/og-claim-card.tsx', 'lib/og-brand.tsx']
+    const cardSrc = new Map(cardFiles.map((f) => [f, strip(ogFs.readFileSync(f, 'utf8'))]))
+    // (An avatar on the Called it card is a true circle: its radius is the one exception.)
+    const OLD_LOOK = /radial-gradient|linear-gradient|radialGradient|linearGradient|boxShadow|backgroundClip|fontStyle: 'italic'|Newsreader|#34e3a0|52,227,160|#050708|#ff5d5d|#ffd25e/i
+    const offenders = cardFiles.filter((f) => OLD_LOOK.test(cardSrc.get(f) ?? '') || (f !== 'app/api/og/called/card.tsx' && /borderRadius|\brx="/.test(cardSrc.get(f) ?? '')))
+    check(
+      'og cards: no link card draws a gradient, a glow, a shadow, a rounded corner, an italic or the green house palette (flat on #07080D; green and red are the market\'s)',
+      cardFiles.length >= 20 && offenders.length === 0,
+      `${cardFiles.length} files · ${offenders.join(' ')}`,
+    )
+    const ownFaces = cardFiles.filter((f) => /readFile\(/.test(cardSrc.get(f) ?? '') || (/new ImageResponse\(/.test(cardSrc.get(f) ?? '') && !/brandOgFonts\(\)/.test(cardSrc.get(f) ?? '')))
+    check('og cards: every card asks for its faces by role through lib/og-brand-fonts (no card reads a font file itself)', ownFaces.length === 0, ownFaces.join(' '))
+  }
   // The /i unfurl is the first thing a DM'd stranger sees (the H1 drill).
   // GTM's stranger-eye read: say WHOSE ("FROM @HANDLE", never a "CALL BY"
   // trade-tip), never hint auto-run ("TAP TO RUN" → "YOUR WALLET SIGNS"),

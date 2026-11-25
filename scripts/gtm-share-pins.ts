@@ -158,7 +158,8 @@ export async function gtmSharePins(check: Check): Promise<void> {
   check('chart: the share dialog always offers the chart link (copy), shares a link where a file cannot go, and carries the sharer id', /copyLink\(chartUrl\)/.test(chartShare) && /canNativeShare \|\| canShareLink/.test(chartShare) && /const chartUrl = withVia\(absoluteUrl\((?:viewUrl\([^`]*)?`\/t\/\$\{symbol\}/.test(chartShare) && /chartTweetHref\(symbol, tfLabel, chartUrl\)/.test(chartShare))
   check('chart: the dialog offers the share that pays (the symbol\'s own lead ask as an intent link), composed by the header strip\'s grammar', /execAsks\(pair, \{ usd: 25 \}\)\.find\(\(a\) => a\.tone === 'buy'\)/.test(chartShare) && /linksStudioHref\(\{ ask: earnAsk \}\)/.test(chartShare) && /data-share-earn/.test(chartShare))
   const tCard = readFileSync(join(app, 't/[symbol]/opengraph-image.tsx'), 'utf8')
-  check('cards: a symbol card says what the link does (trade from the chart), only for a chartable symbol', /seo\.pair && \([\s\S]{0,400}Trade from this chart/.test(tCard))
+  // RE-PINNED 2026-11-25 (the link cards in the Split look): the chip is one entry of the card's foot, present only for a pair that is not look-only (the old pattern had been red since the look-only indexes joined the card).
+  check('cards: a symbol card says what the link does (trade from the chart), only for a chartable symbol', /seo\.pair && !lookOnly \? \[\{ label: 'Trade from this chart'/.test(tCard))
   check('landing: the share band carries the share control', /<ShareActions post=\{sitePost\(\)\}/.test(readFileSync(join(ROOT, 'components/landing/ShareBand.tsx'), 'utf8')))
   const receiptBtn = readFileSync(join(ROOT, 'components/ShareReceiptButton.tsx'), 'utf8')
   const chatUi = readFileSync(join(ROOT, 'components/ChatInterface.tsx'), 'utf8')

@@ -145,8 +145,8 @@ export function depthCurveSvg(w: DepthWindow, o: DepthCurveOptions): DepthCurve 
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">` +
     grid +
-    (bidD ? `<path d="${bidD}" fill="${o.bidFill}"/><path d="${line(bidD)}" fill="none" stroke="${o.bid}" stroke-width="2.5" stroke-linejoin="round"/>` : '') +
-    (askD ? `<path d="${askD}" fill="${o.askFill}"/><path d="${line(askD)}" fill="none" stroke="${o.ask}" stroke-width="2.5" stroke-linejoin="round"/>` : '') +
+    (bidD ? `<path d="${bidD}" fill="${o.bidFill}"/><path d="${line(bidD)}" fill="none" stroke="${o.bid}" stroke-width="2.5" stroke-linejoin="miter"/>` : '') +
+    (askD ? `<path d="${askD}" fill="${o.askFill}"/><path d="${line(askD)}" fill="none" stroke="${o.ask}" stroke-width="2.5" stroke-linejoin="miter"/>` : '') +
     `<line x1="${midX}" x2="${midX}" y1="0" y2="${H}" stroke="${o.mid}" stroke-width="1.5" stroke-dasharray="5 6"/>` +
     `</svg>`
 

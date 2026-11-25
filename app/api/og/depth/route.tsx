@@ -9,12 +9,17 @@
 // Never a 500 and never a fake book: a symbol with no book (a tokenized
 // stock, an index) or a venue that did not answer goes to the symbol's own
 // card. Under /api/og/, which robots.txt allows.
+//
+// THE LOOK (2026-11-25; brand guidelines section 7, lib/og-brand): flat on
+// #07080D, the symbol as the one display line, every figure in the mono role,
+// the curve in a square hairline frame. Green is the bids and red the asks
+// (the market's own two sides); their fills are flat tints, not see-through.
 
 import { ImageResponse } from 'next/og'
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { brandOgPalette } from '@/lib/brand-theme'
 import { gemMarkSvg } from '@/lib/og-marks'
+import { OG, OgChips, OgFrame, OgLockup, ogDataUri, ogDisplay, ogLabel, ogMix, ogNum } from '@/lib/og-brand'
+import { brandOgFonts } from '@/lib/og-brand-fonts'
 import { depthWindow, fmtDepthPrice, fmtDepthSize, fmtDepthUsd, DEPTH_VENUE_LABEL } from '@/lib/depth'
 import { depthCurveSvg, depthLean, depthSourceWords, depthWindowWords, parseDepthOgQuery } from '@/lib/depth-share'
 import { readServerDepthBook } from '@/lib/depth-book-server'
@@ -25,14 +30,13 @@ export const dynamic = 'force-dynamic'
 
 const W = 1200
 const H = 630
-const CURVE_W = 1072
+const CURVE_W = 1070
 const CURVE_H = 268
-const UP = '#34e3a0'
-const DOWN = '#ff5d5d'
+const UP = OG.up
+const DOWN = OG.down
+const MARK = gemMarkSvg(undefined, { bare: true })
 /** X reads the card once, at post time; a minute keeps a burst of shares to one book read. */
 const CACHE = 'public, max-age=60, s-maxage=60'
-
-const toDataUri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -54,10 +58,10 @@ export async function GET(req: Request) {
     unit,
     bid: UP,
     ask: DOWN,
-    bidFill: 'rgba(52,227,160,0.16)',
-    askFill: 'rgba(255,93,93,0.16)',
-    grid: 'rgba(255,255,255,0.06)',
-    mid: 'rgba(250,250,247,0.55)',
+    bidFill: ogMix(UP, OG.panel, 0.84),
+    askFill: ogMix(DOWN, OG.panel, 0.84),
+    grid: OG.rule,
+    mid: OG.soft,
   })
   const lean = depthLean(w)
   const leanColor = lean.side === 'bid' ? UP : lean.side === 'ask' ? DOWN : pal.ink
@@ -65,49 +69,37 @@ export async function GET(req: Request) {
   const bidBase = w.bids[w.bids.length - 1]?.cum ?? 0
   const askBase = w.asks[w.asks.length - 1]?.cum ?? 0
 
-  const fonts = join(process.cwd(), 'assets', 'og-fonts')
-  const [sans, sansSemi] = await Promise.all([readFile(join(fonts, 'geist-500.ttf')), readFile(join(fonts, 'geist-600.ttf'))])
-
-  const chip = (label: string, color: string, border: string) => (
-    <div key={label} style={{ display: 'flex', padding: '8px 16px', borderRadius: 999, border: `1.5px solid ${border}`, color, fontSize: 16, letterSpacing: 1.5, whiteSpace: 'nowrap' }}>
-      <span>{label}</span>
-    </div>
-  )
+  const fonts = await brandOgFonts()
 
   const res = new ImageResponse(
     (
-      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', background: pal.bg, fontFamily: 'Geist' }}>
+      <OgFrame bg={pal.bg}>
         {/* header: lockup left, what this is right */}
         <div style={{ position: 'absolute', top: 40, left: 64, right: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={toDataUri(gemMarkSvg())} width={40} height={40} alt="" />
-            <span style={{ color: pal.ink, fontSize: 30, fontWeight: 600, letterSpacing: -1.2 }}>pantessa</span>
-            <span style={{ color: pal.muted, fontSize: 16, letterSpacing: 4, marginLeft: 10 }}>MARKETS</span>
-          </div>
-          <span style={{ color: pal.muted, fontSize: 16, letterSpacing: 3 }}>{`ORDER BOOK DEPTH · ${depthWindowWords(w.pct).toUpperCase()}`}</span>
+          <OgLockup mark={MARK} size={42} tag="MARKETS" />
+          <span style={ogLabel(14.5, pal.muted)}>{`ORDER BOOK DEPTH · ${depthWindowWords(w.pct).toUpperCase()}`}</span>
         </div>
 
         {/* symbol + venue / mid + the lean */}
-        <div style={{ position: 'absolute', top: 108, left: 64, right: 64, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+        <div style={{ position: 'absolute', top: 106, left: 64, right: 64, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ color: pal.ink, fontSize: 64, fontWeight: 600, letterSpacing: -2.5, lineHeight: 1 }}>{read.pair.symbol}</span>
+            <span style={{ ...ogDisplay(read.pair.symbol.length > 9 ? 50 : 64, pal.ink), lineHeight: 1 }}>{read.pair.symbol}</span>
             <span style={{ color: pal.muted, fontSize: 22, marginTop: 10 }}>{seo.name === 'Hyperliquid' && read.venue === 'hyperliquid' ? 'Hyperliquid perp book' : `${seo.name} · ${DEPTH_VENUE_LABEL[read.venue]} book`}</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-            <span style={{ color: pal.ink, fontSize: 54, fontWeight: 600, letterSpacing: -2, lineHeight: 1 }}>{`$${fmtDepthPrice(w.mid)}`}</span>
+            <span style={{ ...ogNum(52, pal.ink), letterSpacing: -1.4, lineHeight: 1 }}>{`$${fmtDepthPrice(w.mid)}`}</span>
             <span style={{ color: leanColor, fontSize: 22, fontWeight: 600, marginTop: 10 }}>{lean.words}</span>
           </div>
         </div>
 
         {/* the curve, with the per-side totals in its top corners */}
-        <div style={{ position: 'absolute', top: 222, left: 64, width: CURVE_W, height: CURVE_H + 34, display: 'flex', borderRadius: 18, border: '1.5px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.025)', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: 222, left: 64, width: CURVE_W + 2, height: CURVE_H + 34, display: 'flex', border: `1px solid ${OG.line}`, background: OG.panel, overflow: 'hidden' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={toDataUri(curve.svg)} width={CURVE_W} height={CURVE_H} alt="" style={{ position: 'absolute', top: 0, left: 0 }} />
-          <div style={{ position: 'absolute', top: 14, left: 18, display: 'flex', alignItems: 'center', gap: 8, fontSize: 18, color: UP, fontWeight: 600 }}>
+          <img src={ogDataUri(curve.svg)} width={CURVE_W} height={CURVE_H} alt="" style={{ position: 'absolute', top: 0, left: 0 }} />
+          <div style={{ position: 'absolute', top: 14, left: 18, display: 'flex', ...ogNum(17, UP) }}>
             <span>{`BIDS ${amount(w.bidUsd, bidBase)}`}</span>
           </div>
-          <div style={{ position: 'absolute', top: 14, right: 18, display: 'flex', alignItems: 'center', gap: 8, fontSize: 18, color: DOWN, fontWeight: 600 }}>
+          <div style={{ position: 'absolute', top: 14, right: 18, display: 'flex', ...ogNum(17, DOWN) }}>
             <span>{`ASKS ${amount(w.askUsd, askBase)}`}</span>
           </div>
           {/* A wall's label sits on the mid side of its step, where the curve is lower and the space is clear. */}
@@ -121,20 +113,18 @@ export async function GET(req: Request) {
                 width: 150,
                 display: 'flex',
                 justifyContent: l.side === 'bid' ? 'flex-start' : 'flex-end',
-                fontSize: 15,
-                fontWeight: 600,
-                color: l.side === 'bid' ? UP : DOWN,
+                ...ogNum(14, l.side === 'bid' ? UP : DOWN),
               }}
             >
               <span>{l.text}</span>
             </div>
           ))}
           {/* the price axis: the window's edges and the mid */}
-          <div style={{ position: 'absolute', top: CURVE_H + 6, left: 0, width: CURVE_W, height: 24, display: 'flex', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ position: 'absolute', top: CURVE_H + 6, left: 0, width: CURVE_W, height: 24, display: 'flex', borderTop: `1px solid ${OG.rule}` }}>
             {curve.ticks.map((t, i) => (
               <span
                 key={i}
-                style={{ position: 'absolute', top: 4, left: i === 0 ? 14 : i === 2 ? CURVE_W - 134 : t.x - 60, width: 120, display: 'flex', justifyContent: i === 0 ? 'flex-start' : i === 2 ? 'flex-end' : 'center', fontSize: 15, color: i === 1 ? pal.ink : pal.muted }}
+                style={{ position: 'absolute', top: 5, left: i === 0 ? 14 : i === 2 ? CURVE_W - 134 : t.x - 60, width: 120, display: 'flex', justifyContent: i === 0 ? 'flex-start' : i === 2 ? 'flex-end' : 'center', ...ogNum(13.5, i === 1 ? pal.ink : pal.muted, 500) }}
               >
                 {i === 1 ? `mid ${t.text}` : t.text}
               </span>
@@ -144,22 +134,12 @@ export async function GET(req: Request) {
 
         {/* foot: what the link does, the book and the minute */}
         <div style={{ position: 'absolute', bottom: 34, left: 64, right: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: 12 }}>
-            {chip(read.venue === 'coinbase' ? 'Click a level, rest an order' : 'Trade from this chart', UP, UP)}
-            {chip('Your wallet signs', pal.muted, 'rgba(255,255,255,0.12)')}
-          </div>
-          <span style={{ color: pal.muted, fontSize: 14, letterSpacing: 1.2, whiteSpace: 'nowrap' }}>{depthSourceWords(read.venue, read.book.at).toUpperCase()}</span>
+          <OgChips size={14} ink={pal.muted} chips={[{ label: read.venue === 'coinbase' ? 'Click a level, rest an order' : 'Trade from this chart', tone: OG.violet, plain: true }, { label: 'Your wallet signs', plain: true }]} />
+          <span style={ogLabel(12, pal.muted)}>{depthSourceWords(read.venue, read.book.at).toUpperCase()}</span>
         </div>
-      </div>
+      </OgFrame>
     ),
-    {
-      width: W,
-      height: H,
-      fonts: [
-        { name: 'Geist', data: sans, weight: 500, style: 'normal' },
-        { name: 'Geist', data: sansSemi, weight: 600, style: 'normal' },
-      ],
-    },
+    { width: W, height: H, fonts },
   )
   const body = await res.arrayBuffer()
   return new Response(body, { status: 200, headers: { 'content-type': 'image/png', 'cache-control': CACHE,'x-pantessa-card': 'depth' } })

@@ -186,10 +186,11 @@ export function communityGroupPins(check: Check): void {
   check('group meta: title is "<Name> on Pantessa", description is the about line; an internal room, a t- room and an unreadable one are never indexed', meta.title === 'ETH Swing Traders on Pantessa' && meta.description === 'Daily levels on ETH. Calls are stamped.' && meta.noindex === false && roomMeta(room, 't-group-x').noindex === true && roomMeta(room, 'eth-swing', true).noindex === true && roomMeta(null, 'eth-swing').noindex === true && roomMeta({ ...room, about: '' }, 'eth-swing').description === ROOM_DEFAULT_ABOUT)
   const og = code(read('app', 'g', '[slug]', 'opengraph-image.tsx'))
   // RE-PINNED 2026-11-09 (polish, T13): the card reads { room, known }; an unread store still draws the honest card.
-  check('group card: the OG image draws the Emerald mark and the pinned words, and falls to the honest card when the room cannot be read', /gemMarkSvg\(\)/.test(og) && /roomCardText\(room\)/.test(og) && /readRoom\(slug\)\.catch\(\(\) => \(\{ room: null, known: false/.test(og) && /card\.members/.test(og) && /card\.markets\.map/.test(og))
+  // RE-PINNED 2026-11-25 (the link cards in the Split look): the mark is the Cut P in its own colours with no plate (gemMarkSvg bare), and the faces come by role from lib/og-brand-fonts, so "before a font is read" is before brandOgFonts().
+  check('group card: the OG image draws the house mark (the bare Cut P) and the pinned words, and falls to the honest card when the room cannot be read', /gemMarkSvg\(undefined, \{ bare: true \}\)/.test(og) && /roomCardText\(room\)/.test(og) && /readRoom\(slug\)\.catch\(\(\) => \(\{ room: null, known: false/.test(og) && /card\.members/.test(og) && /card\.markets\.map/.test(og))
   check(
     'group card: T13 — no such room answers 404 before a font is read or an image drawn; a real room\'s card carries an hour of edge cache (s-maxage=3600)',
-    /if \(read\.known && !read\.room\) return new Response\(null, \{ status: 404/.test(og) && og.indexOf('status: 404') < og.indexOf('readFile(') && og.indexOf('status: 404') < og.indexOf('new ImageResponse(') &&
+    /if \(read\.known && !read\.room\) return new Response\(null, \{ status: 404/.test(og) && og.indexOf('brandOgFonts()') > 0 && og.indexOf('status: 404') < og.indexOf('brandOgFonts()') && og.indexOf('status: 404') < og.indexOf('new ImageResponse(') &&
       /ROOM_CARD_CACHE = '[^']*s-maxage=3600/.test(og) && /'cache-control': room \? ROOM_CARD_CACHE/.test(og),
   )
   const page = code(read('app', 'g', '[slug]', 'page.tsx'))
