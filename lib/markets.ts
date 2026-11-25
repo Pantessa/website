@@ -74,6 +74,23 @@ export const COIN_NAMES: Readonly<Record<string, string>> = {
   HYPE: 'Hyperliquid',
   SYRUP: 'Maple',
   FARTCOIN: 'Fartcoin',
+  XMR: 'Monero',
+  VVV: 'Venice',
+  LIT: 'Lighter',
+  MON: 'Monad',
+  PUMP: 'Pump.fun',
+  BNB: 'BNB',
+  XPL: 'Plasma',
+  TRUMP: 'Official Trump',
+  PAXG: 'PAX Gold',
+  TAO: 'Bittensor',
+  TRX: 'TRON',
+  ETHFI: 'ether.fi',
+  PURR: 'Purr',
+  LTC: 'Litecoin',
+  WLFI: 'World Liberty Financial',
+  XLM: 'Stellar',
+  ASTER: 'Aster',
 }
 
 /** The crypto board's order — majors first, then the DeFi names the wallet
@@ -86,7 +103,15 @@ const CRYPTO_ORDER = [
 
 /** HL-only perp listings (majors chart on Coinbase spot and are not
  *  repeated here — the row's venue chip says where the candles come from). */
-const PERP_ORDER = ['HYPE', 'SYRUP', 'FARTCOIN']
+const PERP_ORDER = [
+  'HYPE', 'SYRUP', 'FARTCOIN',
+  // 2026-11-25 (Nate: "can we show more options on the landing?"): the
+  // venue's most traded listings with no spot book here, by its 24h volume
+  // that day. Each is in lib/charts HYPERLIQUID_BOARD_PERPS, so it clears
+  // the resolver cold.
+  'XMR', 'VVV', 'LIT', 'MON', 'PUMP', 'BNB', 'XPL', 'TRUMP', 'PAXG', 'TAO',
+  'TRX', 'ETHFI', 'PURR', 'LTC', 'WLFI', 'XLM', 'ASTER',
+]
 
 /** The rows a section shows, each already cleared by the resolver. A listed
  *  ticker the resolver refuses (feedless, delisted) is DROPPED, never dashed. */
