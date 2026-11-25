@@ -70,7 +70,8 @@ export async function claimCardImage(card: ClaimCard): Promise<ImageResponse> {
             {rows.map((r, i) => (
               <div key={r.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 58, borderTop: i === 0 ? 'none' : `1px solid ${OG.rule}`, whiteSpace: 'nowrap' }}>
                 <span style={{ color: OG.soft, fontSize: 22 }}>{r.label}</span>
-                <span style={ogNum(21, r.strong ? OG.violet : OG.ink)}>{r.value}</span>
+                {/* A value is as often a word as a figure ("Unlimited", "one tap"), so the column is set in the text face. */}
+                <span style={{ color: r.strong ? OG.violet : OG.ink, fontSize: 23, fontWeight: 600 }}>{r.value}</span>
               </div>
             ))}
           </div>

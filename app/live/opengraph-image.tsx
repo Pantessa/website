@@ -117,7 +117,7 @@ export default async function Image() {
             </div>
           </div>
           <div style={{ display: 'flex', marginTop: 28 }}>
-            <OgWords words={EYEBROW} size={13} />
+            <OgWords words={EYEBROW} size={12} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', marginTop: 46, whiteSpace: 'nowrap', ...ogDisplay(74) }}>
             <span>Every print</span>
@@ -131,7 +131,7 @@ export default async function Image() {
 
         {/* left-bottom: what a row offers */}
         <div style={{ position: 'absolute', left: 64, bottom: 44, display: 'flex' }}>
-          <OgChips size={12.5} ink={OG.muted} chips={[{ label: 'EVERY ROW · ONE SENTENCE · ONE TAP', plain: true }, { label: 'NO SIGN-UP TO LOOK', plain: true }]} />
+          <OgChips size={11.5} ink={OG.muted} chips={[{ label: 'EVERY ROW · ONE SENTENCE · ONE TAP', plain: true }, { label: 'NO SIGN-UP TO LOOK', plain: true }]} />
         </div>
 
         {/* right: THE LEADERS — the venue's busiest books, the page's own pick */}

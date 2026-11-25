@@ -137,7 +137,8 @@ function Card({ share, rows, warm, asOf }: { share: LiveShare; rows: CardRow[]; 
               {!battle && (i < names.length - 1 || more > 0) && <span style={{ color: OG.muted, marginLeft: 14 }}>·</span>}
             </span>
           ))}
-          {more > 0 && <span style={{ display: 'flex', color: OG.muted, fontSize: Math.round(hl * 0.62) }}>{`+${more} more`}</span>}
+          {/* The count is set in the text face: it is a figure beside the names, not one of them. */}
+          {more > 0 && <span style={{ display: 'flex', color: OG.muted, fontFamily: 'Geist', fontWeight: 500, letterSpacing: -0.5, fontSize: Math.round(hl * 0.5) }}>{`+${more} more`}</span>}
         </div>
         <span style={{ display: 'flex', marginTop: 10, fontFamily: OG_DISPLAY, fontWeight: 600, fontSize: 42, letterSpacing: -0.6, color: OG.ink }}>{cardTagline(share.view)}</span>
         <div style={{ display: 'flex', flexDirection: 'column', marginTop: 22, gap: 10 }}>
@@ -151,7 +152,7 @@ function Card({ share, rows, warm, asOf }: { share: LiveShare; rows: CardRow[]; 
       </div>
 
       <div style={{ position: 'absolute', left: 64, bottom: 44, display: 'flex' }}>
-        <OgChips size={12.5} ink={OG.muted} chips={[{ label: 'PRICES · HYPERLIQUID', plain: true }, { label: 'NO SIGN-UP TO LOOK', plain: true }]} />
+        <OgChips size={12} ink={OG.muted} chips={[{ label: 'PRICES · HYPERLIQUID', plain: true }, { label: 'NO SIGN-UP TO LOOK', plain: true }]} />
       </div>
 
       {/* right: the picked markets */}
