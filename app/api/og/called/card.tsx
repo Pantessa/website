@@ -339,7 +339,7 @@ function Scoreboard({ input, address }: { input: CalledCardInput; address: strin
             {counts.map((c) => (
               <div key={c.kind} style={{ display: 'flex', alignItems: 'center', gap: 7, width: C.w / 2, height: 27 }}>
                 <div style={{ display: 'flex', width: 9, height: 9, background: TONE[c.kind as CallVerdict], flexShrink: 0 }} />
-                <span style={{ color: INK, fontFamily: MONO, fontSize: 15.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{c.text}</span>
+                <span style={{ color: INK, fontSize: 15.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{c.text}</span>
               </div>
             ))}
           </div>
