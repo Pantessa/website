@@ -304,9 +304,9 @@ export function readPins(check: Check): void {
       /<SpineLink /.test(card) && !/<Link[\s>]/.test(card) && /\{door\}/.test(card),
   )
   check(
-    'read: the first frame is the server\'s — the line is one h2 whose aria-label is the whole sentence, each clause a pressed-state button, the tiles a tablist with roving focus and arrow keys, the chart an SVG in a stretched viewBox inside a box whose height is CSS; clock words wait for the browser; nothing animates under reduced motion',
-    /<h2 className="read__line" aria-label=\{headline\}>/.test(card) && /aria-pressed=\{c\.key === sel\}/.test(card) /* RE-PINNED 2026-11-20 (the desk): a clause is keyed by its symbol */ && /role="tablist"/.test(card) && /role="tab" aria-selected=\{on\} tabIndex=\{on \? 0 : -1\}/.test(card) &&
-      /e\.key !== 'ArrowRight' && e\.key !== 'ArrowLeft'/.test(card) && /viewBox="0 0 1000 300" preserveAspectRatio="none"/.test(card) && /vectorEffect="non-scaling-stroke"/.test(card) &&
+    'read: the first frame is the server\'s — the line is one h2 whose aria-label is the whole sentence, each clause a pressed-state button, each tile a link onto its market\'s own page (a tile with no page a pressed-state button onto the chart), the chart an SVG in a stretched viewBox inside a box whose height is CSS; clock words wait for the browser; nothing animates under reduced motion',
+    /<h2 className="read__line" aria-label=\{headline\}>/.test(card) && /aria-pressed=\{c\.key === sel\}/.test(card) /* RE-PINNED 2026-11-20 (the desk): a clause is keyed by its symbol */ && /* RE-PINNED 2026-11-25 (tiles link to the asset page, Nate): was a tablist with arrow keys */ /const href = deskPageHref\(i\)/.test(card) && /<SpineLink href=\{href\} prefetch=\{false\} className=\{cls\} data-read-tile=\{i\.key\}/.test(card) && /aria-pressed=\{on\} className=\{cls\} onClick=\{\(\) => pick\(i\.key\)\}/.test(card) && !/role="tablist"/.test(card) &&
+      /viewBox="0 0 1000 300" preserveAspectRatio="none"/.test(card) && /vectorEffect="non-scaling-stroke"/.test(card) &&
       /useState<Date \| null>\(null\)/.test(card) && /suppressHydrationWarning/.test(card) &&
       /\.read__plot \{ position: relative; height: clamp\(/.test(css) && /prefers-reduced-motion: reduce/.test(css) && /@media \(hover: none\) \{[\s\S]*\.read__chip \{ min-height: 44px; \}/.test(css) &&
       !/#[0-9a-fA-F]{3,8}\b|rgba?\(|font-size: \d+px|border-radius: \d+px/.test(css),

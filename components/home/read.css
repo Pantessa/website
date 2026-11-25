@@ -55,7 +55,7 @@
 /* ── The wall: a tile a token, each a day's chart ─────────────────────── */
 .read__tiles { display: grid; grid-template-columns: repeat(var(--read-cols, 8), minmax(0, 1fr)); gap: var(--sp-3); margin-top: var(--sp-1); }
 .read__cell { position: relative; display: flex; min-width: 0; }
-.read__tile { position: relative; flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--sp-2) 10px 0; border: 1px solid var(--line); border-radius: var(--r-md); background: transparent; color: var(--fg); font-family: var(--mk-font-ui); text-align: left; cursor: pointer; outline: none; overflow: hidden; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
+.read__tile { position: relative; text-decoration: none; flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--sp-2) 10px 0; border: 1px solid var(--line); border-radius: var(--r-md); background: transparent; color: var(--fg); font-family: var(--mk-font-ui); text-align: left; cursor: pointer; outline: none; overflow: hidden; transition: border-color var(--dur-1) ease, background var(--dur-1) ease; }
 .read__tile:hover { border-color: color-mix(in srgb, var(--fg) 28%, var(--line)); }
 .read__tile:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .read__tile.is-on { border-color: color-mix(in srgb, var(--read-tone) 70%, var(--line)); background: color-mix(in srgb, var(--read-tone) 9%, var(--surf-1)); }
